@@ -78,6 +78,9 @@ const ROLE_COLORS = ["#2A5E9B", "#00A896", "#BF5AF2", "#FF9F0A", "#5E8C31", "#FF
 // Leaderboard delivered-% thresholds. >= green is green; >= yellow is yellow; below is red.
 const DEFAULT_THRESHOLDS = { green: 20, yellow: 10 };
 
+// Daily Activity checkout minimums (per store, editable)
+const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2 };
+
 const DEFAULT_CONFIG = {
   stores: [
     { id: "holler-honda", name: "Holler Honda", icon: null },
@@ -148,6 +151,7 @@ function detectReportType(rows, filename = "") {
   }
   if (h2.includes("video day of appt")) return "appointment";
   if (h1.includes("bh lead") && h1.includes("engaged")) return "video";
+  if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
   return null;
 }
 
@@ -202,6 +206,16 @@ function parseReport(rows, type) {
         .filter((i) => i >= 0);
       rec.bhVideoPct = toNum(row[pctCols[0]]);
       rec.engagedVideoPct = toNum(row[pctCols[1]]);
+    } else if (type === "activity") {
+      rec.actCalls = toNum(row[idx("Calls")]);
+      rec.actCallContacted = toNum(row[idx("Call Contacted")]);
+      rec.actVideo = toNum(row[idx("Personalized Video")]);
+      rec.actText = toNum(row[idx("Text")]);
+      rec.actEmail = toNum(row[idx("Email")]);
+      rec.actApptCreated = toNum(row[idx("Created")]);
+      rec.actApptShow = toNum(row[idx("Show")]);
+      rec.actOppsTotal = toNum(row[idx("Total")]);
+      rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
     }
     out[key] = rec;
   }
@@ -257,8 +271,6 @@ const failureText = (ev) =>
   ).join("; ");
 
 /* ---------------- Storage + audit (Supabase-backed) ---------------- */
-// Reads config from Vite env at build time. Set these in Vercel:
-//   VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
@@ -307,6 +319,7 @@ export default function LeadPerformanceCalculator() {
   const [config, setConfig] = useState(null);
   const [session, setSession] = useState(null);
   const [entered, setEntered] = useState(false);
+  const [appModule, setAppModule] = useState("perf");
   const [view, setView] = useState("admin");
   const [storeData, setStoreData] = useState(null);
   const [adminData, setAdminData] = useState({});
@@ -414,8 +427,22 @@ export default function LeadPerformanceCalculator() {
       if (!type) { log.push({ ok: false, msg: `${file.name} isn't a Delivery, Appointment, or Video report, so it was skipped.` }); continue; }
       const parsed = parseReport(rows, type);
       M.names[type] = Object.keys(parsed);
-      const label = REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || type;
+      const label = REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || (type === "activity" ? "Daily Activity" : type);
       let count = 0;
+      // Daily Activity is stored per-day (checkout resets daily)
+      if (type === "activity") {
+        if (!next.activity) next.activity = {};
+        next.activity[day] = {};
+        for (const [key, rec] of Object.entries(parsed)) {
+          next.activity[day][key] = {
+            displayName: rec.displayName,
+            calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
+            text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
+            apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
+          };
+          count++;
+        }
+      }
       for (const [key, rec] of Object.entries(parsed)) {
         const prevStat = M.stats[key] || {};
         // capture prior channel delivered % so the leaderboard can show a trend
@@ -424,7 +451,7 @@ export default function LeadPerformanceCalculator() {
           if (rec[ch + "Pct"] != null && prevStat[ch + "Pct"] != null) trend[ch] = prevStat[ch + "Pct"];
         }
         M.stats[key] = { ...prevStat, ...rec, prevPct: trend, [`${type}Updated`]: day };
-        count++;
+        if (type !== "activity") count++;
       }
       M.imports[day][type] = true;
       importedFiles.push(`${label} (${count})`);
@@ -477,7 +504,7 @@ export default function LeadPerformanceCalculator() {
   };
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
   if (!config) return <Shell><div className="loading">Loading…</div><Style /></Shell>;
-  if (!entered && !session) return <Shell><Splash config={config} onEnter={() => setEntered(true)} onLaunchBoard={(storeId) => openLeaderboard(config, storeId)} /><Style /></Shell>;
+  if (!entered && !session) return <Shell><Splash config={config} onEnter={(mod) => { setAppModule(mod || "perf"); setEntered(true); }} onLaunchBoard={(storeId) => openLeaderboard(config, storeId)} /><Style /></Shell>;
   if (!session) return <Shell><Login config={config} onBack={() => setEntered(false)}
     onLogin={(u) => { setSession(u); appendAudit({ user: u.name, action: "Signed in" }); }}
     onRegister={async (u) => {
@@ -596,18 +623,36 @@ export default function LeadPerformanceCalculator() {
       ) : (
         <>
           <nav className="seg-wrap no-print">
-            <SegControl
-              items={[["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]}
-              value={tab} onChange={setTab}
-              renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
+            {appModule === "activity" ? (
+              <SegControl
+                items={[["checkout", "Check Out"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]}
+                value={["checkout", "plates", "import", "actstd"].includes(tab) ? tab : "checkout"} onChange={setTab}
+                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
+            ) : (
+              <SegControl
+                items={[["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]}
+                value={["board", "import", "gm", "history", "standards", "roster"].includes(tab) ? tab : "board"} onChange={setTab}
+                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
+            )}
           </nav>
-          <div key={view + tab} className="page">
-            {tab === "board" && <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName} onMove={moveAssociate} onSetRestriction={setRestriction} />}
-            {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} />}
-            {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
-            {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
-            {tab === "standards" && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
-            {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+          <div key={view + tab + appModule} className="page">
+            {appModule === "activity" ? (
+              <>
+                {(tab === "checkout" || !["plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} />}
+                {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity />}
+                {tab === "actstd" && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+              </>
+            ) : (
+              <>
+                {tab === "board" && <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName} onMove={moveAssociate} onSetRestriction={setRestriction} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} />}
+                {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
+                {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
+                {tab === "standards" && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+                {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+              </>
+            )}
           </div>
         </>
       )}
@@ -784,8 +829,9 @@ function Splash({ config, onEnter, onLaunchBoard }) {
         <h1 className="splash-title">Lead Performance</h1>
         <p className="splash-sub">Holler-Classic Family of Dealerships</p>
         <div className="splash-actions">
-          <button className="btn wide splash-btn-primary" onClick={onEnter}>Launch Tool</button>
-          <button className="btn-outline wide splash-btn-secondary" onClick={() => setPickStore((v) => !v)}>Launch The Board</button>
+          <button className="btn wide splash-btn-primary" onClick={() => onEnter("perf")}>Performance Tracker</button>
+          <button className="btn wide splash-btn-primary splash-btn-activity" onClick={() => onEnter("activity")}>Daily Activity Tracker</button>
+          <button className="btn-outline wide splash-btn-secondary" onClick={() => setPickStore((v) => !v)}>The Board</button>
         </div>
         {pickStore && (
           <div className="splash-picker">
@@ -954,11 +1000,225 @@ function Login({ config, onLogin, onRegister, onSetupAdmin, onBack }) {
 }
 
 /* ---------------- Import badge ---------------- */
-function ImportBadge({ storeData }) {
+function ImportBadge({ storeData, activity }) {
   const M = storeData.months[ym()];
   const t = M?.imports?.[today()] || {};
+  if (activity) {
+    return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? "✓" : "0/1"}</span>;
+  }
   const done = ["delivery", "appointment", "video"].filter((k) => t[k]).length;
   return <span className={"badge " + (done === 3 ? "badge-ok" : "badge-warn")}>{done}/3</span>;
+}
+
+/* ---------------- Check Out Tracker (Daily Activity) ---------------- */
+function CheckOutTracker({ config, store, data }) {
+  const [query, setQuery] = useState("");
+  const [day, setDay] = useState(today());
+  const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
+  const activityDays = Object.keys(data.activity || {}).sort().reverse();
+  const dayData = data.activity?.[day] || {};
+
+  // build rows from roster, matched to that day's activity import
+  const q = norm(query);
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+  const rows = roster.map((a) => {
+    const rec = dayData[norm(a.name)] || {};
+    const calls = rec.calls, video = rec.video;
+    const callsMet = calls != null && calls >= std.minCalls;
+    const videoMet = video != null && video >= std.minVideos;
+    const hasData = rec.calls != null || rec.video != null;
+    return { a, calls, video, callsMet, videoMet, rocked: callsMet && videoMet, hasData, rec };
+  }).filter((r) => !q || norm(r.a.name).includes(q));
+
+  const rockedCount = rows.filter((r) => r.rocked).length;
+  const withData = rows.filter((r) => r.hasData);
+  const offenders = withData.filter((r) => !r.rocked);
+
+  if (activityDays.length === 0)
+    return <div className="empty">No Daily Activity imported yet. Drop today's Standard Daily Activity report in the Import tab to build the checkout sheet.</div>;
+
+  return (
+    <div className="checkout">
+      <div className="gm-toolbar">
+        <select value={day} onChange={(e) => setDay(e.target.value)}>
+          {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+        </select>
+        <span className="hint">Minimum standard: {std.minCalls} calls · {std.minVideos} videos. Change it in the Standards tab.</span>
+      </div>
+      <div className="checkout-summary">
+        <span className="stat-pass">✓ {rockedCount} rocked it</span>
+        <span className="stat-fail">✕ {offenders.length} below standard</span>
+        <span className="stat-dim">{withData.length} of {rows.length} with data</span>
+      </div>
+      <div className="search-wrap">
+        <span className="search-icon">⌕</span>
+        <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${store.name}`} />
+        {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
+      </div>
+      <div className="card checkout-card">
+        <table className="checkout-table">
+          <thead><tr><th>Name</th><th>Calls</th><th>Videos</th><th>Rocked It</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.a.id} className={!r.hasData ? "co-nodata" : r.rocked ? "co-rocked" : "co-miss"}>
+                <td><b>{r.a.name}</b></td>
+                <td className={r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>{r.calls ?? "—"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}</td>
+                <td className={r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>{r.video ?? "—"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}</td>
+                <td>{!r.hasData ? <span className="co-badge dim">no data</span> : r.rocked ? <span className="co-badge yes">Rocked it</span> : <span className="co-badge no">Check out</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {offenders.length > 0 && (
+        <div className="card offender-card">
+          <h3 className="role-header">Top Offenders <span className="section-sub">below standard for {new Date(day + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></h3>
+          {offenders.sort((a, b) => (num(a.calls) + num(a.video) * 8) - (num(b.calls) + num(b.video) * 8)).map((r) => (
+            <div key={r.a.id} className="offender-row">
+              <b>{r.a.name}</b>
+              <span className="offender-detail">
+                {!r.callsMet && <span className="reason watch">Calls {r.calls ?? 0} / {std.minCalls}</span>}
+                {!r.videoMet && <span className="reason watch">Videos {r.video ?? 0} / {std.minVideos}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+const num = (v) => (v == null ? 0 : v);
+
+/* ---------------- License Plate Tracker ---------------- */
+function PlateTracker({ data, onChange, userName }) {
+  const [day, setDay] = useState(today());
+  const [tag, setTag] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const plates = data.plates || {}; // { day: [ {id, tag, assignee, checkedOut, checkedIn, by} ] }
+  const dayPlates = plates[day] || [];
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+
+  const save = (nextDayPlates, audit) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[day] = nextDayPlates;
+    onChange(next, audit);
+  };
+  const addPlate = () => {
+    const t = tag.trim().toUpperCase(); if (!t) return;
+    if (dayPlates.some((p) => p.tag === t)) return;
+    save([...dayPlates, { id: uid(), tag: t, assignee: assignee.trim(), checkedOut: true, checkedIn: false, by: userName }],
+      { action: "Assigned plate", detail: `${t} → ${assignee.trim() || "unassigned"}` });
+    setTag(""); setAssignee("");
+  };
+  const toggleIn = (id) => {
+    save(dayPlates.map((p) => p.id === id ? { ...p, checkedIn: !p.checkedIn } : p));
+  };
+  const setPlateAssignee = (id, name) => {
+    save(dayPlates.map((p) => p.id === id ? { ...p, assignee: name } : p));
+  };
+  const remove = (id) => save(dayPlates.filter((p) => p.id !== id));
+  const carryForward = () => {
+    // pull yesterday's (most recent prior day) assignments into today
+    const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
+    const prior = priorDays.length ? plates[priorDays[0]] : [];
+    if (!prior.length) return;
+    const existing = new Set(dayPlates.map((p) => p.tag));
+    const carried = prior.filter((p) => !existing.has(p.tag)).map((p) => ({ ...p, id: uid(), checkedIn: false, checkedOut: true, by: userName }));
+    save([...dayPlates, ...carried], { action: "Carried plates forward", detail: `${carried.length} from ${priorDays[0]}` });
+  };
+
+  const plateDays = Object.keys(plates).sort().reverse();
+
+  return (
+    <div className="plates">
+      <div className="gm-toolbar">
+        <select value={day} onChange={(e) => setDay(e.target.value)}>
+          <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
+          {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+        </select>
+        <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
+        <span className="hint">Assignments are saved per day, so you can look back and see who had which plate on any date.</span>
+      </div>
+      <div className="card">
+        <div className="inline-form">
+          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag / plate #" onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 140 }} />
+          <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+            <option value="">— assign to —</option>
+            {roster.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+          </select>
+          <button className="btn" onClick={addPlate}>Add plate</button>
+        </div>
+      </div>
+      <div className="card">
+        {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
+          <table className="roster-table wide">
+            <thead><tr><th>Tag</th><th>Assigned to</th><th>Checked back in</th><th>Logged by</th><th /></tr></thead>
+            <tbody>
+              {dayPlates.map((p) => (
+                <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
+                  <td><b>{p.tag}</b></td>
+                  <td>
+                    <select value={p.assignee || ""} onChange={(e) => setPlateAssignee(p.id, e.target.value)}>
+                      <option value="">— unassigned —</option>
+                      {roster.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                      {p.assignee && !roster.some((a) => a.name === p.assignee) && <option value={p.assignee}>{p.assignee}</option>}
+                    </select>
+                  </td>
+                  <td><button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? "✓ Returned" : "Out"}</button></td>
+                  <td className="mono">{p.by || "—"}</td>
+                  <td><button className="btn-x" onClick={() => remove(p.id)}>Remove</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Activity Standards Editor ---------------- */
+function ActivityStandardsEditor({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
+  const set = (field, v) => {
+    const val = Math.max(0, v);
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.activityStandards = { ...(s.activityStandards || DEFAULT_ACTIVITY_STANDARDS), [field]: val };
+    onChange(next, { store: storeId, action: "Changed activity standards", detail: `${store.name}: ${field} ${val}` });
+  };
+  const Stepper = ({ label, field, value, hint }) => (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => set(field, value - 1)} disabled={value <= 0}>−</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => set(field, value + 1)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+  return (
+    <div className="standards">
+      <div className="card">
+        <h3>Daily Check Out Minimums <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">An associate "rocks it" for the day when they meet both minimums. These pull from the Daily Activity report's Calls and Personalized Video columns, and apply to this store only.</p>
+        <div className="stepper-row">
+          <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
+          <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
+        </div>
+        <div className="preset-row">
+          <span className="hint">Quick set:</span>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 16); setTimeout(() => set("minVideos", 2), 60); }}>16 calls · 2 videos</button>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 20); setTimeout(() => set("minVideos", 3), 60); }}>20 calls · 3 videos</button>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 25); setTimeout(() => set("minVideos", 5), 60); }}>25 calls · 5 videos</button>
+        </div>
+        <div className="preview-line">Current standard: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b> per day to rock it.</div>
+      </div>
+    </div>
+  );
 }
 
 /* ---------------- Admin overview ---------------- */
@@ -1336,9 +1596,35 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
 }
 
 /* ---------------- Import ---------------- */
-function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef }) {
+function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity }) {
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
+  if (activity) {
+    return (
+      <div className="import">
+        <div className="card checklist">
+          <div className="checklist-title">Today's Activity Import <span className="section-sub">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span></div>
+          <div className={"check " + (t.activity ? "done" : "")}>
+            <span className="check-box">{t.activity ? "✓" : ""}</span>Standard Daily Activity report
+          </div>
+          {!t.activity && <p className="hint">Drop today's Daily Activity export to build the Check Out sheet for today.</p>}
+        </div>
+        <div className={"dropzone " + (dropActive ? "active" : "")}
+          onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
+          onClick={() => fileRef.current?.click()}>
+          <div className="dz-icon">⇩</div>
+          <div className="dz-title">Drop today's Daily Activity CSV here</div>
+          <div className="dz-sub">The Standard Daily Activity report. Calls and Personalized Video feed the Check Out sheet.</div>
+          <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
+            onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+        </div>
+        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
+        <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
+      </div>
+    );
+  }
   return (
     <div className="import">
       <div className="card checklist">
@@ -1734,10 +2020,11 @@ function AccessPanel({ config, session, onChange }) {
     const n = name.trim(); const e = email.trim().toLowerCase();
     if (!n || !validPin(pin)) { alert("Name is required and PIN must be exactly 6 digits."); return; }
     if (e && config.users.some((u) => (u.email || "").toLowerCase() === e)) { alert("That email is already in use."); return; }
+    const safeRole = role === "overseer" ? "overseer" : "manager"; // admins are made only via Make admin
     const next = JSON.parse(JSON.stringify(config));
-    next.users.push({ id: uid(), name: n, email: e, pin, role, stores: role === "admin" ? [] : storeIds, active: true });
+    next.users.push({ id: uid(), name: n, email: e, pin, role: safeRole, stores: storeIds, active: true });
     setName(""); setEmail(""); setPin(""); setStoreIds([]);
-    onChange(next, { action: "Created user", detail: `${n} (${role})` });
+    onChange(next, { action: "Created user", detail: `${n} (${safeRole})` });
   };
   const toggleActive = (u) => {
     const next = JSON.parse(JSON.stringify(config));
@@ -1752,6 +2039,24 @@ function AccessPanel({ config, session, onChange }) {
     const next = JSON.parse(JSON.stringify(config));
     next.users.find((x) => x.id === u.id).pin = p.trim();
     onChange(next, { action: "Changed PIN", detail: u.name });
+  };
+  const promote = (u) => {
+    if (session.role !== "admin") return;
+    if (!window.confirm(`Make ${u.name} a Group Admin? Admins can see and change everything across all stores, manage users, and edit standards. Only do this for someone you fully trust.`)) return;
+    const next = JSON.parse(JSON.stringify(config));
+    const t = next.users.find((x) => x.id === u.id); if (!t) return;
+    t.role = "admin"; t.stores = []; t.pending = false;
+    onChange(next, { action: "Promoted to admin", detail: u.name });
+  };
+  const demote = (u) => {
+    if (session.role !== "admin") return;
+    const others = config.users.filter((x) => x.role === "admin" && x.id !== u.id && x.active);
+    if (others.length === 0) { alert("You can't remove the last admin. Promote someone else first."); return; }
+    if (!window.confirm(`Remove admin rights from ${u.name}? They'll become a store manager with no store access until you assign one.`)) return;
+    const next = JSON.parse(JSON.stringify(config));
+    const t = next.users.find((x) => x.id === u.id); if (!t) return;
+    t.role = "manager"; t.stores = [];
+    onChange(next, { action: "Removed admin rights", detail: u.name });
   };
   const changeStores = (u, id, checked) => {
     const next = JSON.parse(JSON.stringify(config));
@@ -1814,7 +2119,6 @@ function AccessPanel({ config, session, onChange }) {
           <select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="manager">Store Manager</option>
             <option value="overseer">Centralized BDC (oversight)</option>
-            <option value="admin">Group Admin</option>
           </select>
           <button className="btn" onClick={addUser}>Create</button>
         </div>
@@ -1857,6 +2161,8 @@ function AccessPanel({ config, session, onChange }) {
                 <td className="row-actions">
                   <button className="btn-x" onClick={() => changePin(u)}>Change PIN</button>
                   {u.id !== session.id && <button className="btn-x" onClick={() => toggleActive(u)}>{u.active ? "Deactivate" : "Reactivate"}</button>}
+                  {u.id !== session.id && u.role !== "admin" && <button className="btn-x" onClick={() => promote(u)}>Make admin</button>}
+                  {u.id !== session.id && u.role === "admin" && <button className="btn-x" onClick={() => demote(u)}>Remove admin</button>}
                 </td>
               </tr>
             ))}
@@ -2307,6 +2613,46 @@ function Style() {
       .splash-btn-primary { padding:18px; font-size:17px; font-weight:700; width:100%; border-radius:15px;
         box-shadow: 0 6px 20px rgba(42,94,155,.32); }
       .splash-btn-secondary { padding:11px; font-size:13.5px; width:78%; border-radius:12px; }
+      .splash-btn-activity { background:#00A896; }
+      .splash-btn-activity:hover { box-shadow:0 3px 10px rgba(0,168,150,.35); }
+
+      /* ---- check out tracker ---- */
+      .checkout-summary { display:flex; gap:16px; margin-bottom:14px; font-size:13px; font-weight:600; }
+      .checkout-table { width:100%; border-collapse:collapse; }
+      .checkout-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); padding:8px; font-weight:600; }
+      .checkout-table th:not(:first-child) { text-align:center; }
+      .checkout-table td { padding:8px; border-top:1px solid rgba(0,0,0,.05); text-align:center; }
+      .checkout-table td:first-child { text-align:left; }
+      .cell-g { color:#1E7A3C; font-weight:700; } .cell-r { color:#C13529; font-weight:700; }
+      .cell-need { color:var(--ink-3); font-weight:500; font-size:11px; }
+      .co-nodata { opacity:.5; }
+      .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
+      .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .co-badge.no { background:rgba(229,71,60,.13); color:#C13529; }
+      .co-badge.dim { background:#F2F2F4; color:var(--ink-2); }
+      .offender-card { border-left:4px solid var(--red); }
+      .offender-row { display:flex; gap:12px; align-items:baseline; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .offender-row:last-child { border-bottom:none; }
+      .offender-detail { display:flex; gap:6px; flex-wrap:wrap; }
+
+      /* ---- plate tracker ---- */
+      .plate-out td { }
+      .plate-check { border:none; border-radius:8px; padding:5px 12px; font-weight:600; font-size:12px; cursor:pointer; }
+      .plate-check.out { background:rgba(255,159,10,.16); color:var(--amber); }
+      .plate-check.in { background:rgba(48,177,85,.14); color:#1E7A3C; }
+
+      /* ---- activity standards stepper ---- */
+      .stepper-row { display:flex; gap:20px; margin:16px 0; flex-wrap:wrap; }
+      .stepper-block { text-align:center; }
+      .stepper-label { font-weight:700; font-size:14px; margin-bottom:8px; }
+      .stepper { display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+      .stepper-btn { border:none; background:rgba(255,255,255,.6); width:46px; height:46px; font-size:22px; font-weight:600; color:var(--blue); cursor:pointer; transition: background .15s; }
+      .stepper-btn:hover:not(:disabled) { background:rgba(42,94,155,.1); }
+      .stepper-btn:disabled { opacity:.3; cursor:default; }
+      .stepper-value { min-width:60px; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; }
+      .stepper-hint { font-size:11px; color:var(--ink-3); margin-top:5px; }
+      .preset-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+      .preview-line { font-size:13px; color:var(--ink-2); margin-top:8px; padding-top:12px; border-top:1px solid var(--line); }
       .splash-picker { margin-top:20px; animation: pageIn .3s var(--spring); }
       .splash-store-list { display:flex; flex-direction:column; gap:8px; max-width:300px; margin:10px auto 0; }
       .splash-store { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:12px; cursor:pointer;
