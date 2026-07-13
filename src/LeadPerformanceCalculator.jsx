@@ -559,6 +559,11 @@ export default function LeadPerformanceCalculator() {
   const [dropActive, setDropActive] = useState(false);
   const [importLog, setImportLog] = useState([]);
   const [pendingChannels, setPendingChannels] = useState(null); // { ambiguous:[{rows,fileName}], ready:[] }
+  // The landing view is decided once when you sign in. Re-deciding it every time the
+  // config saved was throwing you out of the store you were working in: editing a
+  // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
+  // "All Stores", and the activity guard then bounced you to the first store.
+  const viewPicked = useRef(false);
   const [saving, setSaving] = useState(false);
   const [loadErr, setLoadErr] = useState(false);
   const fileRef = useRef(null);
@@ -658,13 +663,19 @@ export default function LeadPerformanceCalculator() {
       if (session.role === "admin") {
         runAutoBackup(config, all, session.name).catch(() => {});
       }
-      if (session.role === "admin") {
-        setView("admin");
-      } else if (session.role === "overseer" && accessible.length > 1) {
-        setView("combined");
-      } else {
-        const first = accessible[0]?.id;
-        if (first) { setView(first); setStoreData(all[first]); }
+      if (!viewPicked.current) {
+        viewPicked.current = true;
+        if (session.role === "admin") {
+          setView("admin");
+        } else if (session.role === "overseer" && accessible.length > 1) {
+          setView("combined");
+        } else {
+          const first = accessible[0]?.id;
+          if (first) { setView(first); setStoreData(all[first]); }
+        }
+      } else if (view !== "admin" && view !== "combined" && all[view]) {
+        // config changed while working in a store: refresh that store's data, stay put
+        setStoreData(all[view]);
       }
     })();
   }, [config, session]);
@@ -868,6 +879,7 @@ export default function LeadPerformanceCalculator() {
 
   const signOut = async () => {
     await authSignOut();
+    viewPicked.current = false;
     setSession(null); setEntered(false); setAppModule("perf");
   };
 
@@ -1422,7 +1434,7 @@ function LEADERBOARD_HTML(p) {
         'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
         'Phone ' + CFG.thresholds.phone.green + '%+ &middot; ' +
         'Showroom ' + CFG.thresholds.showroom.green + '%+' +
-        ' &middot; arrows show the change since the previous report &middot; refreshes every 30 seconds' +
+        ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
       '</div>';
     tick();
   }
@@ -1431,7 +1443,13 @@ function LEADERBOARD_HTML(p) {
     if(c) c.textContent = n.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
   async function loop(){ var s = await getStore(); render(s); }
-  loop(); setInterval(loop, 30000); setInterval(tick, 20000);
+  // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
+  // was pointless: the reports only change when a manager uploads one.
+  // The clock is separate and ticks every 10 seconds, so the minute on screen is
+  // always right regardless of when the data last refreshed.
+  loop();
+  setInterval(loop, 15 * 60 * 1000);
+  setInterval(tick, 10000);
 </script></body></html>`;
 }
 
@@ -4259,7 +4277,14 @@ function Style() {
       }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-        font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate; overflow-x:clip; }
+        font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
+        overflow-x:clip;
+        /* Scroll anchoring is what shifts the store logo when you reverse scroll
+           direction. It was only turned off for touch; the desktop kept it, and the
+           extra compositor layers (promoted top bar, fixed version stamp) made it
+           show up there too. Off everywhere now. */
+        overflow-anchor: none; }
+      .lpc * { overflow-anchor: none; }
       /* base wash */
       .lpc::before { content:""; position:fixed; inset:-10%; z-index:-2; pointer-events:none;
         background:
@@ -4755,11 +4780,13 @@ function Style() {
       .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit, .settings {
         padding:24px 32px; max-width:1440px; margin:0 auto; }
 
+      /* No backdrop-filter here. A fixed, blurred element is a permanently compositing
+         layer, which is a lot to pay for a version badge, and it fed the scroll shift. */
       .version-stamp { position:fixed; right:14px; bottom:12px; z-index:20; pointer-events:none;
         font-size:10.5px; font-weight:600; letter-spacing:.06em; color:var(--ink-3);
-        background:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.7);
-        padding:4px 9px; border-radius:20px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-        font-variant-numeric:tabular-nums; opacity:.75; }
+        background:#F0F2F5; border:1px solid rgba(0,0,0,.06);
+        padding:4px 9px; border-radius:20px;
+        font-variant-numeric:tabular-nums; opacity:.7; }
       .loading, .empty { padding:64px 24px; color:var(--ink-2); }
       .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
         padding:18px 20px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
