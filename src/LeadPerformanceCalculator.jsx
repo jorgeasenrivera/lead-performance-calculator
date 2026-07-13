@@ -564,6 +564,8 @@ export default function LeadPerformanceCalculator() {
   // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
   // "All Stores", and the activity guard then bounced you to the first store.
   const viewPicked = useRef(false);
+  // which slice of the board is showing. Driven by the hero tiles.
+  const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
   const [saving, setSaving] = useState(false);
   const [loadErr, setLoadErr] = useState(false);
   const fileRef = useRef(null);
@@ -679,6 +681,8 @@ export default function LeadPerformanceCalculator() {
       }
     })();
   }, [config, session]);
+
+  useEffect(() => { setBoardFilter(null); }, [view, tab, appModule]);
 
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
@@ -1117,8 +1121,11 @@ export default function LeadPerformanceCalculator() {
                         setSession((s) => ({ ...s, onboarded: true }));
                       }} />
                     )}
-                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab} />
-                    <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName} onMove={moveAssociate} onSetRestriction={setRestriction} />
+                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
+                      filter={boardFilter} onFilter={setBoardFilter} />
+                    <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName}
+                      onMove={moveAssociate} onSetRestriction={setRestriction}
+                      filter={boardFilter} onClearFilter={() => setBoardFilter(null)} />
                   </div>
                 )}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} />}
@@ -1750,41 +1757,58 @@ function CheckOutTracker({ config, store, data }) {
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${store.name}`} />
         {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
-      <div className="card checkout-card">
-        <table className="checkout-table">
-          <thead><tr><th>Name</th><th>Calls</th><th>Videos</th><th>Rocked It</th></tr></thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.a.id} className={!r.hasData ? "co-nodata" : r.rocked ? "co-rocked" : "co-miss"}>
-                <td><b>{r.a.name}</b></td>
-                <td className={r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
-                  {r.hasData && <span className="cell-mark">{r.callsMet ? "✓" : "✗"}</span>}
-                  {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
-                </td>
-                <td className={r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
-                  {r.hasData && <span className="cell-mark">{r.videoMet ? "✓" : "✗"}</span>}
-                  {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
-                </td>
-                <td>{!r.hasData ? <span className="co-badge dim">no data</span> : r.rocked ? <span className="co-badge yes">✓ Rocked it</span> : <span className="co-badge no">✗ Check out</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {offenders.length > 0 && (
-        <div className="card offender-card">
-          <h3 className="role-header">Top Offenders <span className="section-sub">below standard for {new Date(day + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></h3>
-          {offenders.sort((a, b) => (num(a.calls) + num(a.video) * 8) - (num(b.calls) + num(b.video) * 8)).map((r) => (
-            <div key={r.a.id} className="offender-row">
-              <b>{r.a.name}</b>
-              <span className="offender-detail">
-                {!r.callsMet && <span className="reason watch">Calls {r.calls ?? 0} / {std.minCalls}</span>}
-                {!r.videoMet && <span className="reason watch">Videos {r.video ?? 0} / {std.minVideos}</span>}
-              </span>
-            </div>
-          ))}
+      {/* the sheet and the people who need a conversation, side by side. Scanning a
+          table and then scrolling to find who to talk to was the wrong shape. */}
+      <div className="checkout-split">
+        <div className="card checkout-card">
+          <table className="checkout-table">
+            <thead><tr><th>Name</th><th>Calls</th><th>Videos</th><th>Rocked It</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.a.id} className={!r.hasData ? "co-nodata" : r.rocked ? "co-rocked" : "co-miss"}>
+                  <td><b>{r.a.name}</b></td>
+                  <td className={r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
+                    {r.hasData && <span className="cell-mark">{r.callsMet ? "\u2713" : "\u2717"}</span>}
+                    {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
+                  </td>
+                  <td className={r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
+                    {r.hasData && <span className="cell-mark">{r.videoMet ? "\u2713" : "\u2717"}</span>}
+                    {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
+                  </td>
+                  <td>{!r.hasData ? <span className="co-badge dim">no data</span> : r.rocked ? <span className="co-badge yes">\u2713 Rocked it</span> : <span className="co-badge no">\u2717 Check out</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+
+        <aside className="checkout-side">
+          <div className={"card offender-card " + (offenders.length === 0 ? "offender-clear" : "")}>
+            <h3 className="off-title">
+              {offenders.length === 0 ? "Nobody to check out" : `Check these ${offenders.length}`}
+              <span className="section-sub">{new Date(day + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+            </h3>
+            {offenders.length === 0 ? (
+              <p className="hint">Everyone with data on file hit both minimums today. Worth saying so out loud.</p>
+            ) : (
+              <>
+                <p className="hint">Furthest from standard first.</p>
+                {offenders
+                  .sort((a, b) => (num(a.calls) + num(a.video) * 8) - (num(b.calls) + num(b.video) * 8))
+                  .map((r) => (
+                    <div key={r.a.id} className="offender-row">
+                      <b>{r.a.name}</b>
+                      <span className="offender-detail">
+                        {!r.callsMet && <span className="reason watch">Calls {r.calls ?? 0} / {std.minCalls}</span>}
+                        {!r.videoMet && <span className="reason watch">Videos {r.video ?? 0} / {std.minVideos}</span>}
+                      </span>
+                    </div>
+                  ))}
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -2003,7 +2027,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 }
 
 /* ---------------- Lead Board ---------------- */
-function Board({ config, store, data, dragName, setDragName, onMove, onSetRestriction, readOnly }) {
+function Board({ config, store, data, dragName, setDragName, onMove, onSetRestriction, readOnly, filter, onClearFilter }) {
   const [query, setQuery] = useState("");
   const M = data.months?.[ym()];
   const names = M?.names || {};
@@ -2058,11 +2082,25 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
   const q = norm(query);
   const matches = (a) => !q || norm(a.name).includes(q);
 
+  // Which bucket is a person in? Exactly the rules the hero tiles count with, so the
+  // numbers up there and the cards down here can never disagree.
+  const bucketOf = (a) => {
+    const r = restrictions[a.id];
+    if (r && (!r.until || new Date(r.until) > new Date())) return "off";
+    const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
+    const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
+    if (ev.status === "pass") return "cleared";
+    if (ev.status === "fail") return "attention";
+    return "other";
+  };
+  const inFilter = (a) => !filter || bucketOf(a) === filter;
+
   const sections = config.roles.map((role) => ({
     role,
-    people: (data.roster || []).filter((a) => a.roleId === role.id && matches(a)).sort((a, b) => a.order - b.order),
+    people: (data.roster || []).filter((a) => a.roleId === role.id && matches(a) && inFilter(a)).sort((a, b) => a.order - b.order),
   }));
-  const unassigned = (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
+  // unassigned people have no standards to be judged by, so a bucket filter hides them
+  const unassigned = filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
   const totalMatches = sections.reduce((n, s) => n + s.people.length, 0) + unassigned.length;
 
   if ((data.roster || []).length === 0)
@@ -2121,6 +2159,15 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
         <div className="card recap">
           <h3 className="role-header">{monthLabel(prevYm())} Wrap-Up</h3>
           <p className="hint">Everyone on the roster finished last month at or above standard. Clean slate.</p>
+        </div>
+      )}
+      {filter && (
+        <div className="filter-bar">
+          <span className="filter-what">
+            Showing only <b>{filter === "cleared" ? "cleared to grab leads" : filter === "attention" ? "needs attention" : "off leads"}</b>
+            {" \u00b7 "}{totalMatches} {totalMatches === 1 ? "person" : "people"}
+          </span>
+          <button className="btn-x" onClick={onClearFilter}>Show everyone</button>
         </div>
       )}
       {sections.map(({ role, people }) => (
@@ -3159,7 +3206,7 @@ function useCountUp(target, ms = 1000, delay = 150) {
 }
 
 /* ---------------- Store hero (manager landing) ---------------- */
-function StoreHero({ config, store, data, session, onGoTab }) {
+function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) {
   const M = data.months?.[ym()];
   const restrictions = data.restrictions || {};
   const graceDays = store.graceDays ?? 10;
@@ -3247,25 +3294,29 @@ function StoreHero({ config, store, data, session, onGoTab }) {
       </div>
 
       <div className="hero-tiles">
-        <div className="tile tile-good">
+        <button className={"tile tile-good " + (filter === "cleared" ? "picked" : "")}
+          onClick={() => onFilter(filter === "cleared" ? null : "cleared")}>
           <div className="tile-num">{nCleared}</div>
           <div className="tile-label">Cleared to grab</div>
-        </div>
-        <div className={"tile " + (attention === 0 ? "tile-flat" : inGrace ? "tile-warn" : "tile-bad")}>
+        </button>
+        <button className={"tile " + (attention === 0 ? "tile-flat" : inGrace ? "tile-warn" : "tile-bad") + (filter === "attention" ? " picked" : "")}
+          onClick={() => onFilter(filter === "attention" ? null : "attention")}>
           <div className="tile-num">{nAttention}</div>
           <div className="tile-label">{inGrace ? "Working toward" : "Needs attention"}</div>
-        </div>
-        <div className={"tile " + (offLeads > 0 ? "tile-warn" : "tile-flat")}>
+        </button>
+        <button className={"tile " + (offLeads > 0 ? "tile-warn" : "tile-flat") + (filter === "off" ? " picked" : "")}
+          onClick={() => onFilter(filter === "off" ? null : "off")}>
           <div className="tile-num">{nOff}</div>
           <div className="tile-label">Off leads</div>
-        </div>
-        <div className="tile tile-info">
+        </button>
+        <button className={"tile tile-info " + (filter === null ? "picked" : "")}
+          onClick={() => onFilter(null)}>
           <div className="tile-num">{nRoster}</div>
           <div className="tile-label">On the board</div>
-        </div>
-        <div className="tile tile-info">
+        </button>
+        <div className="tile tile-info tile-static" title="Internet leads the team is currently holding, against the combined ceiling their tiers allow">
           <div className="tile-num">{nOpps}<span className="tile-of">/{capTotal || "-"}</span></div>
-          <div className="tile-label">Leads in play</div>
+          <div className="tile-label">Leads held / capacity</div>
         </div>
       </div>
 
@@ -4401,6 +4452,15 @@ function Style() {
       .tile-warn { --accent:#FF9F0A; } .tile-warn .tile-num { color:#B8730A; }
       .tile-info { --accent: var(--sp); } .tile-info .tile-num { color: var(--sd); }
       .tile-flat { --accent:rgba(0,0,0,.12); } .tile-flat .tile-num { color:var(--ink-3); }
+      /* the tiles are buttons: click one to see only those people on the board below */
+      button.tile { cursor:pointer; text-align:left; font:inherit; width:100%; display:block; }
+      .tile.picked { outline:2px solid var(--accent); outline-offset:1px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(31,54,86,.14); }
+      .tile-static { cursor:default; }
+      .filter-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+        background:rgba(42,94,155,.08); border:1px solid rgba(42,94,155,.18); border-radius:12px;
+        padding:10px 15px; margin-bottom:14px; font-size:13px; }
+      .filter-what b { font-weight:700; }
 
       .hero-strip { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px;
         animation: tileIn .5s var(--spring) .40s both; }
@@ -4943,7 +5003,16 @@ function Style() {
       .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
       .co-badge.no { background:rgba(229,71,60,.13); color:#C13529; }
       .co-badge.dim { background:#F2F2F4; color:var(--ink-2); }
+      /* activity sheet left, the people who need a conversation right */
+      .checkout-split { display:grid; grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); gap:16px; align-items:start; }
+      .checkout-side { position:sticky; top:80px; }
       .offender-card { border-left:4px solid var(--red); }
+      .offender-card.offender-clear { border-left-color:#30B155; }
+      .off-title { font-size:15px; font-weight:700; margin-bottom:6px; display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
+      @media (max-width: 1000px) {
+        .checkout-split { grid-template-columns: 1fr; }
+        .checkout-side { position:static; }
+      }
       .offender-row { display:flex; gap:12px; align-items:baseline; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
       .offender-row:last-child { border-bottom:none; }
       .offender-detail { display:flex; gap:6px; flex-wrap:wrap; }
