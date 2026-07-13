@@ -207,6 +207,13 @@ function detectReportType(rows, filename = "") {
   const h2 = (rows[1] || []).join("|").toLowerCase();
   const h1 = (rows[0] || []).join("|").toLowerCase();
   const fn = filename.toLowerCase();
+  // ACTIVITY MUST BE CHECKED FIRST. The Daily Activity export also carries a
+  // "Units Delivered" column, so testing for that first swallowed it as a delivery
+  // summary and quietly wrote activity numbers into the wrong place. Only the
+  // activity report has Call Contacted AND Personalized Video together, so this
+  // signature is unambiguous.
+  if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
+
   if (h2.includes("units delivered")) {
     // three same-format delivery reports; tell them apart by filename keyword
     if (fn.includes("phone")) return "delivery-phone";
@@ -216,7 +223,6 @@ function detectReportType(rows, filename = "") {
   }
   if (h2.includes("video day of appt")) return "appointment";
   if (h1.includes("bh lead") && h1.includes("engaged")) return "video";
-  if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
   return null;
 }
 
@@ -281,6 +287,8 @@ function parseReport(rows, type) {
       rec.actApptShow = toNum(row[idx("Show")]);
       rec.actOppsTotal = toNum(row[idx("Total")]);
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
+      rec.actSold = toNum(row[idx("Sold")]);
+      rec.actUnits = toNum(row[idx("Units Delivered")]);
     }
     out[key] = rec;
   }
@@ -710,9 +718,14 @@ export default function LeadPerformanceCalculator() {
 
     for (const { rows, type, fileName } of entries) {
       const raw = parseReport(rows, type);
-      // fold every incoming name through the alias map before it touches storage
+      // fold every incoming name through the alias map, and drop anything on the
+      // exclusion list. Reports contain roll-up rows like "Team A" that are not
+      // people, and letting them through skews every average on the board.
+      const excluded = new Set((next.excluded || []).map(norm));
       const parsed = {};
+      let skipped = 0;
       for (const [k, v] of Object.entries(raw)) {
+        if (excluded.has(k)) { skipped++; continue; }
         const c = canon(k);
         parsed[c] = { ...(parsed[c] || {}), ...v };
       }
@@ -729,6 +742,8 @@ export default function LeadPerformanceCalculator() {
             calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
             text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
             apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
+            sold: rec.actSold, units: rec.actUnits,
+            uploadedAt: new Date().toISOString(),
           };
           count++;
         }
@@ -759,16 +774,22 @@ export default function LeadPerformanceCalculator() {
       }
 
       M.imports[day][type] = true;
+      // a full log of every upload, not just a tick for the day
+      next.importLog = [
+        { t: new Date().toISOString(), type, label, file: fileName, count, skipped, by: session?.name || "-" },
+        ...(next.importLog || []),
+      ].slice(0, 200);
       // The Internet Delivery Summary is the same DriveCentric export that drives the
       // lead standards. Uploading it once should satisfy both checklists, not leave the
       // other one stuck as "waiting".
       if (type === "delivery-internet") M.imports[day]["delivery"] = true;
       if (type === "delivery") M.imports[day]["delivery-internet"] = true;
       importedFiles.push(`${label} (${count})`);
-      log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated.` });
+      log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated${skipped ? `, ${skipped} excluded row${skipped === 1 ? "" : "s"} skipped` : ""}.` });
 
       const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
       for (const [key, rec] of Object.entries(parsed)) {
+        if (excluded.has(key)) continue;
         if (!rosterKeys.has(key)) {
           next.roster.push({ id: uid(), name: rec.displayName, roleId: null, order: next.roster.length });
           rosterKeys.add(key);
@@ -1048,9 +1069,9 @@ export default function LeadPerformanceCalculator() {
             {appModule === "activity" ? (
               <SegControl
                 items={isAdmin
-                  ? [["checkout", "Check Out"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
-                  : [["checkout", "Check Out"], ["plates", "License Plates"], ["import", "Import"]]}
-                value={(isAdmin ? ["checkout", "plates", "import", "actstd"] : ["checkout", "plates", "import"]).includes(tab) ? tab : "checkout"}
+                  ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+                  : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
+                value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
                 onChange={setTab}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
             ) : (
@@ -1068,7 +1089,8 @@ export default function LeadPerformanceCalculator() {
           <div key={view + tab + appModule} className="page">
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} />}
+                {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity />}
                 {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
@@ -2806,6 +2828,261 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   );
 }
 
+/* ---------------- Upload history ---------------- */
+function UploadHistory({ data }) {
+  const log = data.importLog || [];
+  if (log.length === 0) return null;
+  return (
+    <div className="card">
+      <h3>Upload history</h3>
+      <p className="hint">Every upload, with the time it landed. Useful when the report gets pulled more than once a day and you need to know how fresh a number really is.</p>
+      <div className="up-list">
+        {log.slice(0, 25).map((u, i) => (
+          <div key={i} className="up-row">
+            <span className="up-when">{new Date(u.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+            <span className="up-type">{u.label}</span>
+            <span className="up-file">{u.file}</span>
+            <span className="up-count">{u.count} rows{u.skipped ? `, ${u.skipped} ignored` : ""}</span>
+            <span className="up-by">{u.by}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Coaching: associate cards ---------------- */
+
+// Average a person's daily activity across every day we have on file.
+function activityAverages(data, nameKey) {
+  const days = Object.keys(data.activity || {});
+  const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
+  if (rows.length === 0) return null;
+  const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
+  const n = rows.length;
+  return {
+    days: n,
+    calls: sum("calls") / n,
+    contacted: sum("contacted") / n,
+    video: sum("video") / n,
+    text: sum("text") / n,
+    email: sum("email") / n,
+    apptCreated: sum("apptCreated") / n,
+    apptShow: sum("apptShow") / n,
+    tasks: sum("tasks") / n,
+    // contact rate is the one that usually separates people: calls are effort,
+    // contacts are effectiveness
+    contactRate: sum("calls") > 0 ? sum("contacted") / sum("calls") : null,
+    showRate: sum("apptCreated") > 0 ? sum("apptShow") / sum("apptCreated") : null,
+  };
+}
+
+const BEHAVIOURS = [
+  { id: "calls", label: "Calls per day", kind: "num" },
+  { id: "contacted", label: "Contacts per day", kind: "num" },
+  { id: "contactRate", label: "Contact rate", kind: "pct" },
+  { id: "video", label: "Personalized videos per day", kind: "num" },
+  { id: "text", label: "Texts per day", kind: "num" },
+  { id: "email", label: "Emails per day", kind: "num" },
+  { id: "apptCreated", label: "Appointments set per day", kind: "num" },
+  { id: "showRate", label: "Appointment show rate", kind: "pct" },
+  { id: "tasks", label: "Tasks completed per day", kind: "num" },
+];
+
+function CoachingPanel({ config, store, data }) {
+  const [openId, setOpenId] = useState(null);
+  const M = data.months?.[ym()];
+  const roster = (data.roster || []).filter((a) => a.roleId);
+
+  // Rank everyone by units delivered this month, then treat the top third as the
+  // benchmark. What separates them is the whole point of this view.
+  const scored = roster.map((a) => {
+    const s = M?.stats?.[norm(a.name)] || {};
+    const units = (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0);
+    return { a, units, stats: s, act: activityAverages(data, norm(a.name)) };
+  }).sort((x, y) => y.units - x.units);
+
+  const withData = scored.filter((r) => r.act);
+  const topCount = Math.max(1, Math.round(withData.length / 3));
+  const top = withData.slice(0, topCount);
+
+  const topAvg = {};
+  for (const b of BEHAVIOURS) {
+    const vals = top.map((r) => r.act[b.id]).filter((v) => v != null);
+    topAvg[b.id] = vals.length ? vals.reduce((n, v) => n + v, 0) / vals.length : null;
+  }
+
+  if (roster.length === 0) {
+    return <div className="empty">No associates with a position yet. Assign roles on the Roster tab and this will fill in.</div>;
+  }
+  if (withData.length === 0) {
+    return <div className="empty">No Daily Activity imported yet. Once a few days are in, this will show what the strongest people do differently.</div>;
+  }
+
+  const openRow = scored.find((r) => r.a.id === openId);
+
+  return (
+    <div className="coaching">
+      <div className="card">
+        <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">
+          Top third by units delivered this month ({top.length} of {withData.length} with activity on file), averaged
+          across every day imported. This is the bar, drawn from your own floor rather than a number someone made up.
+        </p>
+        <div className="bench-grid">
+          {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
+            <div key={b.id} className="bench-tile">
+              <div className="bench-num">{b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}</div>
+              <div className="bench-lbl">{b.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Associates</h3>
+        <p className="hint">Open anyone to see their card, how they compare, and what to coach.</p>
+        <div className="coach-list">
+          {scored.map((r) => (
+            <button key={r.a.id} className={"coach-row " + (openId === r.a.id ? "on" : "")}
+              onClick={() => setOpenId(openId === r.a.id ? null : r.a.id)}>
+              <span className="coach-name">{r.a.name}</span>
+              <span className="coach-role">{config.roles.find((x) => x.id === r.a.roleId)?.name}</span>
+              <span className="coach-units">{r.units} <em>units</em></span>
+              {r.act ? <span className="coach-days">{r.act.days} day{r.act.days === 1 ? "" : "s"} of activity</span>
+                     : <span className="coach-days dim">no activity yet</span>}
+              <span className="coach-open">{openId === r.a.id ? "Close" : "Open card"}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {openRow && <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} />}
+    </div>
+  );
+}
+
+function AssociateCard({ config, store, row, topAvg, topCount }) {
+  const { a, stats, act, units } = row;
+  const role = config.roles.find((x) => x.id === a.roleId);
+  const thr = normThresholds(store.thresholds);
+
+  const gaps = BEHAVIOURS
+    .filter((b) => act && act[b.id] != null && topAvg[b.id] != null && topAvg[b.id] > 0)
+    .map((b) => ({ ...b, mine: act[b.id], theirs: topAvg[b.id], ratio: act[b.id] / topAvg[b.id] }))
+    .sort((x, y) => x.ratio - y.ratio);
+
+  const behind = gaps.filter((g) => g.ratio < 0.85);
+  const ahead = gaps.filter((g) => g.ratio > 1.1);
+
+  const summaryText = () => {
+    const L = [];
+    L.push(`${a.name} — ${store.name} — ${new Date().toLocaleDateString()}`);
+    L.push("");
+    L.push(`Units delivered this month: ${units}`);
+    if (stats.internetPct != null) L.push(`Internet delivered: ${fmtPct(stats.internetPct)}`);
+    if (stats.phonePct != null) L.push(`Phone delivered: ${fmtPct(stats.phonePct)}`);
+    if (stats.showroomPct != null) L.push(`Showroom delivered: ${fmtPct(stats.showroomPct)}`);
+    L.push("");
+    L.push(`Compared with the top ${topCount} performer${topCount === 1 ? "" : "s"} at this store:`);
+    if (behind.length === 0) L.push("  You are at or above the benchmark on every behaviour.");
+    for (const g of behind) {
+      const f = g.kind === "pct" ? fmtPct : fmtNum;
+      L.push(`  ${g.label}: ${f(g.mine)} vs ${f(g.theirs)}`);
+    }
+    if (ahead.length) {
+      L.push("");
+      L.push("Strengths:");
+      for (const g of ahead) {
+        const f = g.kind === "pct" ? fmtPct : fmtNum;
+        L.push(`  ${g.label}: ${f(g.mine)} vs ${f(g.theirs)}`);
+      }
+    }
+    return L.join(String.fromCharCode(10));
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(summaryText()); alert("Card copied. Paste it into an email or a text."); }
+    catch (e) { alert("Couldn't copy automatically. Use Print instead."); }
+  };
+
+  return (
+    <div className="card assoc-card-full print-area">
+      <div className="ac-head">
+        <div>
+          <h2 className="ac-name">{a.name}</h2>
+          <div className="ac-sub">{role?.name} · {store.name} · {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
+        </div>
+        <div className="ac-actions no-print">
+          <button className="btn-ghost" onClick={copy}>Copy card</button>
+          <button className="btn-ghost" onClick={() => window.print()}>Print / PDF</button>
+        </div>
+      </div>
+
+      <div className="ac-results">
+        <div className="ac-stat"><b>{units}</b><span>Units delivered</span></div>
+        <div className="ac-stat"><b>{fmtPct(stats.internetPct)}</b><span>Internet %</span></div>
+        <div className="ac-stat"><b>{fmtPct(stats.phonePct)}</b><span>Phone %</span></div>
+        <div className="ac-stat"><b>{fmtPct(stats.showroomPct)}</b><span>Showroom %</span></div>
+      </div>
+
+      {!act ? (
+        <p className="hint">No Daily Activity on file for this person yet, so there is nothing to compare their behaviour against.</p>
+      ) : (
+        <>
+          <h3 className="ac-h3">Behaviour vs the top {topCount} at this store</h3>
+          <div className="ac-bars">
+            {gaps.map((g) => {
+              const f = g.kind === "pct" ? fmtPct : fmtNum;
+              // benchmark sits at 70% of the track, so a bar that reaches the line is at parity
+              const pct = Math.max(3, Math.min(100, g.ratio * 70));
+              const state = g.ratio < 0.85 ? "behind" : g.ratio > 1.1 ? "ahead" : "even";
+              return (
+                <div key={g.id} className="ac-bar-row">
+                  <span className="ac-bar-lbl">{g.label}</span>
+                  <div className="ac-bar-track">
+                    <div className="ac-bench" title="Top performers" />
+                    <div className={"ac-bar " + state} style={{ width: pct + "%" }} />
+                  </div>
+                  <span className="ac-bar-val">{f(g.mine)}<em> vs {f(g.theirs)}</em></span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="ac-coach">
+            {behind.length > 0 ? (
+              <>
+                <h3 className="ac-h3">What to coach</h3>
+                <ul className="ac-list">
+                  {behind.slice(0, 3).map((g) => {
+                    const f = g.kind === "pct" ? fmtPct : fmtNum;
+                    return (
+                      <li key={g.id}>
+                        <b>{g.label}</b> is at {f(g.mine)}, against {f(g.theirs)} for the strongest people here.
+                        {g.id === "contactRate" && " Effort is not the issue if calls are fine; this is about when they are calling and what they open with."}
+                        {g.id === "video" && " Personalized video is the single easiest habit to add, and it shows up in delivery rate."}
+                        {g.id === "showRate" && " Appointments are being set but not landing. Look at confirmation habits the day before."}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <p className="hint">This person is at or above the benchmark on every behaviour we track. Worth asking what they do that is not in the report.</p>
+            )}
+            {ahead.length > 0 && (
+              <p className="hint">Strengths worth naming out loud: {ahead.slice(0, 3).map((g) => g.label.toLowerCase()).join(", ")}.</p>
+            )}
+          </div>
+
+          <p className="hint">Based on {act.days} day{act.days === 1 ? "" : "s"} of activity on file. The more days imported, the more the pattern means.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Tool switcher ---------------- */
 function ToolSwitcher({ value, onChange }) {
   const tools = [
@@ -3021,6 +3298,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
         </div>
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
+        <UploadHistory data={data} />
         <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
       </div>
     );
@@ -3066,6 +3344,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}
         </div>
       )}
+      <UploadHistory data={data} />
       <p className="hint">Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the previous numbers for that report. Imports are recorded in the audit log.</p>
     </div>
   );
@@ -3310,6 +3589,25 @@ function RosterEditor({ config, data, onChange }) {
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
   const [mergeFrom, setMergeFrom] = useState("");
   const [mergeInto, setMergeInto] = useState("");
+  const [excl, setExcl] = useState("");
+
+  // names that are not people. Skipped on every future import, and removed from the
+  // roster now if they already slipped in.
+  const addExcluded = () => {
+    const n = excl.trim();
+    if (!n) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.excluded = [...(next.excluded || [])];
+    if (!next.excluded.some((x) => norm(x) === norm(n))) next.excluded.push(n);
+    next.roster = (next.roster || []).filter((a) => norm(a.name) !== norm(n));
+    setExcl("");
+    onChange(next, { action: "Excluded name from imports", detail: n });
+  };
+  const removeExcluded = (n) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.excluded = (next.excluded || []).filter((x) => x !== n);
+    onChange(next, { action: "Stopped excluding name", detail: n });
+  };
 
   // Fold a duplicate/renamed person into the person they really are.
   const merge = () => {
@@ -3394,6 +3692,34 @@ function RosterEditor({ config, data, onChange }) {
           <button className="btn" onClick={add}>Add Associate</button>
         </div>
         <p className="hint">Names must match DriveCentric exports exactly (not case-sensitive). Anyone who shows up in a report but isn't listed here gets added automatically under "Needs a Position." Roster changes are recorded in the audit log.</p>
+      </div>
+
+      <div className="card">
+        <h3>Ignore these names</h3>
+        <p className="hint">
+          DriveCentric exports contain roll-up rows that are not people, like "Team A" or a house account.
+          Left alone they get added to the roster and drag every average around. Anything listed here is
+          skipped on import and will never appear again.
+        </p>
+        <div className="inline-form">
+          <input value={excl} onChange={(e) => setExcl(e.target.value)} placeholder="e.g. Team A"
+            onKeyDown={(e) => e.key === "Enter" && addExcluded()} />
+          <button className="btn" onClick={addExcluded}>Ignore this name</button>
+        </div>
+        {(data.excluded || []).length > 0 && (
+          <div className="domain-list">
+            {(data.excluded || []).map((n) => (
+              <span key={n} className="domain-chip">{n}
+                <button className="btn-x" onClick={() => removeExcluded(n)}>✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+        {(data.roster || []).filter((a) => !a.roleId).length > 0 && (
+          <p className="hint">
+            Tip: anyone sitting in "Needs a Position" who is not a real person is probably one of these.
+          </p>
+        )}
       </div>
 
       <div className="card">
@@ -4300,6 +4626,60 @@ function Style() {
       .store-item-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
       .btn-x.danger { color:var(--red); }
       .btn-x.danger:hover { background:rgba(229,71,60,.1); }
+
+      /* ---- upload history ---- */
+      .up-list { display:flex; flex-direction:column; }
+      .up-row { display:grid; grid-template-columns: 150px 150px 1fr 130px 100px; gap:10px; align-items:center;
+        padding:7px 0; border-top:1px solid rgba(0,0,0,.05); font-size:12.5px; }
+      .up-row:first-child { border-top:none; }
+      .up-when { font-weight:700; font-variant-numeric:tabular-nums; }
+      .up-type { color:var(--blue); font-weight:600; }
+      .up-file { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .up-count, .up-by { color:var(--ink-3); }
+
+      /* ---- coaching ---- */
+      .bench-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-top:14px; }
+      .bench-tile { background:rgba(193,215,48,.12); border:1px solid rgba(193,215,48,.35); border-radius:14px; padding:14px 16px; }
+      .bench-num { font-size:24px; font-weight:700; letter-spacing:-.02em; color:#5E7A0C; font-variant-numeric:tabular-nums; }
+      .bench-lbl { font-size:11px; color:var(--ink-2); font-weight:600; margin-top:4px; }
+
+      .coach-list { display:flex; flex-direction:column; gap:6px; }
+      .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; gap:12px; align-items:center;
+        text-align:left; padding:11px 14px; border-radius:12px; cursor:pointer; border:1px solid transparent;
+        background:rgba(255,255,255,.5); font-size:13px; transition: all .2s var(--spring); }
+      .coach-row:hover { background:#fff; }
+      .coach-row.on { border-color:var(--blue); background:#fff; box-shadow:var(--shadow-1); }
+      .coach-name { font-weight:700; font-size:14px; }
+      .coach-role { color:var(--ink-2); }
+      .coach-units { font-weight:700; } .coach-units em { font-style:normal; font-weight:500; color:var(--ink-3); font-size:11.5px; }
+      .coach-days { color:var(--ink-3); font-size:12px; } .coach-days.dim { opacity:.6; }
+      .coach-open { color:var(--blue); font-weight:600; font-size:12px; }
+
+      .assoc-card-full { border-top:4px solid var(--blue); }
+      .ac-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+      .ac-name { font-size:26px; font-weight:700; letter-spacing:-.02em; }
+      .ac-sub { color:var(--ink-2); font-size:13px; margin-top:3px; }
+      .ac-actions { display:flex; gap:8px; }
+      .ac-results { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap:12px; margin:18px 0 6px; }
+      .ac-stat { background:rgba(42,94,155,.07); border-radius:12px; padding:12px 14px; }
+      .ac-stat b { display:block; font-size:22px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+      .ac-stat span { font-size:11px; color:var(--ink-2); font-weight:600; }
+      .ac-h3 { font-size:15px; font-weight:700; margin:20px 0 10px; }
+      .ac-bars { display:flex; flex-direction:column; gap:9px; }
+      .ac-bar-row { display:grid; grid-template-columns: 210px 1fr 170px; gap:12px; align-items:center; font-size:12.5px; }
+      .ac-bar-lbl { font-weight:600; }
+      .ac-bar-track { position:relative; height:14px; background:rgba(0,0,0,.06); border-radius:7px; overflow:hidden; }
+      .ac-bar { height:100%; border-radius:7px; transition:width .6s var(--spring); }
+      .ac-bar.behind { background:#E5473C; }
+      .ac-bar.even { background:var(--blue); }
+      .ac-bar.ahead { background:#30B155; }
+      /* the benchmark line: where the top performers sit */
+      /* where the top performers sit. A bar reaching this line means parity with them. */
+      .ac-bench { position:absolute; left:70%; top:-3px; bottom:-3px; width:2px; background:rgba(0,0,0,.5); z-index:2; }
+      .ac-bar-val { text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+      .ac-bar-val em { font-style:normal; font-weight:500; color:var(--ink-3); }
+      .ac-list { margin:0 0 0 18px; display:flex; flex-direction:column; gap:8px; font-size:13px; }
+      .ac-coach { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
 
       /* ---- pending approvals ---- */
       .pending-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 0;
