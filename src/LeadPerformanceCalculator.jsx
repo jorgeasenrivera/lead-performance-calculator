@@ -649,6 +649,11 @@ export default function LeadPerformanceCalculator() {
       }
 
       M.imports[day][type] = true;
+      // The Internet Delivery Summary is the same DriveCentric export that drives the
+      // lead standards. Uploading it once should satisfy both checklists, not leave the
+      // other one stuck as "waiting".
+      if (type === "delivery-internet") M.imports[day]["delivery"] = true;
+      if (type === "delivery") M.imports[day]["delivery-internet"] = true;
       importedFiles.push(`${label} (${count})`);
       log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated.` });
 
@@ -2188,7 +2193,10 @@ function BackupPanel({ config, adminData, onRestoreAll, onRestoreStore }) {
 
 /* ---------------- Channel prompt (no more guessing from filenames) ---------------- */
 function ChannelPrompt({ pending, onCancel, onConfirm }) {
-  const [picks, setPicks] = useState(() => pending.ambiguous.map(() => ""));
+  // Internet is the report imported every day and the one that feeds the lead
+  // standards, so it is the sensible default. Phone and Showroom are optional extras
+  // for The Board. Still shown for confirmation so nothing is silently misfiled.
+  const [picks, setPicks] = useState(() => pending.ambiguous.map((_, i) => (i === 0 ? "delivery-internet" : "")));
   const allPicked = picks.every((p) => p);
   const dupes = picks.filter(Boolean).length !== new Set(picks.filter(Boolean)).size;
 
@@ -2595,18 +2603,25 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
     <div className="import">
       <div className="card checklist">
         <div className="checklist-title">Today's Imports <span className="section-sub">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span></div>
-        <div className="check-group-label">Lead standards</div>
-        {Object.entries(REPORTS).map(([k, r]) => (
-          <div key={k} className={"check " + (t[k] ? "done" : "")}>
-            <span className="check-box">{t[k] ? "✓" : ""}</span>{r.label} report
-          </div>
-        ))}
-        <div className="check-group-label">Leaderboard delivery</div>
-        {Object.entries(LEADERBOARD_REPORTS).map(([k, r]) => (
-          <div key={k} className={"check " + (t[k] ? "done" : "")}>
-            <span className="check-box">{t[k] ? "✓" : ""}</span>{r.label}
-          </div>
-        ))}
+        <div className="check-group-label">Required</div>
+        <div className={"check " + (t.delivery ? "done" : "")}>
+          <span className="check-box">{t.delivery ? "✓" : ""}</span>
+          Delivery Summary (Internet)
+          <span className="check-note">also fills the Internet column on The Board</span>
+        </div>
+        <div className={"check " + (t.appointment ? "done" : "")}>
+          <span className="check-box">{t.appointment ? "✓" : ""}</span>Appointment report
+        </div>
+        <div className={"check " + (t.video ? "done" : "")}>
+          <span className="check-box">{t.video ? "✓" : ""}</span>Video report
+        </div>
+        <div className="check-group-label">The Board (optional)</div>
+        <div className={"check " + (t["delivery-phone"] ? "done" : "")}>
+          <span className="check-box">{t["delivery-phone"] ? "✓" : ""}</span>Phone Delivery Summary
+        </div>
+        <div className={"check " + (t["delivery-showroom"] ? "done" : "")}>
+          <span className="check-box">{t["delivery-showroom"] ? "✓" : ""}</span>Showroom Delivery Summary
+        </div>
         {!(t.delivery && t.appointment && t.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
       </div>
       <div className={"dropzone " + (dropActive ? "active" : "")}
@@ -2616,7 +2631,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         onClick={() => fileRef.current?.click()}>
         <div className="dz-icon">⇩</div>
         <div className="dz-title">Drop today's CSVs here</div>
-        <div className="dz-sub">Standards reports (Appointment, Video) plus your delivery reports. For the leaderboard, name the three delivery files with "internet", "phone", and "showroom" so the tool can tell them apart.</div>
+        <div className="dz-sub">Drop the Delivery Summary, Appointment, and Video reports. The Internet Delivery Summary is one file that covers both the Lead Board and The Board. If you also run Phone and Showroom summaries for The Board, put "phone" or "showroom" in those file names so the tool can tell them apart.</div>
         <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
           onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
       </div>
@@ -4122,6 +4137,7 @@ function Style() {
       .thr-dot.g { background:var(--green); } .thr-dot.y { background:#E0A100; }
       .check-group-label { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin:10px 0 4px; }
       .check-group-label:first-of-type { margin-top:0; }
+      .check-note { font-size:11px; color:var(--ink-3); margin-left:8px; font-style:italic; }
       .setup-note { font-size:13px; color:var(--ink-2); margin:8px 0 6px; }
       .login-ok { color:#1E7A3C; font-size:12.5px; margin-top:10px; background:rgba(48,177,85,.12); padding:8px 10px; border-radius:8px; }
       .pending-card { border-left:4px solid var(--amber); }
