@@ -124,8 +124,8 @@ const DEFAULT_CONFIG = {
     { id: "holler-hyundai", name: "Holler Hyundai", icon: null },
   ],
   roles: [
-    { id: "sales", name: "Sales Associate", color: "#2A5E9B" },
-    { id: "bdc", name: "BDC Agent", color: "#00A896" },
+    { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true },
+    { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false },
   ],
   standards: {},
   approvedDomains: [],
@@ -559,6 +559,10 @@ export default function LeadPerformanceCalculator() {
           if (r.color === "#0A84FF") { r.color = "#2A5E9B"; dirty = true; }
         }
         if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
+        // which roles appear on The Board. BDC agents don't sell units, so they're off.
+        for (const r of cfg.roles || []) {
+          if (r.onBoard === undefined) { r.onBoard = r.id !== "bdc"; dirty = true; }
+        }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
@@ -1086,36 +1090,46 @@ function LEADERBOARD_HTML(p) {
   .wrap { height:100vh; display:flex; flex-direction:column; padding:2.2vh 2vw; }
   .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.6vh; }
   .head-l { display:flex; align-items:center; gap:1.2vw; }
-  .head-logo { width:5vh; height:5vh; border-radius:1vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .head-r { display:flex; align-items:center; gap:2.4vw; }
+  .head-logo { width:5.4vh; height:5.4vh; border-radius:1vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .head-logo img { width:100%; height:100%; object-fit:contain; }
-  .head-title { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:4.2vh; letter-spacing:.5px; line-height:1; }
+  .head-title { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:4.4vh; letter-spacing:.5px; line-height:1; }
   .head-sub { font-size:1.6vh; color:#9FC2E4; letter-spacing:.08em; text-transform:uppercase; }
+  .total { text-align:right; }
+  .total-num { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:4.6vh; line-height:1; color:var(--lime); }
+  .total-cap { font-size:1.35vh; color:#9FC2E4; letter-spacing:.09em; text-transform:uppercase; font-weight:600; margin-top:.3vh; }
   .clock { text-align:right; font-family:'Barlow Semi Condensed'; }
   .clock-time { font-size:3.2vh; font-weight:700; }
   .clock-date { font-size:1.5vh; color:#9FC2E4; }
-  .board { flex:1; display:grid; grid-template-columns:1.35fr 1fr; gap:1.4vw; min-height:0; }
-  .panel { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:1.4vh; padding:1.6vh 1.4vw; display:flex; flex-direction:column; min-height:0; }
-  .panel-title { font-family:'Barlow Semi Condensed'; font-weight:700; font-size:2.1vh; letter-spacing:.05em; text-transform:uppercase; color:#BFD9F0; margin-bottom:1.2vh; display:flex; justify-content:space-between; gap:1vw; }
-  .panel-title span:last-child { color:#7FA8D4; font-size:1.5vh; font-weight:600; }
-  .rows { flex:1; overflow:hidden; display:flex; flex-direction:column; gap:.7vh; }
-  .drow { display:grid; grid-template-columns:2.6vh 1fr auto; align-items:center; gap:1vw; padding:.7vh 1vw; border-radius:1vh; background:rgba(255,255,255,.04); }
-  .rank { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:2.4vh; color:#7FA8D4; text-align:center; }
-  .dname { font-weight:600; font-size:2.3vh; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .dpct { display:flex; align-items:center; gap:.6vw; }
-  .pill { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:2.7vh; padding:.4vh 1.1vw; border-radius:1vh; min-width:7vw; text-align:center; }
+
+  /* one panel, one table, everybody visible without scrolling */
+  .panel { flex:1; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+    border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden; }
+  .lb { width:100%; border-collapse:collapse; table-layout:fixed; }
+  .lb th { font-size:1.5vh; text-transform:uppercase; letter-spacing:.08em; color:#9FC2E4;
+    font-weight:700; padding:0 .6vw 1vh; text-align:center; }
+  .lb th.nm { text-align:left; }
+  .lb td { padding:var(--rowpad) .6vw; border-top:1px solid rgba(255,255,255,.07);
+    font-size:var(--rowfs); text-align:center; }
+  .lb tbody tr:first-child td { border-top:none; }
+
+  .lb .rank { width:4%; color:#7FA8D4; font-family:'Barlow Semi Condensed'; font-weight:800; }
+  .lb .nm { width:30%; text-align:left; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb .sold { width:14%; font-family:'Barlow Semi Condensed'; font-weight:800; color:var(--lime);
+    font-variant-numeric:tabular-nums; font-size:calc(var(--rowfs) * 1.12); }
+  .lb .pcell { width:17.33%; white-space:nowrap; }
+
+  .pill { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:var(--rowfs);
+    padding:.25vh .8vw; border-radius:.9vh; display:inline-block; min-width:5.4vw; }
   .pill.g { background:var(--greenbg); color:var(--green); }
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
-  .pill-mark { font-size:1.9vh; margin-right:.5vw; opacity:.85; }
-  .trend { font-size:2vh; width:2vh; text-align:center; }
-  .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#7FA8D4; }
-  .utable { width:100%; border-collapse:collapse; }
-  .utable th { font-size:1.5vh; text-transform:uppercase; letter-spacing:.06em; color:#9FC2E4; text-align:right; padding:.6vh .6vw; font-weight:600; }
-  .utable th:first-child { text-align:left; }
-  .utable td { font-size:2.1vh; padding:.55vh .6vw; text-align:right; border-top:1px solid rgba(255,255,255,.07); font-variant-numeric:tabular-nums; }
-  .utable td:first-child { text-align:left; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:12vw; }
-  .utot { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:2.3vh; }
-  .flag { color:#FFCf6b; font-size:1.6vh; }
+  .pill.dim { background:rgba(255,255,255,.07); color:#6E93BC; }
+  .pill-mark { font-size:calc(var(--rowfs) * .72); margin-right:.35vw; opacity:.85; }
+  .trend { font-size:calc(var(--rowfs) * .68); margin-right:.4vw; }
+  .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#5C7F9F; }
+
+  .flag { color:#FFCF6B; }
   .foot { text-align:center; font-size:1.4vh; color:#7FA8D4; margin-top:1.1vh; letter-spacing:.04em; }
   .empty { color:#7FA8D4; font-size:2vh; padding:4vh; text-align:center; }
   .fade { animation:fade .5s ease; } @keyframes fade { from{opacity:0;transform:translateY(6px);} to{opacity:1;} }
@@ -1158,43 +1172,81 @@ function LEADERBOARD_HTML(p) {
   function num(v){ return v==null?0:v; }
   function render(store){
     var root = document.getElementById('root');
-    if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import today\\'s delivery reports in the tool and this board will fill in.</div>'; return; }
+    if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import today\'s delivery reports in the tool and this board will fill in.</div>'; return; }
     var M = (store.months||{})[CFG.ym] || {stats:{}};
-    var people = (store.roster||[]).filter(function(a){return a.roleId;}).map(function(a){
-      var s = M.stats[norm(a.name)] || {};
-      var iU=num(s.internetUnits), pU=num(s.phoneUnits), rU=num(s.showroomUnits);
-      var haveAll = (s.internetUnits!=null) && (s.phoneUnits!=null) && (s.showroomUnits!=null);
-      return { name:a.name, internetPct:s.internetPct, phonePct:s.phonePct, showroomPct:s.showroomPct,
-        prev:(s.prevPct||{}), iU:iU, pU:pU, rU:rU, sum:iU+pU+rU, haveAll:haveAll,
-        best: Math.max(num(s.internetPct),num(s.phonePct),num(s.showroomPct)) };
-    });
-    var byPct = people.slice().filter(function(x){return x.internetPct!=null||x.phonePct!=null||x.showroomPct!=null;})
-      .sort(function(a,b){return b.best-a.best;});
-    var pctRows = byPct.map(function(x,i){
-      var cur = x.internetPct; var ar = arrow(cur, x.prev.internet); var tn = tone(cur);
-      return '<div class="drow fade"><div class="rank">'+(i+1)+'</div><div class="dname">'+x.name+'</div>'+
-        '<div class="dpct"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+
-        '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(cur)+'</span></div></div>';
-    }).join('') || '<div class="empty">Import an Internet Delivery report to populate delivered %.</div>';
-    var uRows = people.slice().sort(function(a,b){return b.sum-a.sum;}).map(function(x){
-      var flag = !x.haveAll;
-      return '<tr class="fade"><td>'+x.name+'</td><td>'+x.rU+'</td><td>'+x.iU+'</td><td>'+x.pU+'</td>'+
-        '<td class="utot">'+x.sum+(flag?' <span class="flag" title="Missing one or more delivery reports for this associate, the total may be incomplete.">⚑</span>':'')+'</td></tr>';
-    }).join('') || '<tr><td colspan="5" class="empty">Import delivery reports to populate units.</td></tr>';
-    var totSum = people.reduce(function(n,x){return n+x.sum;},0);
-    // grand-total reconciliation: sum should be a whole number of units
-    var grandFlag = Math.abs(totSum - Math.round(totSum)) > 0.01;
+
+    // CFG.roles already excludes any role turned off for The Board (BDC by default),
+    // so only the people who actually deliver units show up here.
+    var boardRoles = {};
+    (CFG.roles||[]).forEach(function(r){ boardRoles[r.id] = true; });
+
+    var people = (store.roster||[])
+      .filter(function(a){ return a.roleId && boardRoles[a.roleId]; })
+      .map(function(a){
+        var s = M.stats[norm(a.name)] || {};
+        var iU=num(s.internetUnits), pU=num(s.phoneUnits), rU=num(s.showroomUnits);
+        var haveAll = (s.internetUnits!=null) && (s.phoneUnits!=null) && (s.showroomUnits!=null);
+        return {
+          name:a.name,
+          internetPct:s.internetPct, phonePct:s.phonePct, showroomPct:s.showroomPct,
+          prev:(s.prevPct||{}),
+          sold: iU+pU+rU,
+          haveAll:haveAll
+        };
+      })
+      .sort(function(a,b){ return b.sold - a.sold; });
+
+    var totalSold = people.reduce(function(n,x){ return n + x.sold; }, 0);
+    var grandFlag = Math.abs(totalSold - Math.round(totalSold)) > 0.01;
+
+    // Everyone has to fit on one screen with no scrolling, so the rows scale to the
+    // size of the team rather than being a fixed height.
+    var n = people.length;
+    var rowFs  = n > 26 ? 1.3 : n > 20 ? 1.7 : n > 15 ? 2.1 : n > 10 ? 2.5 : 2.9;  // vh
+    var rowPad = n > 26 ? 0.22 : n > 20 ? 0.35 : n > 15 ? 0.5 : 0.75;              // vh
+
+    function cell(pct, prevVal){
+      if (pct == null) return '<td class="pcell"><span class="pill dim">-</span></td>';
+      var tn = tone(pct);
+      var ar = arrow(pct, prevVal);
+      return '<td class="pcell"><span class="trend '+ar[0]+'">'+ar[1]+'</span>' +
+             '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span></td>';
+    }
+
+    var rows = people.map(function(x,i){
+      return '<tr class="fade">' +
+        '<td class="rank">'+(i+1)+'</td>' +
+        '<td class="nm">'+x.name+(x.haveAll?'':' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>')+'</td>' +
+        '<td class="sold">'+x.sold+'</td>' +
+        cell(x.internetPct, x.prev.internet) +
+        cell(x.phonePct,    x.prev.phone) +
+        cell(x.showroomPct, x.prev.showroom) +
+      '</tr>';
+    }).join('');
+
+    if (!rows) rows = '<tr><td colspan="6" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
+
     root.innerHTML =
       '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
       '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
-      '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"></div></div></div>'+
-      '<div class="board">'+
-        '<div class="panel"><div class="panel-title"><span>Internet Delivered %</span><span>green ≥ '+CFG.thresholds.green+'% · yellow ≥ '+CFG.thresholds.yellow+'%</span></div><div class="rows">'+pctRows+'</div></div>'+
-        '<div class="panel"><div class="panel-title"><span>Units Delivered</span><span>'+totSum+' total'+(grandFlag?' ⚑':'')+'</span></div>'+
-        '<table class="utable"><thead><tr><th>Associate</th><th>Show</th><th>Net</th><th>Phone</th><th>Total</th></tr></thead><tbody>'+uRows+'</tbody></table>'+
-        '<div class="foot">⚑ next to a name means a delivery report is missing for them. ⚑ on the total means units don\\'t reconcile to a whole number, check for a missing unit.</div></div>'+
+      '<div class="head-r">'+
+        '<div class="total"><div class="total-num">'+totalSold+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
+        '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"></div></div>'+
+      '</div></div>'+
+      '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
+        '<table class="lb">'+
+          '<thead><tr>'+
+            '<th class="rank">#</th>'+
+            '<th class="nm">Associate</th>'+
+            '<th class="sold">Delivered</th>'+
+            '<th class="pcell">Internet %</th>'+
+            '<th class="pcell">Phone %</th>'+
+            '<th class="pcell">Showroom %</th>'+
+          '</tr></thead>'+
+          '<tbody>'+rows+'</tbody>'+
+        '</table>'+
       '</div>'+
-      '<div class="foot">Live view · refreshes every 30 seconds · Earn the next lead.</div>';
+      '<div class="foot">Green at or above '+CFG.thresholds.green+'% &middot; yellow at or above '+CFG.thresholds.yellow+'% &middot; arrows compare with the last import &middot; refreshes every 30 seconds</div>';
     tick();
   }
   function tick(){ var n=new Date();
@@ -1292,7 +1344,7 @@ async function openLeaderboard(config, storeId) {
     storeName: store?.name || "Store",
     icon: store?.icon || null,
     thresholds,
-    roles: config.roles,
+    roles: config.roles.filter((r) => r.onBoard !== false),
     ym: ym(),
     tokens,
   };
@@ -2130,23 +2182,47 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
   };
 
   const recoverOrphan = async (o) => {
+    // Look through the automatic backups for the last time this store was properly
+    // configured, so its real name, logo and colours come back too rather than
+    // being reset to a blank default.
+    let found = null;
+    for (const b of (autoList || [])) {
+      const snap = await fetchAuto(b.id);
+      const s = snap?.config?.stores?.find((x) => x.id === o.id);
+      if (s) { found = { store: s, standards: snap.config.standards?.[o.id], when: b.t }; break; }
+    }
+
+    const suggested = found
+      ? found.store.name
+      : o.id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
     const name = window.prompt(
-      "Restore this store. What should it be called?",
-      o.id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+      found
+        ? "Restoring this store from the backup taken " + new Date(found.when).toLocaleString() +
+          ". Its logo and colours are coming back too. Name:"
+        : "No backup found for this store, so its logo and colours will start fresh. What should it be called?",
+      suggested
     );
     if (!name || !name.trim()) return;
+
     setBusy(true);
     const next = JSON.parse(JSON.stringify(config));
-    next.stores.push({ id: o.id, name: name.trim(), icon: null, brand: { ...DEFAULT_BRAND } });
-    if (!next.standards[o.id]) {
+    next.stores.push(found
+      ? { ...found.store, name: name.trim() }
+      : { id: o.id, name: name.trim(), icon: null, brand: { ...DEFAULT_BRAND } });
+
+    if (found?.standards) {
+      next.standards[o.id] = JSON.parse(JSON.stringify(found.standards));
+    } else if (!next.standards[o.id]) {
       next.standards[o.id] = {};
       for (const r of next.roles) next.standards[o.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
     }
+
     const ok = await saveShared(CONFIG_KEY, next);
     setBusy(false);
     if (!ok) { setMsg("Couldn't save. You may not have permission."); return; }
     await appendAudit({ user: session?.name, action: "Recovered store", detail: `${name.trim()} (${o.id})` });
-    setMsg(`${name.trim()} is back, with its roster and imports. Reload the page to see it.`);
+    setMsg(`${name.trim()} is back${found ? ", with its logo, colours and standards" : ""}. Reload the page to see it.`);
     setOrphans((list) => (list || []).filter((x) => x.id !== o.id));
   };
 
@@ -2424,8 +2500,8 @@ function StoreWizard({ config, store, onCancel, onSave }) {
         <div className="wiz-body">
           <div className="wiz-form">
             <label>Store name</label>
-            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="e.g. Audi North Orlando" disabled={editing} />
-            {editing && <p className="hint">The name is locked after creation so history stays linked. Everything else is editable.</p>}
+            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="e.g. Audi North Orlando" />
+            {editing && <p className="hint">Rename it freely. Its roster, imports, and history are tied to the store itself, not to what it is called, so nothing is lost.</p>}
 
             <label>Manufacturer</label>
             <div className="wiz-presets">
