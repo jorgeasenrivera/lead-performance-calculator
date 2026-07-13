@@ -37,6 +37,14 @@ const REPORTS = {
   video: { label: "Video" },
 };
 
+// One safe place to turn any report key into a human label. Indexing REPORTS
+// directly blew up on the leaderboard channels and the activity report, which
+// are not in it.
+const reportLabel = (t) =>
+  REPORTS[t]?.label ||
+  LEADERBOARD_REPORTS[t]?.label ||
+  (t === "activity" ? "Daily Activity" : t);
+
 // leaderboard needs three channel delivery reports
 const LEADERBOARD_REPORTS = {
   "delivery-internet": { label: "Internet Delivery" },
@@ -1711,9 +1719,16 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
   const [query, setQuery] = useState("");
   const M = data.months?.[ym()];
   const names = M?.names || {};
-  const importedTypes = Object.keys(names);
+  // An associate is only "incomplete" if they're missing one of the three REQUIRED
+  // reports. The optional Board channels (phone/showroom) and the Daily Activity
+  // report also land in `names`, and mapping those through REPORTS returned undefined,
+  // which crashed the whole page the moment anyone was given a role.
+  const requiredTypes = Object.keys(REPORTS).filter((t) => names[t]);
   const missingReports = (nameKey) =>
-    importedTypes.filter((t) => !(names[t] || []).includes(nameKey)).map((t) => REPORTS[t].label);
+    requiredTypes
+      .filter((t) => !(names[t] || []).includes(nameKey))
+      .map((t) => reportLabel(t));
+  const importedTypes = requiredTypes;
 
   const graceDays = store.graceDays ?? 10;
   const inGrace = new Date().getDate() <= graceDays;
@@ -2602,7 +2617,7 @@ function StoreHero({ config, store, data, session, onGoTab }) {
   const t = M?.imports?.[today()] || {};
   const need = ["delivery", "appointment", "video"];
   const done = need.filter((k) => t[k]);
-  const missing = need.filter((k) => !t[k]).map((k) => REPORTS[k].label);
+  const missing = need.filter((k) => !t[k]).map((k) => reportLabel(k));
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
