@@ -398,7 +398,43 @@ async function getTokens() {
     refresh_token: session.refresh_token,
   };
 }
+
+// A read that FAILED and a key that simply does not exist are completely different
+// things. Treating them the same is how a transient error (a network blip, an auth
+// token that was not ready yet, an RLS denial) got mistaken for "first run" and
+// overwrote real data with defaults. These say which actually happened.
+async function loadStrict(key) {
+  if (!supabase) return { ok: false, missing: false, value: null };
+  try {
+    const { data, error } = await supabase
+      .from("app_data").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    return { ok: true, missing: !data, value: data ? data.value : null };
+  } catch (e) {
+    console.error("load failed", key, e);
+    return { ok: false, missing: false, value: null, error: e };
+  }
+}
+
+// Every store's data row, whether or not the store is still listed in the config.
+// This is what lets the recovery tool find data that was orphaned.
+async function listStoreKeys() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("app_data").select("key").like("key", "lpc:store:%");
+    if (error) throw error;
+    return (data || []).map((r) => r.key);
+  } catch (e) {
+    console.error("listStoreKeys", e);
+    return [];
+  }
+}
 /* ===== END BACKEND BLOCK ===== */
+
+// Stamped automatically at build time by vite.config.js, so every deploy
+// carries its own version without anyone remembering to bump a number.
+const APP_VERSION = (typeof __APP_VERSION__ !== "undefined") ? __APP_VERSION__ : "preview";
 
 const BACKUP_INDEX_KEY = "lpc:backups:index:v1";
 const backupKey = (id) => `lpc:backup:${id}:v1`;
@@ -501,7 +537,14 @@ export default function LeadPerformanceCalculator() {
 
   useEffect(() => {
     (async () => {
-      let cfg = await loadShared(CONFIG_KEY, null);
+      // Strict read. If this FAILS we must not proceed: a failed read used to look
+      // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
+      // straight over the real one, wiping every store. Bail out and say so instead.
+      const res = await loadStrict(CONFIG_KEY);
+      if (!res.ok) { setLoadErr(true); return; }
+
+      let cfg = res.value;
+
       if (cfg) {
         let dirty = false;
         for (const r of cfg.roles || []) {
@@ -509,23 +552,30 @@ export default function LeadPerformanceCalculator() {
         }
         if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
-        // Accounts moved to Supabase Auth + the profiles table; drop the old list.
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
+        setConfig(cfg);
+        return;
       }
-      if (!cfg) {
-        const v1 = await loadShared("lpc:config:v1", null);
-        cfg = v1 ? { ...DEFAULT_CONFIG, ...v1 } : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-        delete cfg.users;
-        if (!v1) {
-          cfg.standards = {};
-          for (const s of cfg.stores) {
-            cfg.standards[s.id] = {};
-            for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
-          }
+
+      // Genuinely absent, not merely unreadable. Check the v1 key before assuming
+      // this is a brand new install.
+      const old = await loadStrict("lpc:config:v1");
+      if (!old.ok) { setLoadErr(true); return; }
+
+      cfg = old.value
+        ? { ...DEFAULT_CONFIG, ...old.value }
+        : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      delete cfg.users;
+
+      if (!old.value) {
+        cfg.standards = {};
+        for (const s of cfg.stores) {
+          cfg.standards[s.id] = {};
+          for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
         }
-        await saveShared(CONFIG_KEY, cfg);
       }
+      await saveShared(CONFIG_KEY, cfg);
       setConfig(cfg);
     })().catch(() => setLoadErr(true));
   }, []);
@@ -536,8 +586,14 @@ export default function LeadPerformanceCalculator() {
       const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
       const all = {};
       for (const s of accessible) {
-        let d = await loadShared(storeKey(s.id), null);
-        if (!d) d = await loadShared(`lpc:store:${s.id}:v1`, emptyStoreData());
+        const r = await loadStrict(storeKey(s.id));
+        if (!r.ok) { setLoadErr(true); return; }   // never let a failed read look like an empty store
+        let d = r.value;
+        if (!d) {
+          const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
+          if (!legacy.ok) { setLoadErr(true); return; }
+          d = legacy.value || emptyStoreData();
+        }
         all[s.id] = d;
       }
       setAdminData(all);
@@ -834,7 +890,7 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "audit" && <AuditLog />}
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
-              <BackupPanel config={config} adminData={adminData}
+              <BackupPanel config={config} adminData={adminData} session={session}
                 onRestoreAll={async (backup) => {
                   await saveShared(CONFIG_KEY, backup.config);
                   for (const [sid, sdata] of Object.entries(backup.stores || {})) {
@@ -2022,7 +2078,7 @@ function WelcomeCard({ store, onDismiss }) {
 }
 
 /* ---------------- Backup / restore ---------------- */
-function BackupPanel({ config, adminData, onRestoreAll, onRestoreStore }) {
+function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [autoList, setAutoList] = useState(null);
@@ -2033,6 +2089,51 @@ function BackupPanel({ config, adminData, onRestoreAll, onRestoreStore }) {
 
   // pull one of the automatic snapshots back out of the database
   const fetchAuto = async (id) => await loadShared(backupKey(id), null);
+
+  const [orphans, setOrphans] = useState(null);
+
+  // Store data lives under lpc:store:{id}:v2. If a store vanished from config, the
+  // row is still there, just unreferenced. Find those.
+  const scanOrphans = async () => {
+    setBusy(true); setMsg("");
+    const keys = await listStoreKeys();
+    const known = new Set(config.stores.map((s) => s.id));
+    const found = [];
+    for (const k of keys) {
+      const id = k.split(":")[2];
+      if (!id || known.has(id)) continue;
+      const d = await loadShared(k, null);
+      if (!d) continue;
+      const roster = (d.roster || []).length;
+      const months = Object.keys(d.months || {}).length;
+      if (roster === 0 && months === 0) continue;  // nothing worth recovering
+      found.push({ id, key: k, roster, months });
+    }
+    setOrphans(found);
+    setBusy(false);
+    if (found.length === 0) setMsg("");
+  };
+
+  const recoverOrphan = async (o) => {
+    const name = window.prompt(
+      "Restore this store. What should it be called?",
+      o.id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+    );
+    if (!name || !name.trim()) return;
+    setBusy(true);
+    const next = JSON.parse(JSON.stringify(config));
+    next.stores.push({ id: o.id, name: name.trim(), icon: null, brand: { ...DEFAULT_BRAND } });
+    if (!next.standards[o.id]) {
+      next.standards[o.id] = {};
+      for (const r of next.roles) next.standards[o.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
+    }
+    const ok = await saveShared(CONFIG_KEY, next);
+    setBusy(false);
+    if (!ok) { setMsg("Couldn't save. You may not have permission."); return; }
+    await appendAudit({ user: session?.name, action: "Recovered store", detail: `${name.trim()} (${o.id})` });
+    setMsg(`${name.trim()} is back, with its roster and imports. Reload the page to see it.`);
+    setOrphans((list) => (list || []).filter((x) => x.id !== o.id));
+  };
 
   const downloadAuto = async (b) => {
     setBusy(true);
@@ -2128,6 +2229,33 @@ function BackupPanel({ config, adminData, onRestoreAll, onRestoreStore }) {
           </label>
         </div>
         {msg && <div className="login-ok" style={{ marginTop: 10 }}>{msg}</div>}
+      </div>
+
+      <div className="card recover-card">
+        <h3>Recover missing stores</h3>
+        <p className="hint">
+          If a store disappeared from the tool but you know you created it, its data is very likely
+          still in the database, just no longer listed. This scans for store data that isn't attached
+          to any store and offers to put it back, with its roster, imports, and history intact.
+        </p>
+        <button className="btn" disabled={busy} onClick={scanOrphans}>Scan for missing stores</button>
+        {orphans !== null && (
+          orphans.length === 0
+            ? <p className="hint" style={{ marginTop: 10 }}>Nothing orphaned. Every store with data is showing in the tool.</p>
+            : (
+              <div className="snap-list" style={{ marginLeft: 0, marginTop: 10 }}>
+                {orphans.map((o) => (
+                  <div key={o.id} className="snap-row">
+                    <span className="snap-when">{o.id}</span>
+                    <span className="snap-reason">
+                      {o.roster} on roster, {o.months} month{o.months === 1 ? "" : "s"} of data
+                    </span>
+                    <button className="btn" disabled={busy} onClick={() => recoverOrphan(o)}>Restore this store</button>
+                  </div>
+                ))}
+              </div>
+            )
+        )}
       </div>
 
       <div className="card">
@@ -3504,7 +3632,8 @@ function LogoCropper({ src, onCancel, onSave }) {
 
 /* ---------------- Shell + styles ---------------- */
 function Shell({ children }) {
-  return <div className="lpc">{children}</div>;
+  return <div className="lpc">{children}
+      <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
 
 function Style() {
@@ -3764,6 +3893,7 @@ function Style() {
       .welcome-step b { font-size:13.5px; }
       .welcome-step p { font-size:12.5px; color:var(--ink-2); margin-top:2px; }
 
+      .recover-card { border-left:4px solid var(--amber); }
       .snap-store { padding:12px 0; border-bottom:1px solid rgba(0,0,0,.06); }
       .snap-store:last-child { border-bottom:none; }
       .snap-store-name { display:flex; align-items:center; gap:10px; }
@@ -3827,6 +3957,7 @@ function Style() {
           transform: none;
         }
         .topbar::after { display: none; }
+        .version-stamp { backdrop-filter:none; -webkit-backdrop-filter:none; background:rgba(255,255,255,.85); }
         .card, .tile, .store-item, .wiz, .wiz-overlay, .splash-store, .bl-tile {
           backdrop-filter: none; -webkit-backdrop-filter: none;
         }
@@ -3941,14 +4072,23 @@ function Style() {
       /* the hero + welcome card live directly in .page, which carries no padding of
          its own (the padding sits on .board). Without this they butt straight up
          against the tab bar and the window edge. */
-      .board-page { padding:26px 24px 0; max-width:1120px; }
+      .board-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
       .board-page > .board { padding:0; max-width:none; }
       .board-page > .welcome { margin-bottom:18px; }
       .seg-wrap { padding-bottom:4px; }
       @keyframes pageIn { from { opacity:0; transform: translateY(10px) scale(.995); } to { opacity:1; transform:none; } }
 
       /* ---- layout & cards ---- */
-      .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit, .settings { padding:20px 24px; max-width:1120px; }
+      /* Wider, and centred rather than pinned to the left. 1440px keeps line lengths
+         readable while letting a big monitor actually breathe. */
+      .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit, .settings {
+        padding:24px 32px; max-width:1440px; margin:0 auto; }
+
+      .version-stamp { position:fixed; right:14px; bottom:12px; z-index:20; pointer-events:none;
+        font-size:10.5px; font-weight:600; letter-spacing:.06em; color:var(--ink-3);
+        background:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.7);
+        padding:4px 9px; border-radius:20px; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+        font-variant-numeric:tabular-nums; opacity:.75; }
       .loading, .empty { padding:64px 24px; color:var(--ink-2); }
       .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
         padding:18px 20px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
@@ -4329,6 +4469,7 @@ function Style() {
         .card { box-shadow:none; border:none; padding:0; margin-bottom:20px; }
         .gm-table td, .gm-table th { font-size:11px; }
         .lpc::before, .lpc::after { display:none !important; }
+        .version-stamp { display:none; }
         .logo-anim, .dz-icon, .star-badge { animation:none !important; }
         .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
         .logo-anim .logo-needle { transform: rotate(0deg) !important; }
