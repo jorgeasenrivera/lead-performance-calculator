@@ -93,8 +93,34 @@ const DEFAULT_TIERS = [
 
 const ROLE_COLORS = ["#2A5E9B", "#00A896", "#BF5AF2", "#FF9F0A", "#5E8C31", "#FF375F"];
 
-// Leaderboard delivered-% thresholds. >= green is green; >= yellow is yellow; below is red.
-const DEFAULT_THRESHOLDS = { green: 20, yellow: 10 };
+// Leaderboard delivered-% thresholds, per channel. At or above green is green, at or
+// above yellow is yellow, anything lower is red. Internet, phone and showroom sit in
+// very different ranges, so each gets its own pair.
+const CHANNEL_LIST = [
+  { id: "internet", label: "Internet" },
+  { id: "phone", label: "Phone" },
+  { id: "showroom", label: "Showroom" },
+];
+const DEFAULT_THRESHOLDS = {
+  internet: { green: 20, yellow: 10 },
+  phone:    { green: 25, yellow: 12 },
+  showroom: { green: 30, yellow: 15 },
+};
+
+// Older stores saved a single flat { green, yellow }. Spread it across all three
+// channels so nothing breaks and the numbers carry over.
+function normThresholds(t) {
+  if (!t) return JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
+  if (t.green !== undefined || t.yellow !== undefined) {
+    const flat = { green: t.green ?? 20, yellow: t.yellow ?? 10 };
+    return { internet: { ...flat }, phone: { ...flat }, showroom: { ...flat } };
+  }
+  const out = {};
+  for (const c of CHANNEL_LIST) {
+    out[c.id] = { ...DEFAULT_THRESHOLDS[c.id], ...(t[c.id] || {}) };
+  }
+  return out;
+}
 
 // Daily Activity checkout minimums (per store, editable)
 const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2 };
@@ -543,6 +569,17 @@ export default function LeadPerformanceCalculator() {
     return () => { try { unsub && unsub(); } catch (e) {} };
   }, [refreshProfile]);
 
+  // Daily Activity is recorded per store, so the all-stores view has nothing to show.
+  // If an admin ends up there, drop them into their first store instead of a blank page.
+  useEffect(() => {
+    if (!config || !session) return;
+    if (appModule !== "activity" || view !== "admin") return;
+    const list = session.role === "admin"
+      ? config.stores
+      : config.stores.filter((s) => (session.stores || []).includes(s.id));
+    if (list[0]) setView(list[0].id);
+  }, [appModule, view, config, session]);
+
   useEffect(() => {
     (async () => {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
@@ -703,6 +740,7 @@ export default function LeadPerformanceCalculator() {
         // Re-importing twice in one day must not compare a number against itself.
         const trend = { ...(prevStat.prevPct || {}) };
         const pctDay = { ...(prevStat.pctDay || {}) };
+        const hist = JSON.parse(JSON.stringify(prevStat.pctHistory || {}));
         for (const ch of ["internet", "phone", "showroom"]) {
           if (rec[ch + "Pct"] == null) continue;
           const storedVal = prevStat[ch + "Pct"];
@@ -711,8 +749,12 @@ export default function LeadPerformanceCalculator() {
             trend[ch] = storedVal; // yesterday's figure becomes the comparison baseline
           }
           pctDay[ch] = day;
+          // running history, one point per day, so a real trend can be drawn
+          hist[ch] = (hist[ch] || []).filter((p) => p.d !== day);
+          hist[ch].push({ d: day, v: rec[ch + "Pct"] });
+          hist[ch] = hist[ch].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-30);
         }
-        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, pctDay, [`${type}Updated`]: day };
+        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, pctDay, pctHistory: hist, [`${type}Updated`]: day };
         if (type !== "activity") count++;
       }
 
@@ -809,11 +851,8 @@ export default function LeadPerformanceCalculator() {
   };
 
   // Signed out: splash first, then the sign-in card.
-  if (!session && !entered) {
-    return <Shell><Splash config={config} onEnter={(mod) => { setAppModule(mod || "perf"); setEntered(true); }} /><Style /></Shell>;
-  }
   if (!session) {
-    return <Shell><Login config={config} onBack={() => setEntered(false)}
+    return <Shell><Login config={config}
       onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
   }
 
@@ -828,6 +867,24 @@ export default function LeadPerformanceCalculator() {
   }
   if (session.role !== "admin" && session.pending) {
     return <Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>;
+  }
+
+  // Pick a tool. Daily Activity is per-store, so an admin who chooses it gets dropped
+  // into a store rather than the all-stores overview, which has no activity data.
+  const chooseModule = (mod) => {
+    setAppModule(mod || "perf");
+    if (mod === "activity" && view === "admin") {
+      const first = (isAdmin ? config.stores : accessibleStores)[0];
+      if (first) setView(first.id);
+    }
+    if (mod === "perf" && isAdmin && view !== "admin") {
+      // leave the admin where they were; they can switch stores from the dropdown
+    }
+    setEntered(true);
+  };
+
+  if (!entered) {
+    return <Shell><Splash config={config} session={session} onEnter={chooseModule} onSignOut={signOut} /><Style /></Shell>;
   }
 
   const isAdmin = session.role === "admin";
@@ -850,8 +907,17 @@ export default function LeadPerformanceCalculator() {
             </div>
           </div>
           <div className="topbar-right">
+            <ToolSwitcher value="board" onChange={(mod) => {
+              if (mod === "board") return;
+              if (mod === "activity" && view === "admin") {
+                const first = (isAdmin ? config.stores : accessibleStores)[0];
+                if (first) setView(first.id);
+              }
+              setAppModule(mod);
+              setTab(mod === "activity" ? "checkout" : "board");
+            }} />
             <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
-            <button className="btn-quiet" onClick={() => setAppModule("perf")}>Open the tracker</button>
+            <button className="btn-quiet" onClick={() => setEntered(false)}>Tools</button>
             <button className="btn-quiet" onClick={signOut}>Sign out</button>
           </div>
         </header>
@@ -877,13 +943,27 @@ export default function LeadPerformanceCalculator() {
         </div>
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
+
+          <ToolSwitcher value={appModule} onChange={(mod) => {
+            if (mod === appModule) return;
+            if (mod === "board") { setAppModule("board"); return; }
+            if (mod === "activity" && view === "admin") {
+              const first = (isAdmin ? config.stores : accessibleStores)[0];
+              if (first) setView(first.id);
+            }
+            setAppModule(mod);
+            setTab(mod === "activity" ? "checkout" : "board");
+          }} />
+
           <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
-            {isAdmin && <option value="admin">All Stores</option>}
-            {isOverseer && session.stores.length > 1 && <option value="combined">Combined (my stores)</option>}
+            {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
+            {isAdmin && appModule !== "activity" && <option value="admin">All Stores</option>}
+            {isOverseer && appModule !== "activity" && session.stores.length > 1 && <option value="combined">Combined (my stores)</option>}
             {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+
           <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
-          {view !== "admin" && view !== "combined" && <button className="btn-quiet" onClick={() => openLeaderboard(config, view)}>Leaderboard ↗</button>}
+          <button className="btn-quiet" onClick={() => setEntered(false)}>Tools</button>
           <button className="btn-quiet" onClick={signOut}>Sign out</button>
         </div>
       </header>
@@ -1091,13 +1171,13 @@ function LEADERBOARD_HTML(p) {
   .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.6vh; }
   .head-l { display:flex; align-items:center; gap:1.2vw; }
   .head-r { display:flex; align-items:center; gap:2.4vw; }
-  .head-logo { width:5.4vh; height:5.4vh; border-radius:1vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .head-logo { width:6.6vh; height:6.6vh; border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .head-logo img { width:100%; height:100%; object-fit:contain; }
-  .head-title { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:4.4vh; letter-spacing:.5px; line-height:1; }
-  .head-sub { font-size:1.6vh; color:#9FC2E4; letter-spacing:.08em; text-transform:uppercase; }
+  .head-title { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:5.4vh; letter-spacing:.5px; line-height:1; }
+  .head-sub { font-size:1.7vh; color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
   .total { text-align:right; }
-  .total-num { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:4.6vh; line-height:1; color:var(--lime); }
-  .total-cap { font-size:1.35vh; color:#9FC2E4; letter-spacing:.09em; text-transform:uppercase; font-weight:600; margin-top:.3vh; }
+  .total-num { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:5.8vh; line-height:1; color:var(--lime); }
+  .total-cap { font-size:1.5vh; color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
   .clock { text-align:right; font-family:'Barlow Semi Condensed'; }
   .clock-time { font-size:3.2vh; font-weight:700; }
   .clock-date { font-size:1.5vh; color:#9FC2E4; }
@@ -1105,28 +1185,39 @@ function LEADERBOARD_HTML(p) {
   /* one panel, one table, everybody visible without scrolling */
   .panel { flex:1; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
     border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden; }
-  .lb { width:100%; border-collapse:collapse; table-layout:fixed; }
-  .lb th { font-size:1.5vh; text-transform:uppercase; letter-spacing:.08em; color:#9FC2E4;
-    font-weight:700; padding:0 .6vw 1vh; text-align:center; }
-  .lb th.nm { text-align:left; }
-  .lb td { padding:var(--rowpad) .6vw; border-top:1px solid rgba(255,255,255,.07);
-    font-size:var(--rowfs); text-align:center; }
-  .lb tbody tr:first-child td { border-top:none; }
+  /* The table is capped and centred. Stretched across a 65in screen the columns drifted
+     so far apart the eye lost the row on the way across. */
+  .lb { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
+  .lb th { font-size:1.7vh; text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
+    font-weight:700; padding:0 .5vw 1.2vh; text-align:center; }
+  .lb th.nm { text-align:left; padding-left:1vw; }
+  .lb td { padding:var(--rowpad) .5vw; font-size:var(--rowfs); text-align:center; }
 
-  .lb .rank { width:4%; color:#7FA8D4; font-family:'Barlow Semi Condensed'; font-weight:800; }
-  .lb .nm { width:30%; text-align:left; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lb .sold { width:14%; font-family:'Barlow Semi Condensed'; font-weight:800; color:var(--lime);
-    font-variant-numeric:tabular-nums; font-size:calc(var(--rowfs) * 1.12); }
-  .lb .pcell { width:17.33%; white-space:nowrap; }
+  /* zebra striping instead of hairlines: from across the room a solid band is far
+     easier to track than a 1px line */
+  .lb tbody tr:nth-child(odd) { background:rgba(255,255,255,.045); }
+  .lb tbody tr td:first-child { border-radius:1vh 0 0 1vh; }
+  .lb tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
 
-  .pill { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:var(--rowfs);
-    padding:.25vh .8vw; border-radius:.9vh; display:inline-block; min-width:5.4vw; }
+  .lb .rank { width:5%; color:#7FA8D4; font-family:'Barlow Semi Condensed'; font-weight:800;
+    font-size:calc(var(--rowfs) * .9); }
+  .lb .nm { width:31%; text-align:left; padding-left:1vw; font-weight:700;
+    font-size:calc(var(--rowfs) * 1.08); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb .sold { width:13%; font-family:'Barlow Semi Condensed'; font-weight:800; color:var(--lime);
+    font-variant-numeric:tabular-nums; font-size:calc(var(--rowfs) * 1.35); }
+  .lb .pcell { width:17%; white-space:nowrap; }
+
+  .pill { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:calc(var(--rowfs) * 1.05);
+    padding:.3vh .7vw; border-radius:.9vh; display:inline-block; min-width:5.2vw; }
   .pill.g { background:var(--greenbg); color:var(--green); }
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
   .pill.dim { background:rgba(255,255,255,.07); color:#6E93BC; }
-  .pill-mark { font-size:calc(var(--rowfs) * .72); margin-right:.35vw; opacity:.85; }
-  .trend { font-size:calc(var(--rowfs) * .68); margin-right:.4vw; }
+  .pill-mark { font-size:calc(var(--rowfs) * .85); margin-right:.3vw; opacity:.9; }
+  .move { display:inline-flex; align-items:center; gap:.2vw; margin-left:.45vw; min-width:3.4vw;
+    justify-content:flex-start; }
+  .trend { font-size:calc(var(--rowfs) * .78); }
+  .delta { font-size:calc(var(--rowfs) * .72); font-weight:700; font-variant-numeric:tabular-nums; }
   .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#5C7F9F; }
 
   .flag { color:#FFCF6B; }
@@ -1194,12 +1285,26 @@ function LEADERBOARD_HTML(p) {
 
   // keep the session alive well before it lapses, so an all-day board never drops out
   setInterval(function(){ refreshToken(); }, 40 * 60 * 1000);
-  function tone(pct){ if (pct==null) return 'r'; var v=pct*100;
-    if (v>=CFG.thresholds.green) return 'g'; if (v>=CFG.thresholds.yellow) return 'y'; return 'r'; }
+  // each channel is judged on its own scale: a 25% showroom close and a 25% internet
+  // close are nowhere near the same achievement
+  function tone(pct, ch){
+    if (pct==null) return 'r';
+    var t = (CFG.thresholds && CFG.thresholds[ch]) || { green: 20, yellow: 10 };
+    var v = pct*100;
+    if (v>=t.green) return 'g';
+    if (v>=t.yellow) return 'y';
+    return 'r';
+  }
   // symbol as well as colour, so the board reads for colour-blind viewers too
   function toneMark(t){ return t==='g' ? '\\u2713' : t==='y' ? '\\u2013' : '\\u2717'; }
-  function arrow(cur, prev){ if (cur==null||prev==null) return ['flat','·'];
-    if (cur>prev+0.001) return ['up','▲']; if (cur<prev-0.001) return ['down','▼']; return ['flat','·']; }
+  // direction AND distance moved since the previous report, in percentage points
+  function arrow(cur, prev){
+    if (cur==null||prev==null) return ['flat','·',''];
+    var d = (cur - prev) * 100;
+    if (d > 0.05)  return ['up','▲','+'+d.toFixed(1)];
+    if (d < -0.05) return ['down','▼', d.toFixed(1)];
+    return ['flat','·',''];
+  }
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
   function render(store){
@@ -1238,16 +1343,24 @@ function LEADERBOARD_HTML(p) {
 
     // Everyone has to fit on one screen with no scrolling, so the rows scale to the
     // size of the team rather than being a fixed height.
-    var n = people.length;
-    var rowFs  = n > 26 ? 1.3 : n > 20 ? 1.7 : n > 15 ? 2.1 : n > 10 ? 2.5 : 2.9;  // vh
-    var rowPad = n > 26 ? 0.22 : n > 20 ? 0.35 : n > 15 ? 0.5 : 0.75;              // vh
+    // Size from the space that is actually available rather than a fixed lookup.
+    // This is on a TV across a showroom floor, so fill the screen: a small team should
+    // read enormous, and a big team should still be as large as it possibly can be.
+    var n = Math.max(people.length, 1);
+    var AVAIL = 80;                                   // vh the table body gets
+    var rowH  = Math.min(8.5, AVAIL / (n + 1));       // height each row can take
+    var rowFs = Math.max(1.4, Math.min(4.2, rowH * 0.60));   // vh
+    var rowPad = Math.max(0.15, rowH * 0.10);                // vh
 
-    function cell(pct, prevVal){
+    function cell(pct, prevVal, ch){
       if (pct == null) return '<td class="pcell"><span class="pill dim">-</span></td>';
-      var tn = tone(pct);
+      var tn = tone(pct, ch);
       var ar = arrow(pct, prevVal);
-      return '<td class="pcell"><span class="trend '+ar[0]+'">'+ar[1]+'</span>' +
-             '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span></td>';
+      var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
+      return '<td class="pcell">' +
+        '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span>' +
+        '<span class="move"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>' +
+      '</td>';
     }
 
     var rows = people.map(function(x,i){
@@ -1255,9 +1368,9 @@ function LEADERBOARD_HTML(p) {
         '<td class="rank">'+(i+1)+'</td>' +
         '<td class="nm">'+x.name+(x.haveAll?'':' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>')+'</td>' +
         '<td class="sold">'+x.sold+'</td>' +
-        cell(x.internetPct, x.prev.internet) +
-        cell(x.phonePct,    x.prev.phone) +
-        cell(x.showroomPct, x.prev.showroom) +
+        cell(x.internetPct, x.prev.internet, 'internet') +
+        cell(x.phonePct,    x.prev.phone,    'phone') +
+        cell(x.showroomPct, x.prev.showroom, 'showroom') +
       '</tr>';
     }).join('');
 
@@ -1283,7 +1396,12 @@ function LEADERBOARD_HTML(p) {
           '<tbody>'+rows+'</tbody>'+
         '</table>'+
       '</div>'+
-      '<div class="foot">Green at or above '+CFG.thresholds.green+'% &middot; yellow at or above '+CFG.thresholds.yellow+'% &middot; arrows compare with the last import &middot; refreshes every 30 seconds</div>';
+      '<div class="foot">' +
+        'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
+        'Phone ' + CFG.thresholds.phone.green + '%+ &middot; ' +
+        'Showroom ' + CFG.thresholds.showroom.green + '%+' +
+        ' &middot; arrows show the change since the previous report &middot; refreshes every 30 seconds' +
+      '</div>';
     tick();
   }
   function tick(){ var n=new Date();
@@ -1296,18 +1414,22 @@ function LEADERBOARD_HTML(p) {
 }
 
 /* ---------------- Splash ---------------- */
-function Splash({ config, onEnter }) {
+function Splash({ config, session, onEnter, onSignOut }) {
+  const first = (session?.name || "").split(" ")[0];
   return (
     <div className="splash">
       <div className="splash-inner">
         <div className="splash-logo"><Logo size={92} animated /></div>
         <h1 className="splash-title">Lead Performance</h1>
-        <p className="splash-sub">Holler-Classic Family of Dealerships</p>
+        <p className="splash-sub">
+          {first ? `Welcome back, ${first}. Which tool do you need?` : "Which tool do you need?"}
+        </p>
         <div className="splash-actions">
           <button className="btn wide splash-btn-primary" onClick={() => onEnter("perf")}>Performance Tracker</button>
           <button className="btn wide splash-btn-primary splash-btn-activity" onClick={() => onEnter("activity")}>Daily Activity Tracker</button>
           <button className="btn-outline wide splash-btn-secondary" onClick={() => onEnter("board")}>The Board</button>
         </div>
+        <button className="btn-link" onClick={onSignOut}>Sign out</button>
         <p className="splash-foot">Earn the next lead.</p>
       </div>
     </div>
@@ -1372,7 +1494,7 @@ async function openLeaderboard(config, storeId) {
   const w = window.open("", "lpc_leaderboard_" + storeId, "width=1600,height=900");
   if (!w) { alert("Please allow pop-ups for this site to open the leaderboard on a second screen."); return; }
   const store = config.stores.find((s) => s.id === storeId);
-  const thresholds = store?.thresholds || DEFAULT_THRESHOLDS;
+  const thresholds = normThresholds(store?.thresholds);
   // The board runs on a TV all day, so it carries the signed-in user's tokens and
   // refreshes them itself. Without this it would lose access once the data is locked down.
   const tokens = await getTokens();
@@ -1713,6 +1835,43 @@ function PlateTracker({ data, onChange, userName }) {
           </table>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Leaderboard thresholds (per channel) ---------------- */
+function ThresholdGrid({ value, onChange }) {
+  const t = normThresholds(value);
+  const set = (ch, key, v) => {
+    const next = normThresholds(t);
+    next[ch][key] = Math.max(0, Math.min(100, v));
+    onChange(next);
+  };
+  return (
+    <div className="thr-grid">
+      <div className="thr-grid-head">
+        <span />
+        <span><span className="thr-dot g" />Green at or above</span>
+        <span><span className="thr-dot y" />Yellow at or above</span>
+      </div>
+      {CHANNEL_LIST.map((c) => (
+        <div key={c.id} className="thr-grid-row">
+          <span className="thr-ch">{c.label} %</span>
+          <label className="thr-inp">
+            <input type="number" min="0" max="100" value={t[c.id].green}
+              onChange={(e) => set(c.id, "green", parseInt(e.target.value) || 0)} />%
+          </label>
+          <label className="thr-inp">
+            <input type="number" min="0" max="100" value={t[c.id].yellow}
+              onChange={(e) => set(c.id, "yellow", parseInt(e.target.value) || 0)} />%
+          </label>
+        </div>
+      ))}
+      <p className="hint">
+        Each channel is scored on its own scale, because a 25% showroom close and a 25% internet
+        close are not the same achievement. At or above green shows green on The Board, at or above
+        yellow shows yellow, anything below that shows red.
+      </p>
     </div>
   );
 }
@@ -2501,7 +2660,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   const [name, setName] = useState(store?.name || "");
   const [icon, setIcon] = useState(store?.icon || null);
   const [brand, setBrand] = useState(store?.brand || { ...DEFAULT_BRAND });
-  const [thresholds, setThresholds] = useState(store?.thresholds || { ...DEFAULT_THRESHOLDS });
+  const [thresholds, setThresholds] = useState(() => normThresholds(store?.thresholds));
   const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
   const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
   const [cropSrc, setCropSrc] = useState(null);
@@ -2578,16 +2737,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
             </div>
 
             <label>Leaderboard colors</label>
-            <div className="wiz-nums">
-              <label className="thr-label"><span className="thr-dot g" />Green ≥
-                <input type="number" min="0" max="100" value={thresholds.green}
-                  onChange={(e) => setThresholds({ ...thresholds, green: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })} />%
-              </label>
-              <label className="thr-label"><span className="thr-dot y" />Yellow ≥
-                <input type="number" min="0" max="100" value={thresholds.yellow}
-                  onChange={(e) => setThresholds({ ...thresholds, yellow: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })} />%
-              </label>
-            </div>
+            <ThresholdGrid value={thresholds} onChange={setThresholds} />
 
             <label>Daily check out minimums</label>
             <div className="wiz-nums">
@@ -2652,6 +2802,26 @@ function StoreWizard({ config, store, onCancel, onSave }) {
             onSave={(dataUrl) => { setIcon(dataUrl); setCropSrc(null); }} />
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Tool switcher ---------------- */
+function ToolSwitcher({ value, onChange }) {
+  const tools = [
+    ["perf", "Performance"],
+    ["activity", "Daily Activity"],
+    ["board", "The Board"],
+  ];
+  return (
+    <div className="tool-switch" role="group" aria-label="Switch tool">
+      {tools.map(([id, label]) => (
+        <button key={id}
+          className={"tool-btn " + (value === id ? "on" : "")}
+          onClick={() => onChange(id)}>
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -3087,29 +3257,16 @@ function StandardsEditor({ config, storeId, onChange }) {
         </label>
         <span className="hint">No restrictions are recommended during the first days of the month while numbers settle. Anyone below standard shows as working toward the target instead. Set to 0 to turn this off.</span>
       </div>
-      <div className="card grace-setting">
-        <span className="grace-label">Leaderboard colors</span>
-        <label className="thr-label"><span className="thr-dot g" />Green at or above
-          <input type="number" min="0" max="100" defaultValue={config.stores.find((s) => s.id === storeId)?.thresholds?.green ?? DEFAULT_THRESHOLDS.green}
-            onBlur={(e) => {
-              const v = Math.max(0, Math.min(100, toNum(e.target.value) ?? DEFAULT_THRESHOLDS.green));
-              const next = JSON.parse(JSON.stringify(config));
-              const s = next.stores.find((x) => x.id === storeId);
-              s.thresholds = { ...(s.thresholds || DEFAULT_THRESHOLDS), green: v };
-              onChange(next, { store: storeId, action: "Changed leaderboard threshold", detail: `${storeName}: green ${v}%` });
-            }} />%
-        </label>
-        <label className="thr-label"><span className="thr-dot y" />Yellow at or above
-          <input type="number" min="0" max="100" defaultValue={config.stores.find((s) => s.id === storeId)?.thresholds?.yellow ?? DEFAULT_THRESHOLDS.yellow}
-            onBlur={(e) => {
-              const v = Math.max(0, Math.min(100, toNum(e.target.value) ?? DEFAULT_THRESHOLDS.yellow));
-              const next = JSON.parse(JSON.stringify(config));
-              const s = next.stores.find((x) => x.id === storeId);
-              s.thresholds = { ...(s.thresholds || DEFAULT_THRESHOLDS), yellow: v };
-              onChange(next, { store: storeId, action: "Changed leaderboard threshold", detail: `${storeName}: yellow ${v}%` });
-            }} />%
-        </label>
-        <span className="hint">Delivered % at or above green shows green on the TV leaderboard, at or above yellow shows yellow, anything lower shows red. Below yellow is red.</span>
+      <div className="card">
+        <h3>Leaderboard colors <span className="section-sub">{storeName}</span></h3>
+        <ThresholdGrid
+          value={config.stores.find((s) => s.id === storeId)?.thresholds}
+          onChange={(next) => {
+            const cfg = JSON.parse(JSON.stringify(config));
+            const s = cfg.stores.find((x) => x.id === storeId);
+            s.thresholds = next;
+            onChange(cfg, { store: storeId, action: "Changed leaderboard thresholds", detail: storeName });
+          }} />
       </div>
       <div className="std-head">
         <h3>Standards for</h3>
@@ -4177,6 +4334,12 @@ function Style() {
       .save-dot { font-size:12px; color:var(--ink-3); animation: pulse 1.2s ease infinite; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
+      .tool-switch { display:inline-flex; gap:2px; background:rgba(118,118,128,.12); border-radius:10px; padding:2px; }
+      .tool-btn { border:none; background:none; padding:6px 12px; border-radius:8px; cursor:pointer;
+        font-size:12.5px; font-weight:600; color:var(--ink-2); white-space:nowrap;
+        transition: background .2s var(--spring), color .2s var(--spring); }
+      .tool-btn:hover { color:var(--ink); }
+      .tool-btn.on { background:#fff; color:var(--blue); box-shadow:0 1px 3px rgba(0,0,0,.10); }
 
       /* ---- segmented control (sliding) ---- */
       .seg-wrap { display:flex; padding:16px 24px 0; }
@@ -4400,6 +4563,13 @@ function Style() {
 
       /* ---- thresholds + check groups ---- */
       .thr-label { display:flex; gap:8px; align-items:center; font-weight:600; }
+      .thr-grid { display:flex; flex-direction:column; gap:8px; }
+      .thr-grid-head, .thr-grid-row { display:grid; grid-template-columns: 1.1fr 1fr 1fr; gap:12px; align-items:center; }
+      .thr-grid-head span { font-size:11px; font-weight:700; color:var(--ink-3); text-transform:uppercase;
+        letter-spacing:.06em; display:flex; align-items:center; gap:6px; }
+      .thr-ch { font-weight:700; font-size:13.5px; }
+      .thr-inp { display:flex; align-items:center; gap:5px; font-size:13px; color:var(--ink-2); }
+      .thr-inp input { width:70px; }
       .thr-label input[type=number] { width:64px; }
       .thr-dot { width:11px; height:11px; border-radius:50%; }
       .thr-dot.g { background:var(--green); } .thr-dot.y { background:#E0A100; }
