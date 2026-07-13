@@ -1138,30 +1138,62 @@ function LEADERBOARD_HTML(p) {
 <script>
   var CFG = ${JSON.stringify(p)};
   function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
-  var SB = null;
-  async function initClient(){
-    if (SB || !CFG.tokens) return SB;
-    try {
-      var mod = await import('https://esm.sh/@supabase/supabase-js@2');
-      SB = mod.createClient(CFG.tokens.url, CFG.tokens.anonKey, {
-        auth: { persistSession: false, autoRefreshToken: true }
-      });
-      await SB.auth.setSession({
-        access_token: CFG.tokens.access_token,
-        refresh_token: CFG.tokens.refresh_token
-      });
-    } catch (e) { SB = null; }
-    return SB;
+  // No external library and no CDN. A TV on a dealership network may not be able to
+  // reach an external CDN at all, and an import that never resolves left it stuck on
+  // "Loading" forever. Plain fetch against the REST API, with the token refreshed by
+  // hand so the screen can sit there unattended for days.
+  var TOK = CFG.tokens ? {
+    access: CFG.tokens.access_token,
+    refresh: CFG.tokens.refresh_token
+  } : null;
+
+  function withTimeout(promise, ms){
+    return Promise.race([
+      promise,
+      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); })
+    ]);
   }
+
+  async function refreshToken(){
+    if (!TOK || !TOK.refresh) return false;
+    try {
+      var r = await withTimeout(fetch(CFG.tokens.url + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: CFG.tokens.anonKey },
+        body: JSON.stringify({ refresh_token: TOK.refresh })
+      }), 12000);
+      if (!r.ok) return false;
+      var d = await r.json();
+      if (!d.access_token) return false;
+      TOK.access = d.access_token;
+      if (d.refresh_token) TOK.refresh = d.refresh_token;
+      return true;
+    } catch (e) { return false; }
+  }
+
   async function getStore(){
+    if (!TOK) return { __err: 'This board was opened without a signed-in session. Open it again from the tool.' };
+    var url = CFG.tokens.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(CFG.storeKey) + '&select=value';
+    function headers(){
+      return { apikey: CFG.tokens.anonKey, Authorization: 'Bearer ' + TOK.access };
+    }
     try {
-      var c = await initClient();
-      if (!c) return null;
-      var res = await c.from('app_data').select('value').eq('key', CFG.storeKey).maybeSingle();
-      if (res.error) return null;
-      return res.data ? res.data.value : null;
-    } catch(e){ return null; }
+      var res = await withTimeout(fetch(url, { headers: headers() }), 12000);
+      if (res.status === 401 || res.status === 403) {
+        var ok = await refreshToken();
+        if (!ok) return { __err: 'The session for this board expired. Open it again from the tool.' };
+        res = await withTimeout(fetch(url, { headers: headers() }), 12000);
+      }
+      if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
+      var rows = await res.json();
+      return (rows && rows[0]) ? rows[0].value : null;
+    } catch (e) {
+      return { __err: 'No connection to the database. Retrying...' };
+    }
   }
+
+  // keep the session alive well before it lapses, so an all-day board never drops out
+  setInterval(function(){ refreshToken(); }, 40 * 60 * 1000);
   function tone(pct){ if (pct==null) return 'r'; var v=pct*100;
     if (v>=CFG.thresholds.green) return 'g'; if (v>=CFG.thresholds.yellow) return 'y'; return 'r'; }
   // symbol as well as colour, so the board reads for colour-blind viewers too
@@ -1172,6 +1204,11 @@ function LEADERBOARD_HTML(p) {
   function num(v){ return v==null?0:v; }
   function render(store){
     var root = document.getElementById('root');
+    // an error is not the same as an empty store: say which, never just hang
+    if (store && store.__err){
+      root.innerHTML = '<div class="empty">' + store.__err + '</div>';
+      return;
+    }
     if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import today\'s delivery reports in the tool and this board will fill in.</div>'; return; }
     var M = (store.months||{})[CFG.ym] || {stats:{}};
 
