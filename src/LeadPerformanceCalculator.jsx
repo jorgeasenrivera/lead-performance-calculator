@@ -3,9 +3,9 @@ import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
 
 /* ============================================================
-   LEAD PERFORMANCE CALCULATOR v3 — Holler-Classic Family of Dealerships
+   LEAD PERFORMANCE CALCULATOR v3 for the Holler-Classic Family of Dealerships
    "Earn the next lead."
-   v3: Apple-inspired redesign — frosted chrome, segmented controls,
+   v3: Apple-inspired redesign with frosted chrome, segmented controls,
    spring transitions, logo + favicon. Logic & storage identical to v2.
    ============================================================ */
 
@@ -46,12 +46,22 @@ const LEADERBOARD_REPORTS = {
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
-const ym = () => new Date().toISOString().slice(0, 7);
-const prevYm = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); };
-const dayOfMonth = () => new Date().getDate();
-const today = () => new Date().toISOString().slice(0, 10);
-const fmtPct = (v) => (v == null ? "—" : (v * 100).toFixed(1) + "%");
-const fmtNum = (v) => (v == null ? "—" : Math.round(v * 10) / 10);
+
+// All day/month boundaries run on dealership time, not the browser's clock and not UTC.
+// (toISOString() is UTC, so an 8pm Eastern import would have counted as tomorrow.)
+const STORE_TZ = "America/New_York";
+const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
+const today = () => dayIn();
+const ym = () => today().slice(0, 7);
+const prevYm = () => {
+  const [y, m] = today().split("-").map(Number);
+  const pm = m === 1 ? 12 : m - 1;
+  const py = m === 1 ? y - 1 : y;
+  return `${py}-${String(pm).padStart(2, "0")}`;
+};
+const dayOfMonth = () => Number(today().slice(8, 10));
+const fmtPct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
+const fmtNum = (v) => (v == null ? "-" : Math.round(v * 10) / 10);
 const monthLabel = (m) => new Date(m + "-02").toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
 const DEFAULT_TIERS = [
@@ -78,6 +88,27 @@ const ROLE_COLORS = ["#2A5E9B", "#00A896", "#BF5AF2", "#FF9F0A", "#5E8C31", "#FF
 // Leaderboard delivered-% thresholds. >= green is green; >= yellow is yellow; below is red.
 const DEFAULT_THRESHOLDS = { green: 20, yellow: 10 };
 
+// Daily Activity checkout minimums (per store, editable)
+const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2 };
+
+// Per-store brand colors. `primary` drives the hero band + accents on the manager's view.
+const DEFAULT_BRAND = { primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" };
+
+// Manufacturer palettes so a store instantly reads as its franchise.
+const BRAND_PRESETS = [
+  { id: "honda",    label: "Honda",        primary: "#CC0000", deep: "#8E0000", accent: "#F2F2F2" },
+  { id: "ford",     label: "Ford",         primary: "#1F5FA9", deep: "#00095B", accent: "#8FC5E8" },
+  { id: "hyundai",  label: "Hyundai",      primary: "#00559A", deep: "#002C5F", accent: "#A4C8E1" },
+  { id: "mazda",    label: "Mazda",        primary: "#3D4B54", deep: "#101820", accent: "#C8102E" },
+  { id: "audi",     label: "Audi",         primary: "#3C4247", deep: "#1A1D20", accent: "#BB0A30" },
+  { id: "toyota",   label: "Toyota",       primary: "#C8102E", deep: "#8A0B20", accent: "#E8E8E8" },
+  { id: "kia",      label: "Kia",          primary: "#05141F", deep: "#000000", accent: "#BB162B" },
+  { id: "chevy",    label: "Chevrolet",    primary: "#1B4E8C", deep: "#0D2240", accent: "#FCC10F" },
+  { id: "nissan",   label: "Nissan",       primary: "#C3002F", deep: "#8A0021", accent: "#E5E5E5" },
+  { id: "driversmart", label: "Driver's Mart", primary: "#00A896", deep: "#00776A", accent: "#C1D730" },
+  { id: "hc",       label: "Holler-Classic", primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" },
+];
+
 const DEFAULT_CONFIG = {
   stores: [
     { id: "holler-honda", name: "Holler Honda", icon: null },
@@ -91,16 +122,13 @@ const DEFAULT_CONFIG = {
   standards: {},
   approvedDomains: [],
   registrationOpen: true,
-  users: [
-    { id: "admin-1", name: "Jorge (Group Admin)", email: "", pin: null, role: "admin", stores: [], active: true },
-  ],
 };
 
 /* ---------------- Logo + favicon ---------------- */
 
-function Logo({ size = 40 }) {
+function Logo({ size = 40, animated = false }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={animated ? "logo-anim" : ""}>
       <defs>
         <linearGradient id="lpcg" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#2A5E9B" />
@@ -110,16 +138,22 @@ function Logo({ size = 40 }) {
       <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lpcg)" />
       {/* full ring track (light blue) */}
       <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
-      {/* lime progress: starts at ring's left edge, sweeps left→right over the top, stops at the needle tip on the ring */}
-      <path d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="round" />
-      {/* speedometer needle reaching the same point on the ring */}
-      <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="4.5" strokeLinecap="round" />
+      {/* soft rounded start for the lime (a butt-capped path would cut flat here) */}
+      <circle className="logo-arc-start" cx="15" cy="32" r="2.5" fill="#C1D730" />
+      {/* Lime sweeps 180° → 320.2°: the SAME angular span as the needle, so the two tips
+          travel together. A butt cap ends it flat on the needle's centerline, whereas a round cap
+          would bulge sideways past the needle. The white needle is drawn on top of the seam. */}
+      <path className="logo-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
+      {/* needle: width 5 so its round tip reaches the arc's outer edge (r=19.5) and covers the seam */}
+      <g className="logo-needle" style={{ transformOrigin: "32px 32px" }}>
+        <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
+      </g>
       <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
     </svg>
   );
 }
 
-const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#2A5E9B'/><stop offset='100%' stop-color='#1D4674'/></linearGradient></defs><rect x='2' y='2' width='60' height='60' rx='15' fill='url(#g)'/><circle cx='32' cy='32' r='17' fill='none' stroke='rgba(136,198,234,.5)' stroke-width='5'/><path d='M 15 32 A 17 17 0 0 1 45.06 21.12' fill='none' stroke='#C1D730' stroke-width='5' stroke-linecap='round'/><line x1='32' y1='32' x2='45.06' y2='21.12' stroke='#FFF' stroke-width='4.5' stroke-linecap='round'/><circle cx='32' cy='32' r='4.5' fill='#FFF'/></svg>`;
+const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#2A5E9B'/><stop offset='100%' stop-color='#1D4674'/></linearGradient></defs><rect x='2' y='2' width='60' height='60' rx='15' fill='url(#g)'/><circle cx='32' cy='32' r='17' fill='none' stroke='rgba(136,198,234,.5)' stroke-width='5'/><circle cx='15' cy='32' r='2.5' fill='#C1D730'/><path d='M 15 32 A 17 17 0 0 1 45.06 21.12' fill='none' stroke='#C1D730' stroke-width='5' stroke-linecap='butt'/><line x1='32' y1='32' x2='45.06' y2='21.12' stroke='#FFF' stroke-width='5' stroke-linecap='round'/><circle cx='32' cy='32' r='4.5' fill='#FFF'/></svg>`;
 
 function useFavicon() {
   useEffect(() => {
@@ -148,6 +182,7 @@ function detectReportType(rows, filename = "") {
   }
   if (h2.includes("video day of appt")) return "appointment";
   if (h1.includes("bh lead") && h1.includes("engaged")) return "video";
+  if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
   return null;
 }
 
@@ -202,6 +237,16 @@ function parseReport(rows, type) {
         .filter((i) => i >= 0);
       rec.bhVideoPct = toNum(row[pctCols[0]]);
       rec.engagedVideoPct = toNum(row[pctCols[1]]);
+    } else if (type === "activity") {
+      rec.actCalls = toNum(row[idx("Calls")]);
+      rec.actCallContacted = toNum(row[idx("Call Contacted")]);
+      rec.actVideo = toNum(row[idx("Personalized Video")]);
+      rec.actText = toNum(row[idx("Text")]);
+      rec.actEmail = toNum(row[idx("Email")]);
+      rec.actApptCreated = toNum(row[idx("Created")]);
+      rec.actApptShow = toNum(row[idx("Show")]);
+      rec.actOppsTotal = toNum(row[idx("Total")]);
+      rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
     }
     out[key] = rec;
   }
@@ -256,14 +301,15 @@ const failureText = (ev) =>
     `${f.def.short} ${f.val == null ? "no data" : f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val)} (needs ${f.def.kind === "pct" ? f.min + "%" : f.min})`
   ).join("; ");
 
-/* ---------------- Storage + audit (Supabase-backed) ---------------- */
-// Reads config from Vite env at build time. Set these in Vercel:
-//   VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+/* ===== BACKEND BLOCK: Supabase (storage + real auth) ===== */
+// Set in Vercel: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+const AUTH_ENABLED = true;
 
 async function loadShared(key, fallback) {
   if (!supabase) return fallback;
@@ -280,6 +326,123 @@ async function saveShared(key, value) {
     if (error) throw error;
     return true;
   } catch (e) { console.error("save failed", key, e); return false; }
+}
+
+// ---- auth ----
+// Passwords live in Supabase Auth (hashed). This app never sees them.
+// The `profiles` row carries role + store access, and only an admin can change it.
+async function authGetProfile() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  const { data, error } = await supabase
+    .from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+  if (error || !data) return null;
+  return data;
+}
+async function authSignIn(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  return { error: error ? error.message : null };
+}
+async function authSignUp(email, password, name) {
+  const { error } = await supabase.auth.signUp({
+    email, password, options: { data: { name } },
+  });
+  return { error: error ? error.message : null };
+}
+async function authSignOut() {
+  if (supabase) await supabase.auth.signOut();
+}
+async function authResetPassword(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+  return { error: error ? error.message : null };
+}
+async function listProfiles() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("profiles").select("*").order("created_at");
+  if (error) { console.error("listProfiles", error); return []; }
+  return data || [];
+}
+async function updateProfile(id, patch) {
+  if (!supabase) return false;
+  const { error } = await supabase.from("profiles").update(patch).eq("id", id);
+  if (error) { console.error("updateProfile", error); return false; }
+  return true;
+}
+async function deleteProfile(id) {
+  if (!supabase) return false;
+  const { error } = await supabase.from("profiles").delete().eq("id", id);
+  if (error) { console.error("deleteProfile", error); return false; }
+  return true;
+}
+// Deliberately narrow: this is the only thing a non-admin may change about themselves.
+async function markOnboarded() {
+  if (!supabase) return;
+  await supabase.rpc("mark_onboarded");
+}
+function onAuthChange(cb) {
+  if (!supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange(() => cb());
+  return () => { try { data.subscription.unsubscribe(); } catch (e) {} };
+}
+async function getTokens() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  return {
+    url: SUPABASE_URL,
+    anonKey: SUPABASE_ANON_KEY,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  };
+}
+/* ===== END BACKEND BLOCK ===== */
+
+const BACKUP_INDEX_KEY = "lpc:backups:index:v1";
+const backupKey = (id) => `lpc:backup:${id}:v1`;
+const AUTO_BACKUP_EVERY_HOURS = 20;   // once a working day
+const KEEP_BACKUPS = 14;
+
+// Writes a full snapshot to the database, at most once a day, whenever an admin
+// opens the tool. No server or cron needed: the admin's own visit is the trigger.
+// Snapshots are stripped out of the copy so backups can't nest inside each other.
+async function runAutoBackup(config, adminData, byName) {
+  const index = await loadShared(BACKUP_INDEX_KEY, []);
+  const newest = index[0] ? new Date(index[0].t).getTime() : 0;
+  if (Date.now() - newest < AUTO_BACKUP_EVERY_HOURS * 3600 * 1000) return index;
+
+  const stores = {};
+  for (const [sid, d] of Object.entries(adminData || {})) {
+    if (!d) continue;
+    const copy = { ...d };
+    delete copy.snapshots;
+    stores[sid] = copy;
+  }
+  if (Object.keys(stores).length === 0) return index;
+
+  const id = new Date().toISOString().replace(/[:.]/g, "-");
+  const payload = {
+    app: "lead-performance-calculator",
+    version: 2,
+    exportedAt: new Date().toISOString(),
+    auto: true,
+    by: byName || "auto",
+    config,
+    stores,
+    audit: await loadShared(AUDIT_KEY, []),
+  };
+
+  const ok = await saveShared(backupKey(id), payload);
+  if (!ok) return index;
+
+  const next = [{ id, t: payload.exportedAt, stores: Object.keys(stores).length, auto: true }, ...index];
+  const keep = next.slice(0, KEEP_BACKUPS);
+  // free the space used by anything that fell off the end
+  for (const old of next.slice(KEEP_BACKUPS)) await saveShared(backupKey(old.id), null);
+  await saveShared(BACKUP_INDEX_KEY, keep);
+  return keep;
 }
 
 const emptyStoreData = () => ({ roster: [], months: {} });
@@ -306,7 +469,9 @@ export default function LeadPerformanceCalculator() {
   useFavicon();
   const [config, setConfig] = useState(null);
   const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
+  const [appModule, setAppModule] = useState("perf");
   const [view, setView] = useState("admin");
   const [storeData, setStoreData] = useState(null);
   const [adminData, setAdminData] = useState({});
@@ -315,31 +480,43 @@ export default function LeadPerformanceCalculator() {
   const [dragName, setDragName] = useState(null);
   const [dropActive, setDropActive] = useState(false);
   const [importLog, setImportLog] = useState([]);
+  const [pendingChannels, setPendingChannels] = useState(null); // { ambiguous:[{rows,fileName}], ready:[] }
   const [saving, setSaving] = useState(false);
   const [loadErr, setLoadErr] = useState(false);
   const fileRef = useRef(null);
+
+  // Who is signed in? Preview returns a stand-in admin; the hosted site
+  // reads the real Supabase session and its matching profile row.
+  const refreshProfile = useCallback(async () => {
+    const p = await authGetProfile();
+    setSession(p);
+    setAuthReady(true);
+  }, []);
+
+  useEffect(() => {
+    refreshProfile();
+    const unsub = onAuthChange(() => refreshProfile());
+    return () => { try { unsub && unsub(); } catch (e) {} };
+  }, [refreshProfile]);
 
   useEffect(() => {
     (async () => {
       let cfg = await loadShared(CONFIG_KEY, null);
       if (cfg) {
-        // brand-color migration for configs saved before the Holler-Classic palette
         let dirty = false;
         for (const r of cfg.roles || []) {
           if (r.color === "#0A84FF") { r.color = "#2A5E9B"; dirty = true; }
         }
-        // auth migration: add new fields, force admin to set a real PIN if still on the old default
         if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
-        for (const u of cfg.users || []) {
-          if (u.email === undefined) { u.email = ""; dirty = true; }
-          if (u.role === "admin" && u.pin === "1234") { u.pin = null; dirty = true; }
-        }
+        // Accounts moved to Supabase Auth + the profiles table; drop the old list.
+        if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
       }
       if (!cfg) {
         const v1 = await loadShared("lpc:config:v1", null);
-        cfg = v1 ? { ...DEFAULT_CONFIG, ...v1, users: DEFAULT_CONFIG.users } : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        cfg = v1 ? { ...DEFAULT_CONFIG, ...v1 } : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        delete cfg.users;
         if (!v1) {
           cfg.standards = {};
           for (const s of cfg.stores) {
@@ -364,6 +541,10 @@ export default function LeadPerformanceCalculator() {
         all[s.id] = d;
       }
       setAdminData(all);
+      // an admin opening the tool is what triggers the daily backup
+      if (session.role === "admin") {
+        runAutoBackup(config, all, session.name).catch(() => {});
+      }
       if (session.role === "admin") {
         setView("admin");
       } else if (session.role === "overseer" && accessible.length > 1) {
@@ -398,37 +579,79 @@ export default function LeadPerformanceCalculator() {
     setSaving(false);
   };
 
-  const handleFiles = useCallback(async (fileList) => {
-    if (!storeData || view === "admin") return;
+  // Keep a rolling set of restore points so a bad import is never fatal.
+  const snapshotStore = (data, reason) => {
+    const copy = JSON.parse(JSON.stringify({
+      roster: data.roster, months: data.months, activity: data.activity,
+      plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
+    }));
+    const snaps = data.snapshots || [];
+    snaps.unshift({ t: new Date().toISOString(), by: session?.name || "-", reason, data: copy });
+    data.snapshots = snaps.slice(0, 8); // keep the last 8
+  };
+
+  // Apply already-typed report entries. Ambiguous delivery files are resolved before we get here.
+  const applyEntries = async (entries) => {
     const month = ym(); const day = today();
     let next = JSON.parse(JSON.stringify(storeData));
+    snapshotStore(next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
     const M = next.months[month];
     if (!M.imports[day]) M.imports[day] = {};
     const log = []; const importedFiles = [];
 
-    for (const file of Array.from(fileList)) {
-      const text = await file.text();
-      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
-      const type = detectReportType(rows, file.name);
-      if (!type) { log.push({ ok: false, msg: `${file.name} isn't a Delivery, Appointment, or Video report, so it was skipped.` }); continue; }
-      const parsed = parseReport(rows, type);
+    const aliases = next.aliases || {};
+    const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
+
+    for (const { rows, type, fileName } of entries) {
+      const raw = parseReport(rows, type);
+      // fold every incoming name through the alias map before it touches storage
+      const parsed = {};
+      for (const [k, v] of Object.entries(raw)) {
+        const c = canon(k);
+        parsed[c] = { ...(parsed[c] || {}), ...v };
+      }
       M.names[type] = Object.keys(parsed);
-      const label = REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || type;
+      const label = REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || (type === "activity" ? "Daily Activity" : type);
       let count = 0;
+
+      if (type === "activity") {
+        if (!next.activity) next.activity = {};
+        next.activity[day] = {};
+        for (const [key, rec] of Object.entries(parsed)) {
+          next.activity[day][key] = {
+            displayName: rec.displayName,
+            calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
+            text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
+            apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
+          };
+          count++;
+        }
+      }
+
       for (const [key, rec] of Object.entries(parsed)) {
         const prevStat = M.stats[key] || {};
-        // capture prior channel delivered % so the leaderboard can show a trend
+        // Day-over-day trend: only move the baseline when this import is a NEW day.
+        // Re-importing twice in one day must not compare a number against itself.
         const trend = { ...(prevStat.prevPct || {}) };
+        const pctDay = { ...(prevStat.pctDay || {}) };
         for (const ch of ["internet", "phone", "showroom"]) {
-          if (rec[ch + "Pct"] != null && prevStat[ch + "Pct"] != null) trend[ch] = prevStat[ch + "Pct"];
+          if (rec[ch + "Pct"] == null) continue;
+          const storedVal = prevStat[ch + "Pct"];
+          const storedDay = pctDay[ch];
+          if (storedVal != null && storedDay && storedDay !== day) {
+            trend[ch] = storedVal; // yesterday's figure becomes the comparison baseline
+          }
+          pctDay[ch] = day;
         }
-        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, [`${type}Updated`]: day };
-        count++;
+        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, pctDay, [`${type}Updated`]: day };
+        if (type !== "activity") count++;
       }
+
       M.imports[day][type] = true;
       importedFiles.push(`${label} (${count})`);
-      log.push({ ok: true, msg: `${file.name} → ${label} · ${count} associates updated.` });
+      log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated.` });
+
       const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
       for (const [key, rec] of Object.entries(parsed)) {
         if (!rosterKeys.has(key)) {
@@ -437,12 +660,41 @@ export default function LeadPerformanceCalculator() {
         }
       }
     }
+
     setImportLog(log);
     if (importedFiles.length) {
+      // freeze the standards in force this month so past months stay judged under their own rules
       M.standardsSnapshot = JSON.parse(JSON.stringify(config.standards?.[view] || {}));
     }
-    await persistStore(view, next, importedFiles.length ? { action: "Imported reports", detail: importedFiles.join(", ") } : null);
-  }, [storeData, view, session, config]);
+    await persistStore(view, next, {
+      action: "Imported reports",
+      detail: importedFiles.join(", ") || "nothing usable",
+    });
+  };
+
+  const handleFiles = useCallback(async (fileList) => {
+    if (!storeData || view === "admin") return;
+    const ready = []; const ambiguous = []; const log = [];
+
+    for (const file of Array.from(fileList)) {
+      const text = await file.text();
+      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+      const type = detectReportType(rows, file.name);
+      if (!type) {
+        log.push({ ok: false, msg: `${file.name} isn't a Delivery, Appointment, Video, or Daily Activity report, so it was skipped.` });
+        continue;
+      }
+      // "delivery" means we saw a delivery report but couldn't tell which channel from the filename.
+      // Rather than guess (and silently mis-file it), ask.
+      if (type === "delivery") ambiguous.push({ rows, fileName: file.name });
+      else ready.push({ rows, type, fileName: file.name });
+    }
+
+    if (log.length) setImportLog(log);
+    if (ambiguous.length) setPendingChannels({ ambiguous, ready });
+    else if (ready.length) await applyEntries(ready);
+  }, [storeData, view, session]); // eslint-disable-line
+
 
   const moveAssociate = async (name, targetName, roleId) => {
     if (!storeData) return;
@@ -476,47 +728,34 @@ export default function LeadPerformanceCalculator() {
     });
   };
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
-  if (!config) return <Shell><div className="loading">Loading…</div><Style /></Shell>;
-  if (!entered && !session) return <Shell><Splash config={config} onEnter={() => setEntered(true)} onLaunchBoard={(storeId) => openLeaderboard(config, storeId)} /><Style /></Shell>;
-  if (!session) return <Shell><Login config={config} onBack={() => setEntered(false)}
-    onLogin={(u) => { setSession(u); appendAudit({ user: u.name, action: "Signed in" }); }}
-    onRegister={async (u) => {
-      const fresh = await loadShared(CONFIG_KEY, null);
-      const base = fresh ? JSON.parse(JSON.stringify(fresh)) : JSON.parse(JSON.stringify(config));
-      if (base.users.some((x) => (x.email || "").toLowerCase() === u.email)) {
-        alert("An account with that email already exists. Please sign in instead.");
-        return { ok: false };
-      }
-      base.users.push(u);
-      const saved = await saveShared(CONFIG_KEY, base);
-      if (!saved) {
-        alert("Couldn't save your registration. The tool may not be published yet, storage only works on the published link.");
-        return { ok: false };
-      }
-      setConfig(base);
-      await appendAudit({ user: u.name, action: "Requested account", detail: `${u.email}, wants ${config.stores.find((s) => s.id === u.requestedStore)?.name || "a store"}` });
-      return { ok: true };
-    }}
-    onSetupAdmin={async ({ email, pin }) => {
-      const fresh = await loadShared(CONFIG_KEY, null);
-      const freshAdmin = fresh?.users?.find((x) => x.role === "admin");
-      if (freshAdmin && freshAdmin.pin) {
-        alert("An admin account has already been set up for this tool. Please sign in with your email and PIN instead, or ask your group admin to create your account.");
-        return { ok: false };
-      }
-      const next = fresh ? JSON.parse(JSON.stringify(fresh)) : JSON.parse(JSON.stringify(config));
-      const a = next.users.find((x) => x.role === "admin");
-      a.email = email; a.pin = pin;
-      const saved = await saveShared(CONFIG_KEY, next);
-      if (!saved) {
-        alert("Couldn't save your account. This usually means the tool isn't published yet, storage only works on the published link. Publish first, then open the published URL and set up your account there.");
-        return { ok: false };
-      }
-      setConfig(next);
-      await appendAudit({ user: a.name, action: "Set up admin account" });
-      return { ok: true, admin: a };
-    }}
-  /><Style /></Shell>;
+  if (!config || !authReady) return <Shell><LoadingScreen /><Style /></Shell>;
+
+  const signOut = async () => {
+    await authSignOut();
+    setSession(null); setEntered(false); setAppModule("perf");
+  };
+
+  // Signed out: splash first, then the sign-in card.
+  if (!session && !entered) {
+    return <Shell><Splash config={config} onEnter={(mod) => { setAppModule(mod || "perf"); setEntered(true); }} /><Style /></Shell>;
+  }
+  if (!session) {
+    return <Shell><Login config={config} onBack={() => setEntered(false)}
+      onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
+  }
+
+  // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
+  if (!session.active) {
+    return <Shell><div className="login"><div className="login-card">
+      <div className="login-logo"><Logo size={64} animated /></div>
+      <h1 className="login-title">Account paused</h1>
+      <p className="setup-note">This account has been deactivated. Contact your group admin.</p>
+      <button className="btn wide" onClick={signOut}>Sign out</button>
+    </div></div><Style /></Shell>;
+  }
+  if (session.role !== "admin" && session.pending) {
+    return <Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>;
+  }
 
   const isAdmin = session.role === "admin";
   const isOverseer = session.role === "overseer";
@@ -524,6 +763,34 @@ export default function LeadPerformanceCalculator() {
   const accessibleStores = isAdmin ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
   const currentStore = view !== "admin" ? config.stores.find((s) => s.id === view) : null;
   const overviewStores = isAdmin ? config.stores : accessibleStores;
+
+  // "The Board" chosen from the splash: scope it to who's signed in.
+  if (appModule === "board") {
+    return (
+      <Shell>
+        <header className="topbar no-print">
+          <div className="brand">
+            <Logo size={36} />
+            <div>
+              <div className="brand-title">Lead Performance</div>
+              <div className="brand-sub">Holler-Classic · Earn the next lead</div>
+            </div>
+          </div>
+          <div className="topbar-right">
+            <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
+            <button className="btn-quiet" onClick={() => setAppModule("perf")}>Open the tracker</button>
+            <button className="btn-quiet" onClick={signOut}>Sign out</button>
+          </div>
+        </header>
+        <div className="page">
+          <BoardLauncher config={config} session={session}
+            onLaunch={(storeId) => openLeaderboard(config, storeId)}
+            onBack={signOut} />
+        </div>
+        <Style />
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
@@ -544,7 +811,7 @@ export default function LeadPerformanceCalculator() {
           </select>
           <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
           {view !== "admin" && view !== "combined" && <button className="btn-quiet" onClick={() => openLeaderboard(config, view)}>Leaderboard ↗</button>}
-          <button className="btn-quiet" onClick={() => { setSession(null); setEntered(false); }}>Sign out</button>
+          <button className="btn-quiet" onClick={signOut}>Sign out</button>
         </div>
       </header>
 
@@ -552,7 +819,7 @@ export default function LeadPerformanceCalculator() {
         <>
           <nav className="seg-wrap no-print">
             <SegControl
-              items={[["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"]]}
+              items={[["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]]}
               value={adminTab} onChange={setAdminTab} />
           </nav>
           <div key={adminTab} className="page">
@@ -561,6 +828,35 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "access" && <AccessPanel config={config} session={session} onChange={persistConfig} />}
             {adminTab === "audit" && <AuditLog />}
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
+            {adminTab === "backup" && (
+              <BackupPanel config={config} adminData={adminData}
+                onRestoreAll={async (backup) => {
+                  await saveShared(CONFIG_KEY, backup.config);
+                  for (const [sid, sdata] of Object.entries(backup.stores || {})) {
+                    await saveShared(storeKey(sid), sdata);
+                  }
+                  if (backup.audit) await saveShared(AUDIT_KEY, backup.audit);
+                  setConfig(backup.config);
+                  setAdminData(backup.stores || {});
+                  await appendAudit({ user: session.name, action: "Restored from backup", detail: backup.exportedAt || "" });
+                }}
+                onRestoreStore={async (storeId, snap) => {
+                  const current = adminData[storeId] || emptyStoreData();
+                  const restored = {
+                    ...current,
+                    ...snap.data,
+                    // keep the existing restore points, and add one for the state we're leaving
+                    snapshots: [
+                      { t: new Date().toISOString(), by: session.name, reason: "Before rollback", data: JSON.parse(JSON.stringify({
+                        roster: current.roster, months: current.months, activity: current.activity,
+                        plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+                      })) },
+                      ...(current.snapshots || []),
+                    ].slice(0, 8),
+                  };
+                  await persistStore(storeId, restored, { action: "Rolled back store", detail: `${config.stores.find((s) => s.id === storeId)?.name} → ${new Date(snap.t).toLocaleString()}` });
+                }} />
+            )}
           </div>
         </>
       ) : view === "combined" && isOverseer ? (
@@ -579,7 +875,7 @@ export default function LeadPerformanceCalculator() {
       ) : accessibleStores.length === 0 ? (
         <div className="empty">Your account is active but no store has been assigned yet. Your group admin needs to grant you store access in the Access panel.</div>
       ) : !storeData ? (
-        <div className="loading">Loading {currentStore?.name}…</div>
+        <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} />
       ) : isOverseer ? (
         <>
           <nav className="seg-wrap no-print">
@@ -596,20 +892,67 @@ export default function LeadPerformanceCalculator() {
       ) : (
         <>
           <nav className="seg-wrap no-print">
-            <SegControl
-              items={[["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]}
-              value={tab} onChange={setTab}
-              renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
+            {appModule === "activity" ? (
+              <SegControl
+                items={isAdmin
+                  ? [["checkout", "Check Out"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+                  : [["checkout", "Check Out"], ["plates", "License Plates"], ["import", "Import"]]}
+                value={(isAdmin ? ["checkout", "plates", "import", "actstd"] : ["checkout", "plates", "import"]).includes(tab) ? tab : "checkout"}
+                onChange={setTab}
+                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
+            ) : (
+              <SegControl
+                items={isAdmin
+                  ? [["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
+                  : [["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]]}
+                value={(isAdmin
+                  ? ["board", "import", "gm", "history", "standards", "roster"]
+                  : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
+                onChange={setTab}
+                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
+            )}
           </nav>
-          <div key={view + tab} className="page">
-            {tab === "board" && <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName} onMove={moveAssociate} onSetRestriction={setRestriction} />}
-            {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} />}
-            {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
-            {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
-            {tab === "standards" && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
-            {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+          <div key={view + tab + appModule} className="page">
+            {appModule === "activity" ? (
+              <>
+                {(tab === "checkout" || !["plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} />}
+                {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity />}
+                {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+              </>
+            ) : (
+              <>
+                {tab === "board" && (
+                  <div className="board-page">
+                    {session.role === "manager" && !session.onboarded && (
+                      <WelcomeCard store={currentStore} onDismiss={async () => {
+                        await markOnboarded();
+                        setSession((s) => ({ ...s, onboarded: true }));
+                      }} />
+                    )}
+                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab} />
+                    <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName} onMove={moveAssociate} onSetRestriction={setRestriction} />
+                  </div>
+                )}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} />}
+                {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
+                {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
+                {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+                {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+              </>
+            )}
           </div>
         </>
+      )}
+      {pendingChannels && (
+        <ChannelPrompt
+          pending={pendingChannels}
+          onCancel={() => { setPendingChannels(null); setImportLog([{ ok: false, msg: "Import cancelled, nothing was changed." }]); }}
+          onConfirm={async (resolved) => {
+            const all = [...pendingChannels.ready, ...resolved];
+            setPendingChannels(null);
+            await applyEntries(all);
+          }} />
       )}
       <Style />
     </Shell>
@@ -694,6 +1037,7 @@ function LEADERBOARD_HTML(p) {
   .pill.g { background:var(--greenbg); color:var(--green); }
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
+  .pill-mark { font-size:1.9vh; margin-right:.5vw; opacity:.85; }
   .trend { font-size:2vh; width:2vh; text-align:center; }
   .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#7FA8D4; }
   .utable { width:100%; border-collapse:collapse; }
@@ -711,19 +1055,37 @@ function LEADERBOARD_HTML(p) {
 <script>
   var CFG = ${JSON.stringify(p)};
   function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
+  var SB = null;
+  async function initClient(){
+    if (SB || !CFG.tokens) return SB;
+    try {
+      var mod = await import('https://esm.sh/@supabase/supabase-js@2');
+      SB = mod.createClient(CFG.tokens.url, CFG.tokens.anonKey, {
+        auth: { persistSession: false, autoRefreshToken: true }
+      });
+      await SB.auth.setSession({
+        access_token: CFG.tokens.access_token,
+        refresh_token: CFG.tokens.refresh_token
+      });
+    } catch (e) { SB = null; }
+    return SB;
+  }
   async function getStore(){
     try {
-      var url = CFG.supabaseUrl + '/rest/v1/app_data?key=eq.' + encodeURIComponent(CFG.storeKey) + '&select=value';
-      var res = await fetch(url, { headers: { apikey: CFG.supabaseKey, Authorization: 'Bearer ' + CFG.supabaseKey } });
-      var rows = await res.json();
-      return (rows && rows[0]) ? rows[0].value : null;
+      var c = await initClient();
+      if (!c) return null;
+      var res = await c.from('app_data').select('value').eq('key', CFG.storeKey).maybeSingle();
+      if (res.error) return null;
+      return res.data ? res.data.value : null;
     } catch(e){ return null; }
   }
   function tone(pct){ if (pct==null) return 'r'; var v=pct*100;
     if (v>=CFG.thresholds.green) return 'g'; if (v>=CFG.thresholds.yellow) return 'y'; return 'r'; }
+  // symbol as well as colour, so the board reads for colour-blind viewers too
+  function toneMark(t){ return t==='g' ? '\\u2713' : t==='y' ? '\\u2013' : '\\u2717'; }
   function arrow(cur, prev){ if (cur==null||prev==null) return ['flat','·'];
     if (cur>prev+0.001) return ['up','▲']; if (cur<prev-0.001) return ['down','▼']; return ['flat','·']; }
-  function fmtPct(v){ return v==null?'—':(v*100).toFixed(1)+'%'; }
+  function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
   function render(store){
     var root = document.getElementById('root');
@@ -740,9 +1102,10 @@ function LEADERBOARD_HTML(p) {
     var byPct = people.slice().filter(function(x){return x.internetPct!=null||x.phonePct!=null||x.showroomPct!=null;})
       .sort(function(a,b){return b.best-a.best;});
     var pctRows = byPct.map(function(x,i){
-      var cur = x.internetPct; var ar = arrow(cur, x.prev.internet);
+      var cur = x.internetPct; var ar = arrow(cur, x.prev.internet); var tn = tone(cur);
       return '<div class="drow fade"><div class="rank">'+(i+1)+'</div><div class="dname">'+x.name+'</div>'+
-        '<div class="dpct"><span class="trend '+ar[0]+'">'+ar[1]+'</span><span class="pill '+tone(cur)+'">'+fmtPct(cur)+'</span></div></div>';
+        '<div class="dpct"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+
+        '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(cur)+'</span></div></div>';
     }).join('') || '<div class="empty">Import an Internet Delivery report to populate delivered %.</div>';
     var uRows = people.slice().sort(function(a,b){return b.sum-a.sum;}).map(function(x){
       var flag = !x.haveAll;
@@ -775,44 +1138,86 @@ function LEADERBOARD_HTML(p) {
 }
 
 /* ---------------- Splash ---------------- */
-function Splash({ config, onEnter, onLaunchBoard }) {
-  const [pickStore, setPickStore] = useState(false);
+function Splash({ config, onEnter }) {
   return (
     <div className="splash">
       <div className="splash-inner">
-        <div className="splash-logo"><Logo size={92} /></div>
+        <div className="splash-logo"><Logo size={92} animated /></div>
         <h1 className="splash-title">Lead Performance</h1>
         <p className="splash-sub">Holler-Classic Family of Dealerships</p>
         <div className="splash-actions">
-          <button className="btn wide splash-btn-primary" onClick={onEnter}>Launch Tool</button>
-          <button className="btn-outline wide splash-btn-secondary" onClick={() => setPickStore((v) => !v)}>Launch The Board</button>
+          <button className="btn wide splash-btn-primary" onClick={() => onEnter("perf")}>Performance Tracker</button>
+          <button className="btn wide splash-btn-primary splash-btn-activity" onClick={() => onEnter("activity")}>Daily Activity Tracker</button>
+          <button className="btn-outline wide splash-btn-secondary" onClick={() => onEnter("board")}>The Board</button>
         </div>
-        {pickStore && (
-          <div className="splash-picker">
-            <p className="hint">Open a live leaderboard for a big screen or TV. It opens in its own window and refreshes on its own.</p>
-            <div className="splash-store-list">
-              {config.stores.map((s) => (
-                <button key={s.id} className="splash-store" onClick={() => onLaunchBoard(s.id)}>
-                  {s.icon ? <img src={s.icon} alt="" /> : <span className="splash-store-ph">{s.name[0]}</span>}
-                  {s.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         <p className="splash-foot">Earn the next lead.</p>
       </div>
     </div>
   );
 }
 
+/* ---------------- Board launcher (after sign-in, role-aware) ---------------- */
+function BoardLauncher({ config, session, onLaunch, onBack }) {
+  const isAdmin = session.role === "admin";
+  const stores = isAdmin ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
+  const single = stores.length === 1;
+  const [opened, setOpened] = useState(false);
+
+  // A manager belongs to exactly one store, so their board opens straight away, with no picker.
+  useEffect(() => {
+    if (single && !opened) { onLaunch(stores[0].id); setOpened(true); }
+  }, [single, opened]); // eslint-disable-line
+
+  if (stores.length === 0) {
+    return <div className="empty">No store is assigned to your account yet, so there's no board to show. Ask your group admin to grant you store access.</div>;
+  }
+
+  if (single) {
+    const s = stores[0];
+    return (
+      <div className="board-launch">
+        <div className="card board-launch-card">
+          <div className="bl-logo">{s.icon ? <img src={s.icon} alt="" /> : <Logo size={54} animated />}</div>
+          <h2 className="bl-title">{s.name}</h2>
+          <p className="hint">The Board opened in its own window, sized for a TV or big screen. It refreshes on its own every 30 seconds.</p>
+          <button className="btn" onClick={() => onLaunch(s.id)}>Open it again</button>
+          <button className="btn-link" onClick={onBack}>← Back to start</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin and Centralized BDC pick which store's board to throw on the screen.
+  return (
+    <div className="board-launch">
+      <h2 className="section-title">The Board <span className="section-sub">choose a store</span></h2>
+      <p className="hint">Opens a live leaderboard in its own window, sized for a TV. Managers skip this step, their board opens straight to their own store.</p>
+      <div className="bl-grid">
+        {stores.map((s) => {
+          const b = s.brand || DEFAULT_BRAND;
+          return (
+            <button key={s.id} className="bl-tile" style={{ "--sp": b.primary, "--sd": b.deep }} onClick={() => onLaunch(s.id)}>
+              <span className="bl-tile-logo">{s.icon ? <img src={s.icon} alt="" /> : <span className="bl-tile-ph">{s.name[0]}</span>}</span>
+              <span className="bl-tile-name">{s.name}</span>
+              <span className="bl-tile-go">Open ↗</span>
+            </button>
+          );
+        })}
+      </div>
+      <button className="btn-link" onClick={onBack}>← Back to start</button>
+    </div>
+  );
+}
+
 // Opens a standalone, auto-refreshing leaderboard in a new window sized for a TV.
-function openLeaderboard(config, storeId) {
+async function openLeaderboard(config, storeId) {
   const w = window.open("", "lpc_leaderboard_" + storeId, "width=1600,height=900");
   if (!w) { alert("Please allow pop-ups for this site to open the leaderboard on a second screen."); return; }
   const store = config.stores.find((s) => s.id === storeId);
   const thresholds = store?.thresholds || DEFAULT_THRESHOLDS;
-  // The board reads its own data from shared storage on an interval so it stays live.
+  // The board runs on a TV all day, so it carries the signed-in user's tokens and
+  // refreshes them itself. Without this it would lose access once the data is locked down.
+  const tokens = await getTokens();
   const payload = {
     storeKey: `lpc:store:${storeId}:v2`,
     storeName: store?.name || "Store",
@@ -820,145 +1225,381 @@ function openLeaderboard(config, storeId) {
     thresholds,
     roles: config.roles,
     ym: ym(),
-    supabaseUrl: SUPABASE_URL,
-    supabaseKey: SUPABASE_ANON_KEY,
+    tokens,
   };
   w.document.open();
   w.document.write(LEADERBOARD_HTML(payload));
   w.document.close();
 }
 
-/* ---------------- Login ---------------- */
-function Login({ config, onLogin, onRegister, onSetupAdmin, onBack }) {
-  const admin = config.users.find((u) => u.role === "admin");
-  const needsSetup = admin && !admin.pin;
-  const [mode, setMode] = useState(needsSetup ? "setup" : "signin");
+/* ---------------- Login (real accounts) ---------------- */
+function Login({ config, onBack, onAuthed }) {
+  const [mode, setMode] = useState("signin"); // signin | signup | forgot
   const [email, setEmail] = useState("");
-  const [pin, setPin] = useState("");
-  const [pin2, setPin2] = useState("");
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
   const [name, setName] = useState("");
-  const [storeId, setStoreId] = useState(config.stores[0]?.id || "");
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const validPin = (p) => /^\d{6}$/.test(p);
-  const domainOf = (e) => (e.split("@")[1] || "").trim().toLowerCase();
+  const domains = config.approvedDomains || [];
+  const canRegister = config.registrationOpen && domains.length > 0;
 
-  const doSetup = async () => {
-    if (!validPin(pin)) { setErr("PIN must be exactly 6 digits."); return; }
-    if (pin !== pin2) { setErr("The two PINs don't match."); return; }
-    if (!email.trim() || !email.includes("@")) { setErr("Enter your work email."); return; }
-    const result = await onSetupAdmin({ email: email.trim().toLowerCase(), pin });
-    if (result && result.ok) onLogin(result.admin);
+  const signIn = async () => {
+    setErr(""); setOk("");
+    if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
+    setBusy(true);
+    const res = await authSignIn(email.trim().toLowerCase(), password);
+    setBusy(false);
+    if (res.error) { setErr(res.error); return; }
+    onAuthed();
   };
 
-  const doSignin = () => {
-    const e = email.trim().toLowerCase();
-    const u = config.users.find((x) => (x.email || "").toLowerCase() === e);
-    if (!u) { setErr(canRegister ? "No account found for that email. Use \u201cCreate new account\u201d below." : "No account found for that email. Ask your group admin to set up your account."); return; }
-    if (!u.active) { setErr("That account is inactive. Contact your group admin."); return; }
-    if (u.pending) { setErr("Your account is awaiting admin approval for store access."); return; }
-    if (u.pin !== pin.trim()) { setErr("That PIN doesn't match."); return; }
-    onLogin(u);
-  };
-
-  const canRegister = config.registrationOpen && (config.approvedDomains || []).length > 0;
-
-  const doRegister = async () => {
+  const signUp = async () => {
+    setErr(""); setOk("");
     const e = email.trim().toLowerCase();
     if (!e.includes("@")) { setErr("Enter a valid email."); return; }
-    if (!config.registrationOpen) { setErr("Account creation is currently closed. Contact your group admin."); return; }
-    const domains = config.approvedDomains || [];
-    if (domains.length === 0) { setErr("No approved email domains are set up yet. Contact your group admin."); return; }
-    if (!domains.includes(domainOf(e))) { setErr(`Email must be on an approved company domain (${domains.join(", ")}).`); return; }
-    if (config.users.some((u) => (u.email || "").toLowerCase() === e)) { setErr("An account with that email already exists. Try signing in."); return; }
     if (!name.trim()) { setErr("Enter your full name."); return; }
-    if (!validPin(pin)) { setErr("PIN must be exactly 6 digits."); return; }
-    if (pin !== pin2) { setErr("The two PINs don't match."); return; }
-    const result = await onRegister({ id: uid(), name: name.trim(), email: e, pin, role: "manager", stores: [], requestedStore: storeId, pending: true, active: true });
-    if (result && result.ok) {
-      setOk("Account created. You'll be able to sign in once your group admin approves your store access.");
-      setMode("signin"); setPin(""); setPin2("");
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (password !== password2) { setErr("The two passwords do not match."); return; }
+    // The very first account created becomes the admin, so it is not domain-gated.
+    if (domains.length > 0 && !domains.includes(domainOf(e))) {
+      setErr("Email must be on an approved company domain (" + domains.join(", ") + ").");
+      return;
     }
+    setBusy(true);
+    const res = await authSignUp(e, password, name.trim());
+    setBusy(false);
+    if (res.error) { setErr(res.error); return; }
+    setOk("Account created.");
+    onAuthed();
+  };
+
+  const forgot = async () => {
+    setErr(""); setOk("");
+    const e = email.trim().toLowerCase();
+    if (!e.includes("@")) { setErr("Enter your email first."); return; }
+    setBusy(true);
+    const res = await authResetPassword(e);
+    setBusy(false);
+    if (res.error) { setErr(res.error); return; }
+    setOk("If that email has an account, a reset link is on its way. Check your inbox.");
   };
 
   return (
     <div className="login">
       <div className="login-card">
-        <div className="login-logo"><Logo size={64} /></div>
-        <h2>Lead Performance</h2>
-        <p className="hint center">Holler-Classic Family of Dealerships</p>
+        <div className="login-logo"><Logo size={64} animated /></div>
+        <h1 className="login-title">Lead Performance</h1>
+        <p className="login-sub">Holler-Classic Family of Dealerships</p>
 
-        {mode === "setup" && (
-          <>
-            <p className="setup-note">Welcome. Create the first account to get started. This one is your group admin account, it can manage stores, users, and standards.</p>
-            <label>Your work email</label>
-            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="you@company.com" />
-            <label>Create a 6-digit PIN</label>
-            <input type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} placeholder="••••••" />
-            <label>Confirm PIN</label>
-            <input type="password" inputMode="numeric" maxLength={6} value={pin2} onChange={(e) => { setPin2(e.target.value.replace(/\D/g, "")); setErr(""); }}
-              onKeyDown={(e) => e.key === "Enter" && doSetup()} placeholder="••••••" />
-            {err && <div className="login-err">{err}</div>}
-            <button className="btn wide" onClick={doSetup}>Create Account</button>
-          </>
-        )}
+        {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
         {mode === "signin" && (
           <>
             <label>Work email</label>
-            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); setOk(""); }} placeholder="you@company.com" />
-            <label>PIN</label>
-            <input type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }}
-              onKeyDown={(e) => e.key === "Enter" && doSignin()} placeholder="••••••" />
+            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+              placeholder="you@company.com" autoComplete="username" />
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="Your password" autoComplete="current-password" />
             {err && <div className="login-err">{err}</div>}
             {ok && <div className="login-ok">{ok}</div>}
-            <button className="btn wide" onClick={doSignin}>Sign In</button>
+            <button className="btn wide" onClick={signIn} disabled={busy}>{busy ? "Signing in..." : "Sign In"}</button>
+            <button className="btn-link" onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot password?</button>
             <div className="login-divider"><span>or</span></div>
-            <button className="btn-outline wide" onClick={() => { setMode("register"); setErr(""); setOk(""); setPin(""); setPin2(""); }}>Create New Account</button>
-            {onBack && <button className="btn-link" onClick={onBack}>← Back to start</button>}
+            <button className="btn-outline wide" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
+            {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
           </>
         )}
 
-        {mode === "register" && (
-          !canRegister ? (
-            <>
-              <p className="setup-note">New account creation isn't available right now. Your group admin needs to turn on registration and add an approved email domain first, or they can create your account for you directly.</p>
-              <button className="btn wide" onClick={() => { setMode("signin"); setErr(""); }}>Back to Sign In</button>
-            </>
-          ) : (
-            <>
-              <p className="setup-note">Create your account. Your group admin grants store access after you register, so you'll sign in once approved.</p>
-              <label>Work email</label>
-              <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }} placeholder="you@company.com" />
-              <label>Full name</label>
-              <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="First Last" />
-              <label>Store you need access to</label>
-              <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
-                {config.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <label>Create a 6-digit PIN</label>
-              <input type="password" inputMode="numeric" maxLength={6} value={pin} onChange={(e) => { setPin(e.target.value.replace(/\D/g, "")); setErr(""); }} placeholder="••••••" />
-              <label>Confirm PIN</label>
-              <input type="password" inputMode="numeric" maxLength={6} value={pin2} onChange={(e) => { setPin2(e.target.value.replace(/\D/g, "")); setErr(""); }}
-                onKeyDown={(e) => e.key === "Enter" && doRegister()} placeholder="••••••" />
-              {err && <div className="login-err">{err}</div>}
-              <button className="btn wide" onClick={doRegister}>Create Account</button>
-              <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setPin(""); setPin2(""); }}>Back to sign in</button>
-            </>
-          )
+        {mode === "signup" && (
+          <>
+            <p className="setup-note">
+              {canRegister
+                ? "Create your account. Your group admin grants store access after you register."
+                : "Create your account. Heads up: the very first account created becomes the group admin."}
+            </p>
+            <label>Work email</label>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+              placeholder="you@company.com" autoComplete="username" />
+            <label>Full name</label>
+            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="First Last" />
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+              placeholder="At least 8 characters" autoComplete="new-password" />
+            <label>Confirm password</label>
+            <input type="password" value={password2} onChange={(e) => { setPassword2(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && signUp()} placeholder="Repeat it" autoComplete="new-password" />
+            {err && <div className="login-err">{err}</div>}
+            {ok && <div className="login-ok">{ok}</div>}
+            <button className="btn wide" onClick={signUp} disabled={busy}>{busy ? "Creating..." : "Create Account"}</button>
+            <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setPassword(""); setPassword2(""); }}>Back to sign in</button>
+          </>
+        )}
+
+        {mode === "forgot" && (
+          <>
+            <p className="setup-note">Enter your email and we will send a link to set a new password.</p>
+            <label>Work email</label>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && forgot()} placeholder="you@company.com" />
+            {err && <div className="login-err">{err}</div>}
+            {ok && <div className="login-ok">{ok}</div>}
+            <button className="btn wide" onClick={forgot} disabled={busy}>{busy ? "Sending..." : "Send reset link"}</button>
+            <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
+          </>
         )}
       </div>
     </div>
   );
 }
 
+/* ---------------- Waiting on approval ---------------- */
+function PendingScreen({ profile, onSignOut }) {
+  const first = (profile.name || "").split(" ")[0];
+  return (
+    <div className="login">
+      <div className="login-card">
+        <div className="login-logo"><Logo size={64} animated /></div>
+        <h1 className="login-title">Almost there</h1>
+        <p className="setup-note">
+          Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
+          Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
+        </p>
+        <button className="btn wide" onClick={onSignOut}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Import badge ---------------- */
-function ImportBadge({ storeData }) {
+function ImportBadge({ storeData, activity }) {
   const M = storeData.months[ym()];
   const t = M?.imports?.[today()] || {};
+  if (activity) {
+    return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? "✓" : "0/1"}</span>;
+  }
   const done = ["delivery", "appointment", "video"].filter((k) => t[k]).length;
   return <span className={"badge " + (done === 3 ? "badge-ok" : "badge-warn")}>{done}/3</span>;
+}
+
+/* ---------------- Check Out Tracker (Daily Activity) ---------------- */
+function CheckOutTracker({ config, store, data }) {
+  const [query, setQuery] = useState("");
+  const [day, setDay] = useState(today());
+  const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
+  const activityDays = Object.keys(data.activity || {}).sort().reverse();
+  const dayData = data.activity?.[day] || {};
+
+  // build rows from roster, matched to that day's activity import
+  const q = norm(query);
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+  const rows = roster.map((a) => {
+    const rec = dayData[norm(a.name)] || {};
+    const calls = rec.calls, video = rec.video;
+    const callsMet = calls != null && calls >= std.minCalls;
+    const videoMet = video != null && video >= std.minVideos;
+    const hasData = rec.calls != null || rec.video != null;
+    return { a, calls, video, callsMet, videoMet, rocked: callsMet && videoMet, hasData, rec };
+  }).filter((r) => !q || norm(r.a.name).includes(q));
+
+  const rockedCount = rows.filter((r) => r.rocked).length;
+  const withData = rows.filter((r) => r.hasData);
+  const offenders = withData.filter((r) => !r.rocked);
+
+  if (activityDays.length === 0)
+    return <div className="empty">No Daily Activity imported yet. Drop today's Standard Daily Activity report in the Import tab to build the checkout sheet.</div>;
+
+  return (
+    <div className="checkout">
+      <div className="gm-toolbar">
+        <select value={day} onChange={(e) => setDay(e.target.value)}>
+          {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+        </select>
+        <span className="hint">Minimum standard: {std.minCalls} calls · {std.minVideos} videos. Change it in the Standards tab.</span>
+      </div>
+      <div className="checkout-summary">
+        <span className="stat-pass">✓ {rockedCount} rocked it</span>
+        <span className="stat-fail">✕ {offenders.length} below standard</span>
+        <span className="stat-dim">{withData.length} of {rows.length} with data</span>
+      </div>
+      <div className="search-wrap">
+        <span className="search-icon">⌕</span>
+        <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${store.name}`} />
+        {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
+      </div>
+      <div className="card checkout-card">
+        <table className="checkout-table">
+          <thead><tr><th>Name</th><th>Calls</th><th>Videos</th><th>Rocked It</th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.a.id} className={!r.hasData ? "co-nodata" : r.rocked ? "co-rocked" : "co-miss"}>
+                <td><b>{r.a.name}</b></td>
+                <td className={r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
+                  {r.hasData && <span className="cell-mark">{r.callsMet ? "✓" : "✗"}</span>}
+                  {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
+                </td>
+                <td className={r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
+                  {r.hasData && <span className="cell-mark">{r.videoMet ? "✓" : "✗"}</span>}
+                  {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
+                </td>
+                <td>{!r.hasData ? <span className="co-badge dim">no data</span> : r.rocked ? <span className="co-badge yes">✓ Rocked it</span> : <span className="co-badge no">✗ Check out</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {offenders.length > 0 && (
+        <div className="card offender-card">
+          <h3 className="role-header">Top Offenders <span className="section-sub">below standard for {new Date(day + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></h3>
+          {offenders.sort((a, b) => (num(a.calls) + num(a.video) * 8) - (num(b.calls) + num(b.video) * 8)).map((r) => (
+            <div key={r.a.id} className="offender-row">
+              <b>{r.a.name}</b>
+              <span className="offender-detail">
+                {!r.callsMet && <span className="reason watch">Calls {r.calls ?? 0} / {std.minCalls}</span>}
+                {!r.videoMet && <span className="reason watch">Videos {r.video ?? 0} / {std.minVideos}</span>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+const num = (v) => (v == null ? 0 : v);
+
+/* ---------------- License Plate Tracker ---------------- */
+function PlateTracker({ data, onChange, userName }) {
+  const [day, setDay] = useState(today());
+  const [tag, setTag] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const plates = data.plates || {}; // { day: [ {id, tag, assignee, checkedOut, checkedIn, by} ] }
+  const dayPlates = plates[day] || [];
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+
+  const save = (nextDayPlates, audit) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[day] = nextDayPlates;
+    onChange(next, audit);
+  };
+  const addPlate = () => {
+    const t = tag.trim().toUpperCase(); if (!t) return;
+    if (dayPlates.some((p) => p.tag === t)) return;
+    save([...dayPlates, { id: uid(), tag: t, assignee: assignee.trim(), checkedOut: true, checkedIn: false, by: userName }],
+      { action: "Assigned plate", detail: `${t} → ${assignee.trim() || "unassigned"}` });
+    setTag(""); setAssignee("");
+  };
+  const toggleIn = (id) => {
+    save(dayPlates.map((p) => p.id === id ? { ...p, checkedIn: !p.checkedIn } : p));
+  };
+  const setPlateAssignee = (id, name) => {
+    save(dayPlates.map((p) => p.id === id ? { ...p, assignee: name } : p));
+  };
+  const remove = (id) => save(dayPlates.filter((p) => p.id !== id));
+  const carryForward = () => {
+    // pull yesterday's (most recent prior day) assignments into today
+    const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
+    const prior = priorDays.length ? plates[priorDays[0]] : [];
+    if (!prior.length) return;
+    const existing = new Set(dayPlates.map((p) => p.tag));
+    const carried = prior.filter((p) => !existing.has(p.tag)).map((p) => ({ ...p, id: uid(), checkedIn: false, checkedOut: true, by: userName }));
+    save([...dayPlates, ...carried], { action: "Carried plates forward", detail: `${carried.length} from ${priorDays[0]}` });
+  };
+
+  const plateDays = Object.keys(plates).sort().reverse();
+
+  return (
+    <div className="plates">
+      <div className="gm-toolbar">
+        <select value={day} onChange={(e) => setDay(e.target.value)}>
+          <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
+          {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+        </select>
+        <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
+        <span className="hint">Assignments are saved per day, so you can look back and see who had which plate on any date.</span>
+      </div>
+      <div className="card">
+        <div className="inline-form">
+          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag / plate #" onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 140 }} />
+          <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+            <option value="">Assign to</option>
+            {roster.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+          </select>
+          <button className="btn" onClick={addPlate}>Add plate</button>
+        </div>
+      </div>
+      <div className="card">
+        {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
+          <table className="roster-table wide">
+            <thead><tr><th>Tag</th><th>Assigned to</th><th>Checked back in</th><th>Logged by</th><th /></tr></thead>
+            <tbody>
+              {dayPlates.map((p) => (
+                <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
+                  <td><b>{p.tag}</b></td>
+                  <td>
+                    <select value={p.assignee || ""} onChange={(e) => setPlateAssignee(p.id, e.target.value)}>
+                      <option value="">Unassigned</option>
+                      {roster.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                      {p.assignee && !roster.some((a) => a.name === p.assignee) && <option value={p.assignee}>{p.assignee}</option>}
+                    </select>
+                  </td>
+                  <td><button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? "✓ Returned" : "Out"}</button></td>
+                  <td className="mono">{p.by || "-"}</td>
+                  <td><button className="btn-x" onClick={() => remove(p.id)}>Remove</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Activity Standards Editor ---------------- */
+function ActivityStandardsEditor({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
+  const set = (field, v) => {
+    const val = Math.max(0, v);
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.activityStandards = { ...(s.activityStandards || DEFAULT_ACTIVITY_STANDARDS), [field]: val };
+    onChange(next, { store: storeId, action: "Changed activity standards", detail: `${store.name}: ${field} ${val}` });
+  };
+  const Stepper = ({ label, field, value, hint }) => (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => set(field, value - 1)} disabled={value <= 0}>−</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => set(field, value + 1)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+  return (
+    <div className="standards">
+      <div className="card">
+        <h3>Daily Check Out Minimums <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">An associate "rocks it" for the day when they meet both minimums. These pull from the Daily Activity report's Calls and Personalized Video columns, and apply to this store only.</p>
+        <div className="stepper-row">
+          <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
+          <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
+        </div>
+        <div className="preset-row">
+          <span className="hint">Quick set:</span>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 16); setTimeout(() => set("minVideos", 2), 60); }}>16 calls · 2 videos</button>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 20); setTimeout(() => set("minVideos", 3), 60); }}>20 calls · 3 videos</button>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 25); setTimeout(() => set("minVideos", 5), 60); }}>25 calls · 5 videos</button>
+        </div>
+        <div className="preview-line">Current standard: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b> per day to rock it.</div>
+      </div>
+    </div>
+  );
 }
 
 /* ---------------- Admin overview ---------------- */
@@ -1187,7 +1828,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         <span className="assoc-name">{a.name}</span>
         {star && <span className="star-badge" title="Wildly surpassing standard">★ Crushing it</span>}
         {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
-        <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "—"}</span></span>
+        <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
         {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
           {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
           {softFail && <span className="verdict verdict-grace">Early month</span>}
@@ -1321,7 +1962,7 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
               <span className="combined-role-dot" style={{ background: r.role.color }} />
               <span className="assoc-name">{r.name}</span>
               <span className="combined-role-label">{r.role.name}</span>
-              <span className="assoc-leads">{r.ev.opps ?? 0}<span className="of-cap"> / {r.ev.cap ?? "—"}</span></span>
+              <span className="assoc-leads">{r.ev.opps ?? 0}<span className="of-cap"> / {r.ev.cap ?? "-"}</span></span>
               {r.off ? <span className="verdict verdict-off">Off leads</span>
                 : r.ev.status === "pass" ? <span className="verdict verdict-pass">Cleared</span>
                 : r.ev.status === "fail" ? <span className="verdict verdict-fail">Restrict</span>
@@ -1335,10 +1976,621 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
   );
 }
 
+/* ---------------- First-run welcome (managers) ---------------- */
+function WelcomeCard({ store, onDismiss }) {
+  return (
+    <div className="card welcome">
+      <div className="welcome-head">
+        <h3>Welcome to the Lead Performance Tracker</h3>
+        <button className="btn-x" onClick={onDismiss}>Got it ✕</button>
+      </div>
+      <p className="welcome-lede">
+        This is where {store?.name || "your store"} tracks who has earned the right to take more internet leads.
+        The idea is simple: handle your leads well, and you unlock the next one.
+      </p>
+      <div className="welcome-steps">
+        <div className="welcome-step">
+          <span className="ws-num">1</span>
+          <div>
+            <b>Import each morning</b>
+            <p>Drop the DriveCentric exports on the Import tab. The tool sorts out which report is which.</p>
+          </div>
+        </div>
+        <div className="welcome-step">
+          <span className="ws-num">2</span>
+          <div>
+            <b>Read the board</b>
+            <p>Green means cleared to grab leads. Red means their numbers say to pause them. The reasons are listed on each card.</p>
+          </div>
+        </div>
+        <div className="welcome-step">
+          <span className="ws-num">3</span>
+          <div>
+            <b>Act, then confirm</b>
+            <p>If you take someone off leads, hit "Confirm removed from leads" so the tool knows and can re-check them later.</p>
+          </div>
+        </div>
+      </div>
+      <p className="hint">No one is restricted during the first days of the month while numbers settle, you'll see "Early month" instead. This card won't show again.</p>
+    </div>
+  );
+}
+
+/* ---------------- Backup / restore ---------------- */
+function BackupPanel({ config, adminData, onRestoreAll, onRestoreStore }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [autoList, setAutoList] = useState(null);
+
+  useEffect(() => {
+    loadShared(BACKUP_INDEX_KEY, []).then(setAutoList).catch(() => setAutoList([]));
+  }, []);
+
+  // pull one of the automatic snapshots back out of the database
+  const fetchAuto = async (id) => await loadShared(backupKey(id), null);
+
+  const downloadAuto = async (b) => {
+    setBusy(true);
+    const data = await fetchAuto(b.id);
+    setBusy(false);
+    if (!data) { setMsg("That backup couldn't be read."); return; }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lpc-backup-${b.t.slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMsg("Downloaded.");
+  };
+
+  const restoreAuto = async (b) => {
+    if (!window.confirm(
+      "Restore the automatic backup from " + new Date(b.t).toLocaleString() + "?" +
+      String.fromCharCode(10, 10) +
+      "This OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and settings. It cannot be undone." +
+      String.fromCharCode(10, 10) +
+      "Download a fresh backup first if you're unsure."
+    )) return;
+    setBusy(true);
+    const data = await fetchAuto(b.id);
+    if (!data) { setBusy(false); setMsg("That backup couldn't be read."); return; }
+    await onRestoreAll(data);
+    setBusy(false);
+    setMsg("Restored. Reload the page to see it everywhere.");
+  };
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const audit = await loadShared(AUDIT_KEY, []);
+      const payload = {
+        app: "lead-performance-calculator",
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        config,
+        stores: adminData,
+        audit,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `lpc-backup-${today()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg(`Backup downloaded (${config.stores.length} stores).`);
+    } catch (e) {
+      setMsg("Couldn't build the backup. Try again.");
+    }
+    setBusy(false);
+  };
+
+  const restore = (file) => {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = async () => {
+      let data;
+      try { data = JSON.parse(r.result); }
+      catch { setMsg("That file isn't valid JSON."); return; }
+      if (data.app !== "lead-performance-calculator" || !data.config) {
+        setMsg("That doesn't look like a Lead Performance backup file."); return;
+      }
+      const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
+      if (!window.confirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`)) return;
+      setBusy(true);
+      await onRestoreAll(data);
+      setBusy(false);
+      setMsg("Restored. Reload the page to see it everywhere.");
+    };
+    r.readAsText(file);
+  };
+
+  return (
+    <div className="settings">
+      <div className="card">
+        <h3>Backup</h3>
+        <p className="hint">
+          Everything lives in one database with no version history, so a bad import, an accidental delete, or two people saving at once can lose data with no way back.
+          Download a backup regularly, and always before a big change. The file holds every store, roster, import, standard, and user.
+        </p>
+        <div className="inline-form">
+          <button className="btn" onClick={download} disabled={busy}>Download backup</button>
+          <label className="btn-ghost file-btn">
+            Restore from file
+            <input type="file" accept="application/json,.json" style={{ display: "none" }}
+              onChange={(e) => { restore(e.target.files[0]); e.target.value = ""; }} />
+          </label>
+        </div>
+        {msg && <div className="login-ok" style={{ marginTop: 10 }}>{msg}</div>}
+      </div>
+
+      <div className="card">
+        <h3>Automatic backups</h3>
+        <p className="hint">
+          The tool saves a full snapshot of everything once a day, the first time you open it.
+          Nothing to remember and nothing to schedule. The last {KEEP_BACKUPS} are kept.
+        </p>
+        {autoList === null ? <p className="hint">Loading backups...</p>
+          : autoList.length === 0 ? <p className="hint">No automatic backup yet. One will be written the next time you open the tool.</p>
+          : (
+            <div className="snap-list" style={{ marginLeft: 0 }}>
+              {autoList.map((b) => (
+                <div key={b.id} className="snap-row">
+                  <span className="snap-when">{new Date(b.t).toLocaleString()}</span>
+                  <span className="snap-reason">{b.stores} store{b.stores === 1 ? "" : "s"}</span>
+                  <button className="btn-x" disabled={busy} onClick={() => downloadAuto(b)}>Download</button>
+                  <button className="btn-x" disabled={busy} onClick={() => restoreAuto(b)}>Restore</button>
+                </div>
+              ))}
+            </div>
+          )}
+        <p className="hint">
+          One caveat worth knowing: these live in the same database as your data, so they protect you
+          from a bad import or an accidental delete, but not from losing the Supabase project itself.
+          Download a copy now and then and keep it somewhere else.
+        </p>
+      </div>
+
+      <div className="card">
+        <h3>Restore points</h3>
+        <p className="hint">The tool automatically saves the state of a store right before every import. If an import goes wrong, roll that store back here. The last 8 are kept per store.</p>
+        {config.stores.map((s) => {
+          const snaps = adminData[s.id]?.snapshots || [];
+          return (
+            <div key={s.id} className="snap-store">
+              <div className="snap-store-name">
+                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
+                <b>{s.name}</b>
+                <span className="hint">{snaps.length ? `${snaps.length} restore point${snaps.length === 1 ? "" : "s"}` : "no restore points yet"}</span>
+              </div>
+              {snaps.length > 0 && (
+                <div className="snap-list">
+                  {snaps.map((sn, i) => (
+                    <div key={i} className="snap-row">
+                      <span className="snap-when">{new Date(sn.t).toLocaleString()}</span>
+                      <span className="snap-reason">{sn.reason}{sn.by ? ` · ${sn.by}` : ""}</span>
+                      <button className="btn-x" onClick={() => {
+                        if (!window.confirm(`Roll ${s.name} back to ${new Date(sn.t).toLocaleString()}?\n\nAnything imported or changed at this store since then will be lost.`)) return;
+                        onRestoreStore(s.id, sn);
+                      }}>Restore this</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Channel prompt (no more guessing from filenames) ---------------- */
+function ChannelPrompt({ pending, onCancel, onConfirm }) {
+  const [picks, setPicks] = useState(() => pending.ambiguous.map(() => ""));
+  const allPicked = picks.every((p) => p);
+  const dupes = picks.filter(Boolean).length !== new Set(picks.filter(Boolean)).size;
+
+  return (
+    <div className="wiz-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="wiz" style={{ maxWidth: 560 }}>
+        <div className="wiz-head">
+          <h3>Which delivery report is this?</h3>
+          <button className="btn-x" onClick={onCancel}>✕</button>
+        </div>
+        <div style={{ padding: "8px 24px 4px" }}>
+          <p className="hint">
+            These are delivery reports, but they're identical in format so the file name is the only clue, and it didn't say.
+            Tell the tool which channel each one is. Naming the files with "internet", "phone", or "showroom" skips this step next time.
+          </p>
+          {pending.ambiguous.map((f, i) => (
+            <div key={i} className="chan-row">
+              <span className="chan-file">{f.fileName}</span>
+              <select value={picks[i]} onChange={(e) => { const n = [...picks]; n[i] = e.target.value; setPicks(n); }}>
+                <option value="">Select a channel</option>
+                <option value="delivery-internet">Internet</option>
+                <option value="delivery-phone">Phone</option>
+                <option value="delivery-showroom">Showroom</option>
+              </select>
+            </div>
+          ))}
+          {dupes && <div className="login-err">Two files are set to the same channel. Each channel should only be imported once.</div>}
+        </div>
+        <div className="wiz-foot">
+          <button className="btn-x" onClick={onCancel}>Cancel import</button>
+          <button className="btn" disabled={!allPicked || dupes}
+            onClick={() => onConfirm(pending.ambiguous.map((f, i) => ({ rows: f.rows, type: picks[i], fileName: f.fileName })))}>
+            Import
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Channel prompt end ---------------- */
+
+/* ---------------- Store wizard (create / edit before it goes live) ---------------- */
+function StoreWizard({ config, store, onCancel, onSave }) {
+  const editing = !!store;
+  const [name, setName] = useState(store?.name || "");
+  const [icon, setIcon] = useState(store?.icon || null);
+  const [brand, setBrand] = useState(store?.brand || { ...DEFAULT_BRAND });
+  const [thresholds, setThresholds] = useState(store?.thresholds || { ...DEFAULT_THRESHOLDS });
+  const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
+  const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
+  const [cropSrc, setCropSrc] = useState(null);
+  const [err, setErr] = useState("");
+
+  const id = editing ? store.id : name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const idTaken = !editing && id && config.stores.some((s) => s.id === id);
+
+  const pickFile = (file) => {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => setCropSrc(r.result);
+    r.readAsDataURL(file);
+  };
+
+  const applyPreset = (p) => setBrand({ primary: p.primary, deep: p.deep, accent: p.accent });
+
+  const save = () => {
+    if (!name.trim()) { setErr("Give the store a name."); return; }
+    if (!id) { setErr("That name doesn't make a valid store ID. Try adding a letter or number."); return; }
+    if (idTaken) { setErr("A store with that name already exists."); return; }
+    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays });
+  };
+
+  return (
+    <div className="wiz-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="wiz">
+        <div className="wiz-head">
+          <h3>{editing ? `Customize ${store.name}` : "New Store"}</h3>
+          <button className="btn-x" onClick={onCancel}>✕</button>
+        </div>
+
+        <div className="wiz-body">
+          <div className="wiz-form">
+            <label>Store name</label>
+            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="e.g. Audi North Orlando" disabled={editing} />
+            {editing && <p className="hint">The name is locked after creation so history stays linked. Everything else is editable.</p>}
+
+            <label>Manufacturer</label>
+            <div className="wiz-presets">
+              {BRAND_PRESETS.map((p) => (
+                <button key={p.id} className={"wiz-preset " + (brand.primary === p.primary && brand.deep === p.deep ? "on" : "")}
+                  onClick={() => applyPreset(p)} title={p.label}>
+                  <span className="wiz-swatch" style={{ background: `linear-gradient(130deg, ${p.primary}, ${p.deep})` }}>
+                    <span className="wiz-swatch-dot" style={{ background: p.accent }} />
+                  </span>
+                  <span className="wiz-preset-label">{p.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <label>Fine-tune colors</label>
+            <div className="wiz-colors">
+              <label className="wiz-color">Primary
+                <input type="color" value={brand.primary} onChange={(e) => setBrand({ ...brand, primary: e.target.value })} />
+              </label>
+              <label className="wiz-color">Deep
+                <input type="color" value={brand.deep} onChange={(e) => setBrand({ ...brand, deep: e.target.value })} />
+              </label>
+              <label className="wiz-color">Accent
+                <input type="color" value={brand.accent} onChange={(e) => setBrand({ ...brand, accent: e.target.value })} />
+              </label>
+            </div>
+
+            <label>Logo</label>
+            <div className="wiz-logo-row">
+              {icon ? <img className="store-logo" src={icon} alt="" /> : <div className="store-logo placeholder">{(name.trim()[0] || "?").toUpperCase()}</div>}
+              <label className="btn-ghost file-btn">
+                {icon ? "Replace" : "Upload"}
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickFile(e.target.files[0]); e.target.value = ""; }} />
+              </label>
+              {icon && <button className="btn-x" onClick={() => setCropSrc(icon)}>Crop</button>}
+              {icon && <button className="btn-x" onClick={() => setIcon(null)}>Remove</button>}
+            </div>
+
+            <label>Leaderboard colors</label>
+            <div className="wiz-nums">
+              <label className="thr-label"><span className="thr-dot g" />Green ≥
+                <input type="number" min="0" max="100" value={thresholds.green}
+                  onChange={(e) => setThresholds({ ...thresholds, green: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })} />%
+              </label>
+              <label className="thr-label"><span className="thr-dot y" />Yellow ≥
+                <input type="number" min="0" max="100" value={thresholds.yellow}
+                  onChange={(e) => setThresholds({ ...thresholds, yellow: Math.max(0, Math.min(100, parseInt(e.target.value) || 0)) })} />%
+              </label>
+            </div>
+
+            <label>Daily check out minimums</label>
+            <div className="wiz-nums">
+              <label className="thr-label">Calls
+                <input type="number" min="0" value={act.minCalls}
+                  onChange={(e) => setAct({ ...act, minCalls: Math.max(0, parseInt(e.target.value) || 0) })} />
+              </label>
+              <label className="thr-label">Videos
+                <input type="number" min="0" value={act.minVideos}
+                  onChange={(e) => setAct({ ...act, minVideos: Math.max(0, parseInt(e.target.value) || 0) })} />
+              </label>
+              <label className="thr-label">Grace days
+                <input type="number" min="0" max="28" value={graceDays}
+                  onChange={(e) => setGraceDays(Math.max(0, Math.min(28, parseInt(e.target.value) || 0)))} />
+              </label>
+            </div>
+
+            {err && <div className="login-err">{err}</div>}
+            {idTaken && <div className="login-err">A store with that name already exists.</div>}
+          </div>
+
+          {/* live preview of exactly what the manager will see */}
+          <div className="wiz-preview">
+            <div className="wiz-preview-label">Manager's view</div>
+            <div className="wiz-hero" style={{ "--sp": brand.primary, "--sd": brand.deep, "--sa": brand.accent }}>
+              <div className="wiz-hero-band">
+                <div className="wiz-hero-id">
+                  <div className="wiz-hero-logo">
+                    {icon ? <img src={icon} alt="" /> : <Logo size={34} />}
+                  </div>
+                  <div>
+                    <div className="wiz-hero-greet">Good morning</div>
+                    <div className="wiz-hero-name">{name.trim() || "Your Store"}</div>
+                  </div>
+                </div>
+                <div className="wiz-hero-ring">
+                  <svg width="52" height="52" viewBox="0 0 52 52">
+                    <circle cx="26" cy="26" r="19" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="5" />
+                    <circle cx="26" cy="26" r="19" fill="none" stroke={brand.accent} strokeWidth="5" strokeLinecap="round"
+                      strokeDasharray={`${0.72 * 2 * Math.PI * 19} ${2 * Math.PI * 19}`} transform="rotate(-90 26 26)" />
+                  </svg>
+                  <span className="wiz-hero-pct">72%</span>
+                </div>
+              </div>
+              <div className="wiz-hero-tiles">
+                <div className="wiz-tile" style={{ borderLeftColor: "#30B155" }}><b>8</b><span>Cleared</span></div>
+                <div className="wiz-tile" style={{ borderLeftColor: "#E5473C" }}><b>2</b><span>Attention</span></div>
+                <div className="wiz-tile" style={{ borderLeftColor: brand.primary }}><b>12</b><span>On board</span></div>
+              </div>
+            </div>
+            <p className="hint">This is how the store will look to its manager. Colors carry into their hero, accents, and The Board.</p>
+          </div>
+        </div>
+
+        <div className="wiz-foot">
+          <button className="btn-x" onClick={onCancel}>Cancel</button>
+          <button className="btn" onClick={save} disabled={!name.trim() || idTaken}>{editing ? "Save changes" : "Create store"}</button>
+        </div>
+
+        {cropSrc && (
+          <LogoCropper src={cropSrc} onCancel={() => setCropSrc(null)}
+            onSave={(dataUrl) => { setIcon(dataUrl); setCropSrc(null); }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Loading screen ---------------- */
+function LoadingScreen({ label = "Loading" }) {
+  return (
+    <div className="loadscreen">
+      <div className="loadscreen-inner">
+        <div className="loadscreen-logo"><Logo size={80} animated /></div>
+        <div className="loadscreen-bar"><div className="loadscreen-bar-fill" /></div>
+        <div className="loadscreen-label">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/* Animates a number up from zero. Honours the OS reduce-motion setting by
+   jumping straight to the final value. */
+function useCountUp(target, ms = 1000, delay = 150) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !target) { setV(target || 0); return; }
+    let raf, startT = null;
+    const tick = (t) => {
+      if (startT === null) startT = t;
+      const elapsed = t - startT - delay;
+      if (elapsed < 0) { raf = requestAnimationFrame(tick); return; }
+      const p = Math.min(1, elapsed / ms);
+      const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic: quick then settles
+      setV(Math.round(target * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms, delay]);
+  return v;
+}
+
+/* ---------------- Store hero (manager landing) ---------------- */
+function StoreHero({ config, store, data, session, onGoTab }) {
+  const M = data.months?.[ym()];
+  const restrictions = data.restrictions || {};
+  const graceDays = store.graceDays ?? 10;
+  const inGrace = new Date().getDate() <= graceDays;
+
+  const isRestricted = (a) => {
+    const r = restrictions[a.id];
+    return r && (!r.until || new Date(r.until) > new Date());
+  };
+
+  // same evaluation the Board uses, so the tiles can never disagree with the cards
+  let cleared = 0, attention = 0, offLeads = 0, oppsUsed = 0, capTotal = 0;
+  const ranked = [];
+  const roster = (data.roster || []).filter((a) => a.roleId);
+  for (const role of config.roles) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    for (const a of roster.filter((x) => x.roleId === role.id)) {
+      const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
+      if (ev.opps != null) oppsUsed += ev.opps;
+      if (ev.cap != null) capTotal += ev.cap;
+      if (isRestricted(a)) { offLeads++; continue; }
+      if (ev.status === "pass") { cleared++; ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps }); }
+      else if (ev.status === "fail") attention++;
+    }
+  }
+  ranked.sort((a, b) => b.surpass - a.surpass);
+  const leader = ranked[0];
+
+  const evaluated = cleared + attention + offLeads;
+  const pct = evaluated > 0 ? Math.round((cleared / evaluated) * 100) : 0;
+
+  // today's import status
+  const t = M?.imports?.[today()] || {};
+  const need = ["delivery", "appointment", "video"];
+  const done = need.filter((k) => t[k]);
+  const missing = need.filter((k) => !t[k]).map((k) => REPORTS[k].label);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = (session.name || "").split(" ")[0];
+
+  // Progress ring. Bigger than it was: at r=34 the inner space was only ~60px across,
+  // which pushed the word "cleared" hard up against the stroke. r=45 leaves ~80px.
+  const SIZE = 122, CX = SIZE / 2, R = 45, SW = 9;
+  const C = 2 * Math.PI * R;
+  const dash = (pct / 100) * C;
+
+  // numbers roll up rather than just appearing
+  const nPct = useCountUp(pct, 1100, 300);
+  const nCleared = useCountUp(cleared, 800, 250);
+  const nAttention = useCountUp(attention, 800, 320);
+  const nOff = useCountUp(offLeads, 800, 390);
+  const nRoster = useCountUp(roster.length, 800, 460);
+  const nOpps = useCountUp(oppsUsed, 900, 530);
+
+  const b = store.brand || DEFAULT_BRAND;
+  const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
+
+  return (
+    <div className="hero" style={brandVars}>
+      <div className="hero-band">
+        <div className="hero-id">
+          <div className="hero-logo">
+            {store.icon ? <img src={store.icon} alt="" /> : <Logo size={54} animated />}
+          </div>
+          <div className="hero-text">
+            <div className="hero-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
+            <h1 className="hero-store">{store.name}</h1>
+            <div className="hero-date">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+          </div>
+        </div>
+
+        <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
+          <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+            <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
+            <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
+              strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
+              style={{ "--c": dash }} />
+          </svg>
+          <div className="hero-ring-label">
+            <div className="hero-ring-pct">{nPct}<span>%</span></div>
+            <div className="hero-ring-cap">Cleared</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="hero-tiles">
+        <div className="tile tile-good">
+          <div className="tile-num">{nCleared}</div>
+          <div className="tile-label">Cleared to grab</div>
+        </div>
+        <div className={"tile " + (attention === 0 ? "tile-flat" : inGrace ? "tile-warn" : "tile-bad")}>
+          <div className="tile-num">{nAttention}</div>
+          <div className="tile-label">{inGrace ? "Working toward" : "Needs attention"}</div>
+        </div>
+        <div className={"tile " + (offLeads > 0 ? "tile-warn" : "tile-flat")}>
+          <div className="tile-num">{nOff}</div>
+          <div className="tile-label">Off leads</div>
+        </div>
+        <div className="tile tile-info">
+          <div className="tile-num">{nRoster}</div>
+          <div className="tile-label">On the board</div>
+        </div>
+        <div className="tile tile-info">
+          <div className="tile-num">{nOpps}<span className="tile-of">/{capTotal || "-"}</span></div>
+          <div className="tile-label">Leads in play</div>
+        </div>
+      </div>
+
+      <div className="hero-strip">
+        <button className={"strip-chip " + (missing.length === 0 ? "chip-ok" : "chip-warn")} onClick={() => onGoTab("import")}>
+          <span className="chip-dot" />
+          {missing.length === 0
+            ? `All ${done.length} of today's reports are in`
+            : `Waiting on ${missing.join(" and ")}. Import now.`}
+        </button>
+        {inGrace && <span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span>}
+        {leader && (
+          <div className="strip-leader">
+            <span className="leader-crown">★</span>
+            <span className="leader-name">{leader.name}</span>
+            <span className="leader-tag">leading the board</span>
+            <span className="leader-pct">+{Math.round(leader.surpass * 100)}% over standard</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Import ---------------- */
-function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef }) {
+function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity }) {
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
+  if (activity) {
+    return (
+      <div className="import">
+        <div className="card checklist">
+          <div className="checklist-title">Today's Activity Import <span className="section-sub">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span></div>
+          <div className={"check " + (t.activity ? "done" : "")}>
+            <span className="check-box">{t.activity ? "✓" : ""}</span>Standard Daily Activity report
+          </div>
+          {!t.activity && <p className="hint">Drop today's Daily Activity export to build the Check Out sheet for today.</p>}
+        </div>
+        <div className={"dropzone " + (dropActive ? "active" : "")}
+          onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
+          onClick={() => fileRef.current?.click()}>
+          <div className="dz-icon">⇩</div>
+          <div className="dz-title">Drop today's Daily Activity CSV here</div>
+          <div className="dz-sub">The Standard Daily Activity report. Calls and Personalized Video feed the Check Out sheet.</div>
+          <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
+            onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+        </div>
+        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
+        <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
+      </div>
+    );
+  }
   return (
     <div className="import">
       <div className="card checklist">
@@ -1515,10 +2767,10 @@ function HistoryPanel({ config, store, data }) {
                   return (
                     <tr key={a.id}>
                       <td><b>{a.name}</b></td>
-                      <td>{ev.opps ?? 0} / {ev.cap ?? "—"}</td>
+                      <td>{ev.opps ?? 0} / {ev.cap ?? "-"}</td>
                       <td>{fmtPct(s?.deliveredPct)}</td><td>{fmtPct(s?.apptVideoDayPct)}</td>
                       <td>{fmtPct(s?.engagedVideoPct)}</td><td>{fmtPct(s?.bhVideoPct)}</td>
-                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span> : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span> : "—"}</td>
+                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span> : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span> : "-"}</td>
                     </tr>
                   );
                 })}
@@ -1628,6 +2880,61 @@ function StandardsEditor({ config, storeId, onChange }) {
 function RosterEditor({ config, data, onChange }) {
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
+  const [mergeFrom, setMergeFrom] = useState("");
+  const [mergeInto, setMergeInto] = useState("");
+
+  // Fold a duplicate/renamed person into the person they really are.
+  const merge = () => {
+    const from = data.roster.find((a) => a.id === mergeFrom);
+    const into = data.roster.find((a) => a.id === mergeInto);
+    if (!from || !into || from.id === into.id) return;
+    const fk = norm(from.name), ik = norm(into.name);
+    if (!window.confirm(`Merge "${from.name}" into "${into.name}"?\n\nTheir history moves to ${into.name}, "${from.name}" is removed from the roster, and any future report that still says "${from.name}" will automatically count toward ${into.name}.`)) return;
+
+    const next = JSON.parse(JSON.stringify(data));
+    // move monthly stats where the canonical person has none
+    for (const mKey of Object.keys(next.months || {})) {
+      const M = next.months[mKey];
+      if (M.stats?.[fk]) {
+        M.stats[ik] = { ...(M.stats[fk]), ...(M.stats[ik] || {}) };
+        delete M.stats[fk];
+      }
+      if (M.names) {
+        for (const t of Object.keys(M.names)) {
+          M.names[t] = (M.names[t] || []).map((k) => (k === fk ? ik : k));
+        }
+      }
+    }
+    // move daily activity
+    for (const d of Object.keys(next.activity || {})) {
+      if (next.activity[d]?.[fk]) {
+        next.activity[d][ik] = { ...(next.activity[d][fk]), ...(next.activity[d][ik] || {}) };
+        delete next.activity[d][fk];
+      }
+    }
+    // repoint plate assignments
+    for (const d of Object.keys(next.plates || {})) {
+      next.plates[d] = (next.plates[d] || []).map((p) => (norm(p.assignee || "") === fk ? { ...p, assignee: into.name } : p));
+    }
+    // carry any active restriction across, then drop the duplicate
+    if (next.restrictions?.[from.id] && !next.restrictions?.[into.id]) {
+      next.restrictions[into.id] = next.restrictions[from.id];
+    }
+    delete next.restrictions?.[from.id];
+    next.roster = next.roster.filter((a) => a.id !== from.id);
+    // remember the alias so future imports fold automatically
+    next.aliases = { ...(next.aliases || {}), [fk]: ik };
+
+    setMergeFrom(""); setMergeInto("");
+    onChange(next, { action: "Merged associates", detail: `${from.name} → ${into.name}` });
+  };
+
+  const unmerge = (aliasKey) => {
+    const next = JSON.parse(JSON.stringify(data));
+    delete next.aliases[aliasKey];
+    onChange(next, { action: "Removed name link", detail: aliasKey });
+  };
+
   const add = () => {
     const n = name.trim(); if (!n) return;
     const next = JSON.parse(JSON.stringify(data));
@@ -1660,6 +2967,34 @@ function RosterEditor({ config, data, onChange }) {
         </div>
         <p className="hint">Names must match DriveCentric exports exactly (not case-sensitive). Anyone who shows up in a report but isn't listed here gets added automatically under "Needs a Position." Roster changes are recorded in the audit log.</p>
       </div>
+
+      <div className="card">
+        <h3>Merge duplicate names</h3>
+        <p className="hint">If DriveCentric ever spells someone differently (a nickname, a married name, a typo), they'll show up here as a second person and their history splits. Merge them and the history joins back up, plus future reports using the old spelling will automatically count toward the right person.</p>
+        <div className="inline-form">
+          <select value={mergeFrom} onChange={(e) => setMergeFrom(e.target.value)}>
+            <option value="">Select the duplicate</option>
+            {(data.roster || []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <span className="merge-arrow">→</span>
+          <select value={mergeInto} onChange={(e) => setMergeInto(e.target.value)}>
+            <option value="">Select the real person</option>
+            {(data.roster || []).filter((a) => a.id !== mergeFrom).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button className="btn" onClick={merge} disabled={!mergeFrom || !mergeInto}>Merge</button>
+        </div>
+        {Object.keys(data.aliases || {}).length > 0 && (
+          <div className="alias-list">
+            <div className="check-group-label">Linked names</div>
+            {Object.entries(data.aliases).map(([from, to]) => (
+              <div key={from} className="alias-row">
+                <span className="mono">{from}</span> <span className="merge-arrow">→</span> <span className="mono">{to}</span>
+                <button className="btn-x" onClick={() => unmerge(from)}>Unlink</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="card">
         <table className="roster-table">
           <thead><tr><th>Name</th><th>Position</th><th /></tr></thead>
@@ -1685,20 +3020,68 @@ function RosterEditor({ config, data, onChange }) {
 
 /* ---------------- Access panel ---------------- */
 function AccessPanel({ config, session, onChange }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [pin, setPin] = useState("");
-  const [role, setRole] = useState("manager");
-  const [storeIds, setStoreIds] = useState([]);
+  const [people, setPeople] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
   const [domain, setDomain] = useState("");
 
-  const validPin = (p) => /^\d{6}$/.test(p);
-  const pending = config.users.filter((u) => u.pending);
+  const reload = useCallback(async () => {
+    setPeople(await listProfiles());
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  const patch = async (id, fields, auditNote) => {
+    setBusy(true);
+    const ok = await updateProfile(id, fields);
+    setBusy(false);
+    if (!ok) { setMsg("That change didn't save. You may not have permission."); return; }
+    if (auditNote) await appendAudit({ user: session.name, action: auditNote.action, detail: auditNote.detail });
+    setMsg("");
+    reload();
+  };
+
+  const approve = (u, storeIds) =>
+    patch(u.id, { pending: false, stores: storeIds }, { action: "Approved account", detail: u.email });
+
+  const toggleStore = (u, sid, on) => {
+    const next = on ? [...(u.stores || []), sid] : (u.stores || []).filter((x) => x !== sid);
+    patch(u.id, { stores: next }, { action: "Changed store access", detail: u.email + ": " + next.join(", ") });
+  };
+
+  const setRole = (u, role) =>
+    patch(u.id, { role }, { action: "Changed role", detail: u.email + " -> " + role });
+
+  const promote = (u) => {
+    if (!window.confirm("Make " + (u.name || u.email) + " a Group Admin?" + String.fromCharCode(10, 10) +
+      "Admins see and change everything across every store, manage accounts, and edit standards. Only do this for someone you fully trust.")) return;
+    patch(u.id, { role: "admin", pending: false }, { action: "Promoted to admin", detail: u.email });
+  };
+
+  const demote = (u) => {
+    const others = (people || []).filter((x) => x.role === "admin" && x.id !== u.id && x.active);
+    if (others.length === 0) { alert("You can't remove the last admin. Promote someone else first."); return; }
+    if (!window.confirm("Remove admin rights from " + (u.name || u.email) + "? They become a store manager with no store access until you assign one.")) return;
+    patch(u.id, { role: "manager", stores: [] }, { action: "Removed admin rights", detail: u.email });
+  };
+
+  const toggleActive = (u) =>
+    patch(u.id, { active: !u.active }, { action: u.active ? "Deactivated account" : "Reactivated account", detail: u.email });
+
+  const remove = async (u) => {
+    if (!window.confirm("Delete " + (u.name || u.email) + " permanently?" + String.fromCharCode(10, 10) +
+      "This removes their profile. It does not delete any store data they imported.")) return;
+    setBusy(true);
+    const ok = await deleteProfile(u.id);
+    setBusy(false);
+    if (!ok) { setMsg("Couldn't delete that profile."); return; }
+    await appendAudit({ user: session.name, action: "Deleted account", detail: u.email });
+    reload();
+  };
 
   const addDomain = () => {
     const d = domain.trim().toLowerCase().replace(/^@/, "");
     if (!d || !d.includes(".")) return;
-    if ((config.approvedDomains || []).includes(d)) { setDomain(""); return; }
+    if ((config.approvedDomains || []).includes(d)) return;
     const next = JSON.parse(JSON.stringify(config));
     next.approvedDomains = [...(next.approvedDomains || []), d];
     setDomain("");
@@ -1709,144 +3092,61 @@ function AccessPanel({ config, session, onChange }) {
     next.approvedDomains = (next.approvedDomains || []).filter((x) => x !== d);
     onChange(next, { action: "Removed approved domain", detail: d });
   };
-  const toggleRegistration = () => {
-    const next = JSON.parse(JSON.stringify(config));
-    next.registrationOpen = !next.registrationOpen;
-    onChange(next, { action: next.registrationOpen ? "Opened registration" : "Closed registration" });
-  };
 
-  const approve = (u, storeId) => {
-    const next = JSON.parse(JSON.stringify(config));
-    const t = next.users.find((x) => x.id === u.id); if (!t) return;
-    t.pending = false;
-    t.stores = storeId ? [storeId] : [];
-    delete t.requestedStore;
-    onChange(next, { action: "Approved account", detail: `${t.name} → ${config.stores.find((s) => s.id === storeId)?.name || "no store"}` });
-  };
-  const deny = (u) => {
-    if (!window.confirm(`Deny and delete the pending account for ${u.name}?`)) return;
-    const next = JSON.parse(JSON.stringify(config));
-    next.users = next.users.filter((x) => x.id !== u.id);
-    onChange(next, { action: "Denied account", detail: u.name });
-  };
+  if (!AUTH_ENABLED) {
+    return <div className="empty">Accounts are managed on the hosted site, where real sign-in is available. This preview has no account system.</div>;
+  }
+  if (!people) return <LoadingScreen label="Loading accounts" />;
 
-  const addUser = () => {
-    const n = name.trim(); const e = email.trim().toLowerCase();
-    if (!n || !validPin(pin)) { alert("Name is required and PIN must be exactly 6 digits."); return; }
-    if (e && config.users.some((u) => (u.email || "").toLowerCase() === e)) { alert("That email is already in use."); return; }
-    const next = JSON.parse(JSON.stringify(config));
-    next.users.push({ id: uid(), name: n, email: e, pin, role, stores: role === "admin" ? [] : storeIds, active: true });
-    setName(""); setEmail(""); setPin(""); setStoreIds([]);
-    onChange(next, { action: "Created user", detail: `${n} (${role})` });
-  };
-  const toggleActive = (u) => {
-    const next = JSON.parse(JSON.stringify(config));
-    const t = next.users.find((x) => x.id === u.id); if (!t) return;
-    t.active = !t.active;
-    onChange(next, { action: t.active ? "Reactivated user" : "Deactivated user", detail: t.name });
-  };
-  const changePin = (u) => {
-    const p = prompt(`New 6-digit PIN for ${u.name}:`);
-    if (p == null) return;
-    if (!/^\d{6}$/.test(p.trim())) { alert("PIN must be exactly 6 digits."); return; }
-    const next = JSON.parse(JSON.stringify(config));
-    next.users.find((x) => x.id === u.id).pin = p.trim();
-    onChange(next, { action: "Changed PIN", detail: u.name });
-  };
-  const changeStores = (u, id, checked) => {
-    const next = JSON.parse(JSON.stringify(config));
-    const t = next.users.find((x) => x.id === u.id); if (!t) return;
-    t.stores = checked ? [...new Set([...t.stores, id])] : t.stores.filter((s) => s !== id);
-    onChange(next, { action: "Changed store access", detail: `${t.name} → ${t.stores.map((s) => config.stores.find((x) => x.id === s)?.name).join(", ") || "none"}` });
-  };
-  const domainOf = (e) => (String(e).split("@")[1] || "").toLowerCase();
-  const offDomain = (u) => u.email && (config.approvedDomains || []).length > 0 && !(config.approvedDomains || []).includes(domainOf(u.email));
+  const pending = people.filter((u) => u.pending && u.role !== "admin");
+  const active = people.filter((u) => !u.pending || u.role === "admin");
 
   return (
     <div className="access">
+      {msg && <div className="login-err">{msg}</div>}
+
       {pending.length > 0 && (
-        <div className="card pending-card">
-          <h3>Pending Approvals <span className="badge badge-warn">{pending.length}</span></h3>
-          <p className="hint">These people registered and are waiting for store access. Approve to let them in, or deny to remove the request.</p>
+        <div className="card">
+          <h3>Waiting for approval <span className="badge badge-warn">{pending.length}</span></h3>
+          <p className="hint">These people created an account and are waiting on you. Tick the stores they should see, then approve.</p>
           {pending.map((u) => (
-            <div key={u.id} className="pending-row">
-              <div><b>{u.name}</b><span className="pending-email">{u.email}</span></div>
-              <div className="pending-actions">
-                <span className="hint">Requested: {config.stores.find((s) => s.id === u.requestedStore)?.name || "none"}</span>
-                <select defaultValue={u.requestedStore || ""} id={"appr-" + u.id}>
-                  <option value="">no store yet</option>
-                  {config.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <button className="btn" onClick={() => approve(u, document.getElementById("appr-" + u.id).value)}>Approve</button>
-                <button className="btn-x" onClick={() => deny(u)}>Deny</button>
-              </div>
-            </div>
+            <PendingRow key={u.id} u={u} stores={config.stores} busy={busy}
+              onApprove={(ids) => approve(u, ids)} onReject={() => remove(u)} />
           ))}
         </div>
       )}
 
       <div className="card">
-        <h3>Approved Email Domains</h3>
-        <p className="hint">Only emails on these domains can create an account. Without at least one domain, self-registration stays closed.</p>
-        <div className="chip-list">
-          {(config.approvedDomains || []).map((d) => (
-            <span key={d} className="domain-chip">{d}<button onClick={() => removeDomain(d)}>✕</button></span>
-          ))}
-          {(config.approvedDomains || []).length === 0 && <span className="hint">No domains yet.</span>}
-        </div>
-        <div className="inline-form">
-          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="hollerclassic.com" onKeyDown={(e) => e.key === "Enter" && addDomain()} />
-          <button className="btn" onClick={addDomain}>Add domain</button>
-        </div>
-        <label className="toggle-row">
-          <input type="checkbox" checked={!!config.registrationOpen} onChange={toggleRegistration} />
-          <span>Allow new account creation {config.registrationOpen ? "(open)" : "(closed)"}</span>
-        </label>
-        <p className="hint">Turn this off once everyone's enrolled to close the door entirely. Only you can reopen it.</p>
-      </div>
-
-      <div className="card">
-        <h3>Create a User Directly</h3>
-        <div className="inline-form">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-          <input value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} maxLength={6} placeholder="6-digit PIN" inputMode="numeric" />
-          <select value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="manager">Store Manager</option>
-            <option value="overseer">Centralized BDC (oversight)</option>
-            <option value="admin">Group Admin</option>
-          </select>
-          <button className="btn" onClick={addUser}>Create</button>
-        </div>
-        {(role === "manager" || role === "overseer") && (
-          <div className="store-checks">
-            {config.stores.map((s) => (
-              <label key={s.id} className="check-inline">
-                <input type="checkbox" checked={storeIds.includes(s.id)}
-                  onChange={(e) => setStoreIds(e.target.checked ? [...storeIds, s.id] : storeIds.filter((x) => x !== s.id))} />
-                {s.name}
-              </label>
-            ))}
-          </div>
-        )}
-        <p className="hint">Use this to add someone without waiting for them to self-register. Managers and Centralized BDC users only see the stores checked here; a Centralized BDC user gets a read-only combined view across all of them. Keep in mind this is honor-system access control inside a shared tool: it keeps people organized and accountable, but it isn't bank-grade security.</p>
-      </div>
-
-      <div className="card">
+        <h3>Accounts</h3>
+        <p className="hint">
+          Passwords are handled by Supabase and stored hashed. No one, including you, can read them.
+          If someone forgets theirs they use "Forgot password?" on the sign-in screen.
+        </p>
         <table className="roster-table wide">
-          <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Store access</th><th>Status</th><th /></tr></thead>
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Role</th><th>Stores</th><th>Status</th><th /></tr>
+          </thead>
           <tbody>
-            {config.users.filter((u) => !u.pending).map((u) => (
-              <tr key={u.id} className={u.active ? "" : "row-inactive"}>
-                <td><b>{u.name}</b></td>
-                <td className="mono">{u.email || "—"}{offDomain(u) && <span className="flag flag-gray" title="Email is not on an approved domain">off-domain</span>}</td>
-                <td>{u.role === "admin" ? "Group Admin" : u.role === "overseer" ? "Centralized BDC" : "Manager"}</td>
+            {active.map((u) => (
+              <tr key={u.id}>
+                <td><b>{u.name || "-"}</b></td>
+                <td className="mono">{u.email}</td>
+                <td>
+                  {u.role === "admin" ? "Group Admin" : (
+                    <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
+                      <option value="manager">Store Manager</option>
+                      <option value="overseer">Centralized BDC</option>
+                    </select>
+                  )}
+                </td>
                 <td>
                   {u.role === "admin" ? <span className="hint">All stores</span> : (
                     <div className="store-checks tight">
                       {config.stores.map((s) => (
                         <label key={s.id} className="check-inline">
-                          <input type="checkbox" checked={u.stores.includes(s.id)} onChange={(e) => changeStores(u, s.id, e.target.checked)} />
+                          <input type="checkbox" disabled={busy}
+                            checked={(u.stores || []).includes(s.id)}
+                            onChange={(e) => toggleStore(u, s.id, e.target.checked)} />
                           {s.name}
                         </label>
                       ))}
@@ -1855,14 +3155,72 @@ function AccessPanel({ config, session, onChange }) {
                 </td>
                 <td>{u.active ? <span className="badge badge-ok">Active</span> : <span className="badge badge-off">Inactive</span>}</td>
                 <td className="row-actions">
-                  <button className="btn-x" onClick={() => changePin(u)}>Change PIN</button>
-                  {u.id !== session.id && <button className="btn-x" onClick={() => toggleActive(u)}>{u.active ? "Deactivate" : "Reactivate"}</button>}
+                  {u.id !== session.id && (
+                    <>
+                      <button className="btn-x" onClick={() => toggleActive(u)} disabled={busy}>{u.active ? "Deactivate" : "Reactivate"}</button>
+                      {u.role !== "admin"
+                        ? <button className="btn-x" onClick={() => promote(u)} disabled={busy}>Make admin</button>
+                        : <button className="btn-x" onClick={() => demote(u)} disabled={busy}>Remove admin</button>}
+                      <button className="btn-x" onClick={() => remove(u)} disabled={busy}>Delete</button>
+                    </>
+                  )}
+                  {u.id === session.id && <span className="hint">This is you</span>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p className="hint">To move a manager to a different store, just check the new store and uncheck the old one. Changes take effect the next time they load the tool.</p>
+      </div>
+
+      <div className="card">
+        <h3>Approved email domains</h3>
+        <p className="hint">Only these domains may create an account. Leave this empty and nobody new can register.</p>
+        <div className="inline-form">
+          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="hollerclassic.com"
+            onKeyDown={(e) => e.key === "Enter" && addDomain()} />
+          <button className="btn" onClick={addDomain}>Add domain</button>
+        </div>
+        <div className="domain-list">
+          {(config.approvedDomains || []).length === 0
+            ? <p className="hint">No domains yet, so account creation is closed.</p>
+            : (config.approvedDomains || []).map((d) => (
+              <span key={d} className="domain-chip">@{d}<button className="btn-x" onClick={() => removeDomain(d)}>✕</button></span>
+            ))}
+        </div>
+        <label className="toggle-row">
+          <input type="checkbox" checked={!!config.registrationOpen}
+            onChange={(e) => {
+              const next = JSON.parse(JSON.stringify(config));
+              next.registrationOpen = e.target.checked;
+              onChange(next, { action: e.target.checked ? "Opened registration" : "Closed registration" });
+            }} />
+          Allow new people to create accounts
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PendingRow({ u, stores, busy, onApprove, onReject }) {
+  const [ids, setIds] = useState([]);
+  return (
+    <div className="pending-row">
+      <div className="pending-who">
+        <b>{u.name || "-"}</b>
+        <span className="mono">{u.email}</span>
+      </div>
+      <div className="store-checks tight">
+        {stores.map((s) => (
+          <label key={s.id} className="check-inline">
+            <input type="checkbox" checked={ids.includes(s.id)}
+              onChange={(e) => setIds(e.target.checked ? [...ids, s.id] : ids.filter((x) => x !== s.id))} />
+            {s.name}
+          </label>
+        ))}
+      </div>
+      <div className="row-actions">
+        <button className="btn" disabled={busy || ids.length === 0} onClick={() => onApprove(ids)}>Approve</button>
+        <button className="btn-x" disabled={busy} onClick={onReject}>Reject</button>
       </div>
     </div>
   );
@@ -1890,7 +3248,7 @@ function AuditLog() {
               <tr key={i}>
                 <td className="mono">{new Date(e.t).toLocaleString()}</td>
                 <td>{e.user}</td>
-                <td>{e.store || "—"}</td>
+                <td>{e.store || "-"}</td>
                 <td><b>{e.action}</b></td>
                 <td>{e.detail || ""}</td>
               </tr>
@@ -1904,20 +3262,23 @@ function AuditLog() {
 
 /* ---------------- Settings ---------------- */
 function SettingsPanel({ config, onChange }) {
-  const [newStore, setNewStore] = useState("");
   const [newRole, setNewRole] = useState("");
   const [cropping, setCropping] = useState(null); // { storeId, src }
+  const [wizard, setWizard] = useState(null); // { store } for edit, {} for new
 
-  const addStore = () => {
-    const name = newStore.trim(); if (!name) return;
-    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    if (config.stores.some((s) => s.id === id)) return;
+  const saveStore = (draft) => {
     const next = JSON.parse(JSON.stringify(config));
-    next.stores.push({ id, name, icon: null });
-    next.standards[id] = {};
-    for (const r of next.roles) next.standards[id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
-    setNewStore("");
-    onChange(next, { action: "Added store", detail: name });
+    const existing = next.stores.find((s) => s.id === draft.id);
+    if (existing) {
+      Object.assign(existing, draft);
+      onChange(next, { action: "Customized store", detail: draft.name });
+    } else {
+      next.stores.push(draft);
+      next.standards[draft.id] = {};
+      for (const r of next.roles) next.standards[draft.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
+      onChange(next, { action: "Added store", detail: draft.name });
+    }
+    setWizard(null);
   };
   const moveStore = (idx, dir) => {
     const to = idx + dir;
@@ -1927,14 +3288,22 @@ function SettingsPanel({ config, onChange }) {
     next.stores.splice(to, 0, item);
     onChange(next, { action: "Reordered stores", detail: `${item.name} moved ${dir < 0 ? "up" : "down"}` });
   };
-  const deleteStore = (s) => {
-    const ok = window.confirm(`Delete ${s.name}? Its roster, imports, and history stay saved in storage, but the store disappears from every view and its standards are removed. Users with access only to this store will have nothing to see.`);
+  const deleteStore = async (s) => {
+    const ok = window.confirm(`Delete ${s.name}? Its roster, imports, and history stay saved in storage, but the store disappears from every view and its standards are removed. Anyone whose only access was this store will have nothing to see.`);
     if (!ok) return;
     const next = JSON.parse(JSON.stringify(config));
     next.stores = next.stores.filter((x) => x.id !== s.id);
     delete next.standards[s.id];
-    for (const u of next.users) u.stores = (u.stores || []).filter((id) => id !== s.id);
     onChange(next, { action: "Deleted store", detail: s.name });
+    // strip the store from everyone's access list
+    try {
+      const people = await listProfiles();
+      for (const u of people) {
+        if ((u.stores || []).includes(s.id)) {
+          await updateProfile(u.id, { stores: (u.stores || []).filter((id) => id !== s.id) });
+        }
+      }
+    } catch (e) { /* profiles aren't available in preview */ }
   };
   const addRole = () => {
     const name = newRole.trim(); if (!name) return;
@@ -1973,37 +3342,43 @@ function SettingsPanel({ config, onChange }) {
   return (
     <div className="settings">
       <div className="card">
-        <h3>Stores & Manufacturer Logos</h3>
-        <table className="roster-table">
-          <thead><tr><th>Order</th><th>Logo</th><th>Store</th><th /></tr></thead>
-          <tbody>
-            {config.stores.map((s, idx) => (
-              <tr key={s.id}>
-                <td className="row-actions">
+        <h3>Stores &amp; Manufacturer Logos</h3>
+        <div className="store-list">
+          {config.stores.map((s, idx) => (
+            <div key={s.id} className="store-item">
+              <div className="store-item-main">
+                <div className="store-item-order">
                   <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up">↑</button>
                   <button className="btn-arrow" disabled={idx === config.stores.length - 1} onClick={() => moveStore(idx, 1)} title="Move down">↓</button>
-                </td>
-                <td>{s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}</td>
-                <td><b>{s.name}</b></td>
-                <td className="row-actions">
-                  <label className="btn-ghost file-btn">
-                    {s.icon ? "Replace logo" : "Upload logo"}
-                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { setIcon(s.id, e.target.files[0]); e.target.value = ""; }} />
-                  </label>
-                  {s.icon && <button className="btn-x" onClick={() => setCropping({ storeId: s.id, src: s.icon })}>Edit</button>}
-                  {s.icon && <button className="btn-x" onClick={() => clearIcon(s.id)}>Remove</button>}
-                  <button className="btn-x" onClick={() => deleteStore(s)}>Delete store</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="inline-form">
-          <input value={newStore} onChange={(e) => setNewStore(e.target.value)} placeholder="e.g. Audi North Orlando" />
-          <button className="btn" onClick={addStore}>Add Store</button>
+                </div>
+                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
+                <div className="store-item-name">
+                  <b>{s.name}</b>
+                  <span className="brand-swatch" title="Store colors"
+                    style={{ background: `linear-gradient(130deg, ${(s.brand || DEFAULT_BRAND).primary}, ${(s.brand || DEFAULT_BRAND).deep})` }} />
+                </div>
+              </div>
+              <div className="store-item-actions">
+                <button className="btn-ghost" onClick={() => setWizard({ store: s })}>Customize</button>
+                <label className="btn-ghost file-btn">
+                  {s.icon ? "Replace logo" : "Upload logo"}
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { setIcon(s.id, e.target.files[0]); e.target.value = ""; }} />
+                </label>
+                {s.icon && <button className="btn-x" onClick={() => setCropping({ storeId: s.id, src: s.icon })}>Crop</button>}
+                {s.icon && <button className="btn-x" onClick={() => clearIcon(s.id)}>Remove logo</button>}
+                <button className="btn-x danger" onClick={() => deleteStore(s)}>Delete store</button>
+              </div>
+            </div>
+          ))}
         </div>
-        <p className="hint">The order here is the order everywhere: the overview cards and the store dropdown. Upload any image and you can crop and zoom it before it saves. New stores start with the default tier standards.</p>
+        <div className="inline-form">
+          <button className="btn" onClick={() => setWizard({})}>+ New Store</button>
+        </div>
+        <p className="hint">"New Store" opens a setup tool where you pick the manufacturer colors, logo, standards, and thresholds, with a live preview of the manager's view, before the store is created. "Customize" reopens that tool for an existing store. The order here is the order everywhere.</p>
       </div>
+      {wizard && (
+        <StoreWizard config={config} store={wizard.store} onCancel={() => setWizard(null)} onSave={saveStore} />
+      )}
       <div className="card">
         <h3>Positions</h3>
         <div className="role-chips">
@@ -2129,21 +3504,398 @@ function Style() {
       }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-        font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate; }
-      .lpc::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+        font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate; overflow-x:clip; }
+      /* base wash */
+      .lpc::before { content:""; position:fixed; inset:-10%; z-index:-2; pointer-events:none;
         background:
-          radial-gradient(48% 42% at 12% 6%, rgba(136,198,234,.34), transparent 70%),
-          radial-gradient(42% 40% at 88% 12%, rgba(193,215,48,.22), transparent 70%),
-          radial-gradient(52% 46% at 50% 100%, rgba(42,94,155,.14), transparent 72%),
-          var(--bg); }
+          radial-gradient(38% 34% at 15% 8%, rgba(136,198,234,.38), transparent 70%),
+          radial-gradient(34% 32% at 85% 14%, rgba(193,215,48,.24), transparent 70%),
+          var(--bg);
+        animation: driftA 34s ease-in-out infinite alternate; will-change: transform; }
+      /* second drifting layer, slower and offset, for parallax life */
+      .lpc::after { content:""; position:fixed; inset:-15%; z-index:-2; pointer-events:none;
+        background:
+          radial-gradient(30% 30% at 70% 85%, rgba(42,94,155,.16), transparent 72%),
+          radial-gradient(26% 26% at 25% 92%, rgba(0,168,150,.12), transparent 72%);
+        animation: driftB 46s ease-in-out infinite alternate; will-change: transform; }
+      @keyframes driftA {
+        0%   { transform: translate3d(0,0,0) scale(1); }
+        50%  { transform: translate3d(2.5%, 2%, 0) scale(1.06); }
+        100% { transform: translate3d(-2%, 3%, 0) scale(1.03); }
+      }
+      @keyframes driftB {
+        0%   { transform: translate3d(0,0,0) scale(1.05); }
+        50%  { transform: translate3d(-3%, -2.5%, 0) scale(1); }
+        100% { transform: translate3d(2%, -3%, 0) scale(1.08); }
+      }
+
+      /* ---- living logo: needle sweeps left→right, lime arc draws in behind it ---- */
+      .logo-anim { animation: logoFloat 7s ease-in-out 1.8s infinite; will-change: transform; }
+      .logo-anim .logo-arc {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation: arcDraw 1.5s var(--spring) .25s forwards;
+      }
+      .logo-anim .logo-needle {
+        transform: rotate(-140.2deg);
+        animation: needleSweep 1.5s var(--spring) .25s forwards;
+      }
+      @keyframes arcDraw { to { stroke-dashoffset: 0; } }
+      /* needle sweeps from the arc's start (180°) to its resting angle (320.2°).
+         No overshoot: backing off even a few degrees exposed the lime arc behind the tip. */
+      @keyframes needleSweep {
+        from { transform: rotate(-140.2deg); }
+        to   { transform: rotate(0deg); }
+      }
+      @keyframes logoFloat {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50%      { transform: translateY(-3px) scale(1.015); }
+      }
+
       .lpc * { box-sizing: border-box; }
       ::selection { background: rgba(42,94,155,.2); }
 
+      /* ---- store hero (manager landing) ---- */
+      .hero { margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      .hero-band { display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
+        padding:30px 34px; border-radius:24px; position:relative; overflow:hidden;
+        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
+        box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
+        animation: heroIn .6s var(--spring) both; }
+      .hero-band::after { content:""; position:absolute; inset:0; pointer-events:none;
+        background: radial-gradient(40% 70% at 78% 10%, color-mix(in srgb, var(--sa) 26%, transparent), transparent 70%),
+                    radial-gradient(45% 80% at 8% 100%, rgba(255,255,255,.16), transparent 70%);
+        animation: heroSheen 18s ease-in-out infinite alternate; }
+      .hero-id { display:flex; align-items:center; gap:20px; position:relative; z-index:1; }
+      .hero-text { display:flex; flex-direction:column; gap:6px; }
+      .hero-logo { width:64px; height:64px; border-radius:16px; background:rgba(255,255,255,.95);
+        display:flex; align-items:center; justify-content:center;
+        overflow:hidden; box-shadow: 0 4px 14px rgba(0,0,0,.18); flex:0 0 auto; }
+      .hero-logo img { width:100%; height:100%; object-fit:contain; }
+      /* small caps get real tracking. They were set tight and read as a smudge. */
+      .hero-greet { color:rgba(255,255,255,.75); font-size:11.5px; font-weight:700;
+        letter-spacing:.12em; text-transform:uppercase; }
+      .hero-store { color:#fff; font-size:31px; font-weight:700; letter-spacing:-.015em; line-height:1.12; margin:0; }
+      .hero-date { color:rgba(255,255,255,.62); font-size:13px; letter-spacing:.015em; }
+
+      .hero-ring-wrap { position:relative; flex:0 0 auto; z-index:1; }
+      .hero-ring { display:block; }
+      .hero-ring-fill { animation: ringIn 1.5s var(--spring) .3s both; }
+      @keyframes ringIn { from { stroke-dashoffset: var(--c); } to { stroke-dashoffset: 0; } }
+      /* inset pulls the label off the stroke. "Cleared" was touching the ring. */
+      .hero-ring-label { position:absolute; inset:20px; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; gap:6px; }
+      .hero-ring-pct { color:#fff; font-size:31px; font-weight:700; letter-spacing:-.03em; line-height:1;
+        font-variant-numeric:tabular-nums; }
+      .hero-ring-pct span { font-size:16px; font-weight:600; opacity:.68; margin-left:2px; }
+      .hero-ring-cap { color:rgba(255,255,255,.72); font-size:9.5px; text-transform:uppercase;
+        letter-spacing:.16em; font-weight:700; line-height:1; }
+
+      .hero-tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(134px, 1fr)); gap:14px; margin-top:16px; }
+      .tile { position:relative; overflow:hidden;
+        background: rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+        padding:17px 19px 17px 22px;
+        backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07);
+        transition: transform .3s var(--spring), box-shadow .3s var(--spring);
+        animation: tileIn .5s var(--spring) both;
+        --accent: rgba(0,0,0,.12); }
+      /* full-height accent. A border-left would be curved away by the border-radius
+         and blend into the pale top/bottom borders, which made the colour stop short. */
+      .tile::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+        background: var(--accent); }
+      .tile:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 12px 26px rgba(31,54,86,.12); }
+      .hero-tiles .tile:nth-child(1) { animation-delay:.10s; }
+      .hero-tiles .tile:nth-child(2) { animation-delay:.17s; }
+      .hero-tiles .tile:nth-child(3) { animation-delay:.24s; }
+      .hero-tiles .tile:nth-child(4) { animation-delay:.31s; }
+      .hero-tiles .tile:nth-child(5) { animation-delay:.38s; }
+      @keyframes tileIn { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform:none; } }
+      .tile-num { font-size:31px; font-weight:700; letter-spacing:-.03em; line-height:1.05;
+        font-variant-numeric:tabular-nums; }
+      .tile-of { font-size:15px; font-weight:600; color:var(--ink-3); margin-left:2px; letter-spacing:0; }
+      .tile-label { font-size:10px; color:var(--ink-2); font-weight:700; margin-top:8px;
+        letter-spacing:.09em; text-transform:uppercase; }
+      .tile-good { --accent:#30B155; } .tile-good .tile-num { color:#1E7A3C; }
+      .tile-bad  { --accent:#E5473C; } .tile-bad .tile-num { color:#C13529; }
+      .tile-warn { --accent:#FF9F0A; } .tile-warn .tile-num { color:#B8730A; }
+      .tile-info { --accent: var(--sp); } .tile-info .tile-num { color: var(--sd); }
+      .tile-flat { --accent:rgba(0,0,0,.12); } .tile-flat .tile-num { color:var(--ink-3); }
+
+      .hero-strip { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px;
+        animation: tileIn .5s var(--spring) .40s both; }
+      .strip-chip { display:inline-flex; align-items:center; gap:8px; border:none; cursor:pointer;
+        padding:9px 15px; border-radius:20px; font-size:12.5px; font-weight:600; transition: all .2s var(--spring); }
+      .strip-chip:hover { transform: translateY(-1px); box-shadow: var(--shadow-1); }
+      .chip-ok { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .chip-warn { background:rgba(255,159,10,.16); color:#95600A; }
+      .chip-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+      .chip-warn .chip-dot { animation: chipPulse 1.8s ease-in-out infinite; }
+      @keyframes chipPulse { 0%,100% { opacity:.45; transform:scale(1); } 50% { opacity:1; transform:scale(1.25); } }
+      .strip-note { font-size:12px; color:var(--ink-2); background:rgba(255,255,255,.55); padding:8px 14px; border-radius:20px;
+        border:1px solid rgba(255,255,255,.7); }
+      .strip-leader { display:inline-flex; align-items:center; gap:8px; margin-left:auto;
+        padding:8px 15px; border-radius:20px; font-size:12.5px;
+        background: linear-gradient(100deg, rgba(193,215,48,.22), rgba(136,198,234,.18));
+        border:1px solid rgba(193,215,48,.35); }
+      .leader-crown { color:#7E9410; font-size:13px; animation: starGlow 3.2s ease-in-out infinite; }
+      .leader-name { font-weight:700; }
+      .leader-tag { color:var(--ink-2); }
+      .leader-pct { font-weight:700; color:#1E7A3C; }
+      @media (max-width: 700px) {
+        .hero-band { padding:18px; }
+        .hero-store { font-size:22px; }
+        .strip-leader { margin-left:0; }
+      }
+
+      /* ---- store wizard ---- */
+      .wiz-overlay { position:fixed; inset:0; z-index:60; background:rgba(18,33,47,.42);
+        backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+        display:flex; align-items:center; justify-content:center; padding:20px; animation: fadeIn .25s ease; }
+      @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+      .wiz { width:100%; max-width:920px; max-height:90vh; overflow:auto; border-radius:24px;
+        background:rgba(255,255,255,.86); backdrop-filter:blur(30px) saturate(180%); -webkit-backdrop-filter:blur(30px) saturate(180%);
+        border:1px solid rgba(255,255,255,.8); box-shadow: 0 30px 70px rgba(18,33,47,.32);
+        animation: heroIn .4s var(--spring) both; position:relative; }
+      .wiz-head { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 0; }
+      .wiz-head h3 { font-size:20px; font-weight:700; letter-spacing:-.02em; }
+      .wiz-body { display:grid; grid-template-columns: 1.15fr .85fr; gap:24px; padding:16px 24px; }
+      .wiz-form label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--ink-3); font-weight:700; margin:14px 0 6px; }
+      .wiz-form > input[type=text], .wiz-form > input { width:100%; }
+      .wiz-presets { display:grid; grid-template-columns: repeat(auto-fill, minmax(88px,1fr)); gap:8px; }
+      .wiz-preset { display:flex; flex-direction:column; align-items:center; gap:5px; padding:8px 4px; cursor:pointer;
+        border-radius:12px; border:2px solid transparent; background:rgba(255,255,255,.5); transition: all .2s var(--spring); }
+      .wiz-preset:hover { background:#fff; transform:translateY(-1px); }
+      .wiz-preset.on { border-color:var(--blue); background:#fff; box-shadow: var(--shadow-1); }
+      .wiz-swatch { width:36px; height:36px; border-radius:10px; position:relative; box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+      .wiz-swatch-dot { position:absolute; right:-2px; bottom:-2px; width:12px; height:12px; border-radius:50%; border:2px solid #fff; }
+      .wiz-preset-label { font-size:10.5px; font-weight:600; color:var(--ink-2); }
+      .wiz-colors { display:flex; gap:14px; flex-wrap:wrap; }
+      .wiz-color { display:flex !important; align-items:center; gap:7px; text-transform:none !important; letter-spacing:0 !important;
+        font-size:12px !important; color:var(--ink) !important; margin:0 !important; }
+      .wiz-color input[type=color] { width:38px; height:30px; border:1px solid var(--line); border-radius:8px; padding:0; cursor:pointer; background:none; }
+      .wiz-logo-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+      .wiz-nums { display:flex; gap:16px; flex-wrap:wrap; }
+      .wiz-nums .thr-label { text-transform:none; letter-spacing:0; font-size:12.5px; color:var(--ink); margin:0; }
+      .wiz-foot { display:flex; justify-content:flex-end; gap:10px; padding:12px 24px 22px; border-top:1px solid var(--line); margin-top:4px; }
+      .wiz-foot .btn:disabled { opacity:.45; cursor:default; }
+
+      .wiz-preview-label { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin-bottom:8px; }
+      .wiz-hero { --sp:#2A5E9B; --sd:#1D4674; --sa:#C1D730; }
+      .wiz-hero-band { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; border-radius:16px;
+        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
+        box-shadow: 0 8px 20px rgba(31,54,86,.22); }
+      .wiz-hero-id { display:flex; align-items:center; gap:10px; }
+      .wiz-hero-logo { width:38px; height:38px; border-radius:10px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex:0 0 auto; }
+      .wiz-hero-logo img { width:100%; height:100%; object-fit:contain; }
+      .wiz-hero-greet { color:rgba(255,255,255,.7); font-size:10px; font-weight:600; }
+      .wiz-hero-name { color:#fff; font-size:16px; font-weight:700; letter-spacing:-.02em; }
+      .wiz-hero-ring { position:relative; width:52px; height:52px; flex:0 0 auto; }
+      .wiz-hero-pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; }
+      .wiz-hero-tiles { display:flex; gap:7px; margin-top:8px; }
+      .wiz-tile { flex:1; background:rgba(255,255,255,.7); border:1px solid rgba(255,255,255,.8); border-left-width:3px;
+        border-radius:10px; padding:8px 9px; }
+      .wiz-tile b { display:block; font-size:16px; font-weight:700; letter-spacing:-.02em; }
+      .wiz-tile span { font-size:9.5px; color:var(--ink-2); font-weight:600; }
+      .brand-swatch { display:inline-block; width:22px; height:12px; border-radius:4px; margin-left:8px; vertical-align:middle;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+      @media (max-width: 780px) { .wiz-body { grid-template-columns: 1fr; } }
+
+      /* ---- loading screen ---- */
+      .loadscreen { min-height:70vh; display:flex; align-items:center; justify-content:center; }
+      .loadscreen-inner { text-align:center; animation: heroIn .5s var(--spring) both; }
+      .loadscreen-logo { display:flex; justify-content:center; margin-bottom:22px;
+        filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
+      .loadscreen-bar { width:170px; height:4px; border-radius:4px; background:rgba(42,94,155,.14); overflow:hidden; margin:0 auto; }
+      .loadscreen-bar-fill { width:40%; height:100%; border-radius:4px;
+        background:linear-gradient(90deg, var(--blue), var(--lime));
+        animation: loadSlide 1.25s ease-in-out infinite; }
+      @keyframes loadSlide {
+        0%   { transform: translateX(-120%); }
+        100% { transform: translateX(320%); }
+      }
+      .loadscreen-label { margin-top:14px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
+
+      /* ---- board launcher ---- */
+      .board-launch { max-width:760px; margin:0 auto; }
+      .board-launch-card { text-align:center; padding:34px 28px; }
+      .bl-logo { display:flex; justify-content:center; margin-bottom:14px; }
+      .bl-logo img { width:64px; height:64px; object-fit:contain; border-radius:14px; }
+      .bl-title { font-size:24px; font-weight:700; letter-spacing:-.02em; margin-bottom:6px; }
+      .board-launch-card .btn { margin-top:14px; }
+      .bl-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:14px; margin:16px 0; }
+      .bl-tile { --sp:#2A5E9B; --sd:#1D4674; display:flex; flex-direction:column; align-items:flex-start; gap:8px;
+        padding:18px; border-radius:18px; cursor:pointer; border:none; text-align:left; color:#fff;
+        background: linear-gradient(130deg, var(--sp), var(--sd));
+        box-shadow: 0 8px 22px rgba(31,54,86,.18); transition: transform .25s var(--spring), box-shadow .25s var(--spring);
+        animation: tileIn .5s var(--spring) both; }
+      .bl-tile:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(31,54,86,.26); }
+      .bl-tile-logo { width:42px; height:42px; border-radius:11px; background:rgba(255,255,255,.95);
+        display:flex; align-items:center; justify-content:center; overflow:hidden; }
+      .bl-tile-logo img { width:100%; height:100%; object-fit:contain; }
+      .bl-tile-ph { font-weight:700; color:var(--ink-2); font-size:17px; }
+      .bl-tile-name { font-weight:700; font-size:16px; letter-spacing:-.01em; }
+      .bl-tile-go { font-size:12px; opacity:.75; font-weight:600; }
+
+      /* ---- welcome / backup / merge / channel prompt ---- */
+      .welcome { border-left:4px solid var(--lime); }
+      .welcome-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+      .welcome-lede { font-size:14px; color:var(--ink-2); margin:6px 0 14px; max-width:70ch; }
+      .welcome-steps { display:grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap:14px; margin-bottom:12px; }
+      .welcome-step { display:flex; gap:10px; align-items:flex-start; }
+      .ws-num { flex:0 0 auto; width:24px; height:24px; border-radius:50%; background:var(--blue); color:#fff;
+        display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+      .welcome-step b { font-size:13.5px; }
+      .welcome-step p { font-size:12.5px; color:var(--ink-2); margin-top:2px; }
+
+      .snap-store { padding:12px 0; border-bottom:1px solid rgba(0,0,0,.06); }
+      .snap-store:last-child { border-bottom:none; }
+      .snap-store-name { display:flex; align-items:center; gap:10px; }
+      .snap-list { margin:8px 0 0 42px; }
+      .snap-row { display:flex; align-items:center; gap:12px; padding:5px 0; font-size:12.5px; flex-wrap:wrap; }
+      .snap-when { font-weight:600; font-variant-numeric:tabular-nums; }
+      .snap-reason { color:var(--ink-2); flex:1; }
+
+      .merge-arrow { color:var(--ink-3); font-weight:700; }
+      .alias-list { margin-top:12px; }
+      .alias-row { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:12.5px; }
+
+      .chan-row { display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid rgba(0,0,0,.06); }
+      .chan-row:last-child { border-bottom:none; }
+      .chan-file { flex:1; font-size:13px; font-weight:600; word-break:break-all; }
+
+      /* colour-blind safety: never rely on colour alone */
+      .cell-mark { font-weight:700; margin-right:5px; }
+      .co-badge.yes, .co-badge.no { letter-spacing:.01em; }
+
+      /* ---- touch devices: stability over glass ----
+         Three things were compounding to make the store logo jump and the header
+         jitter on iOS:
+           1. overflow-x:clip on the tall root container. Clipping overflow on a long
+              scrolling element makes Safari's scroll anchoring misfire, so reversing
+              scroll direction shifts the content. This was the jump.
+           2. will-change:transform on the drifting background. Even with the animation
+              switched off, will-change permanently promotes a compositor layer that
+              repaints on every scroll frame. This was the jitter.
+           3. Infinite animations (background drift, hero sheen, logo float) repainting
+              behind blurred surfaces.
+         On touch we drop all of it: no clip, no anchoring, no promoted layers, no
+         blur, no looping animation. The desktop keeps the full treatment. */
+      @media (hover: none) and (pointer: coarse) {
+        .lpc {
+          overflow-x: visible;          /* the clip was the jump */
+          overflow-anchor: none;        /* stop Safari re-anchoring mid-scroll */
+          isolation: auto;
+          background: linear-gradient(180deg, #F7F8FA 0%, #EDF2F8 100%);
+        }
+        .lpc::before, .lpc::after { display: none !important; }
+
+        /* no promoted layers anywhere. This is what was jittering. */
+        .lpc, .lpc * { will-change: auto !important; }
+
+        /* nothing loops forever behind a scrolling surface */
+        .logo-anim, .hero-band::after, .dz-icon, .star-badge,
+        .chip-warn .chip-dot, .leader-crown, .loadscreen-bar-fill {
+          animation: none !important;
+        }
+        /* leave the logo in its finished state rather than mid-sweep */
+        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
+        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
+        .loadscreen-bar-fill { width: 100%; }
+
+        /* the sticky blurred header was the other half of the jump */
+        .topbar {
+          position: static;
+          backdrop-filter: none; -webkit-backdrop-filter: none;
+          background: #FFFFFF;
+          transform: none;
+        }
+        .topbar::after { display: none; }
+        .card, .tile, .store-item, .wiz, .wiz-overlay, .splash-store, .bl-tile {
+          backdrop-filter: none; -webkit-backdrop-filter: none;
+        }
+        .card, .tile, .store-item, .wiz { background: #FFFFFF; }
+
+        /* hover lifts only ever stick on a touchscreen */
+        .card:hover, .tile:hover, .store-item:hover, .bl-tile:hover,
+        .splash-store:hover, .strip-chip:hover { transform: none; }
+      }
+
+      /* ---- small screens (layout only) ---- */
+      @media (max-width: 640px) {
+        .lpc { font-size:13.5px; padding-bottom:48px; }
+        .topbar { padding:10px 14px; }
+        .page, .print-area { padding-left:14px; padding-right:14px; }
+        /* .board-page sits inside .page, so don't stack their side padding */
+        .board-page { padding:18px 0 0; }
+        .hero-band { flex-direction:column; align-items:flex-start; padding:18px; }
+        .hero-ring-wrap { align-self:flex-end; margin-top:-46px; }
+        .hero-tiles { grid-template-columns: repeat(2, 1fr); }
+        .hero-strip { flex-direction:column; align-items:stretch; }
+        .strip-leader { margin-left:0; }
+
+        /* only cards that actually hold a wide table become scroll containers */
+        .card:has(table) { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .checkout-table, .roster-table, .gm-table { min-width:520px; }
+
+        /* store rows stack; every action stays on screen, no sideways swipe */
+        .store-item { flex-direction:column; align-items:stretch; }
+        .store-item-actions { justify-content:flex-start; }
+        .store-item-actions .btn-ghost, .store-item-actions .btn-x { flex:1 1 auto; text-align:center; }
+
+        .assoc-row { flex-wrap:wrap; gap:6px; }
+        .assoc-leads { margin-left:auto; }
+        .seg-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .seg { min-width:max-content; }
+        .wiz-body { grid-template-columns:1fr; }
+        .wiz { max-height:94vh; border-radius:18px; }
+        .inline-form { flex-direction:column; align-items:stretch; }
+        .inline-form > * { width:100%; }
+        .row-actions { flex-wrap:wrap; }
+        .pending-row .row-actions { margin-left:0; }
+        .splash-actions { max-width:100%; }
+        .stepper-row { justify-content:space-between; }
+      }
+
+      /* ---- store list (reflows instead of a cramped table) ---- */
+      .store-list { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+      .store-item { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+        padding:12px 14px; border-radius:14px; background:rgba(255,255,255,.5); border:1px solid rgba(255,255,255,.7); }
+      .store-item-main { display:flex; align-items:center; gap:12px; min-width:0; }
+      .store-item-order { display:flex; flex-direction:column; gap:2px; }
+      .store-item-name { display:flex; align-items:center; gap:8px; min-width:0; }
+      .store-item-name b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .store-item-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .btn-x.danger { color:var(--red); }
+      .btn-x.danger:hover { background:rgba(229,71,60,.1); }
+
+      /* ---- pending approvals ---- */
+      .pending-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 0;
+        border-bottom:1px solid rgba(0,0,0,.06); }
+      .pending-row:last-child { border-bottom:none; }
+      .pending-who { display:flex; flex-direction:column; min-width:180px; }
+      .pending-who .mono { font-size:12px; color:var(--ink-2); }
+      .pending-row .row-actions { margin-left:auto; }
+
       /* ---- frosted top bar ---- */
+      /* Sticky frosted header. What makes it read as smooth rather than "clicking":
+         - translateZ(0) + will-change put it on its own GPU layer, so the blur is
+           composited rather than re-rasterised coarsely on every scroll frame.
+         - A SMALL blur radius. Cost scales with radius: a 28px blur samples a big
+           region each frame and the browser drops to a cheaper, steppier redraw.
+           16px stays cheap enough to resolve continuously.
+         - A fairly opaque fill, so colour underneath reads as a soft tint instead of
+           punching through and making every step obvious.
+         - A gradient fade below the bar (::after) so elements ease out from under it
+           instead of popping across a hard edge. */
       .topbar { position: sticky; top: 0; z-index: 30; display:flex; align-items:center; justify-content:space-between;
-        padding:12px 24px; background: rgba(255,255,255,.55); backdrop-filter: saturate(180%) blur(28px);
-        -webkit-backdrop-filter: saturate(180%) blur(28px); border-bottom: 1px solid rgba(255,255,255,.6);
-        box-shadow: 0 1px 0 rgba(0,0,0,.05); flex-wrap:wrap; gap:10px; }
+        padding:12px 24px; background: rgba(252,253,254,.78); backdrop-filter: saturate(170%) blur(16px);
+        -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(255,255,255,.55);
+        flex-wrap:wrap; gap:10px;
+        transform: translateZ(0); will-change: backdrop-filter; backface-visibility: hidden; }
+      .topbar::after { content:""; position:absolute; left:0; right:0; top:100%; height:16px; pointer-events:none;
+        background: linear-gradient(180deg, rgba(244,246,249,.85), rgba(244,246,249,0)); }
       .brand { display:flex; gap:12px; align-items:center; }
       .brand-title { font-weight:700; font-size:17px; letter-spacing:-.02em; }
       .brand-sub { font-size:11px; color:var(--ink-2); letter-spacing:.02em; }
@@ -2171,6 +3923,13 @@ function Style() {
 
       /* ---- page transition ---- */
       .page { animation: pageIn .38s var(--spring); }
+      /* the hero + welcome card live directly in .page, which carries no padding of
+         its own (the padding sits on .board). Without this they butt straight up
+         against the tab bar and the window edge. */
+      .board-page { padding:26px 24px 0; max-width:1120px; }
+      .board-page > .board { padding:0; max-width:none; }
+      .board-page > .welcome { margin-bottom:18px; }
+      .seg-wrap { padding-bottom:4px; }
       @keyframes pageIn { from { opacity:0; transform: translateY(10px) scale(.995); } to { opacity:1; transform:none; } }
 
       /* ---- layout & cards ---- */
@@ -2180,6 +3939,8 @@ function Style() {
         padding:18px 20px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
         margin-bottom:16px; transition: box-shadow .3s var(--spring), transform .3s var(--spring); }
+      .card:hover { transform: translateY(-1px);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 4px rgba(0,0,0,.05), 0 14px 34px rgba(31,54,86,.11); }
       .section-title { font-size:24px; font-weight:700; letter-spacing:-.03em; margin:4px 0 18px; }
       .section-sub { font-size:14px; font-weight:500; color:var(--ink-2); margin-left:8px; letter-spacing:0; }
 
@@ -2271,7 +4032,12 @@ function Style() {
 
       /* ---- rank + star + incomplete + off leads ---- */
       .rank-badge { font-size:15px; }
-      .star-badge { font-size:11px; font-weight:700; color:#1E7A3C; background:rgba(48,177,85,.14); padding:3px 9px; border-radius:20px; }
+      .star-badge { font-size:11px; font-weight:700; color:#1E7A3C; background:rgba(48,177,85,.14); padding:3px 9px; border-radius:20px;
+        animation: starGlow 3.2s ease-in-out infinite; }
+      @keyframes starGlow {
+        0%,100% { box-shadow: 0 0 0 0 rgba(48,177,85,0); }
+        50%     { box-shadow: 0 0 0 3px rgba(48,177,85,.10); }
+      }
       .assoc-card.incomplete { opacity:.55; filter:grayscale(.75); }
       .assoc-card.incomplete .verdict { visibility:hidden; }
       .flag-gray { color:var(--ink-2); background:rgba(118,118,128,.16); }
@@ -2307,13 +4073,46 @@ function Style() {
       .splash-btn-primary { padding:18px; font-size:17px; font-weight:700; width:100%; border-radius:15px;
         box-shadow: 0 6px 20px rgba(42,94,155,.32); }
       .splash-btn-secondary { padding:11px; font-size:13.5px; width:78%; border-radius:12px; }
-      .splash-picker { margin-top:20px; animation: pageIn .3s var(--spring); }
-      .splash-store-list { display:flex; flex-direction:column; gap:8px; max-width:300px; margin:10px auto 0; }
-      .splash-store { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:12px; cursor:pointer;
-        background:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.8); backdrop-filter:blur(14px); font-weight:600; font-size:14px; transition: all .2s var(--spring); }
-      .splash-store:hover { background:#fff; transform: translateY(-1px); box-shadow: var(--shadow-1); }
-      .splash-store img { width:26px; height:26px; object-fit:contain; border-radius:6px; }
-      .splash-store-ph { width:26px; height:26px; border-radius:6px; background:#F5F5F7; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-3); }
+      .splash-btn-activity { background:#00A896; }
+      .splash-btn-activity:hover { box-shadow:0 3px 10px rgba(0,168,150,.35); }
+
+      /* ---- check out tracker ---- */
+      .checkout-summary { display:flex; gap:16px; margin-bottom:14px; font-size:13px; font-weight:600; }
+      .checkout-table { width:100%; border-collapse:collapse; }
+      .checkout-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); padding:8px; font-weight:600; }
+      .checkout-table th:not(:first-child) { text-align:center; }
+      .checkout-table td { padding:8px; border-top:1px solid rgba(0,0,0,.05); text-align:center; }
+      .checkout-table td:first-child { text-align:left; }
+      .cell-g { color:#1E7A3C; font-weight:700; } .cell-r { color:#C13529; font-weight:700; }
+      .cell-need { color:var(--ink-3); font-weight:500; font-size:11px; }
+      .co-nodata { opacity:.5; }
+      .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
+      .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .co-badge.no { background:rgba(229,71,60,.13); color:#C13529; }
+      .co-badge.dim { background:#F2F2F4; color:var(--ink-2); }
+      .offender-card { border-left:4px solid var(--red); }
+      .offender-row { display:flex; gap:12px; align-items:baseline; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .offender-row:last-child { border-bottom:none; }
+      .offender-detail { display:flex; gap:6px; flex-wrap:wrap; }
+
+      /* ---- plate tracker ---- */
+      .plate-out td { }
+      .plate-check { border:none; border-radius:8px; padding:5px 12px; font-weight:600; font-size:12px; cursor:pointer; }
+      .plate-check.out { background:rgba(255,159,10,.16); color:var(--amber); }
+      .plate-check.in { background:rgba(48,177,85,.14); color:#1E7A3C; }
+
+      /* ---- activity standards stepper ---- */
+      .stepper-row { display:flex; gap:20px; margin:16px 0; flex-wrap:wrap; }
+      .stepper-block { text-align:center; }
+      .stepper-label { font-weight:700; font-size:14px; margin-bottom:8px; }
+      .stepper { display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+      .stepper-btn { border:none; background:rgba(255,255,255,.6); width:46px; height:46px; font-size:22px; font-weight:600; color:var(--blue); cursor:pointer; transition: background .15s; }
+      .stepper-btn:hover:not(:disabled) { background:rgba(42,94,155,.1); }
+      .stepper-btn:disabled { opacity:.3; cursor:default; }
+      .stepper-value { min-width:60px; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; }
+      .stepper-hint { font-size:11px; color:var(--ink-3); margin-top:5px; }
+      .preset-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+      .preview-line { font-size:13px; color:var(--ink-2); margin-top:8px; padding-top:12px; border-top:1px solid var(--line); }
       .splash-foot { margin-top:28px; font-size:12px; color:var(--ink-3); letter-spacing:.06em; text-transform:uppercase; }
 
       /* ---- thresholds + check groups ---- */
@@ -2391,7 +4190,9 @@ function Style() {
         transition: all .25s var(--spring); max-width:640px; }
       .dropzone:hover { border-color: var(--blue); transform: translateY(-1px); box-shadow: var(--shadow-1); }
       .dropzone.active { border-color:var(--blue); background:rgba(10,132,255,.05); transform: scale(1.01); box-shadow: var(--shadow-2); }
-      .dz-icon { font-size:28px; color:var(--blue); }
+      .dz-icon { font-size:28px; color:var(--blue); animation: dzBob 2.6s ease-in-out infinite; }
+      @keyframes dzBob { 0%,100% { transform: translateY(0); opacity:.85; } 50% { transform: translateY(4px); opacity:1; } }
+      .dropzone.active .dz-icon { animation-duration: 1s; }
       .dz-title { font-size:17px; font-weight:700; letter-spacing:-.01em; margin-top:8px; }
       .dz-sub { color:var(--ink-2); font-size:12.5px; margin-top:5px; }
       .import-log { margin-top:14px; max-width:640px; }
@@ -2464,7 +4265,8 @@ function Style() {
       .store-card:hover { box-shadow:var(--shadow-2); transform: translateY(-3px); }
       .store-card:active { transform: translateY(-1px) scale(.99); }
       .store-card-top { display:flex; gap:11px; align-items:center; margin-bottom:10px; }
-      .store-logo { width:38px; height:38px; object-fit:contain; border-radius:10px; background:#fff; border:1px solid var(--line); }
+      .store-logo { width:38px; height:38px; flex:0 0 38px; object-fit:contain; border-radius:10px; background:#fff;
+        border:1px solid var(--line); display:block; }
       .store-logo.placeholder { display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-3);
         background:#F5F5F7; font-size:16px; }
       .store-card-name { font-weight:700; font-size:17px; letter-spacing:-.02em; }
@@ -2481,12 +4283,39 @@ function Style() {
       .card h3 { margin:0 0 10px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
 
       @media (max-width: 700px) { .assoc-name { flex:1 1 auto; } }
+
+      /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
+      @media (prefers-reduced-motion: reduce) {
+        .lpc *, .lpc *::before, .lpc *::after {
+          animation-duration: .001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: .001ms !important;
+          scroll-behavior: auto !important;
+        }
+        .lpc::before, .lpc::after { animation: none !important; transform: none !important; }
+        /* leave the logo in its finished state rather than mid-sweep */
+        .logo-anim { animation: none !important; transform: none !important; }
+        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; animation: none !important; }
+        .logo-anim .logo-needle { transform: rotate(0deg) !important; animation: none !important; }
+        .dz-icon, .star-badge { animation: none !important; }
+        /* hero holds its finished state instead of animating in */
+        .hero-band, .hero-band::after, .tile, .hero-strip { animation: none !important; transform: none !important; }
+        .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
+        .chip-warn .chip-dot, .leader-crown { animation: none !important; }
+        .loadscreen-bar-fill, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
+        .loadscreen-bar-fill { width:100%; }
+      }
+
       @media print {
         .no-print, .topbar, .seg-wrap { display:none !important; }
         .lpc { background:#fff; padding:0; }
         .print-area { padding:0; max-width:none; }
         .card { box-shadow:none; border:none; padding:0; margin-bottom:20px; }
         .gm-table td, .gm-table th { font-size:11px; }
+        .lpc::before, .lpc::after { display:none !important; }
+        .logo-anim, .dz-icon, .star-badge { animation:none !important; }
+        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
+        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
       }
     `}</style>
   );
