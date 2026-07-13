@@ -1209,7 +1209,7 @@ function LEADERBOARD_HTML(p) {
       root.innerHTML = '<div class="empty">' + store.__err + '</div>';
       return;
     }
-    if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import today\'s delivery reports in the tool and this board will fill in.</div>'; return; }
+    if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
     var M = (store.months||{})[CFG.ym] || {stats:{}};
 
     // CFG.roles already excludes any role turned off for The Board (BDC by default),
