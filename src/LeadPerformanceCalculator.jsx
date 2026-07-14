@@ -158,8 +158,8 @@ const DEFAULT_CONFIG = {
     { id: "holler-hyundai", name: "Holler Hyundai", icon: null },
   ],
   roles: [
-    { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true },
-    { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false },
+    { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
+    { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
   ],
   standards: {},
   approvedDomains: [],
@@ -635,6 +635,8 @@ export default function LeadPerformanceCalculator() {
         // which roles appear on The Board. BDC agents don't sell units, so they're off.
         for (const r of cfg.roles || []) {
           if (r.onBoard === undefined) { r.onBoard = r.id !== "bdc"; dirty = true; }
+          // coaching is built on cars sold, so it does not apply to BDC by default
+          if (r.coaching === undefined) { r.coaching = r.id !== "bdc"; dirty = true; }
         }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
         if (cfg.users) { delete cfg.users; dirty = true; }
@@ -747,17 +749,21 @@ export default function LeadPerformanceCalculator() {
     const copy = JSON.parse(JSON.stringify({
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
+      stars: data.stars, goals: data.goals, baselines: data.baselines,
+      repeatFlags: data.repeatFlags, excluded: data.excluded,
     }));
+    const t = new Date().toISOString();
     const snaps = data.snapshots || [];
-    snaps.unshift({ t: new Date().toISOString(), by: session?.name || "-", reason, data: copy });
-    data.snapshots = snaps.slice(0, 8); // keep the last 8
+    snaps.unshift({ t, by: session?.name || "-", reason, data: copy });
+    data.snapshots = snaps.slice(0, 12);
+    return t;   // so an upload can point back at the exact state before it
   };
 
   // Apply already-typed report entries. Ambiguous delivery files are resolved before we get here.
   const applyEntries = async (entries) => {
     const month = ym(); const day = today();
     let next = JSON.parse(JSON.stringify(storeData));
-    snapshotStore(next, "Before import");
+    const snapT = snapshotStore(next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
     const M = next.months[month];
     if (!M.imports[day]) M.imports[day] = {};
@@ -830,7 +836,8 @@ export default function LeadPerformanceCalculator() {
       M.imports[day][type] = true;
       // a full log of every upload, not just a tick for the day
       next.importLog = [
-        { t: new Date().toISOString(), type, label, file: fileName, count, skipped, by: session?.name || "-" },
+        { id: uid(), t: new Date().toISOString(), type, label, file: fileName, count, skipped,
+          by: session?.name || "-", snapT, day: type === "activity" ? day : null },
         ...(next.importLog || []),
       ].slice(0, 200);
       // The Internet Delivery Summary is the same DriveCentric export that drives the
@@ -1167,7 +1174,7 @@ export default function LeadPerformanceCalculator() {
                       filter={boardFilter} onClearFilter={() => setBoardFilter(null)} />
                   </div>
                 )}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
                 {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
@@ -2078,11 +2085,14 @@ function CheckOutTracker({ config, store, data, onChange }) {
     const hasData = rec.calls != null || rec.video != null;
     const callsMet = rec.calls != null && rec.calls >= std.minCalls;
     const videoMet = rec.video != null && rec.video >= std.minVideos;
-    const starsMet = !std.minStars || (stars != null && stars >= std.minStars);
+    // Once a Stars minimum is set, it is a real gate: missing counts as short, exactly
+    // like calls or videos. At 0 it is recorded but never held against anyone.
+    const starsRequired = (std.minStars ?? 0) > 0;
+    const starsMet = !starsRequired || (stars != null && stars >= std.minStars);
     return {
       calls: rec.calls, video: rec.video, stars,
-      callsMet, videoMet, starsMet, hasData,
-      rocked: callsMet && videoMet && starsMet,
+      callsMet, videoMet, starsMet, starsRequired, hasData,
+      rocked: callsMet && videoMet && starsMet,   // all three, or the day is a miss
     };
   };
 
@@ -2155,14 +2165,15 @@ function CheckOutTracker({ config, store, data, onChange }) {
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
                   {/* Stars come from a different app with no report, so they are typed in. */}
-                  <td className={std.minStars > 0 && r.stars != null ? (r.starsMet ? "cell-g" : "cell-r") : ""}>
+                  <td className={r.starsRequired ? (r.starsMet ? "cell-g" : "cell-r") : ""}>
+                    {r.starsRequired && <span className="cell-mark">{r.starsMet ? "✓" : "✗"}</span>}
                     <input className="star-inp" type="number" min="0" value={r.stars ?? ""}
                       placeholder="-" onChange={(e) => setStars(norm(r.a.name), e.target.value)} />
-                    {std.minStars > 0 && <span className="cell-need"> / {std.minStars}</span>}
+                    {r.starsRequired && <span className="cell-need"> / {std.minStars}</span>}
                   </td>
                   <td>{!r.hasData ? <span className="co-badge dim">no data</span>
-                    : r.rocked ? <span className="co-badge yes">\u2713 RockEd</span>
-                    : <span className="co-badge no">\u2717 Check out</span>}</td>
+                    : r.rocked ? <span className="co-badge yes">✓ RockEd</span>
+                    : <span className="co-badge no">✗ Check out</span>}</td>
                   <td>
                     <button className={"flag-btn " + (r.manualFlag ? "on" : r.autoFlag ? "auto" : "")}
                       title={r.manualFlag ? "Flagged by you. Click to clear."
@@ -3525,23 +3536,122 @@ function BaselineImport({ data, onChange }) {
 }
 
 /* ---------------- Upload history ---------------- */
-function UploadHistory({ data }) {
+function UploadHistory({ data, onChange }) {
   const log = data.importLog || [];
+  const [busy, setBusy] = useState(false);
   if (log.length === 0) return null;
+
+  // Two genuinely different situations, and pretending they're the same would lose data.
+  //
+  // ACTIVITY is stored per day, so removing one is surgical: delete that day and
+  // nothing else is touched.
+  //
+  // DELIVERY / APPOINTMENT / VIDEO overwrite the month's running totals. There is no
+  // way to subtract one upload back out of them, because the previous value is gone.
+  // The only honest undo is to restore the snapshot taken immediately before it, which
+  // also rewinds anything imported afterwards. So we say that out loud.
+
+  const laterThan = (entry) => log.filter((u) => new Date(u.t) > new Date(entry.t)).length;
+
+  const deleteActivityDay = (u) => {
+    if (!window.confirm(
+      "Delete the activity for " + new Date(u.day + "T12:00").toLocaleDateString() + "?" +
+      String.fromCharCode(10, 10) +
+      "Only that day is removed. Every other day and every other report stays exactly as it is." +
+      String.fromCharCode(10, 10) +
+      "Stars you typed in for that day are kept, in case you re-import it."
+    )) return;
+    setBusy(true);
+    const next = JSON.parse(JSON.stringify(data));
+    if (next.activity) delete next.activity[u.day];
+    // clear the tick for that day so the checklist is honest again
+    for (const mk of Object.keys(next.months || {})) {
+      if (next.months[mk]?.imports?.[u.day]) delete next.months[mk].imports[u.day].activity;
+    }
+    next.importLog = (next.importLog || []).filter((x) => x.id !== u.id);
+    onChange(next, { action: "Deleted activity day", detail: u.day });
+    setBusy(false);
+  };
+
+  const undoUpload = (u) => {
+    const snap = (data.snapshots || []).find((s) => s.t === u.snapT);
+    const after = laterThan(u);
+    if (!snap) {
+      alert(
+        "The restore point for this upload has aged out, so it can no longer be undone cleanly." +
+        String.fromCharCode(10, 10) +
+        "Re-import the correct file instead: it overwrites these numbers. Or restore a backup from the Backup tab."
+      );
+      return;
+    }
+    if (!window.confirm(
+      "Undo " + u.label + " from " + new Date(u.t).toLocaleString() + "?" +
+      String.fromCharCode(10, 10) +
+      "This report overwrote the month's running totals, so the only way back is to restore the state from just before it." +
+      (after > 0
+        ? String.fromCharCode(10, 10) + "WARNING: " + after + " later upload" + (after === 1 ? "" : "s") +
+          " will also be undone. You will need to re-import " + (after === 1 ? "it" : "them") + "."
+        : "")
+    )) return;
+
+    setBusy(true);
+    const current = JSON.parse(JSON.stringify(data));
+    const restored = {
+      ...current,
+      ...snap.data,
+      snapshots: [
+        { t: new Date().toISOString(), by: "-", reason: "Before undo", data: JSON.parse(JSON.stringify({
+          roster: current.roster, months: current.months, activity: current.activity,
+          plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+          stars: current.stars, goals: current.goals, baselines: current.baselines,
+          repeatFlags: current.repeatFlags, excluded: current.excluded,
+        })) },
+        ...(current.snapshots || []),
+      ].slice(0, 12),
+      // the undo itself is undoable
+      importLog: (current.importLog || []).filter((x) => new Date(x.t) < new Date(u.t)),
+      // these are yours, not the report's: never rewind them
+      goals: current.goals,
+      baselines: current.baselines,
+      stars: current.stars,
+      repeatFlags: current.repeatFlags,
+      excluded: current.excluded,
+    };
+    onChange(restored, { action: "Undid upload", detail: `${u.label} (${u.file})` });
+    setBusy(false);
+  };
+
   return (
     <div className="card">
       <h3>Upload history</h3>
-      <p className="hint">Every upload, with the time it landed. Useful when the report gets pulled more than once a day and you need to know how fresh a number really is.</p>
+      <p className="hint">
+        Every upload, with the time it landed. Activity days can be deleted on their own.
+        The other reports overwrite the month's totals, so undoing one means rewinding to just before it.
+      </p>
       <div className="up-list">
-        {log.slice(0, 25).map((u, i) => (
-          <div key={i} className="up-row">
-            <span className="up-when">{new Date(u.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
-            <span className="up-type">{u.label}</span>
-            <span className="up-file">{u.file}</span>
-            <span className="up-count">{u.count} rows{u.skipped ? `, ${u.skipped} ignored` : ""}</span>
-            <span className="up-by">{u.by}</span>
-          </div>
-        ))}
+        {log.slice(0, 25).map((u, i) => {
+          const canSurgical = u.type === "activity" && u.day;
+          const after = laterThan(u);
+          return (
+            <div key={u.id || i} className="up-row">
+              <span className="up-when">{new Date(u.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+              <span className="up-type">{u.label}</span>
+              <span className="up-file">{u.file}</span>
+              <span className="up-count">{u.count} rows{u.skipped ? `, ${u.skipped} ignored` : ""}</span>
+              <span className="up-by">{u.by}</span>
+              {canSurgical ? (
+                <button className="btn-x danger" disabled={busy} onClick={() => deleteActivityDay(u)}>Delete</button>
+              ) : u.snapT ? (
+                <button className="btn-x danger" disabled={busy} onClick={() => undoUpload(u)}
+                  title={after > 0 ? `Also undoes ${after} later upload${after === 1 ? "" : "s"}` : "Rewinds to just before this upload"}>
+                  Undo{after > 0 ? ` (+${after})` : ""}
+                </button>
+              ) : (
+                <span className="hint">-</span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -3720,7 +3830,13 @@ const BEHAVIOURS = [
 function CoachingPanel({ config, store, data, onChange }) {
   const [openId, setOpenId] = useState(null);
   const M = data.months?.[ym()];
-  const roster = (data.roster || []).filter((a) => a.roleId);
+
+  // Coaching is built entirely on cars sold: per-car outreach ratios, closing rates,
+  // pace to a unit goal. A BDC agent does not deliver units, so every one of those
+  // numbers is meaningless for them, and including them dragged the benchmark down.
+  const coachRoles = new Set(config.roles.filter((r) => r.coaching !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && coachRoles.has(a.roleId));
+  const excludedRoles = config.roles.filter((r) => r.coaching === false).map((r) => r.name);
 
   // Rank everyone by units delivered this month, then treat the top third as the
   // benchmark. What separates them is the whole point of this view.
@@ -3783,7 +3899,10 @@ function CoachingPanel({ config, store, data, onChange }) {
 
       <div className="card">
         <h3>Associates</h3>
-        <p className="hint">Open anyone to see their card, how they compare, and what to coach.</p>
+        <p className="hint">
+          Open anyone to see their card, how they compare, and what to coach.
+          {excludedRoles.length > 0 && ` ${excludedRoles.join(" and ")} are not shown here: coaching is built on cars sold, which does not apply to them. You can change that under Stores.`}
+        </p>
         <div className="coach-list">
           {scored.map((r) => (
             <button key={r.a.id} className={"coach-row " + (openId === r.a.id ? "on" : "")}
@@ -4105,8 +4224,8 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
                       {goal === 0 ? <span className="co-badge dim">no goal</span>
                         : stillNeeded === 0 ? <span className="co-badge yes">done</span>
                         : remaining === 0 ? <span className="co-badge dim">month over</span>
-                        : ok ? <span className="co-badge yes">\u2713 on pace</span>
-                        : <span className="co-badge no">\u2717 behind</span>}
+                        : ok ? <span className="co-badge yes">✓ on pace</span>
+                        : <span className="co-badge no">✗ behind</span>}
                     </td>
                   </tr>
                 );
@@ -4570,7 +4689,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         </div>
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
-        <UploadHistory data={data} />
+        <UploadHistory data={data} onChange={onChange} />
         <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
       </div>
     );
@@ -4620,7 +4739,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}
         </div>
       )}
-      <UploadHistory data={data} />
+      <UploadHistory data={data} onChange={onChange} />
       <p className="hint">Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the previous numbers for that report. Imports are recorded in the audit log.</p>
     </div>
   );
@@ -5411,9 +5530,44 @@ function SettingsPanel({ config, onChange }) {
       )}
       <div className="card">
         <h3>Positions</h3>
-        <div className="role-chips">
-          {config.roles.map((r) => <span key={r.id} className="role-chip" style={{ background: r.color }}>{r.name}</span>)}
-        </div>
+        <p className="hint">
+          Both The Board and Coaching are built on cars sold. A position that does not deliver units
+          has no meaningful closing rate or per-car ratio, so it is switched off for both by default.
+        </p>
+        <table className="roster-table">
+          <thead>
+            <tr><th>Position</th><th>Show on The Board</th><th>Include in Coaching</th></tr>
+          </thead>
+          <tbody>
+            {config.roles.map((r) => (
+              <tr key={r.id}>
+                <td><span className="role-chip" style={{ background: r.color }}>{r.name}</span></td>
+                <td>
+                  <label className="check-inline">
+                    <input type="checkbox" checked={r.onBoard !== false}
+                      onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(config));
+                        next.roles.find((x) => x.id === r.id).onBoard = e.target.checked;
+                        onChange(next, { action: "Changed position visibility", detail: `${r.name} on The Board: ${e.target.checked}` });
+                      }} />
+                    Delivers units
+                  </label>
+                </td>
+                <td>
+                  <label className="check-inline">
+                    <input type="checkbox" checked={r.coaching !== false}
+                      onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(config));
+                        next.roles.find((x) => x.id === r.id).coaching = e.target.checked;
+                        onChange(next, { action: "Changed position visibility", detail: `${r.name} in Coaching: ${e.target.checked}` });
+                      }} />
+                    Coach on cars
+                  </label>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         <div className="inline-form">
           <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="e.g. Internet Sales" />
           <button className="btn" onClick={addRole}>Add Position</button>
@@ -5921,7 +6075,7 @@ function Style() {
 
       /* ---- upload history ---- */
       .up-list { display:flex; flex-direction:column; }
-      .up-row { display:grid; grid-template-columns: 150px 150px 1fr 130px 100px; gap:10px; align-items:center;
+      .up-row { display:grid; grid-template-columns: 140px 140px 1fr 120px 90px auto; gap:10px; align-items:center;
         padding:7px 0; border-top:1px solid rgba(0,0,0,.05); font-size:12.5px; }
       .up-row:first-child { border-top:none; }
       .up-when { font-weight:700; font-variant-numeric:tabular-nums; }
