@@ -340,6 +340,10 @@ function evaluateAssociate(stats, tiers) {
     status: failures.length === 0 ? "pass" : "fail",
     failures, tier, tierIndex, cap: tier.cap, opps: opps ?? 0,
     atCap: (opps ?? 0) >= tier.cap,
+    // How close to the ceiling. Being below standard only actually costs someone
+    // leads once they reach their cap, so the warning should escalate rather than
+    // shouting "restricted" at somebody who still has plenty of room.
+    capUse: tier.cap > 0 ? (opps ?? 0) / tier.cap : 0,
     nextCap: sorted[tierIndex + 1]?.cap ?? null,
     surpass,
   };
@@ -2699,7 +2703,13 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
           {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
           {softFail && <span className="verdict verdict-grace">Early month</span>}
-          {ev.status === "fail" && !grace && <span className="verdict verdict-fail">Restrict leads</span>}
+          {ev.status === "fail" && !grace && (
+            ev.atCap
+              ? <span className="verdict verdict-fail">Restrict leads</span>
+              : (ev.capUse ?? 0) >= 0.8
+                ? <span className="verdict verdict-warn">Nearing the limit</span>
+                : <span className="verdict verdict-watch">Below standard, room left</span>
+          )}
           {ev.status === "no-standards" && <span className="verdict verdict-dim">No standards</span>}
         </>)}
       </div>
@@ -2734,14 +2744,19 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       )}
       {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
         <div className="reasons">
-          <div>Restrict leads because of:{" "}
+          <div>
+            {ev.atCap
+              ? "At the lead cap and below standard, so leads are restricted because of: "
+              : (ev.capUse ?? 0) >= 0.8
+                ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless this improves: `
+                : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix before the cap and nothing pauses: `}
             {ev.failures.map((f, i) => (
               <span key={i} className="reason">
                 {f.def.short} {f.val == null ? "(no data)" : (f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val))}, needs {f.def.kind === "pct" ? f.min + "%" : f.min}
               </span>
             ))}
           </div>
-          {!readOnly && (!showRestrict ? (
+          {!readOnly && ev.atCap && (!showRestrict ? (
             <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
           ) : (
             <div className="restrict-form">
@@ -4784,7 +4799,7 @@ function GMSummary({ config, data, stores }) {
     for (const r of rows) {
       out.push([
         r.store, r.role, r.name, r.ev.opps ?? "", r.ev.cap ?? "",
-        r.ev.status === "pass" ? "Cleared to grab leads" : r.grace ? "Grace period, trending below standard" : r.ev.status === "fail" ? "Restrict leads" : "No standards",
+        r.ev.status === "pass" ? "Cleared to grab leads" : r.grace ? "Grace period, trending below standard" : r.ev.status === "fail" ? (r.ev.atCap ? "Restrict leads" : (r.ev.capUse ?? 0) >= 0.8 ? "Nearing the limit" : "Below standard, room left") : "No standards",
         r.ev.status === "fail" ? failureText(r.ev) : "",
         fmtPct(r.stats?.deliveredPct), fmtPct(r.stats?.soldPct), fmtNum(r.stats?.unitsDelivered),
         fmtPct(r.stats?.apptVideoDayPct), fmtPct(r.stats?.bhVideoPct), fmtPct(r.stats?.engagedVideoPct),
@@ -6298,6 +6313,10 @@ function Style() {
       .verdict.sm { min-width:0; font-size:11px; padding:3px 9px; }
       .verdict-pass { background:rgba(48,177,85,.14); color:#1E7A3C; }
       .verdict-fail { background:rgba(229,71,60,.13); color:#C13529; }
+      /* amber: below standard and closing on the cap */
+      .verdict-warn { background:rgba(255,159,10,.16); color:#95600A; }
+      /* blue: below standard but plenty of headroom, so nothing is paused yet */
+      .verdict-watch { background:rgba(42,94,155,.12); color:#1D4674; }
       .verdict-dim { background:#F2F2F4; color:var(--ink-2); }
       .gauge { position:relative; height:8px; background:#E9E9EB; border-radius:5px; margin:9px 0 0 23px; max-width:520px; }
       .gauge-fill { height:100%; border-radius:5px; background:linear-gradient(90deg, #2A5E9B, #C1D730);
