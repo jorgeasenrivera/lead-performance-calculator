@@ -24,6 +24,7 @@ const METRICS = {
   internetPct: { label: "Internet Delivered %", short: "Internet %", kind: "pct" },
   phonePct: { label: "Phone Delivered %", short: "Phone %", kind: "pct" },
   showroomPct: { label: "Showroom Delivered %", short: "Showroom %", kind: "pct" },
+  campaignUnits: { label: "Campaign Units", short: "Campaign", kind: "num" },
   internetUnits: { label: "Internet Units", short: "Internet", kind: "num" },
   phoneUnits: { label: "Phone Units", short: "Phone", kind: "num" },
   showroomUnits: { label: "Showroom Units", short: "Showroom", kind: "num" },
@@ -50,6 +51,10 @@ const LEADERBOARD_REPORTS = {
   "delivery-internet": { label: "Internet Delivery" },
   "delivery-phone": { label: "Phone Delivery" },
   "delivery-showroom": { label: "Showroom Delivery" },
+  // Campaign covers service-to-sales and finance applications. Those leads genuinely
+  // sell cars, so the units must count, but grading them on close rate would punish
+  // people for working a completely different kind of lead. Units only.
+  "delivery-campaign": { label: "Campaign Delivery" },
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -123,7 +128,10 @@ function normThresholds(t) {
 }
 
 // Daily Activity checkout minimums (per store, editable)
-const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2 };
+// minStars is optional: leave it at 0 and stars are recorded but not required.
+// repeatDays is how many days below standard in a month before someone is flagged
+// automatically as a repeat offender.
+const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, repeatDays: 3 };
 
 // Per-store brand colors. `primary` drives the hero band + accents on the manager's view.
 const DEFAULT_BRAND = { primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" };
@@ -216,6 +224,7 @@ function detectReportType(rows, filename = "") {
 
   if (h2.includes("units delivered")) {
     // three same-format delivery reports; tell them apart by filename keyword
+    if (fn.includes("campaign")) return "delivery-campaign";
     if (fn.includes("phone")) return "delivery-phone";
     if (fn.includes("showroom") || fn.includes("show-room") || fn.includes("floor")) return "delivery-showroom";
     if (fn.includes("internet") || fn.includes("web")) return "delivery-internet";
@@ -257,6 +266,9 @@ function parseReport(rows, type) {
         rec.deliveredPct = dpct;
         rec.internetUnits = units;
         rec.internetPct = dpct;
+      } else if (channel === "campaign") {
+        // units only, on purpose. No pct is stored, so nothing can accidentally grade it.
+        rec.campaignUnits = units;
       } else {
         rec[channel + "Units"] = units;
         rec[channel + "Pct"] = dpct;
@@ -289,6 +301,15 @@ function parseReport(rows, type) {
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
       rec.actSold = toNum(row[idx("Sold")]);
       rec.actUnits = toNum(row[idx("Units Delivered")]);
+      // Opportunities by source. These are what make closing rates per channel possible.
+      rec.actOppShowroom = toNum(row[idx("Showroom")]);
+      rec.actOppPhone    = toNum(row[idx("Phone")]);
+      rec.actOppInternet = toNum(row[idx("Internet")]);
+      rec.actOppCampaign = toNum(row[idx("Campaign")]);
+      // The appointment funnel, end to end.
+      rec.actApptScheduled = toNum(row[idx("Scheduled")]);
+      rec.actApptConfirmed = toNum(row[idx("Confirmed")]);
+      rec.actApptNoShow    = toNum(row[idx("No Show")]);
     }
     out[key] = rec;
   }
@@ -684,6 +705,20 @@ export default function LeadPerformanceCalculator() {
 
   useEffect(() => { setBoardFilter(null); }, [view, tab, appModule]);
 
+  // The Board opens in its own window and is tuned at the TV, not here. It calls
+  // back into this window to save what the person standing at the screen chose.
+  useEffect(() => {
+    window.__lpcSaveBoardDisplay = async (storeId, display) => {
+      const current = adminData[storeId] || (view === storeId ? storeData : null);
+      if (!current) return false;
+      const next = JSON.parse(JSON.stringify(current));
+      next.boardDisplay = display;
+      await persistStore(storeId, next, { action: "Changed board display", detail: JSON.stringify(display) });
+      return true;
+    };
+    return () => { delete window.__lpcSaveBoardDisplay; };
+  }, [adminData, storeData, view]); // eslint-disable-line
+
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     (async () => {
@@ -758,6 +793,10 @@ export default function LeadPerformanceCalculator() {
             text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
             apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
             sold: rec.actSold, units: rec.actUnits,
+            oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
+            oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
+            apptScheduled: rec.actApptScheduled, apptConfirmed: rec.actApptConfirmed,
+            apptNoShow: rec.actApptNoShow,
             uploadedAt: new Date().toISOString(),
           };
           count++;
@@ -771,7 +810,7 @@ export default function LeadPerformanceCalculator() {
         const trend = { ...(prevStat.prevPct || {}) };
         const pctDay = { ...(prevStat.pctDay || {}) };
         const hist = JSON.parse(JSON.stringify(prevStat.pctHistory || {}));
-        for (const ch of ["internet", "phone", "showroom"]) {
+        for (const ch of ["internet", "phone", "showroom"]) {   // campaign has no pct by design
           if (rec[ch + "Pct"] == null) continue;
           const storedVal = prevStat[ch + "Pct"];
           const storedDay = pctDay[ch];
@@ -1105,10 +1144,10 @@ export default function LeadPerformanceCalculator() {
           <div key={view + tab + appModule} className="page">
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} />}
-                {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
               </>
             ) : (
@@ -1221,20 +1260,30 @@ function LEADERBOARD_HTML(p) {
     0% { transform: translate3d(0,0,0) scale(1); }
     100% { transform: translate3d(-2.5%, 2%, 0) scale(1.08); }
   }
-  .wrap { position:relative; z-index:1; }
+  /* Display tuning, set at the TV itself.
+     --tscale   : overall text size
+     --squeeze  : horizontal pre-compression. If the TV stretches the picture sideways
+                  (casting 4:3 into 16:9, or a stretched picture mode), squeezing the
+                  content here means it comes out the right shape on the wall.
+     --pad      : edge inset, for TVs that overscan and crop the borders. */
+  .wrap { position:relative; z-index:1;
+    --tscale: 1; --squeeze: 1; --pad: 0vw;
+    padding-left: calc(2vw + var(--pad)); padding-right: calc(2vw + var(--pad));
+    transform: scaleX(var(--squeeze));
+    transform-origin: center center; }
   .wrap { height:100vh; display:flex; flex-direction:column; padding:2.2vh 2vw; }
   .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.6vh; }
   .head-l { display:flex; align-items:center; gap:1.2vw; }
   .head-r { display:flex; align-items:center; gap:2.4vw; }
-  .head-logo { width:6.6vh; height:6.6vh; border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .head-logo { width:calc(6.6vh * var(--tscale)); height:calc(6.6vh * var(--tscale)); border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .head-logo img { width:100%; height:100%; object-fit:contain; }
-  .head-title { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:5.4vh; letter-spacing:.5px; line-height:1; }
-  .head-sub { font-size:1.7vh; color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
+  .head-title { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(5.4vh * var(--tscale)); letter-spacing:.5px; line-height:1; }
+  .head-sub { font-size:calc(1.7vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
   .total { text-align:right; }
-  .total-num { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:5.8vh; line-height:1; color:var(--lime); }
-  .total-cap { font-size:1.5vh; color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
+  .total-num { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
+  .total-cap { font-size:calc(1.5vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
   .clock { text-align:right; font-family:'Archivo','Inter',sans-serif; }
-  .clock-time { font-size:3.2vh; font-weight:700; }
+  .clock-time { font-size:calc(3.2vh * var(--tscale)); font-weight:700; }
   .clock-date { font-size:1.5vh; color:#9FC2E4; display:flex; align-items:center; gap:.4vw; justify-content:flex-end; }
   .live { width:.8vh; height:.8vh; border-radius:50%; background:#69E08A; flex:0 0 auto;
     box-shadow:0 0 0 0 rgba(105,224,138,.7); animation: livePulse 2.4s ease-out infinite; }
@@ -1245,12 +1294,16 @@ function LEADERBOARD_HTML(p) {
   }
 
   /* one panel, one table, everybody visible without scrolling */
-  .panel { flex:1; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+  .panel { flex:1; position:relative; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
     border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden; }
+  .scroller { height:100%; overflow:hidden; }
+  /* soft fade at the bottom edge so a row cut mid-scroll reads as intentional */
+  .panel::after { content:''; position:absolute; left:0; right:0; bottom:0; height:5vh; pointer-events:none;
+    background:linear-gradient(180deg, transparent, rgba(14,32,51,.75)); border-radius:0 0 1.4vh 1.4vh; }
   /* The table is capped and centred. Stretched across a 65in screen the columns drifted
      so far apart the eye lost the row on the way across. */
   .lb { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
-  .lb th { font-size:1.7vh; text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
+  .lb th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
     font-weight:700; padding:0 .5vw 1.2vh; text-align:center; }
   .lb th.nm { text-align:left; padding-left:1vw; }
   .lb td { padding:var(--rowpad) .5vw; font-size:var(--rowfs); text-align:center; }
@@ -1278,9 +1331,16 @@ function LEADERBOARD_HTML(p) {
 
   /* Delivered doubles as a bar chart: volume is instantly comparable down the column */
   .lb .sold { width:14%; position:relative; }
-  .lb .sold .bar { position:absolute; left:6%; top:14%; bottom:14%; width:var(--barw);
-    background:linear-gradient(90deg, rgba(193,215,48,.30), rgba(193,215,48,.10));
+  /* --barw is a percentage of the cell, and the leader gets 100%. Starting at 6% meant
+     the leader's bar ran to 106% and spilled into the Internet column. Scale it into
+     the space that actually exists. */
+  .lb .sold .bar { position:absolute; left:5%; top:14%; bottom:14%;
+    width:calc(var(--barw) * 0.86);
+    background:linear-gradient(90deg, rgba(193,215,48,.32), rgba(193,215,48,.08));
     border-radius:.5vh; z-index:0; transition:width .8s cubic-bezier(.22,1,.36,1); }
+  .lb .sold .camp { position:relative; z-index:1; display:inline-block; margin-left:.4vw;
+    font-size:calc(var(--rowfs) * .55); font-weight:700; color:#B9CE4B;
+    background:rgba(193,215,48,.14); padding:.15vh .45vw; border-radius:.5vh; vertical-align:middle; }
   .lb .sold .soldnum { position:relative; z-index:1;
     font-family:'Archivo Black','Archivo',sans-serif; color:var(--lime);
     font-size:calc(var(--rowfs) * 1.45); }
@@ -1317,8 +1377,61 @@ function LEADERBOARD_HTML(p) {
   .foot { text-align:center; font-size:1.4vh; color:#7FA8D4; margin-top:1.1vh; letter-spacing:.04em; }
   .empty { color:#7FA8D4; font-size:2vh; padding:4vh; text-align:center; }
   .fade { animation:fade .5s ease; } @keyframes fade { from{opacity:0;transform:translateY(6px);} to{opacity:1;} }
+
+  /* tuning controls: nearly invisible until someone goes looking for them */
+  .gear { position:fixed; right:1.2vw; bottom:1.2vh; z-index:40; width:4.4vh; height:4.4vh; border-radius:50%;
+    border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.07); color:#9FC2E4;
+    font-size:2.2vh; cursor:pointer; opacity:.16; transition:opacity .25s, background .25s; }
+  .gear:hover { opacity:1; background:rgba(255,255,255,.14); }
+  .tuner { position:fixed; right:1.2vw; bottom:7vh; z-index:41; width:min(340px, 32vw);
+    background:rgba(10,24,40,.96); border:1px solid rgba(255,255,255,.14); border-radius:1.4vh;
+    padding:1.6vh 1.4vw; display:none; box-shadow:0 1.5vh 4vh rgba(0,0,0,.55); font-size:1.6vh; }
+  .tuner.on { display:block; }
+  .tuner-head { display:flex; justify-content:space-between; align-items:center;
+    font-weight:800; font-size:1.9vh; margin-bottom:1.2vh; }
+  .tuner-x { background:none; border:none; color:#9FC2E4; font-size:2.4vh; cursor:pointer; line-height:1; }
+  .tuner-row { display:block; margin-bottom:1vh; }
+  .tuner-row span { display:flex; justify-content:space-between; color:#BFD9F0; margin-bottom:.5vh; }
+  .tuner-row b { color:#fff; }
+  .tuner-row input[type=range] { width:100%; accent-color:#C1D730; }
+  .tuner-hint { color:#7FA8D4; font-size:1.35vh; margin:-.3vh 0 1.2vh; line-height:1.45; }
+  .tuner-foot { display:flex; gap:.6vw; margin-top:1.4vh; }
+  .tuner-btn { flex:1; padding:.9vh .6vw; border-radius:.9vh; border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.06); color:#EAF1F8; font-size:1.5vh; font-weight:700; cursor:pointer; }
+  .tuner-btn.primary { background:#C1D730; color:#1F2A00; border-color:#C1D730; }
+  .tuner-msg { color:#69E08A; font-size:1.35vh; margin-top:.8vh; min-height:1.6vh; }
 </style></head>
-<body><div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
+<body>
+<div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
+
+<!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
+<button class="gear" id="gear" title="Display settings">&#9881;</button>
+<div class="tuner" id="tuner">
+  <div class="tuner-head">Display <button class="tuner-x" id="tclose">&times;</button></div>
+
+  <label class="tuner-row">
+    <span>Text size <b id="v-t">100%</b></span>
+    <input id="s-t" type="range" min="60" max="160" step="5" value="100">
+  </label>
+
+  <label class="tuner-row">
+    <span>Horizontal squeeze <b id="v-s">100%</b></span>
+    <input id="s-s" type="range" min="70" max="100" step="1" value="100">
+  </label>
+  <p class="tuner-hint">If the TV stretches the picture sideways, pull this down until the letters look the right shape on the wall.</p>
+
+  <label class="tuner-row">
+    <span>Edge inset <b id="v-p">0%</b></span>
+    <input id="s-p" type="range" min="0" max="8" step="0.5" value="0">
+  </label>
+  <p class="tuner-hint">For screens that crop the edges.</p>
+
+  <div class="tuner-foot">
+    <button class="tuner-btn" id="treset">Reset</button>
+    <button class="tuner-btn primary" id="tsave">Save for this store</button>
+  </div>
+  <div class="tuner-msg" id="tmsg"></div>
+</div>
 <script>
   var CFG = ${JSON.stringify(p)};
   function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
@@ -1420,12 +1533,14 @@ function LEADERBOARD_HTML(p) {
       .map(function(a){
         var s = M.stats[norm(a.name)] || {};
         var iU=num(s.internetUnits), pU=num(s.phoneUnits), rU=num(s.showroomUnits);
+        var cU=num(s.campaignUnits);   // service-to-sales and finance apps: units count, close rate is not graded
         var haveAll = (s.internetUnits!=null) && (s.phoneUnits!=null) && (s.showroomUnits!=null);
         return {
           name:a.name,
           internetPct:s.internetPct, phonePct:s.phonePct, showroomPct:s.showroomPct,
           prev:(s.prevPct||{}),
-          sold: iU+pU+rU,
+          camp: cU,
+          sold: iU+pU+rU+cU,
           haveAll:haveAll
         };
       })
@@ -1441,9 +1556,11 @@ function LEADERBOARD_HTML(p) {
     // read enormous, and a big team should still be as large as it possibly can be.
     var n = Math.max(people.length, 1);
     var AVAIL = 80;                                   // vh the table body gets
-    var rowH  = Math.min(8.5, AVAIL / (n + 1));       // height each row can take
-    var rowFs = Math.max(1.4, Math.min(4.2, rowH * 0.60));   // vh
-    var rowPad = Math.max(0.15, rowH * 0.10);                // vh
+    var rowH  = Math.min(8.5, AVAIL / (n + 1));
+    // Never shrink below what is readable from across a floor. If the team does not
+    // fit at that size, the board scrolls instead of squinting.
+    var rowFs = Math.max(2.2, Math.min(4.2, rowH * 0.60)) * DISP.tscale;   // vh
+    var rowPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;                // vh
 
     function cell(pct, prevVal, ch){
       if (pct == null) return '<td class="pcell"><span class="pill dim">-</span></td>';
@@ -1464,7 +1581,9 @@ function LEADERBOARD_HTML(p) {
       return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.name + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
-        '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span></td>' +
+        '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
+          (x.camp > 0 ? '<span class="camp" title="Campaign units: service-to-sales and finance. Counted, not graded.">+' + x.camp + ' camp</span>' : '') +
+        '</td>' +
         cell(x.internetPct, x.prev.internet, 'internet') +
         cell(x.phonePct,    x.prev.phone,    'phone') +
         cell(x.showroomPct, x.prev.showroom, 'showroom') +
@@ -1481,6 +1600,7 @@ function LEADERBOARD_HTML(p) {
         '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
       '</div></div>'+
       '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
+        '<div class="scroller" id="scroller">'+
         '<table class="lb">'+
           '<thead><tr>'+
             '<th class="rank">#</th>'+
@@ -1492,6 +1612,7 @@ function LEADERBOARD_HTML(p) {
           '</tr></thead>'+
           '<tbody>'+rows+'</tbody>'+
         '</table>'+
+        '</div>'+
       '</div>'+
       '<div class="foot">' +
         'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
@@ -1501,6 +1622,58 @@ function LEADERBOARD_HTML(p) {
       '</div>';
     tick();
     countUp();
+    startScroll();
+  }
+
+  // If the whole team cannot fit at a readable size, the board walks slowly down the
+  // list, holds at the bottom, then springs back to the top with a bounce. Nobody at
+  // the bottom of the board should be invisible all day.
+  var scrollRAF = null;
+  function startScroll(){
+    if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
+    var el = document.getElementById('scroller');
+    if (!el) return;
+
+    // let layout settle before measuring
+    setTimeout(function(){
+      var over = el.scrollHeight - el.clientHeight;
+      if (over <= 4) return;                 // everyone fits: nothing to do
+
+      var HOLD_TOP = 4000;                   // pause so the leaders get their moment
+      var HOLD_BOTTOM = 2500;
+      var SPEED = 22;                        // px per second: a slow, readable crawl
+      var BLOOP = 950;                       // the spring back to the top
+
+      var phase = 'holdTop', t0 = null, from = 0;
+
+      function bloopEase(p){
+        // overshoot slightly then settle: the "bloop"
+        var c = 1.70158 * 1.2;
+        return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2);
+      }
+
+      function frame(ts){
+        if (t0 === null) t0 = ts;
+        var dt = ts - t0;
+
+        if (phase === 'holdTop') {
+          el.scrollTop = 0;
+          if (dt > HOLD_TOP) { phase = 'down'; t0 = ts; }
+        } else if (phase === 'down') {
+          var y = (dt / 1000) * SPEED;
+          if (y >= over) { el.scrollTop = over; phase = 'holdBottom'; t0 = ts; }
+          else el.scrollTop = y;
+        } else if (phase === 'holdBottom') {
+          if (dt > HOLD_BOTTOM) { phase = 'bloop'; t0 = ts; from = el.scrollTop; }
+        } else if (phase === 'bloop') {
+          var p = Math.min(1, dt / BLOOP);
+          el.scrollTop = Math.max(0, from * (1 - bloopEase(p)));
+          if (p >= 1) { el.scrollTop = 0; phase = 'holdTop'; t0 = ts; }
+        }
+        scrollRAF = requestAnimationFrame(frame);
+      }
+      scrollRAF = requestAnimationFrame(frame);
+    }, 400);
   }
 
   // numbers roll up rather than snapping into place. Runs on every refresh, so a
@@ -1529,7 +1702,80 @@ function LEADERBOARD_HTML(p) {
     var dt = document.getElementById('datt');
     if(dt) dt.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
     else if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
-  async function loop(){ var s = await getStore(); render(s); }
+  async function loop(){
+    var s = await getStore();
+    if (s && s.boardDisplay && !s.__err) {
+      // only adopt saved settings on the first load, so a live adjustment is not
+      // stamped over every fifteen minutes
+      if (!LAST) {
+        DISP.tscale = s.boardDisplay.tscale || 1;
+        DISP.squeeze = s.boardDisplay.squeeze || 1;
+        DISP.pad = s.boardDisplay.pad || 0;
+      }
+    }
+    if (s && !s.__err) LAST = s;
+    applyDisp();
+    render(s);
+    wireTuner();
+    applyDisp();
+  }
+  /* ---------- display tuning ---------- */
+  // Read whatever was saved for this store, and let the person at the TV change it.
+  var DISP = { tscale: 1, squeeze: 1, pad: 0 };
+
+  function applyDisp(){
+    var w = document.getElementById('root');
+    if (!w) return;
+    w.style.setProperty('--tscale', DISP.tscale);
+    w.style.setProperty('--squeeze', DISP.squeeze);
+    w.style.setProperty('--pad', DISP.pad + 'vw');
+    var t = document.getElementById('v-t'), s = document.getElementById('v-s'), pd = document.getElementById('v-p');
+    if (t) t.textContent = Math.round(DISP.tscale * 100) + '%';
+    if (s) s.textContent = Math.round(DISP.squeeze * 100) + '%';
+    if (pd) pd.textContent = DISP.pad + '%';
+  }
+
+  function wireTuner(){
+    var gear = document.getElementById('gear');
+    var tun = document.getElementById('tuner');
+    var st = document.getElementById('s-t'), ss = document.getElementById('s-s'), sp = document.getElementById('s-p');
+    if (!gear || !tun) return;
+
+    gear.onclick = function(){ tun.classList.toggle('on'); };
+    document.getElementById('tclose').onclick = function(){ tun.classList.remove('on'); };
+
+    st.value = Math.round(DISP.tscale * 100);
+    ss.value = Math.round(DISP.squeeze * 100);
+    sp.value = DISP.pad;
+
+    // text size changes the row maths, so re-render; the others are pure CSS
+    st.oninput = function(){ DISP.tscale = st.value / 100; applyDisp(); if (LAST) render(LAST); };
+    ss.oninput = function(){ DISP.squeeze = ss.value / 100; applyDisp(); };
+    sp.oninput = function(){ DISP.pad = parseFloat(sp.value); applyDisp(); };
+
+    document.getElementById('treset').onclick = function(){
+      DISP = { tscale: 1, squeeze: 1, pad: 0 };
+      st.value = 100; ss.value = 100; sp.value = 0;
+      applyDisp(); if (LAST) render(LAST);
+    };
+
+    document.getElementById('tsave').onclick = async function(){
+      var msg = document.getElementById('tmsg');
+      try {
+        var op = window.opener;
+        if (op && op.__lpcSaveBoardDisplay) {
+          var ok = await op.__lpcSaveBoardDisplay(CFG.storeId, DISP);
+          msg.textContent = ok ? 'Saved for this store.' : 'Could not save.';
+        } else {
+          msg.textContent = 'Keep the tool window open to save this.';
+        }
+      } catch (e) { msg.textContent = 'Could not save.'; }
+      setTimeout(function(){ msg.textContent = ''; }, 4000);
+    };
+  }
+
+  var LAST = null;   // last store payload, so a text-size change can re-render
+
   // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
   // was pointless: the reports only change when a manager uploads one.
   // The clock is separate and ticks every 10 seconds, so the minute on screen is
@@ -1626,6 +1872,7 @@ async function openLeaderboard(config, storeId) {
   // refreshes them itself. Without this it would lose access once the data is locked down.
   const tokens = await getTokens();
   const payload = {
+    storeId,
     storeKey: `lpc:store:${storeId}:v2`,
     storeName: store?.name || "Store",
     icon: store?.icon || null,
@@ -1793,24 +2040,74 @@ function ImportBadge({ storeData, activity }) {
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
-function CheckOutTracker({ config, store, data }) {
+function CheckOutTracker({ config, store, data, onChange }) {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(today());
-  const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
   const activityDays = Object.keys(data.activity || {}).sort().reverse();
   const dayData = data.activity?.[day] || {};
 
-  // build rows from roster, matched to that day's activity import
+  // Stars come from a different app that we cannot pull a report from, so they are
+  // typed in. They live outside data.activity on purpose: that gets overwritten on
+  // every import and would wipe them.
+  const starsFor = (k) => data.stars?.[day]?.[k];
+  const setStars = (k, v) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.stars = next.stars || {};
+    next.stars[day] = next.stars[day] || {};
+    if (v == null || v === "") delete next.stars[day][k];
+    else next.stars[day][k] = Math.max(0, parseInt(v) || 0);
+    onChange(next);
+  };
+
+  const manualFlags = data.repeatFlags || {};
+  const toggleFlag = (a) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.repeatFlags = { ...(next.repeatFlags || {}) };
+    if (next.repeatFlags[a.id]) delete next.repeatFlags[a.id];
+    else next.repeatFlags[a.id] = { by: "manual", since: new Date().toISOString() };
+    onChange(next, { action: next.repeatFlags[a.id] ? "Flagged repeat offender" : "Cleared repeat flag", detail: a.name });
+  };
+
   const q = norm(query);
   const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
-  const rows = roster.map((a) => {
-    const rec = dayData[norm(a.name)] || {};
-    const calls = rec.calls, video = rec.video;
-    const callsMet = calls != null && calls >= std.minCalls;
-    const videoMet = video != null && video >= std.minVideos;
+
+  const evalDay = (a, d) => {
+    const rec = (data.activity?.[d] || {})[norm(a.name)] || {};
+    const stars = data.stars?.[d]?.[norm(a.name)];
     const hasData = rec.calls != null || rec.video != null;
-    return { a, calls, video, callsMet, videoMet, rocked: callsMet && videoMet, hasData, rec };
+    const callsMet = rec.calls != null && rec.calls >= std.minCalls;
+    const videoMet = rec.video != null && rec.video >= std.minVideos;
+    const starsMet = !std.minStars || (stars != null && stars >= std.minStars);
+    return {
+      calls: rec.calls, video: rec.video, stars,
+      callsMet, videoMet, starsMet, hasData,
+      rocked: callsMet && videoMet && starsMet,
+    };
+  };
+
+  // How many days this month has each person missed the bar? That is what makes
+  // somebody a repeat offender rather than someone who had one bad Tuesday.
+  const monthDays = activityDays.filter((d) => d.startsWith(ym()));
+  const missCount = {};
+  for (const a of roster) {
+    missCount[a.id] = monthDays.filter((d) => {
+      const e = evalDay(a, d);
+      return e.hasData && !e.rocked;
+    }).length;
+  }
+
+  const rows = roster.map((a) => {
+    const e = evalDay(a, day);
+    const misses = missCount[a.id] || 0;
+    const autoFlag = std.repeatDays > 0 && misses >= std.repeatDays;
+    return { a, ...e, rec: dayData[norm(a.name)] || {}, misses, autoFlag, manualFlag: !!manualFlags[a.id] };
   }).filter((r) => !q || norm(r.a.name).includes(q));
+
+  const repeatList = roster
+    .map((a) => ({ a, misses: missCount[a.id] || 0, manual: !!manualFlags[a.id] }))
+    .filter((r) => r.manual || (std.repeatDays > 0 && r.misses >= std.repeatDays))
+    .sort((x, y) => y.misses - x.misses);
 
   const rockedCount = rows.filter((r) => r.rocked).length;
   const withData = rows.filter((r) => r.hasData);
@@ -1828,7 +2125,7 @@ function CheckOutTracker({ config, store, data }) {
         <span className="hint">Minimum standard: {std.minCalls} calls · {std.minVideos} videos. Change it in the Standards tab.</span>
       </div>
       <div className="checkout-summary">
-        <span className="stat-pass">✓ {rockedCount} rocked it</span>
+        <span className="stat-pass">✓ {rockedCount} RockEd</span>
         <span className="stat-fail">✕ {offenders.length} below standard</span>
         <span className="stat-dim">{withData.length} of {rows.length} with data</span>
       </div>
@@ -1842,7 +2139,9 @@ function CheckOutTracker({ config, store, data }) {
       <div className="checkout-split">
         <div className="card checkout-card">
           <table className="checkout-table">
-            <thead><tr><th>Name</th><th>Calls</th><th>Videos</th><th>Rocked It</th></tr></thead>
+            <thead><tr>
+              <th>Name</th><th>Calls</th><th>Videos</th><th>Stars</th><th>RockEd</th><th>Repeat</th>
+            </tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.a.id} className={!r.hasData ? "co-nodata" : r.rocked ? "co-rocked" : "co-miss"}>
@@ -1855,7 +2154,24 @@ function CheckOutTracker({ config, store, data }) {
                     {r.hasData && <span className="cell-mark">{r.videoMet ? "\u2713" : "\u2717"}</span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
-                  <td>{!r.hasData ? <span className="co-badge dim">no data</span> : r.rocked ? <span className="co-badge yes">\u2713 Rocked it</span> : <span className="co-badge no">\u2717 Check out</span>}</td>
+                  {/* Stars come from a different app with no report, so they are typed in. */}
+                  <td className={std.minStars > 0 && r.stars != null ? (r.starsMet ? "cell-g" : "cell-r") : ""}>
+                    <input className="star-inp" type="number" min="0" value={r.stars ?? ""}
+                      placeholder="-" onChange={(e) => setStars(norm(r.a.name), e.target.value)} />
+                    {std.minStars > 0 && <span className="cell-need"> / {std.minStars}</span>}
+                  </td>
+                  <td>{!r.hasData ? <span className="co-badge dim">no data</span>
+                    : r.rocked ? <span className="co-badge yes">\u2713 RockEd</span>
+                    : <span className="co-badge no">\u2717 Check out</span>}</td>
+                  <td>
+                    <button className={"flag-btn " + (r.manualFlag ? "on" : r.autoFlag ? "auto" : "")}
+                      title={r.manualFlag ? "Flagged by you. Click to clear."
+                        : r.autoFlag ? `Missed the bar on ${r.misses} days this month. Click to also flag by hand.`
+                        : `Missed ${r.misses} day${r.misses === 1 ? "" : "s"} this month. Click to flag.`}
+                      onClick={() => toggleFlag(r.a)}>
+                      {r.manualFlag ? "\u2691 flagged" : r.autoFlag ? `\u2691 ${r.misses}x` : r.misses > 0 ? `${r.misses}x` : "-"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1863,6 +2179,25 @@ function CheckOutTracker({ config, store, data }) {
         </div>
 
         <aside className="checkout-side">
+          {repeatList.length > 0 && (
+            <div className="card repeat-card">
+              <h3 className="off-title">
+                Repeat offenders
+                <span className="section-sub">{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
+              </h3>
+              <p className="hint">
+                Below the bar on {std.repeatDays}+ days this month, or flagged by hand.
+                One bad day is noise. This is a pattern.
+              </p>
+              {repeatList.map((r) => (
+                <div key={r.a.id} className="repeat-row">
+                  <b>{r.a.name}</b>
+                  <span className="repeat-count">{r.misses} day{r.misses === 1 ? "" : "s"} missed</span>
+                  {r.manual && <span className="repeat-tag">flagged by you</span>}
+                </div>
+              ))}
+            </div>
+          )}
           <div className={"card offender-card " + (offenders.length === 0 ? "offender-clear" : "")}>
             <h3 className="off-title">
               {offenders.length === 0 ? "Nobody to check out" : `Check these ${offenders.length}`}
@@ -2021,6 +2356,20 @@ function ThresholdGrid({ value, onChange }) {
 }
 
 /* ---------------- Activity Standards Editor ---------------- */
+function StoreStepper({ label, value, onChange, hint }) {
+  return (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => onChange(value - 1)} disabled={value <= 1}>&minus;</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => onChange(value + 1)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+}
+
 function ActivityStandardsEditor({ config, storeId, onChange }) {
   const store = config.stores.find((s) => s.id === storeId);
   const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
@@ -2050,6 +2399,17 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
         <div className="stepper-row">
           <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
           <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
+          <Stepper label="Stars" field="minStars" value={std.minStars ?? 0} hint="0 = not required" />
+          <Stepper label="Repeat after" field="repeatDays" value={std.repeatDays ?? 3} hint="days missed in a month" />
+        </div>
+        <div className="stepper-row">
+          <StoreStepper label="Working days" value={store.workingDaysInMonth ?? 26}
+            onChange={(v) => {
+              const next = JSON.parse(JSON.stringify(config));
+              const s = next.stores.find((x) => x.id === storeId);
+              s.workingDaysInMonth = Math.max(1, Math.min(31, v));
+              onChange(next, { store: storeId, action: "Set working days", detail: String(v) });
+            }} hint="in the month, for pacing" />
         </div>
         <div className="preset-row">
           <span className="hint">Quick set:</span>
@@ -2057,7 +2417,12 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
           <button className="btn-ghost" onClick={() => { set("minCalls", 20); setTimeout(() => set("minVideos", 3), 60); }}>20 calls · 3 videos</button>
           <button className="btn-ghost" onClick={() => { set("minCalls", 25); setTimeout(() => set("minVideos", 5), 60); }}>25 calls · 5 videos</button>
         </div>
-        <div className="preview-line">Current standard: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b> per day to rock it.</div>
+        <div className="preview-line">
+          To RockEd: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b>
+          {std.minStars > 0 ? <> and <b>{std.minStars} stars</b></> : null} in a day.
+          Missing that on <b>{std.repeatDays ?? 3} days</b> in a month flags someone as a repeat offender automatically.
+          {!std.minStars && " Stars are recorded but not required at 0."}
+        </div>
       </div>
     </div>
   );
@@ -2802,6 +3167,7 @@ function ChannelPrompt({ pending, onCancel, onConfirm }) {
                 <option value="delivery-internet">Internet</option>
                 <option value="delivery-phone">Phone</option>
                 <option value="delivery-showroom">Showroom</option>
+                <option value="delivery-campaign">Campaign (units only)</option>
               </select>
             </div>
           ))}
@@ -2973,6 +3339,191 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   );
 }
 
+/* ---------------- Baseline import (historical period) ---------------- */
+function BaselineImport({ data, onChange }) {
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [days, setDays] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  const seeded = Object.keys(data.baselines || {}).length;
+
+  // count working days between two dates, Sundays excluded
+  const workingDaysBetween = (a, b) => {
+    if (!a || !b) return 0;
+    const s = new Date(a + "T12:00"), e = new Date(b + "T12:00");
+    if (e < s) return 0;
+    let n = 0;
+    for (const d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() !== 0) n++;   // skip Sundays
+    }
+    return n;
+  };
+
+  const onDates = (a, b) => {
+    setStart(a); setEnd(b);
+    const wd = workingDaysBetween(a, b);
+    if (wd) setDays(String(wd));
+  };
+
+  const read = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    const text = await file.text();
+    const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+    const type = detectReportType(rows, file.name);
+    setBusy(false);
+    if (type !== "activity") {
+      setPreview({ error: "That is not a Daily Activity report. Pull the activity report for your date range and drop it here." });
+      return;
+    }
+    const parsed = parseReport(rows, "activity");
+    const excluded = new Set((data.excluded || []).map(norm));
+    const aliases = data.aliases || {};
+    const people = [];
+    for (const [k, rec] of Object.entries(parsed)) {
+      const key = aliases[k] || k;
+      if (excluded.has(key)) continue;
+      const a = (data.roster || []).find((x) => norm(x.name) === key);
+      if (!a) continue;   // only people already on the roster
+      people.push({ a, rec });
+    }
+    setPreview({ people, fileName: file.name });
+  };
+
+  const commit = () => {
+    const d = parseInt(days) || 0;
+    if (!preview?.people?.length || d <= 0) return;
+    if (seeded && !window.confirm(
+      "This overwrites the existing baseline for everyone in the file." +
+      String.fromCharCode(10, 10) +
+      "Their history is what every coaching target is built from, so only do this if the old seed was wrong."
+    )) return;
+
+    const next = JSON.parse(JSON.stringify(data));
+    next.baselines = next.baselines || {};
+    for (const { a, rec } of preview.people) {
+      next.baselines[a.id] = {
+        daysWorked: d,
+        oppShowroom: rec.actOppShowroom ?? 0,
+        oppInternet: rec.actOppInternet ?? 0,
+        oppPhone: rec.actOppPhone ?? 0,
+        oppCampaign: rec.actOppCampaign ?? 0,
+        // The activity report gives total units, not units per channel. Split them the
+        // way this person's own opportunities split, which is the best honest estimate
+        // available. Overwrite by hand on their card if you know better.
+        ...(function () {
+          const units = rec.actUnits ?? 0;
+          const o = {
+            showroom: rec.actOppShowroom ?? 0, internet: rec.actOppInternet ?? 0,
+            phone: rec.actOppPhone ?? 0, campaign: rec.actOppCampaign ?? 0,
+          };
+          const total = o.showroom + o.internet + o.phone + o.campaign;
+          const share = (v) => (total > 0 ? (units * v) / total : 0);
+          return {
+            unitsShowroom: Math.round(share(o.showroom) * 10) / 10,
+            unitsInternet: Math.round(share(o.internet) * 10) / 10,
+            unitsPhone: Math.round(share(o.phone) * 10) / 10,
+            unitsCampaign: Math.round(share(o.campaign) * 10) / 10,
+          };
+        })(),
+        apptCreated: rec.actApptCreated ?? 0,
+        apptConfirmed: rec.actApptConfirmed ?? 0,
+        apptShowed: rec.actApptShow ?? 0,
+        calls: rec.actCalls ?? 0,
+        contacted: rec.actCallContacted ?? 0,
+        text: rec.actText ?? 0,
+        email: rec.actEmail ?? 0,
+        video: rec.actVideo ?? 0,
+        tasks: rec.actCompletedTasks ?? 0,
+        units: rec.actUnits ?? 0,
+        period: { start, end, days: d },
+      };
+    }
+    onChange(next, {
+      action: "Imported 90-day baseline",
+      detail: `${preview.people.length} associates, ${start} to ${end}, ${d} working days`,
+    });
+    setPreview(null);
+  };
+
+  return (
+    <div className="card baseline-card">
+      <h3>90-day baseline {seeded > 0 && <span className="badge badge-ok">{seeded} seeded</span>}</h3>
+      <p className="hint">
+        Every coaching target is built from a person's own conversion history, and the tool has none until it has
+        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric,
+        drop it here, and it seeds everyone at once. From then on the tool builds its own history and the seed
+        matters less every week.
+      </p>
+
+      <div className="bl-dates">
+        <label className="bl-field">
+          <span>Period start</span>
+          <input type="date" value={start} onChange={(e) => onDates(e.target.value, end)} />
+        </label>
+        <label className="bl-field">
+          <span>Period end</span>
+          <input type="date" value={end} onChange={(e) => onDates(start, e.target.value)} />
+        </label>
+        <label className="bl-field">
+          <span>Working days</span>
+          <input type="number" min="1" value={days} onChange={(e) => setDays(e.target.value)} />
+        </label>
+        <span className="hint">Sundays are excluded automatically. Change it if your store works differently.</span>
+      </div>
+
+      <div className="inline-form">
+        <label className="btn-ghost file-btn">
+          {busy ? "Reading..." : "Choose activity report"}
+          <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }}
+            onChange={(e) => { read(e.target.files[0]); e.target.value = ""; }} />
+        </label>
+      </div>
+
+      {preview?.error && <div className="login-err">{preview.error}</div>}
+
+      {preview?.people && (
+        <div className="bl-preview">
+          <div className="check-group-label">
+            {preview.people.length} matched from {preview.fileName}
+          </div>
+          {preview.people.length === 0 ? (
+            <p className="hint">Nobody in that file matches your roster. Check the names, or import the report normally first so the roster builds itself.</p>
+          ) : (
+            <>
+              <table className="roster-table">
+                <thead><tr><th>Name</th><th>Units</th><th>Calls</th><th>Videos</th><th>Opportunities</th></tr></thead>
+                <tbody>
+                  {preview.people.slice(0, 8).map(({ a, rec }) => (
+                    <tr key={a.id}>
+                      <td><b>{a.name}</b></td>
+                      <td>{rec.actUnits ?? 0}</td>
+                      <td>{rec.actCalls ?? 0}</td>
+                      <td>{rec.actVideo ?? 0}</td>
+                      <td>{(rec.actOppShowroom ?? 0) + (rec.actOppInternet ?? 0) + (rec.actOppPhone ?? 0) + (rec.actOppCampaign ?? 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {preview.people.length > 8 && <p className="hint">and {preview.people.length - 8} more.</p>}
+              <div className="inline-form">
+                <button className="btn" disabled={!days || !start || !end} onClick={commit}>
+                  Seed baseline for {preview.people.length} {preview.people.length === 1 ? "person" : "people"}
+                </button>
+                <button className="btn-x" onClick={() => setPreview(null)}>Cancel</button>
+              </div>
+              {(!start || !end || !days) && <p className="hint">Set the period the report covers first.</p>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Upload history ---------------- */
 function UploadHistory({ data }) {
   const log = data.importLog || [];
@@ -2994,6 +3545,138 @@ function UploadHistory({ data }) {
       </div>
     </div>
   );
+}
+
+/* ================= OWN YOUR OUTCOME =================
+   Coaching only. It never gates leads. The Lead Board's tier system remains the
+   single source of truth for who can take another lead, so the two can't contradict
+   each other.
+
+   The whole point: coach against a person's OWN conversion history rather than a
+   number somebody invented. "You need 25 calls per car, you're 8 cars short with 10
+   days left, so that's 20 calls a day and you're doing 12" beats "make more calls".
+   ==================================================== */
+
+const OYO_CHANNELS = [
+  { id: "showroom", label: "Showroom" },
+  { id: "internet", label: "Internet" },
+  { id: "phone", label: "Phone" },
+  { id: "campaign", label: "Campaign" },
+];
+
+// The outreach the workbook tracks, and the field each one lives in.
+const OYO_OUTREACH = [
+  { id: "calls", label: "Calls made" },
+  { id: "contacted", label: "Calls contacted" },
+  { id: "text", label: "Texts sent" },
+  { id: "email", label: "Emails sent" },
+  { id: "video", label: "Personalized videos" },
+  { id: "tasks", label: "Completed tasks" },
+];
+
+const emptyBaseline = () => ({
+  daysWorked: 0,
+  oppShowroom: 0, oppInternet: 0, oppPhone: 0, oppCampaign: 0,
+  unitsShowroom: 0, unitsInternet: 0, unitsPhone: 0, unitsCampaign: 0,
+  apptCreated: 0, apptConfirmed: 0, apptShowed: 0,
+  calls: 0, contacted: 0, text: 0, email: 0, video: 0, tasks: 0,
+  units: 0,
+});
+
+// Everything this person has done this month, summed straight out of the imports.
+// This is the MTD sheet, built from the Daily Activity report instead of typed in.
+function oyoMTD(data, nameKey, monthStats) {
+  const days = Object.keys(data.activity || {}).filter((d) => d.startsWith(ym()));
+  const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
+  const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
+
+  const s = monthStats || {};
+  return {
+    daysElapsed: rows.length,          // days we actually have data for, not a guess
+    oppShowroom: sum("oppShowroom"),
+    oppInternet: sum("oppInternet"),
+    oppPhone: sum("oppPhone"),
+    oppCampaign: sum("oppCampaign"),
+    // units per channel come from the Delivery Summaries, which are the authority on units
+    unitsShowroom: s.showroomUnits ?? 0,
+    unitsInternet: s.internetUnits ?? 0,
+    unitsPhone: s.phoneUnits ?? 0,
+    unitsCampaign: s.campaignUnits ?? 0,
+    apptCreated: sum("apptCreated"),
+    apptConfirmed: sum("apptConfirmed"),
+    apptShowed: sum("apptShow"),
+    calls: sum("calls"),
+    contacted: sum("contacted"),
+    text: sum("text"),
+    email: sum("email"),
+    video: sum("video"),
+    tasks: sum("tasks"),
+  };
+}
+
+const oyoUnits = (m) =>
+  (m.unitsShowroom ?? 0) + (m.unitsInternet ?? 0) + (m.unitsPhone ?? 0) + (m.unitsCampaign ?? 0);
+
+// A person's own conversion history. Seeded by hand until the tool has enough of its
+// own, then blended with what it has actually seen.
+function oyoBaseline(data, nameKey, aId) {
+  const seed = data.baselines?.[aId];
+  const seeded = seed && (seed.daysWorked ?? 0) > 0;
+
+  // everything the tool has observed itself, across every month on file
+  const allDays = Object.keys(data.activity || {});
+  const rows = allDays.map((d) => data.activity[d][nameKey]).filter(Boolean);
+  const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
+
+  const observedUnits = Object.keys(data.months || {}).reduce((n, mk) => {
+    const st = data.months[mk]?.stats?.[nameKey] || {};
+    return n + (st.showroomUnits ?? 0) + (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.campaignUnits ?? 0);
+  }, 0);
+
+  const observed = {
+    daysWorked: rows.length,
+    oppShowroom: sum("oppShowroom"), oppInternet: sum("oppInternet"),
+    oppPhone: sum("oppPhone"), oppCampaign: sum("oppCampaign"),
+    apptCreated: sum("apptCreated"), apptConfirmed: sum("apptConfirmed"), apptShowed: sum("apptShow"),
+    calls: sum("calls"), contacted: sum("contacted"), text: sum("text"),
+    email: sum("email"), video: sum("video"), tasks: sum("tasks"),
+    units: observedUnits,
+    unitsShowroom: 0, unitsInternet: 0, unitsPhone: 0, unitsCampaign: 0,
+  };
+  for (const mk of Object.keys(data.months || {})) {
+    const st = data.months[mk]?.stats?.[nameKey] || {};
+    observed.unitsShowroom += st.showroomUnits ?? 0;
+    observed.unitsInternet += st.internetUnits ?? 0;
+    observed.unitsPhone += st.phoneUnits ?? 0;
+    observed.unitsCampaign += st.campaignUnits ?? 0;
+  }
+
+  if (!seeded) return { ...observed, source: observed.daysWorked > 0 ? "observed" : "none" };
+
+  // Seed plus what we have seen since. The seed stops mattering as real history
+  // accumulates, which is exactly what you want.
+  const merged = { ...emptyBaseline(), source: "seed+observed" };
+  for (const k of Object.keys(emptyBaseline())) {
+    merged[k] = (seed[k] ?? 0) + (observed[k] ?? 0);
+  }
+  return merged;
+}
+
+// Per-vehicle ratios: the heart of the whole thing.
+function oyoRatios(b) {
+  const u = b.units || 0;
+  if (u <= 0) return null;
+  const r = {};
+  for (const o of OYO_OUTREACH) r[o.id] = (b[o.id] ?? 0) / u;
+  r.apptCreated = (b.apptCreated ?? 0) / u;
+  r.apptShowed = (b.apptShowed ?? 0) / u;
+  for (const c of OYO_CHANNELS) {
+    const opp = b["opp" + c.id.charAt(0).toUpperCase() + c.id.slice(1)] ?? 0;
+    const un = b["units" + c.id.charAt(0).toUpperCase() + c.id.slice(1)] ?? 0;
+    r["close_" + c.id] = opp > 0 ? un / opp : null;     // closing rate on that channel
+    r["leadsPerCar_" + c.id] = un > 0 ? opp / un : null;
+  }
+  return r;
 }
 
 /* ---------------- Coaching: associate cards ---------------- */
@@ -3034,7 +3717,7 @@ const BEHAVIOURS = [
   { id: "tasks", label: "Tasks completed per day", kind: "num" },
 ];
 
-function CoachingPanel({ config, store, data }) {
+function CoachingPanel({ config, store, data, onChange }) {
   const [openId, setOpenId] = useState(null);
   const M = data.months?.[ym()];
   const roster = (data.roster || []).filter((a) => a.roleId);
@@ -3043,8 +3726,12 @@ function CoachingPanel({ config, store, data }) {
   // benchmark. What separates them is the whole point of this view.
   const scored = roster.map((a) => {
     const s = M?.stats?.[norm(a.name)] || {};
-    const units = (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0);
-    return { a, units, stats: s, act: activityAverages(data, norm(a.name)) };
+    const units = (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0) + (s.campaignUnits ?? 0);
+    // the same verdict the Lead Board reaches, so the one-pager can explain a pause
+    // in exactly the terms the person already sees.
+    const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
+    const ev = evaluateAssociate(s, tiers);
+    return { a, units, stats: s, ev, act: activityAverages(data, norm(a.name)) };
   }).sort((x, y) => y.units - x.units);
 
   const withData = scored.filter((r) => r.act);
@@ -3060,14 +3747,23 @@ function CoachingPanel({ config, store, data }) {
   if (roster.length === 0) {
     return <div className="empty">No associates with a position yet. Assign roles on the Roster tab and this will fill in.</div>;
   }
-  if (withData.length === 0) {
-    return <div className="empty">No Daily Activity imported yet. Once a few days are in, this will show what the strongest people do differently.</div>;
-  }
+  // No early exit for missing activity. The benchmark needs it, but a card does not:
+  // you can still set a goal, seed a baseline, and print the one-pager. Bailing out
+  // here is why the cards would not open at all.
 
   const openRow = scored.find((r) => r.a.id === openId);
 
   return (
     <div className="coaching">
+      {withData.length === 0 ? (
+        <div className="card">
+          <h3>What the strongest people do differently</h3>
+          <p className="hint">
+            Needs Daily Activity imported before it can tell you anything. You can still open anyone's card
+            below to set a goal, seed their baseline, and print their one-pager.
+          </p>
+        </div>
+      ) : (
       <div className="card">
         <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
         <p className="hint">
@@ -3083,6 +3779,7 @@ function CoachingPanel({ config, store, data }) {
           ))}
         </div>
       </div>
+      )}
 
       <div className="card">
         <h3>Associates</h3>
@@ -3102,13 +3799,423 @@ function CoachingPanel({ config, store, data }) {
         </div>
       </div>
 
-      {openRow && <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} />}
+      {openRow && <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} data={data} onChange={onChange} />}
     </div>
   );
 }
 
-function AssociateCard({ config, store, row, topAvg, topCount }) {
+// The one-pager. It exists to answer two questions in a room, on paper:
+//   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
+// Everything on it is derived from this person's own numbers, so it is not an opinion.
+function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays }) {
+  const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
+  if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
+
+  const delivered = oyoUnits(mtd);
+  const elapsed = Math.max(1, mtd.daysElapsed);
+  const remaining = Math.max(0, workingDays - mtd.daysElapsed);
+  const stillNeeded = Math.max(0, goal - delivered);
+  const perDay = remaining > 0 ? stillNeeded / remaining : 0;
+  const pace = (delivered / elapsed) * workingDays;
+
+  const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const pct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
+  const num = (v) => (v == null ? "-" : (Math.round(v * 10) / 10).toString());
+
+  // ---- WHY ----
+  let whyTitle, whyBody, whyClass;
+  if (restrictedNow) {
+    whyTitle = "Your leads are paused right now.";
+    whyBody = "Confirmed off leads since " + new Date(restriction.since).toLocaleDateString() +
+      (restriction.until ? ". Back up for review on " + new Date(restriction.until).toLocaleDateString() + "." : ".");
+    whyClass = "bad";
+  } else if (ev && ev.status === "fail") {
+    whyTitle = "You are below the standard, so new leads are on hold.";
+    whyBody = "Clear the items below and leads resume. Nothing else is required.";
+    whyClass = "bad";
+  } else if (ev && ev.status === "pass") {
+    whyTitle = "You are cleared to take leads.";
+    whyBody = "You are meeting every standard at your current tier. Keep the process consistent.";
+    whyClass = "good";
+  } else {
+    whyTitle = "No standards are set for your position yet.";
+    whyBody = "Ask your manager which tier you are on.";
+    whyClass = "flat";
+  }
+
+  const failRows = (ev && ev.failures ? ev.failures : []).map((f) =>
+    '<tr><td>' + esc(f.def.short) + '</td>' +
+    '<td class="r">' + (f.val == null ? "no data" : (f.def.kind === "pct" ? pct(f.val) : num(f.val))) + '</td>' +
+    '<td class="r">' + (f.def.kind === "pct" ? f.min + "%" : f.min) + '</td>' +
+    '<td class="r bad">short</td></tr>'
+  ).join("");
+
+  // ---- WHAT IT TAKES ----
+  const outreachRows = ratios ? OYO_OUTREACH.map((o) => {
+    const per = ratios[o.id];
+    const target = remaining > 0 ? (per * stillNeeded) / remaining : 0;
+    const doing = (mtd[o.id] || 0) / elapsed;
+    const ok = stillNeeded === 0 || remaining === 0 || doing >= target;
+    return '<tr><td>' + esc(o.label) + '</td>' +
+      '<td class="r">' + num(per) + '</td>' +
+      '<td class="r"><b>' + num(target) + '</b></td>' +
+      '<td class="r">' + num(doing) + '</td>' +
+      '<td class="r ' + (ok ? "good" : "bad") + '">' + (ok ? "on pace" : "behind") + '</td></tr>';
+  }).join("") : "";
+
+  const leadRows = ratios ? OYO_CHANNELS.map((c) => {
+    const lpc = ratios["leadsPerCar_" + c.id];
+    const cr = ratios["close_" + c.id];
+    if (!lpc || cr == null) return "";
+    return '<tr><td>' + esc(c.label) + '</td>' +
+      '<td class="r">' + pct(cr) + '</td>' +
+      '<td class="r">' + Math.ceil(lpc) + '</td>' +
+      '<td class="r"><b>' + (goal > 0 ? Math.ceil(lpc * goal) : "-") + '</b></td></tr>';
+  }).join("") : "";
+
+  const html =
+'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Own Your Outcome</title><style>' +
+'@page { size: letter portrait; margin: 12mm; }' +
+'* { box-sizing:border-box; margin:0; padding:0; }' +
+'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10.5px; line-height:1.4; }' +
+'.sheet { max-width:186mm; }' +
+'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #2A5E9B; padding-bottom:8px; margin-bottom:12px; }' +
+'.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
+'.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
+'.goalbox { text-align:right; }' +
+'.goalbox b { font-size:26px; font-weight:800; color:#2A5E9B; display:block; line-height:1; }' +
+'.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
+'h2 { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#5B6874; margin:14px 0 6px; }' +
+'.why { padding:10px 12px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
+'.why.bad { border-left-color:#C13529; background:#FBEEEC; }' +
+'.why.good { border-left-color:#1E7A3C; background:#EAF6EE; }' +
+'.why b { font-size:13px; display:block; margin-bottom:2px; }' +
+'.stats { display:flex; gap:0; border:1px solid #DDE3E9; border-radius:7px; overflow:hidden; margin-top:4px; }' +
+'.stat { flex:1; padding:9px 10px; border-right:1px solid #DDE3E9; }' +
+'.stat:last-child { border-right:none; }' +
+'.stat b { display:block; font-size:19px; font-weight:800; letter-spacing:-.02em; }' +
+'.stat span { font-size:8.5px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
+'table { width:100%; border-collapse:collapse; }' +
+'th { text-align:left; font-size:8.5px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:5px 7px; border-bottom:1px solid #DDE3E9; }' +
+'td { padding:5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'td.r, th.r { text-align:right; }' +
+'.good { color:#1E7A3C; font-weight:700; } .bad { color:#C13529; font-weight:700; }' +
+'.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:10px 12px; margin-top:8px; font-size:12.5px; }' +
+'.big b { color:#2A5E9B; }' +
+'.cols { display:flex; gap:14px; }' +
+'.cols > div { flex:1; }' +
+'.sign { margin-top:16px; padding-top:10px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
+'.sign div { flex:1; }' +
+'.line { border-bottom:1px solid #9AA5B1; height:22px; margin-bottom:3px; }' +
+'.foot { margin-top:10px; font-size:8.5px; color:#8B95A1; }' +
+'</style></head><body><div class="sheet">' +
+
+'<div class="hd">' +
+  '<div><div class="nm">' + esc(a.name) + '</div>' +
+  '<div class="sub">' + esc(store.name) + ' &middot; ' + new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
+  (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>Units this month</span></div>' : '') +
+'</div>' +
+
+'<h2>Why am I not getting leads?</h2>' +
+'<div class="why ' + whyClass + '"><b>' + whyTitle + '</b>' + esc(whyBody) + '</div>' +
+(failRows ?
+  '<table style="margin-top:6px"><thead><tr><th>What is measured</th><th class="r">You</th><th class="r">Needed</th><th class="r">Status</th></tr></thead><tbody>' +
+  failRows + '</tbody></table>' : '') +
+
+(goal > 0 ?
+'<h2>Where you stand</h2>' +
+'<div class="stats">' +
+  '<div class="stat"><b>' + num(delivered) + '</b><span>Delivered</span></div>' +
+  '<div class="stat"><b>' + num(stillNeeded) + '</b><span>Still needed</span></div>' +
+  '<div class="stat"><b>' + remaining + '</b><span>Days left</span></div>' +
+  '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>Projected</span></div>' +
+'</div>' +
+(stillNeeded > 0 && remaining > 0 ?
+  '<div class="big">To hit <b>' + goal + '</b>, you need <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> for the ' + remaining + ' working days left.</div>'
+ : stillNeeded === 0 ? '<div class="big">Goal met. <b>' + num(delivered) + '</b> delivered against a goal of <b>' + goal + '</b>.</div>' : '')
+: '') +
+
+(ratios ?
+'<h2>What do I have to do?</h2>' +
+'<div class="cols">' +
+  '<div><table><thead><tr><th>Every day</th><th class="r">Per car</th><th class="r">Target</th><th class="r">Doing</th><th class="r"></th></tr></thead>' +
+  '<tbody>' + outreachRows + '</tbody></table></div>' +
+'</div>' +
+(leadRows ?
+  '<h2>Leads it takes, at your own closing rate</h2>' +
+  '<table><thead><tr><th>Channel</th><th class="r">You close</th><th class="r">Leads per car</th><th class="r">For your goal</th></tr></thead>' +
+  '<tbody>' + leadRows + '</tbody></table>' : '')
+: '<h2>What do I have to do?</h2><div class="why flat">Not enough history yet to build your plan. Once your activity has been imported for a while, this page will show exactly what it takes.</div>') +
+
+'<div class="sign">' +
+  '<div><div class="line"></div>Associate</div>' +
+  '<div><div class="line"></div>Manager</div>' +
+  '<div><div class="line"></div>Date</div>' +
+'</div>' +
+'<div class="foot">Every number here comes from your own reported activity and your own closing rates. Nothing on this page is an opinion.</div>' +
+'</div></body></html>';
+
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  setTimeout(function () { w.focus(); w.print(); }, 400);
+}
+
+function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
+  const [editBase, setEditBase] = useState(false);
+  const key = norm(a.name);
+
+  const goal = data.goals?.[a.id]?.monthly ?? 0;
+  const workingDays = store.workingDaysInMonth ?? 26;
+
+  const mtd = oyoMTD(data, key, monthStats);
+  const base = oyoBaseline(data, key, a.id);
+  const ratios = oyoRatios(base);
+
+  const delivered = oyoUnits(mtd);
+  const elapsed = Math.max(1, mtd.daysElapsed);
+  const remaining = Math.max(0, workingDays - mtd.daysElapsed);
+  const stillNeeded = Math.max(0, goal - delivered);
+  const perDayNeeded = remaining > 0 ? stillNeeded / remaining : 0;
+  const pace = (delivered / elapsed) * workingDays;         // where this month lands at today's rate
+  const onTrack = goal > 0 && pace >= goal;
+
+  const setGoal = (v) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.goals = next.goals || {};
+    next.goals[a.id] = { ...(next.goals[a.id] || {}), monthly: Math.max(0, parseInt(v) || 0) };
+    onChange(next, { action: "Set monthly goal", detail: `${a.name}: ${v}` });
+  };
+
+  const saveBase = (b) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.baselines = next.baselines || {};
+    next.baselines[a.id] = b;
+    onChange(next, { action: "Set 90-day baseline", detail: a.name });
+    setEditBase(false);
+  };
+
+  return (
+    <>
+      {/* ---- goal + pace ---- */}
+      <h3 className="ac-h3">Own your outcome</h3>
+      <div className="oyo-goal">
+        <div className="oyo-goalset">
+          <label>Monthly goal</label>
+          <input type="number" min="0" value={goal || ""} placeholder="0"
+            onChange={(e) => setGoal(e.target.value)} />
+          <span className="hint">units. Set per person.</span>
+        </div>
+
+        {goal > 0 && (
+          <div className="oyo-pace">
+            <div className="oyo-track">
+              <div className={"oyo-fill " + (onTrack ? "good" : "behind")}
+                style={{ width: Math.min(100, (delivered / goal) * 100) + "%" }} />
+              <div className="oyo-pacemark" style={{ left: Math.min(100, (mtd.daysElapsed / workingDays) * 100) + "%" }}
+                title="Where you should be by today" />
+            </div>
+            <div className="oyo-stats">
+              <span><b>{delivered}</b> delivered</span>
+              <span><b>{stillNeeded}</b> still needed</span>
+              <span><b>{remaining}</b> days left</span>
+              <span className={onTrack ? "good" : "behind"}>
+                <b>{fmtNum(pace)}</b> projected
+              </span>
+            </div>
+            {stillNeeded > 0 && remaining > 0 && (
+              <p className="oyo-lede">
+                That is <b>{fmtNum(perDayNeeded)} car{perDayNeeded === 1 ? "" : "s"} a day</b> for the rest of the month.
+              </p>
+            )}
+            {stillNeeded === 0 && <p className="oyo-lede good">Goal met. {delivered} of {goal}.</p>}
+            {remaining === 0 && stillNeeded > 0 && <p className="oyo-lede behind">Month is out of days.</p>}
+          </div>
+        )}
+      </div>
+
+      {/* ---- closing rate by channel ---- */}
+      <h3 className="ac-h3">Closing rate this month</h3>
+      <div className="oyo-chan">
+        {OYO_CHANNELS.map((c) => {
+          const cap = c.id.charAt(0).toUpperCase() + c.id.slice(1);
+          const opp = mtd["opp" + cap] ?? 0;
+          const un = mtd["units" + cap] ?? 0;
+          const rate = opp > 0 ? un / opp : null;
+          const hist = ratios ? ratios["close_" + c.id] : null;
+          const better = rate != null && hist != null && rate >= hist;
+          return (
+            <div key={c.id} className="oyo-chan-tile">
+              <div className="oyo-chan-name">{c.label}</div>
+              <div className="oyo-chan-rate">{rate == null ? "-" : fmtPct(rate)}</div>
+              <div className="oyo-chan-sub">{un} of {opp} leads</div>
+              {hist != null && (
+                <div className={"oyo-chan-hist " + (better ? "good" : "behind")}>
+                  {better ? "\u25b2" : "\u25bc"} your usual {fmtPct(hist)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ---- the blueprint ---- */}
+      {!ratios ? (
+        <p className="hint">
+          No conversion history yet, so there is nothing to build a plan from. Seed this person's 90-day numbers
+          below, or wait for a few weeks of imports to accumulate.
+        </p>
+      ) : (
+        <>
+          <h3 className="ac-h3">
+            What it takes {goal > 0 && stillNeeded > 0 ? <span className="section-sub">to find {stillNeeded} more car{stillNeeded === 1 ? "" : "s"}</span> : null}
+          </h3>
+          <p className="hint">
+            Built from this person's own conversion history, not a number anybody made up.
+            Historically they deliver <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"} across <b>{base.daysWorked}</b> working days.
+          </p>
+
+          <table className="oyo-table">
+            <thead>
+              <tr>
+                <th>Activity</th>
+                <th>Per car</th>
+                <th>Needed</th>
+                <th>Target / day</th>
+                <th>Doing / day</th>
+                <th>On pace?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {OYO_OUTREACH.map((o) => {
+                const per = ratios[o.id];
+                const need = per * stillNeeded;
+                const target = remaining > 0 ? need / remaining : 0;
+                const doing = (mtd[o.id] ?? 0) / elapsed;
+                const ok = remaining === 0 || stillNeeded === 0 || doing >= target;
+                return (
+                  <tr key={o.id} className={ok ? "" : "oyo-behind"}>
+                    <td><b>{o.label}</b></td>
+                    <td>{fmtNum(per)}</td>
+                    <td>{goal > 0 ? Math.ceil(need) : "-"}</td>
+                    <td>{goal > 0 && remaining > 0 ? fmtNum(target) : "-"}</td>
+                    <td>{fmtNum(doing)}</td>
+                    <td>
+                      {goal === 0 ? <span className="co-badge dim">no goal</span>
+                        : stillNeeded === 0 ? <span className="co-badge yes">done</span>
+                        : remaining === 0 ? <span className="co-badge dim">month over</span>
+                        : ok ? <span className="co-badge yes">\u2713 on pace</span>
+                        : <span className="co-badge no">\u2717 behind</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <h3 className="ac-h3">Leads it takes, by channel</h3>
+          <table className="oyo-table">
+            <thead>
+              <tr><th>Channel</th><th>Their closing rate</th><th>Leads per car</th>
+                <th>For 1 car</th><th>For 5</th>{goal > 0 && <th>For the goal</th>}</tr>
+            </thead>
+            <tbody>
+              {OYO_CHANNELS.map((c) => {
+                const cr = ratios["close_" + c.id];
+                const lpc = ratios["leadsPerCar_" + c.id];
+                if (cr == null || !lpc) return (
+                  <tr key={c.id} className="co-nodata">
+                    <td><b>{c.label}</b></td><td>-</td><td>-</td><td>-</td><td>-</td>{goal > 0 && <td>-</td>}
+                  </tr>
+                );
+                return (
+                  <tr key={c.id}>
+                    <td><b>{c.label}</b></td>
+                    <td>{fmtPct(cr)}</td>
+                    <td>{fmtNum(lpc)}</td>
+                    <td>{Math.ceil(lpc)}</td>
+                    <td>{Math.ceil(lpc * 5)}</td>
+                    {goal > 0 && <td><b>{Math.ceil(lpc * goal)}</b></td>}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {/* ---- baseline ---- */}
+      <div className="oyo-base">
+        <div className="oyo-base-head">
+          <div>
+            <b>90-day baseline</b>
+            <span className="hint">
+              {base.source === "seed+observed"
+                ? ` Seeded, plus everything imported since. ${base.daysWorked} days on file.`
+                : base.source === "observed"
+                ? ` Built from ${base.daysWorked} imported day${base.daysWorked === 1 ? "" : "s"}. Seed their real 90-day numbers to make this meaningful sooner.`
+                : " Nothing yet. Paste in their current 90-day numbers to start."}
+            </span>
+          </div>
+          <button className="btn-ghost" onClick={() => setEditBase(!editBase)}>
+            {editBase ? "Cancel" : base.source === "none" ? "Seed baseline" : "Edit seed"}
+          </button>
+        </div>
+        {editBase && <BaselineEditor seed={data.baselines?.[a.id] || emptyBaseline()} onSave={saveBase} />}
+      </div>
+    </>
+  );
+}
+
+function BaselineEditor({ seed, onSave }) {
+  const [b, setB] = useState({ ...emptyBaseline(), ...seed });
+  const f = (k, label) => (
+    <label key={k} className="bl-field">
+      <span>{label}</span>
+      <input type="number" min="0" step="any" value={b[k] ?? 0}
+        onChange={(e) => setB({ ...b, [k]: parseFloat(e.target.value) || 0 })} />
+    </label>
+  );
+  return (
+    <div className="bl-editor">
+      <p className="hint">
+        Type in what this person actually did over their last 90 days, straight from the workbook.
+        The tool blends it with everything it imports from here on, so the seed matters less and less over time.
+      </p>
+      <div className="bl-grid">
+        {f("daysWorked", "Days worked")}
+        {f("units", "Vehicles delivered")}
+      </div>
+      <div className="check-group-label">Opportunities</div>
+      <div className="bl-grid">
+        {f("oppShowroom", "Showroom")}{f("oppInternet", "Internet")}
+        {f("oppPhone", "Phone")}{f("oppCampaign", "Campaign")}
+      </div>
+      <div className="check-group-label">Units delivered by channel</div>
+      <div className="bl-grid">
+        {f("unitsShowroom", "Showroom")}{f("unitsInternet", "Internet")}
+        {f("unitsPhone", "Phone")}{f("unitsCampaign", "Campaign")}
+      </div>
+      <div className="check-group-label">Appointments</div>
+      <div className="bl-grid">
+        {f("apptCreated", "Set")}{f("apptConfirmed", "Confirmed")}{f("apptShowed", "Showed")}
+      </div>
+      <div className="check-group-label">Outreach</div>
+      <div className="bl-grid">
+        {f("calls", "Calls")}{f("contacted", "Contacted")}{f("text", "Texts")}
+        {f("email", "Emails")}{f("video", "Videos")}{f("tasks", "Tasks")}
+      </div>
+      <div className="inline-form">
+        <button className="btn" onClick={() => onSave(b)}>Save baseline</button>
+      </div>
+    </div>
+  );
+}
+
+function AssociateCard({ config, store, row, topAvg, topCount, data, onChange }) {
   const { a, stats, act, units } = row;
+  const goal = data.goals?.[a.id]?.monthly ?? 0;
   const role = config.roles.find((x) => x.id === a.roleId);
   const thr = normThresholds(store.thresholds);
 
@@ -3159,11 +4266,26 @@ function AssociateCard({ config, store, row, topAvg, topCount }) {
           <div className="ac-sub">{role?.name} · {store.name} · {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
         </div>
         <div className="ac-actions no-print">
-          <button className="btn-ghost" onClick={copy}>Copy card</button>
-          <button className="btn-ghost" onClick={() => window.print()}>Print / PDF</button>
+          <button className="btn-ghost" onClick={copy}>Copy summary</button>
+          <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
+            onClick={() => printOnePager({
+              store, config, a, stats, ev: row.ev,
+              restriction: (data.restrictions || {})[a.id],
+              mtd: oyoMTD(data, norm(a.name), stats),
+              base: oyoBaseline(data, norm(a.name), a.id),
+              ratios: oyoRatios(oyoBaseline(data, norm(a.name), a.id)),
+              goal: data.goals?.[a.id]?.monthly ?? 0,
+              workingDays: store.workingDaysInMonth ?? 26,
+            })}>
+            Print one-pager
+          </button>
         </div>
+        {!goal && <p className="hint no-print">Set a monthly goal below and the one-pager unlocks.</p>}
       </div>
 
+      <OwnYourOutcome store={store} data={data} a={a} monthStats={stats} onChange={onChange} />
+
+      <h3 className="ac-h3">Results this month</h3>
       <div className="ac-results">
         <div className="ac-stat"><b>{units}</b><span>Units delivered</span></div>
         <div className="ac-stat"><b>{fmtPct(stats.internetPct)}</b><span>Internet %</span></div>
@@ -3422,7 +4544,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
 }
 
 /* ---------------- Import ---------------- */
-function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity }) {
+function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity, onChange }) {
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
   if (activity) {
@@ -3447,6 +4569,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
         </div>
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
+        <BaselineImport data={data} onChange={onChange} />
         <UploadHistory data={data} />
         <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
       </div>
@@ -3474,6 +4597,10 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         </div>
         <div className={"check " + (t["delivery-showroom"] ? "done" : "")}>
           <span className="check-box">{t["delivery-showroom"] ? "✓" : ""}</span>Showroom Delivery Summary
+        </div>
+        <div className={"check " + (t["delivery-campaign"] ? "done" : "")}>
+          <span className="check-box">{t["delivery-campaign"] ? "✓" : ""}</span>Campaign Delivery Summary
+          <span className="check-note">units only, no percentage</span>
         </div>
         {!(t.delivery && t.appointment && t.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
       </div>
@@ -4846,6 +5973,52 @@ function Style() {
       .ac-list { margin:0 0 0 18px; display:flex; flex-direction:column; gap:8px; font-size:13px; }
       .ac-coach { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
 
+      /* ---- own your outcome ---- */
+      .oyo-goal { display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:start;
+        background:rgba(42,94,155,.05); border-radius:14px; padding:16px; margin-bottom:6px; }
+      .oyo-goalset label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--ink-3); font-weight:700; margin-bottom:6px; }
+      .oyo-goalset input { width:100%; font-size:22px; font-weight:700; text-align:center; padding:8px; }
+      .oyo-track { position:relative; height:22px; background:rgba(0,0,0,.07); border-radius:11px; overflow:hidden; }
+      .oyo-fill { height:100%; border-radius:11px; transition:width .8s var(--spring); }
+      .oyo-fill.good { background:linear-gradient(90deg,#30B155,#5FCB7E); }
+      .oyo-fill.behind { background:linear-gradient(90deg,#E5473C,#F0796F); }
+      /* where they SHOULD be by today: the gap between bar and mark is the whole story */
+      .oyo-pacemark { position:absolute; top:-3px; bottom:-3px; width:3px; background:var(--ink); z-index:2; }
+      .oyo-stats { display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:12.5px; color:var(--ink-2); }
+      .oyo-stats b { font-size:16px; color:var(--ink); font-weight:700; }
+      .oyo-stats .good b { color:#1E7A3C; } .oyo-stats .behind b { color:#C13529; }
+      .oyo-lede { margin-top:10px; font-size:14px; }
+      .oyo-lede.good { color:#1E7A3C; font-weight:600; }
+      .oyo-lede.behind { color:#C13529; font-weight:600; }
+
+      .oyo-chan { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:12px; }
+      .oyo-chan-tile { background:rgba(255,255,255,.6); border:1px solid var(--line); border-radius:14px; padding:13px 15px; }
+      .oyo-chan-name { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; }
+      .oyo-chan-rate { font-size:26px; font-weight:700; letter-spacing:-.02em; margin-top:4px; font-variant-numeric:tabular-nums; }
+      .oyo-chan-sub { font-size:11.5px; color:var(--ink-3); }
+      .oyo-chan-hist { font-size:11.5px; font-weight:700; margin-top:5px; }
+      .oyo-chan-hist.good { color:#1E7A3C; } .oyo-chan-hist.behind { color:#C13529; }
+
+      .oyo-table { width:100%; border-collapse:collapse; margin-bottom:6px; }
+      .oyo-table th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--ink-3); font-weight:700; padding:8px 10px; }
+      .oyo-table td { padding:9px 10px; border-top:1px solid rgba(0,0,0,.06); font-size:13px;
+        font-variant-numeric:tabular-nums; }
+      .oyo-table tr.oyo-behind { background:rgba(229,71,60,.05); }
+
+      .oyo-base { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
+      .oyo-base-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+      .bl-editor { margin-top:12px; background:rgba(0,0,0,.02); border-radius:12px; padding:14px; }
+      .baseline-card { border-left:4px solid var(--lime); }
+      .bl-dates { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin:12px 0; }
+      .bl-dates .bl-field input { padding:7px 9px; }
+      .bl-preview { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+      .bl-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap:10px; margin-bottom:6px; }
+      .bl-field { display:flex; flex-direction:column; gap:3px; }
+      .bl-field span { font-size:11px; color:var(--ink-2); font-weight:600; }
+      @media (max-width: 760px) { .oyo-goal { grid-template-columns:1fr; } }
+
       /* ---- pending approvals ---- */
       .pending-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 0;
         border-bottom:1px solid rgba(0,0,0,.06); }
@@ -5087,6 +6260,18 @@ function Style() {
       .checkout-split { display:grid; grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); gap:16px; align-items:start; }
       .checkout-side { position:sticky; top:80px; }
       .offender-card { border-left:4px solid var(--red); }
+      .repeat-card { border-left:4px solid var(--amber); margin-bottom:12px; }
+      .repeat-row { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding:6px 0;
+        border-bottom:1px solid rgba(0,0,0,.05); font-size:13px; }
+      .repeat-row:last-child { border-bottom:none; }
+      .repeat-count { color:var(--red); font-weight:700; font-size:12px; }
+      .repeat-tag { font-size:10.5px; color:var(--ink-3); background:#F2F2F4; padding:2px 7px; border-radius:10px; }
+      .star-inp { width:54px; text-align:center; padding:4px 6px; font-size:13px; }
+      .flag-btn { border:none; background:#F2F2F4; color:var(--ink-3); font-size:11.5px; font-weight:700;
+        padding:4px 9px; border-radius:10px; cursor:pointer; transition: all .2s var(--spring); white-space:nowrap; }
+      .flag-btn:hover { background:#E6E6EA; }
+      .flag-btn.auto { background:rgba(255,159,10,.16); color:#95600A; }
+      .flag-btn.on { background:rgba(229,71,60,.14); color:#C13529; }
       .offender-card.offender-clear { border-left-color:#30B155; }
       .off-title { font-size:15px; font-weight:700; margin-bottom:6px; display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
       @media (max-width: 1000px) {
