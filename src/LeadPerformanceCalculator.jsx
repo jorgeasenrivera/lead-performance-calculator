@@ -1201,27 +1201,48 @@ function LEADERBOARD_HTML(p) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${p.storeName} · Leaderboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700;800&family=Inter:wght@500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Archivo+Black&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
     --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
   html,body { height:100%; }
-  body { font-family:'Inter',system-ui,sans-serif; color:#EAF1F8;
-    background:radial-gradient(60% 80% at 20% 0%, #244F80, #16324F 60%, #0E2033 100%); overflow:hidden; }
+  body { font-family:'Archivo','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
+    font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
+    background:#0E2033; overflow:hidden; }
+  /* slow aurora. Long cycles on purpose: this hangs on a wall all day and must never
+     become the thing people look at instead of the numbers. */
+  body::before { content:''; position:fixed; inset:-15%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
+      radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
+      radial-gradient(50% 60% at 50% 100%, rgba(42,94,155,.35), transparent 72%);
+    animation: aurora 40s ease-in-out infinite alternate; }
+  @keyframes aurora {
+    0% { transform: translate3d(0,0,0) scale(1); }
+    100% { transform: translate3d(-2.5%, 2%, 0) scale(1.08); }
+  }
+  .wrap { position:relative; z-index:1; }
   .wrap { height:100vh; display:flex; flex-direction:column; padding:2.2vh 2vw; }
   .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.6vh; }
   .head-l { display:flex; align-items:center; gap:1.2vw; }
   .head-r { display:flex; align-items:center; gap:2.4vw; }
   .head-logo { width:6.6vh; height:6.6vh; border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .head-logo img { width:100%; height:100%; object-fit:contain; }
-  .head-title { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:5.4vh; letter-spacing:.5px; line-height:1; }
+  .head-title { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:5.4vh; letter-spacing:.5px; line-height:1; }
   .head-sub { font-size:1.7vh; color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
   .total { text-align:right; }
-  .total-num { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:5.8vh; line-height:1; color:var(--lime); }
+  .total-num { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:5.8vh; line-height:1; color:var(--lime); }
   .total-cap { font-size:1.5vh; color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
-  .clock { text-align:right; font-family:'Barlow Semi Condensed'; }
+  .clock { text-align:right; font-family:'Archivo','Inter',sans-serif; }
   .clock-time { font-size:3.2vh; font-weight:700; }
-  .clock-date { font-size:1.5vh; color:#9FC2E4; }
+  .clock-date { font-size:1.5vh; color:#9FC2E4; display:flex; align-items:center; gap:.4vw; justify-content:flex-end; }
+  .live { width:.8vh; height:.8vh; border-radius:50%; background:#69E08A; flex:0 0 auto;
+    box-shadow:0 0 0 0 rgba(105,224,138,.7); animation: livePulse 2.4s ease-out infinite; }
+  @keyframes livePulse {
+    0% { box-shadow:0 0 0 0 rgba(105,224,138,.55); }
+    70% { box-shadow:0 0 0 1.1vh rgba(105,224,138,0); }
+    100% { box-shadow:0 0 0 0 rgba(105,224,138,0); }
+  }
 
   /* one panel, one table, everybody visible without scrolling */
   .panel { flex:1; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
@@ -1240,15 +1261,46 @@ function LEADERBOARD_HTML(p) {
   .lb tbody tr td:first-child { border-radius:1vh 0 0 1vh; }
   .lb tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
 
-  .lb .rank { width:5%; color:#7FA8D4; font-family:'Barlow Semi Condensed'; font-weight:800;
-    font-size:calc(var(--rowfs) * .9); }
-  .lb .nm { width:31%; text-align:left; padding-left:1vw; font-weight:700;
-    font-size:calc(var(--rowfs) * 1.08); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lb .sold { width:13%; font-family:'Barlow Semi Condensed'; font-weight:800; color:var(--lime);
-    font-variant-numeric:tabular-nums; font-size:calc(var(--rowfs) * 1.35); }
-  .lb .pcell { width:17%; white-space:nowrap; }
+  .lb .rank { width:6%; }
+  /* podium badges. Gold, silver, bronze read instantly from across a floor. */
+  .badge { display:inline-flex; align-items:center; justify-content:center;
+    width:calc(var(--rowfs) * 1.7); height:calc(var(--rowfs) * 1.7); border-radius:50%;
+    font-family:'Archivo Black','Archivo',sans-serif; font-size:calc(var(--rowfs) * .82);
+    background:rgba(255,255,255,.08); color:#8FB3D6; }
+  .badge.m1 { background:linear-gradient(145deg,#FFD75E,#E0A100); color:#3A2B00;
+    box-shadow:0 0 calc(var(--rowfs)*.8) rgba(255,200,60,.55); }
+  .badge.m2 { background:linear-gradient(145deg,#E6ECF2,#AFBECB); color:#2A3540; }
+  .badge.m3 { background:linear-gradient(145deg,#E8A87C,#C0764A); color:#3A1E0B; }
 
-  .pill { font-family:'Barlow Semi Condensed'; font-weight:800; font-size:calc(var(--rowfs) * 1.05);
+  .lb .nm { width:30%; text-align:left; padding-left:1vw; font-weight:700;
+    font-size:calc(var(--rowfs) * 1.12); letter-spacing:-.01em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Delivered doubles as a bar chart: volume is instantly comparable down the column */
+  .lb .sold { width:14%; position:relative; }
+  .lb .sold .bar { position:absolute; left:6%; top:14%; bottom:14%; width:var(--barw);
+    background:linear-gradient(90deg, rgba(193,215,48,.30), rgba(193,215,48,.10));
+    border-radius:.5vh; z-index:0; transition:width .8s cubic-bezier(.22,1,.36,1); }
+  .lb .sold .soldnum { position:relative; z-index:1;
+    font-family:'Archivo Black','Archivo',sans-serif; color:var(--lime);
+    font-size:calc(var(--rowfs) * 1.45); }
+  .lb .pcell { width:16.6%; white-space:nowrap; }
+
+  /* rows arrive in sequence rather than all at once */
+  .lb tbody tr.row { animation: rowIn .5s cubic-bezier(.22,1,.36,1) both;
+    animation-delay: calc(var(--i) * 45ms); }
+  @keyframes rowIn { from { opacity:0; transform: translateY(1.2vh); } to { opacity:1; transform:none; } }
+
+  /* the leader gets a lit band and a slow shine that travels across it */
+  .lb tbody tr.leader { position:relative; }
+  .lb tbody tr.leader td { background:linear-gradient(90deg, rgba(193,215,48,.16), rgba(193,215,48,.03) 60%, transparent); }
+  .lb tbody tr.leader .nm { color:#F2F7DC; }
+  .lb tbody tr.leader .nm::after { content:''; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(105deg, transparent 35%, rgba(255,255,255,.16) 50%, transparent 65%);
+    background-size:220% 100%; animation: shine 5.5s ease-in-out infinite; }
+  @keyframes shine { 0% { background-position:180% 0; } 55%,100% { background-position:-60% 0; } }
+
+  .pill { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(var(--rowfs) * 1.05);
     padding:.3vh .7vw; border-radius:.9vh; display:inline-block; min-width:5.2vw; }
   .pill.g { background:var(--greenbg); color:var(--green); }
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
@@ -1404,11 +1456,15 @@ function LEADERBOARD_HTML(p) {
       '</td>';
     }
 
+    var maxSold = people.reduce(function(m,x){ return Math.max(m, x.sold); }, 0) || 1;
+
     var rows = people.map(function(x,i){
-      return '<tr class="fade">' +
-        '<td class="rank">'+(i+1)+'</td>' +
-        '<td class="nm">'+x.name+(x.haveAll?'':' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>')+'</td>' +
-        '<td class="sold">'+x.sold+'</td>' +
+      var medal = i < 3 ? ' m' + (i+1) : '';
+      var barw = Math.round((x.sold / maxSold) * 100);
+      return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
+        '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
+        '<td class="nm">' + x.name + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span></td>' +
         cell(x.internetPct, x.prev.internet, 'internet') +
         cell(x.phonePct,    x.prev.phone,    'phone') +
         cell(x.showroomPct, x.prev.showroom, 'showroom') +
@@ -1421,8 +1477,8 @@ function LEADERBOARD_HTML(p) {
       '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
       '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
       '<div class="head-r">'+
-        '<div class="total"><div class="total-num">'+totalSold+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
-        '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"></div></div>'+
+        '<div class="total"><div class="total-num"><span class="totnum" data-to="'+totalSold+'">0</span>'+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
+        '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
       '</div></div>'+
       '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
         '<table class="lb">'+
@@ -1444,11 +1500,35 @@ function LEADERBOARD_HTML(p) {
         ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
       '</div>';
     tick();
+    countUp();
+  }
+
+  // numbers roll up rather than snapping into place. Runs on every refresh, so a
+  // new unit landing on the board actually announces itself.
+  function countUp(){
+    var els = document.querySelectorAll('[data-to]');
+    for (var k = 0; k < els.length; k++) {
+      (function(el){
+        var to = parseFloat(el.getAttribute('data-to')) || 0;
+        var dur = 900, t0 = null;
+        function step(ts){
+          if (!t0) t0 = ts;
+          var p = Math.min(1, (ts - t0) / dur);
+          var eased = 1 - Math.pow(1 - p, 3);
+          var v = to * eased;
+          el.textContent = (to % 1 === 0) ? Math.round(v) : v.toFixed(1);
+          if (p < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      })(els[k]);
+    }
   }
   function tick(){ var n=new Date();
     var c=document.getElementById('clk'); var d=document.getElementById('dat');
     if(c) c.textContent = n.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
+    var dt = document.getElementById('datt');
+    if(dt) dt.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
+    else if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
   async function loop(){ var s = await getStore(); render(s); }
   // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
   // was pointless: the reports only change when a manager uploads one.
