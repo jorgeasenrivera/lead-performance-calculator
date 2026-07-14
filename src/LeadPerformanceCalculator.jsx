@@ -3739,6 +3739,21 @@ function oyoMTD(data, nameKey, monthStats) {
   };
 }
 
+// Working days gone by in this month, on the calendar. Sundays excluded.
+// Pacing has to use this, not the number of reports imported: if you have only
+// uploaded twice, elapsed is not 2, it is however many working days have actually
+// passed. That mistake is what produced "24 days left" halfway through the month.
+function workingDaysElapsed() {
+  const t = today();                 // dealership time
+  const [y, m, d] = t.split("-").map(Number);
+  let n = 0;
+  for (let day = 1; day <= d; day++) {
+    const dt = new Date(y, m - 1, day);
+    if (dt.getDay() !== 0) n++;      // skip Sundays
+  }
+  return n;
+}
+
 const oyoUnits = (m) =>
   (m.unitsShowroom ?? 0) + (m.unitsInternet ?? 0) + (m.unitsPhone ?? 0) + (m.unitsCampaign ?? 0);
 
@@ -3946,11 +3961,13 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
 
   const delivered = oyoUnits(mtd);
-  const elapsed = Math.max(1, mtd.daysElapsed);
-  const remaining = Math.max(0, workingDays - mtd.daysElapsed);
+  // same split as the card: pace off the calendar, activity averages off measured days
+  const calElapsed = Math.min(workingDays, Math.max(1, workingDaysElapsed()));
+  const dataDays = Math.max(1, mtd.daysElapsed);
+  const remaining = Math.max(0, workingDays - calElapsed);
   const stillNeeded = Math.max(0, goal - delivered);
   const perDay = remaining > 0 ? stillNeeded / remaining : 0;
-  const pace = (delivered / elapsed) * workingDays;
+  const pace = (delivered / calElapsed) * workingDays;
 
   const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -3989,7 +4006,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   const outreachRows = ratios ? OYO_OUTREACH.map((o) => {
     const per = ratios[o.id];
     const target = remaining > 0 ? (per * stillNeeded) / remaining : 0;
-    const doing = (mtd[o.id] || 0) / elapsed;
+    const doing = (mtd[o.id] || 0) / dataDays;
     const ok = stillNeeded === 0 || remaining === 0 || doing >= target;
     return '<tr><td>' + esc(o.label) + '</td>' +
       '<td class="r">' + num(per) + '</td>' +
@@ -4108,11 +4125,19 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const ratios = oyoRatios(base);
 
   const delivered = oyoUnits(mtd);
-  const elapsed = Math.max(1, mtd.daysElapsed);
-  const remaining = Math.max(0, workingDays - mtd.daysElapsed);
+
+  // Two different denominators, and using the wrong one is what broke this.
+  //  calElapsed  = working days actually gone by. Pace and days-left run off this.
+  //  dataDays    = days we have activity for. Per-day activity averages run off this,
+  //                because that is the only stretch we actually measured.
+  const calElapsed = Math.min(workingDays, Math.max(1, workingDaysElapsed()));
+  const dataDays = Math.max(1, mtd.daysElapsed);
+  const missingDays = Math.max(0, calElapsed - mtd.daysElapsed);
+
+  const remaining = Math.max(0, workingDays - calElapsed);
   const stillNeeded = Math.max(0, goal - delivered);
   const perDayNeeded = remaining > 0 ? stillNeeded / remaining : 0;
-  const pace = (delivered / elapsed) * workingDays;         // where this month lands at today's rate
+  const pace = (delivered / calElapsed) * workingDays;      // where the month lands at today's rate
   const onTrack = goal > 0 && pace >= goal;
 
   const setGoal = (v) => {
@@ -4147,7 +4172,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             <div className="oyo-track">
               <div className={"oyo-fill " + (onTrack ? "good" : "behind")}
                 style={{ width: Math.min(100, (delivered / goal) * 100) + "%" }} />
-              <div className="oyo-pacemark" style={{ left: Math.min(100, (mtd.daysElapsed / workingDays) * 100) + "%" }}
+              <div className="oyo-pacemark" style={{ left: Math.min(100, (calElapsed / workingDays) * 100) + "%" }}
                 title="Where you should be by today" />
             </div>
             <div className="oyo-stats">
@@ -4205,6 +4230,13 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           <h3 className="ac-h3">
             What it takes {goal > 0 && stillNeeded > 0 ? <span className="section-sub">to find {stillNeeded} more car{stillNeeded === 1 ? "" : "s"}</span> : null}
           </h3>
+          {missingDays > 0 && (
+            <p className="hint" style={{ color: "#95600A" }}>
+              Heads up: {calElapsed} working days have passed but activity is only on file for {mtd.daysElapsed}.
+              The daily activity figures below are averaged over the {mtd.daysElapsed} day{mtd.daysElapsed === 1 ? "" : "s"} we
+              actually have, so they are honest. Import the missing days and the picture sharpens.
+            </p>
+          )}
           <p className="hint">
             Built from this person's own conversion history, not a number anybody made up.
             Historically they deliver <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"} across <b>{base.daysWorked}</b> working days.
@@ -4226,7 +4258,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
                 const per = ratios[o.id];
                 const need = per * stillNeeded;
                 const target = remaining > 0 ? need / remaining : 0;
-                const doing = (mtd[o.id] ?? 0) / elapsed;
+                const doing = (mtd[o.id] ?? 0) / dataDays;
                 const ok = remaining === 0 || stillNeeded === 0 || doing >= target;
                 return (
                   <tr key={o.id} className={ok ? "" : "oyo-behind"}>
