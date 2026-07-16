@@ -2791,69 +2791,22 @@ function parseHollerGrid(rows, roster, targetYear, targetMonth) {
 function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
   const [err, setErr] = useState("");
-  const [sheetPick, setSheetPick] = useState(null); // { sheets:[names], rowsBySheet:{name:rows} } when an xlsx has many tabs
-  const [busy, setBusy] = useState(false);
 
-  // Turn a dropped file into rows (2D array). CSV is read directly; xlsx is read with
-  // SheetJS, loaded on demand. A workbook can hold many monthly tabs, so if there's more
-  // than one non-empty sheet we let the manager pick which month to import.
-  const readFile = async (file) => {
-    setErr(""); setBusy(true);
-    try {
-      const nameLc = (file.name || "").toLowerCase();
-      if (nameLc.endsWith(".xlsx") || nameLc.endsWith(".xls") || nameLc.endsWith(".xlsm")) {
-        let XLSX;
-        try { XLSX = await import("xlsx"); } catch (e) {
-          setErr("This is an Excel file, but the xlsx reader isn't available in this build. Save the month's tab as CSV and upload that, or ask the admin to add the 'xlsx' package.");
-          setBusy(false); return;
-        }
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type: "array" });
-        const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-        // keep only sheets that actually contain a team grid
-        const gridSheets = wb.SheetNames.filter((n) => {
-          try { return looksLikeHollerGrid(toRows(wb.Sheets[n])); } catch (e) { return false; }
-        });
-        const usable = gridSheets.length ? gridSheets : wb.SheetNames;
-        if (usable.length === 1) {
-          setBusy(false);
-          parseRows(toRows(wb.Sheets[usable[0]]), usable[0]);
-          return;
-        }
-        // many tabs → let them pick. Default-highlight the one matching the current month.
-        const rowsBySheet = {};
-        for (const n of usable) rowsBySheet[n] = toRows(wb.Sheets[n]);
-        setBusy(false);
-        setSheetPick({ sheets: usable, rowsBySheet });
-        return;
-      }
-      // CSV
-      const text = await file.text();
-      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
-      setBusy(false);
-      parseRows(rows, null);
-    } catch (e) {
-      setBusy(false);
-      setErr("Couldn't read that file. If it's an Excel export, try the .xlsx directly, or save the tab as CSV.");
-    }
-  };
-
-  const parse = async (rows, monthHint) => parseRows(rows, monthHint);
-  const parseRows = (rows, monthHint) => {
+  const parse = async (file) => {
     setErr("");
-    if (!rows || !rows.length) { setErr("That file looks empty."); return; }
+    const text = await file.text();
+    const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
+    if (!rows.length) { setErr("That file looks empty."); return; }
 
     // ---- Auto-detect the Holler team-grid format ----
     if (looksLikeHollerGrid(rows)) {
-      // Figure out which month the sheet is for. Look at the sheet/tab name first
-      // (e.g. "JULY 2026"), then the top-left title cell (e.g. "Jul-26").
+      // Figure out which month the sheet is for. The top-left title is like "Jul-26".
       const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
       let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
-      const src = ((monthHint || "") + " " + String((rows[0] && rows[0][0]) || "")).toLowerCase();
-      const mm = src.match(/([a-z]{3,})[-\s]?(\d{2,4})/);
+      const title = String((rows[0] && rows[0][0]) || "").toLowerCase();
+      const mm = title.match(/([a-z]{3})[-\s]?(\d{2,4})/);
       if (mm) {
-        const mi = MONTHS.findIndex((mo) => mm[1].startsWith(mo));
-        if (mi >= 0) tm = mi + 1;
+        const mi = MONTHS.indexOf(mm[1]); if (mi >= 0) tm = mi + 1;
         const yr = mm[2]; ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
       }
       const res = parseHollerGrid(rows, roster, ty, tm);
@@ -2922,34 +2875,20 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
           <button className="btn-x" onClick={onClose}>✕</button>
         </div>
 
-        {sheetPick ? (
-          <div className="sched-sheetpick">
-            <p className="hint">This workbook has several monthly tabs. Which month do you want to import?</p>
-            <div className="sched-sheet-list">
-              {sheetPick.sheets.map((n) => (
-                <button key={n} className="sched-sheet-btn" onClick={() => { const rows = sheetPick.rowsBySheet[n]; setSheetPick(null); parseRows(rows, n); }}>
-                  {n}
-                </button>
-              ))}
-            </div>
-            <div className="sched-actions">
-              <button className="btn secondary" onClick={() => setSheetPick(null)}>Back</button>
-            </div>
-          </div>
-        ) : !preview ? (
+        {!preview ? (
           <>
             <label className="sched-drop">
-              <input type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) parse(e.target.files[0]); e.target.value = ""; }} />
               <div className="dz-icon">⇩</div>
-              <div className="dz-title">{busy ? "Reading…" : "Drop or choose the schedule"}</div>
-              <div className="dz-sub">Upload the <b>Excel workbook</b> or a <b>CSV</b>. The monthly team grid is read automatically — teams, team days off, and individual OFF/VAC. A simple <b>Name + Off Dates</b> CSV works too.</div>
+              <div className="dz-title">Drop or choose a schedule CSV</div>
+              <div className="dz-sub">Upload your <b>monthly team grid</b> as-is (teams and days off are read automatically), or a simple <b>Name + Off Dates</b> CSV.</div>
             </label>
             {err && <p className="sched-err">{err}</p>}
             <div className="sched-help">
-              <div className="sched-help-title">What it reads</div>
-              <code>The monthly grid as-is: A/B/C team rows, the team legend on the right, and every “NAME OFF” / “NAME VAC” line. Excel files with many month tabs will ask which month.</code>
-              <div className="sched-or">or a simple CSV</div>
-              <code>Name, Off Dates<br />Marcus Bell, 2026-07-04; 2026-07-11</code>
+              <div className="sched-help-title">Two accepted formats</div>
+              <code>Name, Off Dates<br />Marcus Bell, 2026-07-04; 2026-07-11<br />Diana Cho, 2026-07-15</code>
+              <div className="sched-or">or</div>
+              <code>Name, 2026-07-04, 2026-07-05, 2026-07-11<br />Marcus Bell, off, , off<br />Diana Cho, , off, </code>
             </div>
           </>
         ) : (
@@ -7669,10 +7608,6 @@ function Style() {
         padding:10px 12px; font-size:12.5px; color:#1E7A3C; margin-bottom:10px; }
       .sched-detected-tag { display:inline-block; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
         font-size:10.5px; background:#1E7A3C; color:#fff; padding:2px 8px; border-radius:99px; margin-right:8px; }
-      .sched-sheet-list { display:flex; flex-direction:column; gap:6px; margin:12px 0; max-height:320px; overflow-y:auto; }
-      .sched-sheet-btn { text-align:left; border:1px solid var(--line); background:#fff; font:inherit; font-size:14px; font-weight:600;
-        color:var(--ink); padding:12px 14px; border-radius:10px; cursor:pointer; }
-      .sched-sheet-btn:hover { border-color:var(--blue); background:rgba(42,94,155,.05); color:var(--blue); }
       .sched-prow { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
       .sched-dates { color:var(--ink-2); text-align:right; }
       .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
