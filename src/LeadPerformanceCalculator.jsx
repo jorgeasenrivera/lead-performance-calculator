@@ -2665,129 +2665,6 @@ const num = (v) => (v == null ? 0 : v);
    CSV with a Name column and either a list of off-dates, or one column per date with
    an off-marker. Flexible so a manager can paste from most scheduling tools. We map
    names to roster ids and write data.daysOff[id] = [YYYY-MM-DD, ...]. */
-/* ---------------- Holler grid schedule parser ----------------
-   Some stores keep a dense monthly grid: week blocks of a date row, three team rows
-   (A/B/C with a per-day shift or OFF), then individual OFF/VAC lines, plus a legend on
-   the right that lists each team's members. Teams change month to month, so the roster
-   is read from that legend rather than hardcoded. Returns per-person off-days for the
-   target month, plus any names that didn't match the store roster (to clarify by hand). */
-const SCHED_DAYCOLS = [0, 3, 6, 9, 12, 15, 18];
-
-function looksLikeHollerGrid(rows) {
-  for (let i = 0; i < rows.length - 2; i++) {
-    const a = (rows[i][0] || "").trim();
-    const b = (rows[i + 1] && rows[i + 1][0] || "").trim();
-    const c = (rows[i + 2] && rows[i + 2][0] || "").trim();
-    if (a === "A" && b === "B" && c === "C") return true;
-  }
-  return false;
-}
-
-function readLegendTeams(rows) {
-  let legCol = -1;
-  for (let c = 19; c <= 30 && legCol < 0; c++) {
-    let letters = 0;
-    for (const r of rows) { const v = (r[c] || "").trim(); if (/^[A-D]$/.test(v)) letters++; }
-    if (letters >= 3) legCol = c;
-  }
-  const teams = {};
-  if (legCol < 0) return teams;
-  let cur = null;
-  for (const r of rows) {
-    const v = (r[legCol] || "").trim();
-    if (/^[A-D]$/.test(v)) { cur = v; teams[cur] = []; }
-    else if (cur && v && !/^\d+$/.test(v) && v.length >= 2) teams[cur].push(v);
-  }
-  return teams;
-}
-
-// Resolve the seven day cells of a week header to real dates for the target month,
-// handling the prior-month lead-in (…30, 1…) and the next-month tail (…31, 1).
-function resolveWeekDates(dvals, ty, tm) {
-  const dn = dvals.map((v) => /^\d{1,2}$/.test(String(v).trim()) ? parseInt(v) : null);
-  const dts = new Array(7).fill(null);
-  let reset = null;
-  for (let k = 1; k < 7; k++) if (dn[k] === 1 && dn[k - 1] && dn[k - 1] > 20) { reset = k; break; }
-  if (reset != null && reset <= 3 && dn[0] && dn[0] >= 27) {
-    let pm = tm - 1, py = ty; if (pm === 0) { pm = 12; py = ty - 1; }
-    for (let k = 0; k < reset; k++) if (dn[k]) dts[k] = [py, pm, dn[k]];
-    for (let k = reset; k < 7; k++) if (dn[k]) dts[k] = [ty, tm, dn[k]];
-    return dts;
-  }
-  let m = tm, y = ty, prev = null;
-  for (let k = 0; k < 7; k++) {
-    if (dn[k] == null) continue;
-    if (prev != null && dn[k] < prev) { m++; if (m === 13) { m = 1; y++; } }
-    dts[k] = [y, m, dn[k]]; prev = dn[k];
-  }
-  return dts;
-}
-const dts2str = (dt) => dt ? `${dt[0]}-${String(dt[1]).padStart(2, "0")}-${String(dt[2]).padStart(2, "0")}` : null;
-
-function parseHollerGrid(rows, roster, targetYear, targetMonth) {
-  const teams = readLegendTeams(rows);
-  const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
-  const nameMap = new Map();
-  for (const members of Object.values(teams)) {
-    for (const m of members) {
-      const first = m.replace(/\s+S$/i, "").trim();
-      nameMap.set(norm(first), m);
-      nameMap.set(norm(m), m);
-    }
-  }
-  const toRoster = (raw) => {
-    const legend = nameMap.get(norm(raw)) || raw;
-    if (rosterByNorm.has(norm(legend))) return rosterByNorm.get(norm(legend));
-    const firstTok = norm(legend).split(" ")[0];
-    for (const [rn, real] of rosterByNorm) if (rn.split(" ")[0] === firstTok) return real;
-    return null;
-  };
-
-  const dateRows = [];
-  rows.forEach((r, i) => {
-    const vals = SCHED_DAYCOLS.map((c) => (r[c] || "").trim());
-    if (vals.filter((v) => /^\d{1,2}$/.test(v)).length >= 6) dateRows.push([i, vals]);
-  });
-
-  const off = {};
-  const unmatched = {};
-  const markOff = (rawName, date) => {
-    const rn = toRoster(rawName);
-    if (!rn) { unmatched[rawName.trim()] = (unmatched[rawName.trim()] || 0) + 1; return; }
-    (off[rn] = off[rn] || new Set()).add(date);
-  };
-
-  for (let w = 0; w < dateRows.length; w++) {
-    const [didx, dvals] = dateRows[w];
-    const end = w + 1 < dateRows.length ? dateRows[w + 1][0] : rows.length;
-    const dts = resolveWeekDates(dvals, targetYear, targetMonth);
-    for (let ridx = didx + 1; ridx < end; ridx++) {
-      const r = rows[ridx]; if (!r) continue;
-      SCHED_DAYCOLS.forEach((dc, k) => {
-        const cell = (r[dc] || "").trim();
-        const note = (r[dc + 2] || "").trim();
-        const date = dts2str(dts[k]); if (!date) return;
-        if (cell === "A" || cell === "B" || cell === "C") {
-          if (note.toUpperCase() === "OFF") (teams[cell] || []).forEach((m) => markOff(m, date));
-        } else if (!cell && note) {
-          const m1 = note.toUpperCase().match(/^([A-Z]+)\s+(OFF|VAC)\b/);
-          if (m1) markOff(m1[1], date);
-        }
-      });
-    }
-  }
-
-  const prefix = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
-  const matched = [];
-  for (const [name, set] of Object.entries(off)) {
-    const days = [...set].filter((d) => d.startsWith(prefix)).sort();
-    if (!days.length) continue;
-    const a = roster.find((x) => x.name === name);
-    if (a) matched.push({ id: a.id, name, dates: days });
-  }
-  return { matched, unmatched: Object.keys(unmatched), teams };
-}
-
 function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
   const [err, setErr] = useState("");
@@ -2795,36 +2672,16 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const parse = async (file) => {
     setErr("");
     const text = await file.text();
-    const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
+    const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
     if (!rows.length) { setErr("That file looks empty."); return; }
-
-    // ---- Auto-detect the Holler team-grid format ----
-    if (looksLikeHollerGrid(rows)) {
-      // Figure out which month the sheet is for. The top-left title is like "Jul-26".
-      const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-      let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
-      const title = String((rows[0] && rows[0][0]) || "").toLowerCase();
-      const mm = title.match(/([a-z]{3})[-\s]?(\d{2,4})/);
-      if (mm) {
-        const mi = MONTHS.indexOf(mm[1]); if (mi >= 0) tm = mi + 1;
-        const yr = mm[2]; ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
-      }
-      const res = parseHollerGrid(rows, roster, ty, tm);
-      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
-      if (!res.matched.length && !res.unmatched.length) {
-        setErr("Detected a team grid, but couldn't read any off-days. The layout may differ from expected.");
-        return;
-      }
-      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
-      return;
-    }
-
-    // ---- Otherwise, the simple Name + dates format ----
     const header = rows[0].map((h) => String(h || "").trim());
     const lower = header.map((h) => h.toLowerCase());
     const nameCol = lower.findIndex((h) => h.includes("name") || h.includes("associate") || h.includes("employee"));
-    if (nameCol < 0) { setErr("Couldn't find a Name column. Add a header row with a 'Name' column, or upload the monthly team grid."); return; }
+    if (nameCol < 0) { setErr("Couldn't find a Name column. Add a header row with a 'Name' column."); return; }
 
+    // Two supported shapes:
+    // A) Name, OffDates  → one cell with dates separated by ; , or space
+    // B) Name, 2026-07-01, 2026-07-02, ...  → a column per date, any non-empty / "off"/"x"/"v" cell marks off
     const offCol = lower.findIndex((h) => h.includes("off") || h.includes("pto") || h.includes("vacation") || h.includes("dates"));
     const dateCols = header.map((h, i) => ({ i, d: normalizeDate(h) })).filter((c) => c.d && c.i !== nameCol);
 
@@ -2881,7 +2738,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
               <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) parse(e.target.files[0]); e.target.value = ""; }} />
               <div className="dz-icon">⇩</div>
               <div className="dz-title">Drop or choose a schedule CSV</div>
-              <div className="dz-sub">Upload your <b>monthly team grid</b> as-is (teams and days off are read automatically), or a simple <b>Name + Off Dates</b> CSV.</div>
+              <div className="dz-sub">A <b>Name</b> column, plus either an <b>Off Dates</b> column (dates separated by commas) or one column per date marked “off”.</div>
             </label>
             {err && <p className="sched-err">{err}</p>}
             <div className="sched-help">
@@ -2894,12 +2751,6 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         ) : (
           <>
             <div className="sched-preview">
-              {preview.grid && (
-                <div className="sched-detected">
-                  <span className="sched-detected-tag">Team grid detected</span>
-                  {preview.monthLabel} · teams read from the sheet: {Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}
-                </div>
-              )}
               <p className="hint">{preview.total} off-days for {preview.matched.filter((m) => m.dates.length).length} people. Review, then apply.</p>
               {preview.matched.filter((m) => m.dates.length).map((m) => (
                 <div key={m.id} className="sched-prow">
@@ -2908,7 +2759,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
                 </div>
               ))}
               {preview.unmatched.length > 0 && (
-                <p className="sched-err">Couldn't match to the roster, skipped: {preview.unmatched.join(", ")}. If one is a nickname, rename them on the Roster tab to match, then re-upload.</p>
+                <p className="sched-err">Not on the roster, skipped: {preview.unmatched.join(", ")}. Fix the spelling to match roster names, or add them on the Roster tab.</p>
               )}
             </div>
             <div className="sched-actions">
@@ -7604,10 +7455,6 @@ function Style() {
       .sched-help code { display:block; font-size:12px; line-height:1.6; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
       .sched-or { text-align:center; font-size:12px; color:var(--ink-3); font-weight:700; margin:8px 0; }
       .sched-preview { max-height:300px; overflow-y:auto; margin:6px 0 14px; }
-      .sched-detected { background:rgba(48,177,85,.1); border:1px solid rgba(48,177,85,.3); border-radius:10px;
-        padding:10px 12px; font-size:12.5px; color:#1E7A3C; margin-bottom:10px; }
-      .sched-detected-tag { display:inline-block; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
-        font-size:10.5px; background:#1E7A3C; color:#fff; padding:2px 8px; border-radius:99px; margin-right:8px; }
       .sched-prow { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
       .sched-dates { color:var(--ink-2); text-align:right; }
       .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
