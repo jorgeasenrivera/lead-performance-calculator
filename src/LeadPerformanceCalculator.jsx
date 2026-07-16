@@ -3,7 +3,7 @@ import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
 
 /* ============================================================
-   LEAD PERFORMANCE CALCULATOR v3 for the Holler-Classic Family of Dealerships
+   LEAD PERFORMANCE CALCULATOR v3
    "Earn the next lead."
    v3: Apple-inspired redesign with frosted chrome, segmented controls,
    spring transitions, logo + favicon. Logic & storage identical to v2.
@@ -72,6 +72,28 @@ const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const STORE_TZ = "America/New_York";
 const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
 const today = () => dayIn();
+
+// The cinematic loading sequence plays only on the first sign-in of each calendar
+// day, per person. After that, sign-ins during the same day skip straight into the
+// app so it never becomes tedious. Keyed by dealership day + user so it resets at
+// midnight and is independent per account on a shared machine.
+const INTRO_KEY = "lpc:intro-played";
+function introPlayedToday(userId) {
+  try { return localStorage.getItem(INTRO_KEY) === `${today()}:${userId || "anon"}`; }
+  catch (e) { return false; }
+}
+function markIntroPlayed(userId) {
+  try { localStorage.setItem(INTRO_KEY, `${today()}:${userId || "anon"}`); } catch (e) {}
+}
+// How many times someone has seen the intro overall — used to reveal a "Skip" affordance
+// only after the novelty has worn off (first few plays stay unskippable for the wow).
+const INTRO_COUNT_KEY = "lpc:intro-count";
+function introSeenCount() {
+  try { return parseInt(localStorage.getItem(INTRO_COUNT_KEY) || "0", 10) || 0; } catch (e) { return 0; }
+}
+function bumpIntroCount() {
+  try { const n = introSeenCount() + 1; localStorage.setItem(INTRO_COUNT_KEY, String(n)); return n; } catch (e) { return 0; }
+}
 const ym = () => today().slice(0, 7);
 const prevYm = () => {
   const [y, m] = today().split("-").map(Number);
@@ -155,7 +177,7 @@ const BRAND_PRESETS = [
   { id: "chevy",    label: "Chevrolet",    primary: "#1B4E8C", deep: "#0D2240", accent: "#FCC10F" },
   { id: "nissan",   label: "Nissan",       primary: "#C3002F", deep: "#8A0021", accent: "#E5E5E5" },
   { id: "driversmart", label: "Driver's Mart", primary: "#00A896", deep: "#00776A", accent: "#C1D730" },
-  { id: "hc",       label: "Holler-Classic", primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" },
+  { id: "hc",       label: "Classic Blue", primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" },
 ];
 
 const DEFAULT_CONFIG = {
@@ -457,7 +479,16 @@ function verdictOf(ev, { restricted = false, inGrace = false } = {}) {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        // Keep people signed in across reloads and across days. The cinematic
+        // loading sequence is gated separately (once per calendar day); the login
+        // itself persists so The Board and their session survive between visits.
+        persistSession: true,
+        autoRefreshToken: true,
+        storageKey: "lpc-auth",
+      },
+    })
   : null;
 
 const AUTH_ENABLED = true;
@@ -658,11 +689,14 @@ export default function LeadPerformanceCalculator() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
+  // The cinematic intro plays once per calendar day per user. null = not decided yet.
+  const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
   const [view, setView] = useState("admin");
   const [storeData, setStoreData] = useState(null);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [adminTab, setAdminTab] = useState("overview");
   const [dragName, setDragName] = useState(null);
   const [dropActive, setDropActive] = useState(false);
@@ -1076,23 +1110,17 @@ export default function LeadPerformanceCalculator() {
     return <Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>;
   }
 
-  // Pick a tool. Daily Activity is per-store, so an admin who chooses it gets dropped
-  // into a store rather than the all-stores overview, which has no activity data.
+  // The Tools chooser is gone. Signing in drops the person straight into the
+  // Performance dashboard; the cinematic intro (below) covers the transition on the
+  // first sign-in of the day. chooseModule stays for the in-app "Tools" button.
   const chooseModule = (mod) => {
     setAppModule(mod || "perf");
     if (mod === "activity" && view === "admin") {
       const first = (isAdmin ? config.stores : accessibleStores)[0];
       if (first) setView(first.id);
     }
-    if (mod === "perf" && isAdmin && view !== "admin") {
-      // leave the admin where they were; they can switch stores from the dropdown
-    }
     setEntered(true);
   };
-
-  if (!entered) {
-    return <Shell><Splash config={config} session={session} onEnter={chooseModule} onSignOut={signOut} /><Style /></Shell>;
-  }
 
   const isAdmin = session.role === "admin";
   const isOverseer = session.role === "overseer";
@@ -1100,6 +1128,30 @@ export default function LeadPerformanceCalculator() {
   const accessibleStores = isAdmin ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
   const currentStore = view !== "admin" ? config.stores.find((s) => s.id === view) : null;
   const overviewStores = isAdmin ? config.stores : accessibleStores;
+
+  // Sign-in lands straight in the Performance dashboard — no Tools chooser. On the
+  // first sign-in of the day, the cinematic intro plays over the top; after it (or if
+  // it already played today), we drop into the app. Managers land in their store;
+  // admins land in the all-stores overview.
+  if (!entered) {
+    const alreadyToday = introDone || introPlayedToday(session.userId || session.id);
+    if (alreadyToday) {
+      // Straight in — no animation. Enter on the next tick to avoid setState-in-render.
+      return <Shell><EnterNow onEnter={() => { setAppModule("perf"); setEntered(true); }} /><Style /></Shell>;
+    }
+    const landingName = currentStore?.name || (isAdmin ? "your stores" : "your board");
+    return (
+      <Shell>
+        <LoadingSequence storeName={landingName} onComplete={() => {
+          markIntroPlayed(session.userId || session.id);
+          setIntroDone(true);
+          setAppModule("perf");
+          setEntered(true);
+        }} />
+        <Style />
+      </Shell>
+    );
+  }
 
   // "The Board" chosen from the splash: scope it to who's signed in.
   if (appModule === "board") {
@@ -1110,7 +1162,7 @@ export default function LeadPerformanceCalculator() {
             <Logo size={36} />
             <div>
               <div className="brand-title">Lead Performance</div>
-              <div className="brand-sub">Holler-Classic · Earn the next lead</div>
+              <div className="brand-sub">Earn the next lead</div>
             </div>
           </div>
           <div className="topbar-right">
@@ -1138,6 +1190,34 @@ export default function LeadPerformanceCalculator() {
     );
   }
 
+  // One description of the current tab set, shared by the desktop segmented control
+  // and the mobile slide-out drawer so they can never drift apart. Which set applies
+  // depends on the same context checks the render below uses.
+  let navItems = null, navValue = null, navOnChange = null;
+  if (view === "admin" && isAdmin) {
+    navItems = [["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]];
+    navValue = adminTab; navOnChange = setAdminTab;
+  } else if (view === "combined" && isOverseer) {
+    navItems = [["board", "Combined Board"], ["gm", "Summary"]];
+    navValue = tab === "board" || tab === "gm" ? tab : "board"; navOnChange = setTab;
+  } else if (currentStore && storeData && isOverseer) {
+    navItems = [["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]];
+    navValue = ["board", "gm", "history"].includes(tab) ? tab : "board"; navOnChange = setTab;
+  } else if (currentStore && storeData) {
+    if (appModule === "activity") {
+      navItems = isAdmin
+        ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+        : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]];
+      navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
+    } else {
+      navItems = isAdmin
+        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
+        : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]];
+      navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
+    }
+    navOnChange = setTab;
+  }
+
   return (
     <Shell>
       <header className="topbar no-print">
@@ -1145,7 +1225,7 @@ export default function LeadPerformanceCalculator() {
           <Logo size={36} />
           <div>
             <div className="brand-title">Lead Performance</div>
-            <div className="brand-sub">Holler-Classic · Earn the next lead</div>
+            <div className="brand-sub">Earn the next lead</div>
           </div>
         </div>
         <div className="topbar-right">
@@ -1173,7 +1253,35 @@ export default function LeadPerformanceCalculator() {
           <button className="btn-quiet" onClick={() => setEntered(false)}>Tools</button>
           <button className="btn-quiet" onClick={signOut}>Sign out</button>
         </div>
+        {navItems && (
+          <button className="hamburger no-print" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
+            <span></span><span></span><span></span>
+          </button>
+        )}
       </header>
+
+      {navItems && (
+        <MobileDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          items={navItems}
+          value={navValue}
+          onChange={navOnChange}
+          appModule={appModule}
+          storeData={storeData}
+          storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
+          onToolChange={(mod) => {
+            if (mod === appModule) { setDrawerOpen(false); return; }
+            if (mod === "board") { setAppModule("board"); setDrawerOpen(false); return; }
+            if (mod === "activity" && view === "admin") {
+              const first = (isAdmin ? config.stores : accessibleStores)[0];
+              if (first) setView(first.id);
+            }
+            setAppModule(mod);
+            setTab(mod === "activity" ? "checkout" : "board");
+            setDrawerOpen(false);
+          }} />
+      )}
 
       {view === "admin" && isAdmin ? (
         <>
@@ -1240,7 +1348,7 @@ export default function LeadPerformanceCalculator() {
         <>
           <nav className="seg-wrap no-print">
             <SegControl
-              items={[["board", "Lead Board"], ["gm", "Summary"], ["history", "History"]]}
+              items={[["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]]}
               value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={setTab} />
           </nav>
           <div key={view + tab} className="page">
@@ -1263,8 +1371,8 @@ export default function LeadPerformanceCalculator() {
             ) : (
               <SegControl
                 items={isAdmin
-                  ? [["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
-                  : [["board", "Lead Board"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]]}
+                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
+                  : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]]}
                 value={(isAdmin
                   ? ["board", "import", "gm", "history", "standards", "roster"]
                   : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
@@ -1990,6 +2098,104 @@ function LEADERBOARD_HTML(p) {
 </script></body></html>`;
 }
 
+/* ---------------- Cinematic loading sequence ----------------
+   Plays on the first sign-in of each calendar day. The Lead Performance logo whooshes
+   in, fills the back, and morphs into a decorative version of The Board (no real data),
+   then hands off into the Performance page. ~10 seconds, then onComplete fires. A Skip
+   affordance appears only after someone has seen it a few times. */
+function LoadingSequence({ storeName, onComplete }) {
+  const [seen] = useState(() => introSeenCount());
+  const doneRef = useRef(false);
+
+  const finish = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onComplete();
+  }, [onComplete]);
+
+  useEffect(() => {
+    bumpIntroCount();
+    const t = setTimeout(finish, 10000);
+    // reduced-motion: honor the OS setting and skip straight in
+    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq && mq.matches) { clearTimeout(t); finish(); }
+    return () => clearTimeout(t);
+  }, [finish]);
+
+  // decorative board rows — fixed, not real data
+  const ROWS = [
+    ["Marcus Bell", 62, 41, 22, "g"], ["Diana Cho", 58, 38, 19, "g"],
+    ["Andre Watts", 47, 33, 15, "y"], ["Priya Nair", 44, 28, 17, "g"],
+    ["Sam Rivera", 39, 25, 12, "y"], ["Tess Okafor", 31, 22, 9, "r"],
+  ];
+  const MEDALS = ["\uD83E\uDD47", "\uD83E\uDD48", "\uD83E\uDD49"];
+  const spark = (seed) => {
+    let pts = [], v = 50;
+    for (let i = 0; i <= 20; i++) { v += (Math.sin(seed * i * .7) + Math.random() - .5) * 16; v = Math.max(8, Math.min(92, v)); pts.push(v); }
+    const step = 100 / 20;
+    const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${(i * step).toFixed(1)} ${(100 - p).toFixed(1)}`).join(" ");
+    return { d, cls: pts[pts.length - 1] >= pts[0] ? "up" : "down" };
+  };
+  const mark = (t) => t === "g" ? "\u2713" : t === "y" ? "\u26A0\uFE0E" : "\u2717";
+
+  return (
+    <div className="lseq">
+      <div className="lseq-bg" />
+      <div className="lseq-aurora" />
+
+      <div className="lseq-board">
+        <div className="lseq-btitle">
+          <span className="lseq-dot" /><h1>The Board</h1><span className="lseq-sub">Live · Today</span>
+        </div>
+        <div className="lseq-head">
+          <div>Associate</div><div>Internet</div><div>Phone</div><div>Showroom</div><div>Units</div>
+        </div>
+        <div className="lseq-rows">
+          {ROWS.map((r, i) => {
+            const [name, inet, ph, sh, tone] = r; const s = spark(i + 1);
+            return (
+              <div key={name} className="lseq-row" style={{ animationDelay: (4.5 + i * 0.18) + "s" }}>
+                <div className="lseq-name">{i < 3 ? <span className="lseq-medal">{MEDALS[i]}</span> : <span className="lseq-rank">{i + 1}</span>}{name}</div>
+                <div>
+                  <span className={"lseq-pill " + tone}><span className="lseq-mk">{mark(tone)}</span>{inet}%</span>
+                  <div className="lseq-spark"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path className={s.cls} d={s.d} /></svg></div>
+                </div>
+                <div><span className="lseq-units">{ph}</span></div>
+                <div><span className="lseq-units">{sh}</span></div>
+                <div><span className="lseq-units">{inet + ph + sh}</span></div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="lseq-logowrap">
+        <div className="lseq-streak" />
+        <div className="lseq-badge">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <defs><linearGradient id="lseqg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#2A5E9B" /><stop offset="100%" stopColor="#1D4674" /></linearGradient></defs>
+            <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lseqg)" />
+            <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
+            <circle cx="15" cy="32" r="2.5" fill="#C1D730" />
+            <path className="lseq-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
+            <g className="lseq-needle"><line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" /></g>
+            <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
+          </svg>
+        </div>
+        <div className="lseq-word">
+          <h1>Lead Performance</h1>
+          <div className="lseq-tag">Earn the next lead</div>
+        </div>
+      </div>
+
+      <div className="lseq-loadword">Loading {storeName ? storeName : "your board"}…</div>
+      <div className="lseq-loadbar"><div className="lseq-fill" /></div>
+
+      {seen >= 3 && <button className="lseq-skip" onClick={finish}>Skip →</button>}
+    </div>
+  );
+}
+
 /* ---------------- Splash ---------------- */
 function Splash({ config, session, onEnter, onSignOut }) {
   const first = (session?.name || "").split(" ")[0];
@@ -2150,7 +2356,7 @@ function Login({ config, onBack, onAuthed }) {
       <div className="login-card">
         <div className="login-logo"><Logo size={64} animated /></div>
         <h1 className="login-title">Lead Performance</h1>
-        <p className="login-sub">Holler-Classic Family of Dealerships</p>
+        <p className="login-sub">Earn the next lead</p>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
@@ -4763,7 +4969,65 @@ function ToolSwitcher({ value, onChange }) {
   );
 }
 
+/* ---------------- Mobile slide-out drawer ----------------
+   On phones the topbar collapses to a hamburger + logo; all navigation moves here.
+   Slides in from the right like the Claude mobile app. Tapping a tab or the backdrop
+   closes it. Rendered on every screen size but only visible under 720px via CSS. */
+function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
+  // Lock body scroll while the drawer is open so the page behind doesn't move.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [open, onClose]);
+
+  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "The Board"]];
+  const pick = (id) => { onChange && onChange(id); onClose(); };
+
+  return (
+    <div className={"drawer-root no-print " + (open ? "open" : "")} aria-hidden={!open}>
+      <div className="drawer-scrim" onClick={onClose} />
+      <aside className="drawer" role="dialog" aria-label="Menu">
+        <div className="drawer-head">
+          {storeName ? <div className="drawer-store">{storeName}</div> : <div className="drawer-store">Menu</div>}
+          <button className="drawer-x" onClick={onClose} aria-label="Close menu">✕</button>
+        </div>
+
+        <div className="drawer-scroll">
+          <div className="drawer-section-label">Go to</div>
+          <nav className="drawer-nav">
+            {items.map(([id, label]) => (
+              <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
+                <span>{label}</span>
+                {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+                {value === id && <span className="drawer-tick">✓</span>}
+              </button>
+            ))}
+          </nav>
+
+          <div className="drawer-section-label">Switch tool</div>
+          <nav className="drawer-nav">
+            {tools.map(([id, label]) => (
+              <button key={id} className={"drawer-item " + (appModule === id ? "on" : "")} onClick={() => onToolChange(id)}>
+                <span>{label}</span>
+                {appModule === id && <span className="drawer-tick">✓</span>}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 /* ---------------- Loading screen ---------------- */
+function EnterNow({ onEnter }) {
+  useEffect(() => { onEnter(); }, []); // eslint-disable-line
+  return <LoadingScreen label="Loading" />;
+}
 function LoadingScreen({ label = "Loading" }) {
   return (
     <div className="loadscreen">
@@ -5638,7 +5902,7 @@ function AccessPanel({ config, session, onChange }) {
         <h3>Approved email domains</h3>
         <p className="hint">Only these domains may create an account. Leave this empty and nobody new can register.</p>
         <div className="inline-form">
-          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="hollerclassic.com"
+          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourcompany.com"
             onKeyDown={(e) => e.key === "Enter" && addDomain()} />
           <button className="btn" onClick={addDomain}>Add domain</button>
         </div>
@@ -6217,7 +6481,84 @@ function Style() {
       @media (max-width: 780px) { .wiz-body { grid-template-columns: 1fr; } }
 
       /* ---- loading screen ---- */
-      .loadscreen { min-height:70vh; display:flex; align-items:center; justify-content:center; }
+      /* ============ cinematic loading sequence ============ */
+      .lseq { position:fixed; inset:0; z-index:500; overflow:hidden; background:#000; }
+      .lseq-bg { position:absolute; inset:0; opacity:0; animation:lseqBgIn .8s ease .1s forwards; background:
+        radial-gradient(1200px 700px at 70% -10%, rgba(42,94,155,.55), transparent 60%),
+        radial-gradient(900px 600px at 10% 110%, rgba(29,70,116,.6), transparent 60%),
+        linear-gradient(160deg,#0B1B30 0%,#0F2541 55%,#0B1B30 100%); }
+      @keyframes lseqBgIn { to { opacity:1; } }
+      .lseq-aurora { position:absolute; inset:-20%; filter:blur(20px); animation:lseqAurora 16s ease-in-out infinite alternate; background:
+        radial-gradient(600px 300px at 30% 40%, rgba(136,198,234,.10), transparent 70%),
+        radial-gradient(500px 260px at 80% 60%, rgba(193,215,48,.08), transparent 70%); }
+      @keyframes lseqAurora { from { transform:translate(-3%,-2%) scale(1); } to { transform:translate(3%,2%) scale(1.08); } }
+
+      .lseq-board { position:absolute; inset:0; display:flex; flex-direction:column; padding:5vh 6vw;
+        filter:blur(9px) brightness(.55); transform:scale(1.06); opacity:0;
+        animation:lseqFill 1.3s cubic-bezier(.16,1,.3,1) 2.6s forwards, lseqMorph 2.4s var(--spring) 4.4s forwards; }
+      @keyframes lseqFill { to { opacity:.85; } }
+      @keyframes lseqMorph { to { filter:blur(0) brightness(1); transform:scale(1); opacity:1; } }
+      .lseq-btitle { display:flex; align-items:center; gap:14px; color:#fff; margin-bottom:2.5vh; }
+      .lseq-dot { width:12px; height:12px; border-radius:50%; background:var(--red); box-shadow:0 0 12px var(--red); animation:lseqLive 1.4s ease-in-out infinite; }
+      @keyframes lseqLive { 0%,100%{opacity:.5;} 50%{opacity:1;} }
+      .lseq-btitle h1 { font-size:2.4vw; font-weight:800; letter-spacing:-.02em; margin:0; }
+      .lseq-sub { font-size:1.1vw; color:var(--lblue); font-weight:600; }
+      .lseq-head, .lseq-row { display:grid; grid-template-columns:2.4fr 1fr 1fr 1fr 1fr; gap:1.4vw; align-items:center; }
+      .lseq-head { color:var(--lblue); font-size:1vw; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:0 1.6vw 1.4vh; }
+      .lseq-row { padding:1.35vh 1.6vw; border-radius:12px; margin-bottom:.7vh; background:rgba(255,255,255,.04);
+        border:1px solid rgba(255,255,255,.06); opacity:0; transform:translateY(14px); animation:lseqRowIn .55s var(--spring) forwards; }
+      @keyframes lseqRowIn { to { opacity:1; transform:none; } }
+      .lseq-rank { color:var(--lblue); font-weight:800; font-size:1.3vw; margin-right:.6vw; }
+      .lseq-name { color:#fff; font-weight:700; font-size:1.5vw; display:flex; align-items:center; }
+      .lseq-medal { margin-right:.5vw; font-size:1.4vw; }
+      .lseq-pill { display:inline-flex; align-items:center; gap:.4vw; justify-content:center; padding:.5vh 1vw; border-radius:10px;
+        font-weight:800; font-size:1.25vw; font-variant-numeric:tabular-nums; min-width:5vw; }
+      .lseq-pill.g { background:rgba(48,177,85,.16); color:#5FE08A; }
+      .lseq-pill.y { background:rgba(224,161,0,.16); color:#FFCE52; }
+      .lseq-pill.r { background:rgba(229,71,60,.16); color:#FF8A80; }
+      .lseq-mk { font-size:1vw; }
+      .lseq-units { color:#fff; font-weight:800; font-size:1.5vw; font-variant-numeric:tabular-nums; text-align:center; }
+      .lseq-spark { position:relative; height:2.2vh; width:100%; }
+      .lseq-spark svg { width:100%; height:100%; overflow:visible; }
+      .lseq-spark path { fill:none; stroke:var(--lblue); stroke-width:1.5; opacity:.5; }
+      .lseq-spark path.up { stroke:#5FE08A; } .lseq-spark path.down { stroke:#FF8A80; }
+
+      .lseq-logowrap { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:5; pointer-events:none; }
+      .lseq-badge { opacity:0; transform:translateY(14vh) scale(.08); filter:drop-shadow(0 24px 60px rgba(0,0,0,.5));
+        animation:lseqWhoosh 1.5s cubic-bezier(.16,1,.3,1) .2s forwards, lseqHandoff 2.2s var(--spring) 4.2s forwards; }
+      @keyframes lseqWhoosh {
+        0% { opacity:0; transform:translateY(14vh) scale(.08); }
+        35% { opacity:1; }
+        60% { transform:translateY(-1vh) scale(1.25); }
+        100% { transform:translateY(0) scale(1); }
+      }
+      @keyframes lseqHandoff { to { opacity:0; transform:scale(.55) translateY(-4vh); } }
+      .lseq-badge svg { width:24vh; height:24vh; }
+      .lseq-streak { position:absolute; left:50%; top:50%; width:3px; height:44vh; transform:translate(-50%,-50%);
+        background:linear-gradient(to top,transparent,rgba(136,198,234,.5),transparent); opacity:0; animation:lseqStreak .7s ease .25s forwards; }
+      @keyframes lseqStreak { 0%{opacity:0;transform:translate(-50%,30vh) scaleY(.3);} 45%{opacity:.9;} 100%{opacity:0;transform:translate(-50%,-6vh) scaleY(1.2);} }
+      .lseq-arc { stroke-dasharray:100; stroke-dashoffset:100; animation:lseqArc 1.2s var(--spring) 1.5s forwards; }
+      @keyframes lseqArc { to { stroke-dashoffset:0; } }
+      .lseq-needle { transform-origin:32px 32px; transform:rotate(-140.2deg); animation:lseqNeedle 1.2s var(--spring) 1.5s forwards; }
+      @keyframes lseqNeedle { to { transform:rotate(0deg); } }
+      .lseq-word { margin-top:3vh; text-align:center; opacity:0; transform:translateY(16px); animation:lseqWordIn .8s ease 1.9s forwards, lseqWordOut .9s ease 4.2s forwards; }
+      @keyframes lseqWordIn { to { opacity:1; transform:none; } }
+      @keyframes lseqWordOut { to { opacity:0; transform:translateY(-10px); } }
+      .lseq-word h1 { color:#fff; font-size:4.5vh; font-weight:800; letter-spacing:-.03em; margin:0; }
+      .lseq-tag { color:var(--lblue); font-size:2vh; font-weight:600; margin-top:.6vh; letter-spacing:.02em; }
+
+      .lseq-loadbar { position:absolute; bottom:6vh; left:50%; transform:translateX(-50%); width:min(360px,60vw); height:4px;
+        background:rgba(255,255,255,.12); border-radius:99px; overflow:hidden; z-index:6; opacity:0; animation:lseqBarShow .5s ease 2s forwards, lseqBarHide .5s ease 8.6s forwards; }
+      .lseq-fill { height:100%; width:0; background:linear-gradient(90deg,var(--lblue),var(--lime)); border-radius:99px; animation:lseqFillBar 6.6s linear 2s forwards; }
+      @keyframes lseqFillBar { to { width:100%; } }
+      @keyframes lseqBarShow { to { opacity:1; } } @keyframes lseqBarHide { to { opacity:0; } }
+      .lseq-loadword { position:absolute; bottom:9vh; left:50%; transform:translateX(-50%); color:var(--ink-3); font-size:1.6vh; font-weight:600; letter-spacing:.04em; z-index:6; opacity:0; animation:lseqBarShow .5s ease 2.1s forwards, lseqBarHide .5s ease 8.6s forwards; }
+      .lseq-skip { position:absolute; bottom:5vh; right:5vw; z-index:8; background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.25);
+        padding:8px 16px; border-radius:99px; font:inherit; font-size:14px; font-weight:600; cursor:pointer; backdrop-filter:blur(6px); animation:lseqBarShow .5s ease .5s both; }
+      .lseq-skip:hover { background:rgba(255,255,255,.24); }
+      @media (max-width:720px){ .lseq-btitle h1{font-size:6vw;} .lseq-name{font-size:3.6vw;} .lseq-pill{font-size:3vw;min-width:14vw;} .lseq-units{font-size:3.6vw;} .lseq-sub,.lseq-head{font-size:2.6vw;} }
+
+
       .loadscreen-inner { text-align:center; animation: heroIn .5s var(--spring) both; }
       .loadscreen-logo { display:flex; justify-content:center; margin-bottom:22px;
         filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
@@ -6339,6 +6680,20 @@ function Style() {
       }
 
       /* ---- small screens (layout only) ---- */
+      @media (max-width: 720px) {
+        /* Navigation lives in the drawer now. */
+        .hamburger { display:flex; order:1; margin-left:auto; }
+        .seg-wrap { display:none !important; }
+        /* The tool switcher moved into the drawer; account controls stay but tuck under the logo. */
+        .topbar .tool-switch { display:none; }
+        .topbar { flex-wrap:wrap; gap:10px; }
+        .brand { order:0; }
+        .topbar-right { width:100%; order:2; gap:8px 12px; justify-content:flex-start; flex-wrap:wrap; }
+        .topbar-right .view-select { flex:1 1 140px; min-width:0; }
+        .topbar-right .whoami { order:5; }
+      }
+
+      /* ---- small screens (layout only) ---- */
       @media (max-width: 640px) {
         .lpc { font-size:13.5px; padding-bottom:48px; }
         .topbar { padding:10px 14px; }
@@ -6362,8 +6717,6 @@ function Style() {
 
         .assoc-row { flex-wrap:wrap; gap:6px; }
         .assoc-leads { margin-left:auto; }
-        .seg-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-        .seg { min-width:max-content; }
         .wiz-body { grid-template-columns:1fr; }
         .wiz { max-height:94vh; border-radius:18px; }
         .inline-form { flex-direction:column; align-items:stretch; }
@@ -6437,9 +6790,17 @@ function Style() {
       }
 
       /* ---- import: side-by-side checklist + dropzone ---- */
-      .import-grid { display:grid; grid-template-columns: minmax(300px, 400px) 1fr; gap:20px; align-items:stretch; }
-      .import-grid .checklist { max-width:none; margin:0; }
-      .import-grid .dropzone { margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:220px; }
+      .import { display:flex; flex-direction:column; gap:32px; }
+      .import > .card { margin-bottom:0; padding:22px 22px 24px; }
+      .import-grid { display:grid; grid-template-columns: minmax(300px, 400px) 1fr; gap:24px; align-items:stretch; }
+      .import-grid .checklist { max-width:none; margin:0; padding:22px 22px 24px; }
+      .import-grid .dropzone { margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:240px; padding:40px 24px; }
+      .import > .import-log, .import > .hint { margin-top:0; }
+      /* roomier checklist rows so the required/optional lists don't feel cramped */
+      .import .check { padding:9px 0; }
+      .import .check-group-label { margin:18px 0 6px; }
+      .import .check-group-label:first-of-type { margin-top:6px; }
+      .import .checklist-title { margin-bottom:14px; }
       @media (max-width: 820px) { .import-grid { grid-template-columns: 1fr; } }
 
       .help-btn { float:right; margin-top:-2px; border:1px solid var(--line); background:#fff; color:var(--blue);
@@ -6956,6 +7317,35 @@ function Style() {
       .btn.wide { width:100%; margin-top:18px; padding:12px; border-radius:12px; font-size:14px; }
       .btn.secondary { background:rgba(118,118,128,.14); color:var(--ink); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border:1px solid rgba(255,255,255,.5); }
       .btn.secondary:hover { box-shadow:0 3px 10px rgba(0,0,0,.10); }
+      /* ---- mobile slide-out drawer (hidden on desktop, shown under 720px) ---- */
+      .hamburger { display:none; flex-direction:column; justify-content:center; gap:4px; width:38px; height:38px;
+        border:1px solid var(--line); border-radius:11px; background:#fff; cursor:pointer; padding:0 9px; }
+      .hamburger span { display:block; height:2px; border-radius:2px; background:var(--ink); transition:.2s; }
+      .drawer-root { display:none; position:fixed; inset:0; z-index:120; }
+      .drawer-root.open { display:block; }
+      .drawer-scrim { position:absolute; inset:0; background:rgba(15,23,42,.42); backdrop-filter:blur(2px);
+        opacity:0; animation:scrimIn .25s ease forwards; }
+      @keyframes scrimIn { to { opacity:1; } }
+      .drawer { position:absolute; top:0; right:0; height:100%; width:min(84vw, 340px);
+        background:var(--card,#fff); box-shadow:-16px 0 48px rgba(0,0,0,.28); display:flex; flex-direction:column;
+        transform:translateX(100%); animation:drawerIn .28s var(--spring) forwards; }
+      @keyframes drawerIn { to { transform:translateX(0); } }
+      .drawer-head { display:flex; align-items:center; justify-content:space-between; padding:18px 18px 12px;
+        border-bottom:1px solid var(--line); }
+      .drawer-store { font-size:17px; font-weight:800; letter-spacing:-.02em; }
+      .drawer-x { border:none; background:rgba(0,0,0,.05); width:32px; height:32px; border-radius:50%; font-size:15px;
+        cursor:pointer; color:var(--ink-2); }
+      .drawer-scroll { flex:1; overflow-y:auto; padding:12px 12px 28px; }
+      .drawer-section-label { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--ink-3); padding:14px 10px 6px; }
+      .drawer-nav { display:flex; flex-direction:column; gap:2px; }
+      .drawer-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:none; background:transparent;
+        font:inherit; font-size:16px; font-weight:600; color:var(--ink); padding:13px 12px; border-radius:12px; cursor:pointer; }
+      .drawer-item:active { background:rgba(0,0,0,.05); }
+      .drawer-item.on { background:rgba(42,94,155,.1); color:var(--blue); }
+      .drawer-item > span:first-child { flex:1; }
+      .drawer-tick { color:var(--blue); font-weight:800; }
+
       .btn-quiet { background:transparent; border:none; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer;
         padding:7px 10px; border-radius:9px; transition: background .2s; }
       .btn-quiet:hover { background:rgba(10,132,255,.08); }
