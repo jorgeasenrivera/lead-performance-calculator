@@ -158,9 +158,51 @@ function normThresholds(t) {
 
 // Daily Activity checkout minimums (per store, editable)
 // minStars is optional: leave it at 0 and stars are recorded but not required.
+// rockEdStars is the RockEd bar used by the point system (the third point). Default 40.
 // repeatDays is how many days below standard in a month before someone is flagged
 // automatically as a repeat offender.
-const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, repeatDays: 3 };
+const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40, repeatDays: 3 };
+
+// ---- Days off + the Check Out point system ----
+// Off-days live in data.daysOff, keyed by association id, as a set of YYYY-MM-DD.
+// A day off is excluded entirely: no points, and it does not count toward days worked.
+function offDaysFor(data, aId) {
+  const set = data.daysOff?.[aId];
+  return set ? new Set(set) : new Set();
+}
+function isOff(data, aId, d) {
+  return !!(data.daysOff?.[aId] && data.daysOff[aId].includes(d));
+}
+// Points for one person on one day: one point per missed required item
+// (calls, videos, RockEd-40), each judged independently. 0-3. Days off and days with
+// no data at all score no points (nothing to judge).
+function dayPoints(data, a, d, std) {
+  if (isOff(data, a.id, d)) return { off: true, points: 0, missed: [] };
+  const rec = (data.activity?.[d] || {})[norm(a.name)] || {};
+  const stars = data.stars?.[d]?.[norm(a.name)];
+  const hasData = rec.calls != null || rec.video != null || stars != null;
+  if (!hasData) return { off: false, points: 0, missed: [], noData: true };
+  const missed = [];
+  if (!(rec.calls != null && rec.calls >= std.minCalls)) missed.push("calls");
+  if (!(rec.video != null && rec.video >= std.minVideos)) missed.push("videos");
+  const rockBar = std.rockEdStars ?? 40;
+  if (!(stars != null && stars >= rockBar)) missed.push("rocked");
+  return { off: false, points: missed.length, missed, noData: false };
+}
+// Working days elapsed this month (Sundays excluded) minus this person's off-days,
+// so the coaching pace math uses days actually worked.
+function daysWorkedThisMonth(data, a) {
+  const t = today(); const [y, m, dd] = t.split("-").map(Number);
+  let n = 0;
+  for (let day = 1; day <= dd; day++) {
+    const dt = new Date(y, m - 1, day);
+    if (dt.getDay() === 0) continue;               // skip Sundays
+    const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isOff(data, a.id, ds)) continue;           // skip their days off
+    n++;
+  }
+  return n;
+}
 
 // Per-store brand colors. `primary` drives the hero band + accents on the manager's view.
 const DEFAULT_BRAND = { primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" };
@@ -188,6 +230,7 @@ const DEFAULT_CONFIG = {
   ],
   roles: [
     { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
+    { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
     { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
   ],
   standards: {},
@@ -767,6 +810,16 @@ export default function LeadPerformanceCalculator() {
           if (r.coaching === undefined) { r.coaching = r.id !== "bdc"; dirty = true; }
         }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
+        // Service to Sales was added later. Existing stores won't have it, so insert it
+        // (right after Sales Associate) if it's missing. It behaves like Sales: on The
+        // Board, coached, and lead-gated.
+        if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "service")) {
+          const svc = { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true };
+          const salesIdx = cfg.roles.findIndex((r) => r.id === "sales");
+          if (salesIdx >= 0) cfg.roles.splice(salesIdx + 1, 0, svc);
+          else cfg.roles.unshift(svc);
+          dirty = true;
+        }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
         setConfig(cfg);
@@ -878,7 +931,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines,
-      repeatFlags: data.repeatFlags, excluded: data.excluded,
+      repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -2154,7 +2207,7 @@ function LoadingSequence({ storeName, onComplete }) {
           {ROWS.map((r, i) => {
             const [name, inet, ph, sh, tone] = r; const s = spark(i + 1);
             return (
-              <div key={name} className="lseq-row" style={{ animationDelay: (4.5 + i * 0.18) + "s" }}>
+              <div key={name} className="lseq-row" style={{ animationDelay: (5.7 + i * 0.14) + "s" }}>
                 <div className="lseq-name">{i < 3 ? <span className="lseq-medal">{MEDALS[i]}</span> : <span className="lseq-rank">{i + 1}</span>}{name}</div>
                 <div>
                   <span className={"lseq-pill " + tone}><span className="lseq-mk">{mark(tone)}</span>{inet}%</span>
@@ -2453,13 +2506,11 @@ function ImportBadge({ storeData, activity }) {
 function CheckOutTracker({ config, store, data, onChange }) {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(today());
+  const [showSchedule, setShowSchedule] = useState(false);
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
   const activityDays = Object.keys(data.activity || {}).sort().reverse();
   const dayData = data.activity?.[day] || {};
 
-  // Stars come from a different app that we cannot pull a report from, so they are
-  // typed in. They live outside data.activity on purpose: that gets overwritten on
-  // every import and would wipe them.
   const starsFor = (k) => data.stars?.[day]?.[k];
   const setStars = (k, v) => {
     const next = JSON.parse(JSON.stringify(data));
@@ -2470,76 +2521,74 @@ function CheckOutTracker({ config, store, data, onChange }) {
     onChange(next);
   };
 
-  const manualFlags = data.repeatFlags || {};
-  const toggleFlag = (a) => {
+  // Toggle a person's day off (manual). Schedule upload writes the same structure.
+  const toggleOff = (a) => {
     const next = JSON.parse(JSON.stringify(data));
-    next.repeatFlags = { ...(next.repeatFlags || {}) };
-    if (next.repeatFlags[a.id]) delete next.repeatFlags[a.id];
-    else next.repeatFlags[a.id] = { by: "manual", since: new Date().toISOString() };
-    onChange(next, { action: next.repeatFlags[a.id] ? "Flagged repeat offender" : "Cleared repeat flag", detail: a.name });
+    next.daysOff = next.daysOff || {};
+    const list = new Set(next.daysOff[a.id] || []);
+    if (list.has(day)) list.delete(day); else list.add(day);
+    next.daysOff[a.id] = [...list].sort();
+    onChange(next, { action: list.has(day) ? "Marked day off" : "Cleared day off", detail: `${a.name} · ${day}` });
   };
 
   const q = norm(query);
   const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
-
-  const evalDay = (a, d) => {
-    const rec = (data.activity?.[d] || {})[norm(a.name)] || {};
-    const stars = data.stars?.[d]?.[norm(a.name)];
-    const hasData = rec.calls != null || rec.video != null;
-    const callsMet = rec.calls != null && rec.calls >= std.minCalls;
-    const videoMet = rec.video != null && rec.video >= std.minVideos;
-    // Once a Stars minimum is set, it is a real gate: missing counts as short, exactly
-    // like calls or videos. At 0 it is recorded but never held against anyone.
-    const starsRequired = (std.minStars ?? 0) > 0;
-    const starsMet = !starsRequired || (stars != null && stars >= std.minStars);
-    return {
-      calls: rec.calls, video: rec.video, stars,
-      callsMet, videoMet, starsMet, starsRequired, hasData,
-      rocked: callsMet && videoMet && starsMet,   // all three, or the day is a miss
-    };
-  };
-
-  // How many days this month has each person missed the bar? That is what makes
-  // somebody a repeat offender rather than someone who had one bad Tuesday.
   const monthDays = activityDays.filter((d) => d.startsWith(ym()));
-  const missCount = {};
+
+  // Month-to-date points per person, for the Top Offenders panel.
+  const mtdPoints = {};
   for (const a of roster) {
-    missCount[a.id] = monthDays.filter((d) => {
-      const e = evalDay(a, d);
-      return e.hasData && !e.rocked;
-    }).length;
+    let pts = 0;
+    for (const d of monthDays) pts += dayPoints(data, a, d, std).points;
+    mtdPoints[a.id] = pts;
   }
 
   const rows = roster.map((a) => {
-    const e = evalDay(a, day);
-    const misses = missCount[a.id] || 0;
-    const autoFlag = std.repeatDays > 0 && misses >= std.repeatDays;
-    return { a, ...e, rec: dayData[norm(a.name)] || {}, misses, autoFlag, manualFlag: !!manualFlags[a.id] };
+    const dp = dayPoints(data, a, day, std);
+    const rec = dayData[norm(a.name)] || {};
+    const stars = starsFor(norm(a.name));
+    const off = isOff(data, a.id, day);
+    const hasData = !dp.noData && !off;
+    const rockBar = std.rockEdStars ?? 40;
+    return {
+      a, rec, stars, off,
+      calls: rec.calls, video: rec.video,
+      callsMet: rec.calls != null && rec.calls >= std.minCalls,
+      videoMet: rec.video != null && rec.video >= std.minVideos,
+      rockedMet: stars != null && stars >= rockBar,
+      hasData, points: dp.points, missed: dp.missed,
+      mtd: mtdPoints[a.id] || 0,
+      worked: daysWorkedThisMonth(data, a),
+    };
   }).filter((r) => !q || norm(r.a.name).includes(q));
 
-  const repeatList = roster
-    .map((a) => ({ a, misses: missCount[a.id] || 0, manual: !!manualFlags[a.id] }))
-    .filter((r) => r.manual || (std.repeatDays > 0 && r.misses >= std.repeatDays))
-    .sort((x, y) => y.misses - x.misses);
+  // Top Offenders: most month-to-date points first. Only people with points show.
+  const offenders = roster
+    .map((a) => ({ a, points: mtdPoints[a.id] || 0, worked: daysWorkedThisMonth(data, a) }))
+    .filter((r) => r.points > 0)
+    .sort((x, y) => y.points - x.points);
 
-  const rockedCount = rows.filter((r) => r.rocked).length;
+  const rockedCount = rows.filter((r) => r.hasData && r.points === 0).length;
   const withData = rows.filter((r) => r.hasData);
-  const offenders = withData.filter((r) => !r.rocked);
+  const todayOff = rows.filter((r) => r.off).length;
 
   if (activityDays.length === 0)
     return <div className="empty">No Daily Activity imported yet. Drop today's Standard Daily Activity report in the Import tab to build the checkout sheet.</div>;
 
+  const rockBar = std.rockEdStars ?? 40;
   return (
     <div className="checkout">
       <div className="gm-toolbar">
         <select value={day} onChange={(e) => setDay(e.target.value)}>
           {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
         </select>
-        <span className="hint">Minimum standard: {std.minCalls} calls · {std.minVideos} videos. Change it in the Standards tab.</span>
+        <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
+        <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · {rockBar} RockEd stars. One point per item missed. Days off don't count.</span>
       </div>
       <div className="checkout-summary">
-        <span className="stat-pass">✓ {rockedCount} RockEd</span>
-        <span className="stat-fail">✕ {offenders.length} below standard</span>
+        <span className="stat-pass">✓ {rockedCount} clean</span>
+        <span className="stat-fail">● {withData.length - rockedCount} with points</span>
+        {todayOff > 0 && <span className="stat-dim">{todayOff} off today</span>}
         <span className="stat-dim">{withData.length} of {rows.length} with data</span>
       </div>
       <div className="search-wrap">
@@ -2547,43 +2596,39 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${store.name}`} />
         {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
-      {/* the sheet and the people who need a conversation, side by side. Scanning a
-          table and then scrolling to find who to talk to was the wrong shape. */}
       <div className="checkout-split">
         <div className="card checkout-card">
           <table className="checkout-table">
             <thead><tr>
-              <th>Name</th><th>Calls</th><th>Videos</th><th>Stars</th><th>RockEd</th><th>Repeat</th>
+              <th>Name</th><th>Calls</th><th>Videos</th><th>RockEd</th><th>Points</th><th>Off</th>
             </tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.a.id} className={!r.hasData ? "co-nodata" : r.rocked ? "co-rocked" : "co-miss"}>
-                  <td><b>{r.a.name}</b></td>
-                  <td className={r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
+                <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
+                  <td><b>{r.a.name}</b>{r.off && <span className="co-off-tag">Off</span>}</td>
+                  <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark">{r.callsMet ? "\u2713" : "\u2717"}</span>}
                     {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
                   </td>
-                  <td className={r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
+                  <td className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark">{r.videoMet ? "\u2713" : "\u2717"}</span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
-                  {/* Stars come from a different app with no report, so they are typed in. */}
-                  <td className={r.starsRequired ? (r.starsMet ? "cell-g" : "cell-r") : ""}>
-                    {r.starsRequired && <span className="cell-mark">{r.starsMet ? "✓" : "✗"}</span>}
+                  {/* RockEd: manual star input, auto-checks when it reaches the bar. Never wiped by imports. */}
+                  <td className={r.off ? "" : (r.rockedMet ? "cell-g" : (r.stars != null ? "cell-r" : ""))}>
+                    {!r.off && r.stars != null && <span className="cell-mark">{r.rockedMet ? "\u2713" : "\u2717"}</span>}
                     <input className="star-inp" type="number" min="0" value={r.stars ?? ""}
-                      placeholder="-" onChange={(e) => setStars(norm(r.a.name), e.target.value)} />
-                    {r.starsRequired && <span className="cell-need"> / {std.minStars}</span>}
+                      placeholder="-" disabled={r.off} onChange={(e) => setStars(norm(r.a.name), e.target.value)} />
+                    <span className="cell-need"> / {rockBar}</span>
                   </td>
-                  <td>{!r.hasData ? <span className="co-badge dim">no data</span>
-                    : r.rocked ? <span className="co-badge yes">✓ RockEd</span>
-                    : <span className="co-badge no">✗ Check out</span>}</td>
                   <td>
-                    <button className={"flag-btn " + (r.manualFlag ? "on" : r.autoFlag ? "auto" : "")}
-                      title={r.manualFlag ? "Flagged by you. Click to clear."
-                        : r.autoFlag ? `Missed the bar on ${r.misses} days this month. Click to also flag by hand.`
-                        : `Missed ${r.misses} day${r.misses === 1 ? "" : "s"} this month. Click to flag.`}
-                      onClick={() => toggleFlag(r.a)}>
-                      {r.manualFlag ? "\u2691 flagged" : r.autoFlag ? `\u2691 ${r.misses}x` : r.misses > 0 ? `${r.misses}x` : "-"}
+                    {r.off ? <span className="pt-badge off">—</span>
+                      : !r.hasData ? <span className="pt-badge dim">no data</span>
+                      : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>{r.points} {r.points === 1 ? "pt" : "pts"}</span>}
+                  </td>
+                  <td>
+                    <button className={"off-toggle " + (r.off ? "on" : "")} onClick={() => toggleOff(r.a)} title={r.off ? "Marked off. Click to clear." : "Mark this person off for the day."}>
+                      {r.off ? "✓ Off" : "Mark off"}
                     </button>
                   </td>
                 </tr>
@@ -2593,64 +2638,396 @@ function CheckOutTracker({ config, store, data, onChange }) {
         </div>
 
         <aside className="checkout-side">
-          {repeatList.length > 0 && (
-            <div className="card repeat-card">
-              <h3 className="off-title">
-                Repeat offenders
-                <span className="section-sub">{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
-              </h3>
-              <p className="hint">
-                Below the bar on {std.repeatDays}+ days this month, or flagged by hand.
-                One bad day is noise. This is a pattern.
-              </p>
-              {repeatList.map((r) => (
-                <div key={r.a.id} className="repeat-row">
-                  <b>{r.a.name}</b>
-                  <span className="repeat-count">{r.misses} day{r.misses === 1 ? "" : "s"} missed</span>
-                  {r.manual && <span className="repeat-tag">flagged by you</span>}
-                </div>
-              ))}
-            </div>
-          )}
           <div className={"card offender-card " + (offenders.length === 0 ? "offender-clear" : "")}>
             <h3 className="off-title">
-              {offenders.length === 0 ? "Nobody to check out" : `Check these ${offenders.length}`}
-              <span className="section-sub">{new Date(day + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+              {offenders.length === 0 ? "No points this month" : "Top offenders"}
+              <span className="section-sub">{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
             </h3>
             {offenders.length === 0 ? (
-              <p className="hint">Everyone with data on file hit both minimums today. Worth saying so out loud.</p>
+              <p className="hint">Nobody has accrued a point this month. Worth saying out loud.</p>
             ) : (
               <>
-                <p className="hint">Furthest from standard first.</p>
-                {offenders
-                  .sort((a, b) => (num(a.calls) + num(a.video) * 8) - (num(b.calls) + num(b.video) * 8))
-                  .map((r) => (
-                    <div key={r.a.id} className="offender-row">
-                      <b>{r.a.name}</b>
-                      <span className="offender-detail">
-                        {!r.callsMet && <span className="reason watch">Calls {r.calls ?? 0} / {std.minCalls}</span>}
-                        {!r.videoMet && <span className="reason watch">Videos {r.video ?? 0} / {std.minVideos}</span>}
-                      </span>
+                <p className="hint">Most points month-to-date. One point per missed item (calls, videos, {rockBar} RockEd), days off excluded.</p>
+                <ol className="offender-rank">
+                  {offenders.map((r, i) => (
+                    <div key={r.a.id} className="offender-rank-row">
+                      <span className="orr-rank">{i + 1}</span>
+                      <b className="orr-name">{r.a.name}</b>
+                      <span className="orr-worked">{r.worked} day{r.worked === 1 ? "" : "s"} worked</span>
+                      <span className={"orr-points pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
                     </div>
                   ))}
+                </ol>
               </>
             )}
           </div>
         </aside>
       </div>
+
+      {showSchedule && (
+        <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />
+      )}
     </div>
   );
 }
 const num = (v) => (v == null ? 0 : v);
+
+/* ---------------- Monthly schedule upload ----------------
+   CSV with a Name column and either a list of off-dates, or one column per date with
+   an off-marker. Flexible so a manager can paste from most scheduling tools. We map
+   names to roster ids and write data.daysOff[id] = [YYYY-MM-DD, ...]. */
+/* ---------------- Holler grid schedule parser ----------------
+   Some stores keep a dense monthly grid: week blocks of a date row, three team rows
+   (A/B/C with a per-day shift or OFF), then individual OFF/VAC lines, plus a legend on
+   the right that lists each team's members. Teams change month to month, so the roster
+   is read from that legend rather than hardcoded. Returns per-person off-days for the
+   target month, plus any names that didn't match the store roster (to clarify by hand). */
+const SCHED_DAYCOLS = [0, 3, 6, 9, 12, 15, 18];
+
+function looksLikeHollerGrid(rows) {
+  for (let i = 0; i < rows.length - 2; i++) {
+    const a = (rows[i][0] || "").trim();
+    const b = (rows[i + 1] && rows[i + 1][0] || "").trim();
+    const c = (rows[i + 2] && rows[i + 2][0] || "").trim();
+    if (a === "A" && b === "B" && c === "C") return true;
+  }
+  return false;
+}
+
+function readLegendTeams(rows) {
+  let legCol = -1;
+  for (let c = 19; c <= 30 && legCol < 0; c++) {
+    let letters = 0;
+    for (const r of rows) { const v = (r[c] || "").trim(); if (/^[A-D]$/.test(v)) letters++; }
+    if (letters >= 3) legCol = c;
+  }
+  const teams = {};
+  if (legCol < 0) return teams;
+  let cur = null;
+  for (const r of rows) {
+    const v = (r[legCol] || "").trim();
+    if (/^[A-D]$/.test(v)) { cur = v; teams[cur] = []; }
+    else if (cur && v && !/^\d+$/.test(v) && v.length >= 2) teams[cur].push(v);
+  }
+  return teams;
+}
+
+// Resolve the seven day cells of a week header to real dates for the target month,
+// handling the prior-month lead-in (…30, 1…) and the next-month tail (…31, 1).
+function resolveWeekDates(dvals, ty, tm) {
+  const dn = dvals.map((v) => /^\d{1,2}$/.test(String(v).trim()) ? parseInt(v) : null);
+  const dts = new Array(7).fill(null);
+  let reset = null;
+  for (let k = 1; k < 7; k++) if (dn[k] === 1 && dn[k - 1] && dn[k - 1] > 20) { reset = k; break; }
+  if (reset != null && reset <= 3 && dn[0] && dn[0] >= 27) {
+    let pm = tm - 1, py = ty; if (pm === 0) { pm = 12; py = ty - 1; }
+    for (let k = 0; k < reset; k++) if (dn[k]) dts[k] = [py, pm, dn[k]];
+    for (let k = reset; k < 7; k++) if (dn[k]) dts[k] = [ty, tm, dn[k]];
+    return dts;
+  }
+  let m = tm, y = ty, prev = null;
+  for (let k = 0; k < 7; k++) {
+    if (dn[k] == null) continue;
+    if (prev != null && dn[k] < prev) { m++; if (m === 13) { m = 1; y++; } }
+    dts[k] = [y, m, dn[k]]; prev = dn[k];
+  }
+  return dts;
+}
+const dts2str = (dt) => dt ? `${dt[0]}-${String(dt[1]).padStart(2, "0")}-${String(dt[2]).padStart(2, "0")}` : null;
+
+function parseHollerGrid(rows, roster, targetYear, targetMonth) {
+  const teams = readLegendTeams(rows);
+  const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
+  const nameMap = new Map();
+  for (const members of Object.values(teams)) {
+    for (const m of members) {
+      const first = m.replace(/\s+S$/i, "").trim();
+      nameMap.set(norm(first), m);
+      nameMap.set(norm(m), m);
+    }
+  }
+  const toRoster = (raw) => {
+    const legend = nameMap.get(norm(raw)) || raw;
+    if (rosterByNorm.has(norm(legend))) return rosterByNorm.get(norm(legend));
+    const firstTok = norm(legend).split(" ")[0];
+    for (const [rn, real] of rosterByNorm) if (rn.split(" ")[0] === firstTok) return real;
+    return null;
+  };
+
+  const dateRows = [];
+  rows.forEach((r, i) => {
+    const vals = SCHED_DAYCOLS.map((c) => (r[c] || "").trim());
+    if (vals.filter((v) => /^\d{1,2}$/.test(v)).length >= 6) dateRows.push([i, vals]);
+  });
+
+  const off = {};
+  const unmatched = {};
+  const markOff = (rawName, date) => {
+    const rn = toRoster(rawName);
+    if (!rn) { unmatched[rawName.trim()] = (unmatched[rawName.trim()] || 0) + 1; return; }
+    (off[rn] = off[rn] || new Set()).add(date);
+  };
+
+  for (let w = 0; w < dateRows.length; w++) {
+    const [didx, dvals] = dateRows[w];
+    const end = w + 1 < dateRows.length ? dateRows[w + 1][0] : rows.length;
+    const dts = resolveWeekDates(dvals, targetYear, targetMonth);
+    for (let ridx = didx + 1; ridx < end; ridx++) {
+      const r = rows[ridx]; if (!r) continue;
+      SCHED_DAYCOLS.forEach((dc, k) => {
+        const cell = (r[dc] || "").trim();
+        const note = (r[dc + 2] || "").trim();
+        const date = dts2str(dts[k]); if (!date) return;
+        if (cell === "A" || cell === "B" || cell === "C") {
+          if (note.toUpperCase() === "OFF") (teams[cell] || []).forEach((m) => markOff(m, date));
+        } else if (!cell && note) {
+          const m1 = note.toUpperCase().match(/^([A-Z]+)\s+(OFF|VAC)\b/);
+          if (m1) markOff(m1[1], date);
+        }
+      });
+    }
+  }
+
+  const prefix = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+  const matched = [];
+  for (const [name, set] of Object.entries(off)) {
+    const days = [...set].filter((d) => d.startsWith(prefix)).sort();
+    if (!days.length) continue;
+    const a = roster.find((x) => x.name === name);
+    if (a) matched.push({ id: a.id, name, dates: days });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams };
+}
+
+function ScheduleUpload({ store, roster, data, onClose, onChange }) {
+  const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
+  const [err, setErr] = useState("");
+  const [sheetPick, setSheetPick] = useState(null); // { sheets:[names], rowsBySheet:{name:rows} } when an xlsx has many tabs
+  const [busy, setBusy] = useState(false);
+
+  // Turn a dropped file into rows (2D array). CSV is read directly; xlsx is read with
+  // SheetJS, loaded on demand. A workbook can hold many monthly tabs, so if there's more
+  // than one non-empty sheet we let the manager pick which month to import.
+  const readFile = async (file) => {
+    setErr(""); setBusy(true);
+    try {
+      const nameLc = (file.name || "").toLowerCase();
+      if (nameLc.endsWith(".xlsx") || nameLc.endsWith(".xls") || nameLc.endsWith(".xlsm")) {
+        let XLSX;
+        try { XLSX = await import("xlsx"); } catch (e) {
+          setErr("This is an Excel file, but the xlsx reader isn't available in this build. Save the month's tab as CSV and upload that, or ask the admin to add the 'xlsx' package.");
+          setBusy(false); return;
+        }
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+        // keep only sheets that actually contain a team grid
+        const gridSheets = wb.SheetNames.filter((n) => {
+          try { return looksLikeHollerGrid(toRows(wb.Sheets[n])); } catch (e) { return false; }
+        });
+        const usable = gridSheets.length ? gridSheets : wb.SheetNames;
+        if (usable.length === 1) {
+          setBusy(false);
+          parseRows(toRows(wb.Sheets[usable[0]]), usable[0]);
+          return;
+        }
+        // many tabs → let them pick. Default-highlight the one matching the current month.
+        const rowsBySheet = {};
+        for (const n of usable) rowsBySheet[n] = toRows(wb.Sheets[n]);
+        setBusy(false);
+        setSheetPick({ sheets: usable, rowsBySheet });
+        return;
+      }
+      // CSV
+      const text = await file.text();
+      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
+      setBusy(false);
+      parseRows(rows, null);
+    } catch (e) {
+      setBusy(false);
+      setErr("Couldn't read that file. If it's an Excel export, try the .xlsx directly, or save the tab as CSV.");
+    }
+  };
+
+  const parse = async (rows, monthHint) => parseRows(rows, monthHint);
+  const parseRows = (rows, monthHint) => {
+    setErr("");
+    if (!rows || !rows.length) { setErr("That file looks empty."); return; }
+
+    // ---- Auto-detect the Holler team-grid format ----
+    if (looksLikeHollerGrid(rows)) {
+      // Figure out which month the sheet is for. Look at the sheet/tab name first
+      // (e.g. "JULY 2026"), then the top-left title cell (e.g. "Jul-26").
+      const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+      let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
+      const src = ((monthHint || "") + " " + String((rows[0] && rows[0][0]) || "")).toLowerCase();
+      const mm = src.match(/([a-z]{3,})[-\s]?(\d{2,4})/);
+      if (mm) {
+        const mi = MONTHS.findIndex((mo) => mm[1].startsWith(mo));
+        if (mi >= 0) tm = mi + 1;
+        const yr = mm[2]; ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
+      }
+      const res = parseHollerGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (!res.matched.length && !res.unmatched.length) {
+        setErr("Detected a team grid, but couldn't read any off-days. The layout may differ from expected.");
+        return;
+      }
+      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
+      return;
+    }
+
+    // ---- Otherwise, the simple Name + dates format ----
+    const header = rows[0].map((h) => String(h || "").trim());
+    const lower = header.map((h) => h.toLowerCase());
+    const nameCol = lower.findIndex((h) => h.includes("name") || h.includes("associate") || h.includes("employee"));
+    if (nameCol < 0) { setErr("Couldn't find a Name column. Add a header row with a 'Name' column, or upload the monthly team grid."); return; }
+
+    const offCol = lower.findIndex((h) => h.includes("off") || h.includes("pto") || h.includes("vacation") || h.includes("dates"));
+    const dateCols = header.map((h, i) => ({ i, d: normalizeDate(h) })).filter((c) => c.d && c.i !== nameCol);
+
+    const rosterByName = new Map(roster.map((a) => [norm(a.name), a]));
+    const matched = [], unmatched = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r]; if (!row) continue;
+      const nm = String(row[nameCol] || "").trim(); if (!nm) continue;
+      const a = rosterByName.get(norm(nm));
+      let dates = [];
+      if (dateCols.length) {
+        for (const c of dateCols) {
+          const v = String(row[c.i] || "").trim().toLowerCase();
+          if (v && ["off", "x", "v", "pto", "vac", "vacation", "1", "true", "yes"].includes(v)) dates.push(c.d);
+        }
+      } else if (offCol >= 0) {
+        dates = String(row[offCol] || "").split(/[;,\s]+/).map(normalizeDate).filter(Boolean);
+      }
+      dates = [...new Set(dates)].filter((d) => d.startsWith(ym().slice(0, 4))); // sane year guard
+      if (a) matched.push({ name: nm, id: a.id, dates });
+      else if (dates.length) unmatched.push(nm);
+    }
+    if (!matched.length && !unmatched.length) { setErr("No off-days found. Check the format below."); return; }
+    setPreview({ matched, unmatched, total: matched.reduce((n, m) => n + m.dates.length, 0) });
+  };
+
+  const apply = () => {
+    if (!preview) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.daysOff = next.daysOff || {};
+    for (const m of preview.matched) {
+      const set = new Set(next.daysOff[m.id] || []);
+      m.dates.forEach((d) => set.add(d));
+      next.daysOff[m.id] = [...set].sort();
+    }
+    onChange(next, { action: "Applied schedule", detail: `${store.name} · ${preview.total} off-days across ${preview.matched.filter((m) => m.dates.length).length} people` });
+    onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal sched-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="plate-hist-head">
+          <div>
+            <h2 className="plate-hist-title">Upload monthly schedule</h2>
+            <p className="plate-hist-sub">Applies days off and vacation for the month. Off-days are excluded from the point system and from days worked.</p>
+          </div>
+          <button className="btn-x" onClick={onClose}>✕</button>
+        </div>
+
+        {sheetPick ? (
+          <div className="sched-sheetpick">
+            <p className="hint">This workbook has several monthly tabs. Which month do you want to import?</p>
+            <div className="sched-sheet-list">
+              {sheetPick.sheets.map((n) => (
+                <button key={n} className="sched-sheet-btn" onClick={() => { const rows = sheetPick.rowsBySheet[n]; setSheetPick(null); parseRows(rows, n); }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div className="sched-actions">
+              <button className="btn secondary" onClick={() => setSheetPick(null)}>Back</button>
+            </div>
+          </div>
+        ) : !preview ? (
+          <>
+            <label className="sched-drop">
+              <input type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
+              <div className="dz-icon">⇩</div>
+              <div className="dz-title">{busy ? "Reading…" : "Drop or choose the schedule"}</div>
+              <div className="dz-sub">Upload the <b>Excel workbook</b> or a <b>CSV</b>. The monthly team grid is read automatically — teams, team days off, and individual OFF/VAC. A simple <b>Name + Off Dates</b> CSV works too.</div>
+            </label>
+            {err && <p className="sched-err">{err}</p>}
+            <div className="sched-help">
+              <div className="sched-help-title">What it reads</div>
+              <code>The monthly grid as-is: A/B/C team rows, the team legend on the right, and every “NAME OFF” / “NAME VAC” line. Excel files with many month tabs will ask which month.</code>
+              <div className="sched-or">or a simple CSV</div>
+              <code>Name, Off Dates<br />Marcus Bell, 2026-07-04; 2026-07-11</code>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="sched-preview">
+              {preview.grid && (
+                <div className="sched-detected">
+                  <span className="sched-detected-tag">Team grid detected</span>
+                  {preview.monthLabel} · teams read from the sheet: {Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}
+                </div>
+              )}
+              <p className="hint">{preview.total} off-days for {preview.matched.filter((m) => m.dates.length).length} people. Review, then apply.</p>
+              {preview.matched.filter((m) => m.dates.length).map((m) => (
+                <div key={m.id} className="sched-prow">
+                  <b>{m.name}</b>
+                  <span className="sched-dates">{m.dates.map((d) => new Date(d + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })).join(", ")}</span>
+                </div>
+              ))}
+              {preview.unmatched.length > 0 && (
+                <p className="sched-err">Couldn't match to the roster, skipped: {preview.unmatched.join(", ")}. If one is a nickname, rename them on the Roster tab to match, then re-upload.</p>
+              )}
+            </div>
+            <div className="sched-actions">
+              <button className="btn secondary" onClick={() => setPreview(null)}>Choose another file</button>
+              <button className="btn" onClick={apply}>Apply {preview.total} off-days</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// accept 2026-07-04, 07/04/2026, 7/4, etc → YYYY-MM-DD (current year if omitted)
+function normalizeDate(s) {
+  s = String(s || "").trim(); if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (m) {
+    const yr = m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : today().slice(0, 4);
+    return `${yr}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  }
+  return null;
+}
 
 /* ---------------- License Plate Tracker ---------------- */
 function PlateTracker({ data, onChange, userName }) {
   const [day, setDay] = useState(today());
   const [tag, setTag] = useState("");
   const [assignee, setAssignee] = useState("");
-  const plates = data.plates || {}; // { day: [ {id, tag, assignee, checkedOut, checkedIn, by} ] }
+  const [historyFor, setHistoryFor] = useState(null); // plate id whose custody log is open
+  const [editingTime, setEditingTime] = useState(null); // plate id whose time is being edited
+  const plates = data.plates || {}; // { day: [ {id, tag, assignee, checkedOut, checkedIn, by, takenAt, history:[...]} ] }
   const dayPlates = plates[day] || [];
   const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+
+  // Build a datetime-local value (local time) from an ISO string, and back.
+  const isoToLocalInput = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const off = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - off).toISOString().slice(0, 16);
+  };
+  const localInputToIso = (val) => val ? new Date(val).toISOString() : null;
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+  const fmtTimeShort = (iso) => iso ? new Date(iso).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
 
   const save = (nextDayPlates, audit) => {
     const next = JSON.parse(JSON.stringify(data));
@@ -2658,31 +3035,68 @@ function PlateTracker({ data, onChange, userName }) {
     next.plates[day] = nextDayPlates;
     onChange(next, audit);
   };
+  // append an event to a plate's own custody history so the trail survives on the record
+  const withEvent = (plate, action, detail) => ({
+    ...plate,
+    history: [...(plate.history || []), { t: new Date().toISOString(), by: userName, action, detail }],
+  });
+
   const addPlate = () => {
     const t = tag.trim().toUpperCase(); if (!t) return;
     if (dayPlates.some((p) => p.tag === t)) return;
-    save([...dayPlates, { id: uid(), tag: t, assignee: assignee.trim(), checkedOut: true, checkedIn: false, by: userName }],
-      { action: "Assigned plate", detail: `${t} → ${assignee.trim() || "unassigned"}` });
+    const now = new Date().toISOString();
+    const who = assignee.trim();
+    const plate = {
+      id: uid(), tag: t, assignee: who, checkedOut: true, checkedIn: false, by: userName,
+      takenAt: now,
+      history: [{ t: now, by: userName, action: "Taken out", detail: `${t} → ${who || "unassigned"}` }],
+    };
+    save([...dayPlates, plate], { action: "Assigned plate", detail: `${t} → ${who || "unassigned"} at ${fmtTimeShort(now)}` });
     setTag(""); setAssignee("");
   };
   const toggleIn = (id) => {
-    save(dayPlates.map((p) => p.id === id ? { ...p, checkedIn: !p.checkedIn } : p));
+    save(dayPlates.map((p) => {
+      if (p.id !== id) return p;
+      const nowIn = !p.checkedIn;
+      const stamp = nowIn ? new Date().toISOString() : null;
+      const ev = withEvent({ ...p, checkedIn: nowIn, returnedAt: stamp }, nowIn ? "Returned" : "Marked out again", nowIn ? `${p.tag} returned at ${fmtTimeShort(stamp)}` : `${p.tag} re-opened`);
+      return ev;
+    }), { action: "Plate check-in", detail: `${dayPlates.find((p) => p.id === id)?.tag}` });
   };
   const setPlateAssignee = (id, name) => {
-    save(dayPlates.map((p) => p.id === id ? { ...p, assignee: name } : p));
+    save(dayPlates.map((p) => p.id === id
+      ? withEvent({ ...p, assignee: name }, "Reassigned", `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`)
+      : p),
+      { action: "Reassigned plate", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${name || "unassigned"}` });
   };
-  const remove = (id) => save(dayPlates.filter((p) => p.id !== id));
+  const setTakenTime = (id, iso) => {
+    if (!iso) return;
+    save(dayPlates.map((p) => {
+      if (p.id !== id) return p;
+      const old = fmtTime(p.takenAt);
+      return withEvent({ ...p, takenAt: iso }, "Time edited", `${p.tag} taken-out time changed from ${old} to ${fmtTime(iso)}`);
+    }), { action: "Edited plate time", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${fmtTime(iso)}` });
+    setEditingTime(null);
+  };
+  const remove = (id) => {
+    const p = dayPlates.find((x) => x.id === id);
+    save(dayPlates.filter((x) => x.id !== id), { action: "Removed plate", detail: `${p?.tag} (was ${p?.assignee || "unassigned"})` });
+  };
   const carryForward = () => {
-    // pull yesterday's (most recent prior day) assignments into today
     const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
     const prior = priorDays.length ? plates[priorDays[0]] : [];
     if (!prior.length) return;
     const existing = new Set(dayPlates.map((p) => p.tag));
-    const carried = prior.filter((p) => !existing.has(p.tag)).map((p) => ({ ...p, id: uid(), checkedIn: false, checkedOut: true, by: userName }));
+    const now = new Date().toISOString();
+    const carried = prior.filter((p) => !existing.has(p.tag)).map((p) => ({
+      ...p, id: uid(), checkedIn: false, checkedOut: true, by: userName, takenAt: now, returnedAt: null,
+      history: [...(p.history || []), { t: now, by: userName, action: "Carried forward", detail: `${p.tag} from ${priorDays[0]}, held by ${p.assignee || "unassigned"}` }],
+    }));
     save([...dayPlates, ...carried], { action: "Carried plates forward", detail: `${carried.length} from ${priorDays[0]}` });
   };
 
   const plateDays = Object.keys(plates).sort().reverse();
+  const openPlate = historyFor ? dayPlates.find((p) => p.id === historyFor) : null;
 
   return (
     <div className="plates">
@@ -2692,7 +3106,7 @@ function PlateTracker({ data, onChange, userName }) {
           {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
         </select>
         <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
-        <span className="hint">Assignments are saved per day, so you can look back and see who had which plate on any date.</span>
+        <span className="hint">Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when.</span>
       </div>
       <div className="card">
         <div className="inline-form">
@@ -2703,11 +3117,12 @@ function PlateTracker({ data, onChange, userName }) {
           </select>
           <button className="btn" onClick={addPlate}>Add plate</button>
         </div>
+        <p className="hint">The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late.</p>
       </div>
       <div className="card">
         {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
           <table className="roster-table wide">
-            <thead><tr><th>Tag</th><th>Assigned to</th><th>Checked back in</th><th>Logged by</th><th /></tr></thead>
+            <thead><tr><th>Tag</th><th>Assigned to</th><th>Time taken</th><th>Returned</th><th>Logged by</th><th>History</th><th /></tr></thead>
             <tbody>
               {dayPlates.map((p) => (
                 <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
@@ -2719,15 +3134,61 @@ function PlateTracker({ data, onChange, userName }) {
                       {p.assignee && !roster.some((a) => a.name === p.assignee) && <option value={p.assignee}>{p.assignee}</option>}
                     </select>
                   </td>
-                  <td><button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? "✓ Returned" : "Out"}</button></td>
+                  <td>
+                    {editingTime === p.id ? (
+                      <span className="plate-time-edit">
+                        <input type="datetime-local" defaultValue={isoToLocalInput(p.takenAt)}
+                          onKeyDown={(e) => { if (e.key === "Enter") setTakenTime(p.id, localInputToIso(e.target.value)); if (e.key === "Escape") setEditingTime(null); }}
+                          id={"pt-" + p.id} />
+                        <button className="plate-check in" onClick={() => setTakenTime(p.id, localInputToIso(document.getElementById("pt-" + p.id).value))}>Save</button>
+                        <button className="btn-x" onClick={() => setEditingTime(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button className="plate-time" onClick={() => setEditingTime(p.id)} title="Click to edit the time taken">
+                        {fmtTime(p.takenAt)} <span className="plate-time-pencil">✎</span>
+                      </button>
+                    )}
+                  </td>
+                  <td>{p.checkedIn ? <span className="plate-returned">{fmtTimeShort(p.returnedAt)}</span> : <span className="plate-out-tag">Still out</span>}</td>
                   <td className="mono">{p.by || "-"}</td>
-                  <td><button className="btn-x" onClick={() => remove(p.id)}>Remove</button></td>
+                  <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
+                  <td>
+                    <button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? "✓ Returned" : "Mark returned"}</button>
+                    <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {openPlate && (
+        <div className="modal-backdrop" onClick={() => setHistoryFor(null)}>
+          <div className="modal plate-hist-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="plate-hist-head">
+              <div>
+                <h2 className="plate-hist-title">Plate {openPlate.tag}</h2>
+                <p className="plate-hist-sub">Currently {openPlate.checkedIn ? "returned" : "out with " + (openPlate.assignee || "unassigned")}. Full custody trail below.</p>
+              </div>
+              <button className="btn-x" onClick={() => setHistoryFor(null)}>✕</button>
+            </div>
+            <ol className="plate-hist-list">
+              {(openPlate.history || []).slice().reverse().map((h, i) => (
+                <li key={i}>
+                  <div className="ph-when">{fmtTime(h.t)}</div>
+                  <div className="ph-body">
+                    <span className={"ph-action ph-" + h.action.toLowerCase().replace(/\s+/g, "-")}>{h.action}</span>
+                    <span className="ph-detail">{h.detail}</span>
+                    <span className="ph-by">by {h.by || "unknown"}</span>
+                  </div>
+                </li>
+              ))}
+              {(openPlate.history || []).length === 0 && <li><p className="hint">No history recorded for this plate.</p></li>}
+            </ol>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2813,8 +3274,7 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
         <div className="stepper-row">
           <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
           <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
-          <Stepper label="Stars" field="minStars" value={std.minStars ?? 0} hint="0 = not required" />
-          <Stepper label="Repeat after" field="repeatDays" value={std.repeatDays ?? 3} hint="days missed in a month" />
+          <Stepper label="RockEd stars" field="rockEdStars" value={std.rockEdStars ?? 40} hint="the third point" />
         </div>
         <div className="stepper-row">
           <StoreStepper label="Working days" value={store.workingDaysInMonth ?? 26}
@@ -4149,6 +4609,14 @@ function oyoMTD(data, nameKey, monthStats) {
     unitsInternet: s.internetUnits ?? 0,
     unitsPhone: s.phoneUnits ?? 0,
     unitsCampaign: s.campaignUnits ?? 0,
+    // The delivered % straight off the Delivery Summary — the SAME number The Board
+    // shows. Coaching used to recompute units/opportunities against activity-report
+    // opportunities, which gave a different figure than the board. Use the report's
+    // own percentage so the two views always agree.
+    pctShowroom: s.showroomPct ?? null,
+    pctInternet: s.internetPct ?? null,
+    pctPhone: s.phonePct ?? null,
+    pctCampaign: s.campaignPct ?? null,
     apptCreated: sum("apptCreated"),
     apptConfirmed: sum("apptConfirmed"),
     apptShowed: sum("apptShow"),
@@ -4563,7 +5031,13 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   //  calElapsed  = working days actually gone by. Pace and days-left run off this.
   //  dataDays    = days we have activity for. Per-day activity averages run off this,
   //                because that is the only stretch we actually measured.
-  const calElapsed = Math.min(workingDays, Math.max(1, workingDaysElapsed()));
+  //  calElapsed  = working days this person has actually worked (calendar working days
+  //                minus their days off). Pace and days-left run off this, so someone
+  //                who took vacation is not judged as if they were here.
+  //  dataDays    = days we have activity for. Per-day activity averages run off this,
+  //                because that is the only stretch we actually measured.
+  const worked = Math.max(1, daysWorkedThisMonth(data, a));
+  const calElapsed = Math.min(workingDays, worked);
   const dataDays = Math.max(1, mtd.daysElapsed);
   const missingDays = Math.max(0, calElapsed - mtd.daysElapsed);
 
@@ -4634,7 +5108,12 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           const cap = c.id.charAt(0).toUpperCase() + c.id.slice(1);
           const opp = mtd["opp" + cap] ?? 0;
           const un = mtd["units" + cap] ?? 0;
-          const rate = opp > 0 ? un / opp : null;
+          // Prefer the Delivery Summary's own delivered % — the exact number The Board
+          // shows — so coaching and the board never disagree. It is stored as a fraction
+          // (e.g. 0.20 for 20%), the same scale fmtPct and the board use. Fall back to a
+          // computed rate only if the report didn't carry a percentage.
+          const storedPct = mtd["pct" + cap];
+          const rate = storedPct != null ? storedPct : (opp > 0 ? un / opp : null);
           const hist = ratios ? ratios["close_" + c.id] : null;
           const better = rate != null && hist != null && rate >= hist;
           return (
@@ -6482,10 +6961,12 @@ function Style() {
 
       /* ---- loading screen ---- */
       /* ============ cinematic loading sequence ============ */
-      .lseq { position:fixed; inset:0; z-index:500; overflow:hidden; background:#000; }
+      .lseq { position:fixed; inset:0; z-index:500; overflow:hidden; background:#0E2033;
+        font-family:'Archivo','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
       .lseq-bg { position:absolute; inset:0; opacity:0; animation:lseqBgIn .8s ease .1s forwards; background:
-        radial-gradient(1200px 700px at 70% -10%, rgba(42,94,155,.55), transparent 60%),
-        radial-gradient(900px 600px at 10% 110%, rgba(29,70,116,.6), transparent 60%),
+        radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
+        radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
+        radial-gradient(50% 60% at 50% 100%, rgba(42,94,155,.35), transparent 72%),
         linear-gradient(160deg,#0B1B30 0%,#0F2541 55%,#0B1B30 100%); }
       @keyframes lseqBgIn { to { opacity:1; } }
       .lseq-aurora { position:absolute; inset:-20%; filter:blur(20px); animation:lseqAurora 16s ease-in-out infinite alternate; background:
@@ -6495,7 +6976,7 @@ function Style() {
 
       .lseq-board { position:absolute; inset:0; display:flex; flex-direction:column; padding:5vh 6vw;
         filter:blur(9px) brightness(.55); transform:scale(1.06); opacity:0;
-        animation:lseqFill 1.3s cubic-bezier(.16,1,.3,1) 2.6s forwards, lseqMorph 2.4s var(--spring) 4.4s forwards; }
+        animation:lseqFill 1.3s cubic-bezier(.16,1,.3,1) 2.6s forwards, lseqMorph 2.6s var(--spring) 5.6s forwards; }
       @keyframes lseqFill { to { opacity:.85; } }
       @keyframes lseqMorph { to { filter:blur(0) brightness(1); transform:scale(1); opacity:1; } }
       .lseq-btitle { display:flex; align-items:center; gap:14px; color:#fff; margin-bottom:2.5vh; }
@@ -6513,9 +6994,9 @@ function Style() {
       .lseq-medal { margin-right:.5vw; font-size:1.4vw; }
       .lseq-pill { display:inline-flex; align-items:center; gap:.4vw; justify-content:center; padding:.5vh 1vw; border-radius:10px;
         font-weight:800; font-size:1.25vw; font-variant-numeric:tabular-nums; min-width:5vw; }
-      .lseq-pill.g { background:rgba(48,177,85,.16); color:#5FE08A; }
-      .lseq-pill.y { background:rgba(224,161,0,.16); color:#FFCE52; }
-      .lseq-pill.r { background:rgba(229,71,60,.16); color:#FF8A80; }
+      .lseq-pill.g { background:rgba(46,158,79,.18); color:#7BE8A0; }
+      .lseq-pill.y { background:rgba(224,161,0,.18); color:#FFD65A; }
+      .lseq-pill.r { background:rgba(213,67,58,.18); color:#FF9E96; }
       .lseq-mk { font-size:1vw; }
       .lseq-units { color:#fff; font-weight:800; font-size:1.5vw; font-variant-numeric:tabular-nums; text-align:center; }
       .lseq-spark { position:relative; height:2.2vh; width:100%; }
@@ -7158,7 +7639,54 @@ function Style() {
       .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
       .co-badge.no { background:rgba(229,71,60,.13); color:#C13529; }
       .co-badge.dim { background:#F2F2F4; color:var(--ink-2); }
-      /* activity sheet left, the people who need a conversation right */
+      /* point system badges */
+      .pt-badge { font-size:11.5px; font-weight:800; padding:4px 11px; border-radius:20px; font-variant-numeric:tabular-nums; }
+      .pt-badge.pt-0 { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .pt-badge.pt-1 { background:rgba(255,159,10,.16); color:#95600A; }
+      .pt-badge.pt-2 { background:rgba(229,120,20,.16); color:#B4530A; }
+      .pt-badge.pt-3 { background:rgba(229,71,60,.15); color:#C13529; }
+      .pt-badge.dim { background:#F2F2F4; color:var(--ink-2); font-weight:600; }
+      .pt-badge.off { background:transparent; color:var(--ink-3); }
+      .co-off td { opacity:.5; }
+      .co-off-tag { margin-left:8px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--ink-3); background:rgba(0,0,0,.05); padding:1px 7px; border-radius:99px; }
+      .off-toggle { border:1px solid var(--line); background:#fff; color:var(--ink-2); font:inherit; font-size:11.5px; font-weight:700;
+        padding:4px 11px; border-radius:99px; cursor:pointer; }
+      .off-toggle:hover { border-color:var(--blue); color:var(--blue); }
+      .off-toggle.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+      /* top offenders ranking */
+      .offender-rank { list-style:none; margin:8px 0 0; padding:0; }
+      .offender-rank-row { display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto; gap:2px 10px;
+        align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+      .offender-rank-row:last-child { border-bottom:none; }
+      .orr-rank { grid-row:1 / span 2; width:26px; height:26px; border-radius:50%; background:rgba(42,94,155,.1); color:var(--blue);
+        display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; }
+      .orr-name { grid-column:2; font-size:14px; }
+      .orr-worked { grid-column:2; grid-row:2; font-size:12px; color:var(--ink-3); }
+      .orr-points { grid-column:3; grid-row:1 / span 2; font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+      .orr-points.pt-1 { color:#95600A; } .orr-points.pt-2 { color:#B4530A; } .orr-points.pt-3 { color:#C13529; }
+      /* schedule upload modal */
+      .sched-modal { max-width:540px; width:100%; padding:24px 26px; }
+      .sched-drop { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+        border:1.5px dashed rgba(42,94,155,.35); border-radius:16px; padding:32px 20px; cursor:pointer; margin-bottom:14px; }
+      .sched-drop:hover { border-color:var(--blue); background:rgba(42,94,155,.03); }
+      .sched-err { color:#C13529; font-size:13px; font-weight:600; margin:8px 0; }
+      .sched-help { background:rgba(0,0,0,.02); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+      .sched-help-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-3); margin-bottom:8px; }
+      .sched-help code { display:block; font-size:12px; line-height:1.6; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+      .sched-or { text-align:center; font-size:12px; color:var(--ink-3); font-weight:700; margin:8px 0; }
+      .sched-preview { max-height:300px; overflow-y:auto; margin:6px 0 14px; }
+      .sched-detected { background:rgba(48,177,85,.1); border:1px solid rgba(48,177,85,.3); border-radius:10px;
+        padding:10px 12px; font-size:12.5px; color:#1E7A3C; margin-bottom:10px; }
+      .sched-detected-tag { display:inline-block; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+        font-size:10.5px; background:#1E7A3C; color:#fff; padding:2px 8px; border-radius:99px; margin-right:8px; }
+      .sched-sheet-list { display:flex; flex-direction:column; gap:6px; margin:12px 0; max-height:320px; overflow-y:auto; }
+      .sched-sheet-btn { text-align:left; border:1px solid var(--line); background:#fff; font:inherit; font-size:14px; font-weight:600;
+        color:var(--ink); padding:12px 14px; border-radius:10px; cursor:pointer; }
+      .sched-sheet-btn:hover { border-color:var(--blue); background:rgba(42,94,155,.05); color:var(--blue); }
+      .sched-prow { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+      .sched-dates { color:var(--ink-2); text-align:right; }
+      .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
       .checkout-split { display:grid; grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); gap:16px; align-items:start; }
       .checkout-side { position:sticky; top:80px; }
       .offender-card { border-left:4px solid var(--red); }
@@ -7189,6 +7717,30 @@ function Style() {
       .plate-check { border:none; border-radius:8px; padding:5px 12px; font-weight:600; font-size:12px; cursor:pointer; }
       .plate-check.out { background:rgba(255,159,10,.16); color:var(--amber); }
       .plate-check.in { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .plate-time { border:none; background:transparent; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; padding:4px 8px; border-radius:7px; display:inline-flex; align-items:center; gap:6px; }
+      .plate-time:hover { background:rgba(42,94,155,.08); }
+      .plate-time-pencil { color:var(--ink-3); font-size:11px; }
+      .plate-time-edit { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .plate-time-edit input { font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--line); border-radius:7px; }
+      .plate-returned { color:#1E7A3C; font-weight:600; font-size:13px; }
+      .plate-out-tag { color:var(--amber); font-weight:600; font-size:13px; }
+      .plate-hist-btn { border:1px solid var(--line); background:#fff; color:var(--blue); font:inherit; font-size:12px; font-weight:600; padding:4px 10px; border-radius:99px; cursor:pointer; }
+      .plate-hist-btn:hover { background:var(--blue); color:#fff; }
+      .plate-hist-modal { max-width:560px; width:100%; padding:24px 26px; }
+      .plate-hist-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+      .plate-hist-title { font-size:22px; font-weight:800; letter-spacing:-.02em; margin:0; }
+      .plate-hist-sub { color:var(--ink-2); font-size:13px; margin:4px 0 0; }
+      .plate-hist-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+      .plate-hist-list > li { padding:12px 14px; border-radius:12px; }
+      .plate-hist-list > li:nth-child(odd) { background:rgba(0,0,0,.025); }
+      .ph-when { font-size:12px; font-weight:700; color:var(--ink-2); font-variant-numeric:tabular-nums; margin-bottom:4px; }
+      .ph-body { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+      .ph-action { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:99px; background:rgba(42,94,155,.12); color:var(--blue); }
+      .ph-action.ph-taken-out, .ph-action.ph-carried-forward { background:rgba(255,159,10,.16); color:#95600A; }
+      .ph-action.ph-returned { background:rgba(48,177,85,.16); color:#1E7A3C; }
+      .ph-action.ph-time-edited { background:rgba(136,198,234,.22); color:#1D4674; }
+      .ph-detail { font-size:13px; color:var(--ink); }
+      .ph-by { font-size:12px; color:var(--ink-3); margin-left:auto; }
 
       /* ---- activity standards stepper ---- */
       .stepper-row { display:flex; gap:20px; margin:16px 0; flex-wrap:wrap; }
