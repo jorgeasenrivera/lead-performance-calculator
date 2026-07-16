@@ -230,7 +230,6 @@ const DEFAULT_CONFIG = {
   ],
   roles: [
     { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
-    { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
     { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
   ],
   standards: {},
@@ -810,16 +809,6 @@ export default function LeadPerformanceCalculator() {
           if (r.coaching === undefined) { r.coaching = r.id !== "bdc"; dirty = true; }
         }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
-        // Service to Sales was added later. Existing stores won't have it, so insert it
-        // (right after Sales Associate) if it's missing. It behaves like Sales: on The
-        // Board, coached, and lead-gated.
-        if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "service")) {
-          const svc = { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true };
-          const salesIdx = cfg.roles.findIndex((r) => r.id === "sales");
-          if (salesIdx >= 0) cfg.roles.splice(salesIdx + 1, 0, svc);
-          else cfg.roles.unshift(svc);
-          dirty = true;
-        }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
         setConfig(cfg);
