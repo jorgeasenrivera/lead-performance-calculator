@@ -174,23 +174,62 @@ function isOff(data, aId, d) {
   return !!(data.daysOff?.[aId] && data.daysOff[aId].includes(d));
 }
 // Points for one person on one day: one point per missed required item
-// (calls, videos, RockEd-40), each judged independently. 0-3. Days off and days with
-// no data at all score no points (nothing to judge).
+// (calls, videos, RockEd), each judged independently. 0-3. Days off and days with
+// no data at all score no points. RockEd is a simple "qualified" mark now: the manager
+// ticks whether the person qualified in the RockEd training tool that day, rather than
+// typing a star count. Legacy star counts (>= the old bar) still read as qualified.
+function isQualified(data, aName, d, std) {
+  const q = data.qualified?.[d]?.[norm(aName)];
+  if (q === true) return true;
+  if (q === false) return false;
+  const stars = data.stars?.[d]?.[norm(aName)]; // legacy
+  if (stars == null) return null;               // no RockEd mark at all
+  return stars >= (std.rockEdStars ?? 40);
+}
 function dayPoints(data, a, d, std) {
   if (isOff(data, a.id, d)) return { off: true, points: 0, missed: [] };
   const rec = (data.activity?.[d] || {})[norm(a.name)] || {};
-  const stars = data.stars?.[d]?.[norm(a.name)];
-  const hasData = rec.calls != null || rec.video != null || stars != null;
+  const qual = isQualified(data, a.name, d, std);
+  const hasData = rec.calls != null || rec.video != null || qual != null;
   if (!hasData) return { off: false, points: 0, missed: [], noData: true };
   const missed = [];
   if (!(rec.calls != null && rec.calls >= std.minCalls)) missed.push("calls");
   if (!(rec.video != null && rec.video >= std.minVideos)) missed.push("videos");
-  const rockBar = std.rockEdStars ?? 40;
-  if (!(stars != null && stars >= rockBar)) missed.push("rocked");
+  if (qual !== true) missed.push("rocked");
   return { off: false, points: missed.length, missed, noData: false };
 }
-// Working days elapsed this month (Sundays excluded) minus this person's off-days,
-// so the coaching pace math uses days actually worked.
+// A person's current streak, read from their recent working days that have data.
+// Positive: consecutive days meeting ALL three (0 points). Negative: consecutive days
+// missing ALL three (3 points). Days off and no-data days are skipped, not broken on.
+// Returns { dir: "up"|"down"|null, len }.
+function currentStreak(data, a, std) {
+  const days = Object.keys(data.activity || {}).sort().reverse(); // most recent first
+  let dir = null, len = 0;
+  for (const d of days) {
+    if (isOff(data, a.id, d)) continue;
+    const dp = dayPoints(data, a, d, std);
+    if (dp.noData) continue;
+    const perfect = dp.points === 0;
+    const zero = dp.points === 3;
+    if (!perfect && !zero) break;           // a mixed day ends any streak
+    const thisDir = perfect ? "up" : "down";
+    if (dir === null) { dir = thisDir; len = 1; }
+    else if (dir === thisDir) len++;
+    else break;
+  }
+  return { dir, len };
+}
+function StreakIcon({ data, a, std, min = 3 }) {
+  const { dir, len } = currentStreak(data, a, std);
+  if (!dir || len < min) return null;
+  const up = dir === "up";
+  return (
+    <span className={"streak " + (up ? "streak-up" : "streak-down")}
+      title={up ? `On a ${len}-day streak — calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
+      {up ? "🔥" : "🧊"}<span className="streak-n">{len}</span>
+    </span>
+  );
+}
 function daysWorkedThisMonth(data, a) {
   const t = today(); const [y, m, dd] = t.split("-").map(Number);
   let n = 0;
@@ -230,6 +269,7 @@ const DEFAULT_CONFIG = {
   ],
   roles: [
     { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
+    { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
     { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
   ],
   standards: {},
@@ -809,6 +849,16 @@ export default function LeadPerformanceCalculator() {
           if (r.coaching === undefined) { r.coaching = r.id !== "bdc"; dirty = true; }
         }
         if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
+        // Service to Sales was added later. Existing stores won't have it, so insert it
+        // (right after Sales Associate) if it's missing. It behaves like Sales: on The
+        // Board, coached, and lead-gated.
+        if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "service")) {
+          const svc = { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true };
+          const salesIdx = cfg.roles.findIndex((r) => r.id === "sales");
+          if (salesIdx >= 0) cfg.roles.splice(salesIdx + 1, 0, svc);
+          else cfg.roles.unshift(svc);
+          dirty = true;
+        }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
         setConfig(cfg);
@@ -919,7 +969,7 @@ export default function LeadPerformanceCalculator() {
     const copy = JSON.parse(JSON.stringify({
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
-      stars: data.stars, goals: data.goals, baselines: data.baselines,
+      stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
       repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff,
     }));
     const t = new Date().toISOString();
@@ -2501,12 +2551,25 @@ function CheckOutTracker({ config, store, data, onChange }) {
   const dayData = data.activity?.[day] || {};
 
   const starsFor = (k) => data.stars?.[day]?.[k];
-  const setStars = (k, v) => {
+  // RockEd is now a simple qualified/not-qualified mark. Cycle: unset → qualified → not.
+  const qualState = (k) => {
+    const q = data.qualified?.[day]?.[k];
+    if (q === true) return "yes";
+    if (q === false) return "no";
+    const s = data.stars?.[day]?.[k]; // legacy stars still count as qualified
+    if (s != null) return s >= (std.rockEdStars ?? 40) ? "yes" : "no";
+    return "unset";
+  };
+  const cycleQualified = (k) => {
+    const cur = qualState(k);
+    const nextVal = cur === "unset" ? true : cur === "yes" ? false : null;
     const next = JSON.parse(JSON.stringify(data));
-    next.stars = next.stars || {};
-    next.stars[day] = next.stars[day] || {};
-    if (v == null || v === "") delete next.stars[day][k];
-    else next.stars[day][k] = Math.max(0, parseInt(v) || 0);
+    next.qualified = next.qualified || {};
+    next.qualified[day] = next.qualified[day] || {};
+    // clear any legacy star value so the two don't fight
+    if (next.stars?.[day]) delete next.stars[day][k];
+    if (nextVal === null) delete next.qualified[day][k];
+    else next.qualified[day][k] = nextVal;
     onChange(next);
   };
 
@@ -2521,7 +2584,30 @@ function CheckOutTracker({ config, store, data, onChange }) {
   };
 
   const q = norm(query);
-  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+  // Left-side sheet is alphabetical by name so managers can find anyone fast.
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.name.localeCompare(b.name));
+
+  // A clean text recap of the day the manager can paste into a group chat or email.
+  const copyDayReport = () => {
+    const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const lines = [`Daily Check Out — ${store.name} — ${dayLabel}`, ""];
+    const list = roster.map((a) => ({ a, dp: dayPoints(data, a, day, std), off: isOff(data, a.id, day) }));
+    const clean = list.filter((r) => !r.off && !r.dp.noData && r.dp.points === 0);
+    const flagged = list.filter((r) => !r.off && !r.dp.noData && r.dp.points > 0).sort((x, y) => y.dp.points - x.dp.points);
+    const off = list.filter((r) => r.off);
+    if (clean.length) lines.push(`✅ Qualified (${clean.length}): ${clean.map((r) => r.a.name).join(", ")}`, "");
+    if (flagged.length) {
+      lines.push(`⚠️ Needs follow-up (${flagged.length}):`);
+      for (const r of flagged) lines.push(`  • ${r.a.name} — ${r.dp.points} pt${r.dp.points === 1 ? "" : "s"} (missed ${r.dp.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")})`);
+      lines.push("");
+    }
+    if (off.length) lines.push(`🌴 Off: ${off.map((r) => r.a.name).join(", ")}`);
+    const text = lines.join("\n").trim();
+    navigator.clipboard.writeText(text).then(
+      () => alert("Day's report copied. Paste it into your group chat or email."),
+      () => alert("Couldn't copy automatically. Your browser may be blocking clipboard access.")
+    );
+  };
   const monthDays = activityDays.filter((d) => d.startsWith(ym()));
 
   // Month-to-date points per person, for the Top Offenders panel.
@@ -2535,16 +2621,15 @@ function CheckOutTracker({ config, store, data, onChange }) {
   const rows = roster.map((a) => {
     const dp = dayPoints(data, a, day, std);
     const rec = dayData[norm(a.name)] || {};
-    const stars = starsFor(norm(a.name));
+    const qual = qualState(norm(a.name));
     const off = isOff(data, a.id, day);
     const hasData = !dp.noData && !off;
-    const rockBar = std.rockEdStars ?? 40;
     return {
-      a, rec, stars, off,
+      a, rec, qual, off,
       calls: rec.calls, video: rec.video,
       callsMet: rec.calls != null && rec.calls >= std.minCalls,
       videoMet: rec.video != null && rec.video >= std.minVideos,
-      rockedMet: stars != null && stars >= rockBar,
+      rockedMet: qual === "yes",
       hasData, points: dp.points, missed: dp.missed,
       mtd: mtdPoints[a.id] || 0,
       worked: daysWorkedThisMonth(data, a),
@@ -2564,7 +2649,6 @@ function CheckOutTracker({ config, store, data, onChange }) {
   if (activityDays.length === 0)
     return <div className="empty">No Daily Activity imported yet. Drop today's Standard Daily Activity report in the Import tab to build the checkout sheet.</div>;
 
-  const rockBar = std.rockEdStars ?? 40;
   return (
     <div className="checkout">
       <div className="gm-toolbar">
@@ -2572,7 +2656,8 @@ function CheckOutTracker({ config, store, data, onChange }) {
           {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
         </select>
         <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
-        <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · {rockBar} RockEd stars. One point per item missed. Days off don't count.</span>
+        <button className="btn secondary" onClick={copyDayReport}>Copy day's report</button>
+        <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
       </div>
       <div className="checkout-summary">
         <span className="stat-pass">✓ {rockedCount} clean</span>
@@ -2594,7 +2679,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
-                  <td><b>{r.a.name}</b>{r.off && <span className="co-off-tag">Off</span>}</td>
+                  <td><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />{r.off && <span className="co-off-tag">Off</span>}</td>
                   <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark">{r.callsMet ? "\u2713" : "\u2717"}</span>}
                     {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
@@ -2603,12 +2688,13 @@ function CheckOutTracker({ config, store, data, onChange }) {
                     {r.hasData && <span className="cell-mark">{r.videoMet ? "\u2713" : "\u2717"}</span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
-                  {/* RockEd: manual star input, auto-checks when it reaches the bar. Never wiped by imports. */}
-                  <td className={r.off ? "" : (r.rockedMet ? "cell-g" : (r.stars != null ? "cell-r" : ""))}>
-                    {!r.off && r.stars != null && <span className="cell-mark">{r.rockedMet ? "\u2713" : "\u2717"}</span>}
-                    <input className="star-inp" type="number" min="0" value={r.stars ?? ""}
-                      placeholder="-" disabled={r.off} onChange={(e) => setStars(norm(r.a.name), e.target.value)} />
-                    <span className="cell-need"> / {rockBar}</span>
+                  {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
+                  <td>
+                    <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : r.qual === "no" ? "no" : "")}
+                      disabled={r.off} onClick={() => cycleQualified(norm(r.a.name))}
+                      title="RockEd: tap to mark Qualified, tap again for Not qualified, again to clear.">
+                      {r.qual === "yes" ? "✓ Qualified" : r.qual === "no" ? "✗ Not yet" : "Mark"}
+                    </button>
                   </td>
                   <td>
                     {r.off ? <span className="pt-badge off">—</span>
@@ -2636,7 +2722,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
               <p className="hint">Nobody has accrued a point this month. Worth saying out loud.</p>
             ) : (
               <>
-                <p className="hint">Most points month-to-date. One point per missed item (calls, videos, {rockBar} RockEd), days off excluded.</p>
+                <p className="hint">Most points month-to-date. One point per missed item (calls, videos, RockEd), days off excluded.</p>
                 <ol className="offender-rank">
                   {offenders.map((r, i) => (
                     <div key={r.a.id} className="offender-rank-row">
@@ -2665,23 +2751,231 @@ const num = (v) => (v == null ? 0 : v);
    CSV with a Name column and either a list of off-dates, or one column per date with
    an off-marker. Flexible so a manager can paste from most scheduling tools. We map
    names to roster ids and write data.daysOff[id] = [YYYY-MM-DD, ...]. */
+/* Load SheetJS (xlsx) from a CDN the first time an Excel file is opened. Doing it at
+   runtime instead of bundling means the Vite build never has to resolve the package, so
+   deployment doesn't depend on it being installed. Cached after the first load. */
+let _xlsxPromise = null;
+function loadXLSX() {
+  if (typeof window !== "undefined" && window.XLSX) return Promise.resolve(window.XLSX);
+  if (_xlsxPromise) return _xlsxPromise;
+  _xlsxPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+    s.async = true;
+    s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error("xlsx failed to initialize"));
+    s.onerror = () => { _xlsxPromise = null; reject(new Error("xlsx failed to load")); };
+    document.head.appendChild(s);
+  });
+  return _xlsxPromise;
+}
+
+/* ---------------- Holler grid schedule parser ----------------
+   Some stores keep a dense monthly grid: week blocks of a date row, three team rows
+   (A/B/C with a per-day shift or OFF), then individual OFF/VAC lines, plus a legend on
+   the right that lists each team's members. Teams change month to month, so the roster
+   is read from that legend rather than hardcoded. Returns per-person off-days for the
+   target month, plus any names that didn't match the store roster (to clarify by hand). */
+const SCHED_DAYCOLS = [0, 3, 6, 9, 12, 15, 18];
+
+function looksLikeHollerGrid(rows) {
+  for (let i = 0; i < rows.length - 2; i++) {
+    const a = (rows[i][0] || "").trim();
+    const b = (rows[i + 1] && rows[i + 1][0] || "").trim();
+    const c = (rows[i + 2] && rows[i + 2][0] || "").trim();
+    if (a === "A" && b === "B" && c === "C") return true;
+  }
+  return false;
+}
+
+function readLegendTeams(rows) {
+  let legCol = -1;
+  for (let c = 19; c <= 30 && legCol < 0; c++) {
+    let letters = 0;
+    for (const r of rows) { const v = (r[c] || "").trim(); if (/^[A-D]$/.test(v)) letters++; }
+    if (letters >= 3) legCol = c;
+  }
+  const teams = {};
+  if (legCol < 0) return teams;
+  let cur = null;
+  for (const r of rows) {
+    const v = (r[legCol] || "").trim();
+    if (/^[A-D]$/.test(v)) { cur = v; teams[cur] = []; }
+    else if (cur && v && !/^\d+$/.test(v) && v.length >= 2) teams[cur].push(v);
+  }
+  return teams;
+}
+
+// Resolve the seven day cells of a week header to real dates for the target month,
+// handling the prior-month lead-in (…30, 1…) and the next-month tail (…31, 1).
+function resolveWeekDates(dvals, ty, tm) {
+  const dn = dvals.map((v) => /^\d{1,2}$/.test(String(v).trim()) ? parseInt(v) : null);
+  const dts = new Array(7).fill(null);
+  let reset = null;
+  for (let k = 1; k < 7; k++) if (dn[k] === 1 && dn[k - 1] && dn[k - 1] > 20) { reset = k; break; }
+  if (reset != null && reset <= 3 && dn[0] && dn[0] >= 27) {
+    let pm = tm - 1, py = ty; if (pm === 0) { pm = 12; py = ty - 1; }
+    for (let k = 0; k < reset; k++) if (dn[k]) dts[k] = [py, pm, dn[k]];
+    for (let k = reset; k < 7; k++) if (dn[k]) dts[k] = [ty, tm, dn[k]];
+    return dts;
+  }
+  let m = tm, y = ty, prev = null;
+  for (let k = 0; k < 7; k++) {
+    if (dn[k] == null) continue;
+    if (prev != null && dn[k] < prev) { m++; if (m === 13) { m = 1; y++; } }
+    dts[k] = [y, m, dn[k]]; prev = dn[k];
+  }
+  return dts;
+}
+const dts2str = (dt) => dt ? `${dt[0]}-${String(dt[1]).padStart(2, "0")}-${String(dt[2]).padStart(2, "0")}` : null;
+
+function parseHollerGrid(rows, roster, targetYear, targetMonth) {
+  const teams = readLegendTeams(rows);
+  const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
+  const nameMap = new Map();
+  for (const members of Object.values(teams)) {
+    for (const m of members) {
+      const first = m.replace(/\s+S$/i, "").trim();
+      nameMap.set(norm(first), m);
+      nameMap.set(norm(m), m);
+    }
+  }
+  const toRoster = (raw) => {
+    const legend = nameMap.get(norm(raw)) || raw;
+    if (rosterByNorm.has(norm(legend))) return rosterByNorm.get(norm(legend));
+    const firstTok = norm(legend).split(" ")[0];
+    for (const [rn, real] of rosterByNorm) if (rn.split(" ")[0] === firstTok) return real;
+    return null;
+  };
+
+  const dateRows = [];
+  rows.forEach((r, i) => {
+    const vals = SCHED_DAYCOLS.map((c) => (r[c] || "").trim());
+    if (vals.filter((v) => /^\d{1,2}$/.test(v)).length >= 6) dateRows.push([i, vals]);
+  });
+
+  const off = {};
+  const unmatched = {};
+  const markOff = (rawName, date) => {
+    const rn = toRoster(rawName);
+    if (!rn) { unmatched[rawName.trim()] = (unmatched[rawName.trim()] || 0) + 1; return; }
+    (off[rn] = off[rn] || new Set()).add(date);
+  };
+
+  for (let w = 0; w < dateRows.length; w++) {
+    const [didx, dvals] = dateRows[w];
+    const end = w + 1 < dateRows.length ? dateRows[w + 1][0] : rows.length;
+    const dts = resolveWeekDates(dvals, targetYear, targetMonth);
+    for (let ridx = didx + 1; ridx < end; ridx++) {
+      const r = rows[ridx]; if (!r) continue;
+      SCHED_DAYCOLS.forEach((dc, k) => {
+        const cell = (r[dc] || "").trim();
+        const note = (r[dc + 2] || "").trim();
+        const date = dts2str(dts[k]); if (!date) return;
+        if (cell === "A" || cell === "B" || cell === "C") {
+          if (note.toUpperCase() === "OFF") (teams[cell] || []).forEach((m) => markOff(m, date));
+        } else if (!cell && note) {
+          const m1 = note.toUpperCase().match(/^([A-Z]+)\s+(OFF|VAC)\b/);
+          if (m1) markOff(m1[1], date);
+        }
+      });
+    }
+  }
+
+  const prefix = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+  const matched = [];
+  for (const [name, set] of Object.entries(off)) {
+    const days = [...set].filter((d) => d.startsWith(prefix)).sort();
+    if (!days.length) continue;
+    const a = roster.find((x) => x.name === name);
+    if (a) matched.push({ id: a.id, name, dates: days });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams };
+}
+
 function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
   const [err, setErr] = useState("");
+  const [sheetPick, setSheetPick] = useState(null); // { sheets:[names], rowsBySheet:{name:rows} } when an xlsx has many tabs
+  const [busy, setBusy] = useState(false);
 
-  const parse = async (file) => {
+  // Turn a dropped file into rows (2D array). CSV is read directly; xlsx is read with
+  // SheetJS, loaded on demand. A workbook can hold many monthly tabs, so if there's more
+  // than one non-empty sheet we let the manager pick which month to import.
+  const readFile = async (file) => {
+    setErr(""); setBusy(true);
+    try {
+      const nameLc = (file.name || "").toLowerCase();
+      if (nameLc.endsWith(".xlsx") || nameLc.endsWith(".xls") || nameLc.endsWith(".xlsm")) {
+        let XLSX;
+        try { XLSX = await loadXLSX(); } catch (e) {
+          setErr("This is an Excel file, but the reader couldn't load. Check your connection and try again, or save the month's tab as CSV and upload that.");
+          setBusy(false); return;
+        }
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+        // keep only sheets that actually contain a team grid
+        const gridSheets = wb.SheetNames.filter((n) => {
+          try { return looksLikeHollerGrid(toRows(wb.Sheets[n])); } catch (e) { return false; }
+        });
+        const usable = gridSheets.length ? gridSheets : wb.SheetNames;
+        if (usable.length === 1) {
+          setBusy(false);
+          parseRows(toRows(wb.Sheets[usable[0]]), usable[0]);
+          return;
+        }
+        // many tabs → let them pick. Default-highlight the one matching the current month.
+        const rowsBySheet = {};
+        for (const n of usable) rowsBySheet[n] = toRows(wb.Sheets[n]);
+        setBusy(false);
+        setSheetPick({ sheets: usable, rowsBySheet });
+        return;
+      }
+      // CSV
+      const text = await file.text();
+      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
+      setBusy(false);
+      parseRows(rows, null);
+    } catch (e) {
+      setBusy(false);
+      setErr("Couldn't read that file. If it's an Excel export, try the .xlsx directly, or save the tab as CSV.");
+    }
+  };
+
+  const parse = async (rows, monthHint) => parseRows(rows, monthHint);
+  const parseRows = (rows, monthHint) => {
     setErr("");
-    const text = await file.text();
-    const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
-    if (!rows.length) { setErr("That file looks empty."); return; }
+    if (!rows || !rows.length) { setErr("That file looks empty."); return; }
+
+    // ---- Auto-detect the Holler team-grid format ----
+    if (looksLikeHollerGrid(rows)) {
+      // Figure out which month the sheet is for. Look at the sheet/tab name first
+      // (e.g. "JULY 2026"), then the top-left title cell (e.g. "Jul-26").
+      const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+      let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
+      const src = ((monthHint || "") + " " + String((rows[0] && rows[0][0]) || "")).toLowerCase();
+      const mm = src.match(/([a-z]{3,})[-\s]?(\d{2,4})/);
+      if (mm) {
+        const mi = MONTHS.findIndex((mo) => mm[1].startsWith(mo));
+        if (mi >= 0) tm = mi + 1;
+        const yr = mm[2]; ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
+      }
+      const res = parseHollerGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (!res.matched.length && !res.unmatched.length) {
+        setErr("Detected a team grid, but couldn't read any off-days. The layout may differ from expected.");
+        return;
+      }
+      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
+      return;
+    }
+
+    // ---- Otherwise, the simple Name + dates format ----
     const header = rows[0].map((h) => String(h || "").trim());
     const lower = header.map((h) => h.toLowerCase());
     const nameCol = lower.findIndex((h) => h.includes("name") || h.includes("associate") || h.includes("employee"));
-    if (nameCol < 0) { setErr("Couldn't find a Name column. Add a header row with a 'Name' column."); return; }
+    if (nameCol < 0) { setErr("Couldn't find a Name column. Add a header row with a 'Name' column, or upload the monthly team grid."); return; }
 
-    // Two supported shapes:
-    // A) Name, OffDates  → one cell with dates separated by ; , or space
-    // B) Name, 2026-07-01, 2026-07-02, ...  → a column per date, any non-empty / "off"/"x"/"v" cell marks off
     const offCol = lower.findIndex((h) => h.includes("off") || h.includes("pto") || h.includes("vacation") || h.includes("dates"));
     const dateCols = header.map((h, i) => ({ i, d: normalizeDate(h) })).filter((c) => c.d && c.i !== nameCol);
 
@@ -2732,25 +3026,45 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
           <button className="btn-x" onClick={onClose}>✕</button>
         </div>
 
-        {!preview ? (
+        {sheetPick ? (
+          <div className="sched-sheetpick">
+            <p className="hint">This workbook has several monthly tabs. Which month do you want to import?</p>
+            <div className="sched-sheet-list">
+              {sheetPick.sheets.map((n) => (
+                <button key={n} className="sched-sheet-btn" onClick={() => { const rows = sheetPick.rowsBySheet[n]; setSheetPick(null); parseRows(rows, n); }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div className="sched-actions">
+              <button className="btn secondary" onClick={() => setSheetPick(null)}>Back</button>
+            </div>
+          </div>
+        ) : !preview ? (
           <>
             <label className="sched-drop">
-              <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) parse(e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
               <div className="dz-icon">⇩</div>
-              <div className="dz-title">Drop or choose a schedule CSV</div>
-              <div className="dz-sub">A <b>Name</b> column, plus either an <b>Off Dates</b> column (dates separated by commas) or one column per date marked “off”.</div>
+              <div className="dz-title">{busy ? "Reading…" : "Drop or choose the schedule"}</div>
+              <div className="dz-sub">Upload the <b>Excel workbook</b> or a <b>CSV</b>. The monthly team grid is read automatically — teams, team days off, and individual OFF/VAC. A simple <b>Name + Off Dates</b> CSV works too.</div>
             </label>
             {err && <p className="sched-err">{err}</p>}
             <div className="sched-help">
-              <div className="sched-help-title">Two accepted formats</div>
-              <code>Name, Off Dates<br />Marcus Bell, 2026-07-04; 2026-07-11<br />Diana Cho, 2026-07-15</code>
-              <div className="sched-or">or</div>
-              <code>Name, 2026-07-04, 2026-07-05, 2026-07-11<br />Marcus Bell, off, , off<br />Diana Cho, , off, </code>
+              <div className="sched-help-title">What it reads</div>
+              <code>The monthly grid as-is: A/B/C team rows, the team legend on the right, and every “NAME OFF” / “NAME VAC” line. Excel files with many month tabs will ask which month.</code>
+              <div className="sched-or">or a simple CSV</div>
+              <code>Name, Off Dates<br />Marcus Bell, 2026-07-04; 2026-07-11</code>
             </div>
           </>
         ) : (
           <>
             <div className="sched-preview">
+              {preview.grid && (
+                <div className="sched-detected">
+                  <span className="sched-detected-tag">Team grid detected</span>
+                  {preview.monthLabel} · teams read from the sheet: {Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}
+                </div>
+              )}
               <p className="hint">{preview.total} off-days for {preview.matched.filter((m) => m.dates.length).length} people. Review, then apply.</p>
               {preview.matched.filter((m) => m.dates.length).map((m) => (
                 <div key={m.id} className="sched-prow">
@@ -2759,7 +3073,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
                 </div>
               ))}
               {preview.unmatched.length > 0 && (
-                <p className="sched-err">Not on the roster, skipped: {preview.unmatched.join(", ")}. Fix the spelling to match roster names, or add them on the Roster tab.</p>
+                <p className="sched-err">Couldn't match to the roster, skipped: {preview.unmatched.join(", ")}. If one is a nickname, rename them on the Roster tab to match, then re-upload.</p>
               )}
             </div>
             <div className="sched-actions">
@@ -3053,7 +3367,6 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
         <div className="stepper-row">
           <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
           <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
-          <Stepper label="RockEd stars" field="rockEdStars" value={std.rockEdStars ?? 40} hint="the third point" />
         </div>
         <div className="stepper-row">
           <StoreStepper label="Working days" value={store.workingDaysInMonth ?? 26}
@@ -4430,7 +4743,12 @@ const oyoUnits = (m) =>
 // own, then blended with what it has actually seen.
 function oyoBaseline(data, nameKey, aId) {
   const seed = data.baselines?.[aId];
-  const seeded = seed && (seed.daysWorked ?? 0) > 0;
+  // A seed counts if the manager entered ANY meaningful number, not only Days worked.
+  // Previously a seed with units/opportunities but a blank "Days worked" was ignored,
+  // which made "What it takes" claim there was no history.
+  const seedTotal = seed ? ["daysWorked", "units", "oppInternet", "oppPhone", "oppShowroom", "oppCampaign", "calls", "video"]
+    .reduce((n, k) => n + (seed[k] ?? 0), 0) : 0;
+  const seeded = seedTotal > 0;
 
   // everything the tool has observed itself, across every month on file
   const allDays = Object.keys(data.activity || {});
@@ -4607,7 +4925,7 @@ function CoachingPanel({ config, store, data, onChange }) {
             {scored.map((r) => (
               <button key={r.a.id} className={"coach-row " + (openId === r.a.id ? "on" : "")}
                 onClick={() => setOpenId(openId === r.a.id ? null : r.a.id)}>
-                <span className="coach-name">{r.a.name}</span>
+                <span className="coach-name">{r.a.name}<StreakIcon data={data} a={r.a} std={{ ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) }} /></span>
                 <span className="coach-role">{config.roles.find((x) => x.id === r.a.roleId)?.name}</span>
                 <span className="coach-units">{r.units} <em>units</em></span>
                 {r.act ? <span className="coach-days">{r.act.days} day{r.act.days === 1 ? "" : "s"} of activity</span>
@@ -4619,7 +4937,7 @@ function CoachingPanel({ config, store, data, onChange }) {
         </div>
 
         {openRow
-          ? <div className="coach-detail">
+          ? <div className="coach-detail coach-detail-open" key={openRow.a.id}>
               <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} data={data} onChange={onChange} />
             </div>
           : <div className="coach-detail coach-empty">
@@ -4636,12 +4954,11 @@ function CoachingPanel({ config, store, data, onChange }) {
 // The one-pager. It exists to answer two questions in a room, on paper:
 //   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
 // Everything on it is derived from this person's own numbers, so it is not an opinion.
-function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays }) {
+function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, topAvg, topCount, act }) {
   const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
   if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
 
   const delivered = oyoUnits(mtd);
-  // same split as the card: pace off the calendar, activity averages off measured days
   const calElapsed = Math.min(workingDays, Math.max(1, workingDaysElapsed()));
   const dataDays = Math.max(1, mtd.daysElapsed);
   const remaining = Math.max(0, workingDays - calElapsed);
@@ -4649,40 +4966,50 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   const perDay = remaining > 0 ? stillNeeded / remaining : 0;
   const pace = (delivered / calElapsed) * workingDays;
 
+  // Month-end mode: in the first few days of a new month this reads as a wrap-up of the
+  // month just finished rather than a mid-month plan.
+  const now = new Date();
+  const dom = now.getDate();
+  const MONTH_END_WINDOW = 5;                 // first 5 days of the month
+  const monthEnd = dom <= MONTH_END_WINDOW;
+  const lastMonthName = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  const thisMonthName = now.toLocaleDateString("en-US", { month: "long" });
+
   const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const pct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
   const num = (v) => (v == null ? "-" : (Math.round(v * 10) / 10).toString());
 
-  // ---- WHY ----
-  let whyTitle, whyBody, whyClass;
+  // ---- STANDING (coaching language, not "why am I not getting leads") ----
+  let headTitle, headBody, headClass;
   if (restrictedNow) {
-    whyTitle = "Your leads are paused right now.";
-    whyBody = "Confirmed off leads since " + new Date(restriction.since).toLocaleDateString() +
-      (restriction.until ? ". Back up for review on " + new Date(restriction.until).toLocaleDateString() + "." : ".");
-    whyClass = "bad";
+    headTitle = "Leads are paused while we build the habits back up.";
+    headBody = "Off leads since " + new Date(restriction.since).toLocaleDateString() +
+      (restriction.until ? ". We'll review together on " + new Date(restriction.until).toLocaleDateString() + "." : ".") +
+      " This isn't a penalty — it's where we focus the coaching.";
+    headClass = "bad";
   } else if (ev && ev.status === "fail") {
-    whyTitle = "You are below the standard, so new leads are on hold.";
-    whyBody = "Clear the items below and leads resume. Nothing else is required.";
-    whyClass = "bad";
+    headTitle = "A couple of things to tighten up, then leads keep flowing.";
+    headBody = "You're close. The items below are what stands between you and full lead flow — each one is a habit, not a talent.";
+    headClass = "bad";
   } else if (ev && ev.status === "pass") {
-    whyTitle = "You are cleared to take leads.";
-    whyBody = "You are meeting every standard at your current tier. Keep the process consistent.";
-    whyClass = "good";
+    headTitle = "You're doing the work. Let's build on it.";
+    headBody = "You're meeting every standard at your tier. This page is about squeezing more out of the same effort.";
+    headClass = "good";
   } else {
-    whyTitle = "No standards are set for your position yet.";
-    whyBody = "Ask your manager which tier you are on.";
-    whyClass = "flat";
+    headTitle = "Let's set your targets together.";
+    headBody = "No standards are set for your position yet — your manager will walk you through your tier.";
+    headClass = "flat";
   }
 
   const failRows = (ev && ev.failures ? ev.failures : []).map((f) =>
     '<tr><td>' + esc(f.def.short) + '</td>' +
     '<td class="r">' + (f.val == null ? "no data" : (f.def.kind === "pct" ? pct(f.val) : num(f.val))) + '</td>' +
     '<td class="r">' + (f.def.kind === "pct" ? f.min + "%" : f.min) + '</td>' +
-    '<td class="r bad">short</td></tr>'
+    '<td class="r bad">to work on</td></tr>'
   ).join("");
 
-  // ---- WHAT IT TAKES ----
+  // ---- WHAT IT TAKES (outreach per car) ----
   const outreachRows = ratios ? OYO_OUTREACH.map((o) => {
     const per = ratios[o.id];
     const target = remaining > 0 ? (per * stillNeeded) / remaining : 0;
@@ -4695,18 +5022,37 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
       '<td class="r ' + (ok ? "good" : "bad") + '">' + (ok ? "on pace" : "behind") + '</td></tr>';
   }).join("") : "";
 
-  const leadRows = ratios ? OYO_CHANNELS.map((c) => {
-    const lpc = ratios["leadsPerCar_" + c.id];
-    const cr = ratios["close_" + c.id];
-    if (!lpc || cr == null) return "";
+  // ---- LEADS PER CAR BY CHANNEL ----
+  // The closing rate shown here is the SAME delivered % that appears at the top of the
+  // page and on The Board (from the Delivery Summary), so the two never disagree. Leads
+  // per car is derived from that same rate, so a channel you convert well needs fewer.
+  const chanPct = { showroom: stats.showroomPct, internet: stats.internetPct, phone: stats.phonePct, campaign: stats.campaignPct };
+  const leadRows = OYO_CHANNELS.map((c) => {
+    const cr = chanPct[c.id];                       // board-aligned delivered %
+    if (cr == null || cr <= 0) return "";
+    const leadsPerCar = 1 / cr;                       // at that rate, leads needed per delivered car
     return '<tr><td>' + esc(c.label) + '</td>' +
       '<td class="r">' + pct(cr) + '</td>' +
-      '<td class="r">' + Math.ceil(lpc) + '</td>' +
-      '<td class="r"><b>' + (goal > 0 ? Math.ceil(lpc * goal) : "-") + '</b></td></tr>';
+      '<td class="r">' + Math.ceil(leadsPerCar) + '</td>' +
+      '<td class="r"><b>' + (goal > 0 ? Math.ceil(leadsPerCar * goal) : "-") + '</b></td></tr>';
+  }).join("");
+
+  // ---- BEHAVIOUR VS TOP 6 ----
+  const behaviourRows = (act && topAvg) ? BEHAVIOURS.filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null).map((b) => {
+    const f = b.kind === "pct" ? pct : num;
+    const ratio = act[b.id] / topAvg[b.id];
+    const state = ratio < 0.85 ? "bad" : ratio > 1.1 ? "good" : "";
+    const barPct = Math.max(3, Math.min(100, ratio * 70));
+    const label = ratio < 0.85 ? "coach" : ratio > 1.1 ? "strength" : "on par";
+    return '<tr><td>' + esc(b.label) + '</td>' +
+      '<td class="r">' + f(act[b.id]) + '</td>' +
+      '<td class="r">' + f(topAvg[b.id]) + '</td>' +
+      '<td><div class="mini"><div class="mini-bench"></div><div class="mini-bar ' + state + '" style="width:' + barPct + '%"></div></div></td>' +
+      '<td class="r ' + state + '">' + label + '</td></tr>';
   }).join("") : "";
 
   const html =
-'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Own Your Outcome</title><style>' +
+'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
 '@page { size: letter portrait; margin: 12mm; }' +
 '* { box-sizing:border-box; margin:0; padding:0; }' +
 'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10.5px; line-height:1.4; }' +
@@ -4714,6 +5060,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #2A5E9B; padding-bottom:8px; margin-bottom:12px; }' +
 '.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
 '.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
+'.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#2A5E9B; color:#fff; margin-bottom:4px; }' +
 '.goalbox { text-align:right; }' +
 '.goalbox b { font-size:26px; font-weight:800; color:#2A5E9B; display:block; line-height:1; }' +
 '.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
@@ -4732,10 +5079,21 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 'td { padding:5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
 'td.r, th.r { text-align:right; }' +
 '.good { color:#1E7A3C; font-weight:700; } .bad { color:#C13529; font-weight:700; }' +
+'.mini { position:relative; height:9px; background:#EEF1F4; border-radius:5px; overflow:hidden; min-width:80px; }' +
+'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#8AA6C4; border-radius:5px; }' +
+'.mini-bar.good { background:#1E7A3C; } .mini-bar.bad { background:#C13529; }' +
+'.mini-bench { position:absolute; top:-1px; bottom:-1px; left:70%; width:2px; background:#12212F; opacity:.55; z-index:2; }' +
 '.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:10px 12px; margin-top:8px; font-size:12.5px; }' +
 '.big b { color:#2A5E9B; }' +
+'.pbar-wrap { margin-top:8px; }' +
+'.pbar { position:relative; height:16px; background:#EEF1F4; border-radius:8px; overflow:hidden; }' +
+'.pbar-fill { position:absolute; top:0; left:0; height:100%; background:linear-gradient(90deg,#8AA6C4,#2A5E9B); border-radius:8px; }' +
+'.pbar-fill.good { background:linear-gradient(90deg,#4FB477,#1E7A3C); }' +
+'.pbar-mark { position:absolute; top:-2px; bottom:-2px; width:2px; background:#12212F; z-index:2; }' +
+'.pbar-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; margin-top:3px; font-weight:600; }' +
 '.cols { display:flex; gap:14px; }' +
 '.cols > div { flex:1; }' +
+'.note { font-size:9px; color:#5B6874; margin:3px 0 0; }' +
 '.sign { margin-top:16px; padding-top:10px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
 '.sign div { flex:1; }' +
 '.line { border-bottom:1px solid #9AA5B1; height:22px; margin-bottom:3px; }' +
@@ -4743,48 +5101,69 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
-  '<div><div class="nm">' + esc(a.name) + '</div>' +
-  '<div class="sub">' + esc(store.name) + ' &middot; ' + new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
-  (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>Units this month</span></div>' : '') +
+  '<div>' + (monthEnd ? '<div class="badge">' + esc(lastMonthName) + ' month-end review</div>' : '<div class="badge">Coaching plan &middot; ' + esc(thisMonthName) + '</div>') +
+  '<div class="nm">' + esc(a.name) + '</div>' +
+  '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
+  (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>' + (monthEnd ? "Final units" : "Units this month") + '</span></div>' : '') +
 '</div>' +
 
-'<h2>Why am I not getting leads?</h2>' +
-'<div class="why ' + whyClass + '"><b>' + whyTitle + '</b>' + esc(whyBody) + '</div>' +
+'<h2>' + (monthEnd ? "How the month finished" : "Where you stand today") + '</h2>' +
+'<div class="why ' + headClass + '"><b>' + headTitle + '</b>' + esc(headBody) + '</div>' +
 (failRows ?
-  '<table style="margin-top:6px"><thead><tr><th>What is measured</th><th class="r">You</th><th class="r">Needed</th><th class="r">Status</th></tr></thead><tbody>' +
+  '<table style="margin-top:6px"><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Focus</th></tr></thead><tbody>' +
   failRows + '</tbody></table>' : '') +
 
+'<h2>Results this month</h2>' +
+'<div class="stats">' +
+  '<div class="stat"><b>' + delivered + '</b><span>Units delivered</span></div>' +
+  '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet delivered</span></div>' +
+  '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone delivered</span></div>' +
+  '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom delivered</span></div>' +
+'</div>' +
+
+(behaviourRows ?
+'<h2>Behaviour vs the top ' + (topCount || 6) + ' at this store</h2>' +
+'<table><thead><tr><th>Habit</th><th class="r">You / day</th><th class="r">Top ' + (topCount || 6) + '</th><th>vs the line</th><th class="r"></th></tr></thead>' +
+'<tbody>' + behaviourRows + '</tbody></table>' +
+'<p class="note">The line marks what the strongest people here do. Bars past it are your strengths; short bars are the fastest gains.</p>'
+: '') +
+
 (goal > 0 ?
-'<h2>Where you stand</h2>' +
+'<h2>' + (monthEnd ? "Where the month landed" : "Pace to your goal") + '</h2>' +
 '<div class="stats">' +
   '<div class="stat"><b>' + num(delivered) + '</b><span>Delivered</span></div>' +
-  '<div class="stat"><b>' + num(stillNeeded) + '</b><span>Still needed</span></div>' +
+  '<div class="stat"><b>' + num(stillNeeded) + '</b><span>' + (monthEnd ? "Short of goal" : "Still needed") + '</span></div>' +
   '<div class="stat"><b>' + remaining + '</b><span>Days left</span></div>' +
-  '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>Projected</span></div>' +
+  '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>' + (monthEnd ? "Final pace" : "Projected") + '</span></div>' +
 '</div>' +
-(stillNeeded > 0 && remaining > 0 ?
-  '<div class="big">To hit <b>' + goal + '</b>, you need <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> for the ' + remaining + ' working days left.</div>'
- : stillNeeded === 0 ? '<div class="big">Goal met. <b>' + num(delivered) + '</b> delivered against a goal of <b>' + goal + '</b>.</div>' : '')
+(!monthEnd && stillNeeded > 0 && remaining > 0 ?
+  '<div class="big">To hit <b>' + goal + '</b>, aim for <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> over the ' + remaining + ' working days left.</div>'
+ : stillNeeded === 0 ? '<div class="big">Goal met — <b>' + num(delivered) + '</b> delivered against <b>' + goal + '</b>. Strong month.</div>' : '') +
+// pace progress bar: delivered vs goal, with a marker for where they "should" be by now
+'<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
+  (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
+  '<div class="pbar-legend"><span>' + delivered + ' delivered</span>' + (!monthEnd ? '<span>pace marker = today</span>' : '') + '<span>' + goal + ' goal</span></div></div>'
 : '') +
 
 (ratios ?
-'<h2>What do I have to do?</h2>' +
+'<h2>' + (monthEnd ? "What got you there, per car" : "What it takes, per car") + '</h2>' +
 '<div class="cols">' +
   '<div><table><thead><tr><th>Every day</th><th class="r">Per car</th><th class="r">Target</th><th class="r">Doing</th><th class="r"></th></tr></thead>' +
   '<tbody>' + outreachRows + '</tbody></table></div>' +
 '</div>' +
 (leadRows ?
-  '<h2>Leads it takes, at your own closing rate</h2>' +
-  '<table><thead><tr><th>Channel</th><th class="r">You close</th><th class="r">Leads per car</th><th class="r">For your goal</th></tr></thead>' +
-  '<tbody>' + leadRows + '</tbody></table>' : '')
-: '<h2>What do I have to do?</h2><div class="why flat">Not enough history yet to build your plan. Once your activity has been imported for a while, this page will show exactly what it takes.</div>') +
+  '<h2>How many leads each car takes, by channel</h2>' +
+  '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Leads per car</th><th class="r">' + (goal > 0 ? "For your goal" : "") + '</th></tr></thead>' +
+  '<tbody>' + leadRows + '</tbody></table>' +
+  '<p class="note">“You deliver” is your delivered rate from the Delivery Summary — the same number on The Board. The better you convert a channel, the fewer leads each delivered car takes.</p>' : '')
+: '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
 '<div class="sign">' +
   '<div><div class="line"></div>Associate</div>' +
   '<div><div class="line"></div>Manager</div>' +
   '<div><div class="line"></div>Date</div>' +
 '</div>' +
-'<div class="foot">Every number here comes from your own reported activity and your own closing rates. Nothing on this page is an opinion.</div>' +
+'<div class="foot">Every number here comes from this associate\'s own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
 '</div></body></html>';
 
   w.document.open();
@@ -4971,17 +5350,23 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             </tbody>
           </table>
 
-          <h3 className="ac-h3">Leads it takes, by channel</h3>
+          <h3 className="ac-h3">How many leads each car takes, by channel</h3>
+          <p className="hint">
+            "You deliver" is your delivered rate from the Delivery Summary — the same number on The Board.
+            The better you convert a channel, the fewer leads each delivered car takes.
+          </p>
           <table className="oyo-table">
             <thead>
-              <tr><th>Channel</th><th>Their closing rate</th><th>Leads per car</th>
+              <tr><th>Channel</th><th>You deliver</th><th>Leads per car</th>
                 <th>For 1 car</th><th>For 5</th>{goal > 0 && <th>For the goal</th>}</tr>
             </thead>
             <tbody>
               {OYO_CHANNELS.map((c) => {
-                const cr = ratios["close_" + c.id];
-                const lpc = ratios["leadsPerCar_" + c.id];
-                if (cr == null || !lpc) return (
+                // Use the board-aligned delivered % (from the Delivery Summary), not a
+                // separately-computed baseline rate, so this matches the top of the card.
+                const cr = monthStats ? monthStats[c.id + "Pct"] : null;
+                const lpc = cr && cr > 0 ? 1 / cr : null;
+                if (cr == null || cr <= 0 || !lpc) return (
                   <tr key={c.id} className="co-nodata">
                     <td><b>{c.label}</b></td><td>-</td><td>-</td><td>-</td><td>-</td>{goal > 0 && <td>-</td>}
                   </tr>
@@ -5119,7 +5504,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
     <div className="card assoc-card-full print-area">
       <div className="ac-head">
         <div>
-          <h2 className="ac-name">{a.name}</h2>
+          <h2 className="ac-name">{a.name}<span className="no-print"><StreakIcon data={data} a={a} std={{ ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) }} /></span></h2>
           <div className="ac-sub">{role?.name} · {store.name} · {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
         </div>
         <div className="ac-actions no-print">
@@ -5133,6 +5518,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
               ratios: oyoRatios(oyoBaseline(data, norm(a.name), a.id)),
               goal: data.goals?.[a.id]?.monthly ?? 0,
               workingDays: store.workingDaysInMonth ?? 26,
+              topAvg, topCount, act,
             })}>
             Print one-pager
           </button>
@@ -7038,6 +7424,13 @@ function Style() {
       .coach-split.has-open .coach-units { grid-column:1; grid-row:3; }
       .coach-split.has-open .coach-days { grid-column:2; grid-row:3; text-align:right; }
       .coach-detail { min-width:0; }
+      .coach-detail-open { animation: cardOpen .42s cubic-bezier(.22,.61,.36,1) both; }
+      @keyframes cardOpen {
+        from { opacity:0; transform: translateY(10px) scale(.985); }
+        to { opacity:1; transform: none; }
+      }
+      .assoc-card-full .ac-bar { transition: width .6s cubic-bezier(.22,.61,.36,1); }
+      @media (prefers-reduced-motion: reduce) { .coach-detail-open { animation:none; } }
       .coach-empty { border:1.5px dashed var(--line); border-radius:16px; min-height:340px;
         display:flex; align-items:center; justify-content:center; color:var(--ink-3); background:rgba(0,0,0,.015); }
       .coach-empty-inner { text-align:center; }
@@ -7079,6 +7472,8 @@ function Style() {
       /* ---- delivery guide + wrong-report stop screen ---- */
       .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(3px);
         display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:200; overflow-y:auto; }
+      .modal { background:#fff; border-radius:20px; box-shadow:0 30px 80px rgba(0,0,0,.35);
+        border:1px solid rgba(255,255,255,.7); color:var(--ink); }
       .guide-modal { background:var(--card,#fff); border-radius:20px; max-width:640px; width:100%;
         box-shadow:0 30px 80px rgba(0,0,0,.35); padding:26px 28px; }
       .guide-modal-head { display:flex; justify-content:space-between; align-items:center; }
@@ -7429,6 +7824,16 @@ function Style() {
       .co-off td { opacity:.5; }
       .co-off-tag { margin-left:8px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
         color:var(--ink-3); background:rgba(0,0,0,.05); padding:1px 7px; border-radius:99px; }
+      .qual-toggle { border:1px solid var(--line); background:#fff; color:var(--ink-2); font:inherit; font-size:11.5px; font-weight:700;
+        padding:4px 11px; border-radius:99px; cursor:pointer; white-space:nowrap; }
+      .qual-toggle:hover:not(:disabled) { border-color:var(--blue); color:var(--blue); }
+      .qual-toggle:disabled { opacity:.4; cursor:default; }
+      .qual-toggle.yes { background:rgba(48,177,85,.14); color:#1E7A3C; border-color:transparent; }
+      .qual-toggle.no { background:rgba(229,71,60,.13); color:#C13529; border-color:transparent; }
+      .streak { display:inline-flex; align-items:center; gap:1px; margin-left:6px; font-size:12px; vertical-align:middle; }
+      .streak-n { font-size:10px; font-weight:800; color:var(--ink-2); }
+      .streak-up .streak-n { color:#B4530A; }
+      .streak-down .streak-n { color:#2E6FB0; }
       .off-toggle { border:1px solid var(--line); background:#fff; color:var(--ink-2); font:inherit; font-size:11.5px; font-weight:700;
         padding:4px 11px; border-radius:99px; cursor:pointer; }
       .off-toggle:hover { border-color:var(--blue); color:var(--blue); }
@@ -7455,6 +7860,14 @@ function Style() {
       .sched-help code { display:block; font-size:12px; line-height:1.6; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
       .sched-or { text-align:center; font-size:12px; color:var(--ink-3); font-weight:700; margin:8px 0; }
       .sched-preview { max-height:300px; overflow-y:auto; margin:6px 0 14px; }
+      .sched-detected { background:rgba(48,177,85,.1); border:1px solid rgba(48,177,85,.3); border-radius:10px;
+        padding:10px 12px; font-size:12.5px; color:#1E7A3C; margin-bottom:10px; }
+      .sched-detected-tag { display:inline-block; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+        font-size:10.5px; background:#1E7A3C; color:#fff; padding:2px 8px; border-radius:99px; margin-right:8px; }
+      .sched-sheet-list { display:flex; flex-direction:column; gap:6px; margin:12px 0; max-height:320px; overflow-y:auto; }
+      .sched-sheet-btn { text-align:left; border:1px solid var(--line); background:#fff; font:inherit; font-size:14px; font-weight:600;
+        color:var(--ink); padding:12px 14px; border-radius:10px; cursor:pointer; }
+      .sched-sheet-btn:hover { border-color:var(--blue); background:rgba(42,94,155,.05); color:var(--blue); }
       .sched-prow { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
       .sched-dates { color:var(--ink-2); text-align:right; }
       .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
