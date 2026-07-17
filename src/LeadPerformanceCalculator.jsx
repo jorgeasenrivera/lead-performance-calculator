@@ -1002,7 +1002,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
-      repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff,
+      repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff, statsExcluded: data.statsExcluded,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -2880,6 +2880,115 @@ const num = (v) => (v == null ? 0 : v);
    runtime instead of bundling means the Vite build never has to resolve the package, so
    deployment doesn't depend on it being installed. Cached after the first load. */
 let _xlsxPromise = null;
+/* Load pdf.js from a CDN the first time a PDF schedule is opened. Like the xlsx loader,
+   this keeps the Vite build free of the dependency. */
+let _pdfjsPromise = null;
+/* ---------------- PDF calendar schedule parser ----------------
+   A digitally-exported schedule PDF lays out a month as a calendar: 7 day columns
+   (Sun–Sat), each day cell holding a date number and a list of "Name shift" / "Name OFF"
+   / "Name VAC" lines. We take pdf.js text items (each with an x/y position), cluster them
+   into columns and rows to reconstruct the cells, find each cell's date, and read the
+   off/VAC lines. Names are matched to the store roster (first name is enough here). */
+function parsePdfItems(items, pageWidth) {
+  // items: [{ str, x, y }] with y increasing downward
+  // 1) find the 7 day-column x-centers from the weekday header band (top of page)
+  const cleaned = items.map((it) => ({ str: (it.str || "").trim(), x: it.x, y: it.y })).filter((it) => it.str);
+  return cleaned;
+}
+
+// Turn positioned text items into per-person off-days for the target month.
+function parsePdfSchedule(items, pageWidth, roster, targetYear, targetMonth) {
+  const cleaned = items.map((it) => ({ str: (it.str || "").trim(), x: it.x, y: it.y })).filter((it) => it.str);
+  if (!cleaned.length) return { matched: [], unmatched: [], empty: true };
+
+  // Column boundaries: split the page into 7 equal day columns. Header names (Sunday…
+  // Saturday) confirm orientation but equal splits are robust to slight skew.
+  const minX = Math.min(...cleaned.map((c) => c.x));
+  const maxX = Math.max(...cleaned.map((c) => c.x));
+  const span = Math.max(1, maxX - minX);
+  const colOf = (x) => Math.min(6, Math.max(0, Math.floor(((x - minX) / span) * 7 + 0.0001)));
+
+  // Rows (weeks): a date-number line starts each week band. Collect all standalone
+  // 1–2 digit numbers as candidate day markers, with their y and column.
+  const dayMarkers = cleaned
+    .filter((c) => /^\d{1,2}$/.test(c.str))
+    .map((c) => ({ day: parseInt(c.str), y: c.y, col: colOf(c.x) }))
+    .filter((c) => c.day >= 1 && c.day <= 31);
+
+  // Group day markers into week bands by y (markers on the same week share a y ~band).
+  dayMarkers.sort((a, b) => a.y - b.y);
+  const weeks = [];
+  const Y_TOL = 22;
+  for (const m of dayMarkers) {
+    let band = weeks.find((w) => Math.abs(w.y - m.y) < Y_TOL);
+    if (!band) { band = { y: m.y, cells: {} }; weeks.push(band); }
+    // keep the first date seen in a column for that band
+    if (band.cells[m.col] == null) band.cells[m.col] = { day: m.day, y: m.y };
+  }
+  weeks.sort((a, b) => a.y - b.y);
+  if (!weeks.length) return { matched: [], unmatched: [], empty: true };
+
+  // Build a lookup: for a given (col, y) find which week/day it belongs to — a text
+  // line belongs to the week band immediately above-or-equal to its y in that column.
+  const dateFor = (col, y) => {
+    let best = null;
+    for (const w of weeks) {
+      const cell = w.cells[col];
+      if (cell && cell.y <= y + 6) { if (!best || cell.y > best.y) best = cell; }
+    }
+    return best ? best.day : null;
+  };
+
+  // Roster name matching on first name (the schedule uses first names).
+  const rosterByFirst = new Map();
+  for (const a of roster) {
+    const first = norm(a.name).split(" ")[0];
+    if (!rosterByFirst.has(first)) rosterByFirst.set(first, a);
+  }
+  const off = {};       // roster id -> Set(dates)
+  const unmatched = {};
+  const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+
+  // Each line like "Brian - OFF", "Tommy VAC", "Michael 9-6". Only OFF/VAC matter.
+  for (const c of cleaned) {
+    const m = c.str.match(/^([A-Za-z][A-Za-z.'-]*)\s*[-–—]?\s*(OFF|VAC|VACATION)\b/i);
+    if (!m) continue;
+    const first = norm(m[1]).split(" ")[0];
+    const col = colOf(c.x);
+    const day = dateFor(col, c.y);
+    if (!day || day > daysInMonth) continue;
+    const date = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const a = rosterByFirst.get(first);
+    if (a) (off[a.id] = off[a.id] || new Set()).add(date);
+    else unmatched[m[1]] = (unmatched[m[1]] || 0) + 1;
+  }
+
+  const matched = [];
+  for (const [id, set] of Object.entries(off)) {
+    const a = roster.find((x) => x.id === id);
+    matched.push({ id, name: a?.name || id, dates: [...set].sort() });
+  }
+  return { matched, unmatched: Object.keys(unmatched), empty: matched.length === 0 && !Object.keys(unmatched).length };
+}
+
+function loadPdfJs() {
+  if (typeof window !== "undefined" && window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (_pdfjsPromise) return _pdfjsPromise;
+  _pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.async = true;
+    s.onload = () => {
+      if (!window.pdfjsLib) { reject(new Error("pdf.js failed to initialize")); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = () => { _pdfjsPromise = null; reject(new Error("pdf.js failed to load")); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsPromise;
+}
+
 function loadXLSX() {
   if (typeof window !== "undefined" && window.XLSX) return Promise.resolve(window.XLSX);
   if (_xlsxPromise) return _xlsxPromise;
@@ -3030,6 +3139,45 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
     setErr(""); setBusy(true);
     try {
       const nameLc = (file.name || "").toLowerCase();
+      if (nameLc.endsWith(".pdf")) {
+        let pdfjs;
+        try { pdfjs = await loadPdfJs(); } catch (e) {
+          setErr("Couldn't load the PDF reader. Check your connection and try again.");
+          setBusy(false); return;
+        }
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: buf }).promise;
+        let items = [], fullText = "";
+        for (let pn = 1; pn <= pdf.numPages; pn++) {
+          const page = await pdf.getPage(pn);
+          const vp = page.getViewport({ scale: 1 });
+          const tc = await page.getTextContent();
+          for (const it of tc.items) {
+            const tx = it.transform; // [a,b,c,d,e,f] — e,f are x,y (y up from bottom)
+            items.push({ str: it.str, x: tx[4], y: vp.height - tx[5] }); // flip y so it increases downward
+            fullText += " " + it.str;
+          }
+        }
+        if (!items.length || fullText.trim().length < 20) {
+          setErr("This PDF has no readable text — it looks like a scan or photo. Export the schedule as a PDF from your scheduling software (not a scanned copy), or save it as CSV/Excel.");
+          setBusy(false); return;
+        }
+        // month from the page text (e.g. "JULY 2026")
+        const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+        let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
+        const mm = fullText.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*(\d{4})/);
+        if (mm) { tm = MONTHS.indexOf(mm[1]) + 1; ty = parseInt(mm[2]); }
+        const res = parsePdfSchedule(items, 612, roster, ty, tm);
+        if (res.empty) {
+          setErr("Read the PDF, but couldn't find any OFF or VAC entries to apply. The layout may differ from a standard calendar schedule.");
+          setBusy(false); return;
+        }
+        const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+        setBusy(false);
+        setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, pdf: true,
+          monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: {} });
+        return;
+      }
       if (nameLc.endsWith(".xlsx") || nameLc.endsWith(".xls") || nameLc.endsWith(".xlsm")) {
         let XLSX;
         try { XLSX = await loadXLSX(); } catch (e) {
@@ -3168,10 +3316,10 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         ) : !preview ? (
           <>
             <label className="sched-drop">
-              <input type="file" accept=".csv,.xlsx,.xls,.xlsm" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
+              <input type="file" accept=".csv,.xlsx,.xls,.xlsm,.pdf" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
               <div className="dz-icon">⇩</div>
               <div className="dz-title">{busy ? "Reading…" : "Drop or choose the schedule"}</div>
-              <div className="dz-sub">Upload the <b>Excel workbook</b> or a <b>CSV</b>. The monthly team grid is read automatically — teams, team days off, and individual OFF/VAC. A simple <b>Name + Off Dates</b> CSV works too.</div>
+              <div className="dz-sub">Upload an <b>Excel workbook</b>, <b>CSV</b>, or <b>PDF</b>. Team grids and name-based calendar PDFs are read automatically — team and individual OFF/VAC days. A simple <b>Name + Off Dates</b> CSV works too.</div>
             </label>
             {err && <p className="sched-err">{err}</p>}
             <div className="sched-help">
@@ -3186,8 +3334,10 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
             <div className="sched-preview">
               {preview.grid && (
                 <div className="sched-detected">
-                  <span className="sched-detected-tag">Team grid detected</span>
-                  {preview.monthLabel} · teams read from the sheet: {Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}
+                  <span className="sched-detected-tag">{preview.pdf ? "PDF schedule read" : "Team grid detected"}</span>
+                  {preview.pdf
+                    ? `${preview.monthLabel} · read from the calendar, matched by first name`
+                    : `${preview.monthLabel} · teams read from the sheet: ${Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}`}
                 </div>
               )}
               <p className="hint">{preview.total} off-days for {preview.matched.filter((m) => m.dates.length).length} people. Review, then apply.</p>
@@ -5000,8 +5150,13 @@ function CoachingPanel({ config, store, data, onChange }) {
   }).sort((x, y) => y.units - x.units);
 
   const withData = scored.filter((r) => r.act);
-  const topCount = Math.max(1, Math.round(withData.length / 3));
-  const top = withData.slice(0, topCount);
+  // Some associates skew the store benchmark — e.g. a top seller who lives on repeat
+  // business and makes no calls. Flagging them keeps their own card intact but removes
+  // their activity from the "top performers" averages everyone else is measured against.
+  const statsExcluded = new Set((data.statsExcluded || []).map(norm));
+  const benchPool = withData.filter((r) => !statsExcluded.has(norm(r.a.name)));
+  const topCount = Math.max(1, Math.round(benchPool.length / 3));
+  const top = benchPool.slice(0, topCount);
 
   const topAvg = {};
   for (const b of BEHAVIOURS) {
@@ -5057,7 +5212,7 @@ function CoachingPanel({ config, store, data, onChange }) {
             {scored.map((r) => (
               <button key={r.a.id} className={"coach-row " + (openId === r.a.id ? "on" : "")}
                 onClick={() => setOpenId(openId === r.a.id ? null : r.a.id)}>
-                <span className="coach-name">{r.a.name}<StreakIcon data={data} a={r.a} std={{ ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) }} /></span>
+                <span className="coach-name">{r.a.name}<StreakIcon data={data} a={r.a} std={{ ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) }} />{(data.statsExcluded || []).map(norm).includes(norm(r.a.name)) && <span className="coach-excl" title="Excluded from store benchmark averages">out of stats</span>}</span>
                 <span className="coach-role">{config.roles.find((x) => x.id === r.a.roleId)?.name}</span>
                 <span className="coach-units">{r.units} <em>units</em></span>
                 {r.act ? <span className="coach-days">{r.act.days} day{r.act.days === 1 ? "" : "s"} of activity</span>
@@ -5193,8 +5348,8 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.goalbox { text-align:right; }' +
 '.goalbox b { font-size:26px; font-weight:800; color:#2A5E9B; display:block; line-height:1; }' +
 '.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
-'h2 { font-size:10.5px; text-transform:uppercase; letter-spacing:.09em; color:#5B6874; margin:9px 0 4px; }' +
-'.why { padding:8px 11px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
+'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #2A5E9B; background:linear-gradient(90deg, rgba(42,94,155,.08), transparent 60%); }' +
+'.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
 '.why.bad { border-left-color:#C13529; background:#FBEEEC; }' +
 '.why.good { border-left-color:#1E7A3C; background:#EAF6EE; }' +
 '.why b { font-size:13px; display:block; margin-bottom:2px; }' +
@@ -5223,8 +5378,8 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.pbar-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; margin-top:3px; font-weight:600; }' +
 '.cols { display:flex; gap:14px; }' +
 '.cols > div { flex:1; }' +
-'.note { font-size:9px; color:#5B6874; margin:3px 0 0; }' +
-'.sign { margin-top:11px; padding-top:8px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
+'.note { font-size:8.5px; color:#5B6874; margin:2px 0 0; }' +
+'.sign { margin-top:8px; padding-top:7px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
 '.sign div { flex:1; }' +
 '.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
 '.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
@@ -5252,7 +5407,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '</div>' +
 
 (behaviourRows ?
-'<h2>Behaviour vs the top ' + (topCount || 6) + ' at this store</h2>' +
+'<h2>Behavior vs the top ' + (topCount || 6) + ' at this store</h2>' +
 '<table><thead><tr><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th></tr></thead>' +
 '<tbody>' + behaviourRows + '</tbody></table>' +
 '<p class="note">The dark line marks what the strongest people here do. Green bars are your strengths; short red bars are the fastest gains.</p>'
@@ -5278,7 +5433,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 (ratios ?
 '<h2>' + (monthEnd ? "What got you there, per car" : "What it takes, per car") + '</h2>' +
 '<div class="cols">' +
-  '<div><table><thead><tr><th>Every day</th><th class="r">Per car</th><th class="r">Target</th><th class="r">Doing</th><th class="r"></th></tr></thead>' +
+  '<div><table><thead><tr><th>Every day</th><th class="r">90 Day Average</th><th class="r">Target Effort to Reach Goal</th><th class="r">Current Month Pace</th><th class="r"></th></tr></thead>' +
   '<tbody>' + outreachRows + '</tbody></table></div>' +
 '</div>' +
 (leadRows ?
@@ -5446,10 +5601,10 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             <thead>
               <tr>
                 <th>Activity</th>
-                <th>Per car</th>
+                <th>90 Day Average</th>
                 <th>Needed</th>
-                <th>Target / day</th>
-                <th>Doing / day</th>
+                <th>Target Effort to Reach Goal</th>
+                <th>Current Month Pace</th>
                 <th>On pace?</th>
               </tr>
             </thead>
@@ -5589,6 +5744,16 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
   const { a, stats, act, units } = row;
   const goal = data.goals?.[a.id]?.monthly ?? 0;
   const role = config.roles.find((x) => x.id === a.roleId);
+  const isStatsExcluded = (data.statsExcluded || []).map(norm).includes(norm(a.name));
+  const toggleStatsExcluded = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    const set = new Set((next.statsExcluded || []));
+    // store by display name so it survives id changes
+    const has = [...set].some((n) => norm(n) === norm(a.name));
+    if (has) next.statsExcluded = [...set].filter((n) => norm(n) !== norm(a.name));
+    else next.statsExcluded = [...set, a.name];
+    onChange(next, { action: has ? "Included in store stats" : "Excluded from store stats", detail: a.name });
+  };
   const thr = normThresholds(store.thresholds);
 
   const gaps = BEHAVIOURS
@@ -5609,7 +5774,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
     if (stats.showroomPct != null) L.push(`Showroom delivered: ${fmtPct(stats.showroomPct)}`);
     L.push("");
     L.push(`Compared with the top ${topCount} performer${topCount === 1 ? "" : "s"} at this store:`);
-    if (behind.length === 0) L.push("  You are at or above the benchmark on every behaviour.");
+    if (behind.length === 0) L.push("  You are at or above the benchmark on every behavior.");
     for (const g of behind) {
       const f = g.kind === "pct" ? fmtPct : fmtNum;
       L.push(`  ${g.label}: ${f(g.mine)} vs ${f(g.theirs)}`);
@@ -5638,6 +5803,10 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
           <div className="ac-sub">{role?.name} · {store.name} · {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
         </div>
         <div className="ac-actions no-print">
+          <button className={"btn-ghost " + (isStatsExcluded ? "on" : "")} onClick={toggleStatsExcluded}
+            title={isStatsExcluded ? "This person is excluded from the store benchmark. Their card still works. Click to include them." : "Exclude this person's activity from the store benchmark averages (their own card is unaffected)."}>
+            {isStatsExcluded ? "✓ Out of store stats" : "Exclude from store stats"}
+          </button>
           <button className="btn-ghost" onClick={copy}>Copy summary</button>
           <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
             onClick={() => printOnePager({
@@ -5667,10 +5836,10 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
       </div>
 
       {!act ? (
-        <p className="hint">No Daily Activity on file for this person yet, so there is nothing to compare their behaviour against.</p>
+        <p className="hint">No Daily Activity on file for this person yet, so there is nothing to compare their behavior against.</p>
       ) : (
         <>
-          <h3 className="ac-h3">Behaviour vs the top {topCount} at this store</h3>
+          <h3 className="ac-h3">Behavior vs the top {topCount} at this store</h3>
           <div className="ac-bars">
             {gaps.map((g) => {
               const f = g.kind === "pct" ? fmtPct : fmtNum;
@@ -5709,7 +5878,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
                 </ul>
               </>
             ) : (
-              <p className="hint">This person is at or above the benchmark on every behaviour we track. Worth asking what they do that is not in the report.</p>
+              <p className="hint">This person is at or above the benchmark on every behavior we track. Worth asking what they do that is not in the report.</p>
             )}
             {ahead.length > 0 && (
               <p className="hint">Strengths worth naming out loud: {ahead.slice(0, 3).map((g) => g.label.toLowerCase()).join(", ")}.</p>
@@ -6010,7 +6179,13 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
                 <button className={"seg-opt " + (aDay === today() ? "on" : "")} onClick={() => setActivityDay(today())}>Today</button>
                 <button className={"seg-opt " + (aDay === yday ? "on" : "")} onClick={() => setActivityDay(yday)}>Yesterday</button>
               </div>
+              {/* Backfill any past day — pull an older export and land it on the right date. */}
+              <input type="date" className="act-day-date" value={aDay} max={today()}
+                onChange={(e) => { if (e.target.value && e.target.value <= today()) setActivityDay(e.target.value); }} />
             </div>
+            {aDay !== today() && aDay !== yday && (
+              <p className="hint act-backfill">Backfilling <strong>{dayLabel(aDay)}</strong>. The report will land on that date.</p>
+            )}
             <div className={"check " + (already ? "done" : "")}>
               <span className="check-box">{already ? "✓" : ""}</span>Standard Daily Activity report
             </div>
@@ -8181,8 +8356,12 @@ function Style() {
       /* ---- import ---- */
       .checklist { max-width:440px; }
       .checklist-title { font-size:16px; font-weight:700; letter-spacing:-.01em; margin-bottom:12px; }
-      .act-day-pick { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+      .act-day-pick { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
       .act-day-label { font-size:12px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.04em; }
+      .act-day-date { font:inherit; font-size:13px; padding:5px 9px; border:1px solid var(--line); border-radius:9px;
+        background:#fff; color:var(--ink); cursor:pointer; }
+      .act-day-date:hover { border-color:var(--blue); }
+      .act-backfill { color:var(--blue); }
       .seg-small { display:inline-flex; background:var(--ink-e, rgba(0,0,0,.05)); border-radius:9px; padding:2px; gap:2px; }
       .seg-opt { border:none; background:transparent; font:inherit; font-size:13px; font-weight:700; color:var(--ink-2);
         padding:5px 14px; border-radius:7px; cursor:pointer; transition:all .15s ease; }
@@ -8256,6 +8435,9 @@ function Style() {
       .btn-ghost { background:transparent; border:1px solid var(--line); border-radius:11px; padding:7px 14px; color:var(--ink-2);
         cursor:pointer; margin-top:6px; display:inline-block; font-weight:600; font-size:12.5px; transition: all .2s; }
       .btn-ghost:hover { border-color:var(--ink-3); color:var(--ink); }
+      .btn-ghost.on { background:rgba(224,161,0,.14); border-color:transparent; color:#95600A; }
+      .coach-excl { margin-left:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+        background:rgba(224,161,0,.15); color:#95600A; padding:1px 7px; border-radius:99px; vertical-align:middle; }
       .file-btn { cursor:pointer; margin:0; }
       .btn-x { background:transparent; border:none; color:var(--red); cursor:pointer; font-size:12px; font-weight:600;
         padding:4px 8px; border-radius:8px; transition: background .2s; }
