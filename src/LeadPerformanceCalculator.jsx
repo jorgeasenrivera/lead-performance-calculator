@@ -271,6 +271,7 @@ const DEFAULT_CONFIG = {
     { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
     { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
     { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
+    { id: "manager", name: "Manager", color: "#5B6874", onBoard: false, coaching: false, tracked: false },
   ],
   standards: {},
   approvedDomains: [],
@@ -279,29 +280,51 @@ const DEFAULT_CONFIG = {
 
 /* ---------------- Logo + favicon ---------------- */
 
-function Logo({ size = 40, animated = false }) {
+function Logo({ size = 40, animated = false, loading = false }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={animated ? "logo-anim" : ""}>
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={(animated ? "logo-anim " : "") + (loading ? "logo-loading" : "")}>
       <defs>
         <linearGradient id="lpcg" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#2A5E9B" />
           <stop offset="100%" stopColor="#1D4674" />
         </linearGradient>
+        {/* the "whoosh" gradient — blue → lime, the same one the loading bar used */}
+        <linearGradient id="lpc-trail" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#88C6EA" />
+          <stop offset="55%" stopColor="#2A5E9B" />
+          <stop offset="100%" stopColor="#C1D730" />
+        </linearGradient>
       </defs>
       <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lpcg)" />
       {/* full ring track (light blue) */}
       <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
-      {/* soft rounded start for the lime (a butt-capped path would cut flat here) */}
-      <circle className="logo-arc-start" cx="15" cy="32" r="2.5" fill="#C1D730" />
-      {/* Lime sweeps 180° → 320.2°: the SAME angular span as the needle, so the two tips
-          travel together. A butt cap ends it flat on the needle's centerline, whereas a round cap
-          would bulge sideways past the needle. The white needle is drawn on top of the seam. */}
-      <path className="logo-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
-      {/* needle: width 5 so its round tip reaches the arc's outer edge (r=19.5) and covers the seam */}
-      <g className="logo-needle" style={{ transformOrigin: "32px 32px" }}>
-        <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-      </g>
-      <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
+      {loading ? (
+        <>
+          {/* a gradient arc that spins as the needle's trail */}
+          <g className="logo-trail" style={{ transformOrigin: "32px 32px" }}>
+            <path d="M 32 15 A 17 17 0 0 1 47.7 25.2" fill="none" stroke="url(#lpc-trail)" strokeWidth="5" strokeLinecap="round" pathLength="100" />
+          </g>
+          {/* the needle, spinning with the trail */}
+          <g className="logo-spin" style={{ transformOrigin: "32px 32px" }}>
+            <line x1="32" y1="32" x2="32" y2="15" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
+          </g>
+          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
+        </>
+      ) : (
+        <>
+          {/* soft rounded start for the lime (a butt-capped path would cut flat here) */}
+          <circle className="logo-arc-start" cx="15" cy="32" r="2.5" fill="#C1D730" />
+          {/* Lime sweeps 180° → 320.2°: the SAME angular span as the needle, so the two tips
+              travel together. A butt cap ends it flat on the needle's centerline, whereas a round cap
+              would bulge sideways past the needle. The white needle is drawn on top of the seam. */}
+          <path className="logo-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
+          {/* needle: width 5 so its round tip reaches the arc's outer edge (r=19.5) and covers the seam */}
+          <g className="logo-needle" style={{ transformOrigin: "32px 32px" }}>
+            <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
+          </g>
+          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
+        </>
+      )}
     </svg>
   );
 }
@@ -415,6 +438,10 @@ function parseReport(rows, type) {
       rec.actApptShow = toNum(row[idx("Show")]);
       rec.actOppsTotal = toNum(row[idx("Total")]);
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
+      // "Open Tasks" is the posted/outstanding task count on the Workplan; the completion
+      // rate is Completed / Open. Fall back to other header names other exports have used.
+      rec.actOpenTasks = toNum(row[idx("Open Tasks")]) ?? toNum(row[idx("Total Tasks")]) ??
+        toNum(row[idx("Tasks Due")]) ?? toNum(row[idx("Assigned Tasks")]);
       rec.actSold = toNum(row[idx("Sold")]);
       rec.actUnits = toNum(row[idx("Units Delivered")]);
       // Opportunities by source. These are what make closing rates per channel possible.
@@ -859,6 +886,11 @@ export default function LeadPerformanceCalculator() {
           else cfg.roles.unshift(svc);
           dirty = true;
         }
+        // Manager role added later too — for organizing people who aren't scored or tracked.
+        if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "manager")) {
+          cfg.roles.push({ id: "manager", name: "Manager", color: "#5B6874", onBoard: false, coaching: false, tracked: false });
+          dirty = true;
+        }
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
         setConfig(cfg);
@@ -1029,6 +1061,7 @@ export default function LeadPerformanceCalculator() {
             calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
             text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
             apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
+            tasksPosted: rec.actOpenTasks,
             sold: rec.actSold, units: rec.actUnits,
             oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
             oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
@@ -1571,7 +1604,7 @@ function WrongReportStop({ fileName, onClose }) {
         </div>
         <DeliveryGuideSteps />
         <div className="guide-foot">
-          <button className="btn wide" onClick={onClose}>Got it — I'll pull the Delivery Summary</button>
+          <button className="btn wide" onClick={onClose}>Got it, I'll pull the Delivery Summary</button>
         </div>
       </div>
     </div>
@@ -2445,10 +2478,10 @@ function Login({ config, onBack, onAuthed }) {
 
   return (
     <div className="login">
-      <div className="login-card">
-        <div className="login-logo"><Logo size={64} animated /></div>
+      <div className={"login-card " + (busy ? "login-busy" : "")}>
+        <div className="login-logo"><Logo size={64} animated={!busy} loading={busy} /></div>
         <h1 className="login-title">Lead Performance</h1>
-        <p className="login-sub">Earn the next lead</p>
+        <p className="login-sub">{busy ? "Signing you in…" : "Earn the next lead"}</p>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
@@ -2546,6 +2579,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(today());
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
   const activityDays = Object.keys(data.activity || {}).sort().reverse();
   const dayData = data.activity?.[day] || {};
@@ -2585,7 +2619,10 @@ function CheckOutTracker({ config, store, data, onChange }) {
 
   const q = norm(query);
   // Left-side sheet is alphabetical by name so managers can find anyone fast.
-  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.name.localeCompare(b.name));
+  // Roles flagged tracked:false (e.g. Manager) are just for organizing — they aren't
+  // scored on the checkout sheet or in the point system.
+  const untrackedRoles = new Set((config.roles || []).filter((r) => r.tracked === false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && !untrackedRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
 
   // A clean text recap of the day the manager can paste into a group chat or email.
   const copyDayReport = () => {
@@ -2656,7 +2693,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
           {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
         </select>
         <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
-        <button className="btn secondary" onClick={copyDayReport}>Copy day's report</button>
+        <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
         <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
       </div>
       <div className="checkout-summary">
@@ -2742,9 +2779,97 @@ function CheckOutTracker({ config, store, data, onChange }) {
       {showSchedule && (
         <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />
       )}
+      {showReport && (
+        <DayReportModal store={store} day={day} rows={rows} offenders={offenders} onCopy={copyDayReport} onClose={() => setShowReport(false)} />
+      )}
     </div>
   );
 }
+
+/* ---------------- Daily report (visual) ----------------
+   A clean two-column recap for the manager: today's check-out on the left, the
+   running month-to-date top offenders on the right. Replaces the plain text copy,
+   though the text version is still one click away for pasting into a chat. */
+function DayReportModal({ store, day, rows, offenders, onCopy, onClose }) {
+  const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const withData = rows.filter((r) => r.hasData && !r.off);
+  const clean = withData.filter((r) => r.points === 0);
+  const flagged = withData.filter((r) => r.points > 0).sort((a, b) => b.points - a.points);
+  const off = rows.filter((r) => r.off);
+  const monthName = new Date().toLocaleDateString("en-US", { month: "long" });
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal dayreport-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="plate-hist-head">
+          <div>
+            <h2 className="plate-hist-title">Daily report</h2>
+            <p className="plate-hist-sub">{store.name} · {dayLabel}</p>
+          </div>
+          <div className="dr-head-actions">
+            <button className="btn secondary" onClick={onCopy}>Copy as text</button>
+            <button className="btn-x" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div className="dr-cols">
+          {/* LEFT: today */}
+          <div className="dr-col">
+            <div className="dr-col-title">Today</div>
+            <div className="dr-tallies">
+              <div className="dr-tally g"><b>{clean.length}</b><span>Qualified</span></div>
+              <div className="dr-tally r"><b>{flagged.length}</b><span>With points</span></div>
+              <div className="dr-tally d"><b>{off.length}</b><span>Off</span></div>
+            </div>
+            {flagged.length > 0 && (
+              <div className="dr-block">
+                <div className="dr-block-label">Needs follow-up</div>
+                {flagged.map((r) => (
+                  <div key={r.a.id} className="dr-row">
+                    <span className="dr-name">{r.a.name}</span>
+                    <span className="dr-miss">{r.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")}</span>
+                    <span className={"pt-badge pt-" + r.points}>{r.points}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {clean.length > 0 && (
+              <div className="dr-block">
+                <div className="dr-block-label">Qualified</div>
+                <div className="dr-chips">{clean.map((r) => <span key={r.a.id} className="dr-chip g">{r.a.name}</span>)}</div>
+              </div>
+            )}
+            {off.length > 0 && (
+              <div className="dr-block">
+                <div className="dr-block-label">Off</div>
+                <div className="dr-chips">{off.map((r) => <span key={r.a.id} className="dr-chip d">{r.a.name}</span>)}</div>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: running total */}
+          <div className="dr-col dr-col-alt">
+            <div className="dr-col-title">Top offenders <span className="section-sub">{monthName} to date</span></div>
+            {offenders.length === 0 ? (
+              <p className="hint">Nobody has a point this month. Worth saying out loud.</p>
+            ) : (
+              <ol className="dr-rank">
+                {offenders.map((r, i) => (
+                  <div key={r.a.id} className="dr-rank-row">
+                    <span className="dr-rank-n">{i + 1}</span>
+                    <b className="dr-rank-name">{r.a.name}</b>
+                    <span className="dr-rank-worked">{r.worked} day{r.worked === 1 ? "" : "s"}</span>
+                    <span className={"dr-rank-pts pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
+                  </div>
+                ))}
+              </ol>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const num = (v) => (v == null ? 0 : v);
 
 /* ---------------- Monthly schedule upload ----------------
@@ -4438,6 +4563,9 @@ function BaselineImport({ data, onChange }) {
         email: rec.actEmail ?? 0,
         video: rec.actVideo ?? 0,
         tasks: rec.actCompletedTasks ?? 0,
+        tasksPosted: rec.actOpenTasks ?? 0,
+        // completion rate when we know how many were open; null keeps it out of the math
+        taskPct: (rec.actOpenTasks && rec.actOpenTasks > 0) ? (rec.actCompletedTasks ?? 0) / rec.actOpenTasks : null,
         units: rec.actUnits ?? 0,
         period: { start, end, days: d },
       };
@@ -4824,7 +4952,11 @@ function activityAverages(data, nameKey) {
     email: sum("email") / n,
     apptCreated: sum("apptCreated") / n,
     apptShow: sum("apptShow") / n,
-    tasks: sum("tasks") / n,
+    // Tasks is now a completion RATE: total completed / total posted across the month.
+    // If no report ever carried a posted count, leave it null so it drops out cleanly.
+    // Completed / Open across the month. Clearing backlog can push a single day over
+    // 100%, so cap the rate at 1.0 — "task completion rate" reads oddly above 100%.
+    tasks: sum("tasksPosted") > 0 ? Math.min(1, sum("tasks") / sum("tasksPosted")) : null,
     // contact rate is the one that usually separates people: calls are effort,
     // contacts are effectiveness
     contactRate: sum("calls") > 0 ? sum("contacted") / sum("calls") : null,
@@ -4841,7 +4973,7 @@ const BEHAVIOURS = [
   { id: "email", label: "Emails per day", kind: "num" },
   { id: "apptCreated", label: "Appointments set per day", kind: "num" },
   { id: "showRate", label: "Appointment show rate", kind: "pct" },
-  { id: "tasks", label: "Tasks completed per day", kind: "num" },
+  { id: "tasks", label: "Task completion rate", kind: "pct" },
 ];
 
 function CoachingPanel({ config, store, data, onChange }) {
@@ -4986,11 +5118,11 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     headTitle = "Leads are paused while we build the habits back up.";
     headBody = "Off leads since " + new Date(restriction.since).toLocaleDateString() +
       (restriction.until ? ". We'll review together on " + new Date(restriction.until).toLocaleDateString() + "." : ".") +
-      " This isn't a penalty — it's where we focus the coaching.";
+      " This isn't a penalty. It's where we focus the coaching.";
     headClass = "bad";
   } else if (ev && ev.status === "fail") {
     headTitle = "A couple of things to tighten up, then leads keep flowing.";
-    headBody = "You're close. The items below are what stands between you and full lead flow — each one is a habit, not a talent.";
+    headBody = "You're close. The items below are what stands between you and full lead flow, and each one is a habit, not a talent.";
     headClass = "bad";
   } else if (ev && ev.status === "pass") {
     headTitle = "You're doing the work. Let's build on it.";
@@ -4998,7 +5130,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     headClass = "good";
   } else {
     headTitle = "Let's set your targets together.";
-    headBody = "No standards are set for your position yet — your manager will walk you through your tier.";
+    headBody = "No standards are set for your position yet. Your manager will walk you through your tier.";
     headClass = "flat";
   }
 
@@ -5042,50 +5174,48 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     const f = b.kind === "pct" ? pct : num;
     const ratio = act[b.id] / topAvg[b.id];
     const state = ratio < 0.85 ? "bad" : ratio > 1.1 ? "good" : "";
-    const barPct = Math.max(3, Math.min(100, ratio * 70));
-    const label = ratio < 0.85 ? "coach" : ratio > 1.1 ? "strength" : "on par";
+    const barPct = Math.max(3, Math.min(100, ratio * 70));   // 70% of track = parity, same as the card
     return '<tr><td>' + esc(b.label) + '</td>' +
-      '<td class="r">' + f(act[b.id]) + '</td>' +
-      '<td class="r">' + f(topAvg[b.id]) + '</td>' +
       '<td><div class="mini"><div class="mini-bench"></div><div class="mini-bar ' + state + '" style="width:' + barPct + '%"></div></div></td>' +
-      '<td class="r ' + state + '">' + label + '</td></tr>';
+      '<td class="r"><b>' + f(act[b.id]) + '</b> <span class="vs">vs ' + f(topAvg[b.id]) + '</span></td></tr>';
   }).join("") : "";
 
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
 '@page { size: letter portrait; margin: 12mm; }' +
 '* { box-sizing:border-box; margin:0; padding:0; }' +
-'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10.5px; line-height:1.4; }' +
+'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; }' +
 '.sheet { max-width:186mm; }' +
-'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #2A5E9B; padding-bottom:8px; margin-bottom:12px; }' +
+'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #2A5E9B; padding-bottom:6px; margin-bottom:9px; }' +
 '.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
 '.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
 '.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#2A5E9B; color:#fff; margin-bottom:4px; }' +
 '.goalbox { text-align:right; }' +
 '.goalbox b { font-size:26px; font-weight:800; color:#2A5E9B; display:block; line-height:1; }' +
 '.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
-'h2 { font-size:11px; text-transform:uppercase; letter-spacing:.09em; color:#5B6874; margin:14px 0 6px; }' +
-'.why { padding:10px 12px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
+'h2 { font-size:10.5px; text-transform:uppercase; letter-spacing:.09em; color:#5B6874; margin:9px 0 4px; }' +
+'.why { padding:8px 11px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
 '.why.bad { border-left-color:#C13529; background:#FBEEEC; }' +
 '.why.good { border-left-color:#1E7A3C; background:#EAF6EE; }' +
 '.why b { font-size:13px; display:block; margin-bottom:2px; }' +
 '.stats { display:flex; gap:0; border:1px solid #DDE3E9; border-radius:7px; overflow:hidden; margin-top:4px; }' +
-'.stat { flex:1; padding:9px 10px; border-right:1px solid #DDE3E9; }' +
+'.stat { flex:1; padding:6px 10px; border-right:1px solid #DDE3E9; }' +
 '.stat:last-child { border-right:none; }' +
-'.stat b { display:block; font-size:19px; font-weight:800; letter-spacing:-.02em; }' +
-'.stat span { font-size:8.5px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
+'.stat b { display:block; font-size:17px; font-weight:800; letter-spacing:-.02em; }' +
+'.stat span { font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
 'table { width:100%; border-collapse:collapse; }' +
-'th { text-align:left; font-size:8.5px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:5px 7px; border-bottom:1px solid #DDE3E9; }' +
-'td { padding:5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'th { text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:3px 7px; border-bottom:1px solid #DDE3E9; }' +
+'td { padding:3px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
 'td.r, th.r { text-align:right; }' +
 '.good { color:#1E7A3C; font-weight:700; } .bad { color:#C13529; font-weight:700; }' +
-'.mini { position:relative; height:9px; background:#EEF1F4; border-radius:5px; overflow:hidden; min-width:80px; }' +
-'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#8AA6C4; border-radius:5px; }' +
+'.mini { position:relative; height:11px; background:#EEF1F4; border-radius:6px; overflow:hidden; min-width:220px; }' +
+'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#8AA6C4; border-radius:6px; }' +
 '.mini-bar.good { background:#1E7A3C; } .mini-bar.bad { background:#C13529; }' +
-'.mini-bench { position:absolute; top:-1px; bottom:-1px; left:70%; width:2px; background:#12212F; opacity:.55; z-index:2; }' +
-'.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:10px 12px; margin-top:8px; font-size:12.5px; }' +
+'.mini-bench { position:absolute; top:-1px; bottom:-1px; left:70%; width:2px; background:#12212F; opacity:.6; z-index:2; }' +
+'.vs { color:#8B95A1; font-weight:600; }' +
+'.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:7px 11px; margin-top:6px; font-size:11.5px; }' +
 '.big b { color:#2A5E9B; }' +
-'.pbar-wrap { margin-top:8px; }' +
+'.pbar-wrap { margin-top:6px; }' +
 '.pbar { position:relative; height:16px; background:#EEF1F4; border-radius:8px; overflow:hidden; }' +
 '.pbar-fill { position:absolute; top:0; left:0; height:100%; background:linear-gradient(90deg,#8AA6C4,#2A5E9B); border-radius:8px; }' +
 '.pbar-fill.good { background:linear-gradient(90deg,#4FB477,#1E7A3C); }' +
@@ -5094,10 +5224,10 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.cols { display:flex; gap:14px; }' +
 '.cols > div { flex:1; }' +
 '.note { font-size:9px; color:#5B6874; margin:3px 0 0; }' +
-'.sign { margin-top:16px; padding-top:10px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
+'.sign { margin-top:11px; padding-top:8px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
 '.sign div { flex:1; }' +
-'.line { border-bottom:1px solid #9AA5B1; height:22px; margin-bottom:3px; }' +
-'.foot { margin-top:10px; font-size:8.5px; color:#8B95A1; }' +
+'.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
+'.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
 '</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
@@ -5123,9 +5253,9 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 
 (behaviourRows ?
 '<h2>Behaviour vs the top ' + (topCount || 6) + ' at this store</h2>' +
-'<table><thead><tr><th>Habit</th><th class="r">You / day</th><th class="r">Top ' + (topCount || 6) + '</th><th>vs the line</th><th class="r"></th></tr></thead>' +
+'<table><thead><tr><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th></tr></thead>' +
 '<tbody>' + behaviourRows + '</tbody></table>' +
-'<p class="note">The line marks what the strongest people here do. Bars past it are your strengths; short bars are the fastest gains.</p>'
+'<p class="note">The dark line marks what the strongest people here do. Green bars are your strengths; short red bars are the fastest gains.</p>'
 : '') +
 
 (goal > 0 ?
@@ -5138,7 +5268,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '</div>' +
 (!monthEnd && stillNeeded > 0 && remaining > 0 ?
   '<div class="big">To hit <b>' + goal + '</b>, aim for <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> over the ' + remaining + ' working days left.</div>'
- : stillNeeded === 0 ? '<div class="big">Goal met — <b>' + num(delivered) + '</b> delivered against <b>' + goal + '</b>. Strong month.</div>' : '') +
+ : stillNeeded === 0 ? '<div class="big">Goal met. <b>' + num(delivered) + '</b> delivered against <b>' + goal + '</b>. Strong month.</div>' : '') +
 // pace progress bar: delivered vs goal, with a marker for where they "should" be by now
 '<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
   (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
@@ -5155,7 +5285,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   '<h2>How many leads each car takes, by channel</h2>' +
   '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Leads per car</th><th class="r">' + (goal > 0 ? "For your goal" : "") + '</th></tr></thead>' +
   '<tbody>' + leadRows + '</tbody></table>' +
-  '<p class="note">“You deliver” is your delivered rate from the Delivery Summary — the same number on The Board. The better you convert a channel, the fewer leads each delivered car takes.</p>' : '')
+  '<p class="note">"You deliver" is your delivered rate from the Delivery Summary, the same number on The Board. The better you convert a channel, the fewer leads each delivered car takes.</p>' : '')
 : '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
 '<div class="sign">' +
@@ -5471,7 +5601,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
 
   const summaryText = () => {
     const L = [];
-    L.push(`${a.name} — ${store.name} — ${new Date().toLocaleDateString()}`);
+    L.push(`${a.name} · ${store.name} · ${new Date().toLocaleDateString()}`);
     L.push("");
     L.push(`Units delivered this month: ${units}`);
     if (stats.internetPct != null) L.push(`Internet delivered: ${fmtPct(stats.internetPct)}`);
@@ -5676,9 +5806,8 @@ function LoadingScreen({ label = "Loading" }) {
   return (
     <div className="loadscreen">
       <div className="loadscreen-inner">
-        <div className="loadscreen-logo"><Logo size={80} animated /></div>
-        <div className="loadscreen-bar"><div className="loadscreen-bar-fill" /></div>
-        <div className="loadscreen-label">{label}</div>
+        <div className="loadscreen-logo"><Logo size={72} loading /></div>
+        {label ? <div className="loadscreen-label">{label}</div> : null}
       </div>
     </div>
   );
@@ -7205,18 +7334,19 @@ function Style() {
       @media (max-width:720px){ .lseq-btitle h1{font-size:6vw;} .lseq-name{font-size:3.6vw;} .lseq-pill{font-size:3vw;min-width:14vw;} .lseq-units{font-size:3.6vw;} .lseq-sub,.lseq-head{font-size:2.6vw;} }
 
 
-      .loadscreen-inner { text-align:center; animation: heroIn .5s var(--spring) both; }
-      .loadscreen-logo { display:flex; justify-content:center; margin-bottom:22px;
+      /* Loading state centered on screen — same vertical spot as the login logo, so a
+         handoff from login reads as the form dissolving and leaving the speedometer. */
+      .loadscreen { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+        padding:24px; z-index:60; }
+      .loadscreen-inner { text-align:center; animation: loadFadeIn .45s var(--spring) both; }
+      .loadscreen-logo { display:flex; justify-content:center; margin-bottom:20px;
         filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
-      .loadscreen-bar { width:170px; height:4px; border-radius:4px; background:rgba(42,94,155,.14); overflow:hidden; margin:0 auto; }
-      .loadscreen-bar-fill { width:40%; height:100%; border-radius:4px;
-        background:linear-gradient(90deg, var(--blue), var(--lime));
-        animation: loadSlide 1.25s ease-in-out infinite; }
-      @keyframes loadSlide {
-        0%   { transform: translateX(-120%); }
-        100% { transform: translateX(320%); }
-      }
-      .loadscreen-label { margin-top:14px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
+      @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
+      /* the speedometer needle + its gradient trail spin together */
+      .logo-loading .logo-spin { animation: needleSpin 1s linear infinite; }
+      .logo-loading .logo-trail { animation: needleSpin 1s linear infinite; opacity:.9; }
+      @keyframes needleSpin { to { transform: rotate(360deg); } }
+      .loadscreen-label { margin-top:2px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
 
       /* ---- board launcher ---- */
       .board-launch { max-width:760px; margin:0 auto; }
@@ -7298,13 +7428,12 @@ function Style() {
 
         /* nothing loops forever behind a scrolling surface */
         .logo-anim, .hero-band::after, .dz-icon, .star-badge,
-        .chip-warn .chip-dot, .leader-crown, .loadscreen-bar-fill {
+        .chip-warn .chip-dot, .leader-crown, .logo-loading .logo-spin, .logo-loading .logo-trail {
           animation: none !important;
         }
         /* leave the logo in its finished state rather than mid-sweep */
         .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
         .logo-anim .logo-needle { transform: rotate(0deg) !important; }
-        .loadscreen-bar-fill { width: 100%; }
 
         /* the sticky blurred header was the other half of the jump */
         .topbar {
@@ -7669,6 +7798,14 @@ function Style() {
         text-align:center; backdrop-filter: blur(30px) saturate(170%); -webkit-backdrop-filter: blur(30px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.9), var(--shadow-2); animation: loginIn .5s var(--spring); }
       @keyframes loginIn { from { opacity:0; transform: translateY(16px) scale(.97); } to { opacity:1; transform:none; } }
+      /* Signing in: the form and the card chrome gracefully fade out, leaving just the
+         spinning speedometer and title — so the jump to the full loading screen is seamless. */
+      .login-card.login-busy { background:transparent; border-color:transparent; box-shadow:none;
+        backdrop-filter:none; -webkit-backdrop-filter:none; transition: background .5s ease, box-shadow .5s ease, border-color .5s ease; }
+      .login-card.login-busy > *:not(.login-logo):not(.login-title):not(.login-sub) {
+        opacity:0; pointer-events:none; transition: opacity .4s ease; max-height:0; overflow:hidden; }
+      .login-card.login-busy .login-logo { animation: loginLogoRise .5s var(--spring) both; }
+      @keyframes loginLogoRise { from { transform: translateY(0); } to { transform: translateY(-4px) scale(1.05); } }
       .login-logo { display:flex; justify-content:center; margin-bottom:12px; }
       .login-card h2 { font-size:22px; font-weight:700; letter-spacing:-.02em; margin:0 0 2px; }
       .login-card label { display:block; text-align:left; font-size:12px; font-weight:600; margin:16px 0 6px; color:var(--ink-2); }
@@ -7851,6 +7988,37 @@ function Style() {
       .orr-points.pt-1 { color:#95600A; } .orr-points.pt-2 { color:#B4530A; } .orr-points.pt-3 { color:#C13529; }
       /* schedule upload modal */
       .sched-modal { max-width:540px; width:100%; padding:24px 26px; }
+      .dayreport-modal { max-width:720px; width:100%; padding:24px 26px; }
+      .dr-head-actions { display:flex; align-items:center; gap:10px; }
+      .dr-cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:12px; }
+      .dr-col-alt { background:rgba(0,0,0,.02); border-radius:14px; padding:14px 16px; margin:-4px; }
+      .dr-col-title { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-2); margin-bottom:10px; }
+      .dr-tallies { display:flex; gap:8px; margin-bottom:14px; }
+      .dr-tally { flex:1; text-align:center; padding:8px 6px; border-radius:11px; }
+      .dr-tally b { display:block; font-size:22px; font-weight:800; line-height:1; }
+      .dr-tally span { font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
+      .dr-tally.g { background:rgba(48,177,85,.12); } .dr-tally.g b { color:#1E7A3C; } .dr-tally.g span { color:#1E7A3C; }
+      .dr-tally.r { background:rgba(229,71,60,.1); } .dr-tally.r b { color:#C13529; } .dr-tally.r span { color:#C13529; }
+      .dr-tally.d { background:rgba(0,0,0,.04); } .dr-tally.d b { color:var(--ink-2); } .dr-tally.d span { color:var(--ink-3); }
+      .dr-block { margin-bottom:14px; }
+      .dr-block-label { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-3); margin-bottom:6px; }
+      .dr-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+      .dr-row:last-child { border-bottom:none; }
+      .dr-name { font-weight:600; font-size:13.5px; flex:0 0 auto; }
+      .dr-miss { flex:1; font-size:12px; color:var(--ink-3); text-transform:capitalize; }
+      .dr-chips { display:flex; flex-wrap:wrap; gap:5px; }
+      .dr-chip { font-size:12px; font-weight:600; padding:3px 9px; border-radius:99px; }
+      .dr-chip.g { background:rgba(48,177,85,.12); color:#1E7A3C; }
+      .dr-chip.d { background:rgba(0,0,0,.05); color:var(--ink-2); }
+      .dr-rank { list-style:none; margin:0; padding:0; }
+      .dr-rank-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:10px; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); }
+      .dr-rank-row:last-child { border-bottom:none; }
+      .dr-rank-n { width:24px; height:24px; border-radius:50%; background:rgba(42,94,155,.1); color:var(--blue); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; }
+      .dr-rank-name { font-size:14px; }
+      .dr-rank-worked { font-size:11.5px; color:var(--ink-3); }
+      .dr-rank-pts { font-size:18px; font-weight:800; font-variant-numeric:tabular-nums; }
+      .dr-rank-pts.pt-1 { color:#95600A; } .dr-rank-pts.pt-2 { color:#B4530A; } .dr-rank-pts.pt-3 { color:#C13529; }
+      @media (max-width:620px) { .dr-cols { grid-template-columns:1fr; } }
       .sched-drop { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
         border:1.5px dashed rgba(42,94,155,.35); border-radius:16px; padding:32px 20px; cursor:pointer; margin-bottom:14px; }
       .sched-drop:hover { border-color:var(--blue); background:rgba(42,94,155,.03); }
@@ -8185,8 +8353,7 @@ function Style() {
         .hero-band, .hero-band::after, .tile, .hero-strip { animation: none !important; transform: none !important; }
         .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
         .chip-warn .chip-dot, .leader-crown { animation: none !important; }
-        .loadscreen-bar-fill, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
-        .loadscreen-bar-fill { width:100%; }
+        .logo-loading .logo-spin, .logo-loading .logo-trail, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
       }
 
       @media print {
