@@ -5404,8 +5404,13 @@ function withApptStats(act, st) {
   return out;
 }
 
-function activityAverages(data, nameKey) {
-  const days = Object.keys(data.activity || {});
+function activityAverages(data, nameKey, aId) {
+  // A person's days off are excluded from their per-day averages. The report still
+  // lists them (with zeros) on days they weren't in, and counting those days would
+  // quietly drag every habit average down. Because this is computed fresh each time,
+  // a schedule uploaded days into the month backfills automatically: the moment the
+  // off-days are on file, past zeros stop counting against anyone.
+  const days = Object.keys(data.activity || {}).filter((d) => !aId || !isOff(data, aId, d));
   const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
   if (rows.length === 0) return null;
   const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
@@ -5474,7 +5479,7 @@ function CoachingPanel({ config, store, data, onChange }) {
     // in exactly the terms the person already sees.
     const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
     const ev = evaluateAssociate(s, tiers);
-    return { a, units, stats: s, ev, act: withApptStats(activityAverages(data, norm(a.name)), s) };
+    return { a, units, stats: s, ev, act: withApptStats(activityAverages(data, norm(a.name), a.id), s) };
   }).sort((x, y) => y.units - x.units);
 
   const withData = scored.filter((r) => r.act);
