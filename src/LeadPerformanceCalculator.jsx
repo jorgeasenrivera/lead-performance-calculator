@@ -2645,10 +2645,10 @@ function CheckOutTracker({ config, store, data, onChange }) {
 
   const q = norm(query);
   // Left-side sheet is alphabetical by name so managers can find anyone fast.
-  // Roles flagged tracked:false (e.g. Manager) are just for organizing — they aren't
-  // scored on the checkout sheet or in the point system.
-  const untrackedRoles = new Set((config.roles || []).filter((r) => r.tracked === false).map((r) => r.id));
-  const roster = (data.roster || []).filter((a) => a.roleId && !untrackedRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
+  // Check Out is a sales-floor sheet: only roles that are coached on sales behaviours
+  // appear (Sales Associate and Service to Sales). BDC agents and managers stay off it.
+  const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
 
   // A clean text recap of the day the manager can paste into a group chat or email.
   const copyDayReport = () => {
