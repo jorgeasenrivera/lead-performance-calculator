@@ -1824,7 +1824,8 @@ function LEADERBOARD_HTML(p) {
   @keyframes shine { 0% { background-position:180% 0; } 55%,100% { background-position:-60% 0; } }
 
   .pill { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(var(--rowfs) * 1.05);
-    padding:.3vh .7vw; border-radius:.9vh; display:inline-block; min-width:5.2vw; }
+    padding:.3vh 0; border-radius:.9vh; display:inline-block; width:7vw; text-align:center;
+    box-sizing:border-box; font-variant-numeric:tabular-nums; }
   .pill.g { background:var(--greenbg); color:var(--green); }
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
@@ -3612,7 +3613,7 @@ function PlateTracker({ data, onChange, userName }) {
   const [editingTime, setEditingTime] = useState(null); // plate id whose time is being edited
   const plates = data.plates || {}; // { day: [ {id, tag, assignee, checkedOut, checkedIn, by, takenAt, history:[...]} ] }
   const dayPlates = plates[day] || [];
-  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.order - b.order);
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.name.localeCompare(b.name));
 
   // Build a datetime-local value (local time) from an ISO string, and back.
   const isoToLocalInput = (iso) => {
@@ -3792,7 +3793,7 @@ function PlateTracker({ data, onChange, userName }) {
           <table className="roster-table wide">
             <thead><tr><th>Tag</th><th>Assigned to</th><th>Time taken</th><th>Returned</th><th>Logged by</th><th>History</th><th /></tr></thead>
             <tbody>
-              {dayPlates.map((p) => (
+              {[...dayPlates].sort((x, y) => (y.takenAt || "").localeCompare(x.takenAt || "")).map((p) => (
                 <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
                   <td><b>{p.tag}</b></td>
                   <td>
