@@ -1054,14 +1054,22 @@ export default function LeadPerformanceCalculator() {
 
       if (type === "activity") {
         if (!next.activity) next.activity = {};
+        // "Open Tasks" is a live backlog snapshot, so a report pulled for a past date
+        // often comes back without it. Keep whatever was already recorded for that day
+        // rather than blanking it, or backfilling would destroy a good task rate.
+        const priorDay = next.activity[actDay] || {};
+        let missingOpenTasks = 0;
         next.activity[actDay] = {};
         for (const [key, rec] of Object.entries(parsed)) {
+          const priorPosted = priorDay[key]?.tasksPosted;
+          const posted = rec.actOpenTasks != null ? rec.actOpenTasks : (priorPosted ?? null);
+          if (rec.actOpenTasks == null) missingOpenTasks++;
           next.activity[actDay][key] = {
             displayName: rec.displayName,
             calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
             text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
             apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
-            tasksPosted: rec.actOpenTasks,
+            tasksPosted: posted,
             sold: rec.actSold, units: rec.actUnits,
             oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
             oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
@@ -1070,6 +1078,15 @@ export default function LeadPerformanceCalculator() {
             uploadedAt: new Date().toISOString(),
           };
           count++;
+        }
+        // Say so plainly rather than letting the task rate quietly go blank.
+        if (missingOpenTasks > 0 && count > 0) {
+          log.push({
+            ok: true,
+            msg: `Heads up: this report has no "Open Tasks" column, so task completion rate can't be worked out for ${actDay}. ` +
+                 `DriveCentric only reports open tasks as they stand right now, so a report pulled for an earlier date leaves it out. ` +
+                 `Everything else imported normally, and any task count already saved for that day was kept.`,
+          });
         }
       }
 
@@ -3009,6 +3026,201 @@ function loadXLSX() {
    the right that lists each team's members. Teams change month to month, so the roster
    is read from that legend rather than hardcoded. Returns per-person off-days for the
    target month, plus any names that didn't match the store roster (to clarify by hand). */
+/* ---------------- Blank-grid schedule parser (Driver's Mart style) ----------------
+   A different convention from the Holler grid: instead of writing OFF, a person simply
+   has no shift that day. Layout is a week block per date row, with a label column (a
+   person's name, or a team letter whose roster is listed to the left) and seven day
+   columns. A cell with a shift means working; blank or VAC means not working.
+   Teams and individuals both appear, so both are read. */
+/* Work out which month a schedule sheet covers. The title sits in a different cell in
+   every workbook, so check the tab name first and then scan the top rows for a
+   "July 2026" / "Jul-26" style label rather than assuming one fixed cell. */
+function detectSheetMonth(rows, monthHint) {
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
+  const candidates = [String(monthHint || "")];
+  for (let r = 0; r < Math.min(8, rows.length); r++) {
+    for (let c = 0; c < Math.min(14, (rows[r] || []).length); c++) {
+      const v = String((rows[r] || [])[c] || "").trim();
+      if (v) candidates.push(v);
+    }
+  }
+  for (const cand of candidates) {
+    const mm = cand.toLowerCase().match(/([a-z]{3,})[-\s]?(\d{2,4})/);
+    if (!mm) continue;
+    const mi = MONTHS.findIndex((mo) => mm[1].startsWith(mo));
+    if (mi < 0) continue;
+    tm = mi + 1;
+    const yr = mm[2];
+    ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
+    return { ty, tm };
+  }
+  return { ty, tm };
+}
+
+
+
+
+/* Find the sheet's geometry rather than assuming fixed columns: readers differ on
+   whether leading blank columns survive, so locate the run of day-number columns and
+   take the label column as the nearest text column to their left. */
+function dmGeometry(rows) {
+  let best = null;
+  for (let r = 0; r < rows.length; r++) {
+    const cols = [];
+    const row = rows[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const v = String(row[c] == null ? "" : row[c]).trim();
+      if (/^\d{1,2}$/.test(v) && +v >= 1 && +v <= 31) cols.push(c);
+    }
+    if (cols.length < 4) continue;
+    // keep the widest contiguous-ish run (a week is 7 adjacent columns)
+    const runs = [];
+    let run = [cols[0]];
+    for (let i = 1; i < cols.length; i++) {
+      if (cols[i] - cols[i - 1] <= 2) run.push(cols[i]);
+      else { runs.push(run); run = [cols[i]]; }
+    }
+    runs.push(run);
+    const widest = runs.sort((a, b) => b.length - a.length)[0];
+    if (widest.length >= 4 && (!best || widest.length > best.length)) best = widest;
+  }
+  if (!best) return null;
+  // a full week spans 7 columns starting at the run's left edge
+  const start = best[0], end = Math.max(best[best.length - 1], start + 6);
+  const dayCols = [];
+  for (let c = end - 6; c <= end; c++) dayCols.push(c);
+  // label column: nearest column left of the days that carries text
+  let labelCol = Math.max(0, dayCols[0] - 1);
+  for (let c = dayCols[0] - 1; c >= 0; c--) {
+    let hits = 0;
+    for (let r = 0; r < rows.length; r++) {
+      const v = String((rows[r] || [])[c] == null ? "" : (rows[r] || [])[c]).trim();
+      if (v && !/^\d+$/.test(v)) hits++;
+    }
+    if (hits >= 4) { labelCol = c; break; }
+  }
+  return { dayCols, labelCol };
+}
+
+const dmCell = (rows, r, c) => {
+  const v = rows[r] ? rows[r][c] : null;
+  if (v == null) return "";
+  return String(v).trim();
+};
+
+function looksLikeBlankGrid(rows) {
+  const g = dmGeometry(rows);
+  if (!g) return false;
+  // must have at least two week bands and labels under them
+  let dateRows = 0;
+  for (let r = 0; r < rows.length; r++) {
+    const nums = g.dayCols.map((c) => dmCell(rows, r, c)).filter((v) => /^\d{1,2}$/.test(v));
+    if (nums.length >= 4) dateRows++;
+  }
+  if (dateRows < 2) return false;
+  let labels = 0;
+  for (let r = 0; r < rows.length; r++) {
+    const l = dmCell(rows, r, g.labelCol);
+    if (l && !/^\d+$/.test(l)) labels++;
+  }
+  return labels >= 4;
+}
+
+/* Match a schedule label ("Thomas", "Juan R", "Jose B") to a roster person.
+   Exact first, then token-prefix so "Juan R" finds "Juan Rodriguez" without also
+   grabbing "Juan Pablo". Ambiguous matches are reported rather than guessed. */
+function matchRosterName(label, roster) {
+  const L = norm(label);
+  if (!L) return null;
+  const exact = roster.find((a) => norm(a.name) === L);
+  if (exact) return exact;
+  const lt = L.split(" ");
+  const hits = roster.filter((a) => {
+    const rt = norm(a.name).split(" ");
+    if (lt.length > rt.length) return false;
+    return lt.every((t, i) => rt[i] && rt[i].startsWith(t));
+  });
+  if (hits.length === 1) return hits[0];
+  return null;   // none, or ambiguous — surface it instead of picking wrongly
+}
+
+function parseBlankGrid(rows, roster, targetYear, targetMonth) {
+  const geo = dmGeometry(rows);
+  if (!geo) return { matched: [], unmatched: [], teams: {}, empty: true };
+  const { dayCols, labelCol } = geo;
+
+  // Team rosters sit to the left of the schedule: a "Team X (Lead)" header with member
+  // names listed beneath it. Scan the columns left of the label column for that shape.
+  const teams = {}; const used = [];
+  let cur = null;
+  for (let r = 0; r < rows.length; r++) {
+    let head = "";
+    for (let c = 0; c < labelCol; c++) {
+      const v = dmCell(rows, r, c);
+      if (/^team\b/i.test(v)) { head = v; break; }
+    }
+    if (head) {
+      const m = head.match(/team\s*([A-D])\b/i);
+      let letter = m ? m[1].toUpperCase() : ["A", "B", "C", "D"].find((L) => !used.includes(L));
+      if (!letter) letter = String(used.length + 1);
+      used.push(letter); cur = letter; teams[letter] = [];
+      continue;
+    }
+    if (!cur) continue;
+    for (let c = 0; c < labelCol; c++) {
+      const nm = dmCell(rows, r, c);
+      if (nm && !/^\d+$/.test(nm) && !/^team\b/i.test(nm)) { teams[cur].push(nm); break; }
+    }
+  }
+
+  const dateRows = [];
+  for (let r = 0; r < rows.length; r++) {
+    const vals = dayCols.map((c) => dmCell(rows, r, c));
+    if (vals.filter((v) => /^\d{1,2}$/.test(v)).length >= 4) dateRows.push(r);
+  }
+  if (!dateRows.length) return { matched: [], unmatched: [], teams, empty: true };
+
+  const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+  const off = {};
+  const unmatched = {};
+  const markOff = (label, date) => {
+    const a = matchRosterName(label, roster);
+    if (!a) { unmatched[label] = (unmatched[label] || 0) + 1; return; }
+    (off[a.id] = off[a.id] || new Set()).add(date);
+  };
+
+  for (let i = 0; i < dateRows.length; i++) {
+    const dr = dateRows[i];
+    const end = i + 1 < dateRows.length ? dateRows[i + 1] : rows.length;
+    const daynums = dayCols.map((c) => dmCell(rows, dr, c));
+    for (let r = dr + 1; r < end; r++) {
+      const label = dmCell(rows, r, labelCol);
+      if (!label || /^open$/i.test(label)) continue;      // unfilled slot, not a person
+      const people = /^[A-D]$/i.test(label) ? (teams[label.toUpperCase()] || []) : [label];
+      if (!people.length) continue;
+      dayCols.forEach((c, ci) => {
+        const dn = daynums[ci];
+        if (!/^\d{1,2}$/.test(dn)) return;                // column has no date this week
+        const day = parseInt(dn);
+        if (day < 1 || day > daysInMonth) return;
+        const v = dmCell(rows, r, c);
+        const working = !!v && !/^(vac|vacation|off)$/i.test(v);
+        if (working) return;
+        const date = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        people.forEach((p) => markOff(p, date));
+      });
+    }
+  }
+
+  const matched = [];
+  for (const [id, set] of Object.entries(off)) {
+    const a = roster.find((x) => x.id === id);
+    matched.push({ id, name: a?.name || id, dates: [...set].sort() });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams, empty: !matched.length && !Object.keys(unmatched).length };
+}
+
 const SCHED_DAYCOLS = [0, 3, 6, 9, 12, 15, 18];
 
 function looksLikeHollerGrid(rows) {
@@ -3187,9 +3399,9 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
-        // keep only sheets that actually contain a team grid
+        // keep only sheets that actually contain a schedule grid (either style)
         const gridSheets = wb.SheetNames.filter((n) => {
-          try { return looksLikeHollerGrid(toRows(wb.Sheets[n])); } catch (e) { return false; }
+          try { const rr = toRows(wb.Sheets[n]); return looksLikeHollerGrid(rr) || looksLikeBlankGrid(rr); } catch (e) { return false; }
         });
         const usable = gridSheets.length ? gridSheets : wb.SheetNames;
         if (usable.length === 1) {
@@ -3222,17 +3434,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
 
     // ---- Auto-detect the Holler team-grid format ----
     if (looksLikeHollerGrid(rows)) {
-      // Figure out which month the sheet is for. Look at the sheet/tab name first
-      // (e.g. "JULY 2026"), then the top-left title cell (e.g. "Jul-26").
-      const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-      let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
-      const src = ((monthHint || "") + " " + String((rows[0] && rows[0][0]) || "")).toLowerCase();
-      const mm = src.match(/([a-z]{3,})[-\s]?(\d{2,4})/);
-      if (mm) {
-        const mi = MONTHS.findIndex((mo) => mm[1].startsWith(mo));
-        if (mi >= 0) tm = mi + 1;
-        const yr = mm[2]; ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
-      }
+      const { ty, tm } = detectSheetMonth(rows, monthHint);
       const res = parseHollerGrid(rows, roster, ty, tm);
       const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
       if (!res.matched.length && !res.unmatched.length) {
@@ -3240,6 +3442,22 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         return;
       }
       setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
+      return;
+    }
+
+    // ---- Blank-grid style: a shift means working, an empty cell means off ----
+    if (looksLikeBlankGrid(rows)) {
+      const { ty, tm } = detectSheetMonth(rows, monthHint);
+      const res = parseBlankGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (res.empty) {
+        setErr("Detected a schedule grid, but couldn't read any days off. The layout may differ from expected.");
+        return;
+      }
+      setPreview({
+        matched: res.matched, unmatched: res.unmatched, total, grid: true, blankGrid: true,
+        monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams,
+      });
       return;
     }
 
@@ -3334,10 +3552,12 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
             <div className="sched-preview">
               {preview.grid && (
                 <div className="sched-detected">
-                  <span className="sched-detected-tag">{preview.pdf ? "PDF schedule read" : "Team grid detected"}</span>
+                  <span className="sched-detected-tag">{preview.pdf ? "PDF schedule read" : preview.blankGrid ? "Schedule grid read" : "Team grid detected"}</span>
                   {preview.pdf
                     ? `${preview.monthLabel} · read from the calendar, matched by first name`
-                    : `${preview.monthLabel} · teams read from the sheet: ${Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}`}
+                    : preview.blankGrid
+                      ? `${preview.monthLabel} · a blank cell is a day off. Teams read: ${Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ") || "none"}`
+                      : `${preview.monthLabel} · teams read from the sheet: ${Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}`}
                 </div>
               )}
               <p className="hint">{preview.total} off-days for {preview.matched.filter((m) => m.dates.length).length} people. Review, then apply.</p>
