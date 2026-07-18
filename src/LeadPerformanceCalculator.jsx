@@ -3944,15 +3944,6 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
           <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
           <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
         </div>
-        <div className="stepper-row">
-          <StoreStepper label="Working days" value={store.workingDaysInMonth ?? 26}
-            onChange={(v) => {
-              const next = JSON.parse(JSON.stringify(config));
-              const s = next.stores.find((x) => x.id === storeId);
-              s.workingDaysInMonth = Math.max(1, Math.min(31, v));
-              onChange(next, { store: storeId, action: "Set working days", detail: String(v) });
-            }} hint="in the month, for pacing" />
-        </div>
         <div className="preset-row">
           <span className="hint">Quick set:</span>
           <button className="btn-ghost" onClick={() => { set("minCalls", 16); setTimeout(() => set("minVideos", 2), 60); }}>16 calls · 2 videos</button>
@@ -5404,6 +5395,23 @@ function withApptStats(act, st) {
   return out;
 }
 
+/* Working days in the WHOLE month for one person: every non-Sunday on the calendar
+   minus their uploaded days off. Replaces the old store-wide "working days" standard,
+   since people work different amounts — the schedule is the source of truth. */
+function personWorkingDaysInMonth(data, a) {
+  const t = today(); const [y, m] = t.split("-").map(Number);
+  const dim = new Date(y, m, 0).getDate();
+  let n = 0;
+  for (let day = 1; day <= dim; day++) {
+    const dt = new Date(y, m - 1, day);
+    if (dt.getDay() === 0) continue;
+    const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isOff(data, a.id, ds)) continue;
+    n++;
+  }
+  return Math.max(1, n);
+}
+
 function activityAverages(data, nameKey, aId) {
   // A person's days off are excluded from their per-day averages. The report still
   // lists them (with zeros) on days they weren't in, and counting those days would
@@ -5574,12 +5582,12 @@ function CoachingPanel({ config, store, data, onChange }) {
 // The one-pager. It exists to answer two questions in a room, on paper:
 //   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
 // Everything on it is derived from this person's own numbers, so it is not an opinion.
-function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, topAvg, topCount, act }) {
+function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act }) {
   const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
   if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
 
   const delivered = oyoUnits(mtd);
-  const calElapsed = Math.min(workingDays, Math.max(1, workingDaysElapsed()));
+  const calElapsed = Math.min(workingDays, Math.max(1, elapsedDays ?? workingDaysElapsed()));
   const dataDays = Math.max(1, mtd.daysElapsed);
   const remaining = Math.max(0, workingDays - calElapsed);
   const stillNeeded = Math.max(0, goal - delivered);
@@ -5749,10 +5757,10 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '</div>' +
 
 (behaviourRows ?
-'<h2>Behavior vs the top ' + (topCount || 6) + ' at this store</h2>' +
+'<h2>Behavior vs the Top ' + (topCount || 6) + ' Sales Associates in Your Store</h2>' +
 '<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
 '<tbody>' + behaviourRows + '</tbody></table>' +
-'<p class="note">Ordered by leverage on your closing ratio, strongest first. The upright line is what the top ' + (topCount || 6) + ' here do: solid bar past it is a strength, striped bar short of it is the next gain.</p>'
+'<p class="note">Ordered by leverage on your closing ratio, strongest first. The upright line is what the top ' + (topCount || 6) + ' sales associates here do: solid bar past it is a strength, striped bar short of it is the next gain.</p>'
 : '') +
 
 (goal > 0 ?
@@ -5804,7 +5812,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const key = norm(a.name);
 
   const goal = data.goals?.[a.id]?.monthly ?? 0;
-  const workingDays = store.workingDaysInMonth ?? 26;
+  const workingDays = personWorkingDaysInMonth(data, a);
 
   const mtd = oyoMTD(data, key, monthStats);
   const base = oyoBaseline(data, key, a.id);
@@ -6158,7 +6166,8 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
               base: oyoBaseline(data, norm(a.name), a.id),
               ratios: oyoRatios(oyoBaseline(data, norm(a.name), a.id)),
               goal: data.goals?.[a.id]?.monthly ?? 0,
-              workingDays: store.workingDaysInMonth ?? 26,
+              workingDays: personWorkingDaysInMonth(data, a),
+              elapsedDays: Math.max(1, daysWorkedThisMonth(data, a)),
               topAvg, topCount, act,
             })}>
             Print one-pager
@@ -6181,7 +6190,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
         <p className="hint">No Daily Activity on file for this person yet, so there is nothing to compare their behavior against.</p>
       ) : (
         <>
-          <h3 className="ac-h3">Behavior vs the top {topCount} at this store</h3>
+          <h3 className="ac-h3">Behavior vs the Top {topCount} Sales Associates in Your Store</h3>
           <div className="ac-bars">
             {gaps.map((g) => {
               const f = g.kind === "pct" ? fmtPct : fmtNum;
