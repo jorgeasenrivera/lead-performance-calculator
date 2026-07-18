@@ -2257,7 +2257,7 @@ function LoadingSequence({ storeName, onComplete }) {
 
   useEffect(() => {
     bumpIntroCount();
-    const t = setTimeout(finish, 10000);
+    const t = setTimeout(finish, 5000);
     // reduced-motion: honor the OS setting and skip straight in
     const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
     if (mq && mq.matches) { clearTimeout(t); finish(); }
@@ -2296,7 +2296,7 @@ function LoadingSequence({ storeName, onComplete }) {
           {ROWS.map((r, i) => {
             const [name, inet, ph, sh, tone] = r; const s = spark(i + 1);
             return (
-              <div key={name} className="lseq-row" style={{ animationDelay: (5.7 + i * 0.14) + "s" }}>
+              <div key={name} className="lseq-row" style={{ animationDelay: (2.2 + i * 0.09) + "s" }}>
                 <div className="lseq-name">{i < 3 ? <span className="lseq-medal">{MEDALS[i]}</span> : <span className="lseq-rank">{i + 1}</span>}{name}</div>
                 <div>
                   <span className={"lseq-pill " + tone}><span className="lseq-mk">{mark(tone)}</span>{inet}%</span>
@@ -7727,9 +7727,8 @@ function Style() {
 
       .lseq-board { position:absolute; inset:0; display:flex; flex-direction:column; padding:5vh 6vw;
         filter:blur(9px) brightness(.55); transform:scale(1.06); opacity:0;
-        animation:lseqFill 1.3s cubic-bezier(.16,1,.3,1) 2.6s forwards, lseqMorph 2.6s var(--spring) 5.6s forwards; }
+        animation:lseqFill 1.0s cubic-bezier(.16,1,.3,1) 1.2s forwards; }
       @keyframes lseqFill { to { opacity:.85; } }
-      @keyframes lseqMorph { to { filter:blur(0) brightness(1); transform:scale(1); opacity:1; } }
       .lseq-btitle { display:flex; align-items:center; gap:14px; color:#fff; margin-bottom:2.5vh; }
       .lseq-dot { width:12px; height:12px; border-radius:50%; background:var(--red); box-shadow:0 0 12px var(--red); animation:lseqLive 1.4s ease-in-out infinite; }
       @keyframes lseqLive { 0%,100%{opacity:.5;} 50%{opacity:1;} }
@@ -7757,7 +7756,7 @@ function Style() {
 
       .lseq-logowrap { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:5; pointer-events:none; }
       .lseq-badge { opacity:0; transform:translateY(14vh) scale(.08); filter:drop-shadow(0 24px 60px rgba(0,0,0,.5));
-        animation:lseqWhoosh 1.5s cubic-bezier(.16,1,.3,1) .2s forwards, lseqHandoff 2.2s var(--spring) 4.2s forwards; }
+        animation:lseqWhoosh 1.3s cubic-bezier(.16,1,.3,1) .15s forwards, lseqHandoff 1.5s var(--spring) 2.6s forwards; }
       @keyframes lseqWhoosh {
         0% { opacity:0; transform:translateY(14vh) scale(.08); }
         35% { opacity:1; }
@@ -7769,22 +7768,22 @@ function Style() {
       .lseq-streak { position:absolute; left:50%; top:50%; width:3px; height:44vh; transform:translate(-50%,-50%);
         background:linear-gradient(to top,transparent,rgba(136,198,234,.5),transparent); opacity:0; animation:lseqStreak .7s ease .25s forwards; }
       @keyframes lseqStreak { 0%{opacity:0;transform:translate(-50%,30vh) scaleY(.3);} 45%{opacity:.9;} 100%{opacity:0;transform:translate(-50%,-6vh) scaleY(1.2);} }
-      .lseq-arc { stroke-dasharray:100; stroke-dashoffset:100; animation:lseqArc 1.2s var(--spring) 1.5s forwards; }
+      .lseq-arc { stroke-dasharray:100; stroke-dashoffset:100; animation:lseqArc .9s var(--spring) 1.0s forwards; }
       @keyframes lseqArc { to { stroke-dashoffset:0; } }
-      .lseq-needle { transform-origin:32px 32px; transform:rotate(-140.2deg); animation:lseqNeedle 1.2s var(--spring) 1.5s forwards; }
+      .lseq-needle { transform-origin:32px 32px; transform:rotate(-140.2deg); animation:lseqNeedle .9s var(--spring) 1.0s forwards; }
       @keyframes lseqNeedle { to { transform:rotate(0deg); } }
-      .lseq-word { margin-top:3vh; text-align:center; opacity:0; transform:translateY(16px); animation:lseqWordIn .8s ease 1.9s forwards, lseqWordOut .9s ease 4.2s forwards; }
+      .lseq-word { margin-top:3vh; text-align:center; opacity:0; transform:translateY(16px); animation:lseqWordIn .6s ease 1.3s forwards, lseqWordOut .6s ease 2.7s forwards; }
       @keyframes lseqWordIn { to { opacity:1; transform:none; } }
       @keyframes lseqWordOut { to { opacity:0; transform:translateY(-10px); } }
       .lseq-word h1 { color:#fff; font-size:4.5vh; font-weight:800; letter-spacing:-.03em; margin:0; }
       .lseq-tag { color:var(--lblue); font-size:2vh; font-weight:600; margin-top:.6vh; letter-spacing:.02em; }
 
       .lseq-loadbar { position:absolute; bottom:6vh; left:50%; transform:translateX(-50%); width:min(360px,60vw); height:4px;
-        background:rgba(255,255,255,.12); border-radius:99px; overflow:hidden; z-index:6; opacity:0; animation:lseqBarShow .5s ease 2s forwards, lseqBarHide .5s ease 8.6s forwards; }
-      .lseq-fill { height:100%; width:0; background:linear-gradient(90deg,var(--lblue),var(--lime)); border-radius:99px; animation:lseqFillBar 6.6s linear 2s forwards; }
+        background:rgba(255,255,255,.12); border-radius:99px; overflow:hidden; z-index:6; opacity:0; animation:lseqBarShow .4s ease 1.0s forwards, lseqBarHide .4s ease 4.4s forwards; }
+      .lseq-fill { height:100%; width:0; background:linear-gradient(90deg,var(--lblue),var(--lime)); border-radius:99px; animation:lseqFillBar 3.5s linear 1.0s forwards; }
       @keyframes lseqFillBar { to { width:100%; } }
       @keyframes lseqBarShow { to { opacity:1; } } @keyframes lseqBarHide { to { opacity:0; } }
-      .lseq-loadword { position:absolute; bottom:9vh; left:50%; transform:translateX(-50%); color:var(--ink-3); font-size:1.6vh; font-weight:600; letter-spacing:.04em; z-index:6; opacity:0; animation:lseqBarShow .5s ease 2.1s forwards, lseqBarHide .5s ease 8.6s forwards; }
+      .lseq-loadword { position:absolute; bottom:9vh; left:50%; transform:translateX(-50%); color:var(--ink-3); font-size:1.6vh; font-weight:600; letter-spacing:.04em; z-index:6; opacity:0; animation:lseqBarShow .4s ease 1.1s forwards, lseqBarHide .4s ease 4.4s forwards; }
       .lseq-skip { position:absolute; bottom:5vh; right:5vw; z-index:8; background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.25);
         padding:8px 16px; border-radius:99px; font:inherit; font-size:14px; font-weight:600; cursor:pointer; backdrop-filter:blur(6px); animation:lseqBarShow .5s ease .5s both; }
       .lseq-skip:hover { background:rgba(255,255,255,.24); }
