@@ -1792,9 +1792,6 @@ function LEADERBOARD_HTML(p) {
     width:calc(var(--barw) * 0.86);
     background:linear-gradient(90deg, rgba(193,215,48,.32), rgba(193,215,48,.08));
     border-radius:.5vh; z-index:0; transition:width .8s cubic-bezier(.22,1,.36,1); }
-  .lb .sold .camp { position:relative; z-index:1; display:inline-block; margin-left:.4vw;
-    font-size:calc(var(--rowfs) * .55); font-weight:700; color:#B9CE4B;
-    background:rgba(193,215,48,.14); padding:.15vh .45vw; border-radius:.5vh; vertical-align:middle; }
   .lb .sold .soldnum { position:relative; z-index:1;
     font-family:'Archivo Black','Archivo',sans-serif; color:var(--lime);
     font-size:calc(var(--rowfs) * 1.45); }
@@ -2036,7 +2033,6 @@ function LEADERBOARD_HTML(p) {
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.name + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
-          (x.camp > 0 ? '<span class="camp" title="Campaign units: service-to-sales and finance. Counted, not graded.">+' + x.camp + ' camp</span>' : '') +
         '</td>' +
         cell(x.internetPct, x.prev.internet, 'internet') +
         cell(x.phonePct,    x.prev.phone,    'phone') +
