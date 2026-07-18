@@ -422,6 +422,18 @@ function parseReport(rows, type) {
       }
     } else if (type === "appointment") {
       rec.apptVideoDayPct = toNum(row[idx("Video Day of Appt %")]);
+      // Appointments set and the show rate live on THIS report, not Daily Activity.
+      // "Total Created" counts appointments made in the period; "Total Scheduled" is the
+      // ones actually on the books, which is what "appointments set" should mean.
+      rec.apptTotalCreated = toNum(row[idx("Total Created")]);
+      rec.apptTotalScheduled = toNum(row[idx("Total Scheduled")]);
+      rec.apptTotalShow = toNum(row[idx("Total Show")]);
+      // Percentages here export as fractions (0.857) but accept a whole number too.
+      rec.apptShowPct = (() => {
+        const raw = toNum(row[idx("Total Show %")]);
+        if (raw == null) return null;
+        return raw > 1 ? raw / 100 : raw;
+      })();
     } else if (type === "video") {
       const pctCols = header
         .map((h, i) => (norm(h) === norm("Personalized Video %") ? i : -1))
@@ -436,18 +448,6 @@ function parseReport(rows, type) {
       rec.actEmail = toNum(row[idx("Email")]);
       rec.actApptCreated = toNum(row[idx("Created")]);
       rec.actApptShow = toNum(row[idx("Show")]);
-      // Appointments set comes from "Total Scheduled" (Appt Data), not "Created":
-      // Created counts appointments made that day, which may be for any future date.
-      rec.actApptSet = toNum(row[idx("Total Scheduled")]) ?? toNum(row[idx("Scheduled")]) ?? rec.actApptCreated;
-      // Show rate is taken straight from the report's own "Total Show %" so it matches
-      // what DriveCentric shows. Exports may give a fraction (0.55) or a percent (55),
-      // so normalise either into a 0-1 fraction.
-      rec.actShowPct = (() => {
-        const raw = toNum(row[idx("Total Show %")]) ?? toNum(row[idx("Show %")]) ??
-                    toNum(row[idx("Appt Show %")]) ?? toNum(row[idx("Total Show Percent")]);
-        if (raw == null) return null;
-        return raw > 1 ? raw / 100 : raw;
-      })();
       rec.actOppsTotal = toNum(row[idx("Total")]);
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
       // "Open Tasks" is the posted/outstanding task count on the Workplan; the completion
@@ -1086,7 +1086,6 @@ export default function LeadPerformanceCalculator() {
             oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
             oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
             apptScheduled: rec.actApptScheduled, apptConfirmed: rec.actApptConfirmed,
-            apptSet: rec.actApptSet, showPct: rec.actShowPct,
             apptNoShow: rec.actApptNoShow,
             uploadedAt: new Date().toISOString(),
           };
@@ -5316,6 +5315,19 @@ function oyoRatios(b) {
 /* ---------------- Coaching: associate cards ---------------- */
 
 // Average a person's daily activity across every day we have on file.
+/* The appointment funnel lives in the Standard Appointment report, not Daily Activity.
+   That report is month-to-date per person, so its show rate is taken as-is (it is
+   already DriveCentric's own Total Show %) and its scheduled total is spread across the
+   days we have activity for to give a per-day figure comparable to the other habits. */
+function withApptStats(act, st) {
+  if (!act) return act;
+  const out = { ...act };
+  if (!st) return out;
+  if (st.apptShowPct != null) out.showRate = st.apptShowPct;
+  if (st.apptTotalScheduled != null && act.days > 0) out.apptCreated = st.apptTotalScheduled / act.days;
+  return out;
+}
+
 function activityAverages(data, nameKey) {
   const days = Object.keys(data.activity || {});
   const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
@@ -5329,9 +5341,7 @@ function activityAverages(data, nameKey) {
     video: sum("video") / n,
     text: sum("text") / n,
     email: sum("email") / n,
-    // Appointments set per day uses "Total Scheduled" from the report, falling back to
-    // the older "Created" figure for days imported before that column was read.
-    apptCreated: sum("apptSet") > 0 ? sum("apptSet") / n : sum("apptCreated") / n,
+    apptCreated: sum("apptCreated") / n,
     apptShow: sum("apptShow") / n,
     // Tasks is now a completion RATE: total completed / total posted across the month.
     // If no report ever carried a posted count, leave it null so it drops out cleanly.
@@ -5341,18 +5351,9 @@ function activityAverages(data, nameKey) {
     // contact rate is the one that usually separates people: calls are effort,
     // contacts are effectiveness
     contactRate: sum("calls") > 0 ? sum("contacted") / sum("calls") : null,
-    // Show rate comes from the report's own "Total Show %" so it matches DriveCentric.
-    // Across several days the daily percentages are weighted by that day's appointment
-    // count, since a 100% day on one appointment shouldn't outweigh a busy day.
-    showRate: (() => {
-      const withPct = rows.filter((r) => r.showPct != null);
-      if (!withPct.length) return null;
-      const wsum = withPct.reduce((t, r) => t + (r.apptSet ?? r.apptScheduled ?? 0), 0);
-      if (wsum > 0) {
-        return withPct.reduce((t, r) => t + r.showPct * (r.apptSet ?? r.apptScheduled ?? 0), 0) / wsum;
-      }
-      return withPct.reduce((t, r) => t + r.showPct, 0) / withPct.length;
-    })(),
+    // showRate and appointments-set are NOT in the Daily Activity export. They come from
+    // the Standard Appointment report and are layered on in withApptStats() below.
+    showRate: null,
   };
 }
 
@@ -5393,7 +5394,7 @@ function CoachingPanel({ config, store, data, onChange }) {
     // in exactly the terms the person already sees.
     const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
     const ev = evaluateAssociate(s, tiers);
-    return { a, units, stats: s, ev, act: activityAverages(data, norm(a.name)) };
+    return { a, units, stats: s, ev, act: withApptStats(activityAverages(data, norm(a.name)), s) };
   }).sort((x, y) => y.units - x.units);
 
   const withData = scored.filter((r) => r.act);
