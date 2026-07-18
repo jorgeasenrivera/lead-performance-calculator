@@ -922,7 +922,7 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     if (!config || !session) return;
     (async () => {
-      const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
+      const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
       const all = {};
       for (const s of accessible) {
         const r = await loadStrict(storeKey(s.id));
@@ -1249,8 +1249,8 @@ export default function LeadPerformanceCalculator() {
 
   const isAdmin = session.role === "admin";
   const isOverseer = session.role === "overseer";
-  const hasOverview = isAdmin || (isOverseer && session.stores.length > 1);
-  const accessibleStores = isAdmin ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
+  const hasOverview = isAdmin || (isOverseer && (session.stores || []).length > 1);
+  const accessibleStores = isAdmin ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
   const currentStore = view !== "admin" ? config.stores.find((s) => s.id === view) : null;
   const overviewStores = isAdmin ? config.stores : accessibleStores;
 
@@ -1370,7 +1370,7 @@ export default function LeadPerformanceCalculator() {
           <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
             {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
             {isAdmin && appModule !== "activity" && <option value="admin">All Stores</option>}
-            {isOverseer && appModule !== "activity" && session.stores.length > 1 && <option value="combined">Combined (my stores)</option>}
+            {isOverseer && appModule !== "activity" && (session.stores || []).length > 1 && <option value="combined">Combined (my stores)</option>}
             {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
 
@@ -1466,7 +1466,7 @@ export default function LeadPerformanceCalculator() {
           </div>
         </>
       ) : accessibleStores.length === 0 ? (
-        <div className="empty">Your account is active but no store has been assigned yet. Your group admin needs to grant you store access in the Access panel.</div>
+        <NoAccessPanel session={session} config={config} onRecheck={refreshProfile} />
       ) : !storeData ? (
         <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} />
       ) : isOverseer ? (
@@ -2347,7 +2347,7 @@ function Splash({ config, session, onEnter, onSignOut }) {
 /* ---------------- Board launcher (after sign-in, role-aware) ---------------- */
 function BoardLauncher({ config, session, onLaunch, onBack }) {
   const isAdmin = session.role === "admin";
-  const stores = isAdmin ? config.stores : config.stores.filter((s) => session.stores.includes(s.id));
+  const stores = isAdmin ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
   const single = stores.length === 1;
   const [opened, setOpened] = useState(false);
 
@@ -5338,8 +5338,8 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
 '@page { size: letter portrait; margin: 12mm; }' +
-'* { box-sizing:border-box; margin:0; padding:0; }' +
-'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; }' +
+'* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
+'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
 '.sheet { max-width:186mm; }' +
 '.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #2A5E9B; padding-bottom:6px; margin-bottom:9px; }' +
 '.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
@@ -5971,6 +5971,57 @@ function EnterNow({ onEnter }) {
   useEffect(() => { onEnter(); }, []); // eslint-disable-line
   return <LoadingScreen label="Loading" />;
 }
+/* Shown when someone is signed in and approved but no store resolves for them.
+   "No access" has several very different causes, and the old message assumed only one.
+   This shows the account it actually loaded and the store ids on it, so an admin can
+   tell in seconds whether it's a second duplicate account, a stale store id, or a
+   grant that simply hasn't been made yet. */
+function NoAccessPanel({ session, config, onRecheck }) {
+  const [checking, setChecking] = useState(false);
+  const mine = session?.stores || [];
+  const existing = (config?.stores || []).map((s) => s.id);
+  const stale = mine.filter((id) => !existing.includes(id));
+  const recheck = async () => {
+    setChecking(true);
+    try { await onRecheck(); } finally { setChecking(false); }
+  };
+  return (
+    <div className="noaccess">
+      <h2 className="noaccess-title">No store is showing for this account yet</h2>
+      {stale.length > 0 ? (
+        <p className="noaccess-lead">
+          This account has store access saved, but for {stale.length === 1 ? "a store" : "stores"} that no longer exist.
+          An admin needs to re-grant access to a current store.
+        </p>
+      ) : mine.length === 0 ? (
+        <p className="noaccess-lead">
+          Your account is active, but no store has been assigned to it. Your group admin grants access in the Access panel.
+        </p>
+      ) : (
+        <p className="noaccess-lead">
+          Access is saved on this account but didn't match a store. Try Check again, then send the details below to your admin.
+        </p>
+      )}
+
+      <div className="noaccess-box">
+        <div className="noaccess-row"><span>Signed in as</span><b>{session?.email || "unknown"}</b></div>
+        <div className="noaccess-row"><span>Name on account</span><b>{session?.name || "-"}</b></div>
+        <div className="noaccess-row"><span>Account ID</span><b className="mono">{session?.id || "-"}</b></div>
+        <div className="noaccess-row"><span>Role</span><b>{session?.role || "-"}</b></div>
+        <div className="noaccess-row"><span>Stores on this account</span><b className="mono">{mine.length ? mine.join(", ") : "none"}</b></div>
+        <div className="noaccess-row"><span>Stores that exist</span><b className="mono">{existing.length ? existing.join(", ") : "none"}</b></div>
+      </div>
+
+      <p className="hint noaccess-hint">
+        Admin tip: compare the Account ID above with the person's row in the Access panel. If they don't match,
+        there are two accounts for this person and the access was granted to the other one.
+      </p>
+
+      <button className="btn" onClick={recheck} disabled={checking}>{checking ? "Checking…" : "Check again"}</button>
+    </div>
+  );
+}
+
 function LoadingScreen({ label = "Loading" }) {
   return (
     <div className="loadscreen">
@@ -6774,6 +6825,13 @@ function AccessPanel({ config, session, onChange }) {
 
   const pending = people.filter((u) => u.pending && u.role !== "admin");
   const active = people.filter((u) => !u.pending || u.role === "admin");
+  // Emails that appear on more than one account. Granting access to one of them leaves
+  // the person locked out if they sign in with the other.
+  const dupeEmails = (() => {
+    const seen = new Map();
+    for (const u of people) { const k = norm(u.email); seen.set(k, (seen.get(k) || 0) + 1); }
+    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+  })();
 
   return (
     <div className="access">
@@ -6803,8 +6861,12 @@ function AccessPanel({ config, session, onChange }) {
           <tbody>
             {active.map((u) => (
               <tr key={u.id}>
-                <td><b>{u.name || "-"}</b></td>
-                <td className="mono">{u.email}</td>
+                <td><b>{u.name || "-"}</b>
+                  {/* Two accounts for one person is the usual reason access "doesn't
+                      stick": the grant lands on one of them and they sign in as the other. */}
+                  {dupeEmails.has(norm(u.email)) && <span className="dupe-tag" title="Another account uses this same email. Access granted here won't apply to the other one.">duplicate</span>}
+                </td>
+                <td className="mono">{u.email}<span className="acct-id" title="Account ID — compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span></td>
                 <td>
                   {u.role === "admin" ? "Group Admin" : (
                     <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
@@ -7958,6 +8020,20 @@ function Style() {
         padding:4px 9px; border-radius:20px;
         font-variant-numeric:tabular-nums; opacity:.7; }
       .loading, .empty { padding:64px 24px; color:var(--ink-2); }
+      .noaccess { max-width:560px; margin:48px auto; padding:0 20px; }
+      .noaccess-title { font-size:20px; font-weight:800; letter-spacing:-.01em; margin-bottom:6px; }
+      .noaccess-lead { color:var(--ink-2); font-size:14px; margin-bottom:16px; }
+      .noaccess-box { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+      .noaccess-row { display:flex; justify-content:space-between; gap:16px; padding:9px 14px; border-bottom:1px solid var(--line); font-size:13px; }
+      .noaccess-row:last-child { border-bottom:none; }
+      .noaccess-row span { color:var(--ink-3); }
+      .noaccess-row b { text-align:right; word-break:break-all; }
+      .noaccess-row b.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+      .noaccess-hint { margin:14px 0 16px; }
+      .acct-id { display:inline-block; margin-left:8px; font-size:10.5px; color:var(--ink-3);
+        background:rgba(0,0,0,.05); padding:1px 6px; border-radius:99px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+      .dupe-tag { display:inline-block; margin-left:8px; font-size:10px; font-weight:800; text-transform:uppercase;
+        letter-spacing:.04em; background:rgba(229,71,60,.13); color:#C13529; padding:1px 7px; border-radius:99px; }
       .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
         padding:18px 20px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
