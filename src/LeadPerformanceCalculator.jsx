@@ -5232,6 +5232,10 @@ const OYO_CHANNELS = [
   { id: "phone", label: "Phone" },
   { id: "campaign", label: "Campaign" },
 ];
+/* How a month's sales typically split by channel: internet drives about half the cars,
+   with showroom and phone splitting the other half. Used to translate the remaining
+   gap to goal into a concrete lead count per channel at the person's own closing %. */
+const OYO_CHANNEL_MIX = { internet: 0.5, showroom: 0.25, phone: 0.25 };
 
 // The outreach the workbook tracks, and the field each one lives in.
 const OYO_OUTREACH = [
@@ -5655,15 +5659,24 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   // page and on The Board (from the Delivery Summary), so the two never disagree. Leads
   // per car is derived from that same rate, so a channel you convert well needs fewer.
   const chanPct = { showroom: stats.showroomPct, internet: stats.internetPct, phone: stats.phonePct, campaign: stats.campaignPct };
-  const leadRows = OYO_CHANNELS.map((c) => {
-    const cr = chanPct[c.id];                       // board-aligned delivered %
-    if (cr == null || cr <= 0) return "";
-    const leadsPerCar = 1 / cr;                       // at that rate, leads needed per delivered car
+  // The remaining gap to goal, split by the typical channel mix (internet half, showroom
+  // and phone a quarter each), then turned into leads at this person's own closing %.
+  let leadTotal = 0;
+  const leadRows = (goal > 0 && stillNeeded > 0) ? OYO_CHANNELS.map((c) => {
+    const cr = chanPct[c.id];
+    const share = OYO_CHANNEL_MIX[c.id] ?? 0;
+    const cars = stillNeeded * share;
+    if (cr == null || cr <= 0) {
+      return '<tr class="co-nodata"><td>' + esc(c.label) + '</td><td class="r">-</td>' +
+        '<td class="r">' + (Math.round(cars * 10) / 10) + '</td><td class="r">-</td></tr>';
+    }
+    const leads = Math.ceil(cars / cr);
+    leadTotal += leads;
     return '<tr><td>' + esc(c.label) + '</td>' +
       '<td class="r">' + pct(cr) + '</td>' +
-      '<td class="r">' + Math.ceil(leadsPerCar) + '</td>' +
-      '<td class="r"><b>' + (goal > 0 ? Math.ceil(leadsPerCar * goal) : "-") + '</b></td></tr>';
-  }).join("");
+      '<td class="r">' + (Math.round(cars * 10) / 10) + '</td>' +
+      '<td class="r"><b>' + leads + '</b></td></tr>';
+  }).join("") : "";
 
   // ---- BEHAVIOUR VS TOP 6 ----
   const behaviourRows = (act && topAvg) ? BEHAVIOURS
@@ -5787,10 +5800,10 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   '<tbody>' + outreachRows + '</tbody></table></div>' +
 '</div>' +
 (leadRows ?
-  '<h2>How many leads each car takes, by channel</h2>' +
-  '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Leads per car</th><th class="r">' + (goal > 0 ? "For your goal" : "") + '</th></tr></thead>' +
+  '<h2>How many leads does it take to reach your goal?</h2>' +
+  '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
   '<tbody>' + leadRows + '</tbody></table>' +
-  '<p class="note">"You deliver" is your delivered rate from the Delivery Summary, the same number on The Board. The better you convert a channel, the fewer leads each delivered car takes.</p>' : '')
+  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' split by the typical mix (internet about half, showroom and phone the rest), at your own closing rates: about <b>' + leadTotal + ' leads</b> gets you to your goal. Raise a closing rate and that number drops.</p>' : '')
 : '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
 '<div class="sign">' +
@@ -5985,40 +5998,50 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             </tbody>
           </table>
 
-          <h3 className="ac-h3">How many leads each car takes, by channel</h3>
-          <p className="hint">
-            "You deliver" is your delivered rate from the Delivery Summary, the same number on The Board.
-            The better you convert a channel, the fewer leads each delivered car takes.
-          </p>
-          <table className="oyo-table">
-            <thead>
-              <tr><th>Channel</th><th>You deliver</th><th>Leads per car</th>
-                <th>For 1 car</th><th>For 5</th>{goal > 0 && <th>For the goal</th>}</tr>
-            </thead>
-            <tbody>
-              {OYO_CHANNELS.map((c) => {
-                // Use the board-aligned delivered % (from the Delivery Summary), not a
-                // separately-computed baseline rate, so this matches the top of the card.
-                const cr = monthStats ? monthStats[c.id + "Pct"] : null;
-                const lpc = cr && cr > 0 ? 1 / cr : null;
-                if (cr == null || cr <= 0 || !lpc) return (
-                  <tr key={c.id} className="co-nodata">
-                    <td><b>{c.label}</b></td><td>-</td><td>-</td><td>-</td><td>-</td>{goal > 0 && <td>-</td>}
-                  </tr>
-                );
-                return (
-                  <tr key={c.id}>
-                    <td><b>{c.label}</b></td>
-                    <td>{fmtPct(cr)}</td>
-                    <td>{fmtNum(lpc)}</td>
-                    <td>{Math.ceil(lpc)}</td>
-                    <td>{Math.ceil(lpc * 5)}</td>
-                    {goal > 0 && <td><b>{Math.ceil(lpc * goal)}</b></td>}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <h3 className="ac-h3">How many leads does it take to reach your goal?</h3>
+          {goal === 0 ? (
+            <p className="hint">Set a monthly goal above and this turns the gap into a concrete lead count per channel.</p>
+          ) : stillNeeded === 0 ? (
+            <p className="hint">Goal met. Nothing left to split; anything from here is gravy.</p>
+          ) : (() => {
+            // The remaining gap, split by the typical channel mix (internet about half of
+            // the cars, showroom and phone the rest), turned into leads at this person's
+            // own closing rates. Edit the goal and these move with it.
+            const rows = OYO_CHANNELS.map((c) => {
+              const cr = monthStats ? monthStats[c.id + "Pct"] : null;
+              const share = OYO_CHANNEL_MIX[c.id] ?? 0;
+              const cars = stillNeeded * share;
+              const leads = cr && cr > 0 ? Math.ceil(cars / cr) : null;
+              return { c, cr, cars, leads };
+            });
+            const total = rows.reduce((t, r) => t + (r.leads ?? 0), 0);
+            const missing = rows.some((r) => r.leads == null);
+            return (
+              <>
+                <table className="oyo-table">
+                  <thead>
+                    <tr><th>Channel</th><th>You deliver</th><th>Cars of the gap</th><th>Leads needed</th></tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(({ c, cr, cars, leads }) => (
+                      <tr key={c.id} className={leads == null ? "co-nodata" : ""}>
+                        <td><b>{c.label}</b></td>
+                        <td>{cr && cr > 0 ? fmtPct(cr) : "-"}</td>
+                        <td>{Math.round(cars * 10) / 10}</td>
+                        <td>{leads == null ? "-" : <b>{leads}</b>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="hint">
+                  Your remaining <b>{stillNeeded}</b> car{stillNeeded === 1 ? "" : "s"}, split by the typical mix
+                  (internet about half, showroom and phone the rest), at your own closing rates:
+                  about <b>{total} leads</b> gets you to your goal.{missing ? " Channels without a delivered % yet are left out of that count." : ""} Raise
+                  a closing rate and that number drops.
+                </p>
+              </>
+            );
+          })()}
         </>
       )}
 
