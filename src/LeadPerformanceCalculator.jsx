@@ -5330,16 +5330,21 @@ function activityAverages(data, nameKey) {
   };
 }
 
+/* `impact` orders these by how directly the habit moves the closing ratio, following the
+   funnel from the sale backwards: an appointment that shows is one step from a delivery,
+   setting the appointment is the step before that, and so on down to raw outreach volume.
+   The coaching print lists them in this order so the top of the page is where the
+   biggest gain is, not just the first metric that happened to be collected. */
 const BEHAVIOURS = [
-  { id: "calls", label: "Calls per day", kind: "num" },
-  { id: "contacted", label: "Contacts per day", kind: "num" },
-  { id: "contactRate", label: "Contact rate", kind: "pct" },
-  { id: "video", label: "Personalized videos per day", kind: "num" },
-  { id: "text", label: "Texts per day", kind: "num" },
-  { id: "email", label: "Emails per day", kind: "num" },
-  { id: "apptCreated", label: "Appointments set per day", kind: "num" },
-  { id: "showRate", label: "Appointment show rate", kind: "pct" },
-  { id: "tasks", label: "Task completion rate", kind: "pct" },
+  { id: "showRate", label: "Appointment show rate", kind: "pct", impact: 1 },
+  { id: "apptCreated", label: "Appointments set per day", kind: "num", impact: 2 },
+  { id: "contactRate", label: "Contact rate", kind: "pct", impact: 3 },
+  { id: "video", label: "Personalized videos per day", kind: "num", impact: 4 },
+  { id: "contacted", label: "Contacts per day", kind: "num", impact: 5 },
+  { id: "calls", label: "Calls per day", kind: "num", impact: 6 },
+  { id: "tasks", label: "Task completion rate", kind: "pct", impact: 7 },
+  { id: "text", label: "Texts per day", kind: "num", impact: 8 },
+  { id: "email", label: "Emails per day", kind: "num", impact: 9 },
 ];
 
 function CoachingPanel({ config, store, data, onChange }) {
@@ -5509,7 +5514,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     '<tr><td>' + esc(f.def.short) + '</td>' +
     '<td class="r">' + (f.val == null ? "no data" : (f.def.kind === "pct" ? pct(f.val) : num(f.val))) + '</td>' +
     '<td class="r">' + (f.def.kind === "pct" ? f.min + "%" : f.min) + '</td>' +
-    '<td class="r bad">to work on</td></tr>'
+    '<td class="r bad"><span class="mk">&#9660;</span>to work on</td></tr>'
   ).join("");
 
   // ---- WHAT IT TAKES (outreach per car) ----
@@ -5522,7 +5527,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
       '<td class="r">' + num(per) + '</td>' +
       '<td class="r"><b>' + num(target) + '</b></td>' +
       '<td class="r">' + num(doing) + '</td>' +
-      '<td class="r ' + (ok ? "good" : "bad") + '">' + (ok ? "on pace" : "behind") + '</td></tr>';
+      '<td class="r ' + (ok ? "good" : "bad") + '"><span class="mk">' + (ok ? "&#9650;" : "&#9660;") + '</span>' + (ok ? "on pace" : "behind") + '</td></tr>';
   }).join("") : "";
 
   // ---- LEADS PER CAR BY CHANNEL ----
@@ -5541,15 +5546,24 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   }).join("");
 
   // ---- BEHAVIOUR VS TOP 6 ----
-  const behaviourRows = (act && topAvg) ? BEHAVIOURS.filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null).map((b) => {
-    const f = b.kind === "pct" ? pct : num;
-    const ratio = act[b.id] / topAvg[b.id];
-    const state = ratio < 0.85 ? "bad" : ratio > 1.1 ? "good" : "";
-    const barPct = Math.max(3, Math.min(100, ratio * 70));   // 70% of track = parity, same as the card
-    return '<tr><td>' + esc(b.label) + '</td>' +
-      '<td><div class="mini"><div class="mini-bench"></div><div class="mini-bar ' + state + '" style="width:' + barPct + '%"></div></div></td>' +
-      '<td class="r"><b>' + f(act[b.id]) + '</b> <span class="vs">vs ' + f(topAvg[b.id]) + '</span></td></tr>';
-  }).join("") : "";
+  const behaviourRows = (act && topAvg) ? BEHAVIOURS
+    .filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null)
+    .slice()
+    .sort((x, y) => (x.impact || 99) - (y.impact || 99))   // biggest lever on closing first
+    .map((b, i) => {
+      const f = b.kind === "pct" ? pct : num;
+      const ratio = act[b.id] / topAvg[b.id];
+      const state = ratio < 0.85 ? "bad" : ratio > 1.1 ? "good" : "par";
+      // Never lean on colour alone: a mark and a word carry the meaning in grayscale.
+      const mark = state === "bad" ? "&#9660;" : state === "good" ? "&#9650;" : "&#9679;";
+      const word = state === "bad" ? "focus here" : state === "good" ? "strength" : "on par";
+      const barPct = Math.max(3, Math.min(100, ratio * 70));   // 70% of track = parity, same as the card
+      return '<tr class="' + state + '-row"><td class="rk">' + (i + 1) + '</td>' +
+        '<td>' + esc(b.label) + '</td>' +
+        '<td><div class="mini"><div class="mini-bench"></div><div class="mini-bar ' + state + '" style="width:' + barPct + '%"></div></div></td>' +
+        '<td class="r"><b>' + f(act[b.id]) + '</b> <span class="vs">vs ' + f(topAvg[b.id]) + '</span></td>' +
+        '<td class="r ' + state + '"><span class="mk">' + mark + '</span>' + word + '</td></tr>';
+    }).join("") : "";
 
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
@@ -5557,17 +5571,17 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
 'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
 '.sheet { max-width:186mm; }' +
-'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #2A5E9B; padding-bottom:6px; margin-bottom:9px; }' +
+'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #1A2430; padding-bottom:6px; margin-bottom:9px; }' +
 '.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
 '.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
-'.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#2A5E9B; color:#fff; margin-bottom:4px; }' +
+'.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#1A2430; color:#fff; margin-bottom:4px; }' +
 '.goalbox { text-align:right; }' +
-'.goalbox b { font-size:26px; font-weight:800; color:#2A5E9B; display:block; line-height:1; }' +
+'.goalbox b { font-size:26px; font-weight:800; color:#12212F; display:block; line-height:1; }' +
 '.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
-'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #2A5E9B; background:linear-gradient(90deg, rgba(42,94,155,.08), transparent 60%); }' +
+'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
 '.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
-'.why.bad { border-left-color:#C13529; background:#FBEEEC; }' +
-'.why.good { border-left-color:#1E7A3C; background:#EAF6EE; }' +
+'.why.bad { border-left-color:#1A2430; border-left-width:6px; background:#E9ECEF; }' +
+'.why.good { border-left-color:#9AA5B1; background:#F7F9FA; }' +
 '.why b { font-size:13px; display:block; margin-bottom:2px; }' +
 '.stats { display:flex; gap:0; border:1px solid #DDE3E9; border-radius:7px; overflow:hidden; margin-top:4px; }' +
 '.stat { flex:1; padding:6px 10px; border-right:1px solid #DDE3E9; }' +
@@ -5576,21 +5590,21 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.stat span { font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
 'table { width:100%; border-collapse:collapse; }' +
 'th { text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:3px 7px; border-bottom:1px solid #DDE3E9; }' +
-'td { padding:3px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'td { padding:2.5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
 'td.r, th.r { text-align:right; }' +
-'.good { color:#1E7A3C; font-weight:700; } .bad { color:#C13529; font-weight:700; }' +
+'.good { color:#5B6874; font-weight:700; } .bad { color:#12212F; font-weight:800; } .par { color:#7A8590; font-weight:700; }' +'.mk { display:inline-block; margin-right:4px; font-size:9px; }' +'.rk { width:14px; color:#8B95A1; font-weight:800; text-align:center; }' +'.bad-row td { background:#F2F4F6; }' +
 '.mini { position:relative; height:11px; background:#EEF1F4; border-radius:6px; overflow:hidden; min-width:220px; }' +
-'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#8AA6C4; border-radius:6px; }' +
-'.mini-bar.good { background:#1E7A3C; } .mini-bar.bad { background:#C13529; }' +
-'.mini-bench { position:absolute; top:-1px; bottom:-1px; left:70%; width:2px; background:#12212F; opacity:.6; z-index:2; }' +
+'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#9AA5B1; border-radius:6px; }' +
+'.mini-bar.good { background:#2B3844; } .mini-bar.par { background:#9AA5B1; } .mini-bar.bad { background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
+'.mini-bench { position:absolute; top:-2px; bottom:-2px; left:70%; width:2px; background:#12212F; z-index:3; }' +
 '.vs { color:#8B95A1; font-weight:600; }' +
 '.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:7px 11px; margin-top:6px; font-size:11.5px; }' +
-'.big b { color:#2A5E9B; }' +
+'.big b { color:#12212F; }' +
 '.pbar-wrap { margin-top:6px; }' +
 '.pbar { position:relative; height:16px; background:#EEF1F4; border-radius:8px; overflow:hidden; }' +
-'.pbar-fill { position:absolute; top:0; left:0; height:100%; background:linear-gradient(90deg,#8AA6C4,#2A5E9B); border-radius:8px; }' +
-'.pbar-fill.good { background:linear-gradient(90deg,#4FB477,#1E7A3C); }' +
-'.pbar-mark { position:absolute; top:-2px; bottom:-2px; width:2px; background:#12212F; z-index:2; }' +
+'.pbar-fill { position:absolute; top:0; left:0; height:100%; border-radius:8px; background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
+'.pbar-fill.good { background:#2B3844; background-image:none; border:none; }' +
+'.pbar-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#12212F; z-index:3; }' +
 '.pbar-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; margin-top:3px; font-weight:600; }' +
 '.cols { display:flex; gap:14px; }' +
 '.cols > div { flex:1; }' +
@@ -5624,9 +5638,9 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 
 (behaviourRows ?
 '<h2>Behavior vs the top ' + (topCount || 6) + ' at this store</h2>' +
-'<table><thead><tr><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th></tr></thead>' +
+'<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
 '<tbody>' + behaviourRows + '</tbody></table>' +
-'<p class="note">The dark line marks what the strongest people here do. Green bars are your strengths; short red bars are the fastest gains.</p>'
+'<p class="note">Ordered by leverage on your closing ratio, strongest first. The upright line is what the top ' + (topCount || 6) + ' here do: solid bar past it is a strength, striped bar short of it is the next gain.</p>'
 : '') +
 
 (goal > 0 ?
@@ -5643,7 +5657,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 // pace progress bar: delivered vs goal, with a marker for where they "should" be by now
 '<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
   (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
-  '<div class="pbar-legend"><span>' + delivered + ' delivered</span>' + (!monthEnd ? '<span>pace marker = today</span>' : '') + '<span>' + goal + ' goal</span></div></div>'
+  '<div class="pbar-legend"><span>' + delivered + ' delivered' + (pace >= goal ? ' (solid = on pace)' : ' (striped = behind pace)') + '</span>' + (!monthEnd ? '<span>| marks today</span>' : '') + '<span>' + goal + ' goal</span></div></div>'
 : '') +
 
 (ratios ?
