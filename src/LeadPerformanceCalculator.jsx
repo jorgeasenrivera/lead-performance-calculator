@@ -225,7 +225,7 @@ function StreakIcon({ data, a, std, min = 3 }) {
   const up = dir === "up";
   return (
     <span className={"streak " + (up ? "streak-up" : "streak-down")}
-      title={up ? `On a ${len}-day streak — calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
+      title={up ? `On a ${len}-day streak: calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
       {up ? "🔥" : "🧊"}<span className="streak-n">{len}</span>
     </span>
   );
@@ -514,7 +514,7 @@ function analyzeImport(prior, after, importedChannels) {
   for (let i = 0; i < present.length - 1; i++) {
     const hi = present[i], lo = present[i + 1];
     if (after[lo] > after[hi] && (after[lo] - after[hi]) >= 5) {
-      flags.push({ level: "warn", msg: `${CHANNEL_LABEL[lo]} (${after[lo]}) is higher than ${CHANNEL_LABEL[hi]} (${after[hi]}). Normally ${CHANNEL_LABEL[hi]} runs higher — this can mean two Delivery Summaries were filed under the wrong channels.` });
+      flags.push({ level: "warn", msg: `${CHANNEL_LABEL[lo]} (${after[lo]}) is higher than ${CHANNEL_LABEL[hi]} (${after[hi]}). Normally ${CHANNEL_LABEL[hi]} runs higher, so this can mean two Delivery Summaries were filed under the wrong channels.` });
     }
   }
   return flags;
@@ -1600,15 +1600,15 @@ function DeliveryGuideSteps() {
     <ol className="guide-steps">
       <li>
         <div className="guide-step-head"><span className="guide-num">1</span><span className="guide-step-title">Pull the <strong>Delivery Summary</strong> report</span></div>
-        <p className="guide-step-body">In DriveCentric, open the report titled exactly <strong>Delivery Summary</strong>. This one report covers all four channels — you filter it by Source, you do not pull a separate report per channel.</p>
+        <p className="guide-step-body">In DriveCentric, open the report titled exactly <strong>Delivery Summary</strong>. This one report covers all four channels: you filter it by Source, you do not pull a separate report per channel.</p>
         <img className="guide-img" src={GUIDE_IMG_REPORT} alt="Delivery Summary report title" />
       </li>
       <li>
         <div className="guide-step-head"><span className="guide-num">2</span><span className="guide-step-title">Set the view to <strong>User</strong> and turn <strong>Round %</strong> OFF</span></div>
-        <p className="guide-step-body">Select the <strong>User</strong> tab so numbers are per associate. Then open the three-dot menu and switch <strong>Round %</strong> off — rounded percentages throw off the delivery math.</p>
+        <p className="guide-step-body">Select the <strong>User</strong> tab so numbers are per associate. Then open the three-dot menu and switch <strong>Round %</strong> off, since rounded percentages throw off the delivery math.</p>
         <div className="guide-ba">
-          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_ON} alt="Round % toggled on" /><figcaption>Before — Round % ON</figcaption></figure>
-          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_OFF} alt="Round % toggled off" /><figcaption>After — Round % OFF</figcaption></figure>
+          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_ON} alt="Round % toggled on" /><figcaption>Before: Round % ON</figcaption></figure>
+          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_OFF} alt="Round % toggled off" /><figcaption>After: Round % OFF</figcaption></figure>
         </div>
       </li>
       <li>
@@ -2652,7 +2652,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
   // A clean text recap of the day the manager can paste into a group chat or email.
   const copyDayReport = () => {
     const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-    const lines = [`Daily Check Out — ${store.name} — ${dayLabel}`, ""];
+    const lines = [`Daily Check Out · ${store.name} · ${dayLabel}`, ""];
     const list = roster.map((a) => ({ a, dp: dayPoints(data, a, day, std), off: isOff(data, a.id, day) }));
     const clean = list.filter((r) => !r.off && !r.dp.noData && r.dp.points === 0);
     const flagged = list.filter((r) => !r.off && !r.dp.noData && r.dp.points > 0).sort((x, y) => y.dp.points - x.dp.points);
@@ -2660,7 +2660,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
     if (clean.length) lines.push(`✅ Qualified (${clean.length}): ${clean.map((r) => r.a.name).join(", ")}`, "");
     if (flagged.length) {
       lines.push(`⚠️ Needs follow-up (${flagged.length}):`);
-      for (const r of flagged) lines.push(`  • ${r.a.name} — ${r.dp.points} pt${r.dp.points === 1 ? "" : "s"} (missed ${r.dp.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")})`);
+      for (const r of flagged) lines.push(`  • ${r.a.name}: ${r.dp.points} pt${r.dp.points === 1 ? "" : "s"} (missed ${r.dp.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")})`);
       lines.push("");
     }
     if (off.length) lines.push(`🌴 Off: ${off.map((r) => r.a.name).join(", ")}`);
@@ -3379,7 +3379,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
           }
         }
         if (!items.length || fullText.trim().length < 20) {
-          setErr("This PDF has no readable text — it looks like a scan or photo. Export the schedule as a PDF from your scheduling software (not a scanned copy), or save it as CSV/Excel.");
+          setErr("This PDF has no readable text; it looks like a scan or photo. Export the schedule as a PDF from your scheduling software (not a scanned copy), or save it as CSV/Excel.");
           setBusy(false); return;
         }
         // month from the page text (e.g. "JULY 2026")
@@ -3545,7 +3545,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
               <input type="file" accept=".csv,.xlsx,.xls,.xlsm,.pdf" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
               <div className="dz-icon">⇩</div>
               <div className="dz-title">{busy ? "Reading…" : "Drop or choose the schedule"}</div>
-              <div className="dz-sub">Upload an <b>Excel workbook</b>, <b>CSV</b>, or <b>PDF</b>. Team grids and name-based calendar PDFs are read automatically — team and individual OFF/VAC days. A simple <b>Name + Off Dates</b> CSV works too.</div>
+              <div className="dz-sub">Upload an <b>Excel workbook</b>, <b>CSV</b>, or <b>PDF</b>. Team grids and name-based calendar PDFs are read automatically, including team and individual OFF/VAC days. A simple <b>Name + Off Dates</b> CSV works too.</div>
             </label>
             {err && <p className="sched-err">{err}</p>}
             <div className="sched-help">
@@ -3637,11 +3637,27 @@ function PlateTracker({ data, onChange, userName }) {
     history: [...(plate.history || []), { t: new Date().toISOString(), by: userName, action, detail }],
   });
 
+  const [plateErr, setPlateErr] = useState("");
   const addPlate = () => {
     const t = tag.trim().toUpperCase(); if (!t) return;
-    if (dayPlates.some((p) => p.tag === t)) return;
+    setPlateErr("");
+    // Never came back on an earlier day: hard stop until it's marked returned.
+    if (missingTags.has(t)) {
+      const m = missing.find((x) => x.plate.tag === t);
+      setPlateErr(`${t} has been out since ${m.day} (${m.plate.assignee || "unassigned"}) and was never marked returned. Mark it returned in the banner above before it goes out again.`);
+      return;
+    }
     const now = new Date().toISOString();
     const who = assignee.trim();
+    const stillOut = dayPlates.find((p) => p.tag === t && !p.checkedIn);
+    if (stillOut) {
+      // Hard stop: a plate that hasn't been marked back in can't be re-issued. Its
+      // return has to be logged first, which puts the unlogged hand-back on record.
+      setPlateErr(`${t} is still logged out to ${stillOut.assignee || "unassigned"} and hasn't been marked returned. ` +
+        `Mark it returned first. If it's physically back, that means ${stillOut.assignee || "the previous holder"} returned it without letting a manager know.`);
+      return;
+    }
+    // A plate that was properly returned can go out again; each trip is its own record.
     const plate = {
       id: uid(), tag: t, assignee: who, checkedOut: true, checkedIn: false, by: userName,
       takenAt: now,
@@ -3651,6 +3667,7 @@ function PlateTracker({ data, onChange, userName }) {
     setTag(""); setAssignee("");
   };
   const toggleIn = (id) => {
+    setPlateErr("");
     save(dayPlates.map((p) => {
       if (p.id !== id) return p;
       const nowIn = !p.checkedIn;
@@ -3660,6 +3677,16 @@ function PlateTracker({ data, onChange, userName }) {
     }), { action: "Plate check-in", detail: `${dayPlates.find((p) => p.id === id)?.tag}` });
   };
   const setPlateAssignee = (id, name) => {
+    const p0 = dayPlates.find((p) => p.id === id);
+    if (!p0) return;
+    // Hard stop: a still-out plate can't be handed to someone else. It has to be
+    // marked returned first — if it's physically back, the previous holder returned
+    // it without letting a manager know, and logging the return records that.
+    if (!p0.checkedIn && p0.assignee && name && name !== p0.assignee) {
+      setPlateErr(`${p0.tag} is still logged out to ${p0.assignee} and hasn't been marked returned. ` +
+        `Mark it returned before assigning it to ${name}. If it's physically back, that means ${p0.assignee} returned it without letting a manager know.`);
+      return;
+    }
     save(dayPlates.map((p) => p.id === id
       ? withEvent({ ...p, assignee: name }, "Reassigned", `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`)
       : p),
@@ -3684,7 +3711,9 @@ function PlateTracker({ data, onChange, userName }) {
     if (!prior.length) return;
     const existing = new Set(dayPlates.map((p) => p.tag));
     const now = new Date().toISOString();
-    const carried = prior.filter((p) => !existing.has(p.tag)).map((p) => ({
+    // Only plates that actually came back get re-issued. A plate still out from the
+    // prior day is missing — it sits in the warning banner until it's marked returned.
+    const carried = prior.filter((p) => !existing.has(p.tag) && p.checkedIn && !missingTags.has(p.tag)).map((p) => ({
       ...p, id: uid(), checkedIn: false, checkedOut: true, by: userName, takenAt: now, returnedAt: null,
       history: [...(p.history || []), { t: now, by: userName, action: "Carried forward", detail: `${p.tag} from ${priorDays[0]}, held by ${p.assignee || "unassigned"}` }],
     }));
@@ -3694,8 +3723,51 @@ function PlateTracker({ data, onChange, userName }) {
   const plateDays = Object.keys(plates).sort().reverse();
   const openPlate = historyFor ? dayPlates.find((p) => p.id === historyFor) : null;
 
+  /* A plate that never came back. The most recent record per tag across all days
+     decides its status: if that record is from an earlier day and still not checked
+     in, the plate is missing — it can't go out today until it's marked returned. */
+  const missing = (() => {
+    const latest = {};
+    for (const [d, list] of Object.entries(plates)) {
+      for (const p of list) {
+        const cur = latest[p.tag];
+        if (!cur || d > cur.day || (d === cur.day && (p.takenAt || "") > (cur.plate.takenAt || ""))) {
+          latest[p.tag] = { day: d, plate: p };
+        }
+      }
+    }
+    return Object.values(latest).filter((x) => x.day < day && !x.plate.checkedIn);
+  })();
+  const missingTags = new Set(missing.map((x) => x.plate.tag));
+
+  // Mark a prior day's plate returned from the missing banner, with the late return on the record.
+  const markReturnedPrior = (d, id) => {
+    setPlateErr("");
+    const now = new Date().toISOString();
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[d] = (next.plates[d] || []).map((p) => p.id === id
+      ? { ...p, checkedIn: true, returnedAt: now,
+          history: [...(p.history || []), { t: now, by: userName, action: "Returned (late)", detail: `${p.tag} was still out from ${d}; marked returned on ${day}` }] }
+      : p);
+    const tag2 = (next.plates[d] || []).find((p) => p.id === id)?.tag;
+    onChange(next, { action: "Plate returned late", detail: `${tag2} (out since ${d})` });
+  };
+
   return (
     <div className="plates">
+      {missing.length > 0 && (
+        <div className="plate-missing-banner">
+          <b>⚠ {missing.length === 1 ? "A license plate is missing" : `${missing.length} license plates are missing`}</b>
+          {missing.map((x) => (
+            <div key={x.plate.tag + x.day} className="plate-missing-row">
+              <span><b>{x.plate.tag}</b>: out since {x.day} with {x.plate.assignee || "unassigned"}, never marked returned. It can't go out again until it's checked back in.</span>
+              <button className="btn secondary" onClick={() => markReturnedPrior(x.day, x.plate.id)}>Mark returned now</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {plateErr && <div className="plate-err">{plateErr}</div>}
       <div className="gm-toolbar">
         <select value={day} onChange={(e) => setDay(e.target.value)}>
           <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
@@ -5315,16 +5387,19 @@ function oyoRatios(b) {
 /* ---------------- Coaching: associate cards ---------------- */
 
 // Average a person's daily activity across every day we have on file.
-/* The appointment funnel lives in the Standard Appointment report, not Daily Activity.
-   That report is month-to-date per person, so its show rate is taken as-is (it is
-   already DriveCentric's own Total Show %) and its scheduled total is spread across the
-   days we have activity for to give a per-day figure comparable to the other habits. */
+/* The show rate lives in the Standard Appointment report (its own Total Show %), not
+   Daily Activity, so it's layered on from the monthly stats when that report has been
+   imported. Appointments-set comes from the daily Scheduled column instead. */
 function withApptStats(act, st) {
   if (!act) return act;
   const out = { ...act };
   if (!st) return out;
   if (st.apptShowPct != null) out.showRate = st.apptShowPct;
-  if (st.apptTotalScheduled != null && act.days > 0) out.apptCreated = st.apptTotalScheduled / act.days;
+  // If daily data never carried Scheduled (older imports), the monthly report's
+  // Total Scheduled spread across the days is still better than Created.
+  if ((out.apptCreated == null || out.apptCreated === 0) && st.apptTotalScheduled != null && act.days > 0) {
+    out.apptCreated = st.apptTotalScheduled / act.days;
+  }
   return out;
 }
 
@@ -5341,7 +5416,11 @@ function activityAverages(data, nameKey) {
     video: sum("video") / n,
     text: sum("text") / n,
     email: sum("email") / n,
-    apptCreated: sum("apptCreated") / n,
+    // Appointments set per day = the Daily Activity "Scheduled" column (Appointments
+    // group), averaged per day. "Created" is not used: it counts records touched, which
+    // ran 10x high for some people. Falls back to Created only for old imports made
+    // before Scheduled was stored.
+    apptCreated: sum("apptScheduled") > 0 ? sum("apptScheduled") / n : sum("apptCreated") / n,
     apptShow: sum("apptShow") / n,
     // Tasks is now a completion RATE: total completed / total posted across the month.
     // If no report ever carried a posted count, leave it null so it drops out cleanly.
@@ -5894,7 +5973,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
 
           <h3 className="ac-h3">How many leads each car takes, by channel</h3>
           <p className="hint">
-            "You deliver" is your delivered rate from the Delivery Summary — the same number on The Board.
+            "You deliver" is your delivered rate from the Delivery Summary, the same number on The Board.
             The better you convert a channel, the fewer leads each delivered car takes.
           </p>
           <table className="oyo-table">
@@ -6561,7 +6640,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           onClick={() => fileRef.current?.click()}>
           <div className="dz-icon">⇩</div>
           <div className="dz-title">Drop today's CSVs here</div>
-          <div className="dz-sub">Drop the <strong>Delivery Summary</strong>, Appointment, and Video reports. Every channel comes from the same Delivery Summary, filtered by Source — the tool will ask which channel each delivery file is. New here? Hit <strong>Help</strong> for the step-by-step.</div>
+          <div className="dz-sub">Drop the <strong>Delivery Summary</strong>, Appointment, and Video reports. Every channel comes from the same Delivery Summary, filtered by Source, and the tool will ask which channel each delivery file is. New here? Hit <strong>Help</strong> for the step-by-step.</div>
           <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
         </div>
@@ -7123,7 +7202,7 @@ function AccessPanel({ config, session, onChange }) {
                       stick": the grant lands on one of them and they sign in as the other. */}
                   {dupeEmails.has(norm(u.email)) && <span className="dupe-tag" title="Another account uses this same email. Access granted here won't apply to the other one.">duplicate</span>}
                 </td>
-                <td className="mono">{u.email}<span className="acct-id" title="Account ID — compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span></td>
+                <td className="mono">{u.email}<span className="acct-id" title="Account ID. Compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span></td>
                 <td>
                   {u.role === "admin" ? "Group Admin" : (
                     <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
@@ -8583,6 +8662,15 @@ function Style() {
       .plate-time-edit input { font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--line); border-radius:7px; }
       .plate-returned { color:#1E7A3C; font-weight:600; font-size:13px; }
       .plate-out-tag { color:var(--amber); font-weight:600; font-size:13px; }
+      .plate-missing-banner { background:rgba(229,71,60,.09); border:1px solid rgba(229,71,60,.35);
+        border-radius:14px; padding:12px 16px; margin-bottom:14px; }
+      .plate-missing-banner > b { display:block; color:#C13529; font-size:14px; margin-bottom:6px; }
+      .plate-missing-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
+        padding:6px 0; font-size:13px; color:var(--ink-2); border-top:1px solid rgba(229,71,60,.15); }
+      .plate-missing-row:first-of-type { border-top:none; }
+      .plate-missing-row .btn { flex:0 0 auto; }
+      .plate-err { background:rgba(229,71,60,.09); color:#C13529; font-size:13px; font-weight:600;
+        border-radius:11px; padding:9px 13px; margin-bottom:12px; }
       .plate-hist-btn { border:1px solid var(--line); background:#fff; color:var(--blue); font:inherit; font-size:12px; font-weight:600; padding:4px 10px; border-radius:99px; cursor:pointer; }
       .plate-hist-btn:hover { background:var(--blue); color:#fff; }
       .plate-hist-modal { max-width:560px; width:100%; padding:24px 26px; }
