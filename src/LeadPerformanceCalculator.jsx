@@ -1014,7 +1014,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
-      repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff, statsExcluded: data.statsExcluded,
+      repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -1706,14 +1706,23 @@ function LEADERBOARD_HTML(p) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>${p.storeName} · Leaderboard</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=Archivo+Black&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
     --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
   html,body { height:100%; }
-  body { font-family:'Archivo','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
+  body { font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
     font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
     background:#0E2033; overflow:hidden; }
+  /* Store colors mode: the whole backdrop derives from the store's brand palette,
+     darkened for contrast so the rows and pills still read from across a floor. */
+  body.bg-store { background: color-mix(in srgb, var(--bd, #1D4674), black 62%); }
+  body.bg-store::before {
+    background:
+      radial-gradient(42% 55% at 18% 8%, color-mix(in srgb, var(--bp, #2A5E9B), transparent 20%), transparent 70%),
+      radial-gradient(38% 50% at 82% 12%, color-mix(in srgb, var(--ba, #C1D730), transparent 84%), transparent 70%),
+      radial-gradient(50% 60% at 50% 100%, color-mix(in srgb, var(--bp, #2A5E9B), transparent 60%), transparent 72%);
+  }
   /* slow aurora. Long cycles on purpose: this hangs on a wall all day and must never
      become the thing people look at instead of the numbers. */
   body::before { content:''; position:fixed; inset:-15%; z-index:0; pointer-events:none;
@@ -1743,12 +1752,12 @@ function LEADERBOARD_HTML(p) {
   .head-r { display:flex; align-items:center; gap:2.4vw; }
   .head-logo { width:calc(6.6vh * var(--tscale)); height:calc(6.6vh * var(--tscale)); border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .head-logo img { width:100%; height:100%; object-fit:contain; }
-  .head-title { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(5.4vh * var(--tscale)); letter-spacing:.5px; line-height:1; }
+  .head-title { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.4vh * var(--tscale)); letter-spacing:.5px; line-height:1; }
   .head-sub { font-size:calc(1.7vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
   .total { text-align:right; }
-  .total-num { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
+  .total-num { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
   .total-cap { font-size:calc(1.5vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
-  .clock { text-align:right; font-family:'Archivo','Inter',sans-serif; }
+  .clock { text-align:right; font-family:'Space Grotesk','Inter',sans-serif; }
   .clock-time { font-size:calc(3.2vh * var(--tscale)); font-weight:700; }
   .clock-date { font-size:1.5vh; color:#9FC2E4; display:flex; align-items:center; gap:.4vw; justify-content:flex-end; }
   .live { width:.8vh; height:.8vh; border-radius:50%; background:#69E08A; flex:0 0 auto;
@@ -1784,7 +1793,7 @@ function LEADERBOARD_HTML(p) {
   /* podium badges. Gold, silver, bronze read instantly from across a floor. */
   .badge { display:inline-flex; align-items:center; justify-content:center;
     width:calc(var(--rowfs) * 1.7); height:calc(var(--rowfs) * 1.7); border-radius:50%;
-    font-family:'Archivo Black','Archivo',sans-serif; font-size:calc(var(--rowfs) * .82);
+    font-family:'Space Grotesk',sans-serif;  font-size:calc(var(--rowfs) * .82);
     background:rgba(255,255,255,.08); color:#8FB3D6; }
   .badge.m1 { background:linear-gradient(145deg,#FFD75E,#E0A100); color:#3A2B00;
     box-shadow:0 0 calc(var(--rowfs)*.8) rgba(255,200,60,.55); }
@@ -1805,7 +1814,7 @@ function LEADERBOARD_HTML(p) {
     background:linear-gradient(90deg, rgba(193,215,48,.32), rgba(193,215,48,.08));
     border-radius:.5vh; z-index:0; transition:width .8s cubic-bezier(.22,1,.36,1); }
   .lb .sold .soldnum { position:relative; z-index:1;
-    font-family:'Archivo Black','Archivo',sans-serif; color:var(--lime);
+    font-family:'Space Grotesk',sans-serif;  color:var(--lime);
     font-size:calc(var(--rowfs) * 1.45); }
   .lb .pcell { width:16.6%; white-space:nowrap; }
 
@@ -1823,7 +1832,7 @@ function LEADERBOARD_HTML(p) {
     background-size:220% 100%; animation: shine 5.5s ease-in-out infinite; }
   @keyframes shine { 0% { background-position:180% 0; } 55%,100% { background-position:-60% 0; } }
 
-  .pill { font-family:'Archivo Black','Archivo',sans-serif; font-weight:900; font-size:calc(var(--rowfs) * 1.05);
+  .pill { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(var(--rowfs) * 1.05);
     padding:.3vh 0; border-radius:.9vh; display:inline-block; width:7vw; text-align:center;
     box-sizing:border-box; font-variant-numeric:tabular-nums; }
   .pill.g { background:var(--greenbg); color:var(--green); }
@@ -1847,6 +1856,49 @@ function LEADERBOARD_HTML(p) {
     border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.07); color:#9FC2E4;
     font-size:2.2vh; cursor:pointer; opacity:.16; transition:opacity .25s, background .25s; }
   .gear:hover { opacity:1; background:rgba(255,255,255,.14); }
+  /* ---- Bars style (Digital-Dealership-System look): one huge striped bar per person ---- */
+  .lb2 { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
+  .lb2 th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
+    padding:.6vh .5vw; border-bottom:1px solid rgba(255,255,255,.14); text-align:left; }
+  .lb2 td { padding:var(--rowpad) .5vw; font-size:var(--rowfs); }
+  .lb2 tbody tr:nth-child(odd) { background:rgba(255,255,255,.045); }
+  .lb2 tbody tr td:first-child { border-radius:1vh 0 0 1vh; }
+  .lb2 tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
+  .lb2 .rank { width:5%; text-align:center; }
+  .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb2 .sold2 { width:7%; text-align:right; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+    font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
+  .lb2 .pcell2 { width:11.5%; text-align:center; white-space:nowrap; }
+  /* bigger than before, but capped so a small team's inflated row font can't push
+     the percentage out of its own pill */
+  .lb2 .pcell2 .pill { width:100%; min-width:0; padding-left:.2vw; padding-right:.2vw;
+    font-size:min(calc(var(--rowfs) * .95), 2.75vh); }
+  .lb2 .barcell { width:41.5%; }
+  .lb2 .track2 { position:relative; height:calc(var(--rowfs) * .85); background:rgba(255,255,255,.07);
+    border-radius:99px; overflow:hidden; }
+  .lb2 .fill2 { position:absolute; left:0; top:0; bottom:0; width:var(--barw); border-radius:99px;
+    animation: barGrow 1s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
+  @keyframes barGrow { from { width:0; } }
+  .lb2 .fill2.g { background:repeating-linear-gradient(115deg,#2FBF5F 0 1.2vh,#27A852 1.2vh 2.4vh); }
+  .lb2 .fill2.y { background:repeating-linear-gradient(115deg,#EFD75A 0 1.2vh,#E0C33F 1.2vh 2.4vh); }
+  .lb2 .fill2.r { background:repeating-linear-gradient(115deg,#EF5A64 0 1.2vh,#E04350 1.2vh 2.4vh); }
+  .lb2 tbody tr.leader .nm { color:var(--lime); }
+
+  /* bottom ticker, bars style only: streaks and callouts drift by like a news crawl */
+  .ticker { position:relative; overflow:hidden; margin-top:1vh; border-radius:1vh;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);
+    font-size:calc(2.1vh * var(--tscale)); font-weight:700; padding:.8vh 0; }
+  .ticker-track { display:inline-block; white-space:nowrap; padding-left:100%;
+    animation: tickerMove var(--tickdur, 40s) linear infinite; }
+  @keyframes tickerMove { to { transform: translateX(-100%); } }
+  .ticker-item { display:inline-block; margin-right:3.5vw; }
+  .ticker-item .tk-cap { color:#A8CBEA; font-weight:600; margin-right:.4vw; }
+
+  .tuner-seg { display:flex; gap:.5vw; margin-bottom:1vh; }
+  .tuner-seg button { flex:1; padding:.8vh .5vw; border-radius:.9vh; border:1px solid rgba(255,255,255,.18);
+    background:transparent; color:#BFD9F0; cursor:pointer; font:inherit; font-size:1.6vh; }
+  .tuner-seg button.on { background:#C1D730; border-color:#C1D730; color:#0E2033; font-weight:800; }
+
   .tuner { position:fixed; right:1.2vw; bottom:7vh; z-index:41; width:min(340px, 32vw);
     background:rgba(10,24,40,.96); border:1px solid rgba(255,255,255,.14); border-radius:1.4vh;
     padding:1.6vh 1.4vw; display:none; box-shadow:0 1.5vh 4vh rgba(0,0,0,.55); font-size:1.6vh; }
@@ -1872,6 +1924,18 @@ function LEADERBOARD_HTML(p) {
 <button class="gear" id="gear" title="Display settings">&#9881;</button>
 <div class="tuner" id="tuner">
   <div class="tuner-head">Display <button class="tuner-x" id="tclose">&times;</button></div>
+
+  <label class="tuner-row"><span>Board style</span></label>
+  <div class="tuner-seg">
+    <button id="sty-classic">Classic</button>
+    <button id="sty-bars">Bars</button>
+  </div>
+
+  <label class="tuner-row"><span>Background</span></label>
+  <div class="tuner-seg">
+    <button id="bg-navy">Navy</button>
+    <button id="bg-store">Store colors</button>
+  </div>
 
   <label class="tuner-row">
     <span>Text size <b id="v-t">100%</b></span>
@@ -2010,6 +2074,30 @@ function LEADERBOARD_HTML(p) {
       })
       .sort(function(a,b){ return b.sold - a.sold; });
 
+    // Short display names: first name + last initial ("Sterling B.") to buy the bars
+    // room. If two people collide (Juan R. twice), the last-name prefix grows just
+    // enough to tell them apart (Juan Ra. / Juan Ro.) instead of showing the same tag.
+    (function(){
+      function parts(n){ var t = String(n||'').trim().split(/\\s+/); return { first: t[0]||'', rest: t.slice(1).join(' ') }; }
+      people.forEach(function(x){
+        var pr = parts(x.name);
+        x.disp = pr.rest ? pr.first + ' ' + pr.rest[0] + '.' : pr.first;
+      });
+      var need = true, len = 1;
+      while (need && len < 8) {
+        need = false;
+        var seen = {};
+        people.forEach(function(x){ seen[x.disp] = (seen[x.disp]||0) + 1; });
+        people.forEach(function(x){
+          if (seen[x.disp] > 1) {
+            var pr = parts(x.name);
+            if (pr.rest && pr.rest.length > len) { x.disp = pr.first + ' ' + pr.rest.slice(0, len+1) + '.'; need = true; }
+          }
+        });
+        len++;
+      }
+    })();
+
     var totalSold = people.reduce(function(n,x){ return n + x.sold; }, 0);
     var grandFlag = Math.abs(totalSold - Math.round(totalSold)) > 0.01;
 
@@ -2044,7 +2132,7 @@ function LEADERBOARD_HTML(p) {
       var barw = Math.round((x.sold / maxSold) * 100);
       return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
-        '<td class="nm">' + x.name + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
         '</td>' +
         cell(x.internetPct, x.prev.internet, 'internet') +
@@ -2055,6 +2143,47 @@ function LEADERBOARD_HTML(p) {
 
     if (!rows) rows = '<tr><td colspan="6" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
 
+    // ---- Bars style: rank, name, units, one huge striped bar sized against the leader ----
+    var bars = DISP.style === 'bars';
+    // compact channel pill for the bars view: same tone rules as the classic board,
+    // without the trend arrows, so the row stays clean next to the big bar
+    function cell2(pct, ch){
+      if (pct == null) return '<td class="pcell2"><span class="pill dim">-</span></td>';
+      var tn = tone(pct, ch);
+      return '<td class="pcell2"><span class="pill ' + tn + '"><span class="pill-mark">' + toneMark(tn) + '</span>' + fmtPct(pct) + '</span></td>';
+    }
+    var rows2 = people.map(function(x,i){
+      var medal = i < 3 ? ' m' + (i+1) : '';
+      var ratio = x.sold / maxSold;
+      var t2 = ratio >= 0.75 ? 'g' : ratio >= 0.4 ? 'y' : 'r';
+      var barw = Math.max(2, Math.round(ratio * 100));
+      return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
+        '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
+        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span></td>' +
+        cell2(x.internetPct, 'internet') +
+        cell2(x.phonePct, 'phone') +
+        cell2(x.showroomPct, 'showroom') +
+        '<td class="barcell"><div class="track2"><div class="fill2 ' + t2 + '"></div></div></td>' +
+      '</tr>';
+    }).join('');
+    if (!rows2) rows2 = '<tr><td colspan="7" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
+
+    // ticker items: leader + best of each channel, plus the streaks passed from the tool
+    var tickerItems = [];
+    if (people.length && people[0].sold > 0) tickerItems.push('&#128081; ' + people[0].name + ' leads with ' + people[0].sold + ' units');
+    ['internetPct','phonePct','showroomPct'].forEach(function(k){
+      var best = null;
+      people.forEach(function(x){ if (x[k] != null && (!best || x[k] > best[k])) best = x; });
+      if (best && best[k] > 0) {
+        var lbl = k === 'internetPct' ? 'Top Internet' : k === 'phonePct' ? 'Top Phone' : 'Top Showroom';
+        tickerItems.push('<span class="tk-cap">' + lbl + ':</span>' + best.name + ' ' + fmtPct(best[k]));
+      }
+    });
+    (CFG.ticker || []).forEach(function(t){ tickerItems.push(t); });
+    var tickerHtml = tickerItems.map(function(t){ return '<span class="ticker-item">' + t + '</span>'; }).join('');
+    var tickDur = Math.max(25, tickerItems.length * 7);
+
     root.innerHTML =
       '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
       '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
@@ -2064,25 +2193,40 @@ function LEADERBOARD_HTML(p) {
       '</div></div>'+
       '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
         '<div class="scroller" id="scroller">'+
-        '<table class="lb">'+
-          '<thead><tr>'+
-            '<th class="rank">#</th>'+
-            '<th class="nm">Associate</th>'+
-            '<th class="sold">Delivered</th>'+
-            '<th class="pcell">Internet %</th>'+
-            '<th class="pcell">Phone %</th>'+
-            '<th class="pcell">Showroom %</th>'+
-          '</tr></thead>'+
-          '<tbody>'+rows+'</tbody>'+
-        '</table>'+
+        (bars
+          ? '<table class="lb2">'+
+              '<thead><tr>'+
+                '<th class="rank">#</th>'+
+                '<th class="nm">Associate</th>'+
+                '<th class="sold2" style="text-align:right">Delivered</th>'+
+                '<th class="pcell2" style="text-align:center">Internet %</th>'+
+                '<th class="pcell2" style="text-align:center">Phone %</th>'+
+                '<th class="pcell2" style="text-align:center">Showroom %</th>'+
+                '<th class="barcell">vs leader</th>'+
+              '</tr></thead>'+
+              '<tbody>'+rows2+'</tbody>'+
+            '</table>'
+          : '<table class="lb">'+
+              '<thead><tr>'+
+                '<th class="rank">#</th>'+
+                '<th class="nm">Associate</th>'+
+                '<th class="sold">Delivered</th>'+
+                '<th class="pcell">Internet %</th>'+
+                '<th class="pcell">Phone %</th>'+
+                '<th class="pcell">Showroom %</th>'+
+              '</tr></thead>'+
+              '<tbody>'+rows+'</tbody>'+
+            '</table>')+
         '</div>'+
       '</div>'+
-      '<div class="foot">' +
-        'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
-        'Phone ' + CFG.thresholds.phone.green + '%+ &middot; ' +
-        'Showroom ' + CFG.thresholds.showroom.green + '%+' +
-        ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
-      '</div>';
+      (bars
+        ? '<div class="ticker"><div class="ticker-track" style="--tickdur:'+tickDur+'s">'+tickerHtml+'</div></div>'
+        : '<div class="foot">' +
+            'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
+            'Phone ' + CFG.thresholds.phone.green + '%+ &middot; ' +
+            'Showroom ' + CFG.thresholds.showroom.green + '%+' +
+            ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
+          '</div>');
     tick();
     countUp();
     startScroll();
@@ -2092,6 +2236,7 @@ function LEADERBOARD_HTML(p) {
   // list, holds at the bottom, then springs back to the top with a bounce. Nobody at
   // the bottom of the board should be invisible all day.
   var scrollRAF = null;
+  var idleRefill = null;   // refill timer for boards small enough not to scroll
   function startScroll(){
     if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
     var el = document.getElementById('scroller');
@@ -2100,11 +2245,18 @@ function LEADERBOARD_HTML(p) {
     // let layout settle before measuring
     setTimeout(function(){
       var over = el.scrollHeight - el.clientHeight;
-      if (over <= 4) return;                 // everyone fits: nothing to do
+      if (over <= 4) {
+        // Everyone fits, so there's no scroll cycle to trigger the bar refill.
+        // Give a non-scrolling board the same flourish on a gentle idle timer.
+        if (idleRefill) clearInterval(idleRefill);
+        idleRefill = setInterval(replayBars, 2 * 60 * 1000);
+        return;
+      }
+      if (idleRefill) { clearInterval(idleRefill); idleRefill = null; }
 
       var HOLD_TOP = 4000;                   // pause so the leaders get their moment
       var HOLD_BOTTOM = 2500;
-      var SPEED = 22;                        // px per second: a slow, readable crawl
+      var SPEED = 13;                        // px per second: a slow, readable crawl
       var BLOOP = 950;                       // the spring back to the top
 
       var phase = 'holdTop', t0 = null, from = 0;
@@ -2131,12 +2283,26 @@ function LEADERBOARD_HTML(p) {
         } else if (phase === 'bloop') {
           var p = Math.min(1, dt / BLOOP);
           el.scrollTop = Math.max(0, from * (1 - bloopEase(p)));
-          if (p >= 1) { el.scrollTop = 0; phase = 'holdTop'; t0 = ts; }
+          if (p >= 1) { el.scrollTop = 0; phase = 'holdTop'; t0 = ts; replayBars(); }
         }
         scrollRAF = requestAnimationFrame(frame);
       }
       scrollRAF = requestAnimationFrame(frame);
     }, 400);
+  }
+
+  // When the board springs back to the top, the bars refill from zero as a little
+  // reward moment. Only the bars: the numbers alongside them stay put, so the
+  // figures on screen never look like they changed when they didn't.
+  function replayBars(){
+    var fills = document.querySelectorAll('.fill2');
+    for (var k = 0; k < fills.length; k++) {
+      (function(f){
+        f.style.animation = 'none';
+        void f.offsetWidth;                 // reflow so the animation actually restarts
+        f.style.animation = '';
+      })(fills[k]);
+    }
   }
 
   // numbers roll up rather than snapping into place. Runs on every refresh, so a
@@ -2172,6 +2338,8 @@ function LEADERBOARD_HTML(p) {
       // stamped over every fifteen minutes
       if (!LAST) {
         DISP.tscale = s.boardDisplay.tscale || 1;
+        DISP.style = s.boardDisplay.style || DISP.style;
+        DISP.bg = s.boardDisplay.bg || DISP.bg;
         DISP.squeeze = s.boardDisplay.squeeze || 1;
         DISP.pad = s.boardDisplay.pad || 0;
       }
@@ -2184,9 +2352,14 @@ function LEADERBOARD_HTML(p) {
   }
   /* ---------- display tuning ---------- */
   // Read whatever was saved for this store, and let the person at the TV change it.
-  var DISP = { tscale: 1, squeeze: 1, pad: 0 };
+  var DISP = { tscale: 1, squeeze: 1, pad: 0, style: 'classic', bg: 'navy' };
 
   function applyDisp(){
+    var b = CFG.brand || {};
+    document.body.style.setProperty('--bp', b.primary || '#2A5E9B');
+    document.body.style.setProperty('--bd', b.deep || '#1D4674');
+    document.body.style.setProperty('--ba', b.accent || '#C1D730');
+    document.body.className = DISP.bg === 'store' ? 'bg-store' : '';
     var w = document.getElementById('root');
     if (!w) return;
     w.style.setProperty('--tscale', DISP.tscale);
@@ -2205,6 +2378,24 @@ function LEADERBOARD_HTML(p) {
     if (!gear || !tun) return;
 
     gear.onclick = function(){ tun.classList.toggle('on'); };
+    function paintStyleSeg(){
+      var bc = document.getElementById('sty-classic'), bb = document.getElementById('sty-bars');
+      if (!bc) return;
+      bc.className = DISP.style === 'bars' ? '' : 'on';
+      bb.className = DISP.style === 'bars' ? 'on' : '';
+    }
+    paintStyleSeg();
+    document.getElementById('sty-classic').onclick = function(){ DISP.style='classic'; paintStyleSeg(); if (LAST) render(LAST); };
+    document.getElementById('sty-bars').onclick = function(){ DISP.style='bars'; paintStyleSeg(); if (LAST) render(LAST); };
+    function paintBgSeg(){
+      var bn = document.getElementById('bg-navy'), bs = document.getElementById('bg-store');
+      if (!bn) return;
+      bn.className = DISP.bg === 'store' ? '' : 'on';
+      bs.className = DISP.bg === 'store' ? 'on' : '';
+    }
+    paintBgSeg();
+    document.getElementById('bg-navy').onclick = function(){ DISP.bg='navy'; paintBgSeg(); applyDisp(); };
+    document.getElementById('bg-store').onclick = function(){ DISP.bg='store'; paintBgSeg(); applyDisp(); };
     document.getElementById('tclose').onclick = function(){ tun.classList.remove('on'); };
 
     st.value = Math.round(DISP.tscale * 100);
@@ -2217,7 +2408,7 @@ function LEADERBOARD_HTML(p) {
     sp.oninput = function(){ DISP.pad = parseFloat(sp.value); applyDisp(); };
 
     document.getElementById('treset').onclick = function(){
-      DISP = { tscale: 1, squeeze: 1, pad: 0 };
+      DISP = { tscale: 1, squeeze: 1, pad: 0, style: DISP.style, bg: DISP.bg };
       st.value = 100; ss.value = 100; sp.value = 0;
       applyDisp(); if (LAST) render(LAST);
     };
@@ -2432,14 +2623,31 @@ async function openLeaderboard(config, storeId) {
   // The board runs on a TV all day, so it carries the signed-in user's tokens and
   // refreshes them itself. Without this it would lose access once the data is locked down.
   const tokens = await getTokens();
+  // Streak callouts for the bars-style ticker. Computed here (the app has the streak
+  // logic); refreshed whenever the board is opened. The board adds live leader and
+  // top-channel items itself on every data refresh.
+  let tickerStreaks = [];
+  try {
+    const sdata = await loadShared(`lpc:store:${storeId}:v2`);
+    if (sdata) {
+      const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store?.activityStandards || {}) };
+      const onBoard = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+      for (const a of (sdata.roster || []).filter((x) => x.roleId && onBoard.has(x.roleId))) {
+        const { dir, len } = currentStreak(sdata, a, std);
+        if (dir === "up" && len >= 3) tickerStreaks.push(`&#128293; ${a.name} is on a ${len}-day streak`);
+      }
+    }
+  } catch {}
   const payload = {
     storeId,
     storeKey: `lpc:store:${storeId}:v2`,
     storeName: store?.name || "Store",
     icon: store?.icon || null,
+    brand: store?.brand || DEFAULT_BRAND,
     thresholds,
     roles: config.roles.filter((r) => r.onBoard !== false),
     ym: ym(),
+    ticker: tickerStreaks,
     tokens,
   };
   w.document.open();
@@ -3626,11 +3834,37 @@ function PlateTracker({ data, onChange, userName }) {
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
   const fmtTimeShort = (iso) => iso ? new Date(iso).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
 
-  const save = (nextDayPlates, audit) => {
+  const save = (nextDayPlates, audit, mutate) => {
     const next = JSON.parse(JSON.stringify(data));
     next.plates = next.plates || {};
     next.plates[day] = nextDayPlates;
+    if (mutate) mutate(next);          // registry updates ride in the same write
     onChange(next, audit);
+  };
+
+  /* ---- Plate registry ----
+     Every tag ever logged is remembered in data.plateRegistry, with whether it's a
+     reusable (dealer) plate. Entries match on the END of the number, because people
+     shorthand plates by their last characters: "1UP" finds "7771UP". If the full
+     number shows up later than the shorthand, the registry upgrades itself to the
+     full number and every past record is relinked so the plate's history stays one
+     unbroken trail. */
+  const registry = data.plateRegistry || [];
+  const normTag = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const findRegistryMatch = (t) => {
+    const T = normTag(t);
+    if (!T) return null;
+    const exact = registry.find((r) => normTag(r.tag) === T);
+    if (exact) return { entry: exact, fuller: null };
+    if (T.length >= 3) {
+      // they typed a shorthand of a known plate
+      const known = registry.find((r) => normTag(r.tag).endsWith(T));
+      if (known) return { entry: known, fuller: null };
+    }
+    // they typed a fuller number of a known shorthand: learn the full plate
+    const short = registry.find((r) => normTag(r.tag).length >= 3 && T.endsWith(normTag(r.tag)) && T.length > normTag(r.tag).length);
+    if (short) return { entry: short, fuller: t.trim().toUpperCase() };
+    return null;
   };
   // append an event to a plate's own custody history so the trail survives on the record
   const withEvent = (plate, action, detail) => ({
@@ -3640,8 +3874,38 @@ function PlateTracker({ data, onChange, userName }) {
 
   const [plateErr, setPlateErr] = useState("");
   const addPlate = () => {
-    const t = tag.trim().toUpperCase(); if (!t) return;
+    let t = tag.trim().toUpperCase(); if (!t) return;
     setPlateErr("");
+    // Resolve against the registry: shorthand finds the known plate, and a fuller
+    // number than we knew upgrades the registry and relinks all past records.
+    let registryMutate = null;
+    let enteredAs = null;
+    const hit = findRegistryMatch(t);
+    if (hit) {
+      if (hit.fuller) {
+        const oldTag = hit.entry.tag;
+        t = hit.fuller;
+        enteredAs = null;
+        registryMutate = (next) => {
+          next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === hit.entry.id ? { ...r, tag: hit.fuller } : r);
+          // relink history: the shorthand records were always this plate
+          for (const d of Object.keys(next.plates || {})) {
+            next.plates[d] = next.plates[d].map((p) => p.tag === oldTag
+              ? { ...p, tag: hit.fuller, history: [...(p.history || []), { t: new Date().toISOString(), by: userName, action: "Plate number completed", detail: `${oldTag} is ${hit.fuller}; records relinked` }] }
+              : p);
+          }
+        };
+      } else if (normTag(hit.entry.tag) !== normTag(t)) {
+        enteredAs = t;
+        t = hit.entry.tag;      // shorthand: use the canonical number on the record
+      }
+    } else {
+      // Brand new plate: remember it, and ask whether it's one that will be reused.
+      const reusable = window.confirm(`${t} is new to the tracker.\n\nIs this a plate that will be REUSED (a dealer plate)?\n\nOK = yes, reusable · Cancel = one-time`);
+      registryMutate = (next) => {
+        next.plateRegistry = [...(next.plateRegistry || []), { id: uid(), tag: t, reusable, addedAt: new Date().toISOString() }];
+      };
+    }
     // Never came back on an earlier day: hard stop until it's marked returned.
     if (missingTags.has(t)) {
       const m = missing.find((x) => x.plate.tag === t);
@@ -3662,9 +3926,9 @@ function PlateTracker({ data, onChange, userName }) {
     const plate = {
       id: uid(), tag: t, assignee: who, checkedOut: true, checkedIn: false, by: userName,
       takenAt: now,
-      history: [{ t: now, by: userName, action: "Taken out", detail: `${t} → ${who || "unassigned"}` }],
+      history: [{ t: now, by: userName, action: "Taken out", detail: `${t} → ${who || "unassigned"}` + (enteredAs ? ` (entered as ${enteredAs})` : "") }],
     };
-    save([...dayPlates, plate], { action: "Assigned plate", detail: `${t} → ${who || "unassigned"} at ${fmtTimeShort(now)}` });
+    save([...dayPlates, plate], { action: "Assigned plate", detail: `${t} → ${who || "unassigned"} at ${fmtTimeShort(now)}` }, registryMutate);
     setTag(""); setAssignee("");
   };
   const toggleIn = (id) => {
@@ -5237,6 +5501,25 @@ const OYO_CHANNELS = [
    gap to goal into a concrete lead count per channel at the person's own closing %. */
 const OYO_CHANNEL_MIX = { internet: 0.5, showroom: 0.25, phone: 0.25 };
 
+/* Prefer the person's own sales mix, from their delivered units by channel this month.
+   With very little data a mix is noise (one car = 100% of one channel), so under
+   OYO_MIX_MIN_CARS delivered across the three channels it stays on the typical split
+   and switches to the personal mix automatically once there's enough to read. */
+const OYO_MIX_MIN_CARS = 5;
+function channelMixFor(stats) {
+  const u = {
+    internet: stats?.internetUnits ?? 0,
+    showroom: stats?.showroomUnits ?? 0,
+    phone: stats?.phoneUnits ?? 0,
+  };
+  const total = u.internet + u.showroom + u.phone;
+  if (total < OYO_MIX_MIN_CARS) return { mix: OYO_CHANNEL_MIX, personal: false, total };
+  return {
+    mix: { internet: u.internet / total, showroom: u.showroom / total, phone: u.phone / total },
+    personal: true, total,
+  };
+}
+
 // The outreach the workbook tracks, and the field each one lives in.
 const OYO_OUTREACH = [
   { id: "calls", label: "Calls made" },
@@ -5659,12 +5942,14 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   // page and on The Board (from the Delivery Summary), so the two never disagree. Leads
   // per car is derived from that same rate, so a channel you convert well needs fewer.
   const chanPct = { showroom: stats.showroomPct, internet: stats.internetPct, phone: stats.phonePct, campaign: stats.campaignPct };
-  // The remaining gap to goal, split by the typical channel mix (internet half, showroom
-  // and phone a quarter each), then turned into leads at this person's own closing %.
+  // The remaining gap to goal, split by this person's own sales mix when there's
+  // enough delivered to read one (typical split until then), then turned into leads
+  // at their own closing %.
+  const mixInfo = channelMixFor(stats);
   let leadTotal = 0;
   const leadRows = (goal > 0 && stillNeeded > 0) ? OYO_CHANNELS.map((c) => {
     const cr = chanPct[c.id];
-    const share = OYO_CHANNEL_MIX[c.id] ?? 0;
+    const share = mixInfo.mix[c.id] ?? 0;
     const cars = stillNeeded * share;
     if (cr == null || cr <= 0) {
       return '<tr class="co-nodata"><td>' + esc(c.label) + '</td><td class="r">-</td>' +
@@ -5803,7 +6088,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   '<h2>How many leads does it take to reach your goal?</h2>' +
   '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
   '<tbody>' + leadRows + '</tbody></table>' +
-  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' split by the typical mix (internet about half, showroom and phone the rest), at your own closing rates: about <b>' + leadTotal + ' leads</b> gets you to your goal. Raise a closing rate and that number drops.</p>' : '')
+  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' split by ' + (mixInfo.personal ? 'your own sales mix so far this month (' + mixInfo.total + ' cars)' : 'the typical mix (internet about half, showroom and phone the rest; switches to your own mix at ' + OYO_MIX_MIN_CARS + ' delivered)') + ', at your own closing rates: about <b>' + leadTotal + ' leads</b> gets you to your goal. Raise a closing rate and that number drops.</p>' : '')
 : '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
 '<div class="sign">' +
@@ -6004,12 +6289,13 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           ) : stillNeeded === 0 ? (
             <p className="hint">Goal met. Nothing left to split; anything from here is gravy.</p>
           ) : (() => {
-            // The remaining gap, split by the typical channel mix (internet about half of
-            // the cars, showroom and phone the rest), turned into leads at this person's
-            // own closing rates. Edit the goal and these move with it.
+            // The remaining gap, split by this person's own sales mix once they have
+            // enough delivered to read one (typical split until then), turned into leads
+            // at their own closing rates. Edit the goal and these move with it.
+            const mixInfo = channelMixFor(monthStats);
             const rows = OYO_CHANNELS.map((c) => {
               const cr = monthStats ? monthStats[c.id + "Pct"] : null;
-              const share = OYO_CHANNEL_MIX[c.id] ?? 0;
+              const share = mixInfo.mix[c.id] ?? 0;
               const cars = stillNeeded * share;
               const leads = cr && cr > 0 ? Math.ceil(cars / cr) : null;
               return { c, cr, cars, leads };
@@ -6034,9 +6320,11 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
                   </tbody>
                 </table>
                 <p className="hint">
-                  Your remaining <b>{stillNeeded}</b> car{stillNeeded === 1 ? "" : "s"}, split by the typical mix
-                  (internet about half, showroom and phone the rest), at your own closing rates:
-                  about <b>{total} leads</b> gets you to your goal.{missing ? " Channels without a delivered % yet are left out of that count." : ""} Raise
+                  Your remaining <b>{stillNeeded}</b> car{stillNeeded === 1 ? "" : "s"}, split by{" "}
+                  {mixInfo.personal
+                    ? <>your own sales mix so far this month ({mixInfo.total} cars)</>
+                    : <>the typical mix, internet about half and showroom and phone the rest (switches to your own mix at {OYO_MIX_MIN_CARS} delivered)</>}, at
+                  your own closing rates: about <b>{total} leads</b> gets you to your goal.{missing ? " Channels without a delivered % yet are left out of that count." : ""} Raise
                   a closing rate and that number drops.
                 </p>
               </>
@@ -7867,7 +8155,7 @@ function Style() {
       /* ---- loading screen ---- */
       /* ============ cinematic loading sequence ============ */
       .lseq { position:fixed; inset:0; z-index:500; overflow:hidden; background:#0E2033;
-        font-family:'Archivo','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
+        font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
       .lseq-bg { position:absolute; inset:0; opacity:0; animation:lseqBgIn .8s ease .1s forwards; background:
         radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
         radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
