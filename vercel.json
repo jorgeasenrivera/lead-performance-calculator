@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/ingest.js": {
+      "includeFiles": "node_modules/pdfjs-dist/**"
+    }
+  }
+}
