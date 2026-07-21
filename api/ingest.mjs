@@ -124,12 +124,12 @@ function parseReport(rows, type) {
 
 /* =========================================================================
    PDF: Daily Activity grid.
-   Reality (from live debug): each person's NAME is embedded INSIDE the two
-   header lines, mixed with the column labels, at a drifting position; and
-   "Confirmed" arrives split by ligatures as "Con fi rmed". So: a line with
-   3+ vocabulary words is a header line; delete all vocabulary (including
-   multi-token runs that only match once glued together); what's left are
-   name fragments, accumulated until the "All" row consumes them.
+   Each person's NAME is embedded INSIDE the two header lines, mixed with the
+   column labels, at a drifting position; "Confirmed" arrives split by
+   ligatures as "Con fi rmed". So: a line with 3+ vocabulary words is a header
+   line; delete all vocabulary (including multi-token runs that only match once
+   glued together); what's left are name fragments, accumulated until the "All"
+   row consumes them.
    Data row order (19 numbers after New/Used/All):
    Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet), Campaign,
    App Created, App Scheduled, App Confirmed, App Show, Calls Made, Connects,
@@ -169,8 +169,7 @@ const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone"
 const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /* Remove vocabulary from a token list, including runs of up to 4 consecutive
-   tokens that only form a vocab word when glued ("Con"+"fi"+"rmed"). Returns
-   the surviving (name) tokens. */
+   tokens that only form a vocab word when glued ("Con"+"fi"+"rmed"). */
 function stripVocab(tokens) {
   const kept = [];
   let i = 0;
@@ -189,8 +188,7 @@ function stripVocab(tokens) {
   return kept;
 }
 
-/* Count how many vocab words a line contains (gluing runs), to decide if it
-   is a header line at all. */
+/* Count vocab words in a line (gluing runs), to decide if it's a header. */
 function vocabCount(tokens) {
   let n = 0, i = 0;
   while (i < tokens.length) {
@@ -308,9 +306,15 @@ function applyToStore(data, entries, sourceLabel) {
     repeatFlags: next.repeatFlags, excluded: next.excluded, daysOff: next.daysOff,
     statsExcluded: next.statsExcluded, plateRegistry: next.plateRegistry,
   }));
+
+  // Snapshot only on the FIRST auto-import of a given report type per day —
+  // hourly re-sends would otherwise flush the whole history in a day.
   const snapT = new Date().toISOString();
-  next.snapshots = [{ t: snapT, by: "Auto-import", reason: "Before email import", data: snapCopy },
-    ...(next.snapshots || [])].slice(0, 12);
+  const alreadyToday = entries.every((e) => M.imports?.[day]?.[e.type]);
+  if (!alreadyToday) {
+    next.snapshots = [{ t: snapT, by: "Auto-import", reason: "Before email import", data: snapCopy },
+      ...(next.snapshots || [])].slice(0, 40);
+  }
 
   for (const { rows, type, fileName, actDay: fileDay } of entries) {
     const actDay = (fileDay && fileDay <= day) ? fileDay : day;
