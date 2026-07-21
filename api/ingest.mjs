@@ -123,14 +123,21 @@ function parseReport(rows, type) {
 /* ---------- END extracted code ---------- */
 
 /* =========================================================================
-   PDF: Daily Activity grid (New/Used/All rows per person)
-   Column order: Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet),
-   Campaign, App Created, App Scheduled, App Confirmed, App Show, Calls Made,
-   Connects, Texts, Emails, Videos, Video %, Open Tasks, Completed Tasks,
-   Total Delivered, Total Closing %
-   First block is the STORE header; its All row is the store total.
-   Safety: needs 3+ people AND the parsed store must match a real store,
-   or nothing is written.
+   PDF: Daily Activity grid.
+   Reality (from live debug): each person's NAME is embedded INSIDE the two
+   header lines, mixed with the column labels, at a drifting position; and
+   "Confirmed" arrives split by ligatures as "Con fi rmed". So: a line with
+   3+ vocabulary words is a header line; delete all vocabulary (including
+   multi-token runs that only match once glued together); what's left are
+   name fragments, accumulated until the "All" row consumes them.
+   Data row order (19 numbers after New/Used/All):
+   Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet), Campaign,
+   App Created, App Scheduled, App Confirmed, App Show, Calls Made, Connects,
+   Texts, Emails, Videos, Video %, Open Tasks, Completed Tasks,
+   Total Delivered, Total Closing %.
+   First block is the STORE; its All row is the store total.
+   Safety: 3+ people AND parsed store must match a real store, else nothing
+   is written.
    ========================================================================= */
 async function extractPdfLines(buffer) {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
@@ -154,34 +161,56 @@ async function extractPdfLines(buffer) {
   return lines;
 }
 
-const DA_VOCAB = ["netleads","net","leads","showroom","phoneups","phone","ups","ilmleads","ilm",
-  "campaign","appcreated","appscheduled","appconfirmed","appshow","app","created","scheduled",
-  "confirmed","show","callsmade","calls","made","connects","texts","text","emails","email",
-  "videos","video","opentasks","open","tasks","completedtasks","completed",
-  "totaldelivered","totalclosing","total","delivered","closing"];
+const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone","ups",
+  "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
+  "created","scheduled","confirmed","show","callsmade","calls","made","connects","texts",
+  "text","emails","email","videos","video","opentasks","open","tasks","completedtasks",
+  "completed","totaldelivered","totalclosing","total","delivered","closing"]);
 const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/* True if the candidate is nothing but header vocabulary. Matching on the
-   squashed string survives ligature splits like "Con fi rmed". */
-function isHeaderNoise(candidate) {
-  let s = squashT(candidate).replace(/%/g, "");
-  if (!s) return true;
-  let changed = true;
-  while (changed && s.length) {
-    changed = false;
-    for (const w of DA_VOCAB) {
-      if (s.startsWith(w)) { s = s.slice(w.length); changed = true; break; }
-      if (s.endsWith(w)) { s = s.slice(0, -w.length); changed = true; break; }
+/* Remove vocabulary from a token list, including runs of up to 4 consecutive
+   tokens that only form a vocab word when glued ("Con"+"fi"+"rmed"). Returns
+   the surviving (name) tokens. */
+function stripVocab(tokens) {
+  const kept = [];
+  let i = 0;
+  while (i < tokens.length) {
+    let consumed = 0;
+    for (let len = 4; len >= 1; len--) {
+      if (i + len > tokens.length) continue;
+      const glued = squashT(tokens.slice(i, i + len).join(""));
+      if (glued && DA_VOCAB.has(glued)) { consumed = len; break; }
     }
+    if (consumed) { i += consumed; continue; }
+    const t = tokens[i];
+    if (squashT(t)) kept.push(t);
+    i++;
   }
-  return s.length < 3;
+  return kept;
+}
+
+/* Count how many vocab words a line contains (gluing runs), to decide if it
+   is a header line at all. */
+function vocabCount(tokens) {
+  let n = 0, i = 0;
+  while (i < tokens.length) {
+    let consumed = 0;
+    for (let len = 4; len >= 1; len--) {
+      if (i + len > tokens.length) continue;
+      const glued = squashT(tokens.slice(i, i + len).join(""));
+      if (glued && DA_VOCAB.has(glued)) { consumed = len; break; }
+    }
+    if (consumed) { n++; i += consumed; } else i++;
+  }
+  return n;
 }
 
 function mapDailyActivityGrid(lines) {
   const isNum = (t) => /^[\d,]+$/.test(t) || t === "-" || t === "∞" || /^\d+\.?\d*%$/.test(t);
   const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
 
-  let storeName = null, curName = null, sawHeaderSig = false;
+  let storeName = null, sawHeaderSig = false;
+  let nameParts = [];
   const people = {};
 
   for (const L of lines) {
@@ -191,26 +220,25 @@ function mapDailyActivityGrid(lines) {
     const rowTag = texts[0];
 
     if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
-      if (rowTag !== "All" || !curName) continue;
+      if (rowTag !== "All") continue;
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 19) continue;
+      const nm = nameParts.join(" ").replace(/\s+/g, " ").trim();
+      nameParts = [];
+      if (!nm) continue;
       const v = nums.slice(0, 19).map(val);
-      if (!storeName) { storeName = curName; curName = null; continue; }
-      people[norm(curName)] = { displayName: curName, cols: v };
-      curName = null;
+      if (!storeName) { storeName = nm; continue; } // first block = store totals
+      people[norm(nm)] = { displayName: nm, cols: v };
       continue;
     }
 
-    // Name = the non-numeric tokens BEFORE any header vocabulary starts,
-    // and only if what's left isn't header noise itself.
-    const nonNum = texts.filter((t) => !isNum(t));
-    const nameTokens = [];
-    for (const t of nonNum) {
-      if (DA_VOCAB.includes(squashT(t))) break;
-      nameTokens.push(t);
+    // Header lines (3+ vocab words) may carry name fragments mixed in.
+    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
+    if (vocabCount(nonNum) >= 3) {
+      const frag = stripVocab(nonNum);
+      if (frag.length) nameParts.push(frag.join(" "));
     }
-    const candidate = nameTokens.join(" ").trim();
-    if (candidate && !isHeaderNoise(candidate)) curName = candidate;
+    // Lines with no vocabulary (like the report title) are ignored.
   }
   if (!sawHeaderSig || Object.keys(people).length < 3) return null;
 
@@ -418,9 +446,9 @@ export default async function handler(req, res) {
         actDay: activityDateFrom(a.filename) });
     }
 
-    // PDFs: the Daily Activity grid names its own store in the header, so one
-    // shared address works for every store. If the parsed store matches no
-    // real store, the parse is suspect and NOTHING is written.
+    // PDFs: the Daily Activity grid names its own store, so one shared address
+    // works for every store. If the parsed store matches no real store, the
+    // parse is suspect and NOTHING is written.
     for (const a of pdfs) {
       try {
         const lines = await extractPdfLines(Buffer.from(a.content));
@@ -429,14 +457,16 @@ export default async function handler(req, res) {
           const byHeader = (cfg?.stores || []).find((s) => squash(s.name) === squash(mapped.storeName));
           if (!byHeader) {
             pdfReads.push({ file: a.filename, mapped: false,
-              note: `parsed store "${mapped.storeName}" matches no store; nothing written` });
+              note: `parsed store "${mapped.storeName}" matches no store; nothing written`,
+              parsedPeople: mapped.rows.slice(2).map((r) => r[0]) });
             continue;
           }
           store = byHeader;
           entries.push({ rows: mapped.rows, type: "activity", fileName: a.filename || "email.pdf",
             actDay: activityDateFrom(a.filename) || activityDateFrom(subject) });
           pdfReads.push({ file: a.filename, store: mapped.storeName,
-            people: mapped.rows.length - 2, mapped: true });
+            people: mapped.rows.length - 2, mapped: true,
+            names: mapped.rows.slice(2).map((r) => r[0]) });
         } else {
           const dbg = [];
           for (const L of lines.slice(0, 40)) {
