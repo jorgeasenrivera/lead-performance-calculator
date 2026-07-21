@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/ingest.js": {
+    "api/**": {
       "includeFiles": "node_modules/pdfjs-dist/**"
     }
   }
