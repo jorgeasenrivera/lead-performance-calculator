@@ -124,12 +124,13 @@ function parseReport(rows, type) {
 
 /* =========================================================================
    PDF: Daily Activity grid (New/Used/All rows per person)
-   Column order in the PDF:
-   Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet), Campaign,
-   App Created, App Scheduled, App Confirmed, App Show, Calls Made, Connects,
-   Texts, Emails, Videos, Video %, Open Tasks, Completed Tasks,
+   Column order: Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet),
+   Campaign, App Created, App Scheduled, App Confirmed, App Show, Calls Made,
+   Connects, Texts, Emails, Videos, Video %, Open Tasks, Completed Tasks,
    Total Delivered, Total Closing %
-   First person-block is the STORE header; its All row is the store total.
+   First block is the STORE header; its All row is the store total.
+   Safety: needs 3+ people AND the parsed store must match a real store,
+   or nothing is written.
    ========================================================================= */
 async function extractPdfLines(buffer) {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
@@ -153,7 +154,28 @@ async function extractPdfLines(buffer) {
   return lines;
 }
 
-const DA_HEADER_WORDS = /^(net|leads?|showroom|phone|ups|ilm|campaign|app|created|scheduled|confirmed|show|calls?|made|connects?|texts?|emails?|videos?|video|%|open|tasks?|completed|total|delivered|closing)$/i;
+const DA_VOCAB = ["netleads","net","leads","showroom","phoneups","phone","ups","ilmleads","ilm",
+  "campaign","appcreated","appscheduled","appconfirmed","appshow","app","created","scheduled",
+  "confirmed","show","callsmade","calls","made","connects","texts","text","emails","email",
+  "videos","video","opentasks","open","tasks","completedtasks","completed",
+  "totaldelivered","totalclosing","total","delivered","closing"];
+const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/* True if the candidate is nothing but header vocabulary. Matching on the
+   squashed string survives ligature splits like "Con fi rmed". */
+function isHeaderNoise(candidate) {
+  let s = squashT(candidate).replace(/%/g, "");
+  if (!s) return true;
+  let changed = true;
+  while (changed && s.length) {
+    changed = false;
+    for (const w of DA_VOCAB) {
+      if (s.startsWith(w)) { s = s.slice(w.length); changed = true; break; }
+      if (s.endsWith(w)) { s = s.slice(0, -w.length); changed = true; break; }
+    }
+  }
+  return s.length < 3;
+}
 
 function mapDailyActivityGrid(lines) {
   const isNum = (t) => /^[\d,]+$/.test(t) || t === "-" || t === "∞" || /^\d+\.?\d*%$/.test(t);
@@ -165,7 +187,7 @@ function mapDailyActivityGrid(lines) {
   for (const L of lines) {
     const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
     if (!texts.length) continue;
-    if (texts.some((t) => /^Net$/i.test(t))) sawHeaderSig = true;
+    if (squashT(texts.join("")).includes("netleads")) sawHeaderSig = true;
     const rowTag = texts[0];
 
     if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
@@ -175,16 +197,22 @@ function mapDailyActivityGrid(lines) {
       const v = nums.slice(0, 19).map(val);
       if (!storeName) { storeName = curName; curName = null; continue; }
       people[norm(curName)] = { displayName: curName, cols: v };
+      curName = null;
       continue;
     }
 
-    const nameTokens = texts.filter((t) => !DA_HEADER_WORDS.test(t) && !isNum(t));
-    if (nameTokens.length) {
-      const nm = nameTokens.join(" ").trim();
-      if (nm) curName = nm;
+    // Name = the non-numeric tokens BEFORE any header vocabulary starts,
+    // and only if what's left isn't header noise itself.
+    const nonNum = texts.filter((t) => !isNum(t));
+    const nameTokens = [];
+    for (const t of nonNum) {
+      if (DA_VOCAB.includes(squashT(t))) break;
+      nameTokens.push(t);
     }
+    const candidate = nameTokens.join(" ").trim();
+    if (candidate && !isHeaderNoise(candidate)) curName = candidate;
   }
-  if (!sawHeaderSig || !Object.keys(people).length) return null;
+  if (!sawHeaderSig || Object.keys(people).length < 3) return null;
 
   // Synthesize rows in the exact shape parseReport("activity") expects.
   // Net Leads -> "Total" (total opportunities). ILM -> "Internet".
@@ -390,21 +418,25 @@ export default async function handler(req, res) {
         actDay: activityDateFrom(a.filename) });
     }
 
-    // PDFs: the Daily Activity grid names its own store in the header,
-    // so ONE shared address works for every store on this report.
+    // PDFs: the Daily Activity grid names its own store in the header, so one
+    // shared address works for every store. If the parsed store matches no
+    // real store, the parse is suspect and NOTHING is written.
     for (const a of pdfs) {
       try {
         const lines = await extractPdfLines(Buffer.from(a.content));
         const mapped = mapDailyActivityGrid(lines);
         if (mapped) {
+          const byHeader = (cfg?.stores || []).find((s) => squash(s.name) === squash(mapped.storeName));
+          if (!byHeader) {
+            pdfReads.push({ file: a.filename, mapped: false,
+              note: `parsed store "${mapped.storeName}" matches no store; nothing written` });
+            continue;
+          }
+          store = byHeader;
           entries.push({ rows: mapped.rows, type: "activity", fileName: a.filename || "email.pdf",
             actDay: activityDateFrom(a.filename) || activityDateFrom(subject) });
           pdfReads.push({ file: a.filename, store: mapped.storeName,
             people: mapped.rows.length - 2, mapped: true });
-          if (mapped.storeName) {
-            const byHeader = (cfg?.stores || []).find((s) => squash(s.name) === squash(mapped.storeName));
-            if (byHeader) store = byHeader;
-          }
         } else {
           pdfReads.push({ file: a.filename, mapped: false,
             note: "PDF layout not recognized; nothing written" });
