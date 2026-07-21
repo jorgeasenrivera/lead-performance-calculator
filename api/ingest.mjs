@@ -1,39 +1,21 @@
 /* =========================================================================
    LPC automated report ingest — Vercel serverless function
-   =========================================================================
-   POST /api/ingest        (multipart from the Cloudflare Email Worker)
+   POST /api/ingest  (from the Cloudflare Email Worker)
    Auth: x-ingest-secret header must equal process.env.INGEST_SECRET.
-
-   The email's raw MIME is parsed here (postal-mime), every CSV attachment is
-   run through THE SAME detection + parsing code as the app's import screen
-   (extracted verbatim below), and the result is merged into the store's
-   Supabase document exactly the way a manual import would be — including the
-   day-over-day trend baselines The Board's arrows depend on, the Open Tasks
-   preservation rule, roster auto-add, the import log, and a pre-import
-   snapshot for one-click restore.
-
-   Routing:
-   - Store: the email's TO address local part after "lpc-" names the store
-     (lpc-classicmazda@yourdomain → store whose name squashes to "classicmazda").
-   - Delivery channel: the subject or attachment filename must contain
-     internet / phone / showroom / campaign (name the scheduled report that way
-     in DriveCentric). A delivery file with no channel word is skipped and logged.
-   - Daily Activity lands on the DATE IN THE FILENAME
-     (Standard-Daily_Activity_2026-07-17.csv), falling back to today (Eastern).
-
-   Env vars (Vercel → Settings → Environment Variables):
-     SUPABASE_URL                e.g. https://xxxx.supabase.co
-     SUPABASE_SERVICE_ROLE_KEY   service role key (server only — never in the app)
-     INGEST_SECRET               any long random string; the Worker sends it back
    ========================================================================= */
 
 import PostalMime from "postal-mime";
 import Papa from "papaparse";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+try {
+  pdfjs.GlobalWorkerOptions.workerSrc = require.resolve("pdfjs-dist/legacy/build/pdf.worker.js");
+} catch (e) { /* bundled include covers it */ }
 
 export const config = { api: { bodyParser: false } };
 
-/* ---------- tiny helpers copied from the app so behaviour matches ---------- */
+/* ---------- helpers copied from the app so behaviour matches ---------- */
 const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const toNum = (v) => {
   if (v == null) return null;
@@ -44,38 +26,19 @@ const toNum = (v) => {
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const TZ = "America/New_York";
-const todayET = () => {
-  const d = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
-  return d; // YYYY-MM-DD
-};
+const todayET = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
 const ymET = () => todayET().slice(0, 7);
-
-/* Stubs for app-side lookups the extracted code touches (labels only). */
-const REPORTS = {}; const LEADERBOARD_REPORTS = {};
 
 /* ---------- BEGIN code extracted verbatim from the app ---------- */
 function detectReportType(rows, filename = "") {
   const h2 = (rows[1] || []).join("|").toLowerCase();
   const h1 = (rows[0] || []).join("|").toLowerCase();
   const fn = filename.toLowerCase();
-  // ACTIVITY MUST BE CHECKED FIRST. The Daily Activity export also carries a
-  // "Units Delivered" column, so testing for that first swallowed it as a delivery
-  // summary and quietly wrote activity numbers into the wrong place. Only the
-  // activity report has Call Contacted AND Personalized Video together, so this
-  // signature is unambiguous.
   if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
-
   if (h2.includes("units delivered")) {
-    // Every channel (Internet, Phone, Showroom, Campaign) comes from the SAME
-    // "Delivery Summary" report, filtered by Source inside DriveCentric. So the file
-    // is always titled "Delivery Summary" and never by channel. If a manager instead
-    // pulled a per-channel report (a file titled "Phone", "Internet", etc.), that is
-    // the WRONG export and must be caught, not silently accepted.
     const namesChannel = /\b(internet|phone|showroom|show-room|floor|campaign|web)\b/.test(fn);
     const namesDelivery = fn.includes("delivery");
     if (namesChannel && !namesDelivery) return "wrong-channel-report";
-    // Correct report. We don't trust the filename to say which channel it is, so the
-    // channel is always confirmed by the manager (the ambiguous-channel picker).
     return "delivery";
   }
   if (h2.includes("video day of appt")) return "appointment";
@@ -98,38 +61,28 @@ function parseReport(rows, type) {
       const units = toNum(row[idx("Units Delivered")]);
       const dpct = toNum(row[idx("Delivered %")]);
       if (type === "delivery") {
-        // legacy: also fills the standards fields + internet channel
         rec.opps = toNum(row[idx("Opportunities")]);
         rec.sold = toNum(row[idx("Sold")]);
         rec.soldPct = toNum(row[idx("Sold %")]);
-        rec.unitsDelivered = units;
-        rec.deliveredPct = dpct;
-        rec.internetUnits = units;
-        rec.internetPct = dpct;
+        rec.unitsDelivered = units; rec.deliveredPct = dpct;
+        rec.internetUnits = units; rec.internetPct = dpct;
       } else if (channel === "campaign") {
-        // units only, on purpose. No pct is stored, so nothing can accidentally grade it.
         rec.campaignUnits = units;
       } else {
         rec[channel + "Units"] = units;
         rec[channel + "Pct"] = dpct;
         if (channel === "internet") {
-          // internet delivery still drives the lead-standards fields
           rec.opps = toNum(row[idx("Opportunities")]);
           rec.sold = toNum(row[idx("Sold")]);
           rec.soldPct = toNum(row[idx("Sold %")]);
-          rec.unitsDelivered = units;
-          rec.deliveredPct = dpct;
+          rec.unitsDelivered = units; rec.deliveredPct = dpct;
         }
       }
     } else if (type === "appointment") {
       rec.apptVideoDayPct = toNum(row[idx("Video Day of Appt %")]);
-      // Appointments set and the show rate live on THIS report, not Daily Activity.
-      // "Total Created" counts appointments made in the period; "Total Scheduled" is the
-      // ones actually on the books, which is what "appointments set" should mean.
       rec.apptTotalCreated = toNum(row[idx("Total Created")]);
       rec.apptTotalScheduled = toNum(row[idx("Total Scheduled")]);
       rec.apptTotalShow = toNum(row[idx("Total Show")]);
-      // Percentages here export as fractions (0.857) but accept a whole number too.
       rec.apptShowPct = (() => {
         const raw = toNum(row[idx("Total Show %")]);
         if (raw == null) return null;
@@ -151,18 +104,14 @@ function parseReport(rows, type) {
       rec.actApptShow = toNum(row[idx("Show")]);
       rec.actOppsTotal = toNum(row[idx("Total")]);
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
-      // "Open Tasks" is the posted/outstanding task count on the Workplan; the completion
-      // rate is Completed / Open. Fall back to other header names other exports have used.
       rec.actOpenTasks = toNum(row[idx("Open Tasks")]) ?? toNum(row[idx("Total Tasks")]) ??
         toNum(row[idx("Tasks Due")]) ?? toNum(row[idx("Assigned Tasks")]);
       rec.actSold = toNum(row[idx("Sold")]);
       rec.actUnits = toNum(row[idx("Units Delivered")]);
-      // Opportunities by source. These are what make closing rates per channel possible.
       rec.actOppShowroom = toNum(row[idx("Showroom")]);
       rec.actOppPhone    = toNum(row[idx("Phone")]);
       rec.actOppInternet = toNum(row[idx("Internet")]);
       rec.actOppCampaign = toNum(row[idx("Campaign")]);
-      // The appointment funnel, end to end.
       rec.actApptScheduled = toNum(row[idx("Scheduled")]);
       rec.actApptConfirmed = toNum(row[idx("Confirmed")]);
       rec.actApptNoShow    = toNum(row[idx("No Show")]);
@@ -171,25 +120,19 @@ function parseReport(rows, type) {
   }
   return out;
 }
-
 /* ---------- END extracted code ---------- */
 
 /* =========================================================================
-   PDF scheduled reports
-   =========================================================================
-   DriveCentric's scheduler only sends PDF. These are digital PDFs with real
-   positioned text, so the table is reconstructed from coordinates: words are
-   banded into lines, a line with no numbers starts a person block (multi-line
-   names merge; a name repeated across a page break is the same person), and
-   metric lines (label + numbers) attach to the current person.
-
-   Each report layout gets a MAPPER keyed on the PDF's title line. A PDF whose
-   title has no mapper is read and reported back, but NEVER written — better a
-   loud skip than silently wrong numbers. Add a mapper per real report as its
-   first scheduled email arrives.
+   PDF: Daily Activity grid (New/Used/All rows per person)
+   Column order in the PDF:
+   Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet), Campaign,
+   App Created, App Scheduled, App Confirmed, App Show, Calls Made, Connects,
+   Texts, Emails, Videos, Video %, Open Tasks, Completed Tasks,
+   Total Delivered, Total Closing %
+   First person-block is the STORE header; its All row is the store total.
    ========================================================================= */
-async function extractPdfBlocks(buffer) {
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), disableWorker: true }).promise;
+async function extractPdfLines(buffer) {
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
   const items = [];
   for (let pn = 1; pn <= doc.numPages; pn++) {
     const page = await doc.getPage(pn);
@@ -207,41 +150,64 @@ async function extractPdfBlocks(buffer) {
     if (L && L.pg === it.pg && Math.abs(L.y - it.y) < 4) L.parts.push(it);
     else lines.push({ pg: it.pg, y: it.y, parts: [it] });
   }
-  const METRIC = /^(internet|phone|showroom|campaign|chat|email|text|calls?|total|appointments?|scheduled|confirmed|show|no show|cancelled|sold|units?)$/i;
-  const isNum = (t) => /^[\d,.%\$-]+$/.test(t);
-  const blocks = []; let cur = null; let title = null; let dateRange = null; let pendingName = [];
-  for (const L of lines) {
-    const texts = L.parts.map((p) => p.str);
-    const nums = texts.filter(isNum);
-    const label = texts.filter((t) => !isNum(t)).join(" ");
-    if (!title && /report/i.test(label)) { title = label; continue; }
-    if (/^\d+\/\d+\/\d+/.test(texts[0])) { dateRange = texts.join(" "); continue; }
-    if (nums.length && METRIC.test(texts[0])) {
-      if (pendingName.length) {
-        const name = pendingName.join(" ");
-        if (!(cur && cur.name === name)) { cur = { name, metrics: {} }; blocks.push(cur); }
-        pendingName = [];
-      }
-      if (cur) cur.metrics[texts[0]] = nums.map((n) => toNum(n));
-    } else if (label && !nums.length) {
-      pendingName.push(label);
-    }
-  }
-  return { title: title || "", dateRange, blocks };
+  return lines;
 }
 
-/* Mapper registry: title regex -> function(blocks, ctx) -> entries[] for applyToStore.
-   Each real scheduled report gets an entry here, built against its first real PDF.
-   The commented template shows the shape using the sample "Activity Report". */
-const PDF_MAPPERS = [
-  // {
-  //   match: /^Activity Report/i,
-  //   map(blocks, { storeName }) {
-  //     // drop the store-header block, turn each person's metrics into a rec,
-  //     // then return [{ rows: <synthesized>, type: "...", fileName, actDay }]
-  //   },
-  // },
-];
+const DA_HEADER_WORDS = /^(net|leads?|showroom|phone|ups|ilm|campaign|app|created|scheduled|confirmed|show|calls?|made|connects?|texts?|emails?|videos?|video|%|open|tasks?|completed|total|delivered|closing)$/i;
+
+function mapDailyActivityGrid(lines) {
+  const isNum = (t) => /^[\d,]+$/.test(t) || t === "-" || t === "∞" || /^\d+\.?\d*%$/.test(t);
+  const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
+
+  let storeName = null, curName = null, sawHeaderSig = false;
+  const people = {};
+
+  for (const L of lines) {
+    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+    if (!texts.length) continue;
+    if (texts.some((t) => /^Net$/i.test(t))) sawHeaderSig = true;
+    const rowTag = texts[0];
+
+    if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
+      if (rowTag !== "All" || !curName) continue;
+      const nums = texts.slice(1).filter(isNum);
+      if (nums.length < 19) continue;
+      const v = nums.slice(0, 19).map(val);
+      if (!storeName) { storeName = curName; curName = null; continue; }
+      people[norm(curName)] = { displayName: curName, cols: v };
+      continue;
+    }
+
+    const nameTokens = texts.filter((t) => !DA_HEADER_WORDS.test(t) && !isNum(t));
+    if (nameTokens.length) {
+      const nm = nameTokens.join(" ").trim();
+      if (nm) curName = nm;
+    }
+  }
+  if (!sawHeaderSig || !Object.keys(people).length) return null;
+
+  // Synthesize rows in the exact shape parseReport("activity") expects.
+  // Net Leads -> "Total" (total opportunities). ILM -> "Internet".
+  const header = ["Name","Total","Showroom","Phone","Internet","Campaign",
+    "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+  const rows = [["Daily Activity"], header];
+  for (const p of Object.values(people)) {
+    const c = p.cols;
+    rows.push([p.displayName, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
+      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17]]);
+  }
+  return { storeName, rows };
+}
+
+function activityDateFrom(name) {
+  const s = String(name || "");
+  let m = s.match(/(20\d{2})[-_.](\d{1,2})[-_.](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/(\d{1,2})[-_.](\d{1,2})[-_.](20\d{2})/);
+  if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  return null;
+}
 
 /* ---------- Supabase (PostgREST, service role) ---------- */
 const SB = () => ({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY });
@@ -279,7 +245,6 @@ function applyToStore(data, entries, sourceLabel) {
   const excludedSet = new Set((next.excluded || []).map(norm));
   const results = [];
 
-  // pre-import snapshot, exactly like a manual import
   const snapCopy = JSON.parse(JSON.stringify({
     roster: next.roster, months: next.months, activity: next.activity,
     plates: next.plates, restrictions: next.restrictions, aliases: next.aliases,
@@ -380,11 +345,6 @@ function channelFrom(text) {
   if (t.includes("campaign")) return "campaign";
   return null;
 }
-function activityDateFrom(name) {
-  const m = String(name || "").match(/(20\d{2})[-_.](\d{2})[-_.](\d{2})/);
-  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
-}
-
 async function readRaw(req) {
   const chunks = [];
   for await (const c of req) chunks.push(c);
@@ -402,12 +362,10 @@ export default async function handler(req, res) {
     const to = (mail.to?.[0]?.address || req.headers["x-envelope-to"] || "").toLowerCase();
     const subject = mail.subject || "";
 
-    // which store? lpc-<storename>@…
     const local = to.split("@")[0] || "";
     const slug = squash(local.replace(/^lpc-?/, ""));
     const cfg = await sbGet("lpc:config:v2");
-    const store = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug);
-    if (!store) return res.status(200).json({ skipped: `no store matches address "${to}"` });
+    let store = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug) || null;
 
     const atts = mail.attachments || [];
     const csvs = atts.filter((a) => /csv$/i.test(a.filename || "") || /text\/csv/i.test(a.mimeType || ""));
@@ -416,6 +374,8 @@ export default async function handler(req, res) {
 
     const entries = [];
     const skippedFiles = [];
+    const pdfReads = [];
+
     for (const a of csvs) {
       const text = Buffer.from(a.content).toString("utf8").replace(/^\ufeff/, "");
       const rows = Papa.parse(text, { skipEmptyLines: true }).data;
@@ -426,26 +386,36 @@ export default async function handler(req, res) {
         type = "delivery-" + ch;
       }
       if (!type) { skippedFiles.push({ file: a.filename, why: "unrecognized report" }); continue; }
-      entries.push({ rows, type, fileName: a.filename || "email.csv", actDay: activityDateFrom(a.filename) });
+      entries.push({ rows, type, fileName: a.filename || "email.csv",
+        actDay: activityDateFrom(a.filename) });
     }
-    // PDF attachments: reconstruct, then map if a mapper exists for the title
-    const pdfReads = [];
+
+    // PDFs: the Daily Activity grid names its own store in the header,
+    // so ONE shared address works for every store on this report.
     for (const a of pdfs) {
       try {
-        const { title, dateRange, blocks } = await extractPdfBlocks(Buffer.from(a.content));
-        const mapper = PDF_MAPPERS.find((m) => m.match.test(title));
-        if (mapper) {
-          const mapped = mapper.map(blocks, { storeName: store.name, subject, fileName: a.filename, dateRange });
-          for (const e of mapped) entries.push(e);
-          pdfReads.push({ file: a.filename, title, people: blocks.length, mapped: true });
+        const lines = await extractPdfLines(Buffer.from(a.content));
+        const mapped = mapDailyActivityGrid(lines);
+        if (mapped) {
+          entries.push({ rows: mapped.rows, type: "activity", fileName: a.filename || "email.pdf",
+            actDay: activityDateFrom(a.filename) || activityDateFrom(subject) });
+          pdfReads.push({ file: a.filename, store: mapped.storeName,
+            people: mapped.rows.length - 2, mapped: true });
+          if (mapped.storeName) {
+            const byHeader = (cfg?.stores || []).find((s) => squash(s.name) === squash(mapped.storeName));
+            if (byHeader) store = byHeader;
+          }
         } else {
-          pdfReads.push({ file: a.filename, title, people: blocks.length, mapped: false,
-            note: "PDF read successfully but no mapper is configured for this report title; nothing written" });
+          pdfReads.push({ file: a.filename, mapped: false,
+            note: "PDF layout not recognized; nothing written" });
         }
       } catch (e) {
         skippedFiles.push({ file: a.filename, why: "PDF read failed: " + String(e.message || e) });
       }
     }
+
+    if (!store) return res.status(200).json({
+      skipped: `no store matches address "${to}" or any PDF header`, skippedFiles, pdfReads });
     if (!entries.length) return res.status(200).json({ skipped: skippedFiles, pdfReads });
 
     const key = `lpc:store:${store.id}:v2`;
