@@ -438,8 +438,13 @@ export default async function handler(req, res) {
           pdfReads.push({ file: a.filename, store: mapped.storeName,
             people: mapped.rows.length - 2, mapped: true });
         } else {
+          const dbg = [];
+          for (const L of lines.slice(0, 40)) {
+            dbg.push(L.parts.map((p) => p.str).join(" | "));
+          }
           pdfReads.push({ file: a.filename, mapped: false,
-            note: "PDF layout not recognized; nothing written" });
+            note: "PDF layout not recognized; nothing written",
+            debugLines: dbg });
         }
       } catch (e) {
         skippedFiles.push({ file: a.filename, why: "PDF read failed: " + String(e.message || e) });
