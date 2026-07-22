@@ -242,7 +242,9 @@ function mapDailyActivityGrid(lines) {
        ("Drivers Mart Winter" / "Be Backs" / "Park | Leads | ...").
      - The name comes BEFORE its data rows.
      - A page break REPEATS the header, splitting one person's eight rows
-       across the boundary; the repeat must merge, not create a second person.
+       across the boundary; the repeat merges rather than creating a second.
+     - Lines before the FIRST header block (report title, date range) carry no
+       column vocabulary and must be skipped, or they glue onto the store name.
      - Eight rows per person: New/Used/Other/Total (vehicle type, ignored)
        and Showroom/Phone/Internet/Campaign (source, used).
      - Six values + a percentage per row:
@@ -295,19 +297,21 @@ function mapDeliverySummaryGrid(lines) {
       if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 6) continue;
-      // Store block: skip its numbers, it isn't a person.
-      if (!curName) continue;
+      if (!curName) continue;                             // store block: not a person
       const k = norm(curName);
       if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
-      // Page-break repeat: merge rather than overwrite with a partial block.
       people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
       continue;
     }
 
     // Header line: strip the column vocabulary, whatever survives is a name
     // fragment. The name spans up to three lines, so fragments accumulate.
+    // Lines BEFORE the first header block (report title, date range) carry no
+    // column vocabulary at all — skip them, or they glue onto the store name.
     const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
     if (!nonNum.length) continue;
+    const hasVocab = vocabCountWith(DS_VOCAB, nonNum) >= 1;
+    if (!hasVocab && !sawHeaderSig) continue;             // pre-header preamble
     const frag = stripVocabWith(DS_VOCAB, nonNum);
     if (frag.length) pendingFrags.push(frag.join(" "));
   }
@@ -597,8 +601,7 @@ export default async function handler(req, res) {
       try {
         const lines = await extractPdfLines(Buffer.from(a.content));
 
-        // Try both mappers; each returns null unless the layout truly matches,
-        // so detection no longer depends on the subject line.
+        // Try both mappers; each returns null unless the layout truly matches.
         let mapped = null, kind = null, pairings = null;
         const ds = mapDeliverySummaryGrid(lines);
         if (ds) { mapped = ds; kind = "delivery-summary"; pairings = ds.pairings; }
