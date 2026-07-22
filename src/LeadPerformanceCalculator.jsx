@@ -2804,8 +2804,8 @@ function ImportBadge({ storeData, activity }) {
   if (activity) {
     return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? "✓" : "0/1"}</span>;
   }
-  const done = ["delivery", "appointment", "video"].filter((k) => t[k]).length;
-  return <span className={"badge " + (done === 3 ? "badge-ok" : "badge-warn")}>{done}/3</span>;
+  const done = ["appointment", "video"].filter((k) => t[k]).length;
+  return <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>{done}/2</span>;
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
@@ -6754,7 +6754,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
 
   // today's import status
   const t = M?.imports?.[today()] || {};
-  const need = ["delivery", "appointment", "video"];
+  const need = ["appointment", "video"];   // delivery arrives automatically now
   const done = need.filter((k) => t[k]);
   const missing = need.filter((k) => !t[k]).map((k) => reportLabel(k));
 
@@ -6935,24 +6935,30 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             <button className="help-btn" onClick={onHelp} title="How to pull the Delivery Summary">? Help</button>
           </div>
           <div className="check-group-label">Required</div>
-          <div className={"check " + (t.delivery ? "done" : "")}>
-            <span className="check-box">{t.delivery ? "✓" : ""}</span>
-            Delivery Summary (Internet)
-            <span className="check-note">also fills the Internet column on The Board</span>
-          </div>
+          <div className="check-group-label">Upload these</div>
           <div className={"check " + (t.appointment ? "done" : "")}>
             <span className="check-box">{t.appointment ? "✓" : ""}</span>Appointment report
           </div>
           <div className={"check " + (t.video ? "done" : "")}>
             <span className="check-box">{t.video ? "✓" : ""}</span>Video report
           </div>
-          <div className="check-group-label">The Board (optional)</div>
-          <div className={"check " + (t["delivery-phone"] ? "done" : "")}>
-            <span className="check-box">{t["delivery-phone"] ? "✓" : ""}</span>Phone Delivery Summary
+
+          <div className="check-group-label">Arriving automatically</div>
+          <div className={"check readonly " + (t.delivery ? "done" : "")}>
+            <span className="check-box">{t.delivery ? "✓" : "·"}</span>
+            Delivery Summary
+            <span className="check-note">
+              {t.delivery
+                ? "landed today, all channels"
+                : "emailed in on schedule — nothing to upload"}
+            </span>
           </div>
-          <div className={"check " + (t["delivery-showroom"] ? "done" : "")}>
-            <span className="check-box">{t["delivery-showroom"] ? "✓" : ""}</span>Showroom Delivery Summary
-          </div>
+          {!t.delivery && (
+            <p className="hint">
+              If this hasn't ticked by mid-morning, the email pipeline may be stuck. You can still
+              pull the Delivery Summary by hand and drop it below — hit <strong>Help</strong> for the steps.
+            </p>
+          )}
           <div className={"check " + (t["delivery-campaign"] ? "done" : "")}>
             <span className="check-box">{t["delivery-campaign"] ? "✓" : ""}</span>Campaign Delivery Summary
             <span className="check-note">units only, no percentage</span>
@@ -6966,7 +6972,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           onClick={() => fileRef.current?.click()}>
           <div className="dz-icon">⇩</div>
           <div className="dz-title">Drop today's CSVs here</div>
-          <div className="dz-sub">Drop the <strong>Delivery Summary</strong>, Appointment, and Video reports. Every channel comes from the same Delivery Summary, filtered by Source, and the tool will ask which channel each delivery file is. New here? Hit <strong>Help</strong> for the step-by-step.</div>
+          <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically, but if you need to backfill or the automation is down, drop those here too and the tool will ask which channel each one is.</div>
           <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
         </div>
@@ -9117,6 +9123,9 @@ function Style() {
       .check.done { color:#1E7A3C; font-weight:600; }
       .check-box { width:22px; height:22px; border:1.5px solid var(--ink-3); border-radius:50%; display:flex; align-items:center;
         justify-content:center; font-size:12px; transition: all .3s var(--spring); }
+        .check.readonly { opacity:.85; }
+      .check.readonly .check-box { border-style:dashed; }
+      .check.readonly.done .check-box { border-style:solid; }
       .check.done .check-box { background:var(--green); border-color:var(--green); color:#fff; transform: scale(1.05); }
       .dropzone { border:1.5px dashed rgba(42,94,155,.35); border-radius:var(--radius); padding:48px 20px; text-align:center; cursor:pointer;
         background:rgba(255,255,255,.45); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
