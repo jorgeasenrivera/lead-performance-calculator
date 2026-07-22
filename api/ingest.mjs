@@ -147,8 +147,6 @@ async function extractPdfLines(buffer) {
 
 const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
-/* Remove vocabulary from a token list, including runs of up to 4 consecutive
-   tokens that only form a vocab word when glued ("Con"+"fi"+"rmed"). */
 function stripVocabWith(vocab, tokens) {
   const kept = [];
   let i = 0;
@@ -183,14 +181,6 @@ function vocabCountWith(vocab, tokens) {
 
 /* =========================================================================
    PDF #1: Daily Activity grid.
-   Names embedded INSIDE the two header lines; "Confirmed" splits by ligature
-   as "Con fi rmed". Name fragments accumulate until the "All" row consumes
-   them. 19 numbers per All row:
-   Net Leads(=TOTAL opps), Showroom, Phone Ups, ILM(=internet), Campaign,
-   App Created, App Scheduled, App Confirmed, App Show, Calls Made, Connects,
-   Texts, Emails, Videos, Video %, Open Tasks, Completed Tasks,
-   Total Delivered, Total Closing %.
-   First block is the STORE.
    ========================================================================= */
 const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone","ups",
   "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
@@ -247,27 +237,24 @@ function mapDailyActivityGrid(lines) {
 
 /* =========================================================================
    PDF #2: Delivery Summary grid.
-   Eight rows per person in two groups:
-     vehicle type — New / Used / Other / Total   (not used)
-     source       — Showroom / Phone / Internet / Campaign
-   Six values + a percentage per row:
-     Total Leads | Total Ups | Unsold In Showroom | Be Backs |
-     Total Delivered/F&I | Closing %
-   Total Ups / Unsold In Showroom / Be Backs are SHOWROOM-ONLY metrics and are
-   only read on the Showroom row.
-
-   PAIRING RULE — the important bit. Unlike Daily Activity, the name block
-   appears AFTER the person's data. So a completed source-group is held until
-   the next name arrives, then attributed. Getting this off by one silently
-   assigns everyone their neighbour's numbers, so the response echoes a
-   `pairings` array for spot-checking.
-
+   Confirmed layout from live debug output:
+     - THREE header lines per person, the name split across lines 1 and 3
+       ("Drivers Mart Winter" / "Be Backs" / "Park | Leads | ...").
+     - The name comes BEFORE its data rows.
+     - A page break REPEATS the header, splitting one person's eight rows
+       across the boundary; the repeat must merge, not create a second person.
+     - Eight rows per person: New/Used/Other/Total (vehicle type, ignored)
+       and Showroom/Phone/Internet/Campaign (source, used).
+     - Six values + a percentage per row:
+       Total Leads | Total Ups | Unsold In Showroom | Be Backs |
+       Total Delivered/F&I | Closing %
+       Total Ups / Unsold / Be Backs are SHOWROOM-ONLY and only read there.
    Verified: Jason Campion Internet 110 leads / 5 delivered / 4.5% matches the
    old Delivery Summary CSV (110 net opportunities, 5 deals, 4.5% delivered).
    ========================================================================= */
 const DS_VOCAB = new Set(["total","leads","totalleads","ups","totalups","showroom",
   "unsold","in","unsoldin","unsoldinshowroom","be","backs","bebacks","delivered",
-  "f","i","fi","delivered/f&i","totaldelivered","closing","closing%","%"]);
+  "f","i","fi","f&i","delivered/f&i","totaldelivered","closing","closing%","%"]);
 
 const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
 const DS_VEHICLE = ["New", "Used", "Other", "Total"];
@@ -277,59 +264,56 @@ function mapDeliverySummaryGrid(lines) {
   const val = (t) => (t === "-" || t == null) ? null : toNum(t);
 
   let sawHeaderSig = false;
-  let nameParts = [];
-  let pending = {};            // source rows collected but not yet named
-  const ordered = [];          // { name, sources } in document order
+  let storeName = null;
+  let curName = null;
+  let pendingFrags = [];
+  const people = {};       // norm(name) -> { displayName, sources }
+  const order = [];
   const pairings = [];
 
-  const flushName = () => {
-    const nm = nameParts.join(" ").replace(/\s+/g, " ").trim();
-    nameParts = [];
-    return nm;
+  const commitName = () => {
+    if (!pendingFrags.length) return;
+    const nm = pendingFrags.join(" ").replace(/\s+/g, " ").trim();
+    pendingFrags = [];
+    if (!nm) return;
+    if (!storeName) { storeName = nm; curName = null; return; }
+    curName = nm;
+    const k = norm(nm);
+    if (!people[k]) { people[k] = { displayName: nm, sources: {} }; order.push(k); }
   };
 
   for (const L of lines) {
     const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
     if (!texts.length) continue;
     const joined = squashT(texts.join(""));
-    if (joined.includes("unsoldinshowroom") || joined.includes("bebacks")) sawHeaderSig = true;
+    if (joined.includes("unsoldin") || joined.includes("bebacks")) sawHeaderSig = true;
     const rowTag = texts[0];
 
-    // a source row: collect it into the pending block
-    if (DS_SOURCES.includes(rowTag)) {
+    // A data row ends the header block, so commit whatever name accumulated.
+    if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
+      commitName();
+      if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
       const nums = texts.slice(1).filter(isNum);
-      if (nums.length >= 6) pending[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
+      if (nums.length < 6) continue;
+      // Store block: skip its numbers, it isn't a person.
+      if (!curName) continue;
+      const k = norm(curName);
+      if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
+      // Page-break repeat: merge rather than overwrite with a partial block.
+      people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
       continue;
     }
-    // vehicle-type rows are ignored entirely
-    if (DS_VEHICLE.includes(rowTag)) continue;
 
-    // header/name line: 2+ vocabulary words means it carries the label block
+    // Header line: strip the column vocabulary, whatever survives is a name
+    // fragment. The name spans up to three lines, so fragments accumulate.
     const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
-    if (vocabCountWith(DS_VOCAB, nonNum) >= 2) {
-      const frag = stripVocabWith(DS_VOCAB, nonNum);
-      if (frag.length) {
-        // a name arrived — it names the block that came BEFORE it
-        if (Object.keys(pending).length) {
-          const nm = flushName();
-          if (nm) { ordered.push({ name: nm, sources: pending }); }
-          pending = {};
-        }
-        nameParts.push(frag.join(" "));
-      }
-    }
+    if (!nonNum.length) continue;
+    const frag = stripVocabWith(DS_VOCAB, nonNum);
+    if (frag.length) pendingFrags.push(frag.join(" "));
   }
-  // trailing block, if the file ends on data
-  if (Object.keys(pending).length) {
-    const nm = flushName();
-    if (nm) ordered.push({ name: nm, sources: pending });
-  }
+  commitName();
 
-  if (!sawHeaderSig || ordered.length < 3) return null;
-
-  // first block is the store's own totals
-  const storeName = ordered[0].name;
-  const people = ordered.slice(1);
+  if (!sawHeaderSig || order.length < 3) return null;
 
   const header = ["Name","Opportunities","Units Delivered","Delivered %",
     "internetUnits","internetPct","phoneUnits","phonePct",
@@ -337,33 +321,38 @@ function mapDeliverySummaryGrid(lines) {
     "showroomUps","showroomUnsold","showroomBeBacks"];
   const rows = [["Delivery Summary"], header];
 
-  for (const p of people) {
+  for (const k of order) {
+    const p = people[k];
     const s = p.sources;
-    const pick = (k, i) => (s[k] ? s[k][i] : null);
-    const pctOf = (k) => {
-      const v = pick(k, 5);
+    const pick = (src, i) => (s[src] ? s[src][i] : null);
+    const pctOf = (src) => {
+      const v = pick(src, 5);
       if (v == null) return null;
-      return v > 1 ? v / 100 : v;   // stored as a fraction, like the old report
+      return v > 1 ? v / 100 : v;      // stored as a fraction, like the old report
     };
     const internetLeads = pick("internet", 0);
     const internetDel   = pick("internet", 4);
     rows.push([
-      p.name,
-      internetLeads,                 // Opportunities  (lead standards)
-      internetDel,                   // Units Delivered
-      pctOf("internet"),             // Delivered %
+      p.displayName,
+      internetLeads,                   // Opportunities (drives lead standards)
+      internetDel,                     // Units Delivered
+      pctOf("internet"),               // Delivered %
       internetDel,  pctOf("internet"),
       pick("phone", 4),    pctOf("phone"),
       pick("showroom", 4), pctOf("showroom"),
-      pick("campaign", 4),           // campaign: units only, never graded
-      pick("showroom", 1),           // Total Ups        (showroom-only)
-      pick("showroom", 2),           // Unsold In Showroom
-      pick("showroom", 3),           // Be Backs
+      pick("campaign", 4),             // campaign: units only, never graded
+      pick("showroom", 1),             // Total Ups          (showroom-only)
+      pick("showroom", 2),             // Unsold In Showroom (showroom-only)
+      pick("showroom", 3),             // Be Backs           (showroom-only)
     ]);
     pairings.push({
-      name: p.name,
-      internet: s.internet ? `${pick("internet",0)} leads / ${internetDel} delivered / ${pick("internet",5)}%` : "-",
-      showroom: s.showroom ? `${pick("showroom",0)} leads / ${pick("showroom",4)} delivered` : "-",
+      name: p.displayName,
+      internet: s.internet
+        ? `${pick("internet",0)} leads / ${internetDel} delivered / ${pick("internet",5)}%`
+        : "-",
+      showroom: s.showroom
+        ? `${pick("showroom",0)} leads / ${pick("showroom",4)} delivered`
+        : "-",
     });
   }
   return { storeName, rows, pairings };
@@ -604,24 +593,18 @@ export default async function handler(req, res) {
     // PDFs: each grid names its own store, so ONE shared address works for
     // every store. If the parsed store matches no real store, the parse is
     // suspect and NOTHING is written.
-    const wantsSummary = /delivery\s*summary/i.test(subject);
     for (const a of pdfs) {
       try {
         const lines = await extractPdfLines(Buffer.from(a.content));
 
-        // Subject says Delivery Summary → try that mapper first.
+        // Try both mappers; each returns null unless the layout truly matches,
+        // so detection no longer depends on the subject line.
         let mapped = null, kind = null, pairings = null;
-        if (wantsSummary) {
-          const ds = mapDeliverySummaryGrid(lines);
-          if (ds) { mapped = ds; kind = "delivery-summary"; pairings = ds.pairings; }
-        }
+        const ds = mapDeliverySummaryGrid(lines);
+        if (ds) { mapped = ds; kind = "delivery-summary"; pairings = ds.pairings; }
         if (!mapped) {
           const da = mapDailyActivityGrid(lines);
           if (da) { mapped = da; kind = "activity"; }
-        }
-        if (!mapped && !wantsSummary) {
-          const ds = mapDeliverySummaryGrid(lines);
-          if (ds) { mapped = ds; kind = "delivery-summary"; pairings = ds.pairings; }
         }
 
         if (mapped) {
@@ -640,9 +623,8 @@ export default async function handler(req, res) {
           const read = { file: a.filename, kind, store: mapped.storeName,
             people: mapped.rows.length - 2, mapped: true,
             names: mapped.rows.slice(2).map((r) => r[0]) };
-          // VERIFY THIS on the first Delivery Summary import: it is the
-          // name-to-numbers pairing, which is the one thing that can go wrong
-          // silently on this layout.
+          // VERIFY on the first Delivery Summary import: this is the
+          // name-to-numbers pairing, the one thing that can go wrong silently.
           if (pairings) read.pairings = pairings.slice(0, 12);
           pdfReads.push(read);
         } else {
