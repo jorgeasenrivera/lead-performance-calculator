@@ -38,6 +38,23 @@ const METRICS = {
   showroomUnits: { label: "Showroom Units", short: "Showroom", kind: "num" },
 };
 
+// What each metric actually measures, in the words a manager would use. Shown on
+// hover so the dials can stay small without becoming cryptic.
+const METRIC_DESC = {
+  apptVideoDayPct: "The percentage of deals that had a personalized video sent on the day of the scheduled appointment before the appointment start time, out of the deals that had scheduled appointments.",
+  deliveredPct: "The percentage of deals that were delivered, out of opportunities.",
+  engagedVideoPct: "The percentage of deals that received a personalized video on the day of engagement, after the deal became engaged, out of deals that became engaged.",
+  bhVideoPct: "The percentage of net internet leads created during business hours in which a personalized video was sent on the same day that the lead was created, out of net internet leads created during business hours.",
+};
+
+// Short enough to sit under an 88px dial without truncating. The hover card
+// carries the full name and the definition.
+const METRIC_TINY = {
+  deliveredPct: "Delivery", apptVideoDayPct: "Appt Video",
+  engagedVideoPct: "Engaged Video", bhVideoPct: "BH Video",
+  soldPct: "Sold", unitsDelivered: "Units",
+};
+
 const CHANNELS = { internet: "Internet", phone: "Phone", showroom: "Showroom" };
 
 const REPORTS = {
@@ -4518,12 +4535,13 @@ function MetricStrip({ ev, stats }) {
         const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
         const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
         const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
-        // "Appt Video %" -> "Appt Video": the dial already reads in percent.
-        const lbl = def.short.replace(/\s*%\s*$/, "");
+        const lbl = METRIC_TINY[req.metric] || def.short.replace(/\s*%\s*$/, "");
+        // How far off target, in the metric's own units, for the hover card.
+        const shortBy = (v == null || ratio >= 1) ? null
+          : (def.kind === "pct" ? ((need - v) * 100).toFixed(1) + " points" : fmtNum(need - v));
         const [nx, ny] = pt(t, R);
         return (
-          <div key={i} className={"mdial mdial-" + state}
-            title={`${def.label}: ${v == null ? "no data" : shown} against a target of ${targetTxt}`}>
+          <div key={i} className={"mdial mdial-" + state}>
             <svg viewBox="0 0 76 48" aria-hidden="true">
               <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
               <path className="md-fill" d={arc} fill="none" strokeWidth="7" strokeLinecap="round"
@@ -4533,6 +4551,18 @@ function MetricStrip({ ev, stats }) {
               <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">{shown}</text>
             </svg>
             <div className="mdial-label">{lbl} <span className="mdial-need">{targetTxt}</span></div>
+            <div className="mdial-pop">
+              <div className="mp-title">{def.label}</div>
+              <div className="mp-desc">{METRIC_DESC[req.metric] || "Measured month to date."}</div>
+              <div className="mp-req">
+                <b className="mp-now">{shown}</b>
+                <span className="mp-sep">now, against a target of</span>
+                <b className="mp-target">{targetTxt}</b>
+                <span className={"mp-verdict mp-" + state}>
+                  {v == null ? "no data yet" : shortBy ? `${shortBy} short` : "target met"}
+                </span>
+              </div>
+            </div>
           </div>
         );
       })}
@@ -8790,8 +8820,11 @@ function Style() {
       .hint.center { text-align:center; }
 
       /* ---- board ---- */
-      .role-section { border-left:none; position:relative; overflow:hidden; }
-      .role-section::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--role); border-radius:4px 0 0 4px; }
+      /* overflow stays visible so a dial's hover card can escape the card edge.
+         The accent bar is inset instead of clipped, which keeps the rounded
+         corners clean without a hidden overflow. */
+      .role-section { border-left:none; position:relative; overflow:visible; }
+      .role-section::before { content:""; position:absolute; left:0; top:12px; bottom:12px; width:4px; background:var(--role); border-radius:4px; }
       .role-header { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
       .role-swatch { width:10px; height:10px; border-radius:50%; background:var(--role); }
       .role-count { font-size:12px; color:var(--ink-3); font-weight:600; background:#F2F2F4; border-radius:10px; padding:1px 8px; }
@@ -8830,15 +8863,45 @@ function Style() {
          together as one unit; the row itself wraps them if the screen is narrow. */
       .assoc-row .mstrip { margin-left:auto; flex-wrap:nowrap; gap:10px; }
       .mstrip + .assoc-leads { margin-left:14px; }
-      .mdial { width:82px; text-align:center; }
-      .mdial svg { display:block; width:82px; height:50px; overflow:visible; }
+      .mdial { width:88px; text-align:center; position:relative; }
+      .mdial svg { display:block; width:88px; height:50px; overflow:visible;
+        transition: transform .36s cubic-bezier(.34,1.56,.64,1); }
+      .mdial:hover { z-index:41; }
+      .mdial:hover svg { transform: scale(1.16); }
       .md-track { stroke:rgba(0,0,0,.08); }
       .md-target { stroke:rgba(0,0,0,.5); }
       .md-val { font-size:13px; font-weight:800; letter-spacing:-.03em; fill:var(--ink);
         font-variant-numeric:tabular-nums; }
       .mdial-label { font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
         color:var(--ink-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .mdial-need { color:var(--ink-3); font-weight:700; font-variant-numeric:tabular-nums; }
+      .mdial-need { font-size:8px; color:var(--ink-3); font-weight:700; font-variant-numeric:tabular-nums; }
+
+      /* Hover card. The overshoot in the timing function is the "bloop". */
+      .mdial-pop { position:absolute; left:50%; bottom:calc(100% + 12px); width:262px; z-index:40;
+        opacity:0; pointer-events:none; text-align:left;
+        transform: translateX(-50%) scale(.88); transform-origin: bottom center;
+        transition: opacity .16s ease, transform .36s cubic-bezier(.34,1.56,.64,1);
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:14px;
+        padding:12px 14px 11px; box-shadow: 0 14px 38px rgba(31,54,86,.24); }
+      .mdial-pop::after { content:""; position:absolute; left:50%; top:100%; width:12px; height:12px;
+        margin-left:-6px; margin-top:-6px; transform:rotate(45deg);
+        background:#fff; border-right:1px solid rgba(0,0,0,.07); border-bottom:1px solid rgba(0,0,0,.07);
+        border-radius:0 0 3px 0; }
+      .mdial:hover .mdial-pop { opacity:1; transform: translateX(-50%) scale(1); }
+      .mp-title { font-size:13px; font-weight:800; letter-spacing:-.02em; margin-bottom:5px; }
+      .mp-desc { font-size:11.5px; line-height:1.45; color:var(--ink-2); }
+      .mp-req { margin-top:9px; padding-top:8px; border-top:1px solid rgba(0,0,0,.07);
+        font-size:11.5px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .mp-now { font-size:14px; letter-spacing:-.02em; }
+      .mp-sep { margin:0 5px; }
+      .mp-target { color:var(--ink); }
+      .mp-verdict { display:block; margin-top:4px; font-weight:700; }
+      .mp-verdict.mp-ok { color:#1E7A3C; }
+      .mp-verdict.mp-near { color:#95600A; }
+      .mp-verdict.mp-under { color:#C13529; }
+      .mp-verdict.mp-nodata { color:var(--ink-3); }
+      .mdial-ok .mp-now { color:#1E7A3C; } .mdial-near .mp-now { color:#95600A; }
+      .mdial-under .mp-now { color:#C13529; } .mdial-nodata .mp-now { color:var(--ink-3); }
       .md-fill { transition: stroke-dasharray .7s var(--spring); }
       .mdial-ok     .md-fill { stroke:#30B155; } .mdial-ok     .md-dot { fill:#30B155; } .mdial-ok     .md-val { fill:#1E7A3C; }
       .mdial-near   .md-fill { stroke:#E59200; } .mdial-near   .md-dot { fill:#E59200; } .mdial-near   .md-val { fill:#95600A; }
