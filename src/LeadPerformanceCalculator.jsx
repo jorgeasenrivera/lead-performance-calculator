@@ -423,7 +423,6 @@ if (typeof document !== "undefined") document.documentElement.classList.add("js-
 function useReveal() {
   useEffect(() => {
     const els = document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)");
-    if (!els.length) return;
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce || typeof IntersectionObserver === "undefined") {
       els.forEach((el) => el.classList.add("is-in"));
@@ -436,8 +435,22 @@ function useReveal() {
         io.unobserve(e.target);
       }
     }, { rootMargin: "0px 0px -6% 0px", threshold: 0.04 });
-    els.forEach((el) => io.observe(el));
-    return () => io.disconnect();
+    const watch = (root) => root.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => io.observe(el));
+    watch(document);
+    // A card opened by a child component's own state never re-runs this effect,
+    // so it would sit at opacity 0 forever. Coaching cards did exactly that.
+    // Watching the tree means anything that appears later still gets revealed.
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1) continue;
+          if (n.matches && n.matches(".card, .reveal")) io.observe(n);
+          if (n.querySelectorAll) watch(n);
+        }
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => { io.disconnect(); mo.disconnect(); };
   });
 }
 
@@ -7211,19 +7224,20 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         <div className="hero-focus">
           {weakest && (
             <div className="hf-block hf-fix">
-              <div className="hf-cap">Weakest standard <span className="hf-hint">hover for the play</span></div>
+              <div className="hf-cap">Weakest standard</div>
               <div className="hf-metric">{METRICS[weakest.metric].label}</div>
               <div className="hf-bar"><div className="hf-fill" style={{ width: Math.round(weakest.mean * 100) + "%" }} /></div>
               <div className="hf-sub">{weakest.below} of {weakest.total} below target</div>
-              {METRIC_FIX[weakest.metric] && (
-                <div className="hf-pop">
-                  <div className="mp-title">{METRIC_FIX[weakest.metric].play}</div>
-                  <div className="mp-desc">{METRIC_DESC[weakest.metric]}</div>
-                  <ul className="hf-steps">
-                    {METRIC_FIX[weakest.metric].steps.map((t, i) => <li key={i}>{t}</li>)}
-                  </ul>
+              <div className="hf-pop">
+                <div className="mp-title">{METRIC_FIX[weakest.metric]?.play || METRICS[weakest.metric].label}</div>
+                <div className="mp-desc">{METRIC_DESC[weakest.metric] || "Measured month to date."}</div>
+                <div className="mp-req">
+                  <b className="mp-now">{Math.round(weakest.mean * 100)}%</b>
+                  <span className="mp-sep">of target on average ·</span>
+                  <b className="mp-target">{weakest.below} of {weakest.total}</b>
+                  <span className="mp-verdict mp-under">below target</span>
                 </div>
-              )}
+              </div>
             </div>
           )}
           {urgent.length > 0 && (
@@ -7431,6 +7445,233 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
 }
 
 /* ---------------- GM Summary ---------------- */
+/* ---------------- Trends ----------------
+   Daily imports leave a trail, so this reads it back: activity counts come from
+   the per-day activity records, delivered percentages from the running history
+   each month keeps per channel. Everyone is one line; individuals can be laid
+   over the top to see who is carrying or dragging the average. */
+const TREND_METRICS = [
+  { id: "units",    label: "Units delivered",    kind: "num", src: "act", field: "units" },
+  { id: "calls",    label: "Calls",              kind: "num", src: "act", field: "calls" },
+  { id: "contacted",label: "Contacts",           kind: "num", src: "act", field: "contacted" },
+  { id: "video",    label: "Personalized videos",kind: "num", src: "act", field: "video" },
+  { id: "apptSet",  label: "Appointments set",   kind: "num", src: "act", field: "apptScheduled" },
+  { id: "apptShow", label: "Appointments shown", kind: "num", src: "act", field: "apptShow" },
+  { id: "internet", label: "Internet delivered %", kind: "pct", src: "pct", field: "internet" },
+  { id: "phone",    label: "Phone delivered %",    kind: "pct", src: "pct", field: "phone" },
+  { id: "showroom", label: "Showroom delivered %", kind: "pct", src: "pct", field: "showroom" },
+];
+const TREND_COLORS = ["#2A5E9B", "#E59200", "#00A896", "#BF5AF2", "#E5473C", "#5E8C31"];
+
+const addDays = (d, n) => {
+  const x = new Date(d + "T12:00"); x.setDate(x.getDate() + n);
+  return x.toISOString().slice(0, 10);
+};
+const RANGES = [
+  { id: "mtd", label: "This month",  from: () => today().slice(0, 8) + "01" },
+  { id: "2mo", label: "2 months",    from: () => addDays(today(), -60) },
+  { id: "90d", label: "90 days",     from: () => addDays(today(), -89) },
+  { id: "ytd", label: "Year to date",from: () => today().slice(0, 4) + "-01-01" },
+];
+
+function TrendsPanel({ config, stores, data }) {
+  const [metricId, setMetricId] = useState("units");
+  const [rangeId, setRangeId] = useState("mtd");
+  const [from, setFrom] = useState(RANGES[0].from());
+  const [to, setTo] = useState(today());
+  const [picked, setPicked] = useState([]);
+  const [hover, setHover] = useState(null);
+
+  const metric = TREND_METRICS.find((m) => m.id === metricId) || TREND_METRICS[0];
+  const setRange = (id) => {
+    setRangeId(id);
+    const r = RANGES.find((x) => x.id === id);
+    if (r) { setFrom(r.from()); setTo(today()); }
+  };
+
+  // everyone on a tracked position, across whichever stores are in scope
+  const people = [];
+  for (const st of stores) {
+    const d = data[st.id]; if (!d) continue;
+    for (const a of d.roster || []) {
+      if (!a.roleId) continue;
+      const role = config.roles.find((r) => r.id === a.roleId);
+      if (role?.tracked === false) continue;
+      people.push({ key: norm(a.name), name: a.name, storeId: st.id });
+    }
+  }
+
+  // ---- assemble the days and the values ----
+  const dayset = new Set();
+  const grab = {};   // "day|personKey" -> number
+  for (const st of stores) {
+    const d = data[st.id]; if (!d) continue;
+    if (metric.src === "act") {
+      for (const [day, rec] of Object.entries(d.activity || {})) {
+        if (day < from || day > to) continue;
+        dayset.add(day);
+        for (const [k, row] of Object.entries(rec)) {
+          const v = row?.[metric.field];
+          if (v == null) continue;
+          grab[day + "|" + k] = (grab[day + "|" + k] || 0) + v;
+        }
+      }
+    } else {
+      for (const M of Object.values(d.months || {})) {
+        for (const [k, stt] of Object.entries(M.stats || {})) {
+          for (const pt of (stt.pctHistory?.[metric.field] || [])) {
+            if (pt.d < from || pt.d > to || pt.v == null) continue;
+            dayset.add(pt.d);
+            grab[pt.d + "|" + k] = pt.v;
+          }
+        }
+      }
+    }
+  }
+  const days = [...dayset].sort();
+
+  const seriesFor = (keys, name, color) => ({
+    name, color,
+    points: days.map((day) => {
+      const vals = keys.map((k) => grab[day + "|" + k]).filter((v) => v != null);
+      if (!vals.length) return null;
+      // Counts add up across the floor; percentages only make sense averaged.
+      return metric.kind === "pct" ? vals.reduce((a, b) => a + b, 0) / vals.length
+                                   : vals.reduce((a, b) => a + b, 0);
+    }),
+  });
+
+  const series = [seriesFor(people.map((p) => p.key), metric.kind === "pct" ? "Floor average" : "Everyone", "#12212F")];
+  picked.forEach((k, i) => {
+    const p = people.find((x) => x.key === k);
+    if (p) series.push(seriesFor([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
+  });
+
+  const W = 920, H = 300, PL = 52, PR = 16, PT = 16, PB = 34;
+  const all = series.flatMap((s) => s.points).filter((v) => v != null);
+  const hi = all.length ? Math.max(...all) : 1;
+  const lo = 0;
+  const top = hi <= 0 ? 1 : hi * 1.12;
+  const x = (i) => PL + (days.length <= 1 ? 0 : (i * (W - PL - PR)) / (days.length - 1));
+  const y = (v) => PT + (H - PT - PB) * (1 - (v - lo) / (top - lo));
+  const fmt = (v) => (v == null ? "—" : metric.kind === "pct" ? fmtPct(v) : fmtNum(v));
+
+  const path = (pts) => {
+    let d = "", pen = false;
+    pts.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += (pen ? " L " : " M ") + x(i).toFixed(1) + " " + y(v).toFixed(1);
+      pen = true;
+    });
+    return d.trim();
+  };
+
+  const onMove = (e) => {
+    if (!days.length) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    const i = Math.round(((px - PL) / Math.max(1, W - PL - PR)) * (days.length - 1));
+    setHover(Math.max(0, Math.min(days.length - 1, i)));
+  };
+
+  const ticks = 4;
+  const labelEvery = Math.max(1, Math.ceil(days.length / 7));
+
+  return (
+    <div className="card gm-card trends">
+      <h3 className="gm-section">Trends</h3>
+      <p className="hint">Built from the daily imports, so the trail starts the day this store began importing.</p>
+
+      <div className="tr-controls no-print">
+        <select value={metricId} onChange={(e) => setMetricId(e.target.value)}>
+          {TREND_METRICS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <div className="tr-ranges">
+          {RANGES.map((r) => (
+            <button key={r.id} className={"tr-range" + (rangeId === r.id ? " on" : "")}
+              onClick={() => setRange(r.id)}>{r.label}</button>
+          ))}
+          <button className={"tr-range" + (rangeId === "custom" ? " on" : "")}
+            onClick={() => setRangeId("custom")}>Custom</button>
+        </div>
+        {rangeId === "custom" && (
+          <div className="tr-dates">
+            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+            <span>to</span>
+            <input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
+          </div>
+        )}
+      </div>
+
+      {days.length === 0 ? (
+        <p className="hint">Nothing imported in this window yet.</p>
+      ) : (
+        <>
+          <div className="tr-chart">
+            <svg viewBox={`0 0 ${W} ${H}`} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+              {Array.from({ length: ticks + 1 }, (_, t) => {
+                const v = lo + ((top - lo) * t) / ticks;
+                return (
+                  <g key={t}>
+                    <line className="tr-grid" x1={PL} y1={y(v)} x2={W - PR} y2={y(v)} />
+                    <text className="tr-ytick" x={PL - 9} y={y(v) + 4} textAnchor="end">{fmt(v)}</text>
+                  </g>
+                );
+              })}
+              {days.map((d, i) => (i % labelEvery === 0 ? (
+                <text key={d} className="tr-xtick" x={x(i)} y={H - 12} textAnchor="middle">
+                  {new Date(d + "T12:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
+                </text>
+              ) : null))}
+              {series.map((sr, si) => (
+                <path key={si} className={"tr-line" + (si === 0 ? " tr-floor" : "")}
+                  d={path(sr.points)} stroke={sr.color} fill="none" />
+              ))}
+              {hover != null && (
+                <>
+                  <line className="tr-cross" x1={x(hover)} y1={PT} x2={x(hover)} y2={H - PB} />
+                  {series.map((sr, si) => (sr.points[hover] == null ? null : (
+                    <circle key={si} cx={x(hover)} cy={y(sr.points[hover])} r="4.5" fill={sr.color} stroke="#fff" strokeWidth="2" />
+                  )))}
+                </>
+              )}
+            </svg>
+            {hover != null && (
+              <div className="tr-tip" style={{ left: `${(x(hover) / W) * 100}%` }}>
+                <div className="tr-tip-day">
+                  {new Date(days[hover] + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                </div>
+                {series.map((sr, si) => (
+                  <div key={si} className="tr-tip-row">
+                    <span className="tr-dot" style={{ background: sr.color }} />
+                    <span className="tr-tip-name">{sr.name}</span>
+                    <b>{fmt(sr.points[hover])}</b>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="tr-people no-print">
+            <span className="tr-people-cap">Lay someone over the top</span>
+            {people.slice(0, 40).map((p) => (
+              <button key={p.key}
+                className={"tr-chip" + (picked.includes(p.key) ? " on" : "")}
+                style={picked.includes(p.key)
+                  ? { background: TREND_COLORS[picked.indexOf(p.key) % TREND_COLORS.length], borderColor: "transparent", color: "#fff" }
+                  : undefined}
+                onClick={() => setPicked((cur) =>
+                  cur.includes(p.key) ? cur.filter((k) => k !== p.key) : cur.length >= 6 ? cur : [...cur, p.key])}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function GMSummary({ config, data, stores }) {
   const [month, setMonth] = useState(ym());
   const monthOptions = Array.from(new Set(
@@ -7463,6 +7704,23 @@ function GMSummary({ config, data, stores }) {
   const restricted = rows.filter((r) => r.ev.status === "fail" && !r.grace);
   const trending = rows.filter((r) => r.grace);
   const cleared = rows.filter((r) => r.ev.status === "pass");
+  const paused = rows.filter((r) => r.ev.status === "fail" && !r.grace && r.ev.atCap);
+  // Rolled up by the standard being missed, because "six people are short on
+  // Engaged Video" is a floor meeting, whereas six separate rows is a to-do list.
+  const stdMap = {};
+  for (const r of rows) {
+    if (r.ev.status !== "fail") continue;
+    for (const f of r.ev.failures || []) {
+      (stdMap[f.metric] = stdMap[f.metric] || []).push({
+        name: r.name, store: r.store, grace: r.grace, atCap: r.ev.atCap,
+        shown: f.val == null ? "no data" : (f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val)),
+        need: f.def.kind === "pct" ? f.min + "%" : f.min,
+      });
+    }
+  }
+  const byStandard = Object.entries(stdMap)
+    .map(([metric, ppl]) => ({ metric, people: ppl }))
+    .sort((a, b) => b.people.length - a.people.length);
 
   const exportCSV = () => {
     const out = [["Store", "Position", "Associate", "Leads MTD", "Tier Cap", "Verdict", "Restriction Reasons", "Delivery %", "Sold %", "Units", "Appt Video %", "BH Video %", "Engaged Video %"]];
@@ -7492,44 +7750,61 @@ function GMSummary({ config, data, stores }) {
         <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()} · {restricted.length} restricted · {trending.length > 0 ? `${trending.length} in grace period · ` : ""}{cleared.length} cleared to grab leads</p>
       </div>
       {rows.length === 0 && <div className="empty">No data for this month yet.</div>}
-      {trending.length > 0 && (
+
+      <TrendsPanel config={config} stores={stores} data={data} />
+
+      {byStandard.length > 0 && (
         <div className="card gm-card">
-          <h3 className="gm-section watch">Grace Period: Trending Below Standard ({trending.length})</h3>
-          <p className="hint">Early-month numbers; no restriction recommended yet. Coach these before the grace window closes.</p>
-          <table className="gm-table">
-            <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Working toward</th></tr></thead>
-            <tbody>
-              {trending.map((r, i) => (
-                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td><td>{r.role}</td><td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
-              ))}
-            </tbody>
-          </table>
+          <h3 className="gm-section fail">Where the floor is losing standard</h3>
+          <p className="hint">Grouped by the standard rather than by the person, so a pattern across the floor is obvious and one conversation can fix several people at once.</p>
+          {byStandard.map((g) => (
+            <div key={g.metric} className="std-group">
+              <div className="std-group-head">
+                <span className="std-group-name">{METRICS[g.metric].label}</span>
+                <span className="std-group-count">{g.people.length} below</span>
+              </div>
+              <div className="std-people">
+                {g.people.map((r, i) => (
+                  <div key={i} className="std-person">
+                    <b>{r.name}</b>
+                    {stores.length > 1 && <span className="std-store">{r.store}</span>}
+                    <span className="std-val">{r.shown} <em>vs {r.need}</em></span>
+                    {r.grace && <span className="std-tag">grace</span>}
+                    {r.atCap && <span className="std-tag hot">at cap</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
-      {restricted.length > 0 && (
+
+      {paused.length > 0 && (
         <div className="card gm-card">
-          <h3 className="gm-section fail">Restrict Leads ({restricted.length})</h3>
+          <h3 className="gm-section fail">Leads paused right now ({paused.length})</h3>
+          <p className="hint">At their cap and below standard, so the tool is holding their next lead.</p>
           <table className="gm-table">
             <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Because of</th></tr></thead>
             <tbody>
-              {restricted.map((r, i) => (
+              {paused.map((r, i) => (
                 <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td><td>{r.role}</td><td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
       {cleared.length > 0 && (
         <div className="card gm-card">
-          <h3 className="gm-section pass">Cleared to Grab Leads ({cleared.length})</h3>
-          <table className="gm-table">
-            <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Cleared up to</th></tr></thead>
-            <tbody>
-              {cleared.map((r, i) => (
-                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td><td>{r.role}</td><td>{r.ev.opps} / {r.ev.cap}</td><td>{r.ev.nextCap ? `${r.ev.nextCap} leads` : "Top tier"}</td></tr>
-              ))}
-            </tbody>
-          </table>
+          <h3 className="gm-section pass">Holding standard ({cleared.length})</h3>
+          <div className="std-people">
+            {cleared.map((r, i) => (
+              <div key={i} className="std-person ok">
+                <b>{r.name}</b>
+                <span className="std-val">{r.ev.opps} / {r.ev.cap} <em>leads</em></span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -8530,10 +8805,10 @@ function Style() {
       .hh-row.dim { background:rgba(255,255,255,.12); }
 
       /* ---- the "why, and who" row ---- */
-      .hero-focus { display:grid; grid-template-columns: minmax(210px, 300px) 1fr; gap:14px; margin-top:14px;
+      .hero-focus { display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
         animation: tileIn .5s var(--spring) .32s both; }
       .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
-        padding:15px 17px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
+        padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07); }
       .hf-cap { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.11em; color:var(--ink-3); }
       .hf-metric { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em; margin-top:6px; }
@@ -8541,7 +8816,7 @@ function Style() {
       .hf-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#F5847A,#E59200);
         transition: width .9s var(--ease); }
       .hf-sub { font-size:11px; color:var(--ink-2); margin-top:7px; }
-      .hf-list { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+      .hf-list { display:flex; flex-direction:column; gap:5px; margin-top:11px; }
       .hf-person { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
         border:none; background:transparent; font:inherit; padding:7px 9px; border-radius:10px;
         transition: background .22s var(--ease), transform .22s var(--ease); }
@@ -8552,6 +8827,23 @@ function Style() {
         font-variant-numeric:tabular-nums; }
       .hf-tag.now { background:rgba(229,71,60,.14); color:#C13529; }
       .hf-tag.soon { background:rgba(255,159,10,.16); color:#95600A; }
+      .hf-fix { position:relative; }
+      .hf-pop { position:absolute; left:0; top:calc(100% + 12px); width:300px; z-index:45;
+        opacity:0; pointer-events:none; text-align:left;
+        transform: translateY(-6px) scale(.9); transform-origin: top left;
+        transition: opacity .16s ease, transform .38s var(--ease-bloop);
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
+        padding:14px 16px 13px; box-shadow: 0 16px 42px rgba(31,54,86,.26); }
+      .hf-fix:hover .hf-pop { opacity:1; transform: translateY(0) scale(1); }
+
+      /* the card the manager was sent to, briefly haloed so they land on it */
+      .assoc-card.is-focused { animation: focusPing 2.4s var(--ease) both; border-radius:12px; }
+      @keyframes focusPing {
+        0%   { box-shadow: 0 0 0 0 rgba(42,94,155,.34); background:rgba(42,94,155,.07); }
+        55%  { box-shadow: 0 0 0 7px rgba(42,94,155,0); background:rgba(42,94,155,.05); }
+        100% { box-shadow: 0 0 0 0 rgba(42,94,155,0); background:transparent; }
+      }
+      .pod { cursor:pointer; text-align:left; font:inherit; color:inherit; }
 
       /* ---- Top Performers as a strip rather than three big cards ---- */
       .podium { margin-bottom:22px; }
@@ -8578,7 +8870,15 @@ function Style() {
 
       /* ---- one roster card, roles divided inside it ---- */
       .roster-card { --tint: rgba(42,94,155,.07); padding:6px 24px 20px; }
-      .role-group { position:relative; padding-top:20px; }
+      .role-group { position:relative; isolation:isolate; padding-top:26px;
+        --tint: color-mix(in srgb, var(--role) 14%, transparent); }
+      /* A soft band of the role's own colour behind its header, so Sales, BDC,
+         Managers and Service to Sales read as distinct territories inside the one
+         card rather than an undifferentiated list. */
+      .role-group::before { content:""; position:absolute; left:-12px; right:-12px; top:8px; height:104px;
+        z-index:-1; border-radius:16px; pointer-events:none;
+        background: linear-gradient(180deg, color-mix(in srgb, var(--role) 16%, transparent), transparent 82%); }
+      .role-group .role-header { font-size:17px; }
       .role-group + .role-group { border-top:1px solid rgba(16,40,68,.07); margin-top:6px; }
 
       /* ---- the living backdrop ---- */
@@ -9209,12 +9509,18 @@ function Style() {
       .save-dot { font-size:12px; color:var(--ink-3); animation: pulse 1.2s ease infinite; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
-      .tool-switch { display:inline-flex; gap:2px; background:rgba(118,118,128,.12); border-radius:10px; padding:2px; }
+      .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
+        border-radius:10px; padding:2px; }
+      .tool-thumb { position:absolute; top:2px; bottom:2px; left:0; background:#fff; border-radius:8px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 1px 4px rgba(31,54,86,.18); opacity:0; pointer-events:none;
+        transition: transform .4s var(--spring), width .4s var(--spring); will-change: transform, width; }
+      .tool-thumb.ready { opacity:1; }
       .tool-btn { border:none; background:none; padding:6px 12px; border-radius:8px; cursor:pointer;
         font-size:12.5px; font-weight:600; color:var(--ink-2); white-space:nowrap;
         transition: background .2s var(--spring), color .2s var(--spring); }
       .tool-btn:hover { color:var(--ink); }
-      .tool-btn.on { background:#fff; color:var(--blue); box-shadow:0 1px 3px rgba(0,0,0,.10); }
+      .tool-btn { position:relative; z-index:1; }
+      .tool-btn.on { color:var(--blue); }
 
       /* ---- segmented control (sliding) ---- */
       .seg-wrap { display:flex; padding:16px 24px 0; }
@@ -9421,6 +9727,13 @@ function Style() {
 
       /* ---- search ---- */
       .search-wrap { position:relative; margin-bottom:14px; max-width:420px; }
+      .search-top { margin:0 0 0 auto; max-width:300px; flex:1 1 220px; min-width:160px; }
+      .search-top .search-input { padding:9px 38px; border-radius:12px;
+        background:rgba(118,118,128,.10); border:1px solid transparent;
+        transition: background .3s var(--ease), border-color .3s var(--ease), box-shadow .3s var(--ease); }
+      .search-top .search-input:focus { background:#fff; border-color:rgba(42,94,155,.35);
+        box-shadow: 0 0 0 4px rgba(42,94,155,.14); }
+      .seg-wrap { align-items:center; gap:16px; }
       .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-3); font-size:16px; }
       .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
         border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
@@ -9514,6 +9827,18 @@ function Style() {
       .splash-btn-activity:hover { box-shadow:0 3px 10px rgba(0,168,150,.35); }
 
       /* ---- check out tracker ---- */
+      /* Check Out, Coaching and Plates were flush to the window edge; the rest of
+         the app has always been inset. */
+      .checkout, .coaching, .plates { padding:30px 32px 56px; max-width:1440px; margin:0 auto; }
+      .checkout-card { --tint: rgba(42,94,155,.08); }
+      .coach-list-card { --tint: rgba(0,168,150,.10); }
+      .plates .card { --tint: rgba(122,79,155,.09); }
+      .import .checklist { --tint: rgba(136,198,234,.16); }
+      .assoc-card-full { --tint: rgba(42,94,155,.09); }
+      .checkout-split { gap:22px; }
+      .checkout-table td, .checkout-table th { padding:10px 12px; }
+      .checkout-table tbody tr { transition: background .25s var(--ease); }
+      .checkout-table tbody tr:hover { background:rgba(42,94,155,.045); }
       .checkout-summary { display:flex; gap:16px; margin-bottom:14px; font-size:13px; font-weight:600; }
       .checkout-table { width:100%; border-collapse:collapse; }
       .checkout-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); padding:8px; font-weight:600; }
@@ -9894,6 +10219,70 @@ function Style() {
       .gm-section { font-size:16px; font-weight:700; letter-spacing:-.01em; margin:4px 0 10px; display:flex; align-items:center; gap:9px; }
       .gm-section::before { content:""; width:10px; height:10px; border-radius:50%; }
       .gm-section.fail::before { background:var(--red); } .gm-section.pass::before { background:var(--green); }
+      .gm-section::before { background:var(--blue); }
+      .gm-section.fail::before { background:var(--red); }
+      .gm-section.pass::before { background:var(--green); }
+      @media (max-width: 700px) {
+        .tr-controls { flex-direction:column; align-items:stretch; }
+        .tr-ranges { overflow-x:auto; }
+      }
+      /* ---- trends ---- */
+      .trends { --tint: rgba(0,168,150,.09); }
+      .tr-controls { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin:14px 0 6px; }
+      .tr-ranges { display:inline-flex; background:rgba(118,118,128,.12); border-radius:11px; padding:3px; gap:2px; }
+      .tr-range { border:none; background:transparent; font:inherit; font-size:12.5px; font-weight:600;
+        color:var(--ink-2); padding:7px 13px; border-radius:8px; cursor:pointer;
+        transition: background .28s var(--ease), color .28s var(--ease); }
+      .tr-range:hover { color:var(--ink); }
+      .tr-range.on { background:#fff; color:var(--blue); box-shadow:0 1px 4px rgba(31,54,86,.16); }
+      .tr-dates { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-2); }
+      .tr-chart { position:relative; margin-top:12px; }
+      .tr-chart svg { width:100%; height:auto; display:block; overflow:visible; }
+      .tr-grid { stroke:rgba(16,40,68,.07); stroke-width:1; }
+      .tr-ytick, .tr-xtick { font-size:10px; fill:var(--ink-3); font-weight:600; font-variant-numeric:tabular-nums; }
+      .tr-line { stroke-width:2.25; stroke-linejoin:round; stroke-linecap:round;
+        transition: stroke-width .25s var(--ease); }
+      .tr-floor { stroke-width:3; }
+      .tr-cross { stroke:rgba(16,40,68,.3); stroke-width:1.5; stroke-dasharray:3 4; }
+      .tr-tip { position:absolute; top:6px; transform:translateX(-50%); pointer-events:none; z-index:5;
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:12px;
+        padding:9px 12px; box-shadow:0 12px 30px rgba(31,54,86,.2); min-width:150px;
+        animation: tipIn .22s var(--ease-bloop) both; }
+      @keyframes tipIn { from { opacity:0; transform:translateX(-50%) scale(.92); } to { opacity:1; } }
+      .tr-tip-day { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--ink-3); margin-bottom:6px; }
+      .tr-tip-row { display:flex; align-items:center; gap:7px; font-size:12px; padding:2px 0; }
+      .tr-tip-name { flex:1; color:var(--ink-2); white-space:nowrap; }
+      .tr-tip-row b { font-variant-numeric:tabular-nums; }
+      .tr-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+      .tr-people { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:16px;
+        padding-top:14px; border-top:1px solid rgba(16,40,68,.07); }
+      .tr-people-cap { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.09em;
+        color:var(--ink-3); margin-right:6px; }
+      .tr-chip { border:1px solid var(--line); background:rgba(255,255,255,.7); color:var(--ink-2);
+        font:inherit; font-size:12px; font-weight:600; padding:5px 12px; border-radius:99px; cursor:pointer;
+        transition: transform .25s var(--ease-bloop), border-color .25s var(--ease), color .25s var(--ease); }
+      .tr-chip:hover { border-color:rgba(42,94,155,.4); color:var(--blue); transform:translateY(-1px); }
+
+      /* ---- summary grouped by standard ---- */
+      .std-group { margin-top:16px; }
+      .std-group + .std-group { padding-top:16px; border-top:1px solid rgba(16,40,68,.07); }
+      .std-group-head { display:flex; align-items:baseline; gap:10px; margin-bottom:9px; }
+      .std-group-name { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em; }
+      .std-group-count { font-size:11px; font-weight:700; color:#C13529; background:rgba(229,71,60,.12);
+        padding:2px 9px; border-radius:99px; }
+      .std-people { display:flex; flex-wrap:wrap; gap:7px; }
+      .std-person { display:inline-flex; align-items:center; gap:8px; font-size:12.5px;
+        background:rgba(255,255,255,.72); border:1px solid rgba(16,40,68,.07); border-radius:11px;
+        padding:7px 12px; }
+      .std-person.ok { background:rgba(48,177,85,.09); border-color:rgba(48,177,85,.2); }
+      .std-store { color:var(--ink-3); font-size:11px; }
+      .std-val { color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .std-val em { font-style:normal; color:var(--ink-3); }
+      .std-tag { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+        background:rgba(0,0,0,.06); color:var(--ink-2); padding:2px 7px; border-radius:99px; }
+      .std-tag.hot { background:rgba(229,71,60,.13); color:#C13529; }
+
       .gm-table { width:100%; border-collapse:collapse; }
       .gm-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3);
         padding:8px; border-bottom:1px solid var(--line); font-weight:600; }
