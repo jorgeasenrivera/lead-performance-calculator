@@ -4,7 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 
 /* ============================================================
    LEAD PERFORMANCE CALCULATOR v3
-   "Earn the next lead."
    v3: Apple-inspired redesign with frosted chrome, segmented controls,
    spring transitions, logo + favicon. Logic & storage identical to v2.
    ============================================================ */
@@ -812,6 +811,7 @@ export default function LeadPerformanceCalculator() {
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
+  const [introPlaying, setIntroPlaying] = useState(false);
   // The cinematic intro plays once per calendar day per user. null = not decided yet.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
@@ -849,6 +849,17 @@ export default function LeadPerformanceCalculator() {
     setSession(p);
     setAuthReady(true);
   }, []);
+
+  // Sign-in drops straight into the Performance dashboard. On the first sign-in of
+  // a calendar day the cinematic intro plays as an OVERLAY on top of the already
+  // loaded app and then dissolves away, rather than the app replacing it outright.
+  // Swapping one full screen for another was the hard cut; a curtain lifting is not.
+  useEffect(() => {
+    if (!session || !session.active || entered) return;
+    if (!introPlayedToday(session.userId || session.id)) setIntroPlaying(true);
+    setAppModule("perf");
+    setEntered(true);
+  }, [session, entered]);
 
   useEffect(() => {
     refreshProfile();
@@ -1285,30 +1296,6 @@ export default function LeadPerformanceCalculator() {
   const currentStore = view !== "admin" ? config.stores.find((s) => s.id === view) : null;
   const overviewStores = isAdmin ? config.stores : accessibleStores;
 
-  // Sign-in lands straight in the Performance dashboard — no Tools chooser. On the
-  // first sign-in of the day, the cinematic intro plays over the top; after it (or if
-  // it already played today), we drop into the app. Managers land in their store;
-  // admins land in the all-stores overview.
-  if (!entered) {
-    const alreadyToday = introDone || introPlayedToday(session.userId || session.id);
-    if (alreadyToday) {
-      // Straight in — no animation. Enter on the next tick to avoid setState-in-render.
-      return <Shell><EnterNow onEnter={() => { setAppModule("perf"); setEntered(true); }} /><Style /></Shell>;
-    }
-    const landingName = currentStore?.name || (isAdmin ? "your stores" : "your board");
-    return (
-      <Shell>
-        <LoadingSequence storeName={landingName} onComplete={() => {
-          markIntroPlayed(session.userId || session.id);
-          setIntroDone(true);
-          setAppModule("perf");
-          setEntered(true);
-        }} />
-        <Style />
-      </Shell>
-    );
-  }
-
   // "The Board" chosen from the splash: scope it to who's signed in.
   if (appModule === "board") {
     return (
@@ -1318,8 +1305,7 @@ export default function LeadPerformanceCalculator() {
             <Logo size={36} />
             <div>
               <div className="brand-title">Lead Performance</div>
-              <div className="brand-sub">Earn the next lead</div>
-            </div>
+              </div>
           </div>
           <div className="topbar-right">
             <ToolSwitcher value="board" onChange={(mod) => {
@@ -1332,7 +1318,6 @@ export default function LeadPerformanceCalculator() {
               setTab(mod === "activity" ? "checkout" : "board");
             }} />
             <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
-            <button className="btn-quiet" onClick={() => setEntered(false)}>Tools</button>
             <button className="btn-quiet" onClick={signOut}>Sign out</button>
           </div>
         </header>
@@ -1381,7 +1366,6 @@ export default function LeadPerformanceCalculator() {
           <Logo size={36} />
           <div>
             <div className="brand-title">Lead Performance</div>
-            <div className="brand-sub">Earn the next lead</div>
           </div>
         </div>
         <div className="topbar-right">
@@ -1406,7 +1390,6 @@ export default function LeadPerformanceCalculator() {
           </select>
 
           <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
-          <button className="btn-quiet" onClick={() => setEntered(false)}>Tools</button>
           <button className="btn-quiet" onClick={signOut}>Sign out</button>
         </div>
         {navItems && (
@@ -1587,6 +1570,15 @@ export default function LeadPerformanceCalculator() {
       )}
       {showHelp && (
         <DeliveryGuideModal onClose={() => setShowHelp(false)} />
+      )}
+      {introPlaying && (
+        <LoadingSequence
+          storeName={currentStore?.name || (isAdmin ? "your stores" : "your board")}
+          onComplete={() => {
+            markIntroPlayed(session.userId || session.id);
+            setIntroDone(true);
+            setIntroPlaying(false);
+          }} />
       )}
       <Style />
     </Shell>
@@ -2482,20 +2474,27 @@ function LEADERBOARD_HTML(p) {
    affordance appears only after someone has seen it a few times. */
 function LoadingSequence({ storeName, onComplete }) {
   const [seen] = useState(() => introSeenCount());
+  const [exiting, setExiting] = useState(false);
   const doneRef = useRef(false);
+  // Held in a ref so the timers below never restart when the parent re-renders.
+  const onDone = useRef(onComplete);
+  onDone.current = onComplete;
 
   const finish = useCallback(() => {
     if (doneRef.current) return;
     doneRef.current = true;
-    onComplete();
-  }, [onComplete]);
+    // Blur and scale away first, revealing the app that is already sitting
+    // underneath, then unmount. EXIT_MS must match the lseqOut keyframe.
+    setExiting(true);
+    setTimeout(() => onDone.current(), 640);
+  }, []);
 
   useEffect(() => {
     bumpIntroCount();
-    const t = setTimeout(finish, 5000);
-    // reduced-motion: honor the OS setting and skip straight in
+    // reduced-motion: honor the OS setting and hand over with no animation at all
     const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq && mq.matches) { clearTimeout(t); finish(); }
+    if (mq && mq.matches) { doneRef.current = true; onDone.current(); return; }
+    const t = setTimeout(finish, 5000);
     return () => clearTimeout(t);
   }, [finish]);
 
@@ -2516,7 +2515,7 @@ function LoadingSequence({ storeName, onComplete }) {
   const mark = (t) => t === "g" ? "\u2713" : t === "y" ? "\u26A0\uFE0E" : "\u2717";
 
   return (
-    <div className="lseq">
+    <div className={"lseq" + (exiting ? " is-exiting" : "")}>
       <div className="lseq-bg" />
       <div className="lseq-aurora" />
 
@@ -2561,7 +2560,6 @@ function LoadingSequence({ storeName, onComplete }) {
         </div>
         <div className="lseq-word">
           <h1>Lead Performance</h1>
-          <div className="lseq-tag">Earn the next lead</div>
         </div>
       </div>
 
@@ -2569,29 +2567,6 @@ function LoadingSequence({ storeName, onComplete }) {
       <div className="lseq-loadbar"><div className="lseq-fill" /></div>
 
       {seen >= 3 && <button className="lseq-skip" onClick={finish}>Skip →</button>}
-    </div>
-  );
-}
-
-/* ---------------- Splash ---------------- */
-function Splash({ config, session, onEnter, onSignOut }) {
-  const first = (session?.name || "").split(" ")[0];
-  return (
-    <div className="splash">
-      <div className="splash-inner">
-        <div className="splash-logo"><Logo size={92} animated /></div>
-        <h1 className="splash-title">Lead Performance</h1>
-        <p className="splash-sub">
-          {first ? `Welcome back, ${first}. Which tool do you need?` : "Which tool do you need?"}
-        </p>
-        <div className="splash-actions">
-          <button className="btn wide splash-btn-primary" onClick={() => onEnter("perf")}>Performance Tracker</button>
-          <button className="btn wide splash-btn-primary splash-btn-activity" onClick={() => onEnter("activity")}>Daily Activity Tracker</button>
-          <button className="btn-outline wide splash-btn-secondary" onClick={() => onEnter("board")}>The Board</button>
-        </div>
-        <button className="btn-link" onClick={onSignOut}>Sign out</button>
-        <p className="splash-foot">Earn the next lead.</p>
-      </div>
     </div>
   );
 }
@@ -2750,7 +2725,7 @@ function Login({ config, onBack, onAuthed }) {
       <div className={"login-card " + (busy ? "login-busy" : "")}>
         <div className="login-logo"><Logo size={64} animated={!busy} loading={busy} /></div>
         <h1 className="login-title">Lead Performance</h1>
-        <p className="login-sub">{busy ? "Signing you in…" : "Earn the next lead"}</p>
+        <p className="login-sub">{busy ? "Signing you in…" : "Sign in to continue"}</p>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
@@ -2839,8 +2814,9 @@ function ImportBadge({ storeData, activity }) {
   if (activity) {
     return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? "✓" : "0/1"}</span>;
   }
-  const done = ["delivery", "appointment", "video"].filter((k) => t[k]).length;
-  return <span className={"badge " + (done === 3 ? "badge-ok" : "badge-warn")}>{done}/3</span>;
+  // Delivery Summaries arrive by email, so the manager only uploads two.
+  const done = ["appointment", "video"].filter((k) => t[k]).length;
+  return <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>{done}/2</span>;
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
@@ -4270,7 +4246,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
           const d = adminData[s.id] || emptyStoreData();
           const M = d.months?.[ym()];
           const t = M?.imports?.[today()] || {};
-          const done = ["delivery", "appointment", "video"].filter((k) => t[k]).length;
+          const done = ["appointment", "video"].filter((k) => t[k]).length;
           const inGrace = dayOfMonth() <= (s.graceDays ?? 10);
           const restrictions = d.restrictions || {};
           const isRestricted = (a) => { const r = restrictions[a.id]; return r && (!r.until || new Date(r.until) > new Date()); };
@@ -4293,7 +4269,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
                 <div className="store-card-name">{s.name}</div>
               </div>
               <div className="store-card-row">
-                <span className={"badge " + (done === 3 ? "badge-ok" : "badge-warn")}>Imports {done}/3</span>
+                <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>Imports {done}/2</span>
               </div>
               <div className="store-verdicts">
                 {chips.length === 0
@@ -4420,7 +4396,7 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
           <div className="lb-row">
             {top3.map((r, i) => (
               <div key={r.name} className={"lb-item lb-" + (i + 1)}>
-                <div className="lb-medal">{["①", "②", "③"][i]}</div>
+                <div className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</div>
                 <div className="lb-name">{r.name}</div>
                 <div className="lb-meta" style={{ color: r.role.color }}>{r.role.name}</div>
                 <div className="lb-surpass">+{Math.round(r.surpass * 100)}% over target</div>
@@ -4510,6 +4486,59 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
   );
 }
 
+/* A manager should be able to answer "is this person doing well?" without reading
+   a sentence. Each requirement becomes a small speedometer, echoing the dial in
+   the app's own logo: the coloured sweep is where they are, the dark tick is the
+   target. Short of the tick is a gap, past it is fine. The tick's position and
+   the colour both carry the meaning, so it still reads if colours are hard to
+   tell apart or the screen is glanced at from across a desk. */
+function MetricStrip({ ev, stats }) {
+  const reqs = ev?.tier?.requirements;
+  if (!reqs || !reqs.length) return null;
+
+  // 180-degree dial: centre (38,40), radius 30. The target sits at 70% of the
+  // sweep rather than the end, so beating it still has somewhere to travel.
+  const CX = 38, CY = 40, R = 30, TARGET_T = 0.7;
+  const pt = (t, r) => {
+    const th = Math.PI * (1 - t);
+    return [CX + r * Math.cos(th), CY - r * Math.sin(th)];
+  };
+  const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`;
+  const [tx1, ty1] = pt(TARGET_T, R - 7);
+  const [tx2, ty2] = pt(TARGET_T, R + 7);
+
+  return (
+    <div className="mstrip">
+      {reqs.map((req, i) => {
+        const def = METRICS[req.metric];
+        const v = stats?.[req.metric];
+        const need = def.kind === "pct" ? req.min / 100 : req.min;
+        const ratio = (v == null || need <= 0) ? 0 : v / need;
+        const t = Math.max(0, Math.min(1, ratio * TARGET_T));
+        const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
+        const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
+        const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
+        const [nx, ny] = pt(t, R);
+        return (
+          <div key={i} className={"mdial mdial-" + state}
+            title={`${def.label}: ${v == null ? "no data" : shown} against a target of ${targetTxt}`}>
+            <svg viewBox="0 0 76 48" aria-hidden="true">
+              <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
+              <path className="md-fill" d={arc} fill="none" strokeWidth="7" strokeLinecap="round"
+                pathLength="100" strokeDasharray={`${(t * 100).toFixed(1)} 100`} />
+              <line className="md-target" x1={tx1} y1={ty1} x2={tx2} y2={ty2} strokeWidth="2.5" strokeLinecap="round" />
+              {v != null && <circle className="md-dot" cx={nx} cy={ny} r="3.6" />}
+              <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">{shown}</text>
+            </svg>
+            <div className="mdial-label">{def.short}</div>
+            <div className="mdial-need">target {targetTxt}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, onDragStart, onDropOn, readOnly }) {
   const [open, setOpen] = useState(false);
   const [showRestrict, setShowRestrict] = useState(false);
@@ -4533,7 +4562,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       onDrop={(e) => { if (readOnly) return; e.preventDefault(); onDropOn(); }}>
       <div className="assoc-row" onClick={() => setOpen(!open)}>
         {!readOnly && <span className="grip">⠿</span>}
-        {rank && <span className={"rank-badge rank-" + rank}>{["①", "②", "③"][rank - 1]}</span>}
+        {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
         {star && <span className="star-badge" title="Wildly surpassing standard">★ Crushing it</span>}
         {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
@@ -4554,7 +4583,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       {ev.cap != null && (
         <div className="gauge">
           <div className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")} style={{ width: pct + "%" }} />
-          <div className="gauge-notch" style={{ left: "100%" }} />
         </div>
       )}
       {incomplete && (
@@ -4571,29 +4599,20 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       )}
       {softFail && !restrictedNow && (
         <div className="reasons watch-note">
-          Working toward:{" "}
-          {ev.failures.map((f, i) => (
-            <span key={i} className="reason watch">
-              {f.def.short} {f.val == null ? "(no data)" : (f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val))} → {f.def.kind === "pct" ? f.min + "%" : f.min}
-            </span>
-          ))}
-          <span className="hint"> No restriction recommended during the grace period.</span>
+          <div className="reason-lead">Working toward standard. No restriction recommended during the grace period.</div>
+          <MetricStrip ev={ev} stats={stats} />
         </div>
       )}
       {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
         <div className="reasons">
-          <div>
+          <div className="reason-lead">
             {ev.atCap
-              ? "At the lead cap and below standard, so leads are restricted because of: "
+              ? "At the lead cap and below standard, so leads are restricted."
               : (ev.capUse ?? 0) >= 0.8
-                ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless this improves: `
-                : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix before the cap and nothing pauses: `}
-            {ev.failures.map((f, i) => (
-              <span key={i} className="reason">
-                {f.def.short} {f.val == null ? "(no data)" : (f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val))}, needs {f.def.kind === "pct" ? f.min + "%" : f.min}
-              </span>
-            ))}
+                ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
+                : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`}
           </div>
+          <MetricStrip ev={ev} stats={stats} />
           {!readOnly && ev.atCap && (!showRestrict ? (
             <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
           ) : (
@@ -6664,10 +6683,6 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
 }
 
 /* ---------------- Loading screen ---------------- */
-function EnterNow({ onEnter }) {
-  useEffect(() => { onEnter(); }, []); // eslint-disable-line
-  return <LoadingScreen label="Loading" />;
-}
 /* Shown when someone is signed in and approved but no store resolves for them.
    "No access" has several very different causes, and the old message assumed only one.
    This shows the account it actually loaded and the store ids on it, so an admin can
@@ -8266,6 +8281,13 @@ function Style() {
       @keyframes lseqFillBar { to { width:100%; } }
       @keyframes lseqBarShow { to { opacity:1; } } @keyframes lseqBarHide { to { opacity:0; } }
       .lseq-loadword { position:absolute; bottom:9vh; left:50%; transform:translateX(-50%); color:var(--ink-3); font-size:1.6vh; font-weight:600; letter-spacing:.04em; z-index:6; opacity:0; animation:lseqBarShow .4s ease 1.1s forwards, lseqBarHide .4s ease 4.4s forwards; }
+      /* The curtain lifts: the overlay blurs and pulls away, revealing the app that
+         is already sitting underneath. Duration must match EXIT_MS in the component. */
+      .lseq.is-exiting { pointer-events:none; animation: lseqOut .64s cubic-bezier(.32,.72,.33,1) forwards; }
+      @keyframes lseqOut {
+        0%   { opacity:1; transform:scale(1);    filter:blur(0px); }
+        100% { opacity:0; transform:scale(1.09); filter:blur(12px); }
+      }
       .lseq-skip { position:absolute; bottom:5vh; right:5vw; z-index:8; background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.25);
         padding:8px 16px; border-radius:99px; font:inherit; font-size:14px; font-weight:600; cursor:pointer; backdrop-filter:blur(6px); animation:lseqBarShow .5s ease .5s both; }
       .lseq-skip:hover { background:rgba(255,255,255,.24); }
@@ -8795,55 +8817,47 @@ function Style() {
       .gauge-fill { height:100%; border-radius:5px; background:linear-gradient(90deg, #2A5E9B, #C1D730);
         transition: width .6s var(--spring); }
       .gauge-red { background:linear-gradient(90deg, #FF6B5E, #E5473C); }
-      .gauge-notch { position:absolute; top:-3px; width:2.5px; height:14px; background:var(--ink); border-radius:2px; transform:translateX(-1px); }
       .reasons { margin:9px 0 0 23px; font-size:12.5px; color:#C13529; animation: pageIn .3s var(--spring); }
       .reason { display:inline-block; background:rgba(229,71,60,.10); border-radius:14px; padding:3px 10px; margin:2px 5px 0 0; font-weight:500; }
       .pass-note { color:#1E7A3C; }
 
-      /* ---- grace period & recap ---- */
-      .verdict-grace { background:rgba(136,198,234,.28); color:#1D4674; }
-      .watch-note { color:#7A5A00; }
-      .reason.watch { background:rgba(255,159,10,.12); color:#8A5A00; }
-      .grace-banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-left:4px solid #88C6EA;
-        background:linear-gradient(90deg, rgba(136,198,234,.10), rgba(255,255,255,0) 60%); font-size:13px; color:var(--ink-2); }
-      .recap { border-left:4px solid var(--lime); }
-      .recap-row { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
-      .recap-row:last-child { border-bottom:none; }
-      .recap-name { font-size:11px; }
-      .recap-chips { display:flex; gap:5px; flex-wrap:wrap; }
-      .gm-section.watch::before { background:#88C6EA; }
-      .stat-grace { color:#1D4674; font-weight:600; }
-      .grace-setting { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-      .grace-label { display:flex; gap:9px; align-items:center; font-weight:600; }
-      .grace-setting input[type=number] { width:64px; }
+      /* ---- scorecard dials: the 5-second read on every associate ---- */
+      .reason-lead { font-size:12.5px; color:var(--ink-2); margin-bottom:10px; }
+      .mstrip { display:flex; flex-wrap:wrap; gap:12px 20px; }
+      .mdial { width:88px; text-align:center; }
+      .mdial svg { display:block; width:88px; height:56px; overflow:visible; }
+      .md-track { stroke:rgba(0,0,0,.08); }
+      .md-target { stroke:rgba(0,0,0,.5); }
+      .md-val { font-size:13px; font-weight:800; letter-spacing:-.03em; fill:var(--ink);
+        font-variant-numeric:tabular-nums; }
+      .mdial-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--ink-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .mdial-need { font-size:9.5px; color:var(--ink-3); margin-top:2px; font-variant-numeric:tabular-nums; }
+      .md-fill { transition: stroke-dasharray .7s var(--spring); }
+      .mdial-ok     .md-fill { stroke:#30B155; } .mdial-ok     .md-dot { fill:#30B155; } .mdial-ok     .md-val { fill:#1E7A3C; }
+      .mdial-near   .md-fill { stroke:#E59200; } .mdial-near   .md-dot { fill:#E59200; } .mdial-near   .md-val { fill:#95600A; }
+      .mdial-under  .md-fill { stroke:#E5473C; } .mdial-under  .md-dot { fill:#E5473C; } .mdial-under  .md-val { fill:#C13529; }
+      .mdial-nodata .md-fill { stroke:rgba(0,0,0,.14); } .mdial-nodata .md-val { fill:var(--ink-3); }
 
-      /* ---- search ---- */
-      .search-wrap { position:relative; margin-bottom:14px; max-width:420px; }
-      .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-3); font-size:16px; }
-      .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
-        border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-      .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
-        color:var(--ink-2); width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:11px; }
-      .search-count { margin:-8px 0 12px 4px; }
-
-      /* ---- leaderboard ---- */
-      .leaderboard { border-left:4px solid var(--lime); }
-      .lb-title { font-size:16px; font-weight:700; margin:0 0 12px; }
-      .lb-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
-      .lb-item { padding:14px; border-radius:14px; text-align:center; background:rgba(255,255,255,.5);
-        border:1px solid rgba(255,255,255,.7); transition: transform .3s var(--spring); }
-      .lb-item:hover { transform: translateY(-2px); }
-      .lb-1 { background:linear-gradient(160deg, rgba(255,215,90,.28), rgba(255,255,255,.4)); }
-      .lb-2 { background:linear-gradient(160deg, rgba(200,205,215,.32), rgba(255,255,255,.4)); }
-      .lb-3 { background:linear-gradient(160deg, rgba(205,145,95,.26), rgba(255,255,255,.4)); }
-      .lb-medal { font-size:26px; line-height:1; }
+      .lb-medal { width:40px; height:40px; margin:0 auto; border-radius:50%; display:flex;
+        align-items:center; justify-content:center; font-size:17px; font-weight:800; letter-spacing:-.02em;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 3px 10px rgba(31,54,86,.16); }
+      .lb-medal-1 { background:linear-gradient(150deg,#FFE595,#E0A100); color:#4A3200;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 0 0 3px rgba(224,161,0,.15), 0 5px 14px rgba(224,161,0,.34); }
+      .lb-medal-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
+      .lb-medal-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
       .lb-name { font-weight:700; margin-top:6px; letter-spacing:-.01em; }
       .lb-meta { font-size:11.5px; font-weight:600; margin-top:2px; }
       .lb-surpass { font-size:12px; color:#1E7A3C; font-weight:600; margin-top:6px; }
       @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
 
       /* ---- rank + star + incomplete + off leads ---- */
-      .rank-badge { font-size:15px; }
+      .rank-badge { width:21px; height:21px; flex:0 0 auto; border-radius:50%; display:inline-flex;
+        align-items:center; justify-content:center; font-size:11px; font-weight:800; letter-spacing:-.02em;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
+      .rank-1 { background:linear-gradient(150deg,#FFE595,#E0A100); color:#4A3200; }
+      .rank-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
+      .rank-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
       .star-badge { font-size:11px; font-weight:700; color:#1E7A3C; background:rgba(48,177,85,.14); padding:3px 9px; border-radius:20px;
         animation: starGlow 3.2s ease-in-out infinite; }
       @keyframes starGlow {
