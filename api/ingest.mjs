@@ -189,7 +189,7 @@ const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone"
   "completed","totaldelivered","totalclosing","total","delivered","closing"]);
 
 function mapDailyActivityGrid(lines) {
-  const isNum = (t) => /^[\d,]+$/.test(t) || t === "-" || t === "∞" || /^\d+\.?\d*%$/.test(t);
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
   const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
 
   let storeName = null, sawHeaderSig = false;
@@ -262,8 +262,15 @@ const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
 const DS_VEHICLE = ["New", "Used", "Other", "Total"];
 
 function mapDeliverySummaryGrid(lines) {
-  const isNum = (t) => /^[\d,]+$/.test(t) || t === "-" || /^\d+\.?\d*%$/.test(t);
-  const val = (t) => (t === "-" || t == null) ? null : toNum(t);
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || /^\d+(?:\.\d+)?%$/.test(t);
+  const val = (t) => {
+    if (t === "-" || t == null) return null;
+    if (/%$/.test(String(t))) {
+      const n = parseFloat(String(t));
+      return Number.isFinite(n) ? n / 100 : null;
+    }
+    return toNum(t);
+  };
 
   let sawHeaderSig = false;
   let storeName = null;
@@ -329,11 +336,7 @@ function mapDeliverySummaryGrid(lines) {
     const p = people[k];
     const s = p.sources;
     const pick = (src, i) => (s[src] ? s[src][i] : null);
-    const pctOf = (src) => {
-      const v = pick(src, 5);
-      if (v == null) return null;
-      return v > 1 ? v / 100 : v;      // stored as a fraction, like the old report
-    };
+    const pctOf = (src) => pick(src, 5);
     const internetLeads = pick("internet", 0);
     const internetDel   = pick("internet", 4);
     rows.push([
