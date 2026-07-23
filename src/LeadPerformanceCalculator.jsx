@@ -55,6 +55,43 @@ const METRIC_TINY = {
   soldPct: "Sold", unitsDelivered: "Units",
 };
 
+// A specific play per standard. The point is to replace "everyone make thirty
+// calls today" with something a manager can actually hand to a person.
+const METRIC_FIX = {
+  apptVideoDayPct: {
+    play: "Record tomorrow's videos tonight",
+    steps: [
+      "Pull tomorrow's appointment list at close and record then, not the morning of.",
+      "Name the vehicle and the appointment time in the first five seconds.",
+      "It only counts if it lands before the appointment starts, so send it early.",
+    ],
+  },
+  deliveredPct: {
+    play: "Work the appointments that already showed",
+    steps: [
+      "Chase the shown-but-unsold before touching a single new lead.",
+      "Confirm the day before. A confirmed appointment closes far better than a hoped-for one.",
+      "Find who is sitting on leads untouched for three days and reassign or re-engage.",
+    ],
+  },
+  engagedVideoPct: {
+    play: "Video on the reply, not on a schedule",
+    steps: [
+      "The moment a lead engages, the video goes out that same day.",
+      "Under forty-five seconds, answering the exact question they asked.",
+      "Set the task at the moment of engagement so it doesn't wait for the next work plan.",
+    ],
+  },
+  bhVideoPct: {
+    play: "Same day or it scores nothing",
+    steps: [
+      "Build the video into the first response, not a follow-up step.",
+      "Watch the leads that land after 4pm. Those are the ones that slip to tomorrow.",
+      "A video sent the next morning counts as a miss, however good it is.",
+    ],
+  },
+};
+
 const CHANNELS = { internet: "Internet", phone: "Phone", showroom: "Showroom" };
 
 const REPORTS = {
@@ -952,6 +989,8 @@ export default function LeadPerformanceCalculator() {
   const viewPicked = useRef(false);
   // which slice of the board is showing. Driven by the hero tiles.
   const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
+  const [assocQuery, setAssocQuery] = useState("");
+  const [focusAssoc, setFocusAssoc] = useState(null);
   // Which day a Daily Activity import should land on. Reports are often pulled the
   // next morning, so the manager can aim an import at yesterday without renaming files.
   const [activityDay, setActivityDay] = useState(today());
@@ -1099,7 +1138,7 @@ export default function LeadPerformanceCalculator() {
     })();
   }, [config, session]);
 
-  useEffect(() => { setBoardFilter(null); }, [view, tab, appModule]);
+  useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
 
   // The Board opens in its own window and is tuned at the TV, not here. It calls
   // back into this window to save what the person standing at the screen chose.
@@ -1606,9 +1645,12 @@ export default function LeadPerformanceCalculator() {
             <SegControl
               items={[["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]]}
               value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={setTab} />
+            {(tab === "board" || !["gm", "history"].includes(tab)) &&
+              <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
           <div key={view + tab} className="page">
-            {(tab === "board" || !["gm", "history"].includes(tab)) && <Board config={config} store={currentStore} data={storeData} onMove={moveAssociate} onSetRestriction={setRestriction} readOnly />}
+            {(tab === "board" || !["gm", "history"].includes(tab)) && <Board config={config} store={currentStore} data={storeData} onMove={moveAssociate} onSetRestriction={setRestriction} readOnly
+              query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc} />}
             {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
             {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
           </div>
@@ -1635,6 +1677,8 @@ export default function LeadPerformanceCalculator() {
                 onChange={setTab}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
             )}
+            {appModule !== "activity" && tab === "board" &&
+              <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
           <div key={view + tab + appModule} className="page">
             {appModule === "activity" ? (
@@ -1656,10 +1700,11 @@ export default function LeadPerformanceCalculator() {
                       }} />
                     )}
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
-                      filter={boardFilter} onFilter={setBoardFilter} />
+                      filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc} />
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
-                      filter={boardFilter} onClearFilter={() => setBoardFilter(null)} />
+                      filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
+                      query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc} />
                   </div>
                 )}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -1878,6 +1923,19 @@ function LEADERBOARD_HTML(p) {
   @keyframes aurora {
     0% { transform: translate3d(0,0,0) scale(1); }
     100% { transform: translate3d(-2.5%, 2%, 0) scale(1.08); }
+  }
+  /* The wall screen is always "idle", so it gets the faster colour travel the app
+     only reaches once a manager stops scrolling. */
+  body::after { content:''; position:fixed; inset:-22%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(24% 26% at 28% 26%, rgba(122,79,155,.26), transparent 70%),
+      radial-gradient(22% 24% at 74% 60%, rgba(0,168,150,.26), transparent 70%),
+      radial-gradient(20% 22% at 52% 92%, rgba(193,215,48,.16), transparent 72%);
+    animation: tvMorph 15s ease-in-out infinite alternate; }
+  @keyframes tvMorph {
+    0%   { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg) saturate(1); }
+    50%  { transform: scale(1.16) rotate(-7deg); filter: hue-rotate(130deg) saturate(1.3); }
+    100% { transform: scale(1.3) rotate(12deg); filter: hue-rotate(265deg) saturate(1.1); }
   }
   /* Display tuning, set at the TV itself.
      --tscale   : overall text size
@@ -4410,8 +4468,18 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 }
 
 /* ---------------- Lead Board ---------------- */
-function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter }) {
-  const [query, setQuery] = useState("");
+function AssocSearch({ value, onChange, store }) {
+  return (
+    <div className="search-wrap search-top">
+      <span className="search-icon">⌕</span>
+      <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder={`Search associates at ${store.name}`} />
+      {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
+    </div>
+  );
+}
+
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus }) {
   const M = data.months?.[ym()];
   const names = M?.names || {};
   // An associate is only "incomplete" if they're missing one of the three REQUIRED
@@ -4434,8 +4502,11 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
     const r = restrictions[a.id];
     return r && (!r.until || new Date(r.until) > new Date());
   };
+  // The podium and the coaching shortlist are about the sales floor. Managers,
+  // BDC and service-to-sales are measured elsewhere and would crowd it out.
+  const podiumRoles = config.roles.filter((r) => r.id === "sales");
   const ranked = [];
-  for (const role of config.roles) {
+  for (const role of podiumRoles) {
     const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
     for (const a of (data.roster || []).filter((x) => x.roleId === role.id)) {
       if (isRestricted(a)) continue;
@@ -4504,12 +4575,6 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
 
   return (
     <div className="board">
-      <div className="search-wrap">
-        <span className="search-icon">⌕</span>
-        <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search associates at ${store.name}`} />
-        {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
-      </div>
       {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
 
       {!query && top3.length > 0 && (
@@ -4517,7 +4582,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           <div className="podium-cap">Top Performers <span>units delivered, standards break the tie</span></div>
           <div className="podium-row">
             {top3.map((r, i) => (
-              <div key={r.name} className={"pod pod-" + (i + 1)}>
+              <button key={r.name} className={"pod pod-" + (i + 1)} onClick={() => onFocus && onFocus(r.name)}>
                 <span className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</span>
                 <span className="pod-who">
                   <span className="pod-name">{r.name}</span>
@@ -4527,7 +4592,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
                 <span className={"lb-std " + (r.passing ? "ok" : "part")}>
                   {r.passing ? `+${Math.round(r.surpass * 100)}%` : `${r.met}/${r.total} standards`}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -4585,7 +4650,8 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             return (
               <AssociateRow key={a.id} a={a} stats={stats} ev={ev} missing={missing} incomplete={incomplete}
                 grace={inGrace} rank={rankOf[norm(a.name)]} star={stars.has(norm(a.name))} readOnly={readOnly}
-                restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)} />
+                restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
+                focused={focusName === a.name} />
             );
           })}
         </section>
@@ -4680,10 +4746,21 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused }) {
   const [open, setOpen] = useState(false);
+  const cardRef = useRef(null);
+  // Picked out of the hero shortlist or the podium: open the card and bring it
+  // into view, so the manager lands on the person rather than hunting for them.
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    const el = cardRef.current;
+    if (el && el.scrollIntoView) {
+      try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+    }
+  }, [focused]);
   const [showRestrict, setShowRestrict] = useState(false);
-  const [days, setDays] = useState(14);
+  const [days, setDays] = useState(3);
   const pct = ev.cap ? Math.min(100, (ev.opps / ev.cap) * 100) : 0;
   const softFail = ev.status === "fail" && grace;
 
@@ -4699,7 +4776,8 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
   };
 
   return (
-    <div className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "")}>
+    <div ref={cardRef}
+      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "")}>
       <div className="assoc-row" onClick={() => setOpen(!open)}>
         {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
@@ -6753,10 +6831,29 @@ function ToolSwitcher({ value, onChange }) {
     ["activity", "Daily Activity"],
     ["board", "The Board"],
   ];
+  // Same sliding thumb as the tab bar, so switching tools and switching tabs
+  // feel like the same gesture rather than two different controls.
+  const wrapRef = useRef(null);
+  const btnRefs = useRef({});
+  const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
+  const measure = useCallback(() => {
+    const btn = btnRefs.current[value];
+    if (!btn || !wrapRef.current) return;
+    setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true });
+  }, [value]);
+  useEffect(() => {
+    measure();
+    const t = setTimeout(measure, 150);          // once the web fonts settle
+    window.addEventListener("resize", measure);
+    return () => { clearTimeout(t); window.removeEventListener("resize", measure); };
+  }, [measure]);
+
   return (
-    <div className="tool-switch" role="group" aria-label="Switch tool">
+    <div className="tool-switch" role="group" aria-label="Switch tool" ref={wrapRef}>
+      <div className={"tool-thumb" + (thumb.ready ? " ready" : "")}
+        style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />
       {tools.map(([id, label]) => (
-        <button key={id}
+        <button key={id} ref={(el) => (btnRefs.current[id] = el)}
           className={"tool-btn " + (value === id ? "on" : "")}
           onClick={() => onChange(id)}>
           {label}
@@ -6940,7 +7037,7 @@ function useParallax(ref) {
 }
 
 /* ---------------- Store hero (manager landing) ---------------- */
-function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) {
+function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
   const M = data.months?.[ym()];
   const restrictions = data.restrictions || {};
   const graceDays = store.graceDays ?? 10;
@@ -6985,7 +7082,18 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
     for (const a of roster.filter((x) => x.roleId === role.id)) {
       const st = M?.stats?.[norm(a.name)];
       const ev = evaluateAssociate(st, tiers);
-      const reqs = ev?.tier?.requirements || [];
+      // Score against every standard the role has anywhere in its tiers, not only
+      // the ones this person's current tier happens to require. Otherwise someone
+      // on a low tier is graded on an easier yardstick and store health drifts.
+      // A metric their tier doesn't name yet is judged at the gentlest bar set for it.
+      const own = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
+      const all = new Map();
+      for (const t of tiers) {
+        for (const r of t.requirements || []) {
+          all.set(r.metric, Math.min(all.has(r.metric) ? all.get(r.metric) : Infinity, r.min));
+        }
+      }
+      const reqs = [...all.keys()].map((m) => ({ metric: m, min: own.has(m) ? own.get(m) : all.get(m) }));
       let sum = 0, n = 0;
       for (const req of reqs) {
         const def = METRICS[req.metric];
@@ -7013,7 +7121,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
   // Who to talk to first: below standard, ordered by how close they are to the
   // cap, because that is when being below standard actually costs them leads.
   const urgent = [];
-  for (const role of config.roles) {
+  for (const role of config.roles.filter((r) => r.id === "sales")) {
     const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
     for (const a of roster.filter((x) => x.roleId === role.id)) {
       if (isRestricted(a)) continue;
@@ -7102,11 +7210,20 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
       {(weakest || urgent.length > 0) && (
         <div className="hero-focus">
           {weakest && (
-            <div className="hf-block">
-              <div className="hf-cap">Weakest standard</div>
+            <div className="hf-block hf-fix">
+              <div className="hf-cap">Weakest standard <span className="hf-hint">hover for the play</span></div>
               <div className="hf-metric">{METRICS[weakest.metric].label}</div>
               <div className="hf-bar"><div className="hf-fill" style={{ width: Math.round(weakest.mean * 100) + "%" }} /></div>
               <div className="hf-sub">{weakest.below} of {weakest.total} below target</div>
+              {METRIC_FIX[weakest.metric] && (
+                <div className="hf-pop">
+                  <div className="mp-title">{METRIC_FIX[weakest.metric].play}</div>
+                  <div className="mp-desc">{METRIC_DESC[weakest.metric]}</div>
+                  <ul className="hf-steps">
+                    {METRIC_FIX[weakest.metric].steps.map((t, i) => <li key={i}>{t}</li>)}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
           {urgent.length > 0 && (
@@ -7114,7 +7231,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
               <div className="hf-cap">Talk to these first</div>
               <div className="hf-list">
                 {urgent.slice(0, 3).map((u) => (
-                  <button key={u.name} className="hf-person" onClick={() => onFilter("attention")}>
+                  <button key={u.name} className="hf-person" onClick={() => onFocus && onFocus(u.name)}>
                     <span className="hf-name">{u.name}</span>
                     <span className="hf-why">
                       {u.worst.def.short} {u.worst.val == null ? "no data"
@@ -8469,17 +8586,20 @@ function Style() {
         transform: translate3d(0, var(--bgy, 0px), 0); }
       .bg-live-inner { position:absolute; inset:0;
         background:
-          radial-gradient(26% 28% at 26% 24%, rgba(122,79,155,.22), transparent 70%),
-          radial-gradient(24% 26% at 76% 58%, rgba(0,168,150,.22), transparent 70%),
-          radial-gradient(22% 24% at 50% 92%, rgba(255,159,10,.16), transparent 72%);
-        opacity:.5; animation: bgMorph 30s ease-in-out infinite alternate;
+          radial-gradient(26% 28% at 24% 22%, rgba(122,79,155,.26), transparent 70%),
+          radial-gradient(24% 26% at 78% 56%, rgba(0,168,150,.26), transparent 70%),
+          radial-gradient(22% 24% at 48% 92%, rgba(255,159,10,.20), transparent 72%),
+          radial-gradient(20% 22% at 88% 16%, rgba(42,94,155,.22), transparent 72%),
+          radial-gradient(18% 20% at 8% 70%, rgba(193,215,48,.18), transparent 74%);
+        opacity:.5; animation: bgMorph 26s ease-in-out infinite alternate;
         transition: opacity 1.4s var(--ease); }
-      /* Sitting on one view lets the colours work harder; scrolling already
-         supplies plenty of motion on its own. */
-      .bg-idle .bg-live-inner { animation-duration: 9s; opacity:.9; }
+      /* Sitting on one view lets the colours travel much further and faster;
+         scrolling already supplies plenty of motion on its own. */
+      .bg-idle .bg-live-inner { animation-duration: 7s; opacity:.95; }
       @keyframes bgMorph {
-        0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); filter:hue-rotate(0deg); }
-        100% { transform: translate3d(3%,-4%,0) scale(1.24) rotate(9deg); filter:hue-rotate(36deg); }
+        0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); filter:hue-rotate(0deg) saturate(1); }
+        50%  { transform: translate3d(-2%,3%,0) scale(1.14) rotate(-6deg); filter:hue-rotate(120deg) saturate(1.25); }
+        100% { transform: translate3d(4%,-5%,0) scale(1.28) rotate(11deg); filter:hue-rotate(255deg) saturate(1.1); }
       }
 
       .hero-tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(134px, 1fr)); gap:14px; margin-top:16px; }
