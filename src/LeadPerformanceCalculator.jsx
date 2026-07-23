@@ -4518,6 +4518,8 @@ function MetricStrip({ ev, stats }) {
         const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
         const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
         const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
+        // "Appt Video %" -> "Appt Video": the dial already reads in percent.
+        const lbl = def.short.replace(/\s*%\s*$/, "");
         const [nx, ny] = pt(t, R);
         return (
           <div key={i} className={"mdial mdial-" + state}
@@ -4530,8 +4532,7 @@ function MetricStrip({ ev, stats }) {
               {v != null && <circle className="md-dot" cx={nx} cy={ny} r="3.6" />}
               <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">{shown}</text>
             </svg>
-            <div className="mdial-label">{def.short}</div>
-            <div className="mdial-need">target {targetTxt}</div>
+            <div className="mdial-label">{lbl} <span className="mdial-need">{targetTxt}</span></div>
           </div>
         );
       })}
@@ -4548,6 +4549,8 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
 
   const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
   const daysLeft = restriction?.until ? Math.ceil((new Date(restriction.until) - new Date()) / 86400000) : null;
+  // Dials sit on the name's own row, so one associate reads as one line.
+  const showDials = !incomplete && !restrictedNow && ev.status === "fail";
 
   const confirmRestrict = () => {
     const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
@@ -4566,6 +4569,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         <span className="assoc-name">{a.name}</span>
         {star && <span className="star-badge" title="Wildly surpassing standard">★ Crushing it</span>}
         {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+        {showDials && <MetricStrip ev={ev} stats={stats} />}
         <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
         {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
           {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
@@ -4600,7 +4604,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       {softFail && !restrictedNow && (
         <div className="reasons watch-note">
           <div className="reason-lead">Working toward standard. No restriction recommended during the grace period.</div>
-          <MetricStrip ev={ev} stats={stats} />
         </div>
       )}
       {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
@@ -4612,7 +4615,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
                 ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
                 : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`}
           </div>
-          <MetricStrip ev={ev} stats={stats} />
           {!readOnly && ev.atCap && (!showRestrict ? (
             <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
           ) : (
@@ -8799,7 +8801,7 @@ function Style() {
       .assoc-row { display:flex; align-items:center; gap:10px; cursor:grab; flex-wrap:wrap; }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
-      .assoc-name { font-weight:600; flex:0 0 200px; letter-spacing:-.01em; }
+      .assoc-name { font-weight:650; font-size:15.5px; flex:0 0 212px; letter-spacing:-.015em; }
       .flag { font-size:11px; color:var(--amber); background:rgba(255,159,10,.14); padding:3px 9px; border-radius:20px; font-weight:600; }
       .assoc-leads { margin-left:auto; font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
       .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; }
@@ -8823,22 +8825,62 @@ function Style() {
 
       /* ---- scorecard dials: the 5-second read on every associate ---- */
       .reason-lead { font-size:12.5px; color:var(--ink-2); margin-bottom:10px; }
-      .mstrip { display:flex; flex-wrap:wrap; gap:12px 20px; }
-      .mdial { width:88px; text-align:center; }
-      .mdial svg { display:block; width:88px; height:56px; overflow:visible; }
+      .mstrip { display:flex; flex-wrap:wrap; gap:10px 14px; }
+      /* On the associate row the dials ride to the right of the name and stay
+         together as one unit; the row itself wraps them if the screen is narrow. */
+      .assoc-row .mstrip { margin-left:auto; flex-wrap:nowrap; gap:10px; }
+      .mstrip + .assoc-leads { margin-left:14px; }
+      .mdial { width:82px; text-align:center; }
+      .mdial svg { display:block; width:82px; height:50px; overflow:visible; }
       .md-track { stroke:rgba(0,0,0,.08); }
       .md-target { stroke:rgba(0,0,0,.5); }
       .md-val { font-size:13px; font-weight:800; letter-spacing:-.03em; fill:var(--ink);
         font-variant-numeric:tabular-nums; }
-      .mdial-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+      .mdial-label { font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
         color:var(--ink-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .mdial-need { font-size:9.5px; color:var(--ink-3); margin-top:2px; font-variant-numeric:tabular-nums; }
+      .mdial-need { color:var(--ink-3); font-weight:700; font-variant-numeric:tabular-nums; }
       .md-fill { transition: stroke-dasharray .7s var(--spring); }
       .mdial-ok     .md-fill { stroke:#30B155; } .mdial-ok     .md-dot { fill:#30B155; } .mdial-ok     .md-val { fill:#1E7A3C; }
       .mdial-near   .md-fill { stroke:#E59200; } .mdial-near   .md-dot { fill:#E59200; } .mdial-near   .md-val { fill:#95600A; }
       .mdial-under  .md-fill { stroke:#E5473C; } .mdial-under  .md-dot { fill:#E5473C; } .mdial-under  .md-val { fill:#C13529; }
       .mdial-nodata .md-fill { stroke:rgba(0,0,0,.14); } .mdial-nodata .md-val { fill:var(--ink-3); }
 
+      /* ---- grace period & recap ---- */
+      .verdict-grace { background:rgba(136,198,234,.28); color:#1D4674; }
+      .watch-note { color:#7A5A00; }
+      .reason.watch { background:rgba(255,159,10,.12); color:#8A5A00; }
+      .grace-banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-left:4px solid #88C6EA;
+        background:linear-gradient(90deg, rgba(136,198,234,.10), rgba(255,255,255,0) 60%); font-size:13px; color:var(--ink-2); }
+      .recap { border-left:4px solid var(--lime); }
+      .recap-row { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .recap-row:last-child { border-bottom:none; }
+      .recap-name { font-size:11px; }
+      .recap-chips { display:flex; gap:5px; flex-wrap:wrap; }
+      .gm-section.watch::before { background:#88C6EA; }
+      .stat-grace { color:#1D4674; font-weight:600; }
+      .grace-setting { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+      .grace-label { display:flex; gap:9px; align-items:center; font-weight:600; }
+      .grace-setting input[type=number] { width:64px; }
+
+      /* ---- search ---- */
+      .search-wrap { position:relative; margin-bottom:14px; max-width:420px; }
+      .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-3); font-size:16px; }
+      .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
+        border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+      .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
+        color:var(--ink-2); width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:11px; }
+      .search-count { margin:-8px 0 12px 4px; }
+
+      /* ---- leaderboard ---- */
+      .leaderboard { border-left:4px solid var(--lime); }
+      .lb-title { font-size:16px; font-weight:700; margin:0 0 12px; }
+      .lb-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
+      .lb-item { padding:14px; border-radius:14px; text-align:center; background:rgba(255,255,255,.5);
+        border:1px solid rgba(255,255,255,.7); transition: transform .3s var(--spring); }
+      .lb-item:hover { transform: translateY(-2px); }
+      .lb-1 { background:linear-gradient(160deg, rgba(255,215,90,.28), rgba(255,255,255,.4)); }
+      .lb-2 { background:linear-gradient(160deg, rgba(200,205,215,.32), rgba(255,255,255,.4)); }
+      .lb-3 { background:linear-gradient(160deg, rgba(205,145,95,.26), rgba(255,255,255,.4)); }
       .lb-medal { width:40px; height:40px; margin:0 auto; border-radius:50%; display:flex;
         align-items:center; justify-content:center; font-size:17px; font-weight:800; letter-spacing:-.02em;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 3px 10px rgba(31,54,86,.16); }
@@ -8846,7 +8888,7 @@ function Style() {
         box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 0 0 3px rgba(224,161,0,.15), 0 5px 14px rgba(224,161,0,.34); }
       .lb-medal-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
       .lb-medal-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
-      .lb-name { font-weight:700; margin-top:6px; letter-spacing:-.01em; }
+      .lb-name { font-weight:700; font-size:15.5px; margin-top:8px; letter-spacing:-.015em; }
       .lb-meta { font-size:11.5px; font-weight:600; margin-top:2px; }
       .lb-surpass { font-size:12px; color:#1E7A3C; font-weight:600; margin-top:6px; }
       @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
