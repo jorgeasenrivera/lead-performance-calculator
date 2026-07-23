@@ -83,6 +83,9 @@ const LEADERBOARD_REPORTS = {
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+// Every unit a person delivered this month, across all four channels.
+const unitsOf = (s) =>
+  (s?.internetUnits ?? 0) + (s?.phoneUnits ?? 0) + (s?.showroomUnits ?? 0) + (s?.campaignUnits ?? 0);
 const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 // All day/month boundaries run on dealership time, not the browser's clock and not UTC.
@@ -349,6 +352,34 @@ function Logo({ size = 40, animated = false, loading = false }) {
 
 const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#2A5E9B'/><stop offset='100%' stop-color='#1D4674'/></linearGradient></defs><rect x='2' y='2' width='60' height='60' rx='15' fill='url(#g)'/><circle cx='32' cy='32' r='17' fill='none' stroke='rgba(136,198,234,.5)' stroke-width='5'/><circle cx='15' cy='32' r='2.5' fill='#C1D730'/><path d='M 15 32 A 17 17 0 0 1 45.06 21.12' fill='none' stroke='#C1D730' stroke-width='5' stroke-linecap='butt'/><line x1='32' y1='32' x2='45.06' y2='21.12' stroke='#FFF' stroke-width='5' stroke-linecap='round'/><circle cx='32' cy='32' r='4.5' fill='#FFF'/></svg>`;
 
+// Set at module scope, before anything paints. Reveal-on-scroll hides elements
+// until they are observed, so it must only ever engage when this bundle is live.
+// If the script never runs, nothing is hidden and the app renders plainly.
+if (typeof document !== "undefined") document.documentElement.classList.add("js-anim");
+
+/* Fades sections in as they come into view. One-shot per element: once it has
+   arrived it is left alone, so scrolling back up never re-triggers anything. */
+function useReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)");
+    if (!els.length) return;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || typeof IntersectionObserver === "undefined") {
+      els.forEach((el) => el.classList.add("is-in"));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add("is-in");
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.04 });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  });
+}
+
 function useFavicon() {
   useEffect(() => {
     try {
@@ -357,6 +388,17 @@ function useFavicon() {
       if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
       link.href = href;
       document.title = "Lead Performance Calculator";
+      // Type system, loaded as a stylesheet link rather than an @import so it never
+      // blocks first paint. Space Grotesk is the same face The Board uses on the TV.
+      if (!document.getElementById("lpc-fonts")) {
+        const pre = document.createElement("link");
+        pre.rel = "preconnect"; pre.href = "https://fonts.gstatic.com"; pre.crossOrigin = "anonymous";
+        document.head.appendChild(pre);
+        const f = document.createElement("link");
+        f.id = "lpc-fonts"; f.rel = "stylesheet";
+        f.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap";
+        document.head.appendChild(f);
+      }
     } catch {}
   }, []);
 }
@@ -824,6 +866,7 @@ function downloadCSV(filename, rows) {
 
 export default function LeadPerformanceCalculator() {
   useFavicon();
+  useReveal();
   const [config, setConfig] = useState(null);
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -838,7 +881,6 @@ export default function LeadPerformanceCalculator() {
   const [tab, setTab] = useState("board");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [adminTab, setAdminTab] = useState("overview");
-  const [dragName, setDragName] = useState(null);
   const [dropActive, setDropActive] = useState(false);
   const [importLog, setImportLog] = useState([]);
   const [pendingChannels, setPendingChannels] = useState(null); // { ambiguous:[{rows,fileName}], ready:[] }
@@ -1508,7 +1550,7 @@ export default function LeadPerformanceCalculator() {
               value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={setTab} />
           </nav>
           <div key={view + tab} className="page">
-            {(tab === "board" || !["gm", "history"].includes(tab)) && <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName} onMove={moveAssociate} onSetRestriction={setRestriction} readOnly />}
+            {(tab === "board" || !["gm", "history"].includes(tab)) && <Board config={config} store={currentStore} data={storeData} onMove={moveAssociate} onSetRestriction={setRestriction} readOnly />}
             {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
             {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
           </div>
@@ -1557,7 +1599,7 @@ export default function LeadPerformanceCalculator() {
                     )}
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
                       filter={boardFilter} onFilter={setBoardFilter} />
-                    <Board config={config} store={currentStore} data={storeData} dragName={dragName} setDragName={setDragName}
+                    <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
                       filter={boardFilter} onClearFilter={() => setBoardFilter(null)} />
                   </div>
@@ -4310,7 +4352,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 }
 
 /* ---------------- Lead Board ---------------- */
-function Board({ config, store, data, dragName, setDragName, onMove, onSetRestriction, readOnly, filter, onClearFilter }) {
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter }) {
   const [query, setQuery] = useState("");
   const M = data.months?.[ym()];
   const names = M?.names || {};
@@ -4339,11 +4381,26 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
     const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
     for (const a of (data.roster || []).filter((x) => x.roleId === role.id)) {
       if (isRestricted(a)) continue;
-      const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
-      if (ev.status === "pass") ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps });
+      const st = M?.stats?.[norm(a.name)];
+      const ev = evaluateAssociate(st, tiers);
+      if (ev.status !== "pass") continue;
+      const units = unitsOf(st);
+      // "Top performer" has to have actually delivered something. This is also
+      // what keeps a BDC agent, who books but does not deliver, off the podium.
+      if (units <= 0) continue;
+      ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps, units });
     }
   }
-  ranked.sort((a, b) => b.surpass - a.surpass);
+  // Volume leads and quality adjusts. Units carry most of the weight, how far
+  // past standard they are carries the rest, and each is scored against the best
+  // on the floor. So a big month wins, but clearing a low bar by a mile still
+  // counts for something rather than being invisible.
+  const maxUnits = Math.max(1, ...ranked.map((r) => r.units));
+  const maxSurp = Math.max(0.0001, ...ranked.map((r) => Math.max(0, r.surpass)));
+  for (const r of ranked) {
+    r.score = 0.7 * (r.units / maxUnits) + 0.3 * (Math.max(0, r.surpass) / maxSurp);
+  }
+  ranked.sort((a, b) => b.score - a.score);
   const top3 = ranked.slice(0, 3);
   const rankOf = {}; top3.forEach((r, i) => (rankOf[norm(r.name)] = i + 1));
   // "wildly surpassing" = 40%+ average over every requirement
@@ -4409,14 +4466,15 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
 
       {!query && top3.length > 0 && (
         <div className="card leaderboard">
-          <h3 className="lb-title">Top Performers <span className="section-sub">furthest above standard</span></h3>
+          <h3 className="lb-title">Top Performers <span className="section-sub">units delivered, adjusted for how far past standard</span></h3>
           <div className="lb-row">
             {top3.map((r, i) => (
               <div key={r.name} className={"lb-item lb-" + (i + 1)}>
                 <div className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</div>
                 <div className="lb-name">{r.name}</div>
                 <div className="lb-meta" style={{ color: r.role.color }}>{r.role.name}</div>
-                <div className="lb-surpass">+{Math.round(r.surpass * 100)}% over target</div>
+                <div className="lb-units">{fmtNum(r.units)}<span> units</span></div>
+                <div className="lb-surpass">+{Math.round(r.surpass * 100)}% over standard</div>
               </div>
             ))}
           </div>
@@ -4462,11 +4520,9 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
         </div>
       )}
       {sections.map(({ role, people }) => (
-        <section key={role.id} className="card role-section" style={{ "--role": role.color }}
-          onDragOver={(e) => !readOnly && e.preventDefault()}
-          onDrop={(e) => { if (readOnly) return; e.preventDefault(); if (dragName) onMove(dragName, null, role.id); setDragName(null); }}>
+        <section key={role.id} className="card role-section" style={{ "--role": role.color }}>
           <h3 className="role-header"><span className="role-swatch" />{role.name} <span className="role-count">{people.length}</span></h3>
-          {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : readOnly ? "No associates in this section" : "Drag associates here"}</div>}
+          {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : "No associates in this section"}</div>}
           {people.map((a) => {
             const stats = M?.stats?.[norm(a.name)];
             const ev = evaluateAssociate(stats, config.standards?.[store.id]?.[role.id]?.tiers);
@@ -4476,25 +4532,25 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
             return (
               <AssociateRow key={a.id} a={a} stats={stats} ev={ev} missing={missing} incomplete={incomplete}
                 grace={inGrace} rank={rankOf[norm(a.name)]} star={stars.has(norm(a.name))} readOnly={readOnly}
-                restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
-                onDragStart={() => setDragName(a.name)}
-                onDropOn={() => { if (dragName && dragName !== a.name) onMove(dragName, a.name, role.id); setDragName(null); }} />
+                restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)} />
             );
           })}
         </section>
       ))}
       {unassigned.length > 0 && (
-        <section className="card role-section unassigned" style={{ "--role": "#8E8E93" }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); if (dragName) onMove(dragName, null, null); setDragName(null); }}>
+        <section className="card role-section unassigned" style={{ "--role": "#8E8E93" }}>
           <h3 className="role-header"><span className="role-swatch" />Needs a Position <span className="role-count">{unassigned.length}</span></h3>
-          <p className="hint">These names came in from reports. Drag each one into a position to start scoring them.</p>
+          <p className="hint">These names came in from reports. Give each one a position to start scoring them.</p>
           {unassigned.map((a) => (
-            <div key={a.id} className="assoc-row" draggable
-              onDragStart={() => setDragName(a.name)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); if (dragName && dragName !== a.name) onMove(dragName, a.name, null); setDragName(null); }}>
-              <span className="grip">⠿</span><span className="assoc-name">{a.name}</span>
+            <div key={a.id} className="assoc-row unassigned-row">
+              <span className="assoc-name">{a.name}</span>
+              {!readOnly && (
+                <select className="assign-select" value=""
+                  onChange={(e) => { if (e.target.value) onMove(a.name, null, e.target.value); }}>
+                  <option value="">Assign a position…</option>
+                  {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              )}
             </div>
           ))}
         </section>
@@ -4570,7 +4626,7 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, onDragStart, onDropOn, readOnly }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly }) {
   const [open, setOpen] = useState(false);
   const [showRestrict, setShowRestrict] = useState(false);
   const [days, setDays] = useState(14);
@@ -4589,12 +4645,8 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
   };
 
   return (
-    <div className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "")} draggable={!readOnly}
-      onDragStart={readOnly ? undefined : onDragStart}
-      onDragOver={(e) => !readOnly && e.preventDefault()}
-      onDrop={(e) => { if (readOnly) return; e.preventDefault(); onDropOn(); }}>
+    <div className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "")}>
       <div className="assoc-row" onClick={() => setOpen(!open)}>
-        {!readOnly && <span className="grip">⠿</span>}
         {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
         {star && <span className="star-badge" title="Wildly surpassing standard">★ Crushing it</span>}
@@ -6824,11 +6876,20 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
       if (ev.opps != null) oppsUsed += ev.opps;
       if (ev.cap != null) capTotal += ev.cap;
       if (isRestricted(a)) { offLeads++; continue; }
-      if (ev.status === "pass") { cleared++; ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps }); }
+      if (ev.status === "pass") {
+        cleared++;
+        const units = unitsOf(M?.stats?.[norm(a.name)]);
+        if (units > 0) ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps, units });
+      }
       else if (ev.status === "fail") attention++;
     }
   }
-  ranked.sort((a, b) => b.surpass - a.surpass);
+  {
+    const mu = Math.max(1, ...ranked.map((r) => r.units));
+    const ms = Math.max(0.0001, ...ranked.map((r) => Math.max(0, r.surpass)));
+    for (const r of ranked) r.score = 0.7 * (r.units / mu) + 0.3 * (Math.max(0, r.surpass) / ms);
+  }
+  ranked.sort((a, b) => b.score - a.score);
   const leader = ranked[0];
 
   const evaluated = cleared + attention + offLeads;
@@ -8022,9 +8083,34 @@ function Style() {
         --radius: 18px; --spring: cubic-bezier(.32,.72,.33,1);
         --shadow-1: 0 1px 2px rgba(0,0,0,.04), 0 2px 12px rgba(0,0,0,.05);
         --shadow-2: 0 4px 10px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10);
+        --shadow-3: 0 2px 6px rgba(16,32,52,.06), 0 22px 54px rgba(16,32,52,.14);
+        /* One long, decelerating curve used everywhere so motion feels like it
+           comes from the same hand. --spring stays for the snappier UI bits. */
+        --ease: cubic-bezier(.22,1,.36,1);
+        --ease-bloop: cubic-bezier(.34,1.56,.64,1);
+        --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+        --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+
+      html { scroll-behavior: smooth; }
+
+      /* Display face on anything that carries hierarchy or a number worth reading
+         across a room. Everything else stays on Inter, which holds up better in
+         the dense tables. */
+      .brand-title, .section-title, .hero-store, .hero-ring-pct, .tile-num, .lb-title,
+      .lb-name, .lb-units, .ac-name, .login-title, .plate-hist-title, .guide-title,
+      .stop-title, .noaccess-title, .gm-head h2, .card h3, .role-header, .checklist-title,
+      .bench-num, .assoc-leads, .mp-title, .md-val, .lseq-word h1, .lseq-btitle h1,
+      .oyo-chan-rate, .ac-stat b, .stepper-value, .dr-tally b, .orr-points, .goalbox b,
+      .drawer-store, .bl-title, .off-title, .verdict, .mdial-label, .badge {
+        font-family: var(--font-display); }
+      .lb-title, .card h3, .role-header, .checklist-title, .off-title { letter-spacing:-.015em; }
+
+      /* One focus ring for the whole app, only when keyboarding. */
+      .lpc :focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:8px; }
+      .lpc :focus:not(:focus-visible) { outline:none; }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+        font-family: var(--font-ui);
         font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
         overflow-x:clip;
         /* Scroll anchoring is what shifts the store logo when you reverse scroll
@@ -8765,7 +8851,7 @@ function Style() {
       /* Wider, and centred rather than pinned to the left. 1440px keeps line lengths
          readable while letting a big monitor actually breathe. */
       .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit, .settings {
-        padding:24px 32px; max-width:1440px; margin:0 auto; }
+        padding:30px 32px 56px; max-width:1440px; margin:0 auto; }
 
       /* No backdrop-filter here. A fixed, blurred element is a permanently compositing
          layer, which is a lot to pay for a version badge, and it fed the scroll shift. */
@@ -8792,10 +8878,14 @@ function Style() {
       .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
         padding:18px 20px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
-        margin-bottom:16px; transition: box-shadow .3s var(--spring), transform .3s var(--spring); }
-      .card:hover { transform: translateY(-1px);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 2px 4px rgba(0,0,0,.05), 0 14px 34px rgba(31,54,86,.11); }
-      .section-title { font-size:24px; font-weight:700; letter-spacing:-.03em; margin:4px 0 18px; }
+        margin-bottom:20px;
+        transition: opacity .8s var(--ease), transform .8s var(--ease), box-shadow .4s var(--ease); }
+      /* Sections rise into place as they enter the viewport. Hover only deepens
+         the shadow; lifting the card would fight the reveal's own transform. */
+      .js-anim .card:not(.is-in) { opacity:0; transform: translateY(20px); }
+      .card.is-in { opacity:1; transform:none; }
+      .card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.92), var(--shadow-3); }
+      .section-title { font-size:28px; font-weight:700; letter-spacing:-.035em; margin:4px 0 22px; }
       .section-sub { font-size:14px; font-weight:500; color:var(--ink-2); margin-left:8px; letter-spacing:0; }
 
       /* ---- login ---- */
@@ -8953,7 +9043,12 @@ function Style() {
       .lb-medal-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
       .lb-name { font-weight:700; font-size:15.5px; margin-top:8px; letter-spacing:-.015em; }
       .lb-meta { font-size:11.5px; font-weight:600; margin-top:2px; }
-      .lb-surpass { font-size:12px; color:#1E7A3C; font-weight:600; margin-top:6px; }
+      .lb-units { font-size:26px; font-weight:700; letter-spacing:-.03em; margin-top:8px; line-height:1;
+        font-variant-numeric:tabular-nums; }
+      .lb-units span { font-size:12px; font-weight:600; color:var(--ink-3); letter-spacing:0; }
+      .lb-surpass { font-size:11.5px; color:#1E7A3C; font-weight:600; margin-top:4px; }
+      .unassigned-row { gap:14px; }
+      .assign-select { margin-left:auto; }
       @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
 
       /* ---- rank + star + incomplete + off leads ---- */
@@ -9296,18 +9391,26 @@ function Style() {
 
       /* ---- forms & buttons ---- */
       .inline-form { display:flex; gap:9px; margin:10px 0; flex-wrap:wrap; align-items:center; }
-      input, select { border:1px solid rgba(255,255,255,.8); border-radius:11px; padding:9px 12px; font-size:13px; font-family:inherit;
-        background:rgba(255,255,255,.75); color:var(--ink); transition: border-color .2s, box-shadow .2s, background .2s; outline:none; }
+      input, select { border:1px solid rgba(16,40,68,.12); border-radius:11px; padding:9px 12px; font-size:13px; font-family:inherit;
+        background:rgba(255,255,255,.82); color:var(--ink);
+        box-shadow: inset 0 1px 2px rgba(16,40,68,.04);
+        transition: border-color .25s var(--ease), box-shadow .25s var(--ease), background .25s var(--ease); outline:none; }
       input:hover, select:hover { background:rgba(255,255,255,.92); }
       input:focus, select:focus { border-color:var(--blue); background:#fff; box-shadow: 0 0 0 3.5px rgba(42,94,155,.18); }
       input[type=number] { width:84px; }
-      .btn { background:var(--blue); color:#fff; border:none; border-radius:11px; padding:9px 18px; font-weight:600; font-size:13px;
-        cursor:pointer; transition: transform .15s var(--spring), filter .2s, box-shadow .2s; }
-      .btn:hover { filter:brightness(1.06); box-shadow:0 3px 10px rgba(42,94,155,.35); }
-      .btn:active { transform: scale(.96); }
+      .btn { background:linear-gradient(180deg, #3B72B0 0%, var(--blue) 100%); color:#fff; border:none;
+        border-radius:12px; padding:10px 20px; font-weight:600; font-size:13px; letter-spacing:.005em;
+        cursor:pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,40,68,.22), 0 6px 18px rgba(42,94,155,.24);
+        transition: transform .28s var(--ease-bloop), box-shadow .28s var(--ease), filter .2s; }
+      .btn:hover { filter:brightness(1.05); transform: translateY(-1.5px);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 2px 4px rgba(16,40,68,.2), 0 12px 26px rgba(42,94,155,.34); }
+      .btn:active { transform: translateY(0) scale(.975); transition-duration:.09s; }
+      .btn:disabled { filter:grayscale(.35); opacity:.5; box-shadow:none; transform:none; cursor:default; }
       .btn.wide { width:100%; margin-top:18px; padding:12px; border-radius:12px; font-size:14px; }
-      .btn.secondary { background:rgba(118,118,128,.14); color:var(--ink); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border:1px solid rgba(255,255,255,.5); }
-      .btn.secondary:hover { box-shadow:0 3px 10px rgba(0,0,0,.10); }
+      .btn.secondary { background:rgba(255,255,255,.72); color:var(--ink); border:1px solid rgba(16,40,68,.10);
+        backdrop-filter: blur(14px) saturate(160%); -webkit-backdrop-filter: blur(14px) saturate(160%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 1px 2px rgba(16,40,68,.06); }
+      .btn.secondary:hover { background:#fff; box-shadow: inset 0 1px 0 #fff, 0 8px 20px rgba(16,40,68,.12); }
       /* ---- mobile slide-out drawer (hidden on desktop, shown under 720px) ---- */
       .hamburger { display:none; flex-direction:column; justify-content:center; gap:4px; width:38px; height:38px;
         border:1px solid var(--line); border-radius:11px; background:#fff; cursor:pointer; padding:0 9px; }
@@ -9340,9 +9443,11 @@ function Style() {
       .btn-quiet { background:transparent; border:none; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer;
         padding:7px 10px; border-radius:9px; transition: background .2s; }
       .btn-quiet:hover { background:rgba(10,132,255,.08); }
-      .btn-ghost { background:transparent; border:1px solid var(--line); border-radius:11px; padding:7px 14px; color:var(--ink-2);
-        cursor:pointer; margin-top:6px; display:inline-block; font-weight:600; font-size:12.5px; transition: all .2s; }
-      .btn-ghost:hover { border-color:var(--ink-3); color:var(--ink); }
+      .btn-ghost { background:transparent; border:1px solid var(--line); border-radius:11px; padding:8px 15px; color:var(--ink-2);
+        cursor:pointer; margin-top:6px; display:inline-block; font-weight:600; font-size:12.5px;
+        transition: border-color .25s var(--ease), color .25s var(--ease), background .25s var(--ease), transform .25s var(--ease-bloop); }
+      .btn-ghost:hover { border-color:rgba(42,94,155,.45); color:var(--blue); background:rgba(42,94,155,.06); transform:translateY(-1px); }
+      .btn-ghost:active { transform:none; }
       .btn-ghost.on { background:rgba(224,161,0,.14); border-color:transparent; color:#95600A; }
       .coach-excl { margin-left:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
         background:rgba(224,161,0,.15); color:#95600A; padding:1px 7px; border-radius:99px; vertical-align:middle; }
