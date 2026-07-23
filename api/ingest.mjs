@@ -4487,12 +4487,26 @@ function Board({ config, store, data, dragName, setDragName, onMove, onSetRestri
 }
 
 /* A manager should be able to answer "is this person doing well?" without reading
-   a sentence. Every requirement in the tier gets a bar; the upright line is the
-   target. Short of the line is a gap, past it is fine. Colour AND position carry
-   the meaning, so it still reads if the colours are hard to tell apart. */
+   a sentence. Each requirement becomes a small speedometer, echoing the dial in
+   the app's own logo: the coloured sweep is where they are, the dark tick is the
+   target. Short of the tick is a gap, past it is fine. The tick's position and
+   the colour both carry the meaning, so it still reads if colours are hard to
+   tell apart or the screen is glanced at from across a desk. */
 function MetricStrip({ ev, stats }) {
   const reqs = ev?.tier?.requirements;
   if (!reqs || !reqs.length) return null;
+
+  // 180-degree dial: centre (38,40), radius 30. The target sits at 70% of the
+  // sweep rather than the end, so beating it still has somewhere to travel.
+  const CX = 38, CY = 40, R = 30, TARGET_T = 0.7;
+  const pt = (t, r) => {
+    const th = Math.PI * (1 - t);
+    return [CX + r * Math.cos(th), CY - r * Math.sin(th)];
+  };
+  const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`;
+  const [tx1, ty1] = pt(TARGET_T, R - 7);
+  const [tx2, ty2] = pt(TARGET_T, R + 7);
+
   return (
     <div className="mstrip">
       {reqs.map((req, i) => {
@@ -4500,20 +4514,24 @@ function MetricStrip({ ev, stats }) {
         const v = stats?.[req.metric];
         const need = def.kind === "pct" ? req.min / 100 : req.min;
         const ratio = (v == null || need <= 0) ? 0 : v / need;
-        // The target sits at 70% of the track so beating it still has somewhere to go.
-        const w = Math.max(3, Math.min(100, ratio * 70));
+        const t = Math.max(0, Math.min(1, ratio * TARGET_T));
         const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
+        const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
+        const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
+        const [nx, ny] = pt(t, R);
         return (
-          <div key={i} className={"mm mm-" + state}>
-            <div className="mm-top">
-              <span className="mm-label">{def.short}</span>
-              <span className="mm-val">{v == null ? "—" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v))}</span>
-            </div>
-            <div className="mm-track">
-              <div className="mm-fill" style={{ width: w + "%" }} />
-              <div className="mm-target" />
-            </div>
-            <div className="mm-need">target {def.kind === "pct" ? req.min + "%" : req.min}</div>
+          <div key={i} className={"mdial mdial-" + state}
+            title={`${def.label}: ${v == null ? "no data" : shown} against a target of ${targetTxt}`}>
+            <svg viewBox="0 0 76 48" aria-hidden="true">
+              <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
+              <path className="md-fill" d={arc} fill="none" strokeWidth="7" strokeLinecap="round"
+                pathLength="100" strokeDasharray={`${(t * 100).toFixed(1)} 100`} />
+              <line className="md-target" x1={tx1} y1={ty1} x2={tx2} y2={ty2} strokeWidth="2.5" strokeLinecap="round" />
+              {v != null && <circle className="md-dot" cx={nx} cy={ny} r="3.6" />}
+              <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">{shown}</text>
+            </svg>
+            <div className="mdial-label">{def.short}</div>
+            <div className="mdial-need">target {targetTxt}</div>
           </div>
         );
       })}
@@ -4565,7 +4583,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       {ev.cap != null && (
         <div className="gauge">
           <div className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")} style={{ width: pct + "%" }} />
-          <div className="gauge-notch" style={{ left: "100%" }} />
         </div>
       )}
       {incomplete && (
@@ -8800,68 +8817,28 @@ function Style() {
       .gauge-fill { height:100%; border-radius:5px; background:linear-gradient(90deg, #2A5E9B, #C1D730);
         transition: width .6s var(--spring); }
       .gauge-red { background:linear-gradient(90deg, #FF6B5E, #E5473C); }
-      .gauge-notch { position:absolute; top:-3px; width:2.5px; height:14px; background:var(--ink); border-radius:2px; transform:translateX(-1px); }
       .reasons { margin:9px 0 0 23px; font-size:12.5px; color:#C13529; animation: pageIn .3s var(--spring); }
       .reason { display:inline-block; background:rgba(229,71,60,.10); border-radius:14px; padding:3px 10px; margin:2px 5px 0 0; font-weight:500; }
       .pass-note { color:#1E7A3C; }
 
-      /* ---- scorecard strip: the 5-second read on every associate ---- */
+      /* ---- scorecard dials: the 5-second read on every associate ---- */
       .reason-lead { font-size:12.5px; color:var(--ink-2); margin-bottom:10px; }
-      .mstrip { display:flex; flex-wrap:wrap; gap:10px 14px; }
-      .mm { flex:1 1 150px; min-width:140px; max-width:240px; }
-      .mm-top { display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:5px; }
-      .mm-label { font-size:10px; font-weight:700; color:var(--ink-2); text-transform:uppercase;
-        letter-spacing:.06em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .mm-val { font-size:13.5px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-      .mm-track { position:relative; height:7px; border-radius:4px; background:rgba(0,0,0,.07); }
-      .mm-fill { position:absolute; left:0; top:0; bottom:0; border-radius:4px; transition:width .6s var(--spring); }
-      .mm-target { position:absolute; left:70%; top:-3px; bottom:-3px; width:2px; border-radius:2px; background:rgba(0,0,0,.42); }
-      .mm-need { font-size:10px; color:var(--ink-3); margin-top:4px; font-variant-numeric:tabular-nums; }
-      .mm-ok    .mm-fill { background:linear-gradient(90deg,#5CCB7B,#30B155); }
-      .mm-ok    .mm-val  { color:#1E7A3C; }
-      .mm-near  .mm-fill { background:linear-gradient(90deg,#FFC85C,#E59200); }
-      .mm-near  .mm-val  { color:#95600A; }
-      .mm-under .mm-fill { background:linear-gradient(90deg,#F5847A,#E5473C); }
-      .mm-under .mm-val  { color:#C13529; }
-      .mm-nodata .mm-fill { background:rgba(0,0,0,.13); }
-      .mm-nodata .mm-val  { color:var(--ink-3); }
+      .mstrip { display:flex; flex-wrap:wrap; gap:12px 20px; }
+      .mdial { width:88px; text-align:center; }
+      .mdial svg { display:block; width:88px; height:56px; overflow:visible; }
+      .md-track { stroke:rgba(0,0,0,.08); }
+      .md-target { stroke:rgba(0,0,0,.5); }
+      .md-val { font-size:13px; font-weight:800; letter-spacing:-.03em; fill:var(--ink);
+        font-variant-numeric:tabular-nums; }
+      .mdial-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+        color:var(--ink-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .mdial-need { font-size:9.5px; color:var(--ink-3); margin-top:2px; font-variant-numeric:tabular-nums; }
+      .md-fill { transition: stroke-dasharray .7s var(--spring); }
+      .mdial-ok     .md-fill { stroke:#30B155; } .mdial-ok     .md-dot { fill:#30B155; } .mdial-ok     .md-val { fill:#1E7A3C; }
+      .mdial-near   .md-fill { stroke:#E59200; } .mdial-near   .md-dot { fill:#E59200; } .mdial-near   .md-val { fill:#95600A; }
+      .mdial-under  .md-fill { stroke:#E5473C; } .mdial-under  .md-dot { fill:#E5473C; } .mdial-under  .md-val { fill:#C13529; }
+      .mdial-nodata .md-fill { stroke:rgba(0,0,0,.14); } .mdial-nodata .md-val { fill:var(--ink-3); }
 
-      /* ---- grace period & recap ---- */
-      .verdict-grace { background:rgba(136,198,234,.28); color:#1D4674; }
-      .watch-note { color:#7A5A00; }
-      .reason.watch { background:rgba(255,159,10,.12); color:#8A5A00; }
-      .grace-banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-left:4px solid #88C6EA;
-        background:linear-gradient(90deg, rgba(136,198,234,.10), rgba(255,255,255,0) 60%); font-size:13px; color:var(--ink-2); }
-      .recap { border-left:4px solid var(--lime); }
-      .recap-row { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
-      .recap-row:last-child { border-bottom:none; }
-      .recap-name { font-size:11px; }
-      .recap-chips { display:flex; gap:5px; flex-wrap:wrap; }
-      .gm-section.watch::before { background:#88C6EA; }
-      .stat-grace { color:#1D4674; font-weight:600; }
-      .grace-setting { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-      .grace-label { display:flex; gap:9px; align-items:center; font-weight:600; }
-      .grace-setting input[type=number] { width:64px; }
-
-      /* ---- search ---- */
-      .search-wrap { position:relative; margin-bottom:14px; max-width:420px; }
-      .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-3); font-size:16px; }
-      .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
-        border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
-      .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
-        color:var(--ink-2); width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:11px; }
-      .search-count { margin:-8px 0 12px 4px; }
-
-      /* ---- leaderboard ---- */
-      .leaderboard { border-left:4px solid var(--lime); }
-      .lb-title { font-size:16px; font-weight:700; margin:0 0 12px; }
-      .lb-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
-      .lb-item { padding:14px; border-radius:14px; text-align:center; background:rgba(255,255,255,.5);
-        border:1px solid rgba(255,255,255,.7); transition: transform .3s var(--spring); }
-      .lb-item:hover { transform: translateY(-2px); }
-      .lb-1 { background:linear-gradient(160deg, rgba(255,215,90,.28), rgba(255,255,255,.4)); }
-      .lb-2 { background:linear-gradient(160deg, rgba(200,205,215,.32), rgba(255,255,255,.4)); }
-      .lb-3 { background:linear-gradient(160deg, rgba(205,145,95,.26), rgba(255,255,255,.4)); }
       .lb-medal { width:40px; height:40px; margin:0 auto; border-radius:50%; display:flex;
         align-items:center; justify-content:center; font-size:17px; font-weight:800; letter-spacing:-.02em;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 3px 10px rgba(31,54,86,.16); }
