@@ -86,6 +86,30 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 // Every unit a person delivered this month, across all four channels.
 const unitsOf = (s) =>
   (s?.internetUnits ?? 0) + (s?.phoneUnits ?? 0) + (s?.showroomUnits ?? 0) + (s?.campaignUnits ?? 0);
+
+// How well someone is holding their standards, whether or not they clear all of
+// them: the share of requirements met, plus a bonus for how far past they are.
+function qualityOf(ev) {
+  const total = ev?.tier?.requirements?.length || 0;
+  const met = total - (ev?.failures?.length || 0);
+  const surpass = Math.max(0, ev?.surpass || 0);
+  return {
+    passing: ev?.status === "pass",
+    met, total, surpass,
+    quality: total ? met / total + surpass * 0.5 : 0,
+  };
+}
+
+// Cars sold is the point, so units carry the overwhelming share of the score and
+// standards act as a tiebreaker between people with similar volume. Each side is
+// measured against the best on the floor so neither runs away with it.
+function scoreRanked(list) {
+  const maxU = Math.max(1, ...list.map((r) => r.units));
+  const maxQ = Math.max(0.0001, ...list.map((r) => r.quality));
+  for (const r of list) r.score = 0.85 * (r.units / maxU) + 0.15 * (r.quality / maxQ);
+  list.sort((a, b) => b.score - a.score);
+  return list;
+}
 const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 // All day/month boundaries run on dealership time, not the browser's clock and not UTC.
@@ -378,6 +402,39 @@ function useReveal() {
     els.forEach((el) => io.observe(el));
     return () => io.disconnect();
   });
+}
+
+/* The backdrop drifts against the page: scrolling drags it along at a fraction of
+   the speed and it coasts to a stop rather than tracking the finger, and once the
+   manager settles on a view the colours morph noticeably faster. Vars go on the
+   root element so this survives the app swapping its own shell around. */
+function useLivingBackground() {
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!window.matchMedia) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { root.classList.add("bg-idle"); return; }
+    let cur = 0, target = 0, raf = 0, idleT = 0;
+    const settle = () => { idleT = setTimeout(() => root.classList.add("bg-idle"), 700); };
+    const tick = () => {
+      cur += (target - cur) * 0.07;                 // the lag that reads as inertia
+      root.style.setProperty("--bgy", cur.toFixed(1) + "px");
+      if (Math.abs(target - cur) > 0.4) raf = requestAnimationFrame(tick);
+      else { cur = target; root.style.setProperty("--bgy", cur.toFixed(1) + "px"); raf = 0; }
+    };
+    const onScroll = () => {
+      target = -(window.scrollY || 0) * 0.15;
+      root.classList.remove("bg-idle");
+      clearTimeout(idleT); settle();
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    settle();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(idleT);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
 }
 
 function useFavicon() {
@@ -867,6 +924,7 @@ function downloadCSV(filename, rows) {
 export default function LeadPerformanceCalculator() {
   useFavicon();
   useReveal();
+  useLivingBackground();
   const [config, setConfig] = useState(null);
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -4383,28 +4441,18 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       if (isRestricted(a)) continue;
       const st = M?.stats?.[norm(a.name)];
       const ev = evaluateAssociate(st, tiers);
-      if (ev.status !== "pass") continue;
       const units = unitsOf(st);
-      // "Top performer" has to have actually delivered something. This is also
-      // what keeps a BDC agent, who books but does not deliver, off the podium.
+      // Delivering cars is the qualification, not clearing every standard. This is
+      // also what keeps a BDC agent, who books but does not deliver, off the podium.
       if (units <= 0) continue;
-      ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps, units });
+      ranked.push({ name: a.name, role, units, ...qualityOf(ev) });
     }
   }
-  // Volume leads and quality adjusts. Units carry most of the weight, how far
-  // past standard they are carries the rest, and each is scored against the best
-  // on the floor. So a big month wins, but clearing a low bar by a mile still
-  // counts for something rather than being invisible.
-  const maxUnits = Math.max(1, ...ranked.map((r) => r.units));
-  const maxSurp = Math.max(0.0001, ...ranked.map((r) => Math.max(0, r.surpass)));
-  for (const r of ranked) {
-    r.score = 0.7 * (r.units / maxUnits) + 0.3 * (Math.max(0, r.surpass) / maxSurp);
-  }
-  ranked.sort((a, b) => b.score - a.score);
+  scoreRanked(ranked);
   const top3 = ranked.slice(0, 3);
   const rankOf = {}; top3.forEach((r, i) => (rankOf[norm(r.name)] = i + 1));
   // "wildly surpassing" = 40%+ average over every requirement
-  const stars = new Set(ranked.filter((r) => r.surpass >= 0.4).map((r) => norm(r.name)));
+  const stars = new Set(ranked.filter((r) => r.passing && r.surpass >= 0.4).map((r) => norm(r.name)));
 
   // last-month recap: judged under that month's frozen standards
   const P = data.months?.[prevYm()];
@@ -4465,16 +4513,20 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
 
       {!query && top3.length > 0 && (
-        <div className="card leaderboard">
-          <h3 className="lb-title">Top Performers <span className="section-sub">units delivered, adjusted for how far past standard</span></h3>
-          <div className="lb-row">
+        <div className="podium">
+          <div className="podium-cap">Top Performers <span>units delivered, standards break the tie</span></div>
+          <div className="podium-row">
             {top3.map((r, i) => (
-              <div key={r.name} className={"lb-item lb-" + (i + 1)}>
-                <div className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</div>
-                <div className="lb-name">{r.name}</div>
-                <div className="lb-meta" style={{ color: r.role.color }}>{r.role.name}</div>
-                <div className="lb-units">{fmtNum(r.units)}<span> units</span></div>
-                <div className="lb-surpass">+{Math.round(r.surpass * 100)}% over standard</div>
+              <div key={r.name} className={"pod pod-" + (i + 1)}>
+                <span className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</span>
+                <span className="pod-who">
+                  <span className="pod-name">{r.name}</span>
+                  <span className="pod-role" style={{ color: r.role.color }}>{r.role.name}</span>
+                </span>
+                <span className="pod-units"><CountUp value={r.units} decimals={1} delay={180 + i * 80} /><em>units</em></span>
+                <span className={"lb-std " + (r.passing ? "ok" : "part")}>
+                  {r.passing ? `+${Math.round(r.surpass * 100)}%` : `${r.met}/${r.total} standards`}
+                </span>
               </div>
             ))}
           </div>
@@ -4519,8 +4571,9 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           <button className="btn-x" onClick={onClearFilter}>Show everyone</button>
         </div>
       )}
+      <div className="card roster-card">
       {sections.map(({ role, people }) => (
-        <section key={role.id} className="card role-section" style={{ "--role": role.color }}>
+        <section key={role.id} className="role-group" style={{ "--role": role.color }}>
           <h3 className="role-header"><span className="role-swatch" />{role.name} <span className="role-count">{people.length}</span></h3>
           {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : "No associates in this section"}</div>}
           {people.map((a) => {
@@ -4538,7 +4591,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         </section>
       ))}
       {unassigned.length > 0 && (
-        <section className="card role-section unassigned" style={{ "--role": "#8E8E93" }}>
+        <section className="role-group unassigned" style={{ "--role": "#8E8E93" }}>
           <h3 className="role-header"><span className="role-swatch" />Needs a Position <span className="role-count">{unassigned.length}</span></h3>
           <p className="hint">These names came in from reports. Give each one a position to start scoring them.</p>
           {unassigned.map((a) => (
@@ -4555,6 +4608,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           ))}
         </section>
       )}
+      </div>
     </div>
   );
 }
@@ -6831,7 +6885,7 @@ function LoadingScreen({ label = "Loading" }) {
 
 /* Animates a number up from zero. Honours the OS reduce-motion setting by
    jumping straight to the final value. */
-function useCountUp(target, ms = 1000, delay = 150) {
+function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
   const [v, setV] = useState(0);
   useEffect(() => {
     const reduce = typeof window !== "undefined" && window.matchMedia
@@ -6844,13 +6898,45 @@ function useCountUp(target, ms = 1000, delay = 150) {
       if (elapsed < 0) { raf = requestAnimationFrame(tick); return; }
       const p = Math.min(1, elapsed / ms);
       const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic: quick then settles
-      setV(Math.round(target * eased));
+      const f = Math.pow(10, decimals);
+      setV(Math.round(target * eased * f) / f);
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [target, ms, delay]);
+  }, [target, ms, delay, decimals]);
   return v;
+}
+
+/* Numbers roll up rather than snapping into place, and roll again whenever the
+   underlying figure changes, so a fresh import visibly lands on the page. */
+function CountUp({ value, decimals = 0, ms = 900, delay = 120 }) {
+  return <>{fmtNum(useCountUp(value || 0, ms, delay, decimals))}</>;
+}
+
+/* A slow drift on the hero as the page scrolls: the band stays put while its
+   contents lag and fade. Fine pointers only. Touch scrolling on this app has a
+   history of jitter whenever anything is driven off the scroll position, and a
+   flourish is not worth reintroducing that. */
+function useParallax(ref) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !window.matchMedia) return;
+    const fine = window.matchMedia("(hover:hover) and (pointer:fine)").matches;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!fine || reduce) return;
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      const y = window.scrollY || 0;
+      el.style.setProperty("--px", Math.min(58, y * 0.17).toFixed(1) + "px");
+      el.style.setProperty("--pf", String(Math.max(0.35, 1 - y / 420)));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply); };
+    apply();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [ref]);
 }
 
 /* ---------------- Store hero (manager landing) ---------------- */
@@ -6876,24 +6962,74 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
       if (ev.opps != null) oppsUsed += ev.opps;
       if (ev.cap != null) capTotal += ev.cap;
       if (isRestricted(a)) { offLeads++; continue; }
-      if (ev.status === "pass") {
-        cleared++;
-        const units = unitsOf(M?.stats?.[norm(a.name)]);
-        if (units > 0) ranked.push({ name: a.name, role, surpass: ev.surpass, opps: ev.opps, units });
-      }
+      if (ev.status === "pass") cleared++;
+      const units = unitsOf(M?.stats?.[norm(a.name)]);
+      if (units > 0) ranked.push({ name: a.name, role, units, ...qualityOf(ev) });
       else if (ev.status === "fail") attention++;
     }
   }
-  {
-    const mu = Math.max(1, ...ranked.map((r) => r.units));
-    const ms = Math.max(0.0001, ...ranked.map((r) => Math.max(0, r.surpass)));
-    for (const r of ranked) r.score = 0.7 * (r.units / mu) + 0.3 * (Math.max(0, r.surpass) / ms);
-  }
-  ranked.sort((a, b) => b.score - a.score);
+  scoreRanked(ranked);
   const leader = ranked[0];
 
   const evaluated = cleared + attention + offLeads;
-  const pct = evaluated > 0 ? Math.round((cleared / evaluated) * 100) : 0;
+
+  // Store health is how close the floor is to its standards, not how many have
+  // fully cleared them. A pass rate reads 7% on the third of the month and tells
+  // a manager nothing; this moves smoothly and shows ground being gained.
+  // Each metric is capped at its target so one runaway number can't hide a gap.
+  const metricRoll = {};
+  let attSum = 0, attN = 0;
+  for (const role of config.roles) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    if (!tiers || !tiers.length) continue;
+    for (const a of roster.filter((x) => x.roleId === role.id)) {
+      const st = M?.stats?.[norm(a.name)];
+      const ev = evaluateAssociate(st, tiers);
+      const reqs = ev?.tier?.requirements || [];
+      let sum = 0, n = 0;
+      for (const req of reqs) {
+        const def = METRICS[req.metric];
+        const need = def.kind === "pct" ? req.min / 100 : req.min;
+        if (need <= 0) continue;
+        const got = Math.min(1, (st?.[req.metric] ?? 0) / need);
+        sum += got; n++;
+        const roll = metricRoll[req.metric] || (metricRoll[req.metric] = { below: 0, total: 0, sum: 0 });
+        roll.total++; roll.sum += got;
+        if (got < 1) roll.below++;
+      }
+      if (n) { attSum += sum / n; attN++; }
+    }
+  }
+  const pct = attN ? Math.round((attSum / attN) * 100) : 0;
+  const healthWord = attN === 0 ? "No standards set yet"
+    : pct >= 90 ? "The floor is in good shape"
+    : pct >= 75 ? "Close to standard across the floor"
+    : pct >= 55 ? "Slipping, worth a floor meeting"
+    : "Well below standard";
+  const weakest = Object.entries(metricRoll)
+    .map(([metric, r]) => ({ metric, ...r, mean: r.sum / r.total }))
+    .sort((a, b) => a.mean - b.mean)[0] || null;
+
+  // Who to talk to first: below standard, ordered by how close they are to the
+  // cap, because that is when being below standard actually costs them leads.
+  const urgent = [];
+  for (const role of config.roles) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    for (const a of roster.filter((x) => x.roleId === role.id)) {
+      if (isRestricted(a)) continue;
+      const st = M?.stats?.[norm(a.name)];
+      const ev = evaluateAssociate(st, tiers);
+      if (ev.status !== "fail" || !ev.failures || !ev.failures.length) continue;
+      const worst = ev.failures
+        .map((f) => {
+          const need = f.def.kind === "pct" ? f.min / 100 : f.min;
+          return { ...f, ratio: need > 0 ? (f.val ?? 0) / need : 1 };
+        })
+        .sort((x, y) => x.ratio - y.ratio)[0];
+      urgent.push({ name: a.name, capUse: ev.capUse ?? 0, atCap: ev.atCap, worst, opps: ev.opps, cap: ev.cap });
+    }
+  }
+  urgent.sort((a, b) => b.capUse - a.capUse);
 
   // today's import status
   const t = M?.imports?.[today()] || {};
@@ -6921,10 +7057,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
 
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
+  const bandRef = useRef(null);
+  useParallax(bandRef);
 
   return (
     <div className="hero" style={brandVars}>
-      <div className="hero-band">
+      <div className="hero-band" ref={bandRef}>
         <div className="hero-id">
           <div className="hero-logo">
             {store.icon ? <img src={store.icon} alt="" /> : <Logo size={54} animated />}
@@ -6936,19 +7074,63 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
           </div>
         </div>
 
-        <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
-          <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-            <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
-            <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
-              strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
-              style={{ "--c": dash }} />
-          </svg>
-          <div className="hero-ring-label">
-            <div className="hero-ring-pct">{nPct}<span>%</span></div>
-            <div className="hero-ring-cap">Cleared</div>
+        <div className="hero-health">
+          <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
+            <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+              <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
+              <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
+                strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
+                style={{ "--c": dash }} />
+            </svg>
+            <div className="hero-ring-label">
+              <div className="hero-ring-pct">{nPct}<span>%</span></div>
+              <div className="hero-ring-cap">Health</div>
+            </div>
+          </div>
+          <div className="hh-facts">
+            <div className="hh-verdict">{healthWord}</div>
+            <div className="hh-sub">How close the floor sits to its standards, month to date.</div>
+            <div className="hh-rows">
+              <span className="hh-row ok"><b>{cleared}</b> cleared</span>
+              <span className="hh-row bad"><b>{attention}</b> {inGrace ? "working toward" : "need attention"}</span>
+              {offLeads > 0 && <span className="hh-row dim"><b>{offLeads}</b> off leads</span>}
+            </div>
           </div>
         </div>
       </div>
+
+      {(weakest || urgent.length > 0) && (
+        <div className="hero-focus">
+          {weakest && (
+            <div className="hf-block">
+              <div className="hf-cap">Weakest standard</div>
+              <div className="hf-metric">{METRICS[weakest.metric].label}</div>
+              <div className="hf-bar"><div className="hf-fill" style={{ width: Math.round(weakest.mean * 100) + "%" }} /></div>
+              <div className="hf-sub">{weakest.below} of {weakest.total} below target</div>
+            </div>
+          )}
+          {urgent.length > 0 && (
+            <div className="hf-block hf-wide">
+              <div className="hf-cap">Talk to these first</div>
+              <div className="hf-list">
+                {urgent.slice(0, 3).map((u) => (
+                  <button key={u.name} className="hf-person" onClick={() => onFilter("attention")}>
+                    <span className="hf-name">{u.name}</span>
+                    <span className="hf-why">
+                      {u.worst.def.short} {u.worst.val == null ? "no data"
+                        : (u.worst.def.kind === "pct" ? fmtPct(u.worst.val) : fmtNum(u.worst.val))}
+                      {" vs "}{u.worst.def.kind === "pct" ? u.worst.min + "%" : u.worst.min}
+                    </span>
+                    <span className={"hf-tag " + (u.atCap ? "now" : "soon")}>
+                      {u.atCap ? "at cap" : `${u.opps} / ${u.cap}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="hero-tiles">
         <button className={"tile tile-good " + (filter === "cleared" ? "picked" : "")}
@@ -6990,7 +7172,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter }) 
             <span className="leader-crown">★</span>
             <span className="leader-name">{leader.name}</span>
             <span className="leader-tag">leading the board</span>
-            <span className="leader-pct">+{Math.round(leader.surpass * 100)}% over standard</span>
+            <span className="leader-pct">{fmtNum(leader.units)} units</span>
           </div>
         )}
       </div>
@@ -8070,7 +8252,9 @@ function LogoCropper({ src, onCancel, onSave }) {
 
 /* ---------------- Shell + styles ---------------- */
 function Shell({ children }) {
-  return <div className="lpc">{children}
+  return <div className="lpc">
+      <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
+      {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
 
@@ -8129,8 +8313,9 @@ function Style() {
       /* second drifting layer, slower and offset, for parallax life */
       .lpc::after { content:""; position:fixed; inset:-15%; z-index:-2; pointer-events:none;
         background:
-          radial-gradient(30% 30% at 70% 85%, rgba(42,94,155,.16), transparent 72%),
-          radial-gradient(26% 26% at 25% 92%, rgba(0,168,150,.12), transparent 72%);
+          radial-gradient(30% 30% at 70% 85%, rgba(42,94,155,.18), transparent 72%),
+          radial-gradient(26% 26% at 25% 92%, rgba(0,168,150,.13), transparent 72%),
+          radial-gradient(24% 24% at 92% 42%, rgba(122,79,155,.10), transparent 74%);
         animation: driftB 46s ease-in-out infinite alternate; will-change: transform; }
       @keyframes driftA {
         0%   { transform: translate3d(0,0,0) scale(1); }
@@ -8171,7 +8356,7 @@ function Style() {
 
       /* ---- store hero (manager landing) ---- */
       .hero { margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
-      .hero-band { display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
+      .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
         padding:30px 34px; border-radius:24px; position:relative; overflow:hidden;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
@@ -8180,7 +8365,8 @@ function Style() {
         background: radial-gradient(40% 70% at 78% 10%, color-mix(in srgb, var(--sa) 26%, transparent), transparent 70%),
                     radial-gradient(45% 80% at 8% 100%, rgba(255,255,255,.16), transparent 70%);
         animation: heroSheen 18s ease-in-out infinite alternate; }
-      .hero-id { display:flex; align-items:center; gap:20px; position:relative; z-index:1; }
+      .hero-id { display:flex; align-items:center; gap:20px; position:relative; z-index:1;
+        transform: translate3d(0, var(--px), 0); opacity: var(--pf); }
       .hero-text { display:flex; flex-direction:column; gap:6px; }
       .hero-logo { width:64px; height:64px; border-radius:16px; background:rgba(255,255,255,.95);
         display:flex; align-items:center; justify-content:center;
@@ -8192,7 +8378,8 @@ function Style() {
       .hero-store { color:#fff; font-size:31px; font-weight:700; letter-spacing:-.015em; line-height:1.12; margin:0; }
       .hero-date { color:rgba(255,255,255,.62); font-size:13px; letter-spacing:.015em; }
 
-      .hero-ring-wrap { position:relative; flex:0 0 auto; z-index:1; }
+      .hero-ring-wrap { position:relative; flex:0 0 auto; z-index:1;
+        transform: translate3d(0, calc(var(--px) * .6), 0); opacity: var(--pf); }
       .hero-ring { display:block; }
       .hero-ring-fill { animation: ringIn 1.5s var(--spring) .3s both; }
       @keyframes ringIn { from { stroke-dashoffset: var(--c); } to { stroke-dashoffset: 0; } }
@@ -8204,6 +8391,96 @@ function Style() {
       .hero-ring-pct span { font-size:16px; font-weight:600; opacity:.68; margin-left:2px; }
       .hero-ring-cap { color:rgba(255,255,255,.72); font-size:9.5px; text-transform:uppercase;
         letter-spacing:.16em; font-weight:700; line-height:1; }
+      @media (max-width: 860px) {
+        .hero-focus { grid-template-columns: 1fr; }
+        .hero-health { flex-direction:column; align-items:flex-start; gap:14px; }
+        .hh-facts { max-width:none; }
+      }
+
+      /* ---- health block in the hero ---- */
+      .hero-health { display:flex; align-items:center; gap:22px; position:relative; z-index:1;
+        transform: translate3d(0, calc(var(--px) * .6), 0); opacity: var(--pf); }
+      .hh-facts { max-width:280px; }
+      .hh-verdict { color:#fff; font-size:17px; font-weight:700; letter-spacing:-.02em; line-height:1.25;
+        font-family: var(--font-display); }
+      .hh-sub { color:rgba(255,255,255,.66); font-size:11.5px; margin-top:4px; line-height:1.45; }
+      .hh-rows { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+      .hh-row { font-size:11.5px; font-weight:600; color:rgba(255,255,255,.9);
+        background:rgba(255,255,255,.14); border-radius:99px; padding:4px 11px; }
+      .hh-row b { font-family:var(--font-display); font-size:13px; margin-right:3px; }
+      .hh-row.ok { background:rgba(120,220,150,.22); }
+      .hh-row.bad { background:rgba(255,150,140,.22); }
+      .hh-row.dim { background:rgba(255,255,255,.12); }
+
+      /* ---- the "why, and who" row ---- */
+      .hero-focus { display:grid; grid-template-columns: minmax(210px, 300px) 1fr; gap:14px; margin-top:14px;
+        animation: tileIn .5s var(--spring) .32s both; }
+      .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+        padding:15px 17px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07); }
+      .hf-cap { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.11em; color:var(--ink-3); }
+      .hf-metric { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em; margin-top:6px; }
+      .hf-bar { height:7px; border-radius:4px; background:rgba(0,0,0,.07); margin-top:9px; overflow:hidden; }
+      .hf-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#F5847A,#E59200);
+        transition: width .9s var(--ease); }
+      .hf-sub { font-size:11px; color:var(--ink-2); margin-top:7px; }
+      .hf-list { display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+      .hf-person { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
+        border:none; background:transparent; font:inherit; padding:7px 9px; border-radius:10px;
+        transition: background .22s var(--ease), transform .22s var(--ease); }
+      .hf-person:hover { background:rgba(42,94,155,.07); transform:translateX(2px); }
+      .hf-name { font-weight:700; font-size:13.5px; flex:0 0 auto; }
+      .hf-why { font-size:11.5px; color:var(--ink-2); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .hf-tag { font-size:10px; font-weight:800; padding:3px 9px; border-radius:99px; flex:0 0 auto;
+        font-variant-numeric:tabular-nums; }
+      .hf-tag.now { background:rgba(229,71,60,.14); color:#C13529; }
+      .hf-tag.soon { background:rgba(255,159,10,.16); color:#95600A; }
+
+      /* ---- Top Performers as a strip rather than three big cards ---- */
+      .podium { margin-bottom:22px; }
+      .podium-cap { font-family:var(--font-display); font-size:13px; font-weight:700; letter-spacing:-.01em;
+        margin-bottom:9px; }
+      .podium-cap span { font-weight:500; color:var(--ink-3); font-size:11.5px; margin-left:8px; letter-spacing:0; }
+      .podium-row { display:flex; flex-wrap:wrap; gap:10px; }
+      .pod { flex:1 1 240px; display:flex; align-items:center; gap:11px; padding:11px 14px; border-radius:14px;
+        background:rgba(255,255,255,.7); border:1px solid rgba(16,40,68,.06);
+        transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
+      .pod:hover { transform:translateY(-2px); }
+      .pod-1 { box-shadow: 0 0 0 1px rgba(224,161,0,.28), 0 8px 22px rgba(224,161,0,.15); }
+      .pod-2 { box-shadow: 0 0 0 1px rgba(140,158,176,.26), 0 8px 22px rgba(90,110,130,.11); }
+      .pod-3 { box-shadow: 0 0 0 1px rgba(192,118,74,.26), 0 8px 22px rgba(160,96,58,.13); }
+      .pod .lb-medal { width:30px; height:30px; font-size:13px; margin:0; flex:0 0 auto; }
+      .pod-who { display:flex; flex-direction:column; min-width:0; flex:1; }
+      .pod-name { font-family:var(--font-display); font-weight:700; font-size:14.5px; letter-spacing:-.015em;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .pod-role { font-size:10.5px; font-weight:600; }
+      .pod-units { font-family:var(--font-display); font-size:20px; font-weight:700; letter-spacing:-.03em;
+        font-variant-numeric:tabular-nums; flex:0 0 auto; }
+      .pod-units em { font-style:normal; font-size:10px; font-weight:600; color:var(--ink-3); margin-left:4px; letter-spacing:0; }
+      .pod .lb-std { margin-top:0; flex:0 0 auto; }
+
+      /* ---- one roster card, roles divided inside it ---- */
+      .roster-card { --tint: rgba(42,94,155,.07); padding:6px 24px 20px; }
+      .role-group { position:relative; padding-top:20px; }
+      .role-group + .role-group { border-top:1px solid rgba(16,40,68,.07); margin-top:6px; }
+
+      /* ---- the living backdrop ---- */
+      .bg-live { position:fixed; inset:-25%; z-index:-2; pointer-events:none;
+        transform: translate3d(0, var(--bgy, 0px), 0); }
+      .bg-live-inner { position:absolute; inset:0;
+        background:
+          radial-gradient(26% 28% at 26% 24%, rgba(122,79,155,.22), transparent 70%),
+          radial-gradient(24% 26% at 76% 58%, rgba(0,168,150,.22), transparent 70%),
+          radial-gradient(22% 24% at 50% 92%, rgba(255,159,10,.16), transparent 72%);
+        opacity:.5; animation: bgMorph 30s ease-in-out infinite alternate;
+        transition: opacity 1.4s var(--ease); }
+      /* Sitting on one view lets the colours work harder; scrolling already
+         supplies plenty of motion on its own. */
+      .bg-idle .bg-live-inner { animation-duration: 9s; opacity:.9; }
+      @keyframes bgMorph {
+        0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); filter:hue-rotate(0deg); }
+        100% { transform: translate3d(3%,-4%,0) scale(1.24) rotate(9deg); filter:hue-rotate(36deg); }
+      }
 
       .hero-tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(134px, 1fr)); gap:14px; margin-top:16px; }
       .tile { position:relative; overflow:hidden;
@@ -8448,7 +8725,7 @@ function Style() {
       .bl-tile-go { font-size:12px; opacity:.75; font-weight:600; }
 
       /* ---- welcome / backup / merge / channel prompt ---- */
-      .welcome { border-left:4px solid var(--lime); }
+      .welcome { --tint: rgba(193,215,48,.20); }
       .welcome-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
       .welcome-lede { font-size:14px; color:var(--ink-2); margin:6px 0 14px; max-width:70ch; }
       .welcome-steps { display:grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap:14px; margin-bottom:12px; }
@@ -8458,7 +8735,7 @@ function Style() {
       .welcome-step b { font-size:13.5px; }
       .welcome-step p { font-size:12.5px; color:var(--ink-2); margin-top:2px; }
 
-      .recover-card { border-left:4px solid var(--amber); }
+      .recover-card { --tint: rgba(255,159,10,.15); }
       .snap-store { padding:12px 0; border-bottom:1px solid rgba(0,0,0,.06); }
       .snap-store:last-child { border-bottom:none; }
       .snap-store-name { display:flex; align-items:center; gap:10px; }
@@ -8770,7 +9047,7 @@ function Style() {
       .oyo-base { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
       .oyo-base-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
       .bl-editor { margin-top:12px; background:rgba(0,0,0,.02); border-radius:12px; padding:14px; }
-      .baseline-card { border-left:4px solid var(--lime); }
+      .baseline-card { --tint: rgba(193,215,48,.18); }
       .bl-dates { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin:12px 0; }
       .bl-dates .bl-field input { padding:7px 9px; }
       .bl-preview { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
@@ -8876,12 +9153,18 @@ function Style() {
       .dupe-tag { display:inline-block; margin-left:8px; font-size:10px; font-weight:800; text-transform:uppercase;
         letter-spacing:.04em; background:rgba(229,71,60,.13); color:#C13529; padding:1px 7px; border-radius:99px; }
       .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
-        padding:18px 20px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+        padding:22px 24px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
         margin-bottom:20px;
         transition: opacity .8s var(--ease), transform .8s var(--ease), box-shadow .4s var(--ease); }
       /* Sections rise into place as they enter the viewport. Hover only deepens
          the shadow; lifting the card would fight the reveal's own transform. */
+      /* Colour arrives as a soft bloom out of the top-left corner rather than a
+         bar down the edge. Same information, far less repetition down the page. */
+      .card { isolation:isolate; }
+      .card::after { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+        border-radius:inherit;
+        background: radial-gradient(108% 82% at 0% 0%, var(--tint, transparent), transparent 62%); }
       .js-anim .card:not(.is-in) { opacity:0; transform: translateY(20px); }
       .card.is-in { opacity:1; transform:none; }
       .card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.92), var(--shadow-3); }
@@ -8910,14 +9193,15 @@ function Style() {
       .hint.center { text-align:center; }
 
       /* ---- board ---- */
-      /* overflow stays visible so a dial's hover card can escape the card edge.
-         The accent bar is inset instead of clipped, which keeps the rounded
-         corners clean without a hidden overflow. */
-      .role-section { border-left:none; position:relative; overflow:visible; }
-      .role-section::before { content:""; position:absolute; left:0; top:12px; bottom:12px; width:4px; background:var(--role); border-radius:4px; }
+      /* overflow stays visible so a dial's hover card can escape the card edge */
+      .role-section { border-left:none; position:relative; overflow:visible; margin-bottom:26px;
+        --tint: color-mix(in srgb, var(--role) 14%, transparent); }
       .role-header { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
-      .role-swatch { width:10px; height:10px; border-radius:50%; background:var(--role); }
-      .role-count { font-size:12px; color:var(--ink-3); font-weight:600; background:#F2F2F4; border-radius:10px; padding:1px 8px; }
+      .role-swatch { width:10px; height:10px; border-radius:50%; background:var(--role);
+        box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--role) 16%, transparent); }
+      .role-count { font-size:12px; font-weight:700; border-radius:10px; padding:2px 9px;
+        background: color-mix(in srgb, var(--role) 13%, transparent);
+        color: color-mix(in srgb, var(--role) 72%, #12212F); }
       .role-empty { padding:16px; border:1.5px dashed var(--line); border-radius:12px; color:var(--ink-3); text-align:center; }
       .assoc-card { border-bottom:1px solid rgba(0,0,0,.05); padding:10px 0 12px; transition: background .2s; border-radius:10px; }
       .assoc-card:last-child { border-bottom:none; }
@@ -9002,9 +9286,9 @@ function Style() {
       .verdict-grace { background:rgba(136,198,234,.28); color:#1D4674; }
       .watch-note { color:#7A5A00; }
       .reason.watch { background:rgba(255,159,10,.12); color:#8A5A00; }
-      .grace-banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap; border-left:4px solid #88C6EA;
-        background:linear-gradient(90deg, rgba(136,198,234,.10), rgba(255,255,255,0) 60%); font-size:13px; color:var(--ink-2); }
-      .recap { border-left:4px solid var(--lime); }
+      .grace-banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+        --tint: rgba(136,198,234,.24); font-size:13px; color:var(--ink-2); }
+      .recap { --tint: rgba(193,215,48,.16); }
       .recap-row { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
       .recap-row:last-child { border-bottom:none; }
       .recap-name { font-size:11px; }
@@ -9025,15 +9309,19 @@ function Style() {
       .search-count { margin:-8px 0 12px 4px; }
 
       /* ---- leaderboard ---- */
-      .leaderboard { border-left:4px solid var(--lime); }
+      .leaderboard { --tint: rgba(193,215,48,.18); }
       .lb-title { font-size:16px; font-weight:700; margin:0 0 12px; }
       .lb-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
-      .lb-item { padding:14px; border-radius:14px; text-align:center; background:rgba(255,255,255,.5);
-        border:1px solid rgba(255,255,255,.7); transition: transform .3s var(--spring); }
-      .lb-item:hover { transform: translateY(-2px); }
-      .lb-1 { background:linear-gradient(160deg, rgba(255,215,90,.28), rgba(255,255,255,.4)); }
-      .lb-2 { background:linear-gradient(160deg, rgba(200,205,215,.32), rgba(255,255,255,.4)); }
-      .lb-3 { background:linear-gradient(160deg, rgba(205,145,95,.26), rgba(255,255,255,.4)); }
+      .lb-item { padding:18px 14px 16px; border-radius:16px; text-align:center;
+        background:rgba(255,255,255,.72); border:1px solid rgba(16,40,68,.06);
+        transition: transform .4s var(--ease), box-shadow .4s var(--ease); }
+      .lb-item:hover { transform: translateY(-3px); }
+      .lb-1 { background:radial-gradient(120% 88% at 50% 0%, rgba(255,213,90,.24), rgba(255,255,255,.78) 64%);
+        box-shadow: 0 0 0 1px rgba(224,161,0,.30), 0 10px 30px rgba(224,161,0,.18); }
+      .lb-2 { background:radial-gradient(120% 88% at 50% 0%, rgba(176,190,205,.26), rgba(255,255,255,.78) 64%);
+        box-shadow: 0 0 0 1px rgba(140,158,176,.28), 0 10px 30px rgba(90,110,130,.13); }
+      .lb-3 { background:radial-gradient(120% 88% at 50% 0%, rgba(214,150,102,.24), rgba(255,255,255,.78) 64%);
+        box-shadow: 0 0 0 1px rgba(192,118,74,.28), 0 10px 30px rgba(160,96,58,.15); }
       .lb-medal { width:40px; height:40px; margin:0 auto; border-radius:50%; display:flex;
         align-items:center; justify-content:center; font-size:17px; font-weight:800; letter-spacing:-.02em;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 3px 10px rgba(31,54,86,.16); }
@@ -9046,7 +9334,10 @@ function Style() {
       .lb-units { font-size:26px; font-weight:700; letter-spacing:-.03em; margin-top:8px; line-height:1;
         font-variant-numeric:tabular-nums; }
       .lb-units span { font-size:12px; font-weight:600; color:var(--ink-3); letter-spacing:0; }
-      .lb-surpass { font-size:11.5px; color:#1E7A3C; font-weight:600; margin-top:4px; }
+      .lb-std { font-size:11px; font-weight:700; margin-top:6px; display:inline-block;
+        padding:3px 10px; border-radius:99px; }
+      .lb-std.ok { color:#1E7A3C; background:rgba(48,177,85,.13); }
+      .lb-std.part { color:#95600A; background:rgba(255,159,10,.15); }
       .unassigned-row { gap:14px; }
       .assign-select { margin-left:auto; }
       @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
@@ -9207,8 +9498,8 @@ function Style() {
       .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
       .checkout-split { display:grid; grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); gap:16px; align-items:start; }
       .checkout-side { position:sticky; top:80px; }
-      .offender-card { border-left:4px solid var(--red); }
-      .repeat-card { border-left:4px solid var(--amber); margin-bottom:12px; }
+      .offender-card { --tint: rgba(229,71,60,.12); }
+      .repeat-card { --tint: rgba(255,159,10,.14); margin-bottom:12px; }
       .repeat-row { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding:6px 0;
         border-bottom:1px solid rgba(0,0,0,.05); font-size:13px; }
       .repeat-row:last-child { border-bottom:none; }
@@ -9220,7 +9511,7 @@ function Style() {
       .flag-btn:hover { background:#E6E6EA; }
       .flag-btn.auto { background:rgba(255,159,10,.16); color:#95600A; }
       .flag-btn.on { background:rgba(229,71,60,.14); color:#C13529; }
-      .offender-card.offender-clear { border-left-color:#30B155; }
+      .offender-card.offender-clear { --tint: rgba(48,177,85,.14); }
       .off-title { font-size:15px; font-weight:700; margin-bottom:6px; display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
       @media (max-width: 1000px) {
         .checkout-split { grid-template-columns: 1fr; }
@@ -9300,7 +9591,7 @@ function Style() {
       .check-note { font-size:11px; color:var(--ink-3); margin-left:8px; font-style:italic; }
       .setup-note { font-size:13px; color:var(--ink-2); margin:8px 0 6px; }
       .login-ok { color:#1E7A3C; font-size:12.5px; margin-top:10px; background:rgba(48,177,85,.12); padding:8px 10px; border-radius:8px; }
-      .pending-card { border-left:4px solid var(--amber); }
+      .pending-card { --tint: rgba(255,159,10,.14); }
       .pending-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 0; border-bottom:1px solid rgba(0,0,0,.05); }
       .pending-row:last-child { border-bottom:none; }
       .pending-email { color:var(--ink-2); font-size:12px; margin-left:10px; }
