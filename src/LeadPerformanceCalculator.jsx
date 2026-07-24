@@ -104,6 +104,7 @@ const REPORTS = {
 // directly blew up on the leaderboard channels and the activity report, which
 // are not in it.
 const reportLabel = (t) =>
+  (t === "delivery-summary" ? "Delivery Summary" : null) ||
   REPORTS[t]?.label ||
   LEADERBOARD_REPORTS[t]?.label ||
   (t === "activity" ? "Daily Activity" : t);
@@ -677,6 +678,300 @@ function parseReport(rows, type) {
   }
   return out;
 }
+
+/* ---------------- Reading the PDF reports in the browser ----------------
+   The scheduled reports arrive as PDFs, and the email pipeline reads them on the
+   server. This is the same reading code running in the app, so a manager can drop
+   a PDF straight in: to backfill a day that was missed, or to keep working when
+   the email pipeline is down. The mappers below are the server's, unchanged, so
+   the two paths can never drift apart. */
+async function extractPdfLinesInBrowser(file) {
+  const pdfjs = await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+  const items = [];
+  for (let pn = 1; pn <= doc.numPages; pn++) {
+    const page = await doc.getPage(pn);
+    const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent();
+    for (const it of tc.items) {
+      if (!it.str.trim()) continue;
+      items.push({ str: it.str.trim(), x: it.transform[4], y: vp.height - it.transform[5], pg: pn });
+    }
+  }
+  items.sort((a, b) => a.pg - b.pg || a.y - b.y || a.x - b.x);
+  const lines = [];
+  for (const it of items) {
+    const L = lines[lines.length - 1];
+    if (L && L.pg === it.pg && Math.abs(L.y - it.y) < 4) L.parts.push(it);
+    else lines.push({ pg: it.pg, y: it.y, parts: [it] });
+  }
+  return lines;
+}
+
+const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function stripVocabWith(vocab, tokens) {
+  const kept = [];
+  let i = 0;
+  while (i < tokens.length) {
+    let consumed = 0;
+    for (let len = 4; len >= 1; len--) {
+      if (i + len > tokens.length) continue;
+      const glued = squashT(tokens.slice(i, i + len).join(""));
+      if (glued && vocab.has(glued)) { consumed = len; break; }
+    }
+    if (consumed) { i += consumed; continue; }
+    const t = tokens[i];
+    if (squashT(t)) kept.push(t);
+    i++;
+  }
+  return kept;
+}
+
+function vocabCountWith(vocab, tokens) {
+  let n = 0, i = 0;
+  while (i < tokens.length) {
+    let consumed = 0;
+    for (let len = 4; len >= 1; len--) {
+      if (i + len > tokens.length) continue;
+      const glued = squashT(tokens.slice(i, i + len).join(""));
+      if (glued && vocab.has(glued)) { consumed = len; break; }
+    }
+    if (consumed) { n++; i += consumed; } else i++;
+  }
+  return n;
+}
+
+/* =========================================================================
+   PDF #1: Daily Activity grid.
+   ========================================================================= */
+const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone","ups",
+  "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
+  "created","scheduled","confirmed","show","callsmade","calls","made","connects","texts",
+  "text","emails","email","videos","video","opentasks","open","tasks","completedtasks",
+  "completed","totaldelivered","totalclosing","total","delivered","closing"]);
+
+function mapDailyActivityGrid(lines) {
+  // Same decimal fix as the Delivery Summary: Units Delivered carries half
+  // credit on split deals, and one dropped token knocks the whole row out.
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
+  const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
+
+  let storeName = null, sawHeaderSig = false;
+  let nameParts = [];
+  const people = {};
+
+  for (const L of lines) {
+    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+    if (!texts.length) continue;
+    if (squashT(texts.join("")).includes("netleads")) sawHeaderSig = true;
+    const rowTag = texts[0];
+
+    if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
+      if (rowTag !== "All") continue;
+      const nums = texts.slice(1).filter(isNum);
+      if (nums.length < 19) continue;
+      const nm = nameParts.join(" ").replace(/\s+/g, " ").trim();
+      nameParts = [];
+      if (!nm) continue;
+      const v = nums.slice(0, 19).map(val);
+      if (!storeName) { storeName = nm; continue; }
+      people[norm(nm)] = { displayName: nm, cols: v };
+      continue;
+    }
+
+    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
+    if (vocabCountWith(DA_VOCAB, nonNum) >= 3) {
+      const frag = stripVocabWith(DA_VOCAB, nonNum);
+      if (frag.length) nameParts.push(frag.join(" "));
+    }
+  }
+  if (!sawHeaderSig || Object.keys(people).length < 3) return null;
+
+  const header = ["Name","Total","Showroom","Phone","Internet","Campaign",
+    "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+  const rows = [["Daily Activity"], header];
+  for (const p of Object.values(people)) {
+    const c = p.cols;
+    rows.push([p.displayName, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
+      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17]]);
+  }
+  return { storeName, rows };
+}
+
+/* =========================================================================
+   PDF #2: Delivery Summary grid.
+   Confirmed layout from live debug output:
+     - THREE header lines per person, the name split across lines 1 and 3
+       ("Drivers Mart Winter" / "Be Backs" / "Park | Leads | ...").
+     - The name comes BEFORE its data rows.
+     - A page break REPEATS the header, splitting one person's eight rows
+       across the boundary; the repeat merges rather than creating a second.
+     - Lines before the FIRST header block (report title, date range) carry no
+       column vocabulary and must be skipped, or they glue onto the store name.
+     - Eight rows per person: New/Used/Other/Total (vehicle type, ignored)
+       and Showroom/Phone/Internet/Campaign (source, used).
+     - Six values + a percentage per row:
+       Total Leads | Total Ups | Unsold In Showroom | Be Backs |
+       Total Delivered/F&I | Closing %
+       Total Ups / Unsold / Be Backs are SHOWROOM-ONLY and only read there.
+   Verified: Jason Campion Internet 110 leads / 5 delivered / 4.5% matches the
+   old Delivery Summary CSV (110 net opportunities, 5 deals, 4.5% delivered).
+   ========================================================================= */
+const DS_VOCAB = new Set(["total","leads","totalleads","ups","totalups","showroom",
+  "unsold","in","unsoldin","unsoldinshowroom","be","backs","bebacks","delivered",
+  "f","i","fi","f&i","delivered/f&i","totaldelivered","closing","closing%","%"]);
+
+const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
+const DS_VEHICLE = ["New", "Used", "Other", "Total"];
+
+function mapDeliverySummaryGrid(lines) {
+  // Split deals are credited in halves, so the Delivered column legitimately
+  // reads 3.5 or 13.5. The old pattern had no decimal point, so those tokens
+  // failed isNum, got filtered out of the row, and the row then fell one value
+  // short of six and was dropped whole. That is why people with split deals
+  // came back with null internet numbers while their all-integer channels
+  // survived. Anyone who splits a deal must not vanish from the board.
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || /^\d+(?:\.\d+)?%$/.test(t);
+  // A "%" token is a percentage no matter its size. Deciding by magnitude
+  // (v > 1) would silently turn a real 0.9% into 90%.
+  const val = (t) => {
+    if (t === "-" || t == null) return null;
+    if (/%$/.test(String(t))) {
+      const n = parseFloat(String(t));
+      return Number.isFinite(n) ? n / 100 : null;
+    }
+    return toNum(t);
+  };
+
+  let sawHeaderSig = false;
+  let storeName = null;
+  let curName = null;
+  let pendingFrags = [];
+  const people = {};       // norm(name) -> { displayName, sources }
+  const order = [];
+  const pairings = [];
+
+  const commitName = () => {
+    if (!pendingFrags.length) return;
+    const nm = pendingFrags.join(" ").replace(/\s+/g, " ").trim();
+    pendingFrags = [];
+    if (!nm) return;
+    if (!storeName) { storeName = nm; curName = null; return; }
+    curName = nm;
+    const k = norm(nm);
+    if (!people[k]) { people[k] = { displayName: nm, sources: {} }; order.push(k); }
+  };
+
+  for (const L of lines) {
+    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+    if (!texts.length) continue;
+    const joined = squashT(texts.join(""));
+    if (joined.includes("unsoldin") || joined.includes("bebacks")) sawHeaderSig = true;
+    const rowTag = texts[0];
+
+    // A data row ends the header block, so commit whatever name accumulated.
+    if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
+      commitName();
+      if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
+      const nums = texts.slice(1).filter(isNum);
+      if (nums.length < 6) continue;
+      if (!curName) continue;                             // store block: not a person
+      const k = norm(curName);
+      if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
+      people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
+      continue;
+    }
+
+    // Header line: strip the column vocabulary, whatever survives is a name
+    // fragment. The name spans up to three lines, so fragments accumulate.
+    // Lines BEFORE the first header block (report title, date range) carry no
+    // column vocabulary at all — skip them, or they glue onto the store name.
+    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
+    if (!nonNum.length) continue;
+    const hasVocab = vocabCountWith(DS_VOCAB, nonNum) >= 1;
+    if (!hasVocab && !sawHeaderSig) continue;             // pre-header preamble
+    const frag = stripVocabWith(DS_VOCAB, nonNum);
+    if (frag.length) pendingFrags.push(frag.join(" "));
+  }
+  commitName();
+
+  if (!sawHeaderSig || order.length < 3) return null;
+
+  const header = ["Name","Opportunities","Units Delivered","Delivered %",
+    "internetUnits","internetPct","phoneUnits","phonePct",
+    "showroomUnits","showroomPct","campaignUnits",
+    "showroomUps","showroomUnsold","showroomBeBacks"];
+  const rows = [["Delivery Summary"], header];
+
+  for (const k of order) {
+    const p = people[k];
+    const s = p.sources;
+    const pick = (src, i) => (s[src] ? s[src][i] : null);
+    // val() already returns percentages as a fraction, matching what the old
+    // CSV stored with Round % switched off.
+    const pctOf = (src) => pick(src, 5);
+    const internetLeads = pick("internet", 0);
+    const internetDel   = pick("internet", 4);
+    rows.push([
+      p.displayName,
+      internetLeads,                   // Opportunities (drives lead standards)
+      internetDel,                     // Units Delivered
+      pctOf("internet"),               // Delivered %
+      internetDel,  pctOf("internet"),
+      pick("phone", 4),    pctOf("phone"),
+      pick("showroom", 4), pctOf("showroom"),
+      pick("campaign", 4),             // campaign: units only, never graded
+      pick("showroom", 1),             // Total Ups          (showroom-only)
+      pick("showroom", 2),             // Unsold In Showroom (showroom-only)
+      pick("showroom", 3),             // Be Backs           (showroom-only)
+    ]);
+    pairings.push({
+      name: p.displayName,
+      internet: s.internet
+        ? `${pick("internet",0)} leads / ${internetDel} delivered / ${
+            pctOf("internet") == null ? "-" : (pctOf("internet") * 100).toFixed(1) + "%"}`
+        : "-",
+      showroom: s.showroom
+        ? `${pick("showroom",0)} leads / ${pick("showroom",4)} delivered`
+        : "-",
+    });
+  }
+  return { storeName, rows, pairings };
+}
+
+/* Delivery Summary rows are pre-shaped, so they bypass parseReport(). */
+function parseDeliverySummaryRows(rows) {
+  const header = rows[1] || [];
+  const idx = (label) => header.indexOf(label);
+  const out = {};
+  for (let r = 2; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[0]) continue;
+    const name = String(row[0]).trim();
+    out[norm(name)] = {
+      displayName: name,
+      opps: row[idx("Opportunities")],
+      unitsDelivered: row[idx("Units Delivered")],
+      deliveredPct: row[idx("Delivered %")],
+      internetUnits: row[idx("internetUnits")],
+      internetPct: row[idx("internetPct")],
+      phoneUnits: row[idx("phoneUnits")],
+      phonePct: row[idx("phonePct")],
+      showroomUnits: row[idx("showroomUnits")],
+      showroomPct: row[idx("showroomPct")],
+      campaignUnits: row[idx("campaignUnits")],
+      showroomUps: row[idx("showroomUps")],
+      showroomUnsold: row[idx("showroomUnsold")],
+      showroomBeBacks: row[idx("showroomBeBacks")],
+    };
+  }
+  return out;
+}
+
+/* ---------------- End of the ported reader ---------------- */
 
 /* ---------------- Import sanity checks ----------------
    The tool knows the shape a normal day should have, so it can catch a bad upload
@@ -1272,7 +1567,9 @@ export default function LeadPerformanceCalculator() {
     const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
 
     for (const { rows, type, fileName } of entries) {
-      const raw = parseReport(rows, type);
+      // The PDF Delivery Summary is one grid holding all four channels, so it has
+      // its own reader. Everything else is the familiar column-per-metric export.
+      const raw = type === "delivery-summary" ? parseDeliverySummaryRows(rows) : parseReport(rows, type);
       // fold every incoming name through the alias map, and drop anything on the
       // exclusion list. Reports contain roll-up rows like "Team A" that are not
       // people, and letting them through skews every average on the board.
@@ -1285,9 +1582,11 @@ export default function LeadPerformanceCalculator() {
         parsed[c] = { ...(parsed[c] || {}), ...v };
       }
       M.names[type] = Object.keys(parsed);
-      if (type.startsWith("delivery-")) importedChannels.add(type.split("-")[1]);
+      if (type === "delivery-summary") ["internet", "phone", "showroom", "campaign"].forEach((c) => importedChannels.add(c));
+      else if (type.startsWith("delivery-")) importedChannels.add(type.split("-")[1]);
       else if (type === "delivery") importedChannels.add("internet");
-      const label = REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || (type === "activity" ? "Daily Activity" : type);
+      const label = type === "delivery-summary" ? "Delivery Summary (all channels)"
+        : REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || (type === "activity" ? "Daily Activity" : type);
       let count = 0;
 
       if (type === "activity") {
@@ -1362,6 +1661,12 @@ export default function LeadPerformanceCalculator() {
       // The Internet Delivery Summary is the same DriveCentric export that drives the
       // lead standards. Uploading it once should satisfy both checklists, not leave the
       // other one stuck as "waiting".
+      if (type === "delivery-summary") {
+        // One file satisfies every delivery checklist item.
+        for (const k of ["delivery", "delivery-internet", "delivery-phone", "delivery-showroom", "delivery-campaign"]) {
+          M.imports[day][k] = true;
+        }
+      }
       if (type === "delivery-internet") M.imports[day]["delivery"] = true;
       if (type === "delivery") M.imports[day]["delivery-internet"] = true;
       importedFiles.push(`${label} (${count})`);
@@ -1406,6 +1711,21 @@ export default function LeadPerformanceCalculator() {
     const ready = []; const ambiguous = []; const log = [];
 
     for (const file of Array.from(fileList)) {
+      // PDFs are read with the same mappers the email pipeline uses, so a manager
+      // can backfill a missed day, or carry on when the automation is down.
+      if (/\.pdf$/i.test(file.name)) {
+        try {
+          const lines = await extractPdfLinesInBrowser(file);
+          const da = mapDailyActivityGrid(lines);
+          if (da) { ready.push({ rows: da.rows, type: "activity", fileName: file.name }); continue; }
+          const ds = mapDeliverySummaryGrid(lines);
+          if (ds) { ready.push({ rows: ds.rows, type: "delivery-summary", fileName: file.name }); continue; }
+          log.push({ ok: false, msg: `${file.name} is a PDF, but its layout isn't a Daily Activity or Delivery Summary report, so it was skipped.` });
+        } catch (e) {
+          log.push({ ok: false, msg: `${file.name} couldn't be read. If it's a scan or a photo rather than a report exported from DriveCentric, there is no text in it to read.` });
+        }
+        continue;
+      }
       const text = await file.text();
       const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
       const type = detectReportType(rows, file.name);
@@ -7553,8 +7873,8 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             onClick={() => fileRef.current?.click()}>
             <div className="dz-icon">⇩</div>
             <div className="dz-title">Drop the Daily Activity CSV for {aDay === today() ? "today" : dayLabel(aDay)}</div>
-            <div className="dz-sub">The Standard Daily Activity report. Calls and Personalized Video feed the Check Out sheet.{aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : ""}</div>
-            <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
+            <div className="dz-sub">The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet.{aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : ""}</div>
+            <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
           </div>
         </div>
@@ -7610,9 +7930,9 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
           onClick={() => fileRef.current?.click()}>
           <div className="dz-icon">⇩</div>
-          <div className="dz-title">Drop today's CSVs here</div>
-          <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically, but if you need to backfill or the automation is down, drop those here too and the tool will ask which channel each one is.</div>
-          <input ref={fileRef} type="file" accept=".csv" multiple style={{ display: "none" }}
+          <div className="dz-title">Drop today's reports here</div>
+          <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically; to backfill a missed day or carry on while the automation is down, drop the PDF straight in and it is read here the same way.</div>
+          <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
         </div>
       </div>
