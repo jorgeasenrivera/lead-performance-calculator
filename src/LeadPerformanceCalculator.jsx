@@ -319,6 +319,7 @@ function daysWorkedThisMonth(data, a) {
     const dt = new Date(y, m - 1, day);
     if (dt.getDay() === 0) continue;               // skip Sundays
     const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isHoliday(ds)) continue;                   // the group was closed
     if (isOff(data, a.id, ds)) continue;           // skip their days off
     n++;
   }
@@ -327,6 +328,41 @@ function daysWorkedThisMonth(data, a) {
 
 // Per-store brand colors. `primary` drives the hero band + accents on the manager's view.
 const DEFAULT_BRAND = { primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" };
+
+// Store hours bound the hourly view, and holidays come out of everyone's working
+// days so nobody is judged against a day the doors never opened.
+const DEFAULT_HOURS = { open: "09:00", close: "23:30" };
+const hourOf = (hhmm) => { const [h, m] = String(hhmm || "0:0").split(":").map(Number); return h + (m || 0) / 60; };
+
+/* Holidays are set once for the whole group. They live at module scope so the
+   working-day helpers can see them without every call site carrying the config
+   down through four layers of props. Kept in step with the saved config below. */
+let GROUP_HOLIDAYS = new Set();
+function setGroupHolidays(list) {
+  GROUP_HOLIDAYS = new Set((list || []).map((h) => (typeof h === "string" ? h : h.date)));
+}
+const isHoliday = (d) => GROUP_HOLIDAYS.has(d);
+
+const isoDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const nthWeekday = (y, m, weekday, n) => {
+  const first = new Date(y, m - 1, 1);
+  return new Date(y, m - 1, 1 + ((weekday - first.getDay() + 7) % 7) + (n - 1) * 7);
+};
+const lastWeekday = (y, m, weekday) => {
+  const last = new Date(y, m, 0);
+  return new Date(y, m, 0 - ((last.getDay() - weekday + 7) % 7));
+};
+// The days a dealership actually shuts, not the full federal list, which includes
+// several that showrooms trade straight through.
+const typicalClosures = (y) => [
+  { date: `${y}-01-01`, name: "New Year's Day" },
+  { date: isoDate(lastWeekday(y, 5, 1)), name: "Memorial Day" },
+  { date: `${y}-07-04`, name: "Independence Day" },
+  { date: isoDate(nthWeekday(y, 9, 1, 1)), name: "Labor Day" },
+  { date: isoDate(nthWeekday(y, 11, 4, 4)), name: "Thanksgiving" },
+  { date: `${y}-12-25`, name: "Christmas Day" },
+];
 
 // Manufacturer palettes so a store instantly reads as its franchise.
 const BRAND_PRESETS = [
@@ -358,6 +394,7 @@ const DEFAULT_CONFIG = {
   standards: {},
   approvedDomains: [],
   registrationOpen: true,
+  holidays: [],
 };
 
 /* ---------------- Logo + favicon ---------------- */
@@ -572,12 +609,15 @@ function parseReport(rows, type) {
         rec.deliveredPct = dpct;
         rec.internetUnits = units;
         rec.internetPct = dpct;
+        rec.internetLeads = rec.opps;
       } else if (channel === "campaign") {
         // units only, on purpose. No pct is stored, so nothing can accidentally grade it.
         rec.campaignUnits = units;
+        rec.campaignLeads = toNum(row[idx("Opportunities")]);
       } else {
         rec[channel + "Units"] = units;
         rec[channel + "Pct"] = dpct;
+        rec[channel + "Leads"] = toNum(row[idx("Opportunities")]);
         if (channel === "internet") {
           // internet delivery still drives the lead-standards fields
           rec.opps = toNum(row[idx("Opportunities")]);
@@ -976,6 +1016,9 @@ export default function LeadPerformanceCalculator() {
   useReveal();
   useLivingBackground();
   const [config, setConfig] = useState(null);
+  // Set during render rather than in an effect: children read the holiday set as
+  // they render, and an effect would land a beat too late on the first pass.
+  setGroupHolidays(config?.holidays);
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
@@ -1063,6 +1106,7 @@ export default function LeadPerformanceCalculator() {
           if (r.color === "#0A84FF") { r.color = "#2A5E9B"; dirty = true; }
         }
         if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
+        if (cfg.holidays === undefined) { cfg.holidays = []; dirty = true; }
         // which roles appear on The Board. BDC agents don't sell units, so they're off.
         for (const r of cfg.roles || []) {
           if (r.onBoard === undefined) { r.onBoard = r.id !== "bdc"; dirty = true; }
@@ -1500,6 +1544,12 @@ export default function LeadPerformanceCalculator() {
     );
   }
 
+  // The Import tab pulses until the day's uploads have landed, which replaces the
+  // "all reports are in" chip that had nothing to say the rest of the day.
+  const todayImports = storeData?.months?.[ym()]?.imports?.[today()] || {};
+  const reportsDue = !!storeData && !(todayImports.appointment && todayImports.video);
+  const activityDue = !!storeData && !todayImports.activity;
+
   // One description of the current tab set, shared by the desktop segmented control
   // and the mobile slide-out drawer so they can never drift apart. Which set applies
   // depends on the same context checks the render below uses.
@@ -1678,6 +1728,7 @@ export default function LeadPerformanceCalculator() {
                   : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
                 value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
                 onChange={setTab}
+                attentionId={activityDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
             ) : (
               <SegControl
@@ -1688,6 +1739,7 @@ export default function LeadPerformanceCalculator() {
                   ? ["board", "import", "gm", "history", "standards", "roster"]
                   : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
                 onChange={setTab}
+                attentionId={reportsDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
             )}
             {appModule !== "activity" && tab === "board" &&
@@ -1861,7 +1913,7 @@ function DeliveryGuideModal({ onClose }) {
 }
 
 /* ---------------- Sliding segmented control ---------------- */
-function SegControl({ items, value, onChange, renderExtra }) {
+function SegControl({ items, value, onChange, renderExtra, attentionId }) {
   const wrapRef = useRef(null);
   const btnRefs = useRef({});
   const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
@@ -1892,7 +1944,7 @@ function SegControl({ items, value, onChange, renderExtra }) {
       <div className={"seg-thumb" + (thumb.ready ? " ready" : "")} style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />
       {items.map(([id, label]) => (
         <button key={id} ref={(el) => (btnRefs.current[id] = el)}
-          className={"seg-btn" + (value === id ? " active" : "")}
+          className={"seg-btn" + (value === id ? " active" : "") + (attentionId === id && value !== id ? " seg-wave" : "")}
           onClick={() => onChange(id)}>
           {label}
           {renderExtra && renderExtra(id)}
@@ -5310,6 +5362,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   const [thresholds, setThresholds] = useState(() => normThresholds(store?.thresholds));
   const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
   const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
+  const [hours, setHours] = useState(store?.hours || { ...DEFAULT_HOURS });
   const [cropSrc, setCropSrc] = useState(null);
   const [err, setErr] = useState("");
 
@@ -5329,7 +5382,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
     if (!name.trim()) { setErr("Give the store a name."); return; }
     if (!id) { setErr("That name doesn't make a valid store ID. Try adding a letter or number."); return; }
     if (idTaken) { setErr("A store with that name already exists."); return; }
-    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays });
+    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours });
   };
 
   return (
@@ -5401,6 +5454,17 @@ function StoreWizard({ config, store, onCancel, onSave }) {
                   onChange={(e) => setGraceDays(Math.max(0, Math.min(28, parseInt(e.target.value) || 0)))} />
               </label>
             </div>
+
+            <label>Store hours</label>
+            <div className="wiz-nums">
+              <label className="thr-label">Opens
+                <input type="time" value={hours.open} onChange={(e) => setHours({ ...hours, open: e.target.value })} />
+              </label>
+              <label className="thr-label">Closes
+                <input type="time" value={hours.close} onChange={(e) => setHours({ ...hours, close: e.target.value })} />
+              </label>
+            </div>
+            <p className="hint">Bounds the hourly view and sets the window the activity report is expected to arrive in.</p>
 
             {err && <div className="login-err">{err}</div>}
             {idTaken && <div className="login-err">A store with that name already exists.</div>}
@@ -5976,6 +6040,7 @@ function personWorkingDaysInMonth(data, a) {
     const dt = new Date(y, m - 1, day);
     if (dt.getDay() === 0) continue;
     const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isHoliday(ds)) continue;
     if (isOff(data, a.id, ds)) continue;
     n++;
   }
@@ -6684,6 +6749,87 @@ function BaselineEditor({ seed, onSave }) {
   );
 }
 
+/* Contact rate by hour, per person. Held back until there is a fortnight of
+   hourly data, because two days of it would have a manager coaching noise. */
+const HOURLY_MIN_DAYS = 14;
+function hourlyForPerson(data, key, store) {
+  const byHour = {};
+  const days = new Set();
+  for (const [day, snaps] of Object.entries(data.activitySnaps || {})) {
+    if (!Array.isArray(snaps) || snaps.length < 2) continue;
+    const list = [...snaps].sort((a, b) => (a.t < b.t ? -1 : 1));
+    let touched = false;
+    for (let i = 1; i < list.length; i++) {
+      const hr = new Date(list[i].t).getHours();
+      const before = list[i - 1].rows?.[key] || {};
+      const after = list[i].rows?.[key] || {};
+      const dc = (after.calls ?? 0) - (before.calls ?? 0);
+      const dk = (after.contacted ?? 0) - (before.contacted ?? 0);
+      if (dc <= 0 && dk <= 0) continue;
+      const b = byHour[hr] || (byHour[hr] = { calls: 0, contacted: 0 });
+      if (dc > 0) b.calls += dc;
+      if (dk > 0) b.contacted += dk;
+      touched = true;
+    }
+    if (touched) days.add(day);
+  }
+  const openH = Math.floor(hourOf((store?.hours || DEFAULT_HOURS).open));
+  const closeH = Math.ceil(hourOf((store?.hours || DEFAULT_HOURS).close));
+  const hours = [];
+  for (let h = openH; h <= closeH; h++) {
+    const b = byHour[h] || { calls: 0, contacted: 0 };
+    hours.push({ h, calls: b.calls, contacted: b.contacted, rate: b.calls > 0 ? b.contacted / b.calls : null });
+  }
+  return { hours, days: days.size };
+}
+
+function HourlyBlock({ data, name, store }) {
+  const { hours, days } = hourlyForPerson(data, norm(name), store);
+  const ready = days >= HOURLY_MIN_DAYS;
+  const withCalls = hours.filter((x) => x.calls > 0);
+  const maxCalls = Math.max(1, ...hours.map((x) => x.calls));
+  const best = [...withCalls].sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0))[0];
+  const worst = [...withCalls].sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1))[0];
+
+  const W = 620, H = 120, PB = 22, PT = 8;
+  const bw = hours.length ? (W / hours.length) : 1;
+  const y = (r) => PT + (H - PT - PB) * (1 - (r ?? 0));
+
+  return (
+    <div className={"hourly" + (ready ? "" : " hourly-locked")}>
+      <h3 className="ac-h3">When you actually connect</h3>
+      {!ready && (
+        <div className="hourly-veil">
+          <b>Not enough data yet</b>
+          <span>{days} of {HOURLY_MIN_DAYS} days collected. This needs the activity report arriving hourly, and a fortnight of it before the pattern means anything.</span>
+        </div>
+      )}
+      <svg className="hourly-chart" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+        {hours.map((x, i) => (
+          <rect key={x.h} className="hr-bar" x={i * bw + bw * 0.18} width={bw * 0.64}
+            y={H - PB - ((H - PT - PB) * x.calls) / maxCalls} height={((H - PT - PB) * x.calls) / maxCalls} rx="3" />
+        ))}
+        <path className="hr-line" fill="none"
+          d={hours.map((x, i) => (x.rate == null ? null : `${i === 0 ? "M" : "L"} ${(i * bw + bw / 2).toFixed(1)} ${y(x.rate).toFixed(1)}`))
+            .filter(Boolean).join(" ")} />
+        {hours.map((x, i) => (x.rate == null ? null : (
+          <circle key={x.h} className="hr-dot" cx={i * bw + bw / 2} cy={y(x.rate)} r="3.4" />
+        )))}
+        {hours.map((x, i) => (
+          <text key={"t" + x.h} className="hr-tick" x={i * bw + bw / 2} y={H - 6} textAnchor="middle">{HOUR_LABEL(x.h)}</text>
+        ))}
+      </svg>
+      {ready && best && worst && best.h !== worst.h && (
+        <p className="hourly-read">
+          You connect best around <b>{HOUR_LABEL(best.h)}</b> at {fmtPct(best.rate)}, and worst around{" "}
+          <b>{HOUR_LABEL(worst.h)}</b> at {fmtPct(worst.rate)}. Same calls, different hour.
+        </p>
+      )}
+      {ready && <p className="hint">Bars are calls made in that hour; the line is the share that reached someone. Across {days} days.</p>}
+    </div>
+  );
+}
+
 function AssociateCard({ config, store, row, topAvg, topCount, data, onChange }) {
   const { a, stats, act, units } = row;
   const goal = data.goals?.[a.id]?.monthly ?? 0;
@@ -6771,6 +6917,8 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
       </div>
 
       <OwnYourOutcome store={store} data={data} a={a} monthStats={stats} onChange={onChange} />
+
+      <HourlyBlock data={data} name={a.name} store={store} />
 
       <h3 className="ac-h3">Results this month</h3>
       <div className="ac-results">
@@ -7039,7 +7187,9 @@ function useParallax(ref) {
     const apply = () => {
       raf = 0;
       const y = window.scrollY || 0;
-      el.style.setProperty("--px", Math.min(58, y * 0.17).toFixed(1) + "px");
+      // Capped so the drift stays within the band's own padding. Nothing clips it
+      // any more, because the health card has to be able to escape the band.
+      el.style.setProperty("--px", Math.min(22, y * 0.17).toFixed(1) + "px");
       el.style.setProperty("--pf", String(Math.max(0.35, 1 - y / 420)));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply); };
@@ -7176,6 +7326,35 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const nRoster = useCountUp(roster.length, 800, 460);
   const nOpps = useCountUp(oppsUsed, 900, 530);
 
+  // Store closing rate per channel. Units are stored per person, but lead counts
+  // only for internet, so phone and showroom leads are recovered from a person's
+  // own units divided by their own rate. Anyone without a rate on file simply
+  // drops out of that channel's denominator rather than skewing it.
+  const chanRate = (field) => {
+    let units = 0, leads = 0, seen = false;
+    for (const a of roster) {
+      const st = M?.stats?.[norm(a.name)];
+      const u = st?.[field + "Units"];
+      const pc = st?.[field + "Pct"];
+      if (u == null) continue;
+      seen = true; units += u;
+      const real = st?.[field + "Leads"] ?? (field === "internet" ? st?.opps : null);
+      if (real != null) leads += real;
+      else if (pc != null && pc > 0) leads += u / pc;   // older rows, before leads were stored
+    }
+    return { units, leads, pct: leads > 0 ? units / leads : null, seen };
+  };
+  const closing = [
+    { id: "internet", label: "Internet", ...chanRate("internet") },
+    { id: "phone", label: "Phone", ...chanRate("phone") },
+    { id: "showroom", label: "Showroom", ...chanRate("showroom") },
+  ];
+  const campaignUnits = roster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
+  const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  const thr = normThresholds(store.thresholds);
+  const chanTone = (id, v) => v == null ? "dim"
+    : v * 100 >= thr[id].green ? "g" : v * 100 >= thr[id].yellow ? "y" : "r";
+
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
   const bandRef = useRef(null);
@@ -7212,10 +7391,50 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="hh-verdict">{healthWord}</div>
             <div className="hh-sub">How close the floor sits to its standards, month to date.</div>
             <div className="hh-rows">
-              <span className="hh-row ok"><b>{cleared}</b> cleared</span>
-              <span className="hh-row bad"><b>{attention}</b> {inGrace ? "working toward" : "need attention"}</span>
-              {offLeads > 0 && <span className="hh-row dim"><b>{offLeads}</b> off leads</span>}
+              <button className={"hh-row ok" + (filter === "cleared" ? " on" : "")}
+                onClick={() => onFilter(filter === "cleared" ? null : "cleared")}>
+                <b>{nCleared}</b> cleared
+              </button>
+              <button className={"hh-row bad" + (filter === "attention" ? " on" : "")}
+                onClick={() => onFilter(filter === "attention" ? null : "attention")}>
+                <b>{nAttention}</b> {inGrace ? "working toward" : "need attention"}
+              </button>
+              {offLeads > 0 && (
+                <button className={"hh-row dim" + (filter === "off" ? " on" : "")}
+                  onClick={() => onFilter(filter === "off" ? null : "off")}>
+                  <b>{nOff}</b> off leads
+                </button>
+              )}
             </div>
+            <div className="hh-meta">
+              {nRoster} on the board · <b>{nOpps}</b><span>/{capTotal || "-"}</span> leads held
+            </div>
+          </div>
+
+          <div className="health-pop">
+            <div className="mp-title">Store closing rates</div>
+            <div className="mp-desc">Units delivered against the leads worked, month to date.</div>
+            <div className="hp-rows">
+              {closing.map((c) => (
+                <div key={c.id} className="hp-row">
+                  <span className="hp-ch">{c.label}</span>
+                  <span className={"hp-pct hp-" + chanTone(c.id, c.pct)}>
+                    {c.pct == null ? "\u2014" : fmtPct(c.pct)}
+                  </span>
+                  <span className="hp-sub">
+                    {fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : "\u2014"} leads
+                  </span>
+                </div>
+              ))}
+              {campaignUnits > 0 && (
+                <div className="hp-row">
+                  <span className="hp-ch">Campaign</span>
+                  <span className="hp-pct hp-dim">units only</span>
+                  <span className="hp-sub">{fmtNum(campaignUnits)} delivered</span>
+                </div>
+              )}
+            </div>
+            <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
           </div>
         </div>
       </div>
@@ -7263,49 +7482,14 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         </div>
       )}
 
-      <div className="hero-tiles">
-        <button className={"tile tile-good " + (filter === "cleared" ? "picked" : "")}
-          onClick={() => onFilter(filter === "cleared" ? null : "cleared")}>
-          <div className="tile-num">{nCleared}</div>
-          <div className="tile-label">Cleared to grab</div>
-        </button>
-        <button className={"tile " + (attention === 0 ? "tile-flat" : inGrace ? "tile-warn" : "tile-bad") + (filter === "attention" ? " picked" : "")}
-          onClick={() => onFilter(filter === "attention" ? null : "attention")}>
-          <div className="tile-num">{nAttention}</div>
-          <div className="tile-label">{inGrace ? "Working toward" : "Needs attention"}</div>
-        </button>
-        <button className={"tile " + (offLeads > 0 ? "tile-warn" : "tile-flat") + (filter === "off" ? " picked" : "")}
-          onClick={() => onFilter(filter === "off" ? null : "off")}>
-          <div className="tile-num">{nOff}</div>
-          <div className="tile-label">Off leads</div>
-        </button>
-        <button className={"tile tile-info " + (filter === null ? "picked" : "")}
-          onClick={() => onFilter(null)}>
-          <div className="tile-num">{nRoster}</div>
-          <div className="tile-label">On the board</div>
-        </button>
-        <div className="tile tile-info tile-static" title="Internet leads the team is currently holding, against the combined ceiling their tiers allow">
-          <div className="tile-num">{nOpps}<span className="tile-of">/{capTotal || "-"}</span></div>
-          <div className="tile-label">Leads held / capacity</div>
-        </div>
-      </div>
-
       <div className="hero-strip">
-        <button className={"strip-chip " + (missing.length === 0 ? "chip-ok" : "chip-warn")} onClick={() => onGoTab("import")}>
-          <span className="chip-dot" />
-          {missing.length === 0
-            ? `All ${done.length} of today's reports are in`
-            : `Waiting on ${missing.join(" and ")}. Import now.`}
-        </button>
-        {inGrace && <span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span>}
-        {leader && (
-          <div className="strip-leader">
-            <span className="leader-crown">★</span>
-            <span className="leader-name">{leader.name}</span>
-            <span className="leader-tag">leading the board</span>
-            <span className="leader-pct">{fmtNum(leader.units)} units</span>
-          </div>
+        {missing.length > 0 && (
+          <button className="strip-chip chip-warn" onClick={() => onGoTab("import")}>
+            <span className="chip-dot" />
+            Waiting on {missing.join(" and ")}. Import now.
+          </button>
         )}
+        {inGrace && <span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span>}
       </div>
     </div>
   );
@@ -7445,6 +7629,16 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
 }
 
 /* ---------------- GM Summary ---------------- */
+/* Hourly activity is the difference between two imports on the same day. The
+   Daily Activity report is a running total, so a 10am pull minus a 9am pull is
+   the 9 o'clock hour. Nothing shows until the report is scheduled more than once
+   a day, which is the whole point: one pull a day can only ever be a daily total. */
+const HOUR_LABEL = (h) => {
+  const ampm = h < 12 ? "am" : "pm";
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return hh + ampm;
+};
+
 /* ---------------- Trends ----------------
    Daily imports leave a trail, so this reads it back: activity counts come from
    the per-day activity records, delivered percentages from the running history
@@ -7481,6 +7675,7 @@ function TrendsPanel({ config, stores, data }) {
   const [to, setTo] = useState(today());
   const [picked, setPicked] = useState([]);
   const [hover, setHover] = useState(null);
+  const [byHour, setByHour] = useState(false);
 
   const metric = TREND_METRICS.find((m) => m.id === metricId) || TREND_METRICS[0];
   const setRange = (id) => {
@@ -7528,7 +7723,34 @@ function TrendsPanel({ config, stores, data }) {
       }
     }
   }
-  const days = [...dayset].sort();
+  let days = [...dayset].sort();
+
+  // In hourly mode the x axis stops being dates and becomes the working day.
+  const hourField = { units: "units", calls: "calls", contacted: "contacted", video: "video",
+    apptSet: "apptScheduled", apptShow: "apptShow" }[metric.id];
+  const hourAll = {};                                   // hour -> person -> total
+  if (byHour && hourField) {
+    for (const st of stores) {
+      const d = data[st.id]; if (!d) continue;
+      for (const [day, snaps] of Object.entries(d.activitySnaps || {})) {
+        if (day < from || day > to || !Array.isArray(snaps) || snaps.length < 2) continue;
+        const list = [...snaps].sort((a, b) => (a.t < b.t ? -1 : 1));
+        for (let i = 1; i < list.length; i++) {
+          const hr = new Date(list[i].t).getHours();
+          const bucket = hourAll[hr] || (hourAll[hr] = {});
+          for (const k of Object.keys(list[i].rows || {})) {
+            const before = list[i - 1].rows?.[k] || {};
+            const after = list[i].rows?.[k] || {};
+            // A fall means the report was re-pulled or reset, so only count gains.
+            const dv = (after[hourField] ?? 0) - (before[hourField] ?? 0);
+            if (dv > 0) bucket[k] = (bucket[k] || 0) + dv;
+          }
+        }
+      }
+    }
+  }
+  const hours = Object.keys(hourAll).map(Number).sort((a, b) => a - b);
+  const isHour = !!(byHour && hourField && hours.length);
 
   const seriesFor = (keys, name, color) => ({
     name, color,
@@ -7546,6 +7768,20 @@ function TrendsPanel({ config, stores, data }) {
     const p = people.find((x) => x.key === k);
     if (p) series.push(seriesFor([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
   });
+
+  if (isHour) {
+    days = hours.map(HOUR_LABEL);
+    const hourSeries = (keys, name, color) => ({
+      name, color,
+      points: hours.map((h) => keys.reduce((n, k) => n + (hourAll[h]?.[k] ?? 0), 0)),
+    });
+    series.length = 0;
+    series.push(hourSeries(people.map((p) => p.key), "Everyone", "#12212F"));
+    picked.forEach((k, i) => {
+      const p = people.find((x) => x.key === k);
+      if (p) series.push(hourSeries([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
+    });
+  }
 
   const W = 920, H = 300, PL = 52, PR = 16, PT = 16, PB = 34;
   const all = series.flatMap((s) => s.points).filter((v) => v != null);
@@ -7575,17 +7811,26 @@ function TrendsPanel({ config, stores, data }) {
   };
 
   const ticks = 4;
-  const labelEvery = Math.max(1, Math.ceil(days.length / 7));
+  const labelEvery = isHour ? 1 : Math.max(1, Math.ceil(days.length / 7));
 
   return (
     <div className="card gm-card trends">
       <h3 className="gm-section">Trends</h3>
-      <p className="hint">Built from the daily imports, so the trail starts the day this store began importing.</p>
+      <p className="hint">
+        {byHour
+          ? "Each hour is the difference between two imports on the same day, so this fills in once the activity report is scheduled to arrive more than once a day."
+          : "Built from the daily imports, so the trail starts the day this store began importing."}
+      </p>
 
       <div className="tr-controls no-print">
         <select value={metricId} onChange={(e) => setMetricId(e.target.value)}>
           {TREND_METRICS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
+        <div className="tr-ranges">
+          <button className={"tr-range" + (!byHour ? " on" : "")} onClick={() => setByHour(false)}>By day</button>
+          <button className={"tr-range" + (byHour ? " on" : "")} onClick={() => setByHour(true)}
+            disabled={!hourField} title={hourField ? "" : "Hourly only applies to activity counts"}>By hour</button>
+        </div>
         <div className="tr-ranges">
           {RANGES.map((r) => (
             <button key={r.id} className={"tr-range" + (rangeId === r.id ? " on" : "")}
@@ -7604,7 +7849,11 @@ function TrendsPanel({ config, stores, data }) {
       </div>
 
       {days.length === 0 ? (
-        <p className="hint">Nothing imported in this window yet.</p>
+        <p className="hint">
+          {byHour
+            ? "No hourly picture yet. It needs at least two imports on the same day, which means scheduling the Daily Activity report hourly rather than once each morning."
+            : "Nothing imported in this window yet."}
+        </p>
       ) : (
         <>
           <div className="tr-chart">
@@ -7620,7 +7869,7 @@ function TrendsPanel({ config, stores, data }) {
               })}
               {days.map((d, i) => (i % labelEvery === 0 ? (
                 <text key={d} className="tr-xtick" x={x(i)} y={H - 12} textAnchor="middle">
-                  {new Date(d + "T12:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
+                  {isHour ? d : new Date(d + "T12:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
                 </text>
               ) : null))}
               {series.map((sr, si) => (
@@ -7639,7 +7888,9 @@ function TrendsPanel({ config, stores, data }) {
             {hover != null && (
               <div className="tr-tip" style={{ left: `${(x(hover) / W) * 100}%` }}>
                 <div className="tr-tip-day">
-                  {new Date(days[hover] + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                  {isHour
+                    ? days[hover] + " \u2013 " + HOUR_LABEL((hours[hover] + 1) % 24)
+                    : new Date(days[hover] + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                 </div>
                 {series.map((sr, si) => (
                   <div key={si} className="tr-tip-row">
@@ -8381,6 +8632,69 @@ function AuditLog() {
 }
 
 /* ---------------- Settings ---------------- */
+function HolidayPanel({ config, onChange }) {
+  const [date, setDate] = useState("");
+  const [name, setName] = useState("");
+  const list = [...(config.holidays || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const year = new Date().getFullYear();
+
+  const save = (next, detail) => {
+    const cfg = JSON.parse(JSON.stringify(config));
+    cfg.holidays = [...next].sort((a, b) => (a.date < b.date ? -1 : 1));
+    onChange(cfg, { action: "Changed holidays", detail });
+  };
+  const add = () => {
+    if (!date || list.some((h) => h.date === date)) return;
+    save([...list, { date, name: name.trim() }], `Added ${date}${name ? " (" + name.trim() + ")" : ""}`);
+    setDate(""); setName("");
+  };
+  const addTypical = () => {
+    const have = new Set(list.map((h) => h.date));
+    const add = typicalClosures(year).filter((h) => !have.has(h.date));
+    if (!add.length) return;
+    save([...list, ...add], `Added ${add.length} typical closures for ${year}`);
+  };
+
+  const upcoming = list.filter((h) => h.date >= today()).length;
+  return (
+    <div className="card holiday-card">
+      <h3>Holidays <span className="section-sub">group-wide</span></h3>
+      <p className="hint">
+        Set once and applied to every store. A holiday comes out of every associate's working days for
+        that month, so pacing, per-day averages, the coaching targets and the Check Out day counts never
+        judge anyone against a day the doors were shut. It does not remove any numbers that were imported.
+      </p>
+      <div className="hol-add">
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Thanksgiving"
+          onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="btn" disabled={!date} onClick={add}>Add</button>
+        <button className="btn-ghost" onClick={addTypical}>Add typical closures for {year}</button>
+      </div>
+      {list.length === 0 ? (
+        <p className="hint" style={{ marginTop: 12 }}>None set. Every non-Sunday counts as a working day.</p>
+      ) : (
+        <>
+          <div className="hol-list">
+            {list.map((h) => (
+              <span key={h.date} className={"hol-chip" + (h.date < today() ? " past" : "")}>
+                {new Date(h.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {h.name && <em>{h.name}</em>}
+                <button title="Remove"
+                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)}>✕</button>
+              </span>
+            ))}
+          </div>
+          <p className="hint" style={{ marginTop: 10 }}>
+            {list.length} on file, {upcoming} still ahead. Past dates are dimmed but still count, because
+            they affect the month they fell in.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SettingsPanel({ config, onChange }) {
   const [newRole, setNewRole] = useState("");
   const [cropping, setCropping] = useState(null); // { storeId, src }
@@ -8499,6 +8813,7 @@ function SettingsPanel({ config, onChange }) {
       {wizard && (
         <StoreWizard config={config} store={wizard.store} onCancel={() => setWizard(null)} onSave={saveStore} />
       )}
+      <HolidayPanel config={config} onChange={onChange} />
       <div className="card">
         <h3>Positions</h3>
         <p className="hint">
@@ -8747,13 +9062,13 @@ function Style() {
       ::selection { background: rgba(42,94,155,.2); }
 
       /* ---- store hero (manager landing) ---- */
-      .hero { margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      .hero { position:relative; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
       .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
-        padding:30px 34px; border-radius:24px; position:relative; overflow:hidden;
+        padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: heroIn .6s var(--spring) both; }
-      .hero-band::after { content:""; position:absolute; inset:0; pointer-events:none;
+      .hero-band::after { content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
         background: radial-gradient(40% 70% at 78% 10%, color-mix(in srgb, var(--sa) 26%, transparent), transparent 70%),
                     radial-gradient(45% 80% at 8% 100%, rgba(255,255,255,.16), transparent 70%);
         animation: heroSheen 18s ease-in-out infinite alternate; }
@@ -8790,7 +9105,7 @@ function Style() {
       }
 
       /* ---- health block in the hero ---- */
-      .hero-health { display:flex; align-items:center; gap:22px; position:relative; z-index:1;
+      .hero-health { display:flex; align-items:center; gap:22px; position:relative; z-index:2;
         transform: translate3d(0, calc(var(--px) * .6), 0); opacity: var(--pf); }
       .hh-facts { max-width:280px; }
       .hh-verdict { color:#fff; font-size:17px; font-weight:700; letter-spacing:-.02em; line-height:1.25;
@@ -8800,12 +9115,43 @@ function Style() {
       .hh-row { font-size:11.5px; font-weight:600; color:rgba(255,255,255,.9);
         background:rgba(255,255,255,.14); border-radius:99px; padding:4px 11px; }
       .hh-row b { font-family:var(--font-display); font-size:13px; margin-right:3px; }
+      .hh-row { border:1px solid transparent; cursor:pointer; font-family:inherit;
+        transition: background .25s var(--ease), border-color .25s var(--ease), transform .25s var(--ease-bloop); }
+      .hh-row:hover { transform:translateY(-1px); }
+      .hh-row.on { border-color:rgba(255,255,255,.75); box-shadow:0 3px 10px rgba(0,0,0,.14); }
+      .hh-meta { color:rgba(255,255,255,.62); font-size:11.5px; margin-top:9px; font-variant-numeric:tabular-nums; }
+      .hh-meta b { color:#fff; font-family:var(--font-display); font-size:13px; }
+      .hh-meta span { color:rgba(255,255,255,.5); }
+      /* Closing rates on hover, same bloop as the dials. */
+      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:60;
+        opacity:0; pointer-events:none; text-align:left;
+        transform: translateY(-6px) scale(.9); transform-origin: top right;
+        transition: opacity .16s ease, transform .38s var(--ease-bloop);
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
+        padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3); }
+      .hero-health:hover .health-pop { opacity:1; transform: translateY(0) scale(1); }
+      .health-pop::after { content:""; position:absolute; right:42px; bottom:100%; width:12px; height:12px;
+        margin-bottom:-6px; transform:rotate(45deg); background:#fff;
+        border-left:1px solid rgba(0,0,0,.07); border-top:1px solid rgba(0,0,0,.07); border-radius:3px 0 0 0; }
+      .hp-rows { margin-top:10px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
+      .hp-row { display:grid; grid-template-columns: 1fr auto; gap:2px 10px; padding:6px 0; align-items:baseline; }
+      .hp-row + .hp-row { border-top:1px solid rgba(0,0,0,.05); }
+      .hp-ch { font-size:12.5px; font-weight:700; }
+      .hp-pct { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em;
+        text-align:right; font-variant-numeric:tabular-nums; }
+      .hp-sub { grid-column:1 / -1; font-size:10.5px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+      .hp-g { color:#1E7A3C; } .hp-y { color:#95600A; } .hp-r { color:#C13529; }
+      .hp-dim { color:var(--ink-3); font-size:11px; font-weight:600; }
+      .hp-total { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07);
+        font-size:11.5px; color:var(--ink-2); }
+      .hp-total b { font-family:var(--font-display); font-size:15px; color:var(--ink);
+        letter-spacing:-.02em; margin-right:4px; }
       .hh-row.ok { background:rgba(120,220,150,.22); }
       .hh-row.bad { background:rgba(255,150,140,.22); }
       .hh-row.dim { background:rgba(255,255,255,.12); }
 
       /* ---- the "why, and who" row ---- */
-      .hero-focus { display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
+      .hero-focus { position:relative; z-index:6; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
         animation: tileIn .5s var(--spring) .32s both; }
       .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
         padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
@@ -8942,7 +9288,7 @@ function Style() {
         padding:10px 15px; margin-bottom:14px; font-size:13px; }
       .filter-what b { font-weight:700; }
 
-      .hero-strip { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px;
+      .hero-strip { position:relative; z-index:1; display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px;
         animation: tileIn .5s var(--spring) .40s both; }
       .strip-chip { display:inline-flex; align-items:center; gap:8px; border:none; cursor:pointer;
         padding:9px 15px; border-radius:20px; font-size:12.5px; font-weight:600; transition: all .2s var(--spring); }
@@ -8997,6 +9343,38 @@ function Style() {
       .wiz-color input[type=color] { width:38px; height:30px; border:1px solid var(--line); border-radius:8px; padding:0; cursor:pointer; background:none; }
       .wiz-logo-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
       .wiz-nums { display:flex; gap:16px; flex-wrap:wrap; }
+      .hol-add { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+      .hol-add input[type=date] { flex:0 0 auto; }
+      .hol-add input:not([type=date]) { flex:1 1 140px; min-width:120px; }
+      .hol-add .btn-ghost { margin-top:0; }
+      .hol-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+      .hol-chip { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
+        background:rgba(42,94,155,.09); border:1px solid rgba(42,94,155,.16); color:var(--ink);
+        padding:5px 8px 5px 11px; border-radius:99px; }
+      .hol-chip em { font-style:normal; color:var(--ink-3); font-weight:500; }
+      .hol-chip button { border:none; background:none; cursor:pointer; color:var(--ink-3); font-size:11px; padding:0 2px; }
+      .hol-chip button:hover { color:var(--red); }
+      .hol-chip.past { background:rgba(0,0,0,.04); border-color:rgba(0,0,0,.07); color:var(--ink-3); }
+      .holiday-card { --tint: rgba(191,90,242,.10); }
+
+      /* ---- hourly contact pattern on the coaching card ---- */
+      .hourly { position:relative; margin-top:22px; }
+      .hourly-chart { width:100%; height:auto; display:block; margin-top:4px; }
+      .hr-bar { fill:rgba(42,94,155,.16); }
+      .hr-line { stroke:#E59200; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
+      .hr-dot { fill:#E59200; stroke:#fff; stroke-width:1.5; }
+      .hr-tick { font-size:9px; fill:var(--ink-3); font-weight:600; }
+      .hourly-read { font-size:13px; margin-top:8px; }
+      .hourly-read b { font-family:var(--font-display); letter-spacing:-.01em; }
+      /* Locked until there is a fortnight of it: the shape is shown so the manager
+         knows what is coming, but blurred so nobody coaches off two days of noise. */
+      .hourly-locked .hourly-chart { filter: blur(5px) grayscale(.7); opacity:.45; pointer-events:none; }
+      .hourly-veil { position:absolute; left:50%; top:56%; transform:translate(-50%,-50%); z-index:2;
+        width:min(420px, 92%); text-align:center; background:rgba(255,255,255,.94);
+        border:1px solid rgba(0,0,0,.07); border-radius:14px; padding:13px 16px;
+        box-shadow:0 10px 30px rgba(31,54,86,.14); }
+      .hourly-veil b { display:block; font-family:var(--font-display); font-size:14px; letter-spacing:-.02em; }
+      .hourly-veil span { display:block; font-size:11.5px; color:var(--ink-2); margin-top:5px; line-height:1.45; }
       .wiz-nums .thr-label { text-transform:none; letter-spacing:0; font-size:12.5px; color:var(--ink); margin:0; }
       .wiz-foot { display:flex; justify-content:flex-end; gap:10px; padding:12px 24px 22px; border-top:1px solid var(--line); margin-top:4px; }
       .wiz-foot .btn:disabled { opacity:.45; cursor:default; }
@@ -9538,6 +9916,15 @@ function Style() {
         transition: color .3s var(--spring), transform .15s var(--spring); }
       .seg-btn:active { transform: scale(.96); }
       .seg-btn.active { color:var(--ink); }
+      /* A wave off the Import tab while the day's uploads are still outstanding.
+         It stops the moment they land, and stops if you are already on the tab. */
+      .seg-wave::after { content:""; position:absolute; inset:0; border-radius:9px; pointer-events:none;
+        animation: segWave 2.4s var(--ease) infinite; }
+      @keyframes segWave {
+        0%   { box-shadow: 0 0 0 0 rgba(42,94,155,.40); }
+        70%  { box-shadow: 0 0 0 11px rgba(42,94,155,0); }
+        100% { box-shadow: 0 0 0 0 rgba(42,94,155,0); }
+      }
 
       /* ---- page transition ---- */
       .page { animation: pageIn .38s var(--spring); }
@@ -10235,6 +10622,8 @@ function Style() {
         transition: background .28s var(--ease), color .28s var(--ease); }
       .tr-range:hover { color:var(--ink); }
       .tr-range.on { background:#fff; color:var(--blue); box-shadow:0 1px 4px rgba(31,54,86,.16); }
+      .tr-range:disabled { opacity:.4; cursor:default; }
+      .tr-range:disabled:hover { color:var(--ink-2); }
       .tr-dates { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-2); }
       .tr-chart { position:relative; margin-top:12px; }
       .tr-chart svg { width:100%; height:auto; display:block; overflow:visible; }
