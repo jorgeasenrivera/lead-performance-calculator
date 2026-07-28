@@ -455,6 +455,24 @@ const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><d
 // until they are observed, so it must only ever engage when this bundle is live.
 // If the script never runs, nothing is hidden and the app renders plainly.
 if (typeof document !== "undefined") document.documentElement.classList.add("js-anim");
+// Touch has no hover, so the dial/health/weakest popups would never open. On a
+// touch device a tap toggles the "popped" class the CSS opens on; a tap anywhere
+// else closes whatever is open. One document-level listener covers every popup.
+if (typeof document !== "undefined" && typeof window !== "undefined") {
+  const isTouch = window.matchMedia && window.matchMedia("(hover: none)").matches;
+  if (isTouch) {
+    document.documentElement.classList.add("is-touch");
+    document.addEventListener("click", (e) => {
+      const host = e.target.closest(".mdial, .hf-fix, .hero-health, .pod");
+      const open = document.querySelector(".popped");
+      if (open && open !== host) open.classList.remove("popped");
+      if (host && host.querySelector(".mdial-pop, .hf-pop, .health-pop")) {
+        e.preventDefault();
+        host.classList.toggle("popped");
+      }
+    }, true);
+  }
+}
 
 /* Fades sections in as they come into view. One-shot per element: once it has
    arrived it is left alone, so scrolling back up never re-triggers anything. */
@@ -1632,8 +1650,18 @@ export default function LeadPerformanceCalculator() {
         // Day-over-day trend: only move the baseline when this import is a NEW day.
         // Re-importing twice in one day must not compare a number against itself.
         const trend = { ...(prevStat.prevPct || {}) };
+        const prevUnits = { ...(prevStat.prevUnits || {}) };
         const pctDay = { ...(prevStat.pctDay || {}) };
         const hist = JSON.parse(JSON.stringify(prevStat.pctHistory || {}));
+        for (const ch of ["internet", "phone", "showroom", "campaign"]) {
+          // Units trend is day-aware the same way the percentage trend is: a
+          // re-import on the same day must not reset the baseline to itself.
+          if (rec[ch + "Units"] == null) continue;
+          const storedU = prevStat[ch + "Units"];
+          const storedUDay = pctDay["u_" + ch];
+          if (storedU != null && storedUDay && storedUDay !== day) prevUnits[ch] = storedU;
+          pctDay["u_" + ch] = day;
+        }
         for (const ch of ["internet", "phone", "showroom"]) {   // campaign has no pct by design
           if (rec[ch + "Pct"] == null) continue;
           const storedVal = prevStat[ch + "Pct"];
@@ -1647,7 +1675,7 @@ export default function LeadPerformanceCalculator() {
           hist[ch].push({ d: day, v: rec[ch + "Pct"] });
           hist[ch] = hist[ch].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-30);
         }
-        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, pctDay, pctHistory: hist, [`${type}Updated`]: day };
+        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, prevUnits, pctDay, pctHistory: hist, [`${type}Updated`]: day };
         if (type !== "activity") count++;
       }
 
@@ -1938,6 +1966,22 @@ export default function LeadPerformanceCalculator() {
         )}
       </header>
 
+      {navItems && (
+        <BottomNav
+          items={navItems} value={navValue} onChange={navOnChange}
+          appModule={appModule} storeData={storeData}
+          onToolChange={(mod) => {
+            if (mod === appModule) return;
+            if (mod === "board") { setAppModule("board"); return; }
+            if (mod === "activity" && view === "admin") {
+              const first = (isAdmin ? config.stores : accessibleStores)[0];
+              if (first) setView(first.id);
+            }
+            setAppModule(mod);
+            setTab(mod === "activity" ? "checkout" : "board");
+          }}
+          onMore={() => setDrawerOpen(true)} />
+      )}
       {navItems && (
         <MobileDrawer
           open={drawerOpen}
@@ -2460,15 +2504,15 @@ function LEADERBOARD_HTML(p) {
      the percentage out of its own pill */
   .lb2 .pcell2 .pill { width:100%; min-width:0; padding-left:.2vw; padding-right:.2vw;
     font-size:min(calc(var(--rowfs) * .95), 2.75vh); }
-  .lb2 .barcell { width:41.5%; }
-  .lb2 .track2 { position:relative; height:calc(var(--rowfs) * .85); background:rgba(255,255,255,.07);
-    border-radius:99px; overflow:hidden; }
-  .lb2 .fill2 { position:absolute; left:0; top:0; bottom:0; width:var(--barw); border-radius:99px;
-    animation: barGrow 1s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
-  @keyframes barGrow { from { width:0; } }
-  .lb2 .fill2.g { background:repeating-linear-gradient(115deg,#2FBF5F 0 1.2vh,#27A852 1.2vh 2.4vh); }
-  .lb2 .fill2.y { background:repeating-linear-gradient(115deg,#EFD75A 0 1.2vh,#E0C33F 1.2vh 2.4vh); }
-  .lb2 .fill2.r { background:repeating-linear-gradient(115deg,#EF5A64 0 1.2vh,#E04350 1.2vh 2.4vh); }
+  .lb2 .sold2 { width:11%; }
+  .lb2 .carcell { width:37.5%; }
+  .cars { display:flex; align-items:center; flex-wrap:wrap; gap:.35vw .3vw;
+    animation: carsIn .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
+  @keyframes carsIn { from { opacity:0; transform:translateX(-1vw); } to { opacity:1; transform:none; } }
+  .car { width:calc(var(--rowfs) * 1.35); height:calc(var(--rowfs) * 1.35); flex:0 0 auto; }
+  .cars.g { --carfill:#3ECf6E; } .cars.y { --carfill:#EFD75A; } .cars.r { --carfill:#EF6A72; }
+  /* the delivered number sits right of the % pills now, with its trend beside it */
+  .lb2 .sold2 .move { min-width:0; margin-left:.3vw; }
   .lb2 tbody tr.leader .nm { color:var(--lime); }
 
   /* bottom ticker, bars style only: streaks and callouts drift by like a news crawl */
@@ -2608,6 +2652,49 @@ function LEADERBOARD_HTML(p) {
   setInterval(function(){ refreshToken(); }, 40 * 60 * 1000);
   // each channel is judged on its own scale: a 25% showroom close and a 25% internet
   // close are nowhere near the same achievement
+  // A row of little cars: one filled car per whole unit, a half-filled car for a
+  // half (splits credit .5). Scaled against the leader and capped so a monster
+  // month can't run off a TV.
+  function cars(sold, maxSold){
+    var CAP = 22;
+    var scale = maxSold > CAP ? CAP / maxSold : 1;
+    var scaled = sold * scale;
+    var whole = Math.floor(scaled + 1e-6);
+    var half = (scaled - whole) >= 0.5 - 1e-6 ? 1 : 0;
+    var carPath = 'M2 13 L4.5 8 Q5.2 6.6 6.8 6.6 L17.2 6.6 Q18.8 6.6 19.5 8 L22 13 '
+      + 'Q23 13.2 23 15 L23 17.6 Q23 18.4 22.2 18.4 L20.4 18.4 Q20 20.4 18.2 20.4 '
+      + 'Q16.4 20.4 16 18.4 L8 18.4 Q7.6 20.4 5.8 20.4 Q4 20.4 3.6 18.4 L1.8 18.4 '
+      + 'Q1 18.4 1 17.6 L1 15 Q1 13.2 2 13 Z';
+    function car(frac, key){
+      var body = '<path d="'+carPath+'" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.20)" stroke-width="1"/>';
+      var fill = frac <= 0 ? '' :
+        '<path d="'+carPath+'" fill="var(--carfill)"'
+        + (frac < 1 ? ' clip-path="url(#hc'+key+')"' : '') + '/>';
+      var clip = (frac > 0 && frac < 1)
+        ? '<clipPath id="hc'+key+'"><rect x="0" y="0" width="12" height="27"/></clipPath>' : '';
+      return '<svg class="car" viewBox="0 0 24 24">'+clip+body+fill+'</svg>';
+    }
+    var out = '';
+    for (var i=0;i<whole;i++) out += car(1, i);
+    if (half) out += car(0.5, 'H');
+    if (!whole && !half) out += car(0, 'z');
+    return out;
+  }
+
+  function soldArrow(cur, prev){
+    if (prev == null || cur == null) return ['','',''];
+    var d = cur - prev;
+    if (d > 0.001)  return ['up','▲','+'+(Math.round(d*10)/10)];
+    if (d < -0.001) return ['down','▼',(Math.round(d*10)/10).toString()];
+    return ['flat','',''];
+  }
+  function soldMove(cur, prev){
+    var ar = soldArrow(cur, prev);
+    if (!ar[0] || ar[0]==='flat') return '';
+    var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
+    return '<span class="move"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>';
+  }
+
   function tone(pct, ch){
     if (pct==null) return 'r';
     var t = (CFG.thresholds && CFG.thresholds[ch]) || { green: 20, yellow: 10 };
@@ -2656,6 +2743,12 @@ function LEADERBOARD_HTML(p) {
           prev:(s.prevPct||{}),
           camp: cU,
           sold: iU+pU+rU+cU,
+          prevSold: (function(pu){
+            if(!pu) return null;
+            var any = ['internet','phone','showroom','campaign'].some(function(c){ return pu[c]!=null; });
+            if(!any) return null;
+            return num(pu.internet)+num(pu.phone)+num(pu.showroom)+num(pu.campaign);
+          })(s.prevUnits),
           haveAll:haveAll
         };
       })
@@ -2721,6 +2814,7 @@ function LEADERBOARD_HTML(p) {
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
+          soldMove(x.sold, x.prevSold) +
         '</td>' +
         cell(x.internetPct, x.prev.internet, 'internet') +
         cell(x.phonePct,    x.prev.phone,    'phone') +
@@ -2747,11 +2841,11 @@ function LEADERBOARD_HTML(p) {
       return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
-        '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span></td>' +
         cell2(x.internetPct, 'internet') +
         cell2(x.phonePct, 'phone') +
         cell2(x.showroomPct, 'showroom') +
-        '<td class="barcell"><div class="track2"><div class="fill2 ' + t2 + '"></div></div></td>' +
+        '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span>' + soldMove(x.sold, x.prevSold) + '</td>' +
+        '<td class="carcell"><div class="cars ' + t2 + '">' + cars(x.sold, maxSold) + '</div></td>' +
       '</tr>';
     }).join('');
     if (!rows2) rows2 = '<tr><td colspan="7" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
@@ -2785,11 +2879,11 @@ function LEADERBOARD_HTML(p) {
               '<thead><tr>'+
                 '<th class="rank">#</th>'+
                 '<th class="nm">Associate</th>'+
-                '<th class="sold2" style="text-align:right">Delivered</th>'+
                 '<th class="pcell2" style="text-align:center">Internet %</th>'+
                 '<th class="pcell2" style="text-align:center">Phone %</th>'+
                 '<th class="pcell2" style="text-align:center">Showroom %</th>'+
-                '<th class="barcell">vs leader</th>'+
+                '<th class="sold2" style="text-align:right">Delivered</th>'+
+                '<th class="carcell">units</th>'+
               '</tr></thead>'+
               '<tbody>'+rows2+'</tbody>'+
             '</table>'
@@ -4323,8 +4417,8 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
           <>
             <label className="sched-drop">
               <input type="file" accept=".csv,.xlsx,.xls,.xlsm,.pdf" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
-              <div className="dz-icon">⇩</div>
-              <div className="dz-title">{busy ? "Reading…" : "Drop or choose the schedule"}</div>
+              <div className="dz-icon"><span>⇩</span></div>
+              <div className="dz-title">{busy ? "Reading…" : <><span className="dz-drop">Drop or choose</span><span className="dz-tap">Choose</span> the schedule</>}</div>
               <div className="dz-sub">Upload an <b>Excel workbook</b>, <b>CSV</b>, or <b>PDF</b>. Team grids and name-based calendar PDFs are read automatically, including team and individual OFF/VAC days. A simple <b>Name + Off Dates</b> CSV works too.</div>
             </label>
             {err && <p className="sched-err">{err}</p>}
@@ -5838,6 +5932,77 @@ function StoreWizard({ config, store, onCancel, onSave }) {
 }
 
 /* ---------------- Baseline import (historical period) ---------------- */
+/* The activity export a manager pulls for a long date range comes stacked: a store
+   block, then one New / Used / All block per person, the person's name in the first
+   cell and their combined totals on the "All" row. It is the same shape the PDF
+   mapper produces, so this converts it to those rows and hands off to the normal
+   activity parser. Used only to seed baselines, never for a single day. */
+function mapStackedActivityCsv(rows) {
+  if (!Array.isArray(rows) || rows.length < 6) return null;
+  const head = (rows[0] || []).map((h) => norm(h));
+  // The seed export labels its columns on the store row. Anchor on the ones we
+  // need so a reordered export still lands in the right place.
+  const col = (label) => head.findIndex((h) => h === norm(label));
+  const src = {
+    net: col("Net Leads"), showroom: col("Showroom"), phone: col("Phone Ups"),
+    ilm: col("ILM leads"), campaign: col("Campaign"),
+    created: col("App Created"), scheduled: col("App Scheduled"),
+    confirmed: col("App Confirmed"), show: col("App Show"),
+    calls: col("Calls Made"), connects: col("Connects"),
+    texts: col("Texts"), emails: col("Emails"), videos: col("Videos"),
+    openTasks: col("Open Tasks"), completedTasks: col("Completed Tasks"),
+    delivered: col("Total Delivered"),
+  };
+  if (src.calls < 0 || src.net < 0) return null;   // not this format
+
+  const target = ["Name","Total","Showroom","Phone","Internet","Campaign",
+    "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+  const out = [["Daily Activity"], target];
+
+  const num = (row, i) => (i < 0 ? 0 : toNum(row[i]) ?? 0);
+  let pendingName = null, seenStore = false;
+
+  for (const row of rows) {
+    if (!row || !row.length) continue;
+    const first = String(row[0] || "").trim();
+    if (!first) continue;
+    const tag = first.toLowerCase();
+    if (tag === "new" || tag === "used") continue;      // vehicle split, ignored
+    if (tag === "all") {
+      if (!pendingName) continue;
+      if (!seenStore) { seenStore = true; pendingName = null; continue; }  // store roll-up
+      const total = num(row, src.net);
+      out.push([
+        pendingName,
+        total,
+        num(row, src.showroom),
+        num(row, src.phone),
+        // "Internet" isn't a column in this export; ILM leads is its stand-in.
+        num(row, src.ilm),
+        num(row, src.campaign),
+        num(row, src.created),
+        num(row, src.scheduled),
+        num(row, src.confirmed),
+        num(row, src.show),
+        num(row, src.calls),
+        num(row, src.connects),
+        num(row, src.texts),
+        num(row, src.emails),
+        num(row, src.videos),
+        num(row, src.openTasks),
+        num(row, src.completedTasks),
+        num(row, src.delivered),
+      ]);
+      pendingName = null;
+      continue;
+    }
+    // any other leading text is a person's (or the store's) name header
+    pendingName = first;
+  }
+  return out.length > 2 ? { storeName: out[2] ? null : null, rows: out } : null;
+}
+
 function BaselineImport({ data, onChange }) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -5869,12 +6034,24 @@ function BaselineImport({ data, onChange }) {
   const read = async (file) => {
     if (!file) return;
     setBusy(true);
-    const text = await file.text();
-    const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
-    const type = detectReportType(rows, file.name);
+    const isPdf = /\.pdf$/i.test(file.name);
+    let rows;
+    if (isPdf) {
+      try {
+        const lines = await extractPdfLinesInBrowser(file);
+        const da = mapDailyActivityGrid(lines);
+        rows = da ? da.rows : null;
+      } catch { rows = null; }
+    } else {
+      const text = await file.text();
+      const raw = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+      // Either the normal one-row-per-person export, or the stacked totals export.
+      const stacked = mapStackedActivityCsv(raw);
+      rows = stacked ? stacked.rows : (detectReportType(raw, file.name) === "activity" ? raw : null);
+    }
     setBusy(false);
-    if (type !== "activity") {
-      setPreview({ error: "That is not a Daily Activity report. Pull the activity report for your date range and drop it here." });
+    if (!rows) {
+      setPreview({ error: "That is not a Daily Activity report. Pull the activity report for your date range \u2014 CSV or PDF \u2014 and drop it here." });
       return;
     }
     const parsed = parseReport(rows, "activity");
@@ -5944,20 +6121,21 @@ function BaselineImport({ data, onChange }) {
       };
     }
     onChange(next, {
-      action: "Imported 90-day baseline",
-      detail: `${preview.people.length} associates, ${start} to ${end}, ${d} working days`,
+      action: "Seeded baselines from history",
+      detail: `${preview.people.length} associates${start && end ? `, ${start} to ${end}` : ""}, ${d} working days`,
     });
     setPreview(null);
   };
 
   return (
     <div className="card baseline-card">
-      <h3>90-day baseline {seeded > 0 && <span className="badge badge-ok">{seeded} seeded</span>}</h3>
+      <h3>Seed baselines from history {seeded > 0 && <span className="badge badge-ok">{seeded} seeded</span>}</h3>
       <p className="hint">
         Every coaching target is built from a person's own conversion history, and the tool has none until it has
-        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric,
-        drop it here, and it seeds everyone at once. From then on the tool builds its own history and the seed
-        matters less every week.
+        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric —
+        a whole year works — drop it here, and it seeds everyone at once. CSV or PDF, and either the normal
+        export or the stacked totals export. It sets per-day averages only; it does not touch this month's numbers.
+        Set the working days below so the per-day math is right, then from here the tool builds its own history.
       </p>
 
       <div className="bl-dates">
@@ -5979,7 +6157,7 @@ function BaselineImport({ data, onChange }) {
       <div className="inline-form">
         <label className="btn-ghost file-btn">
           {busy ? "Reading..." : "Choose activity report"}
-          <input ref={fileRef} type="file" accept=".csv" style={{ display: "none" }}
+          <input ref={fileRef} type="file" accept=".csv,.pdf" style={{ display: "none" }}
             onChange={(e) => { read(e.target.files[0]); e.target.value = ""; }} />
         </label>
       </div>
@@ -7348,6 +7526,43 @@ function ToolSwitcher({ value, onChange }) {
    On phones the topbar collapses to a hamburger + logo; all navigation moves here.
    Slides in from the right like the Claude mobile app. Tapping a tab or the backdrop
    closes it. Rendered on every screen size but only visible under 720px via CSS. */
+/* Native-style bottom bar. Up to four primary destinations plus tool-switch live
+   inline; anything past that folds into a More sheet. Same nav model the drawer
+   used, so nothing about the desktop paths changes. */
+function BottomNav({ items, value, onChange, appModule, onToolChange, storeData, onMore }) {
+  if (!items || !items.length) return null;
+  const primary = items.slice(0, 4);
+  const overflow = items.slice(4);
+  const activeInOverflow = overflow.some(([id]) => id === value);
+  return (
+    <nav className="botnav no-print" aria-label="Sections">
+      {primary.map(([id, label]) => (
+        <button key={id} className={"botnav-btn" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
+          <span className="botnav-ico">{NAV_ICON[id] || "•"}</span>
+          <span className="botnav-lbl">{NAV_SHORT[id] || label}</span>
+          {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+        </button>
+      ))}
+      <button className={"botnav-btn" + (activeInOverflow ? " on" : "")} onClick={onMore}>
+        <span className="botnav-ico">⋯</span>
+        <span className="botnav-lbl">More</span>
+      </button>
+    </nav>
+  );
+}
+
+const NAV_ICON = {
+  board: "◎", dashboard: "◎", import: "⇪", gm: "▤", history: "↺", standards: "◈",
+  roster: "☰", checkout: "✓", coaching: "◇", plates: "▦", actstd: "◈",
+  overview: "▦", access: "◐", audit: "❑", settings: "⚙", backup: "⇩",
+};
+const NAV_SHORT = {
+  board: "Board", dashboard: "Board", import: "Import", gm: "Summary", history: "History",
+  standards: "Rules", roster: "Roster", checkout: "Check Out", coaching: "Coaching",
+  plates: "Plates", actstd: "Rules", overview: "Home", access: "Access", audit: "Audit",
+  settings: "Stores", backup: "Backup",
+};
+
 function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
   // Lock body scroll while the drawer is open so the page behind doesn't move.
   useEffect(() => {
@@ -7871,8 +8086,8 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             onDragLeave={() => setDropActive(false)}
             onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
             onClick={() => fileRef.current?.click()}>
-            <div className="dz-icon">⇩</div>
-            <div className="dz-title">Drop the Daily Activity CSV for {aDay === today() ? "today" : dayLabel(aDay)}</div>
+            <div className="dz-icon"><span>⇩</span></div>
+            <div className="dz-title"><span className="dz-drop">Drop</span><span className="dz-tap">Choose</span> the Daily Activity report for {aDay === today() ? "today" : dayLabel(aDay)}</div>
             <div className="dz-sub">The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet.{aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : ""}</div>
             <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
@@ -7929,8 +8144,8 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           onDragLeave={() => setDropActive(false)}
           onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
           onClick={() => fileRef.current?.click()}>
-          <div className="dz-icon">⇩</div>
-          <div className="dz-title">Drop today's reports here</div>
+          <div className="dz-icon"><span>⇩</span></div>
+          <div className="dz-title"><span className="dz-drop">Drop today's reports here</span><span className="dz-tap">Choose today's reports</span></div>
           <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically; to backfill a missed day or carry on while the automation is down, drop the PDF straight in and it is read here the same way.</div>
           <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
@@ -10824,6 +11039,13 @@ function Style() {
       .dropzone:hover { border-color: var(--blue); transform: translateY(-1px); box-shadow: var(--shadow-1); }
       .dropzone.active { border-color:var(--blue); background:rgba(10,132,255,.05); transform: scale(1.01); box-shadow: var(--shadow-2); }
       .dz-icon { font-size:28px; color:var(--blue); animation: dzBob 2.6s ease-in-out infinite; }
+      .dz-tap { display:none; }
+      .is-touch .dz-drop { display:none; }
+      .is-touch .dz-tap { display:inline; }
+      /* On touch the dropzone is really a big button, so make it read like one. */
+      .is-touch .dz-icon::before { content:"＋"; }
+      .is-touch .dz-icon { font-size:26px; animation:none; }
+      .is-touch .dz-icon > * { display:none; }
       @keyframes dzBob { 0%,100% { transform: translateY(0); opacity:.85; } 50% { transform: translateY(4px); opacity:1; } }
       .dropzone.active .dz-icon { animation-duration: 1s; }
       .dz-title { font-size:17px; font-weight:700; letter-spacing:-.01em; margin-top:8px; }
@@ -11071,6 +11293,109 @@ function Style() {
         .logo-anim, .dz-icon, .star-badge { animation:none !important; }
         .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
         .logo-anim .logo-needle { transform: rotate(0deg) !important; }
+      }
+
+      /* =====================================================================
+         MOBILE  —  one coherent pass at <=760px, replacing the scattered
+         per-widget breakpoints. Phones get a native-style bottom bar, the hero
+         reflows to a single column, tables stack, and popups tap open.
+         ===================================================================== */
+      .botnav { display:none; }
+      @media (max-width: 760px) {
+        /* --- chrome --- */
+        .topbar { position:sticky; top:0; z-index:40; padding:10px 14px; gap:10px;
+          background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
+          -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
+        .topbar-right { gap:8px; }
+        .topbar .tool-switch, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
+        .hamburger { display:none !important; }                       /* replaced by the bottom bar */
+        .brand-title { font-size:16px; }
+        .view-select { max-width:46vw; font-size:13px; }
+        .btn-quiet { padding:7px 10px; }
+        .seg-wrap { display:none; }                                   /* the desktop tab strip */
+
+        /* --- page gets out of the way of the bar --- */
+        .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
+        .settings, .checkout, .coaching, .plates {
+          padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
+
+        /* --- bottom bar --- */
+        .botnav { position:fixed; left:0; right:0; bottom:0; z-index:50; display:flex;
+          padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+          background:rgba(255,255,255,.9); backdrop-filter:blur(20px) saturate(180%);
+          -webkit-backdrop-filter:blur(20px) saturate(180%);
+          box-shadow:0 -1px 0 rgba(16,40,68,.10), 0 -8px 24px rgba(16,40,68,.06); }
+        .botnav-btn { flex:1; position:relative; display:flex; flex-direction:column; align-items:center; gap:3px;
+          border:none; background:none; font:inherit; cursor:pointer; padding:5px 2px; border-radius:12px;
+          color:var(--ink-3); transition:color .2s var(--ease), transform .2s var(--ease-bloop); }
+        .botnav-btn.on { color:var(--blue); }
+        .botnav-btn:active { transform:scale(.9); }
+        .botnav-ico { font-size:19px; line-height:1; }
+        .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
+        .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
+        .botnav-btn .badge { position:absolute; top:0; right:22%; transform:scale(.72); }
+
+        /* --- hero reflows to one column --- */
+        .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
+        .hero-id { flex-direction:row; gap:14px; transform:none !important; opacity:1 !important; }
+        .hero-store { font-size:23px; }
+        .hero-health { flex-direction:column; align-items:stretch; gap:16px; transform:none !important; opacity:1 !important; }
+        .hero-ring-wrap { margin:0 auto; transform:none !important; opacity:1 !important; }
+        .hh-facts { max-width:none; text-align:center; }
+        .hh-rows { justify-content:center; }
+        .hero-focus { grid-template-columns:1fr; gap:12px; margin-top:14px; }
+        .hf-wide { grid-column:auto; }
+        /* the closing-rate card can't hang off the right on a phone; centre it */
+        .health-pop { right:50%; left:auto; transform:translateX(50%) translateY(-6px) scale(.9);
+          transform-origin:top center; width:min(300px, 86vw); }
+        .hero-health.popped .health-pop, .health-pop { }
+        .hero-health.popped .health-pop { opacity:1; transform:translateX(50%) translateY(0) scale(1); }
+        .health-pop::after { right:calc(50% - 6px); }
+
+        /* --- dials: bigger tap targets, popup opens upward centred --- */
+        .mstrip { gap:14px 12px; }
+        .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
+        .mdial { width:calc(33.333% - 8px); }
+        .mdial-pop { left:50%; transform:translateX(-50%) translateY(-6px) scale(.9); transform-origin:bottom center;
+          width:min(262px, 84vw); }
+        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0) scale(1); }
+        .hf-fix.popped .hf-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
+        .hf-pop { width:min(300px, 86vw); }
+
+        /* --- associate rows stack instead of spanning a wide line --- */
+        .assoc-row { flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
+        .assoc-name { flex:1 1 60%; font-size:15px; }
+        .assoc-leads { margin-left:auto; }
+        .mstrip + .assoc-leads { margin-left:auto; }
+        .verdict, .restrict-btn, .grab-btn { flex:0 0 auto; }
+
+        /* --- podium stacks --- */
+        .podium-row { flex-direction:column; }
+        .pod { flex:1 1 auto; }
+
+        /* --- tables scroll rather than crush --- */
+        .gm-table, .checkout-table, .history-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
+          white-space:nowrap; }
+        .std-people { gap:6px; }
+
+        /* --- trends: chart stays readable, controls stack --- */
+        .tr-controls { flex-direction:column; align-items:stretch; gap:10px; }
+        .tr-ranges { overflow-x:auto; }
+        .tr-chart svg { min-width:0; }
+        .tr-people { max-height:132px; overflow-y:auto; }
+
+        /* --- roster role bands a touch tighter --- */
+        .roster-card { padding:4px 14px 16px; }
+        .role-group::before { left:-8px; right:-8px; }
+
+        /* motion is costly on phones and the parallax has nothing to grip here */
+        .bg-live { opacity:.7; }
+      }
+
+      @media (max-width: 400px) {
+        .botnav-lbl { font-size:9px; }
+        .mdial { width:calc(50% - 7px); }
+        .hero-store { font-size:20px; }
       }
     `}</style>
   );
