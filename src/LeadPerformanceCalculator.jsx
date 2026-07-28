@@ -2510,16 +2510,19 @@ function LEADERBOARD_HTML(p) {
      the same size across the whole board. The pill has a fixed width too (all
      percentages read identically), and the arrow lives in a reserved lane to the
      right so a row with movement doesn't shove the pill off-centre from one without. */
-  .lb2 .pcell2 { width:14%; text-align:center; white-space:nowrap; }
+  .lb2 .pcell2 { width:15%; text-align:center; white-space:nowrap; }
   .lb2 .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
-  .lb2 .pcell2 .pill { width:5.9vw; min-width:0; padding-left:0; padding-right:0; text-align:center;
-    font-size:min(calc(var(--rowfs) * .9), 2.6vh); }
-  .lb2 .move2 { width:2.6vw; min-width:2.6vw; margin-left:.3vw; justify-content:flex-start; }
-  .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .62); }
-  .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .68); }
-  .lb2 .sold2 { width:6.5%; text-align:center; padding:0; }
+  /* pill + arrow are sized in em so they grow with the row's own font, not the
+     screen width — on a wide TV the row gets taller and the pills grow with it,
+     and horizontal scroll (already built) covers any overflow. */
+  .lb2 .pcell2 .pill { width:5.6em; min-width:0; padding:.28em 0; text-align:center;
+    font-size:calc(var(--rowfs) * .96); }
+  .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.35em; justify-content:flex-start; }
+  .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .66); }
+  .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .72); }
+  .lb2 .sold2 { width:7%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
   .lb2 .sold2 .soldnum { display:inline-block; }
-  .lb2 .carcell { width:31.5%; padding-left:.6vw; }
+  .lb2 .carcell { width:29%; padding-left:.6vw; }
   /* soft "holding the last board" banner when a refresh is distrusted */
   .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
     background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
@@ -2865,7 +2868,7 @@ function LEADERBOARD_HTML(p) {
     var rowH  = Math.min(8.5, AVAIL / (n + 1));
     // Never shrink below what is readable from across a floor. If the team does not
     // fit at that size, the board scrolls instead of squinting.
-    var rowFs = Math.max(2.2, Math.min(4.2, rowH * 0.60)) * DISP.tscale;   // vh
+    var rowFs = Math.max(2.2, Math.min(5.6, rowH * 0.62)) * DISP.tscale;   // vh — higher ceiling so a short list on a wide TV fills the height
     var rowPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;                // vh
 
     function cell(pct, prevVal, ch){
@@ -2962,8 +2965,8 @@ function LEADERBOARD_HTML(p) {
                 '<th class="pcell2" style="text-align:center">Internet %</th>'+
                 '<th class="pcell2" style="text-align:center">Phone %</th>'+
                 '<th class="pcell2" style="text-align:center">Showroom %</th>'+
-                '<th class="sold2" style="text-align:right">Delivered</th>'+
-                '<th class="carcell">units</th>'+
+                '<th class="sold2" style="text-align:center">Delivered</th>'+
+                '<th class="carcell" style="text-align:left; padding-left:.6vw">units</th>'+
               '</tr></thead>'+
               '<tbody>'+rows2+'</tbody>'+
             '</table>'
