@@ -2506,13 +2506,15 @@ function LEADERBOARD_HTML(p) {
   .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lb2 .sold2 { width:7%; text-align:right; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
     font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
-  .lb2 .pcell2 { width:11.5%; text-align:center; white-space:nowrap; }
-  /* bigger than before, but capped so a small team's inflated row font can't push
-     the percentage out of its own pill */
-  .lb2 .pcell2 .pill { width:100%; min-width:0; padding-left:.2vw; padding-right:.2vw;
-    font-size:min(calc(var(--rowfs) * .95), 2.75vh); }
-  .lb2 .sold2 { width:7%; padding-right:.6vw; }
-  .lb2 .carcell { width:41.5%; }
+  .lb2 .pcell2 { width:13.5%; text-align:left; white-space:nowrap; padding-left:.6vw; }
+  /* the pill no longer fills the cell: it shrinks to its text so the +/- sits beside it */
+  .lb2 .pcell2 .pill { width:auto; min-width:0; padding-left:.55vw; padding-right:.55vw;
+    font-size:min(calc(var(--rowfs) * .9), 2.6vh); }
+  .lb2 .move2 { min-width:0; margin-left:.35vw; }
+  .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .62); }
+  .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .68); }
+  .lb2 .sold2 { width:6%; padding-right:.5vw; }
+  .lb2 .carcell { width:34.5%; }
   /* soft "holding the last board" banner when a refresh is distrusted */
   .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
     background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
@@ -2551,10 +2553,11 @@ function LEADERBOARD_HTML(p) {
   }
   .car-more { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:calc(var(--rowfs) * .9);
     color:#C7DDF2; margin-left:.4vw; align-self:center; }
-  .cars { display:flex; align-items:center; flex-wrap:wrap; gap:.35vw .3vw;
+  .cars { display:flex; align-items:center; flex-wrap:nowrap; gap:0 .12vw; overflow:hidden;
     animation: carsIn .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
   @keyframes carsIn { from { opacity:0; transform:translateX(-1vw); } to { opacity:1; transform:none; } }
-  .car { width:calc(var(--rowfs) * 1.35); height:calc(var(--rowfs) * 1.35); flex:0 0 auto; }
+  .cars-inner { display:flex; align-items:center; flex-wrap:nowrap; gap:0 .1vw; width:100%; }
+  .car { width:calc(var(--rowfs) * var(--csz, 1)); height:calc(var(--rowfs) * var(--csz, 1)); flex:0 0 auto; }
   .cars.g { --carfill:#3ECf6E; } .cars.y { --carfill:#EFD75A; } .cars.r { --carfill:#EF6A72; }
   /* the delivered number sits right of the % pills now, with its trend beside it */
   .lb2 .sold2 .move { min-width:0; margin-left:.3vw; }
@@ -2709,10 +2712,14 @@ function LEADERBOARD_HTML(p) {
   // shared "hcH" let a later row's half-car borrow an earlier row's clip.
   var CAR_ROW = 0;
   function cars(sold, maxSold){
-    var CAP = 20;
+    // Cars shrink to fit: the row-leader's count sets the size for everyone, so the
+    // whole column shares one scale and the biggest month still fits on one line.
+    // Past HARDCAP even that is illegible, so those overflow into a "+N".
+    var HARDCAP = 34;
     var uid = 'r' + (CAR_ROW++) + '_';
     var whole = Math.floor(sold + 1e-6);
     var half = (sold - whole) >= 0.5 - 1e-6 ? 1 : 0;
+    var CAP = HARDCAP;
     var carPath = 'M2 13 L4.5 8 Q5.2 6.6 6.8 6.6 L17.2 6.6 Q18.8 6.6 19.5 8 L22 13 '
       + 'Q23 13.2 23 15 L23 17.6 Q23 18.4 22.2 18.4 L20.4 18.4 Q20 20.4 18.2 20.4 '
       + 'Q16.4 20.4 16 18.4 L8 18.4 Q7.6 20.4 5.8 20.4 Q4 20.4 3.6 18.4 L1.8 18.4 '
@@ -2728,11 +2735,16 @@ function LEADERBOARD_HTML(p) {
       return '<svg class="car" viewBox="0 0 24 24">'+clip+body+fill+'</svg>';
     }
     var drawWhole = Math.min(whole, CAP);
-    var out = '';
+    // The most anyone sold decides the shared car size: more cars => smaller cars,
+    // clamped so a light day's cars don't balloon. Set once per render on the row.
+    var peak = Math.min(Math.max(maxSold, 1), CAP + (half ? 0.5 : 0));
+    var sizeEm = Math.max(0.62, Math.min(1.15, 22 / peak));
+    var out = '<span class="cars-inner" style="--csz:' + sizeEm.toFixed(3) + 'em">';
     for (var i=0;i<drawWhole;i++) out += car(1, i);
     if (whole <= CAP && half) out += car(0.5, 'H');
     if (whole > CAP) out += '<span class="car-more">+'+(whole - CAP + (half ? 0.5 : 0))+'</span>';
     if (!whole && !half) out += car(0, 'z');
+    out += '</span>';
     return out;
   }
 
@@ -2882,24 +2894,30 @@ function LEADERBOARD_HTML(p) {
 
     // ---- Bars style: rank, name, units, one huge striped bar sized against the leader ----
     var bars = DISP.style === 'bars';
-    // compact channel pill for the bars view: same tone rules as the classic board,
-    // without the trend arrows, so the row stays clean next to the big bar
-    function cell2(pct, ch){
+    // bars view now carries the same +/- movement as the classic board; the pill
+    // is narrower to leave room for the arrow beside it.
+    function cell2(pct, ch, prevVal){
       if (pct == null) return '<td class="pcell2"><span class="pill dim">-</span></td>';
       var tn = tone(pct, ch);
-      return '<td class="pcell2"><span class="pill ' + tn + '"><span class="pill-mark">' + toneMark(tn) + '</span>' + fmtPct(pct) + '</span></td>';
+      var ar = arrow(pct, prevVal);
+      var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
+      return '<td class="pcell2">' +
+        '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span>' +
+        '<span class="move move2"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>' +
+      '</td>';
     }
     var rows2 = people.map(function(x,i){
       var medal = i < 3 ? ' m' + (i+1) : '';
       var ratio = x.sold / maxSold;
-      var t2 = ratio >= 0.75 ? 'g' : ratio >= 0.4 ? 'y' : 'r';
+      // The podium is always green — top three have earned it no matter the spread.
+      var t2 = i < 3 ? 'g' : ratio >= 0.75 ? 'g' : ratio >= 0.4 ? 'y' : 'r';
       var barw = Math.max(2, Math.round(ratio * 100));
       return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
-        cell2(x.internetPct, 'internet') +
-        cell2(x.phonePct, 'phone') +
-        cell2(x.showroomPct, 'showroom') +
+        cell2(x.internetPct, 'internet', x.prev.internet) +
+        cell2(x.phonePct, 'phone', x.prev.phone) +
+        cell2(x.showroomPct, 'showroom', x.prev.showroom) +
         '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span>' + soldMove(x.sold, x.prevSold) + '</td>' +
         '<td class="carcell"><div class="cars ' + t2 + '">' + cars(x.sold, maxSold) + '</div></td>' +
       '</tr>';
