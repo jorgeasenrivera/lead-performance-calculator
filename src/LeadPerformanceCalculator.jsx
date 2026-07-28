@@ -2739,7 +2739,7 @@ function LEADERBOARD_HTML(p) {
     // clamped so a light day's cars don't balloon. Set once per render on the row.
     var peak = Math.min(Math.max(maxSold, 1), CAP + (half ? 0.5 : 0));
     var sizeEm = Math.max(0.62, Math.min(1.15, 22 / peak));
-    var out = '<span class="cars-inner" style="--csz:' + sizeEm.toFixed(3) + 'em">';
+    var out = '<span class="cars-inner" style="--csz:' + sizeEm.toFixed(3) + '">';
     for (var i=0;i<drawWhole;i++) out += car(1, i);
     if (whole <= CAP && half) out += car(0.5, 'H');
     if (whole > CAP) out += '<span class="car-more">+'+(whole - CAP + (half ? 0.5 : 0))+'</span>';
