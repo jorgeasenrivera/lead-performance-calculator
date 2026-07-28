@@ -2504,17 +2504,22 @@ function LEADERBOARD_HTML(p) {
   .lb2 tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
   .lb2 .rank { width:5%; text-align:center; }
   .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lb2 .sold2 { width:7%; text-align:right; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+  .lb2 .sold2 { width:7%; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
     font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
-  .lb2 .pcell2 { width:13.5%; text-align:left; white-space:nowrap; padding-left:.6vw; }
-  /* the pill no longer fills the cell: it shrinks to its text so the +/- sits beside it */
-  .lb2 .pcell2 .pill { width:auto; min-width:0; padding-left:.55vw; padding-right:.55vw;
+  /* Each % column is a fixed width and its contents are centred, so every pill is
+     the same size across the whole board. The pill has a fixed width too (all
+     percentages read identically), and the arrow lives in a reserved lane to the
+     right so a row with movement doesn't shove the pill off-centre from one without. */
+  .lb2 .pcell2 { width:14%; text-align:center; white-space:nowrap; }
+  .lb2 .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
+  .lb2 .pcell2 .pill { width:5.9vw; min-width:0; padding-left:0; padding-right:0; text-align:center;
     font-size:min(calc(var(--rowfs) * .9), 2.6vh); }
-  .lb2 .move2 { min-width:0; margin-left:.35vw; }
+  .lb2 .move2 { width:2.6vw; min-width:2.6vw; margin-left:.3vw; justify-content:flex-start; }
   .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .62); }
   .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .68); }
-  .lb2 .sold2 { width:6%; padding-right:.5vw; }
-  .lb2 .carcell { width:34.5%; }
+  .lb2 .sold2 { width:6.5%; text-align:center; padding:0; }
+  .lb2 .sold2 .soldnum { display:inline-block; }
+  .lb2 .carcell { width:31.5%; padding-left:.6vw; }
   /* soft "holding the last board" banner when a refresh is distrusted */
   .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
     background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
@@ -2561,6 +2566,7 @@ function LEADERBOARD_HTML(p) {
   .cars.g { --carfill:#3ECf6E; } .cars.y { --carfill:#EFD75A; } .cars.r { --carfill:#EF6A72; }
   /* the delivered number sits right of the % pills now, with its trend beside it */
   .lb2 .sold2 .move { min-width:0; margin-left:.3vw; }
+  .lb2 .sold2 { line-height:1.05; }
   .lb2 tbody tr.leader .nm { color:var(--lime); }
 
   /* bottom ticker, bars style only: streaks and callouts drift by like a news crawl */
@@ -2897,14 +2903,14 @@ function LEADERBOARD_HTML(p) {
     // bars view now carries the same +/- movement as the classic board; the pill
     // is narrower to leave room for the arrow beside it.
     function cell2(pct, ch, prevVal){
-      if (pct == null) return '<td class="pcell2"><span class="pill dim">-</span></td>';
+      if (pct == null) return '<td class="pcell2"><span class="pcell-in"><span class="pill dim">-</span><span class="move move2"></span></span></td>';
       var tn = tone(pct, ch);
       var ar = arrow(pct, prevVal);
       var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
-      return '<td class="pcell2">' +
+      return '<td class="pcell2"><span class="pcell-in">' +
         '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span>' +
         '<span class="move move2"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>' +
-      '</td>';
+      '</span></td>';
     }
     var rows2 = people.map(function(x,i){
       var medal = i < 3 ? ' m' + (i+1) : '';
