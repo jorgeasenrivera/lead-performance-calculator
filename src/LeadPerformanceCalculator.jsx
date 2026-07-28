@@ -921,6 +921,7 @@ function mapDeliverySummaryGrid(lines) {
   const header = ["Name","Opportunities","Units Delivered","Delivered %",
     "internetUnits","internetPct","phoneUnits","phonePct",
     "showroomUnits","showroomPct","campaignUnits",
+    "internetLeads","phoneLeads","showroomLeads",
     "showroomUps","showroomUnsold","showroomBeBacks"];
   const rows = [["Delivery Summary"], header];
 
@@ -942,6 +943,9 @@ function mapDeliverySummaryGrid(lines) {
       pick("phone", 4),    pctOf("phone"),
       pick("showroom", 4), pctOf("showroom"),
       pick("campaign", 4),             // campaign: units only, never graded
+      internetLeads,                   // internetLeads  (Net Opportunities per channel)
+      pick("phone", 0),                // phoneLeads
+      pick("showroom", 0),             // showroomLeads
       pick("showroom", 1),             // Total Ups          (showroom-only)
       pick("showroom", 2),             // Unsold In Showroom (showroom-only)
       pick("showroom", 3),             // Be Backs           (showroom-only)
@@ -976,10 +980,13 @@ function parseDeliverySummaryRows(rows) {
       deliveredPct: row[idx("Delivered %")],
       internetUnits: row[idx("internetUnits")],
       internetPct: row[idx("internetPct")],
+      internetLeads: row[idx("internetLeads")],
       phoneUnits: row[idx("phoneUnits")],
       phonePct: row[idx("phonePct")],
+      phoneLeads: row[idx("phoneLeads")],
       showroomUnits: row[idx("showroomUnits")],
       showroomPct: row[idx("showroomPct")],
+      showroomLeads: row[idx("showroomLeads")],
       campaignUnits: row[idx("campaignUnits")],
       showroomUps: row[idx("showroomUps")],
       showroomUnsold: row[idx("showroomUnsold")],
@@ -2504,8 +2511,46 @@ function LEADERBOARD_HTML(p) {
      the percentage out of its own pill */
   .lb2 .pcell2 .pill { width:100%; min-width:0; padding-left:.2vw; padding-right:.2vw;
     font-size:min(calc(var(--rowfs) * .95), 2.75vh); }
-  .lb2 .sold2 { width:11%; }
-  .lb2 .carcell { width:37.5%; }
+  .lb2 .sold2 { width:7%; padding-right:.6vw; }
+  .lb2 .carcell { width:41.5%; }
+  /* soft "holding the last board" banner when a refresh is distrusted */
+  .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
+    background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
+    padding:1vh 2vw; border-radius:1vh; border:1px solid rgba(136,198,234,.3);
+    box-shadow:0 1vh 3vh rgba(0,0,0,.35); backdrop-filter:blur(8px);
+    transition:transform .6s cubic-bezier(.22,1,.36,1); pointer-events:none; }
+  .stale-note.on { transform:translate(-50%, 0); }
+
+  /* congratulations sweep: a card per new sale, entering from the right with a
+     confetti burst, holding, then sliding off. Staggered so a double gets its own. */
+  .congrats { position:fixed; right:2.5vw; top:12vh; z-index:70; display:flex; flex-direction:column;
+    gap:1.4vh; pointer-events:none; transition:opacity .7s ease; }
+  .congrats.out { opacity:0; }
+  .cg-card { position:relative; display:flex; align-items:center; gap:1.2vw; overflow:visible;
+    background:linear-gradient(120deg, rgba(193,215,48,.96), rgba(120,180,60,.96));
+    color:#132; padding:1.6vh 2vw 1.6vh 1.6vw; border-radius:1.4vh; min-width:22vw;
+    box-shadow:0 1.4vh 4vh rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.5);
+    transform:translateX(120%); opacity:0;
+    animation: cgIn .7s cubic-bezier(.22,1,.36,1) var(--d) forwards,
+               cgOut .6s ease calc(var(--d) + 4.4s) forwards; }
+  @keyframes cgIn  { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+  @keyframes cgOut { from { transform:translateX(0); opacity:1; } to { transform:translateX(120%); opacity:0; } }
+  .cg-ico { font-size:4vh; line-height:1; animation: cgPop .5s ease var(--d) both; }
+  @keyframes cgPop { 0%{ transform:scale(0) rotate(-20deg);} 60%{ transform:scale(1.25) rotate(8deg);} 100%{ transform:scale(1) rotate(0);} }
+  .cg-txt b { font-family:'Space Grotesk',sans-serif; font-size:2.7vh; display:block; letter-spacing:-.01em; }
+  .cg-txt span { font-size:1.9vh; font-weight:600; opacity:.85; }
+  /* confetti burst behind the icon */
+  .cg-burst { position:absolute; left:2.6vw; top:50%; width:0; height:0; }
+  .cg-burst::before, .cg-burst::after { content:''; position:absolute; left:0; top:0; width:.9vh; height:.9vh;
+    border-radius:2px; animation: cgConfetti 1s ease var(--d) both; }
+  .cg-burst::before { background:#2A5E9B; }
+  .cg-burst::after  { background:#fff; animation-delay: calc(var(--d) + .08s); }
+  @keyframes cgConfetti {
+    0% { transform:translate(0,0) scale(1); opacity:1; }
+    100% { transform:translate(3vw,-4vh) scale(0); opacity:0; }
+  }
+  .car-more { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:calc(var(--rowfs) * .9);
+    color:#C7DDF2; margin-left:.4vw; align-self:center; }
   .cars { display:flex; align-items:center; flex-wrap:wrap; gap:.35vw .3vw;
     animation: carsIn .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
   @keyframes carsIn { from { opacity:0; transform:translateX(-1vw); } to { opacity:1; transform:none; } }
@@ -2549,6 +2594,7 @@ function LEADERBOARD_HTML(p) {
   .tuner-msg { color:#69E08A; font-size:1.35vh; margin-top:.8vh; min-height:1.6vh; }
 </style></head>
 <body>
+<div class="stale-note" id="stale-note">Holding the last board — the newest report looked incomplete. Updating on the next cycle.</div>
 <div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
 
 <!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
@@ -2655,28 +2701,37 @@ function LEADERBOARD_HTML(p) {
   // A row of little cars: one filled car per whole unit, a half-filled car for a
   // half (splits credit .5). Scaled against the leader and capped so a monster
   // month can't run off a TV.
+  // One car per whole unit, a half-filled car for a .5 split, always matching the
+  // number exactly. If the leader is over CAP whole cars we DON'T rescale the
+  // count (that broke the 1-car-per-unit promise and rounded 5.5 up to 6); we draw
+  // the honest cars up to CAP and append a "+N" so the row still fits a TV.
+  // clipPath ids must be unique per row — ids are global in one SVG document, so a
+  // shared "hcH" let a later row's half-car borrow an earlier row's clip.
+  var CAR_ROW = 0;
   function cars(sold, maxSold){
-    var CAP = 22;
-    var scale = maxSold > CAP ? CAP / maxSold : 1;
-    var scaled = sold * scale;
-    var whole = Math.floor(scaled + 1e-6);
-    var half = (scaled - whole) >= 0.5 - 1e-6 ? 1 : 0;
+    var CAP = 20;
+    var uid = 'r' + (CAR_ROW++) + '_';
+    var whole = Math.floor(sold + 1e-6);
+    var half = (sold - whole) >= 0.5 - 1e-6 ? 1 : 0;
     var carPath = 'M2 13 L4.5 8 Q5.2 6.6 6.8 6.6 L17.2 6.6 Q18.8 6.6 19.5 8 L22 13 '
       + 'Q23 13.2 23 15 L23 17.6 Q23 18.4 22.2 18.4 L20.4 18.4 Q20 20.4 18.2 20.4 '
       + 'Q16.4 20.4 16 18.4 L8 18.4 Q7.6 20.4 5.8 20.4 Q4 20.4 3.6 18.4 L1.8 18.4 '
       + 'Q1 18.4 1 17.6 L1 15 Q1 13.2 2 13 Z';
     function car(frac, key){
+      var cid = 'hc' + uid + key;
       var body = '<path d="'+carPath+'" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.20)" stroke-width="1"/>';
       var fill = frac <= 0 ? '' :
         '<path d="'+carPath+'" fill="var(--carfill)"'
-        + (frac < 1 ? ' clip-path="url(#hc'+key+')"' : '') + '/>';
+        + (frac < 1 ? ' clip-path="url(#'+cid+')"' : '') + '/>';
       var clip = (frac > 0 && frac < 1)
-        ? '<clipPath id="hc'+key+'"><rect x="0" y="0" width="12" height="27"/></clipPath>' : '';
+        ? '<clipPath id="'+cid+'"><rect x="0" y="0" width="12" height="27"/></clipPath>' : '';
       return '<svg class="car" viewBox="0 0 24 24">'+clip+body+fill+'</svg>';
     }
+    var drawWhole = Math.min(whole, CAP);
     var out = '';
-    for (var i=0;i<whole;i++) out += car(1, i);
-    if (half) out += car(0.5, 'H');
+    for (var i=0;i<drawWhole;i++) out += car(1, i);
+    if (whole <= CAP && half) out += car(0.5, 'H');
+    if (whole > CAP) out += '<span class="car-more">+'+(whole - CAP + (half ? 0.5 : 0))+'</span>';
     if (!whole && !half) out += car(0, 'z');
     return out;
   }
@@ -2716,6 +2771,7 @@ function LEADERBOARD_HTML(p) {
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
   function render(store){
+    CAR_ROW = 0;
     var root = document.getElementById('root');
     // an error is not the same as an empty store: say which, never just hang
     if (store && store.__err){
@@ -3012,8 +3068,77 @@ function LEADERBOARD_HTML(p) {
     var dt = document.getElementById('datt');
     if(dt) dt.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
     else if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
+  // A refresh that swings wildly from the last one is almost always a bad import
+  // or a half-written file, not real. Hold the current board and try again next
+  // cycle rather than flashing garbage onto a showroom TV. "Wildly" = the total
+  // units moved by more than half, on a board that had real numbers to begin with.
+  function tooDifferent(prev, next){
+    try {
+      if (!prev || !prev.store || !next || !next.store) return false;
+      function totalUnits(st){
+        var t = 0, r = (st.roster||[]);
+        for (var i=0;i<r.length;i++){
+          var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
+          var k = norm(r[i].name), o = v[k]; if (!o) continue;
+          t += (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0);
+        }
+        return t;
+      }
+      var a = totalUnits(prev), b = totalUnits(next);
+      if (a < 5) return false;                       // nothing meaningful to protect yet
+      var drop = (a - b) / a;
+      return drop > 0.5;                             // lost more than half: distrust it
+    } catch(e){ return false; }
+  }
+
+  // Who sold since the last good refresh — drives the congratulations sweep.
+  function newlySold(prev, next){
+    var out = [];
+    try {
+      if (!prev || !next) return out;
+      function unitsOf(st, name){
+        var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
+        var o = v[norm(name)]; if (!o) return 0;
+        return (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0);
+      }
+      var roster = (next.roster||[]);
+      for (var i=0;i<roster.length;i++){
+        var nm = roster[i].name;
+        var before = unitsOf(prev, nm), after = unitsOf(next, nm);
+        if (after > before + 1e-6) out.push({ name: nm, gained: after - before });
+      }
+    } catch(e){}
+    return out;
+  }
+
+  function congratulate(list){
+    if (!list.length) return;
+    var host = document.createElement('div');
+    host.className = 'congrats';
+    // one banner per seller, staggered, so a double sale gets its own moment
+    host.innerHTML = list.slice(0, 6).map(function(w, i){
+      var u = w.gained % 1 ? w.gained.toFixed(1) : w.gained;
+      return '<div class="cg-card" style="--d:'+(i*1.5)+'s">'
+        + '<div class="cg-burst"></div>'
+        + '<div class="cg-ico">&#127881;</div>'
+        + '<div class="cg-txt"><b>'+w.name+'</b><span>just delivered '+u+(w.gained==1?' unit':' units')+'</span></div>'
+        + '</div>';
+    }).join('');
+    document.body.appendChild(host);
+    // total life = last card's delay + its own 5s, then fade
+    var life = (Math.min(list.length,6) * 1.5 + 5) * 1000;
+    setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
+  }
+
   async function loop(){
     var s = await getStore();
+    // Failsafe: a good previous board plus a suspicious new one = keep the old one.
+    if (LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
+      var warn = document.getElementById('stale-note');
+      if (warn) warn.classList.add('on');
+      return;                                        // skip this render entirely
+    }
+    var wsold = (LAST && !LAST.__err && s && !s.__err) ? newlySold(LAST, s) : [];
     if (s && s.boardDisplay && !s.__err) {
       // only adopt saved settings on the first load, so a live adjustment is not
       // stamped over every fifteen minutes
@@ -3030,6 +3155,9 @@ function LEADERBOARD_HTML(p) {
     render(s);
     wireTuner();
     applyDisp();
+    var warn = document.getElementById('stale-note');
+    if (warn) warn.classList.remove('on');
+    if (wsold.length) congratulate(wsold);
   }
   /* ---------- display tuning ---------- */
   // Read whatever was saved for this store, and let the person at the TV change it.
@@ -7865,9 +7993,15 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   // only for internet, so phone and showroom leads are recovered from a person's
   // own units divided by their own rate. Anyone without a rate on file simply
   // drops out of that channel's denominator rather than skewing it.
+  // The board only shows roles flagged onBoard (Sales), so the store's closing
+  // rate has to be summed over exactly those people. Summing the whole roster
+  // pulled in BDC, Service-to-Sales and managers, who also carry delivery stats,
+  // which is why the popup read roughly double the Delivery Summary's own totals.
+  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+  const closingRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
   const chanRate = (field) => {
     let units = 0, leads = 0, seen = false;
-    for (const a of roster) {
+    for (const a of closingRoster) {
       const st = M?.stats?.[norm(a.name)];
       const u = st?.[field + "Units"];
       const pc = st?.[field + "Pct"];
@@ -7884,7 +8018,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     { id: "phone", label: "Phone", ...chanRate("phone") },
     { id: "showroom", label: "Showroom", ...chanRate("showroom") },
   ];
-  const campaignUnits = roster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
+  const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
   const thr = normThresholds(store.thresholds);
   const chanTone = (id, v) => v == null ? "dim"
