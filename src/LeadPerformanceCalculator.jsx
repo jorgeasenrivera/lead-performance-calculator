@@ -3641,19 +3641,48 @@ function ImportBadge({ storeData, activity }) {
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
-/* ===== PHONE-LEAD QUEUE ("The Line") — v3 ===== */
+/* ===== PHONE-LEAD QUEUE ("The Line") — v4 ===== */
 
 const QUEUE_TABLE = "queue_public";
 const QUEUE_ID_TABLE = "queue_identity";
 const queueRowId = (store, date) => `${store}:${date}`;
 
 const QUEUE_FLAGS = {
-  waiting:  { label: "In line",       cls: "q-waiting",  icon: "" },
-  lunch:    { label: "At lunch",      cls: "q-lunch",    icon: "🍔" },
-  customer: { label: "With customer", cls: "q-customer", icon: "🤝" },
-  away:     { label: "Away",          cls: "q-away",     icon: "🚶" },
+  waiting:  { label: "In line",       cls: "q-waiting" },
+  lunch:    { label: "At lunch",      cls: "q-lunch" },
+  customer: { label: "With customer", cls: "q-customer" },
+  away:     { label: "Away",          cls: "q-away" },
 };
 const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
+
+/* ---- hand-drawn line icons (currentColor, no emoji) ---- */
+function QPhoneIcon({ className }) {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6.4 3h3l1.5 4-2 1.4a11 11 0 0 0 4.7 4.7l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.4 5.2 2 2 0 0 1 6.4 3z" />
+    </svg>
+  );
+}
+function QClockIcon({ className }) {
+  return (
+    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.4 2" />
+    </svg>
+  );
+}
+function QFlagIcon({ status, className }) {
+  const p = { className, width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
+  if (status === "lunch") return (
+    <svg {...p}><path d="M4 8.5h11.5V13a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8.5z" /><path d="M15.5 9.5H18a2.4 2.4 0 0 1 0 4.8h-2.3" /><path d="M6.5 3.2c-.4.9-.4 1.7 0 2.6M9.5 3.2c-.4.9-.4 1.7 0 2.6" /></svg>
+  );
+  if (status === "customer") return (
+    <svg {...p}><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" /><circle cx="17.2" cy="9.2" r="2.3" /><path d="M16 14.4a4.6 4.6 0 0 1 4.5 4.6" /></svg>
+  );
+  if (status === "away") return (
+    <svg {...p}><path d="M13.5 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h7" /><path d="M11 12h9M16.5 8.5 20.5 12l-4 3.5" /></svg>
+  );
+  return null;
+}
 
 const shortLabel = (name) => {
   const p = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -3823,6 +3852,7 @@ async function printQueueSignIn({ store, url, date, by }) {
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
+  const phoneSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3h3l1.5 4-2 1.4a11 11 0 0 0 4.7 4.7l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.4 5.2 2 2 0 0 1 6.4 3z"/></svg>';
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line · ${store.name}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
@@ -3841,7 +3871,7 @@ async function printQueueSignIn({ store, url, date, by }) {
     .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
     @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
   </style></head><body>
-    <div class="banner">☎ Phone Opportunities</div>
+    <div class="banner">${phoneSvg} Phone Opportunities</div>
     <h1>Get in Line</h1>
     <div class="store">${store.name}</div>
     <div class="date">${nice}</div>
@@ -3855,13 +3885,15 @@ async function printQueueSignIn({ store, url, date, by }) {
 }
 
 /* =========================================================================
-   QueueSignIn — salesperson phone page
+   QueueSignIn — salesperson phone page (curtain wipe between screens)
    ========================================================================= */
 function QueueSignIn({ store, date, token }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
   const [step, setStep] = useState("name");
+  const [shown, setShown] = useState("name");
+  const [wiping, setWiping] = useState(false);
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -3875,6 +3907,15 @@ function QueueSignIn({ store, date, token }) {
   const refetch = useCallback(async () => setRow((await loadQueueRow(store, date)) || null), [store, date]);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
+
+  // curtain: when the target step changes, sweep the panel, swap content mid-sweep
+  useEffect(() => {
+    if (step === shown) return;
+    setWiping(true);
+    const t1 = setTimeout(() => setShown(step), 300);
+    const t2 = setTimeout(() => setWiping(false), 620);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [step, shown]);
 
   const isToday = date === today();
   const valid = isToday && row && row.token && row.token === token;
@@ -3987,69 +4028,68 @@ function QueueSignIn({ store, date, token }) {
 
   /* ---------- render ---------- */
   if (row === undefined || identities === null) {
-    return <div className="q-page"><div className="q-card q-center q-pop" key="loading"><div className="spin-logo" /><p className="q-muted">Loading…</p></div></div>;
+    return <div className="q-page"><div className="q-card q-center q-pop"><div className="spin-logo" /><p className="q-muted">Loading…</p></div></div>;
   }
   if (!isToday || !valid) {
     return (
-      <div className="q-page"><div className="q-card q-center q-pop" key="invalid">
-        <div className="q-x">⏱</div>
+      <div className="q-page"><div className="q-card q-center q-pop">
+        <QClockIcon className="q-x-ico" />
         <h2>This sign-in code isn't for today</h2>
         <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
       </div></div>
     );
   }
   const storeName = (row && row.storeName) || "Phone Line";
-  const PhonePill = () => <div className="q-phone-pill">☎ Phone opportunity</div>;
+  const PhonePill = () => <div className="q-phone-pill"><QPhoneIcon className="q-pill-ico" /> Phone opportunity</div>;
 
-  if (step === "done" && me) {
+  // content is chosen by `shown`, which lags `step` and swaps behind the curtain
+  const eff = (shown === "done" && !me) ? "name" : shown;
+  let content;
+
+  if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
-    return (
-      <div className="q-page">
-        <div className="q-card q-live q-pop" key="done">
-          <PhonePill />
-          <div className="q-head"><p className="q-kicker">{storeName}</p><h2>You're in line</h2></div>
-          <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
-            <div className="q-pos-ring"><div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : (QUEUE_FLAGS[me.status]?.icon || "⏸")}</div></div>
-            <div className="q-pos-sub">
-              {me.status === "waiting"
-                ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
-                : `On ${QUEUE_FLAGS[me.status]?.label}. You'll be passed over until you tap “I'm back.”`}
-              <div className="q-wait">In line {qWaitLabel(qMinsSince(me.joinedAt))}</div>
-            </div>
+    content = (
+      <div className="q-card q-live">
+        <PhonePill />
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>You're in line</h2></div>
+        <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
+          <div className="q-pos-ring"><div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : <QFlagIcon status={me.status} className="q-ring-ico" />}</div></div>
+          <div className="q-pos-sub">
+            {me.status === "waiting"
+              ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
+              : `On ${QUEUE_FLAGS[me.status]?.label}. You'll be passed over until you tap “I'm back.”`}
+            <div className="q-wait">In line {qWaitLabel(qMinsSince(me.joinedAt))}</div>
           </div>
-          <div className="q-flags">
-            {me.status !== "waiting"
-              ? <button className="q-btn q-back q-wide" disabled={busy} onClick={() => setFlag("waiting")}>I'm back{QUEUE_FLAGS[me.status] ? ` from ${QUEUE_FLAGS[me.status].label.toLowerCase()}` : ""}</button>
-              : QUEUE_SELF_FLAGS.map((f) => (
-                  <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>
-                    <span className="q-fico">{QUEUE_FLAGS[f].icon}</span>{QUEUE_FLAGS[f].label}
-                  </button>
-                ))}
-          </div>
-          <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
+        </div>
+        <div className="q-flags">
+          {me.status !== "waiting"
+            ? <button className="q-btn q-back q-wide" disabled={busy} onClick={() => setFlag("waiting")}>I'm back{QUEUE_FLAGS[me.status] ? ` from ${QUEUE_FLAGS[me.status].label.toLowerCase()}` : ""}</button>
+            : QUEUE_SELF_FLAGS.map((f) => (
+                <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>
+                  <QFlagIcon status={f} className="q-fico" />{QUEUE_FLAGS[f].label}
+                </button>
+              ))}
+        </div>
+        <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
+      </div>
+    );
+  } else if (eff === "pin" && selected && switchTo) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Is this you?</h2></div>
+        <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
+        <p className="q-big-q">Are you {switchTo.label}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
+          <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
         </div>
       </div>
     );
-  }
-
-  if (step === "pin" && selected) {
-    if (switchTo) {
-      return (
-        <div className="q-page"><div className="q-card q-pop" key="switch">
-          <div className="q-head"><h2>Is this you?</h2></div>
-          <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
-          <p className="q-big-q">Are you {switchTo.label}?</p>
-          <div className="q-flags">
-            <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
-            <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
-          </div>
-        </div></div>
-      );
-    }
-    return (
-      <div className="q-page"><div className="q-card q-pop" key="pin">
+  } else if (eff === "pin" && selected) {
+    content = (
+      <div className="q-card">
         <div className="q-head">
           <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
@@ -4072,13 +4112,11 @@ function QueueSignIn({ store, date, token }) {
         {msg && <p className="q-err">{msg}</p>}
         <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the line"}</button>
         <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
-      </div></div>
+      </div>
     );
-  }
-
-  if (step === "pick" && resolved && resolved.people) {
-    return (
-      <div className="q-page"><div className="q-card q-pop" key="pick">
+  } else if (eff === "pick" && resolved && resolved.people) {
+    content = (
+      <div className="q-card">
         <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p></div>
         <div className="q-roster">
           {resolved.people.map((p) => (
@@ -4088,26 +4126,22 @@ function QueueSignIn({ store, date, token }) {
           ))}
         </div>
         <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
-      </div></div>
+      </div>
     );
-  }
-
-  if (step === "confirm" && resolved && resolved.person) {
-    return (
-      <div className="q-page"><div className="q-card q-pop" key="confirm">
+  } else if (eff === "confirm" && resolved && resolved.person) {
+    content = (
+      <div className="q-card">
         <div className="q-head"><h2>Did you mean…</h2></div>
         <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
         <div className="q-flags">
           <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
           <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
         </div>
-      </div></div>
+      </div>
     );
-  }
-
-  return (
-    <div className="q-page">
-      <div className="q-card q-pop" key="name">
+  } else {
+    content = (
+      <div className="q-card">
         <PhonePill />
         <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get in line</h2><p className="q-muted">Type your name to claim the next phone opportunity.</p></div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
@@ -4125,6 +4159,13 @@ function QueueSignIn({ store, date, token }) {
           </div>
         )}
       </div>
+    );
+  }
+
+  return (
+    <div className="q-page">
+      <div className="q-stage" key={eff}>{content}</div>
+      <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
     </div>
   );
 }
@@ -4308,7 +4349,7 @@ function QueueTab({ config, store, data, onChange, userName }) {
 
   return (
     <div className="checkout q-tab">
-      <div className="q-phone-banner">☎ Phone Opportunities</div>
+      <div className="q-phone-banner"><QPhoneIcon className="q-banner-ico" /> Phone Opportunities</div>
 
       <div className="q-board">
         <div className="q-board-cell q-board-avail"><div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div></div>
@@ -4364,7 +4405,7 @@ function QueueTab({ config, store, data, onChange, userName }) {
               <div className="q-who">
                 <div className="q-nm">{realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}</div>
                 <div className="q-meta">
-                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{QUEUE_FLAGS[p.status]?.icon ? `${QUEUE_FLAGS[p.status].icon} ` : ""}{QUEUE_FLAGS[p.status]?.label || p.status}</span>
+                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <QFlagIcon status={p.status} className="q-chip-ico" />}{QUEUE_FLAGS[p.status]?.label || p.status}</span>
                   <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
                 </div>
               </div>
@@ -12503,7 +12544,7 @@ function Style() {
 .q-phone-pill{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;background:rgba(76,139,245,.16);
   color:#8fb8ff;font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:11px;padding:6px 12px;border-radius:999px;margin-bottom:12px;}
 .q-live,.q-card{display:flex;flex-direction:column;}
-.q-fico{font-size:18px;line-height:1;}
+.q-fico{width:20px;height:20px;}
 .q-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;}
 
 /* PIN fields: label above, and stop the placeholder from being letter-spaced */
@@ -12527,6 +12568,21 @@ function Style() {
 .q-pin-row:first-of-type{border-top:none;}
 .q-pin-name{font-weight:600;}
 .q-pin-reset{color:#ffb0b0;}
+
+/* v4: curtain wipe + custom line icons */
+.q-stage{position:relative;z-index:1;width:100%;display:flex;justify-content:center;}
+.q-ring-ico{width:46px;height:46px;}
+.q-chip-ico{width:13px;height:13px;vertical-align:-2px;margin-right:4px;}
+.q-pill-ico{width:14px;height:14px;}
+.q-banner-ico{width:15px;height:15px;}
+.q-x-ico{width:46px;height:46px;color:#8fb8ff;}
+.q-curtain{position:fixed;inset:0;z-index:60;background:linear-gradient(120deg,#3b72e0 0%,#5a97ff 55%,#6ea0ff 100%);
+  transform:translateX(-100%);pointer-events:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 60px rgba(0,0,0,.25);}
+.q-curtain.q-wipe{animation:qcurtain .62s cubic-bezier(.76,0,.24,1) both;}
+@keyframes qcurtain{0%{transform:translateX(-100%);}46%{transform:translateX(0);}54%{transform:translateX(0);}100%{transform:translateX(101%);}}
+.q-curtain-mark{width:60px;height:60px;color:rgba(255,255,255,.92);opacity:0;}
+.q-curtain.q-wipe .q-curtain-mark{animation:qmark .62s ease both;}
+@keyframes qmark{0%,100%{opacity:0;transform:scale(.7);}42%,58%{opacity:1;transform:scale(1);}}
 
     `}</style>
   );
