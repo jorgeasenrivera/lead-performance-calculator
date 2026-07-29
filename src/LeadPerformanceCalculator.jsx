@@ -3641,17 +3641,17 @@ function ImportBadge({ storeData, activity }) {
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
-/* ===== PHONE-LEAD QUEUE ("The Line") — v2: typed-name + PIN identity ===== */
+/* ===== PHONE-LEAD QUEUE ("The Line") — v3 ===== */
 
 const QUEUE_TABLE = "queue_public";
 const QUEUE_ID_TABLE = "queue_identity";
 const queueRowId = (store, date) => `${store}:${date}`;
 
 const QUEUE_FLAGS = {
-  waiting:  { label: "In line",       cls: "q-waiting" },
-  lunch:    { label: "At lunch",      cls: "q-lunch" },
-  customer: { label: "With customer", cls: "q-customer" },
-  away:     { label: "Away",          cls: "q-away" },
+  waiting:  { label: "In line",       cls: "q-waiting",  icon: "" },
+  lunch:    { label: "At lunch",      cls: "q-lunch",    icon: "🍔" },
+  customer: { label: "With customer", cls: "q-customer", icon: "🤝" },
+  away:     { label: "Away",          cls: "q-away",     icon: "🚶" },
 };
 const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
 
@@ -3726,7 +3726,6 @@ async function qHashPin(pin, salt) {
   const buf = await (window.crypto.subtle).digest("SHA-256", enc);
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-// returns the associateId whose stored PIN matches, or null
 async function qFindByPin(identities, pin, exceptId) {
   for (const id of Object.keys(identities || {})) {
     if (exceptId && id === exceptId) continue;
@@ -3762,7 +3761,6 @@ function qRankRoster(typed, roster) {
     return { ...r, d, firstEq: lf === tf };
   }).sort((a, b) => a.d - b.d);
 }
-// resolve typed text to one of: {kind:"one",person}, {kind:"pick",people}, {kind:"confirm",person}, {kind:"none",suggestions}
 function qResolveName(typed, roster) {
   const ranked = qRankRoster(typed, roster);
   if (!ranked.length) return { kind: "none", suggestions: [] };
@@ -3812,61 +3810,65 @@ function QueueQR({ url, cell = 6 }) {
   return <div ref={ref} className="q-qr" aria-label="Sign-in QR code" />;
 }
 
-/* ---- printable sign-in poster (NextUp-ready styling) ---- */
-async function printQueueSignIn({ store, url, date }) {
+/* ---- printable sign-in poster (matches the app font; NextUp-ready) ---- */
+async function printQueueSignIn({ store, url, date, by }) {
   let svg = "";
   try {
     const qrcode = await loadQRCode();
     const qr = qrcode(0, "M"); qr.addData(url); qr.make();
     svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
-  } catch (e) { svg = "<p>QR unavailable — reopen and try again.</p>"; }
+  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
   const w = window.open("", "lpc_qr_" + store.id, "width=800,height=1040");
   if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line — ${store.name}</title>
+  const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line · ${store.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#0b1220;padding:56px 48px;text-align:center;}
-    .kicker{text-transform:uppercase;letter-spacing:.22em;font-size:13px;font-weight:800;color:#4c8bf5;}
-    h1{font-size:46px;font-weight:900;margin:10px 0 4px;letter-spacing:-.02em;}
+    body{font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
+    .banner{display:inline-flex;align-items:center;gap:10px;background:#4c8bf5;color:#fff;font-weight:700;
+      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
+    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
     .store{font-size:22px;font-weight:700;color:#334;}
     .date{font-size:16px;color:#667;margin-top:6px;}
-    .qr{width:360px;max-width:70vw;margin:34px auto 14px;padding:22px;border:2px solid #0b1220;border-radius:22px;}
+    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid #4c8bf5;border-radius:24px;}
     .qr svg{display:block;width:100%;height:auto;}
-    .how{font-size:19px;font-weight:600;margin-top:10px;}
-    .sub{font-size:15px;color:#667;margin-top:6px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
-    .foot{margin-top:40px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
-    @media print{body{padding:24px;} .qr{border-color:#000;}}
+    .how{font-size:20px;font-weight:700;margin-top:10px;}
+    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
+    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
+    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
   </style></head><body>
-    <div class="kicker">Sales Floor · Phone Opportunities</div>
+    <div class="banner">☎ Phone Opportunities</div>
     <h1>Get in Line</h1>
     <div class="store">${store.name}</div>
     <div class="date">${nice}</div>
     <div class="qr">${svg}</div>
     <div class="how">Scan with your phone camera to sign in</div>
-    <div class="sub">Enter your name and your PIN to claim your spot for the next phone opportunity. No app, no login — this code only works today.</div>
-    <div class="foot">Generated ${when} · The Line by Holler-Classic</div>
-    <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+    <div class="sub">Enter your name and your PIN to claim your spot for the next phone opportunity. No app, no login. This code only works today.</div>
+    <div class="foot">${foot}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
   </body></html>`);
   w.document.close();
 }
 
 /* =========================================================================
-   QueueSignIn — salesperson phone page: come-back → name → PIN → in line
+   QueueSignIn — salesperson phone page
    ========================================================================= */
 function QueueSignIn({ store, date, token }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
-  const [step, setStep] = useState("name");     // name | pick | confirm | pin | done
+  const [step, setStep] = useState("name");
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
-  const [resolved, setResolved] = useState(null); // {kind,...}
-  const [selected, setSelected] = useState(null); // {id,label,role}
+  const [resolved, setResolved] = useState(null);
+  const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
-  const [pinMode, setPinMode] = useState("verify"); // verify | create
-  const [switchTo, setSwitchTo] = useState(null);   // {id,label} when PIN belongs to another file
+  const [pinMode, setPinMode] = useState("verify");
+  const [switchTo, setSwitchTo] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -3888,10 +3890,7 @@ function QueueSignIn({ store, date, token }) {
     setMeId(id);
   };
 
-  // If we already know who this is today and they're in the line, jump straight to status.
-  useEffect(() => {
-    if (meId && line.some((p) => p.id === meId)) setStep("done");
-  }, [meId, line]);
+  useEffect(() => { if (meId && line.some((p) => p.id === meId)) setStep("done"); }, [meId, line]);
 
   async function joinAs(person) {
     setBusy(true);
@@ -3915,9 +3914,9 @@ function QueueSignIn({ store, date, token }) {
     setMsg("");
     const r = qResolveName(typed, roster);
     setResolved(r);
-    if (r.kind === "one") { pickPerson(r.person); }
-    else if (r.kind === "confirm") { setStep("confirm"); }
-    else if (r.kind === "pick") { setStep("pick"); }
+    if (r.kind === "one") pickPerson(r.person);
+    else if (r.kind === "confirm") setStep("confirm");
+    else if (r.kind === "pick") setStep("pick");
     else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
   }
   function pickPerson(p) {
@@ -3929,7 +3928,7 @@ function QueueSignIn({ store, date, token }) {
 
   async function submitPin() {
     if (!selected) return;
-    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4–6 digits."); return; }
+    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4 to 6 digits."); return; }
     setBusy(true); setMsg("");
     const idents = identities || (await loadQueueIdentities(store));
     if (pinMode === "create") {
@@ -3942,14 +3941,10 @@ function QueueSignIn({ store, date, token }) {
       await joinAs(selected);
       return;
     }
-    // verify
     const rec = idents[selected.id];
     if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
     const other = await qFindByPin(idents, pin, null);
-    if (other && other !== selected.id) {
-      setSwitchTo({ id: other, label: idents[other].label || "that person" });
-      setMsg(""); setBusy(false); return;
-    }
+    if (other && other !== selected.id) { setSwitchTo({ id: other, label: idents[other].label || "that person" }); setMsg(""); setBusy(false); return; }
     setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
     setBusy(false);
   }
@@ -3959,9 +3954,17 @@ function QueueSignIn({ store, date, token }) {
     const next = await mutateQueueRow(store, date, (cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
-      if (p) { p.status = status; p.statusAt = qNowIso();
+      if (p) {
         cur.history = cur.history || [];
-        cur.history.push({ t: qNowIso(), action: status === "waiting" ? "back" : status, id: meId, who: p.label, by: "self" });
+        if (status === "waiting") {
+          const from = p.awayReason || (p.status !== "waiting" ? p.status : null);
+          cur.history.push({ t: qNowIso(), action: "back", from, id: meId, who: p.label, by: "self" });
+          p.awayReason = null;
+        } else {
+          p.awayReason = status;
+          cur.history.push({ t: qNowIso(), action: status, id: meId, who: p.label, by: "self" });
+        }
+        p.status = status; p.statusAt = qNowIso();
       }
       return cur;
     });
@@ -3974,7 +3977,7 @@ function QueueSignIn({ store, date, token }) {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
-      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", id: meId, who: p.label, by: "self" }); }
+      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", from: p.awayReason || null, id: meId, who: p.label, by: "self" }); }
       return cur;
     });
     remember(null);
@@ -3984,11 +3987,11 @@ function QueueSignIn({ store, date, token }) {
 
   /* ---------- render ---------- */
   if (row === undefined || identities === null) {
-    return <div className="q-page"><div className="q-card q-center q-fade"><div className="spin-logo" /><p className="q-muted">Loading…</p></div></div>;
+    return <div className="q-page"><div className="q-card q-center q-pop" key="loading"><div className="spin-logo" /><p className="q-muted">Loading…</p></div></div>;
   }
   if (!isToday || !valid) {
     return (
-      <div className="q-page"><div className="q-card q-center q-fade">
+      <div className="q-page"><div className="q-card q-center q-pop" key="invalid">
         <div className="q-x">⏱</div>
         <h2>This sign-in code isn't for today</h2>
         <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
@@ -3996,32 +3999,33 @@ function QueueSignIn({ store, date, token }) {
     );
   }
   const storeName = (row && row.storeName) || "Phone Line";
+  const PhonePill = () => <div className="q-phone-pill">☎ Phone opportunity</div>;
 
-  // In line
   if (step === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
     return (
       <div className="q-page">
-        <div className="q-card q-live q-pop">
+        <div className="q-card q-live q-pop" key="done">
+          <PhonePill />
           <div className="q-head"><p className="q-kicker">{storeName}</p><h2>You're in line</h2></div>
           <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
-            <div className="q-pos-ring">
-              <div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : "⏸"}</div>
-            </div>
+            <div className="q-pos-ring"><div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : (QUEUE_FLAGS[me.status]?.icon || "⏸")}</div></div>
             <div className="q-pos-sub">
               {me.status === "waiting"
                 ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
-                : `On ${QUEUE_FLAGS[me.status]?.label} — you'll be passed over until you tap “I'm back”`}
+                : `On ${QUEUE_FLAGS[me.status]?.label}. You'll be passed over until you tap “I'm back.”`}
               <div className="q-wait">In line {qWaitLabel(qMinsSince(me.joinedAt))}</div>
             </div>
           </div>
           <div className="q-flags">
             {me.status !== "waiting"
-              ? <button className="q-btn q-back" disabled={busy} onClick={() => setFlag("waiting")}>I'm back</button>
+              ? <button className="q-btn q-back q-wide" disabled={busy} onClick={() => setFlag("waiting")}>I'm back{QUEUE_FLAGS[me.status] ? ` from ${QUEUE_FLAGS[me.status].label.toLowerCase()}` : ""}</button>
               : QUEUE_SELF_FLAGS.map((f) => (
-                  <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>{QUEUE_FLAGS[f].label}</button>
+                  <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>
+                    <span className="q-fico">{QUEUE_FLAGS[f].icon}</span>{QUEUE_FLAGS[f].label}
+                  </button>
                 ))}
           </div>
           <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
@@ -4030,35 +4034,40 @@ function QueueSignIn({ store, date, token }) {
     );
   }
 
-  // PIN step
   if (step === "pin" && selected) {
     if (switchTo) {
       return (
-        <div className="q-page"><div className="q-card q-pop">
-          <div className="q-head"><h2>Wait — is this you?</h2></div>
+        <div className="q-page"><div className="q-card q-pop" key="switch">
+          <div className="q-head"><h2>Is this you?</h2></div>
           <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
           <p className="q-big-q">Are you {switchTo.label}?</p>
           <div className="q-flags">
-            <button className="q-btn q-back" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
-            <button className="q-btn" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem — enter your own PIN."); }}>No, try again</button>
+            <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
+            <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
           </div>
         </div></div>
       );
     }
     return (
-      <div className="q-page"><div className="q-card q-pop">
+      <div className="q-page"><div className="q-card q-pop" key="pin">
         <div className="q-head">
           <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
-          <p className="q-muted">{pinMode === "create" ? "Pick a 4–6 digit PIN. You'll use it to sign in and to get back in if you close this tab." : "So only you can claim your spot."}</p>
+          <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. You'll use it to sign in, and to get back in if you close this tab." : "So only you can claim your spot."}</p>
         </div>
-        <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
-          placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-          onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
+        <div className="q-pin-field">
+          {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
+          <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
+            placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
+        </div>
         {pinMode === "create" && (
-          <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
-            placeholder="Confirm PIN" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
+          <div className="q-pin-field">
+            <label className="q-pin-lbl">Confirm PIN</label>
+            <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
+              placeholder="••••" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
+          </div>
         )}
         {msg && <p className="q-err">{msg}</p>}
         <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the line"}</button>
@@ -4067,10 +4076,9 @@ function QueueSignIn({ store, date, token }) {
     );
   }
 
-  // Pick step (several close names)
   if (step === "pick" && resolved && resolved.people) {
     return (
-      <div className="q-page"><div className="q-card q-pop">
+      <div className="q-page"><div className="q-card q-pop" key="pick">
         <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p></div>
         <div className="q-roster">
           {resolved.people.map((p) => (
@@ -4084,24 +4092,23 @@ function QueueSignIn({ store, date, token }) {
     );
   }
 
-  // Confirm step (one close, not exact)
   if (step === "confirm" && resolved && resolved.person) {
     return (
-      <div className="q-page"><div className="q-card q-pop">
+      <div className="q-page"><div className="q-card q-pop" key="confirm">
         <div className="q-head"><h2>Did you mean…</h2></div>
         <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
         <div className="q-flags">
-          <button className="q-btn q-back" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
-          <button className="q-btn" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
+          <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
+          <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
         </div>
       </div></div>
     );
   }
 
-  // Name step (default)
   return (
     <div className="q-page">
-      <div className="q-card q-pop">
+      <div className="q-card q-pop" key="name">
+        <PhonePill />
         <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get in line</h2><p className="q-muted">Type your name to claim the next phone opportunity.</p></div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
           onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
@@ -4140,7 +4147,6 @@ function queueCoachingStats(data, associateId) {
     if (scheduled && !signed) missedScheduled++;
     taken += evs.filter((e) => e.action === "assigned").length;
     declined += evs.filter((e) => e.action === "declined").length;
-    // pair unavailable spans with the next return/assign/leave event
     let openStatus = null, openAt = null;
     for (const e of evs) {
       if (["lunch", "away", "customer"].includes(e.action)) { openStatus = e.action; openAt = e.t; }
@@ -4160,11 +4166,13 @@ function queueCoachingStats(data, associateId) {
 }
 
 /* =========================================================================
-   QueueTab — manager board (bolder overview + schedule-fed "not here yet")
+   QueueTab — manager board
    ========================================================================= */
 function QueueTab({ config, store, data, onChange, userName }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [identities, setIdentities] = useState({});
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, force] = useReducer((x) => x + 1, 0);
@@ -4175,9 +4183,9 @@ function QueueTab({ config, store, data, onChange, userName }) {
     const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
     return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
   }, [data.roster, config.roles]);
-  const roleName = (id) => (config.roles || []).find((r) => r.id === (salesRoster.find((a) => a.id === id) || {}).roleId)?.name || "";
 
   const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date)) || null), [store.id, date]);
+  const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const ensureRow = useCallback(async () => {
     const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
     const next = await mutateQueueRow(store.id, date, (cur) => {
@@ -4191,13 +4199,13 @@ function QueueTab({ config, store, data, onChange, userName }) {
   }, [store.id, store.name, date, salesRoster, config.roles]);
 
   useEffect(() => { ensureRow(); }, [ensureRow]);
+  useEffect(() => { loadIds(); }, [loadIds]);
   useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
 
   const line = (row && row.line) || [];
   const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
 
-  // scheduled to work today (not off) but not in the line yet
   const expectedNotHere = useMemo(
     () => salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id)),
     [salesRoster, data, date, line]
@@ -4217,15 +4225,15 @@ function QueueTab({ config, store, data, onChange, userName }) {
     if (next) { setRow(next); mirror(next, audit); }
     setBusy(false);
   }
+  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
   const moveToBack = (cur, id) => {
     const i = (cur.line || []).findIndex((p) => p.id === id);
     if (i < 0) return cur;
     const [p] = cur.line.splice(i, 1);
-    p.joinedAt = qNowIso(); p.status = "waiting"; p.statusAt = qNowIso();
+    p.joinedAt = qNowIso(); p.status = "waiting"; p.statusAt = qNowIso(); p.awayReason = null;
     cur.line.push(p);
     return cur;
   };
-  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
 
   const assignNext = () => {
     const first = line.find((p) => p.status === "waiting");
@@ -4241,7 +4249,7 @@ function QueueTab({ config, store, data, onChange, userName }) {
     const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
     pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason });
     return moveToBack(cur, id);
-  }, { action: "Queue: assigned (out of order)", detail: `${realName(id)} — ${reason}` });
+  }, { action: "Queue: assigned (out of order)", detail: `${realName(id)}: ${reason}` });
   const decline = (id) => act((cur) => {
     const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
     pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
@@ -4249,9 +4257,24 @@ function QueueTab({ config, store, data, onChange, userName }) {
   }, { action: "Queue: declined", detail: realName(id) });
   const setFlag = (id, status) => act((cur) => {
     const p = (cur.line || []).find((x) => x.id === id);
-    if (p) { p.status = status; p.statusAt = qNowIso(); pushH(cur, { action: status === "waiting" ? "back" : status, id, who: p.label, by: "manager" }); }
+    if (p) {
+      if (status === "waiting") { pushH(cur, { action: "back", from: p.awayReason || (p.status !== "waiting" ? p.status : null), id, who: p.label, by: "manager" }); p.awayReason = null; }
+      else { p.awayReason = status; pushH(cur, { action: status, id, who: p.label, by: "manager" }); }
+      p.status = status; p.statusAt = qNowIso();
+    }
     return cur;
   });
+  const move = (id, dir) => {
+    const i = line.findIndex((p) => p.id === id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= line.length) return;
+    act((cur) => {
+      const a = cur.line || []; const ci = a.findIndex((p) => p.id === id); const cj = ci + dir;
+      if (ci < 0 || cj < 0 || cj >= a.length) return cur;
+      const [p] = a.splice(ci, 1); a.splice(cj, 0, p);
+      pushH(cur, { action: "reordered", id, who: p.label, by: "manager", detail: `to #${cj + 1}` });
+      return cur;
+    }, { action: "Queue: reordered", detail: `${realName(id)} to #${j + 1}` });
+  };
   const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Queue: removed", detail: realName(id) });
   const addPerson = (id) => act((cur) => {
     cur.line = cur.line || [];
@@ -4269,39 +4292,56 @@ function QueueTab({ config, store, data, onChange, userName }) {
     if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
     act((cur) => { cur.token = uid(); return cur; }, { action: "Queue: code regenerated", detail: store.name });
   };
+  const resetPin = async (id) => {
+    if (!window.confirm(`Reset ${realName(id)}'s PIN? They'll set a new one the next time they sign in.`)) return;
+    const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
+    setIdentities(next);
+    act((cur) => { pushH(cur, { action: "pin-reset", id, who: realName(id), by: "manager" }); return cur; }, { action: "Queue: PIN reset", detail: realName(id) });
+  };
 
   if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? queueSignInUrl(store.id, date, row.token) : "";
   const availCount = line.filter((p) => p.status === "waiting").length;
+  const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   return (
     <div className="checkout q-tab">
-      {/* bold live stat strip */}
+      <div className="q-phone-banner">☎ Phone Opportunities</div>
+
       <div className="q-board">
-        <div className="q-board-cell q-board-avail">
-          <div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div>
-        </div>
-        <div className="q-board-cell">
-          <div className="q-board-n">{line.length}</div><div className="q-board-l">in the line</div>
-        </div>
-        <div className="q-board-cell q-board-miss">
-          <div className="q-board-n">{expectedNotHere.length}</div><div className="q-board-l">not signed in</div>
-        </div>
+        <div className="q-board-cell q-board-avail"><div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div></div>
+        <div className="q-board-cell"><div className="q-board-n">{line.length}</div><div className="q-board-l">in the line</div></div>
+        <div className="q-board-cell q-board-miss"><div className="q-board-n">{expectedNotHere.length}</div><div className="q-board-l">not signed in</div></div>
         <div className="q-board-actions">
+          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
         </div>
       </div>
 
+      {showPins && (
+        <div className="q-pins-panel">
+          <div className="q-pins-head">Salesperson PINs</div>
+          {pinPeople.length === 0
+            ? <p className="muted">No PINs set yet. They're created the first time each person signs in.</p>
+            : pinPeople.map((p) => (
+                <div key={p.id} className="q-pin-row">
+                  <span className="q-pin-name">{p.name}</span>
+                  <button className="btn btn-sm q-pin-reset" onClick={() => resetPin(p.id)}>Reset PIN</button>
+                </div>
+              ))}
+        </div>
+      )}
+
       {showQR && (
         <div className="q-qr-panel">
           <div className="q-qr-box"><QueueQR url={url} /></div>
           <div className="q-qr-info">
-            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're in line — no login. It only works today; a fresh code appears each morning.</p>
+            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're in line. No login. It only works today; a fresh code appears each morning.</p>
             <div className="q-qr-btns">
-              <button className="btn" onClick={() => printQueueSignIn({ store, url, date })}>Print sign-in code</button>
+              <button className="btn" onClick={() => printQueueSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
               <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
               <button className="btn" onClick={regenToken}>New code</button>
             </div>
@@ -4316,11 +4356,15 @@ function QueueTab({ config, store, data, onChange, userName }) {
           const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
           return (
             <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""}`}>
+              <div className="q-ord">
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up">▲</button>
+                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down">▼</button>
+              </div>
               <div className="q-rank">{i + 1}</div>
               <div className="q-who">
                 <div className="q-nm">{realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}</div>
                 <div className="q-meta">
-                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{QUEUE_FLAGS[p.status]?.label || p.status}</span>
+                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{QUEUE_FLAGS[p.status]?.icon ? `${QUEUE_FLAGS[p.status].icon} ` : ""}{QUEUE_FLAGS[p.status]?.label || p.status}</span>
                   <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
                 </div>
               </div>
@@ -4351,7 +4395,6 @@ function QueueTab({ config, store, data, onChange, userName }) {
         })}
       </div>
 
-      {/* scheduled today but not signed in */}
       {expectedNotHere.length > 0 && (
         <div className="q-missing">
           <div className="q-missing-head">Scheduled today, not in line yet</div>
@@ -4380,7 +4423,6 @@ function QueueTab({ config, store, data, onChange, userName }) {
     </div>
   );
 }
-
 function CheckOutTracker({ config, store, data, onChange }) {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(today());
@@ -12453,6 +12495,38 @@ function Style() {
 
 /* coaching card — phone line block */
 .ac-queue{margin-top:8px;}
+
+/* v3 additions */
+.q-phone-banner{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(180deg,#5a97ff,#3b72e0);
+  color:#fff;font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:13px;padding:8px 18px;
+  border-radius:999px;margin-bottom:14px;box-shadow:0 8px 20px rgba(76,139,245,.3);}
+.q-phone-pill{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;background:rgba(76,139,245,.16);
+  color:#8fb8ff;font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:11px;padding:6px 12px;border-radius:999px;margin-bottom:12px;}
+.q-live,.q-card{display:flex;flex-direction:column;}
+.q-fico{font-size:18px;line-height:1;}
+.q-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;}
+
+/* PIN fields: label above, and stop the placeholder from being letter-spaced */
+.q-pin-field{margin-top:12px;text-align:left;}
+.q-pin-lbl{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted,#8aa);margin:0 0 4px 4px;}
+.q-pin-in{margin-top:0;}
+.q-pin-in::placeholder{letter-spacing:.35em;opacity:.5;}
+.q-name-in::placeholder{letter-spacing:normal;opacity:.5;}
+
+/* manager reorder arrows */
+.q-ord{display:flex;flex-direction:column;gap:2px;margin-right:2px;}
+.q-ord-b{width:24px;height:20px;line-height:1;border-radius:6px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);color:inherit;font-size:10px;cursor:pointer;padding:0;}
+.q-ord-b:disabled{opacity:.3;cursor:default;}
+.q-ord-b:hover:not(:disabled){border-color:#4c8bf5;}
+
+/* manager PIN panel */
+.q-pins-panel{margin-bottom:16px;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);}
+.q-pins-head{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--muted,#8aa);margin-bottom:10px;}
+.q-pin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);}
+.q-pin-row:first-of-type{border-top:none;}
+.q-pin-name{font-weight:600;}
+.q-pin-reset{color:#ffb0b0;}
 
     `}</style>
   );
