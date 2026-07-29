@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } from "react";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
 
@@ -1817,6 +1817,17 @@ export default function LeadPerformanceCalculator() {
         : assoc.name,
     });
   };
+  // --- phone-lead queue: public sign-in intercept (before any auth) ---
+  const queueParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const q = p.get("q"), d = p.get("d"), t = p.get("t");
+      return q && d && t ? { store: q, date: d, token: t } : null;
+    } catch { return null; }
+  })();
+  if (queueParams) {
+    return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} /><Style /></Shell>;
+  }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
   if (!config || !authReady) return <Shell><LoadingScreen /><Style /></Shell>;
 
@@ -1921,9 +1932,9 @@ export default function LeadPerformanceCalculator() {
   } else if (currentStore && storeData) {
     if (appModule === "activity") {
       navItems = isAdmin
-        ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
-        : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]];
-      navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
+        ? [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+        : [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]];
+      navValue = (isAdmin ? ["checkout", "queue", "coaching", "plates", "import", "actstd"] : ["checkout", "queue", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
     } else {
       navItems = isAdmin
         ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
@@ -2095,9 +2106,9 @@ export default function LeadPerformanceCalculator() {
             {appModule === "activity" ? (
               <SegControl
                 items={isAdmin
-                  ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
-                  : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
-                value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
+                  ? [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+                  : [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
+                value={(isAdmin ? ["checkout", "queue", "coaching", "plates", "import", "actstd"] : ["checkout", "queue", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
                 onChange={setTab}
                 attentionId={activityDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
@@ -2119,7 +2130,8 @@ export default function LeadPerformanceCalculator() {
           <div key={view + tab + appModule} className="page">
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd", "queue"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "queue" && <QueueTab config={config} store={currentStore} data={storeData} userName={session.name} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -3629,6 +3641,457 @@ function ImportBadge({ storeData, activity }) {
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
+/* ===== PHONE-LEAD QUEUE ("The Line") — added 2026-07-28 ===== */
+
+const QUEUE_TABLE = "queue_public";
+const queueRowId = (store, date) => `${store}:${date}`;
+
+// availability states; "waiting" is available, the rest are passed-over-but-hold-spot
+const QUEUE_FLAGS = {
+  waiting:  { label: "In line",       cls: "q-waiting" },
+  lunch:    { label: "At lunch",      cls: "q-lunch" },
+  customer: { label: "With customer", cls: "q-customer" },
+  away:     { label: "Away",          cls: "q-away" },
+};
+const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"]; // salesperson can set these
+
+// first name + last initial — enough to find yourself, no full names published
+const shortLabel = (name) => {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || "");
+};
+
+const qNowIso = () => new Date().toISOString();
+const qMinsSince = (iso) =>
+  iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000)) : 0;
+const qWaitLabel = (m) =>
+  m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+
+async function loadQueueRow(store, date) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date)).maybeSingle();
+    if (error) throw error;
+    return data ? data.data : null;
+  } catch (e) { console.error("loadQueueRow", e); return null; }
+}
+async function saveQueueRow(store, date, data) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from(QUEUE_TABLE).upsert(
+      { id: queueRowId(store, date), store, qdate: date, data, updated_at: qNowIso() },
+      { onConflict: "id" }
+    );
+    if (error) throw error;
+    return true;
+  } catch (e) { console.error("saveQueueRow", e); return false; }
+}
+// read-modify-write. Volume is tiny, so last-write-wins with a fresh read is safe enough.
+async function mutateQueueRow(store, date, fn) {
+  const cur = await loadQueueRow(store, date);
+  const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+  if (!next) return cur;
+  await saveQueueRow(store, date, next);
+  return next;
+}
+
+// QR loader — runtime CDN, same pattern as your pdf.js / xlsx loaders
+let _qrPromise = null;
+function loadQRCode() {
+  if (typeof window !== "undefined" && window.qrcode) return Promise.resolve(window.qrcode);
+  if (_qrPromise) return _qrPromise;
+  _qrPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+    s.async = true;
+    s.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error("qrcode init failed")));
+    s.onerror = () => { _qrPromise = null; reject(new Error("qrcode load failed")); };
+    document.head.appendChild(s);
+  });
+  return _qrPromise;
+}
+
+// URL the QR encodes. Same origin+path as the app, with the day's params.
+function queueSignInUrl(storeId, date, token) {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?q=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
+}
+
+// Small QR renderer used by the manager tab
+function QueueQR({ url, cell = 6 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    let dead = false;
+    loadQRCode().then((qrcode) => {
+      if (dead || !ref.current) return;
+      try {
+        const qr = qrcode(0, "M");
+        qr.addData(url);
+        qr.make();
+        ref.current.innerHTML = qr.createSvgTag({ cellSize: cell, margin: 2, scalable: true });
+        const svg = ref.current.querySelector("svg");
+        if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; svg.removeAttribute("width"); svg.removeAttribute("height"); }
+      } catch (e) { if (ref.current) ref.current.textContent = "QR error"; }
+    }).catch(() => { if (ref.current) ref.current.textContent = "QR unavailable"; });
+    return () => { dead = true; };
+  }, [url, cell]);
+  return <div ref={ref} className="q-qr" aria-label="Sign-in QR code" />;
+}
+
+
+/* ==========================================================================
+   BLOCK B — QueueSignIn (the salesperson's phone page, no login)
+   Paste at module scope.
+   ========================================================================== */
+
+function QueueSignIn({ store, date, token }) {
+  const [row, setRow] = useState(undefined);            // undefined=loading, null=missing
+  const [meId, setMeId] = useState(() => {
+    try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; }
+  });
+  const [busy, setBusy] = useState(false);
+
+  const refetch = useCallback(async () => {
+    const d = await loadQueueRow(store, date);
+    setRow(d || null);
+  }, [store, date]);
+
+  useEffect(() => {
+    refetch();
+    const t = setInterval(refetch, 5000);
+    return () => clearInterval(t);
+  }, [refetch]);
+
+  const isToday = date === today();
+  const valid = isToday && row && row.token && row.token === token;
+  const line = (row && row.line) || [];
+  const me = line.find((p) => p.id === meId) || null;
+
+  const rememberMe = (id) => { try { id ? localStorage.setItem(`lpcq:${store}:${date}`, id) : localStorage.removeItem(`lpcq:${store}:${date}`); } catch {} setMeId(id); };
+
+  async function join(person) {
+    if (busy) return; setBusy(true);
+    const next = await mutateQueueRow(store, date, (cur) => {
+      if (!cur) return null;
+      cur.line = cur.line || [];
+      if (cur.line.some((p) => p.id === person.id)) return cur; // already in
+      cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+      cur.history = cur.history || [];
+      cur.history.push({ t: qNowIso(), action: "signed-in", who: person.label, by: "self" });
+      return cur;
+    });
+    rememberMe(person.id);
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  async function setFlag(status) {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateQueueRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) { p.status = status; p.statusAt = qNowIso();
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: status === "waiting" ? "back" : status, who: p.label, by: "self" });
+      }
+      return cur;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  async function leave() {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateQueueRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      cur.line = (cur.line || []).filter((x) => x.id !== meId);
+      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", who: p.label, by: "self" }); }
+      return cur;
+    });
+    rememberMe(null);
+    if (next) setRow(next);
+    setBusy(false);
+  }
+
+  // ---- render ----
+  if (row === undefined) {
+    return <div className="q-page"><div className="q-card q-center"><div className="spin-logo" /><p>Loading…</p></div></div>;
+  }
+  if (!isToday || !valid) {
+    return (
+      <div className="q-page">
+        <div className="q-card q-center">
+          <div className="q-x">⏱</div>
+          <h2>This sign-in code isn't for today</h2>
+          <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const storeName = row.storeName || "Phone Line";
+  const roster = row.roster || [];
+  const availableAhead = me ? line.slice(0, line.findIndex((p) => p.id === meId)).filter((p) => p.status === "waiting").length : 0;
+  const myPos = me ? line.findIndex((p) => p.id === meId) + 1 : 0;
+
+  if (!me) {
+    return (
+      <div className="q-page">
+        <div className="q-card">
+          <div className="q-head"><h2>{storeName}</h2><p className="q-muted">Tap your name to get in line for a phone opportunity.</p></div>
+          <div className="q-roster">
+            {roster.map((r) => (
+              <button key={r.id} className="q-name" disabled={busy || line.some((p) => p.id === r.id)} onClick={() => join(r)}>
+                {r.label}{line.some((p) => p.id === r.id) ? <span className="q-in">in line</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="q-page">
+      <div className="q-card">
+        <div className="q-head"><h2>You're in line</h2><p className="q-muted">{storeName}</p></div>
+        <div className="q-pos">
+          <div className="q-pos-n">#{myPos}</div>
+          <div className="q-pos-sub">
+            {me.status === "waiting"
+              ? (availableAhead === 0 ? "You're up next" : `${availableAhead} ahead of you`)
+              : `You're on ${QUEUE_FLAGS[me.status]?.label || me.status} — you'll be passed over until you tap Back`}
+            <div className="q-wait">Waiting {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+          </div>
+        </div>
+        <div className="q-flags">
+          {me.status !== "waiting"
+            ? <button className="q-btn q-back" disabled={busy} onClick={() => setFlag("waiting")}>I'm back</button>
+            : QUEUE_SELF_FLAGS.map((f) => (
+                <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>{QUEUE_FLAGS[f].label}</button>
+              ))}
+        </div>
+        <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
+      </div>
+    </div>
+  );
+}
+
+
+/* QueueTab — manager side; lives in the Daily Activity module.
+   Props match CheckOutTracker (config, store, data, onChange) + userName for audit. */
+function QueueTab({ config, store, data, onChange, userName }) {
+  const [row, setRow] = useState(undefined);
+  const [showQR, setShowQR] = useState(false);
+  const [pendingAssign, setPendingAssign] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [, force] = useReducer((x) => x + 1, 0);
+
+  const date = today();
+
+  const salesRoster = useMemo(() => {
+    const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+    return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.roster, config.roles]);
+
+  const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date)) || null), [store.id, date]);
+
+  const ensureRow = useCallback(async () => {
+    const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name) }));
+    const next = await mutateQueueRow(store.id, date, (cur) => {
+      if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
+      cur.roster = snap; cur.storeName = store.name;
+      if (!cur.token) cur.token = uid();
+      if (!cur.date) cur.date = date;
+      return cur;
+    });
+    setRow(next);
+  }, [store.id, store.name, date, salesRoster]);
+
+  useEffect(() => { ensureRow(); }, [ensureRow]);
+  useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
+
+  const line = (row && row.line) || [];
+  const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
+
+  // mirror a snapshot into the authed store blob (durability + future coaching), on actions only
+  const mirror = (rowData, audit) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.queue = next.queue || {};
+    next.queue[date] = rowData;
+    const days = Object.keys(next.queue).sort();
+    while (days.length > 60) delete next.queue[days.shift()];
+    onChange(next, audit);
+  };
+
+  async function act(mutator, audit) {
+    if (busy) return; setBusy(true);
+    const next = await mutateQueueRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
+    if (next) { setRow(next); mirror(next, audit); }
+    setBusy(false);
+  }
+
+  const moveToBack = (cur, id) => {
+    const i = (cur.line || []).findIndex((p) => p.id === id);
+    if (i < 0) return cur;
+    const [p] = cur.line.splice(i, 1);
+    p.joinedAt = qNowIso(); p.status = "waiting"; p.statusAt = qNowIso();
+    cur.line.push(p);
+    return cur;
+  };
+
+  const assignNext = () => {
+    const nm = realName((line.find((p) => p.status === "waiting") || {}).id);
+    act((cur) => {
+      const i = (cur.line || []).findIndex((p) => p.status === "waiting");
+      if (i < 0) return cur;
+      const p = cur.line[i];
+      cur.history = cur.history || [];
+      cur.history.push({ t: qNowIso(), action: "assigned", who: p.label, by: "manager" });
+      return moveToBack(cur, p.id);
+    }, { action: "Queue: assigned next", detail: nm });
+  };
+
+  const assignSpecific = (id, reason) =>
+    act((cur) => {
+      const p = (cur.line || []).find((x) => x.id === id);
+      if (!p) return cur;
+      cur.history = cur.history || [];
+      cur.history.push({ t: qNowIso(), action: "assigned", who: p.label, by: "manager", reason });
+      return moveToBack(cur, id);
+    }, { action: "Queue: assigned (out of order)", detail: `${realName(id)} — ${reason}` });
+
+  const decline = (id) =>
+    act((cur) => {
+      const p = (cur.line || []).find((x) => x.id === id);
+      if (!p) return cur;
+      cur.history = cur.history || [];
+      cur.history.push({ t: qNowIso(), action: "declined", who: p.label, by: "manager" });
+      return moveToBack(cur, id);
+    }, { action: "Queue: declined", detail: realName(id) });
+
+  const setFlag = (id, status) =>
+    act((cur) => {
+      const p = (cur.line || []).find((x) => x.id === id);
+      if (p) { p.status = status; p.statusAt = qNowIso();
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: status === "waiting" ? "back" : status, who: p.label, by: "manager" });
+      }
+      return cur;
+    });
+
+  const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Queue: removed", detail: realName(id) });
+
+  const addPerson = (id) =>
+    act((cur) => {
+      cur.line = cur.line || [];
+      if (cur.line.some((p) => p.id === id)) return cur;
+      const label = (cur.roster || []).find((r) => r.id === id)?.label || shortLabel(realName(id));
+      cur.line.push({ id, label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+      cur.history = cur.history || [];
+      cur.history.push({ t: qNowIso(), action: "signed-in", who: label, by: "manager" });
+      return cur;
+    }, { action: "Queue: added", detail: realName(id) });
+
+  const clearLine = () => {
+    if (!window.confirm("Clear the current line? Today's history is kept for coaching; only the live line is emptied.")) return;
+    act((cur) => { cur.line = []; cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "cleared", by: "manager" }); return cur; }, { action: "Queue: line cleared", detail: store.name });
+  };
+  const regenToken = () => {
+    if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
+    act((cur) => { cur.token = uid(); return cur; }, { action: "Queue: code regenerated", detail: store.name });
+  };
+
+  if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
+
+  const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
+  const url = row ? queueSignInUrl(store.id, date, row.token) : "";
+
+  return (
+    <div className="checkout q-tab">
+      <div className="q-tab-head">
+        <div>
+          <h3>The Line — {store.name}</h3>
+          <p className="muted">{line.length} in line · {line.filter((p) => p.status === "waiting").length} available</p>
+        </div>
+        <div className="q-tab-actions">
+          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Show sign-in code"}</button>
+          <button className="btn btn-primary" disabled={busy || !line.some((p) => p.status === "waiting")} onClick={assignNext}>Assign next</button>
+        </div>
+      </div>
+
+      {showQR && (
+        <div className="q-qr-panel">
+          <div className="q-qr-box"><QueueQR url={url} /></div>
+          <div className="q-qr-info">
+            <p><strong>Post this at the sales desk.</strong> Salespeople scan it to get in line — no login. It only works today; a fresh code appears each morning.</p>
+            <div className="q-qr-btns">
+              <button className="btn" onClick={() => window.open(url, "_blank")}>Open the sign-in page</button>
+              <button className="btn" onClick={regenToken}>New code</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="q-line">
+        {line.length === 0 && <p className="muted q-empty">Nobody's in line yet. Post the code, or add someone below.</p>}
+        {line.map((p, i) => {
+          const avail = p.status === "waiting";
+          const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
+          return (
+            <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""}`}>
+              <div className="q-rank">{i + 1}</div>
+              <div className="q-who">
+                <div className="q-nm">{realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}</div>
+                <div className="q-meta">
+                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{QUEUE_FLAGS[p.status]?.label || p.status}</span>
+                  <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
+                </div>
+              </div>
+              <div className="q-row-actions">
+                {pendingAssign === p.id ? (
+                  <div className="q-reason">
+                    <span>Reason:</span>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Language match"); setPendingAssign(null); }}>Language match</button>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Manager pick"); setPendingAssign(null); }}>Other</button>
+                    <button className="btn btn-sm" onClick={() => setPendingAssign(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    {!isNext && avail && <button className="btn btn-sm" onClick={() => setPendingAssign(p.id)}>Assign</button>}
+                    <button className="btn btn-sm" onClick={() => decline(p.id)}>Decline</button>
+                    <select className="q-flag-sel" value={p.status} onChange={(e) => setFlag(p.id, e.target.value)}>
+                      <option value="waiting">In line</option>
+                      <option value="lunch">Lunch</option>
+                      <option value="customer">With customer</option>
+                      <option value="away">Away</option>
+                    </select>
+                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)}>✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="q-add">
+        {notInLine.length > 0 && (
+          <>
+            <span className="muted">Add manually:</span>
+            <select className="q-flag-sel" value="" onChange={(e) => { if (e.target.value) addPerson(e.target.value); }}>
+              <option value="">Pick a name…</option>
+              {notInLine.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </>
+        )}
+        {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
+      </div>
+    </div>
+  );
+}
+
 function CheckOutTracker({ config, store, data, onChange }) {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(today());
@@ -7708,12 +8171,12 @@ function BottomNav({ items, value, onChange, appModule, onToolChange, storeData,
 
 const NAV_ICON = {
   board: "◎", dashboard: "◎", import: "⇪", gm: "▤", history: "↺", standards: "◈",
-  roster: "☰", checkout: "✓", coaching: "◇", plates: "▦", actstd: "◈",
+  roster: "☰", checkout: "✓", queue: "☎", coaching: "◇", plates: "▦", actstd: "◈",
   overview: "▦", access: "◐", audit: "❑", settings: "⚙", backup: "⇩",
 };
 const NAV_SHORT = {
   board: "Board", dashboard: "Board", import: "Import", gm: "Summary", history: "History",
-  standards: "Rules", roster: "Roster", checkout: "Check Out", coaching: "Coaching",
+  standards: "Rules", roster: "Roster", checkout: "Check Out", queue: "Line", coaching: "Coaching",
   plates: "Plates", actstd: "Rules", overview: "Home", access: "Access", audit: "Audit",
   settings: "Stores", backup: "Backup",
 };
@@ -11558,6 +12021,59 @@ function Style() {
         .mdial { width:calc(50% - 7px); }
         .hero-store { font-size:20px; }
       }
+/* ---- Phone-lead queue: salesperson page ---- */
+.q-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;background:var(--bg,#0b1220);}
+.q-card{width:100%;max-width:440px;background:var(--card,#121a2b);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+.q-center{text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.q-head h2{margin:0 0 4px;font-size:22px;}
+.q-muted{color:var(--muted,#8aa);font-size:14px;margin:0;}
+.q-x{font-size:40px;}
+.q-roster{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;}
+.q-name{position:relative;padding:16px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:inherit;font-size:16px;font-weight:600;cursor:pointer;}
+.q-name:disabled{opacity:.45;cursor:default;}
+.q-name .q-in{display:block;font-size:11px;font-weight:500;color:var(--muted,#8aa);margin-top:4px;}
+.q-pos{display:flex;align-items:center;gap:16px;margin:18px 0;padding:16px;border-radius:16px;background:rgba(90,140,255,.12);}
+.q-pos-n{font-size:44px;font-weight:800;line-height:1;}
+.q-pos-sub{font-size:15px;}
+.q-wait{color:var(--muted,#8aa);font-size:13px;margin-top:4px;}
+.q-flags{display:flex;gap:8px;flex-wrap:wrap;}
+.q-btn{flex:1;min-width:100px;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;font-weight:600;cursor:pointer;}
+.q-btn.q-back{background:#2e7d5b;border-color:#2e7d5b;color:#fff;}
+.q-leave{width:100%;margin-top:14px;padding:12px;border:none;background:none;color:var(--muted,#8aa);text-decoration:underline;cursor:pointer;font-size:13px;}
+
+/* ---- Phone-lead queue: manager tab ---- */
+.q-tab-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.q-tab-head h3{margin:0 0 2px;}
+.q-tab-actions{display:flex;gap:8px;}
+.q-qr-panel{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:16px;border:1px dashed rgba(255,255,255,.18);border-radius:14px;margin-bottom:16px;}
+.q-qr-box{width:180px;background:#fff;padding:10px;border-radius:12px;}
+.q-qr svg{display:block;}
+.q-qr-info{flex:1;min-width:220px;font-size:14px;}
+.q-qr-btns{display:flex;gap:8px;margin-top:10px;}
+.q-line{display:flex;flex-direction:column;gap:8px;}
+.q-empty{padding:20px;text-align:center;}
+.q-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);}
+.q-row.q-off{opacity:.55;}
+.q-row.q-next{border-color:#4c8bf5;box-shadow:0 0 0 1px #4c8bf5 inset;}
+.q-rank{width:26px;text-align:center;font-weight:800;color:var(--muted,#8aa);}
+.q-who{flex:1;}
+.q-nm{font-weight:600;}
+.q-next-tag{font-size:10px;font-weight:800;color:#4c8bf5;margin-left:6px;letter-spacing:.5px;}
+.q-meta{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted,#8aa);margin-top:2px;}
+.q-chip{padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);}
+.q-chip.q-lunch{background:rgba(255,180,60,.18);color:#ffcf7a;}
+.q-chip.q-customer{background:rgba(120,120,255,.18);color:#b9b9ff;}
+.q-chip.q-away{background:rgba(255,110,110,.18);color:#ffb0b0;}
+.q-row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.q-reason{display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap;}
+.btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
+.q-flag-sel{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.12);}
+.q-rm{color:#ffb0b0;}
+.q-add{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap;}
+.q-clear{margin-left:auto;color:#ffb0b0;}
+.spin-logo{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#4c8bf5;animation:qspin .8s linear infinite;}
+@keyframes qspin{to{transform:rotate(360deg);}}
+
     `}</style>
   );
 }
