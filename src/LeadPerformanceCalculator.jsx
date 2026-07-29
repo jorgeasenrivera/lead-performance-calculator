@@ -3641,37 +3641,36 @@ function ImportBadge({ storeData, activity }) {
 }
 
 /* ---------------- Check Out Tracker (Daily Activity) ---------------- */
-/* ===== PHONE-LEAD QUEUE ("The Line") — added 2026-07-28 ===== */
+/* ===== PHONE-LEAD QUEUE ("The Line") — v2: typed-name + PIN identity ===== */
 
 const QUEUE_TABLE = "queue_public";
+const QUEUE_ID_TABLE = "queue_identity";
 const queueRowId = (store, date) => `${store}:${date}`;
 
-// availability states; "waiting" is available, the rest are passed-over-but-hold-spot
 const QUEUE_FLAGS = {
   waiting:  { label: "In line",       cls: "q-waiting" },
   lunch:    { label: "At lunch",      cls: "q-lunch" },
   customer: { label: "With customer", cls: "q-customer" },
   away:     { label: "Away",          cls: "q-away" },
 };
-const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"]; // salesperson can set these
+const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
 
-// first name + last initial — enough to find yourself, no full names published
 const shortLabel = (name) => {
   const p = String(name || "").trim().split(/\s+/).filter(Boolean);
   return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || "");
 };
+const qNormName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const qFirstToken = (s) => qNormName(s).split(" ")[0] || "";
 
 const qNowIso = () => new Date().toISOString();
-const qMinsSince = (iso) =>
-  iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000)) : 0;
-const qWaitLabel = (m) =>
-  m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`;
+const qMinsSince = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000)) : 0);
+const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`);
 
+/* ---- Supabase access: the per-day line row (queue_public) ---- */
 async function loadQueueRow(store, date) {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase
-      .from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date)).maybeSingle();
+    const { data, error } = await supabase.from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date)).maybeSingle();
     if (error) throw error;
     return data ? data.data : null;
   } catch (e) { console.error("loadQueueRow", e); return null; }
@@ -3680,14 +3679,11 @@ async function saveQueueRow(store, date, data) {
   if (!supabase) return false;
   try {
     const { error } = await supabase.from(QUEUE_TABLE).upsert(
-      { id: queueRowId(store, date), store, qdate: date, data, updated_at: qNowIso() },
-      { onConflict: "id" }
-    );
+      { id: queueRowId(store, date), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
     if (error) throw error;
     return true;
   } catch (e) { console.error("saveQueueRow", e); return false; }
 }
-// read-modify-write. Volume is tiny, so last-write-wins with a fresh read is safe enough.
 async function mutateQueueRow(store, date, fn) {
   const cur = await loadQueueRow(store, date);
   const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
@@ -3696,7 +3692,90 @@ async function mutateQueueRow(store, date, fn) {
   return next;
 }
 
-// QR loader — runtime CDN, same pattern as your pdf.js / xlsx loaders
+/* ---- Supabase access: the persistent identity row (queue_identity), one per store ---- */
+async function loadQueueIdentities(store) {
+  if (!supabase) return {};
+  try {
+    const { data, error } = await supabase.from(QUEUE_ID_TABLE).select("data").eq("id", store).maybeSingle();
+    if (error) throw error;
+    return (data && data.data) || {};
+  } catch (e) { console.error("loadQueueIdentities", e); return {}; }
+}
+async function mutateQueueIdentities(store, fn) {
+  const cur = await loadQueueIdentities(store);
+  const next = fn(JSON.parse(JSON.stringify(cur || {})));
+  if (!next) return cur;
+  if (supabase) {
+    try {
+      const { error } = await supabase.from(QUEUE_ID_TABLE).upsert(
+        { id: store, data: next, updated_at: qNowIso() }, { onConflict: "id" });
+      if (error) throw error;
+    } catch (e) { console.error("saveQueueIdentities", e); }
+  }
+  return next;
+}
+
+/* ---- PIN hashing (Web Crypto; plaintext never stored or sent) ---- */
+const qRandSalt = () => {
+  const a = new Uint8Array(8);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.from(a).map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+async function qHashPin(pin, salt) {
+  const enc = new TextEncoder().encode(`${salt}:${pin}`);
+  const buf = await (window.crypto.subtle).digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+// returns the associateId whose stored PIN matches, or null
+async function qFindByPin(identities, pin, exceptId) {
+  for (const id of Object.keys(identities || {})) {
+    if (exceptId && id === exceptId) continue;
+    const rec = identities[id];
+    if (!rec || !rec.h || !rec.s) continue;
+    // eslint-disable-next-line no-await-in-loop
+    if ((await qHashPin(pin, rec.s)) === rec.h) return id;
+  }
+  return null;
+}
+
+/* ---- fuzzy name matching against the published roster ({id,label,role}) ---- */
+function qLev(a, b) {
+  a = a || ""; b = b || "";
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function qRankRoster(typed, roster) {
+  const t = qNormName(typed), tf = qFirstToken(t);
+  return (roster || []).map((r) => {
+    const lab = qNormName(r.label), lf = qFirstToken(lab);
+    const d = Math.min(qLev(t, lab), qLev(tf, lf));
+    return { ...r, d, firstEq: lf === tf };
+  }).sort((a, b) => a.d - b.d);
+}
+// resolve typed text to one of: {kind:"one",person}, {kind:"pick",people}, {kind:"confirm",person}, {kind:"none",suggestions}
+function qResolveName(typed, roster) {
+  const ranked = qRankRoster(typed, roster);
+  if (!ranked.length) return { kind: "none", suggestions: [] };
+  const exact = ranked.filter((r) => r.d === 0);
+  const firstMatches = ranked.filter((r) => r.firstEq);
+  if (exact.length === 1) return { kind: "one", person: exact[0] };
+  if (firstMatches.length > 1) return { kind: "pick", people: firstMatches.slice(0, 6) };
+  if (firstMatches.length === 1 && ranked[0].firstEq) return { kind: "one", person: firstMatches[0] };
+  if (ranked[0].d <= 2) return { kind: "confirm", person: ranked[0] };
+  return { kind: "none", suggestions: ranked.slice(0, 4) };
+}
+
+/* ---- QR loader + renderer ---- */
 let _qrPromise = null;
 function loadQRCode() {
   if (typeof window !== "undefined" && window.qrcode) return Promise.resolve(window.qrcode);
@@ -3711,14 +3790,10 @@ function loadQRCode() {
   });
   return _qrPromise;
 }
-
-// URL the QR encodes. Same origin+path as the app, with the day's params.
 function queueSignInUrl(storeId, date, token) {
   const base = window.location.origin + window.location.pathname;
   return `${base}?q=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
 }
-
-// Small QR renderer used by the manager tab
 function QueueQR({ url, cell = 6 }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -3726,9 +3801,7 @@ function QueueQR({ url, cell = 6 }) {
     loadQRCode().then((qrcode) => {
       if (dead || !ref.current) return;
       try {
-        const qr = qrcode(0, "M");
-        qr.addData(url);
-        qr.make();
+        const qr = qrcode(0, "M"); qr.addData(url); qr.make();
         ref.current.innerHTML = qr.createSvgTag({ cellSize: cell, margin: 2, scalable: true });
         const svg = ref.current.querySelector("svg");
         if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; svg.removeAttribute("width"); svg.removeAttribute("height"); }
@@ -3739,52 +3812,148 @@ function QueueQR({ url, cell = 6 }) {
   return <div ref={ref} className="q-qr" aria-label="Sign-in QR code" />;
 }
 
+/* ---- printable sign-in poster (NextUp-ready styling) ---- */
+async function printQueueSignIn({ store, url, date }) {
+  let svg = "";
+  try {
+    const qrcode = await loadQRCode();
+    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
+  } catch (e) { svg = "<p>QR unavailable — reopen and try again.</p>"; }
+  const w = window.open("", "lpc_qr_" + store.id, "width=800,height=1040");
+  if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
+  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line — ${store.name}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#0b1220;padding:56px 48px;text-align:center;}
+    .kicker{text-transform:uppercase;letter-spacing:.22em;font-size:13px;font-weight:800;color:#4c8bf5;}
+    h1{font-size:46px;font-weight:900;margin:10px 0 4px;letter-spacing:-.02em;}
+    .store{font-size:22px;font-weight:700;color:#334;}
+    .date{font-size:16px;color:#667;margin-top:6px;}
+    .qr{width:360px;max-width:70vw;margin:34px auto 14px;padding:22px;border:2px solid #0b1220;border-radius:22px;}
+    .qr svg{display:block;width:100%;height:auto;}
+    .how{font-size:19px;font-weight:600;margin-top:10px;}
+    .sub{font-size:15px;color:#667;margin-top:6px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
+    .foot{margin-top:40px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
+    @media print{body{padding:24px;} .qr{border-color:#000;}}
+  </style></head><body>
+    <div class="kicker">Sales Floor · Phone Opportunities</div>
+    <h1>Get in Line</h1>
+    <div class="store">${store.name}</div>
+    <div class="date">${nice}</div>
+    <div class="qr">${svg}</div>
+    <div class="how">Scan with your phone camera to sign in</div>
+    <div class="sub">Enter your name and your PIN to claim your spot for the next phone opportunity. No app, no login — this code only works today.</div>
+    <div class="foot">Generated ${when} · The Line by Holler-Classic</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+  </body></html>`);
+  w.document.close();
+}
 
-/* ==========================================================================
-   BLOCK B — QueueSignIn (the salesperson's phone page, no login)
-   Paste at module scope.
-   ========================================================================== */
-
+/* =========================================================================
+   QueueSignIn — salesperson phone page: come-back → name → PIN → in line
+   ========================================================================= */
 function QueueSignIn({ store, date, token }) {
-  const [row, setRow] = useState(undefined);            // undefined=loading, null=missing
-  const [meId, setMeId] = useState(() => {
-    try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; }
-  });
+  const [row, setRow] = useState(undefined);
+  const [identities, setIdentities] = useState(null);
+  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
+  const [step, setStep] = useState("name");     // name | pick | confirm | pin | done
+  const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
+  const [resolved, setResolved] = useState(null); // {kind,...}
+  const [selected, setSelected] = useState(null); // {id,label,role}
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [pinMode, setPinMode] = useState("verify"); // verify | create
+  const [switchTo, setSwitchTo] = useState(null);   // {id,label} when PIN belongs to another file
+  const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const refetch = useCallback(async () => {
-    const d = await loadQueueRow(store, date);
-    setRow(d || null);
-  }, [store, date]);
-
-  useEffect(() => {
-    refetch();
-    const t = setInterval(refetch, 5000);
-    return () => clearInterval(t);
-  }, [refetch]);
+  const refetch = useCallback(async () => setRow((await loadQueueRow(store, date)) || null), [store, date]);
+  useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   const isToday = date === today();
   const valid = isToday && row && row.token && row.token === token;
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
+  const roster = (row && row.roster) || [];
 
-  const rememberMe = (id) => { try { id ? localStorage.setItem(`lpcq:${store}:${date}`, id) : localStorage.removeItem(`lpcq:${store}:${date}`); } catch {} setMeId(id); };
+  const remember = (id) => {
+    try {
+      if (id) { localStorage.setItem(`lpcq:${store}:${date}`, id); localStorage.setItem(`lpcq:self:${store}`, id); }
+      else localStorage.removeItem(`lpcq:${store}:${date}`);
+    } catch {}
+    setMeId(id);
+  };
 
-  async function join(person) {
-    if (busy) return; setBusy(true);
+  // If we already know who this is today and they're in the line, jump straight to status.
+  useEffect(() => {
+    if (meId && line.some((p) => p.id === meId)) setStep("done");
+  }, [meId, line]);
+
+  async function joinAs(person) {
+    setBusy(true);
     const next = await mutateQueueRow(store, date, (cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
-      if (cur.line.some((p) => p.id === person.id)) return cur; // already in
-      cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
-      cur.history = cur.history || [];
-      cur.history.push({ t: qNowIso(), action: "signed-in", who: person.label, by: "self" });
+      if (!cur.line.some((p) => p.id === person.id)) {
+        cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self" });
+      }
       return cur;
     });
-    rememberMe(person.id);
+    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
+    remember(person.id);
     if (next) setRow(next);
+    setStep("done"); setPin(""); setPin2(""); setBusy(false);
+  }
+
+  function submitName() {
+    setMsg("");
+    const r = qResolveName(typed, roster);
+    setResolved(r);
+    if (r.kind === "one") { pickPerson(r.person); }
+    else if (r.kind === "confirm") { setStep("confirm"); }
+    else if (r.kind === "pick") { setStep("pick"); }
+    else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
+  }
+  function pickPerson(p) {
+    setSelected(p); setSwitchTo(null); setMsg("");
+    const hasPin = !!(identities && identities[p.id] && identities[p.id].h);
+    setPinMode(hasPin ? "verify" : "create");
+    setStep("pin");
+  }
+
+  async function submitPin() {
+    if (!selected) return;
+    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4–6 digits."); return; }
+    setBusy(true); setMsg("");
+    const idents = identities || (await loadQueueIdentities(store));
+    if (pinMode === "create") {
+      if (pin !== pin2) { setMsg("The two PINs don't match."); setBusy(false); return; }
+      const clash = await qFindByPin(idents, pin, selected.id);
+      if (clash) { setMsg("That PIN is already taken by someone here. Pick a different one."); setBusy(false); return; }
+      const salt = qRandSalt(); const h = await qHashPin(pin, salt);
+      const nextIds = await mutateQueueIdentities(store, (cur) => { cur[selected.id] = { h, s: salt, label: selected.label, setAt: qNowIso() }; return cur; });
+      setIdentities(nextIds);
+      await joinAs(selected);
+      return;
+    }
+    // verify
+    const rec = idents[selected.id];
+    if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
+    const other = await qFindByPin(idents, pin, null);
+    if (other && other !== selected.id) {
+      setSwitchTo({ id: other, label: idents[other].label || "that person" });
+      setMsg(""); setBusy(false); return;
+    }
+    setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
     setBusy(false);
   }
+
   async function setFlag(status) {
     if (busy || !meId) return; setBusy(true);
     const next = await mutateQueueRow(store, date, (cur) => {
@@ -3792,7 +3961,7 @@ function QueueSignIn({ store, date, token }) {
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) { p.status = status; p.statusAt = qNowIso();
         cur.history = cur.history || [];
-        cur.history.push({ t: qNowIso(), action: status === "waiting" ? "back" : status, who: p.label, by: "self" });
+        cur.history.push({ t: qNowIso(), action: status === "waiting" ? "back" : status, id: meId, who: p.label, by: "self" });
       }
       return cur;
     });
@@ -3805,81 +3974,194 @@ function QueueSignIn({ store, date, token }) {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
-      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", who: p.label, by: "self" }); }
+      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", id: meId, who: p.label, by: "self" }); }
       return cur;
     });
-    rememberMe(null);
+    remember(null);
     if (next) setRow(next);
-    setBusy(false);
+    setStep("name"); setBusy(false);
   }
 
-  // ---- render ----
-  if (row === undefined) {
-    return <div className="q-page"><div className="q-card q-center"><div className="spin-logo" /><p>Loading…</p></div></div>;
+  /* ---------- render ---------- */
+  if (row === undefined || identities === null) {
+    return <div className="q-page"><div className="q-card q-center q-fade"><div className="spin-logo" /><p className="q-muted">Loading…</p></div></div>;
   }
   if (!isToday || !valid) {
     return (
-      <div className="q-page">
-        <div className="q-card q-center">
-          <div className="q-x">⏱</div>
-          <h2>This sign-in code isn't for today</h2>
-          <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
-        </div>
-      </div>
+      <div className="q-page"><div className="q-card q-center q-fade">
+        <div className="q-x">⏱</div>
+        <h2>This sign-in code isn't for today</h2>
+        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
+      </div></div>
     );
   }
+  const storeName = (row && row.storeName) || "Phone Line";
 
-  const storeName = row.storeName || "Phone Line";
-  const roster = row.roster || [];
-  const availableAhead = me ? line.slice(0, line.findIndex((p) => p.id === meId)).filter((p) => p.status === "waiting").length : 0;
-  const myPos = me ? line.findIndex((p) => p.id === meId) + 1 : 0;
-
-  if (!me) {
+  // In line
+  if (step === "done" && me) {
+    const myPos = line.findIndex((p) => p.id === meId) + 1;
+    const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
+    const isNext = me.status === "waiting" && availableAhead === 0;
     return (
       <div className="q-page">
-        <div className="q-card">
-          <div className="q-head"><h2>{storeName}</h2><p className="q-muted">Tap your name to get in line for a phone opportunity.</p></div>
-          <div className="q-roster">
-            {roster.map((r) => (
-              <button key={r.id} className="q-name" disabled={busy || line.some((p) => p.id === r.id)} onClick={() => join(r)}>
-                {r.label}{line.some((p) => p.id === r.id) ? <span className="q-in">in line</span> : null}
-              </button>
-            ))}
+        <div className="q-card q-live q-pop">
+          <div className="q-head"><p className="q-kicker">{storeName}</p><h2>You're in line</h2></div>
+          <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
+            <div className="q-pos-ring">
+              <div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : "⏸"}</div>
+            </div>
+            <div className="q-pos-sub">
+              {me.status === "waiting"
+                ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
+                : `On ${QUEUE_FLAGS[me.status]?.label} — you'll be passed over until you tap “I'm back”`}
+              <div className="q-wait">In line {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+            </div>
           </div>
+          <div className="q-flags">
+            {me.status !== "waiting"
+              ? <button className="q-btn q-back" disabled={busy} onClick={() => setFlag("waiting")}>I'm back</button>
+              : QUEUE_SELF_FLAGS.map((f) => (
+                  <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>{QUEUE_FLAGS[f].label}</button>
+                ))}
+          </div>
+          <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
         </div>
       </div>
     );
   }
 
+  // PIN step
+  if (step === "pin" && selected) {
+    if (switchTo) {
+      return (
+        <div className="q-page"><div className="q-card q-pop">
+          <div className="q-head"><h2>Wait — is this you?</h2></div>
+          <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
+          <p className="q-big-q">Are you {switchTo.label}?</p>
+          <div className="q-flags">
+            <button className="q-btn q-back" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
+            <button className="q-btn" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem — enter your own PIN."); }}>No, try again</button>
+          </div>
+        </div></div>
+      );
+    }
+    return (
+      <div className="q-page"><div className="q-card q-pop">
+        <div className="q-head">
+          <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
+          <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
+          <p className="q-muted">{pinMode === "create" ? "Pick a 4–6 digit PIN. You'll use it to sign in and to get back in if you close this tab." : "So only you can claim your spot."}</p>
+        </div>
+        <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
+          placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+          onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
+        {pinMode === "create" && (
+          <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
+            placeholder="Confirm PIN" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
+        )}
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the line"}</button>
+        <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
+      </div></div>
+    );
+  }
+
+  // Pick step (several close names)
+  if (step === "pick" && resolved && resolved.people) {
+    return (
+      <div className="q-page"><div className="q-card q-pop">
+        <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p></div>
+        <div className="q-roster">
+          {resolved.people.map((p) => (
+            <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
+              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">in line</span> : null}
+            </button>
+          ))}
+        </div>
+        <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
+      </div></div>
+    );
+  }
+
+  // Confirm step (one close, not exact)
+  if (step === "confirm" && resolved && resolved.person) {
+    return (
+      <div className="q-page"><div className="q-card q-pop">
+        <div className="q-head"><h2>Did you mean…</h2></div>
+        <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
+          <button className="q-btn" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
+        </div>
+      </div></div>
+    );
+  }
+
+  // Name step (default)
   return (
     <div className="q-page">
-      <div className="q-card">
-        <div className="q-head"><h2>You're in line</h2><p className="q-muted">{storeName}</p></div>
-        <div className="q-pos">
-          <div className="q-pos-n">#{myPos}</div>
-          <div className="q-pos-sub">
-            {me.status === "waiting"
-              ? (availableAhead === 0 ? "You're up next" : `${availableAhead} ahead of you`)
-              : `You're on ${QUEUE_FLAGS[me.status]?.label || me.status} — you'll be passed over until you tap Back`}
-            <div className="q-wait">Waiting {qWaitLabel(qMinsSince(me.joinedAt))}</div>
-          </div>
-        </div>
-        <div className="q-flags">
-          {me.status !== "waiting"
-            ? <button className="q-btn q-back" disabled={busy} onClick={() => setFlag("waiting")}>I'm back</button>
-            : QUEUE_SELF_FLAGS.map((f) => (
-                <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>{QUEUE_FLAGS[f].label}</button>
+      <div className="q-card q-pop">
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get in line</h2><p className="q-muted">Type your name to claim the next phone opportunity.</p></div>
+        <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
+          onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={!typed.trim()} onClick={submitName}>Continue</button>
+        {resolved && resolved.kind === "none" && resolved.suggestions && resolved.suggestions.length > 0 && (
+          <div className="q-suggest">
+            <p className="q-muted">Did you mean:</p>
+            <div className="q-roster">
+              {resolved.suggestions.map((p) => (
+                <button key={p.id} className="q-name" onClick={() => pickPerson(p)}>{p.label}{p.role ? <span className="q-role">{p.role}</span> : null}</button>
               ))}
-        </div>
-        <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+/* =========================================================================
+   queueCoachingStats — roll a person's line history into coaching numbers
+   ========================================================================= */
+function queueCoachingStats(data, associateId) {
+  const q = (data && data.queue) || {};
+  const dates = Object.keys(q).sort();
+  let scheduledDays = 0, signedDays = 0, missedScheduled = 0, taken = 0, declined = 0;
+  const unavail = { lunch: 0, away: 0, customer: 0 };
+  for (const d of dates) {
+    const rowd = q[d]; if (!rowd) continue;
+    const scheduled = !isOff(data, associateId, d);
+    if (scheduled) scheduledDays++;
+    const evs = (rowd.history || []).filter((e) => e.id === associateId).sort((a, b) => (a.t < b.t ? -1 : 1));
+    const signed = evs.some((e) => e.action === "signed-in");
+    if (signed) signedDays++;
+    if (scheduled && !signed) missedScheduled++;
+    taken += evs.filter((e) => e.action === "assigned").length;
+    declined += evs.filter((e) => e.action === "declined").length;
+    // pair unavailable spans with the next return/assign/leave event
+    let openStatus = null, openAt = null;
+    for (const e of evs) {
+      if (["lunch", "away", "customer"].includes(e.action)) { openStatus = e.action; openAt = e.t; }
+      else if (["back", "assigned", "left"].includes(e.action) && openStatus) {
+        unavail[openStatus] += Math.max(0, (new Date(e.t) - new Date(openAt)) / 60000);
+        openStatus = null; openAt = null;
+      }
+    }
+  }
+  const total = taken + declined;
+  return {
+    hasData: dates.length > 0 && (signedDays > 0 || scheduledDays > 0),
+    scheduledDays, signedDays, missedScheduled, taken, declined,
+    acceptRate: total > 0 ? taken / total : null,
+    unavailMin: Math.round(unavail.lunch + unavail.away + unavail.customer),
+  };
+}
 
-/* QueueTab — manager side; lives in the Daily Activity module.
-   Props match CheckOutTracker (config, store, data, onChange) + userName for audit. */
+/* =========================================================================
+   QueueTab — manager board (bolder overview + schedule-fed "not here yet")
+   ========================================================================= */
 function QueueTab({ config, store, data, onChange, userName }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
@@ -3893,11 +4175,11 @@ function QueueTab({ config, store, data, onChange, userName }) {
     const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
     return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
   }, [data.roster, config.roles]);
+  const roleName = (id) => (config.roles || []).find((r) => r.id === (salesRoster.find((a) => a.id === id) || {}).roleId)?.name || "";
 
   const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date)) || null), [store.id, date]);
-
   const ensureRow = useCallback(async () => {
-    const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name) }));
+    const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
     const next = await mutateQueueRow(store.id, date, (cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
       cur.roster = snap; cur.storeName = store.name;
@@ -3906,7 +4188,7 @@ function QueueTab({ config, store, data, onChange, userName }) {
       return cur;
     });
     setRow(next);
-  }, [store.id, store.name, date, salesRoster]);
+  }, [store.id, store.name, date, salesRoster, config.roles]);
 
   useEffect(() => { ensureRow(); }, [ensureRow]);
   useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
@@ -3915,7 +4197,12 @@ function QueueTab({ config, store, data, onChange, userName }) {
   const line = (row && row.line) || [];
   const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
 
-  // mirror a snapshot into the authed store blob (durability + future coaching), on actions only
+  // scheduled to work today (not off) but not in the line yet
+  const expectedNotHere = useMemo(
+    () => salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id)),
+    [salesRoster, data, date, line]
+  );
+
   const mirror = (rowData, audit) => {
     const next = JSON.parse(JSON.stringify(data));
     next.queue = next.queue || {};
@@ -3924,14 +4211,12 @@ function QueueTab({ config, store, data, onChange, userName }) {
     while (days.length > 60) delete next.queue[days.shift()];
     onChange(next, audit);
   };
-
   async function act(mutator, audit) {
     if (busy) return; setBusy(true);
     const next = await mutateQueueRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
     if (next) { setRow(next); mirror(next, audit); }
     setBusy(false);
   }
-
   const moveToBack = (cur, id) => {
     const i = (cur.line || []).findIndex((p) => p.id === id);
     if (i < 0) return cur;
@@ -3940,63 +4225,45 @@ function QueueTab({ config, store, data, onChange, userName }) {
     cur.line.push(p);
     return cur;
   };
+  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
 
   const assignNext = () => {
-    const nm = realName((line.find((p) => p.status === "waiting") || {}).id);
+    const first = line.find((p) => p.status === "waiting");
     act((cur) => {
       const i = (cur.line || []).findIndex((p) => p.status === "waiting");
       if (i < 0) return cur;
       const p = cur.line[i];
-      cur.history = cur.history || [];
-      cur.history.push({ t: qNowIso(), action: "assigned", who: p.label, by: "manager" });
+      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager" });
       return moveToBack(cur, p.id);
-    }, { action: "Queue: assigned next", detail: nm });
+    }, { action: "Queue: assigned next", detail: first ? realName(first.id) : "" });
   };
-
-  const assignSpecific = (id, reason) =>
-    act((cur) => {
-      const p = (cur.line || []).find((x) => x.id === id);
-      if (!p) return cur;
-      cur.history = cur.history || [];
-      cur.history.push({ t: qNowIso(), action: "assigned", who: p.label, by: "manager", reason });
-      return moveToBack(cur, id);
-    }, { action: "Queue: assigned (out of order)", detail: `${realName(id)} — ${reason}` });
-
-  const decline = (id) =>
-    act((cur) => {
-      const p = (cur.line || []).find((x) => x.id === id);
-      if (!p) return cur;
-      cur.history = cur.history || [];
-      cur.history.push({ t: qNowIso(), action: "declined", who: p.label, by: "manager" });
-      return moveToBack(cur, id);
-    }, { action: "Queue: declined", detail: realName(id) });
-
-  const setFlag = (id, status) =>
-    act((cur) => {
-      const p = (cur.line || []).find((x) => x.id === id);
-      if (p) { p.status = status; p.statusAt = qNowIso();
-        cur.history = cur.history || [];
-        cur.history.push({ t: qNowIso(), action: status === "waiting" ? "back" : status, who: p.label, by: "manager" });
-      }
-      return cur;
-    });
-
+  const assignSpecific = (id, reason) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason });
+    return moveToBack(cur, id);
+  }, { action: "Queue: assigned (out of order)", detail: `${realName(id)} — ${reason}` });
+  const decline = (id) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
+    return moveToBack(cur, id);
+  }, { action: "Queue: declined", detail: realName(id) });
+  const setFlag = (id, status) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id);
+    if (p) { p.status = status; p.statusAt = qNowIso(); pushH(cur, { action: status === "waiting" ? "back" : status, id, who: p.label, by: "manager" }); }
+    return cur;
+  });
   const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Queue: removed", detail: realName(id) });
-
-  const addPerson = (id) =>
-    act((cur) => {
-      cur.line = cur.line || [];
-      if (cur.line.some((p) => p.id === id)) return cur;
-      const label = (cur.roster || []).find((r) => r.id === id)?.label || shortLabel(realName(id));
-      cur.line.push({ id, label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
-      cur.history = cur.history || [];
-      cur.history.push({ t: qNowIso(), action: "signed-in", who: label, by: "manager" });
-      return cur;
-    }, { action: "Queue: added", detail: realName(id) });
-
+  const addPerson = (id) => act((cur) => {
+    cur.line = cur.line || [];
+    if (cur.line.some((p) => p.id === id)) return cur;
+    const label = (cur.roster || []).find((r) => r.id === id)?.label || shortLabel(realName(id));
+    cur.line.push({ id, label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+    pushH(cur, { action: "signed-in", id, who: label, by: "manager" });
+    return cur;
+  }, { action: "Queue: added", detail: realName(id) });
   const clearLine = () => {
     if (!window.confirm("Clear the current line? Today's history is kept for coaching; only the live line is emptied.")) return;
-    act((cur) => { cur.line = []; cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "cleared", by: "manager" }); return cur; }, { action: "Queue: line cleared", detail: store.name });
+    act((cur) => { cur.line = []; pushH(cur, { action: "cleared", by: "manager" }); return cur; }, { action: "Queue: line cleared", detail: store.name });
   };
   const regenToken = () => {
     if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
@@ -4007,17 +4274,24 @@ function QueueTab({ config, store, data, onChange, userName }) {
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? queueSignInUrl(store.id, date, row.token) : "";
+  const availCount = line.filter((p) => p.status === "waiting").length;
 
   return (
     <div className="checkout q-tab">
-      <div className="q-tab-head">
-        <div>
-          <h3>The Line — {store.name}</h3>
-          <p className="muted">{line.length} in line · {line.filter((p) => p.status === "waiting").length} available</p>
+      {/* bold live stat strip */}
+      <div className="q-board">
+        <div className="q-board-cell q-board-avail">
+          <div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div>
         </div>
-        <div className="q-tab-actions">
-          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Show sign-in code"}</button>
-          <button className="btn btn-primary" disabled={busy || !line.some((p) => p.status === "waiting")} onClick={assignNext}>Assign next</button>
+        <div className="q-board-cell">
+          <div className="q-board-n">{line.length}</div><div className="q-board-l">in the line</div>
+        </div>
+        <div className="q-board-cell q-board-miss">
+          <div className="q-board-n">{expectedNotHere.length}</div><div className="q-board-l">not signed in</div>
+        </div>
+        <div className="q-board-actions">
+          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
         </div>
       </div>
 
@@ -4025,9 +4299,10 @@ function QueueTab({ config, store, data, onChange, userName }) {
         <div className="q-qr-panel">
           <div className="q-qr-box"><QueueQR url={url} /></div>
           <div className="q-qr-info">
-            <p><strong>Post this at the sales desk.</strong> Salespeople scan it to get in line — no login. It only works today; a fresh code appears each morning.</p>
+            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're in line — no login. It only works today; a fresh code appears each morning.</p>
             <div className="q-qr-btns">
-              <button className="btn" onClick={() => window.open(url, "_blank")}>Open the sign-in page</button>
+              <button className="btn" onClick={() => printQueueSignIn({ store, url, date })}>Print sign-in code</button>
+              <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
               <button className="btn" onClick={regenToken}>New code</button>
             </div>
           </div>
@@ -4075,6 +4350,20 @@ function QueueTab({ config, store, data, onChange, userName }) {
           );
         })}
       </div>
+
+      {/* scheduled today but not signed in */}
+      {expectedNotHere.length > 0 && (
+        <div className="q-missing">
+          <div className="q-missing-head">Scheduled today, not in line yet</div>
+          <div className="q-missing-list">
+            {expectedNotHere.map((a) => (
+              <button key={a.id} className="q-missing-chip" title="Add to the line" onClick={() => addPerson(a.id)}>
+                {a.name}<span className="q-missing-add">+ add</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="q-add">
         {notInLine.length > 0 && (
@@ -7993,6 +8282,14 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
         L.push(`  ${g.label}: ${f(g.mine)} vs ${f(g.theirs)}`);
       }
     }
+    const qs = queueCoachingStats(data, a.id);
+    if (qs.hasData) {
+      L.push("");
+      L.push("Phone line:");
+      L.push(`  In line on ${qs.signedDays} of ${qs.scheduledDays} scheduled days`);
+      L.push(`  Phone opps taken: ${qs.taken}  ·  declined: ${qs.declined}${qs.acceptRate == null ? "" : `  ·  accept ${fmtPct(qs.acceptRate)}`}`);
+      if (qs.missedScheduled > 0) L.push(`  Missed the line on ${qs.missedScheduled} scheduled day(s)`);
+    }
     return L.join(String.fromCharCode(10));
   };
 
@@ -8033,6 +8330,28 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
       </div>
 
       <OwnYourOutcome store={store} data={data} a={a} monthStats={stats} onChange={onChange} />
+
+      {(() => {
+        const qs = queueCoachingStats(data, a.id);
+        if (!qs.hasData) return null;
+        return (
+          <div className="ac-queue">
+            <h3 className="ac-h3">Phone line</h3>
+            <div className="ac-results">
+              <div className="ac-stat"><b>{qs.signedDays}/{qs.scheduledDays}</b><span>Scheduled days in line</span></div>
+              <div className="ac-stat"><b>{qs.taken}</b><span>Phone opps taken</span></div>
+              <div className="ac-stat"><b>{qs.declined}</b><span>Declined</span></div>
+              <div className="ac-stat"><b>{qs.acceptRate == null ? "—" : fmtPct(qs.acceptRate)}</b><span>Accept rate</span></div>
+            </div>
+            <p className="hint">
+              {qs.missedScheduled > 0
+                ? `Not in the line on ${qs.missedScheduled} scheduled day${qs.missedScheduled === 1 ? "" : "s"}. `
+                : "In the line every scheduled day on record. "}
+              {qs.unavailMin > 0 ? `About ${qs.unavailMin} min marked unavailable (lunch/away/with a customer) while holding a spot.` : ""}
+            </p>
+          </div>
+        );
+      })()}
 
       <HourlyBlock data={data} name={a.name} store={store} />
 
@@ -12021,58 +12340,119 @@ function Style() {
         .mdial { width:calc(50% - 7px); }
         .hero-store { font-size:20px; }
       }
-/* ---- Phone-lead queue: salesperson page ---- */
-.q-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;background:var(--bg,#0b1220);}
-.q-card{width:100%;max-width:440px;background:var(--card,#121a2b);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4);}
+/* ================= Phone line — salesperson page ================= */
+.q-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;
+  background:radial-gradient(1200px 600px at 50% -10%, rgba(76,139,245,.18), transparent 60%), var(--bg,#0b1220);}
+.q-card{width:100%;max-width:460px;background:var(--card,#121a2b);border:1px solid rgba(255,255,255,.08);
+  border-radius:24px;padding:26px;box-shadow:0 30px 80px rgba(0,0,0,.5);}
 .q-center{text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
-.q-head h2{margin:0 0 4px;font-size:22px;}
+.q-head{margin-bottom:16px;}
+.q-head h2{margin:2px 0 6px;font-size:28px;font-weight:900;letter-spacing:-.02em;}
+.q-kicker{text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:800;color:#6ea0ff;margin:0;}
 .q-muted{color:var(--muted,#8aa);font-size:14px;margin:0;}
-.q-x{font-size:40px;}
-.q-roster{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;}
-.q-name{position:relative;padding:16px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:inherit;font-size:16px;font-weight:600;cursor:pointer;}
-.q-name:disabled{opacity:.45;cursor:default;}
-.q-name .q-in{display:block;font-size:11px;font-weight:500;color:var(--muted,#8aa);margin-top:4px;}
-.q-pos{display:flex;align-items:center;gap:16px;margin:18px 0;padding:16px;border-radius:16px;background:rgba(90,140,255,.12);}
-.q-pos-n{font-size:44px;font-weight:800;line-height:1;}
-.q-pos-sub{font-size:15px;}
-.q-wait{color:var(--muted,#8aa);font-size:13px;margin-top:4px;}
-.q-flags{display:flex;gap:8px;flex-wrap:wrap;}
-.q-btn{flex:1;min-width:100px;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:inherit;font-weight:600;cursor:pointer;}
-.q-btn.q-back{background:#2e7d5b;border-color:#2e7d5b;color:#fff;}
-.q-leave{width:100%;margin-top:14px;padding:12px;border:none;background:none;color:var(--muted,#8aa);text-decoration:underline;cursor:pointer;font-size:13px;}
+.q-err{color:#ff9a9a;font-size:14px;margin:10px 0 0;font-weight:600;}
+.q-x{font-size:44px;}
+.q-fade{animation:qfade .4s ease both;}
+.q-pop{animation:qpop .42s cubic-bezier(.2,.9,.3,1.2) both;}
+@keyframes qfade{from{opacity:0;}to{opacity:1;}}
+@keyframes qpop{from{opacity:0;transform:translateY(14px) scale(.98);}to{opacity:1;transform:none;}}
 
-/* ---- Phone-lead queue: manager tab ---- */
-.q-tab-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
-.q-tab-head h3{margin:0 0 2px;}
-.q-tab-actions{display:flex;gap:8px;}
+.q-name-in,.q-pin-in{width:100%;padding:16px 18px;border-radius:16px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.05);color:inherit;font-size:20px;font-weight:600;margin-top:6px;}
+.q-pin-in{text-align:center;letter-spacing:.5em;font-size:26px;}
+.q-name-in:focus,.q-pin-in:focus{outline:none;border-color:#4c8bf5;box-shadow:0 0 0 3px rgba(76,139,245,.25);}
+.q-roster{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+.q-name{position:relative;padding:15px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.04);color:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:transform .1s,border-color .15s;}
+.q-name:hover{border-color:#4c8bf5;transform:translateY(-1px);}
+.q-name:disabled{opacity:.45;cursor:default;}
+.q-name .q-role{display:block;font-size:11px;font-weight:600;color:var(--muted,#8aa);margin-top:3px;}
+.q-name .q-in{display:block;font-size:11px;font-weight:600;color:#6ea0ff;margin-top:3px;}
+.q-big-q{font-size:22px;font-weight:800;text-align:center;margin:8px 0 16px;}
+.q-role{color:var(--muted,#8aa);font-weight:600;}
+.q-suggest{margin-top:16px;}
+
+.q-btn{flex:1;min-width:110px;padding:15px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);color:inherit;font-weight:700;font-size:15px;cursor:pointer;transition:transform .1s,filter .15s;}
+.q-btn:hover{filter:brightness(1.1);}
+.q-btn:active{transform:scale(.97);}
+.q-btn.q-primary,.q-btn.q-back{background:linear-gradient(180deg,#5a97ff,#3b72e0);border-color:transparent;color:#fff;}
+.q-btn.q-back{background:linear-gradient(180deg,#37c17e,#2e9d63);}
+.q-wide{width:100%;margin-top:16px;}
+.q-flags{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+.q-leave{width:100%;margin-top:14px;padding:12px;border:none;background:none;color:var(--muted,#8aa);
+  text-decoration:underline;cursor:pointer;font-size:13px;}
+
+/* live "you're in line" */
+.q-live{text-align:center;}
+.q-pos{display:flex;flex-direction:column;align-items:center;gap:8px;margin:18px 0;padding:22px;border-radius:20px;
+  background:rgba(90,140,255,.12);transition:background .3s;}
+.q-pos-ring{width:130px;height:130px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:conic-gradient(#4c8bf5 0turn,#4c8bf5 1turn);position:relative;}
+.q-pos-ring::after{content:"";position:absolute;inset:8px;border-radius:50%;background:var(--card,#121a2b);}
+.q-pos-n{position:relative;z-index:1;font-size:46px;font-weight:900;letter-spacing:-.03em;animation:qpop .5s ease both;}
+.q-pos-sub{font-size:16px;font-weight:600;}
+.q-wait{color:var(--muted,#8aa);font-size:13px;font-weight:500;margin-top:6px;}
+.q-uptag{display:inline-block;background:linear-gradient(180deg,#37c17e,#2e9d63);color:#fff;font-weight:800;
+  padding:4px 14px;border-radius:999px;font-size:15px;}
+.q-pos-next .q-pos-ring{animation:qpulse 1.6s ease-in-out infinite;}
+.q-pos-next{background:rgba(55,193,126,.16);}
+.q-pos-off{background:rgba(255,180,60,.12);}
+.q-pos-off .q-pos-ring::after{background:var(--card,#121a2b);}
+@keyframes qpulse{0%,100%{box-shadow:0 0 0 0 rgba(55,193,126,.5);}50%{box-shadow:0 0 0 16px rgba(55,193,126,0);}}
+.spin-logo{width:36px;height:36px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#4c8bf5;animation:qspin .8s linear infinite;}
+@keyframes qspin{to{transform:rotate(360deg);}}
+
+/* ================= Phone line — manager board ================= */
+.q-board{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap;margin-bottom:18px;padding:16px 18px;
+  border-radius:18px;background:linear-gradient(135deg,rgba(76,139,245,.12),rgba(76,139,245,.03));
+  border:1px solid rgba(76,139,245,.2);}
+.q-board-cell{min-width:96px;}
+.q-board-n{font-size:34px;font-weight:900;line-height:1;letter-spacing:-.02em;}
+.q-board-l{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted,#8aa);margin-top:4px;font-weight:700;}
+.q-board-avail .q-board-n{color:#37c17e;}
+.q-board-miss .q-board-n{color:#ffb454;}
+.q-board-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.q-assign-btn{font-weight:800;}
+
 .q-qr-panel{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:16px;border:1px dashed rgba(255,255,255,.18);border-radius:14px;margin-bottom:16px;}
 .q-qr-box{width:180px;background:#fff;padding:10px;border-radius:12px;}
 .q-qr svg{display:block;}
 .q-qr-info{flex:1;min-width:220px;font-size:14px;}
-.q-qr-btns{display:flex;gap:8px;margin-top:10px;}
+.q-qr-btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+
 .q-line{display:flex;flex-direction:column;gap:8px;}
 .q-empty{padding:20px;text-align:center;}
-.q-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);}
+.q-row{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);animation:qfade .3s ease both;}
 .q-row.q-off{opacity:.55;}
-.q-row.q-next{border-color:#4c8bf5;box-shadow:0 0 0 1px #4c8bf5 inset;}
-.q-rank{width:26px;text-align:center;font-weight:800;color:var(--muted,#8aa);}
+.q-row.q-next{border-color:#37c17e;box-shadow:0 0 0 1px #37c17e inset,0 6px 18px rgba(55,193,126,.15);}
+.q-rank{width:28px;text-align:center;font-weight:900;color:var(--muted,#8aa);font-size:16px;}
 .q-who{flex:1;}
-.q-nm{font-weight:600;}
-.q-next-tag{font-size:10px;font-weight:800;color:#4c8bf5;margin-left:6px;letter-spacing:.5px;}
+.q-nm{font-weight:700;}
+.q-next-tag{font-size:10px;font-weight:900;color:#37c17e;margin-left:6px;letter-spacing:.6px;}
 .q-meta{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted,#8aa);margin-top:2px;}
-.q-chip{padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);}
+.q-chip{padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.08);font-weight:600;}
 .q-chip.q-lunch{background:rgba(255,180,60,.18);color:#ffcf7a;}
 .q-chip.q-customer{background:rgba(120,120,255,.18);color:#b9b9ff;}
 .q-chip.q-away{background:rgba(255,110,110,.18);color:#ffb0b0;}
 .q-row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .q-reason{display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap;}
-.btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
 .q-flag-sel{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.12);}
 .q-rm{color:#ffb0b0;}
+
+.q-missing{margin-top:16px;padding:14px 16px;border-radius:14px;background:rgba(255,180,60,.07);border:1px solid rgba(255,180,60,.22);}
+.q-missing-head{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#ffb454;margin-bottom:10px;}
+.q-missing-list{display:flex;gap:8px;flex-wrap:wrap;}
+.q-missing-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;
+  border:1px solid rgba(255,180,60,.35);background:rgba(255,180,60,.08);color:inherit;font-weight:600;cursor:pointer;transition:filter .15s;}
+.q-missing-chip:hover{filter:brightness(1.15);}
+.q-missing-add{font-size:11px;font-weight:800;color:#ffb454;}
 .q-add{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap;}
 .q-clear{margin-left:auto;color:#ffb0b0;}
-.spin-logo{width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#4c8bf5;animation:qspin .8s linear infinite;}
-@keyframes qspin{to{transform:rotate(360deg);}}
+
+/* coaching card — phone line block */
+.ac-queue{margin-top:8px;}
 
     `}</style>
   );
