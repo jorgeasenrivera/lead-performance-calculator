@@ -3892,7 +3892,7 @@ function QueueSignIn({ store, date, token }) {
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
   const [step, setStep] = useState("name");
-  const [shown, setShown] = useState("name");
+  const [shown, setShown] = useState("loading");
   const [wiping, setWiping] = useState(false);
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
@@ -3907,15 +3907,6 @@ function QueueSignIn({ store, date, token }) {
   const refetch = useCallback(async () => setRow((await loadQueueRow(store, date)) || null), [store, date]);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
-
-  // curtain: when the target step changes, sweep the panel, swap content mid-sweep
-  useEffect(() => {
-    if (step === shown) return;
-    setWiping(true);
-    const t1 = setTimeout(() => setShown(step), 300);
-    const t2 = setTimeout(() => setWiping(false), 620);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [step, shown]);
 
   const isToday = date === today();
   const valid = isToday && row && row.token && row.token === token;
@@ -3932,6 +3923,26 @@ function QueueSignIn({ store, date, token }) {
   };
 
   useEffect(() => { if (meId && line.some((p) => p.id === meId)) setStep("done"); }, [meId, line]);
+
+  // which screen should be visible right now (drives the curtain wipe)
+  let screen;
+  if (row === undefined || identities === null) screen = "loading";
+  else if (!isToday || !valid) screen = "invalid";
+  else if (step === "done" && me) screen = "done";
+  else if (step === "pin" && switchTo) screen = "switch";
+  else if (step === "pin" && selected) screen = "pin";
+  else if (step === "pick") screen = "pick";
+  else if (step === "confirm") screen = "confirm";
+  else screen = "name";
+
+  // curtain: on ANY screen change, sweep the panel across and swap content mid-sweep
+  useEffect(() => {
+    if (screen === shown) return;
+    setWiping(true);
+    const t1 = setTimeout(() => setShown(screen), 300);
+    const t2 = setTimeout(() => setWiping(false), 620);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [screen, shown]);
 
   async function joinAs(person) {
     setBusy(true);
@@ -4027,26 +4038,24 @@ function QueueSignIn({ store, date, token }) {
   }
 
   /* ---------- render ---------- */
-  if (row === undefined || identities === null) {
-    return <div className="q-page"><div className="q-card q-center q-pop"><div className="spin-logo" /><p className="q-muted">Loading…</p></div></div>;
-  }
-  if (!isToday || !valid) {
-    return (
-      <div className="q-page"><div className="q-card q-center q-pop">
-        <QClockIcon className="q-x-ico" />
-        <h2>This sign-in code isn't for today</h2>
-        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
-      </div></div>
-    );
-  }
   const storeName = (row && row.storeName) || "Phone Line";
   const PhonePill = () => <div className="q-phone-pill"><QPhoneIcon className="q-pill-ico" /> Phone opportunity</div>;
 
-  // content is chosen by `shown`, which lags `step` and swaps behind the curtain
+  // content is chosen by `shown`, which lags `screen` and swaps behind the curtain
   const eff = (shown === "done" && !me) ? "name" : shown;
   let content;
 
-  if (eff === "done" && me) {
+  if (eff === "loading") {
+    content = <div className="q-card q-center"><div className="spin-logo" /><p className="q-muted">Loading…</p></div>;
+  } else if (eff === "invalid") {
+    content = (
+      <div className="q-card q-center">
+        <QClockIcon className="q-x-ico" />
+        <h2>This sign-in code isn't for today</h2>
+        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
+      </div>
+    );
+  } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
@@ -4075,7 +4084,7 @@ function QueueSignIn({ store, date, token }) {
         <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
       </div>
     );
-  } else if (eff === "pin" && selected && switchTo) {
+  } else if (eff === "switch" && selected && switchTo) {
     content = (
       <div className="q-card">
         <div className="q-head"><h2>Is this you?</h2></div>
@@ -12583,6 +12592,10 @@ function Style() {
 .q-curtain-mark{width:60px;height:60px;color:rgba(255,255,255,.92);opacity:0;}
 .q-curtain.q-wipe .q-curtain-mark{animation:qmark .62s ease both;}
 @keyframes qmark{0%,100%{opacity:0;transform:scale(.7);}42%,58%{opacity:1;transform:scale(1);}}
+
+/* v5: center the status icon inside the position ring */
+.q-pos-n{display:flex;align-items:center;justify-content:center;line-height:1;}
+.q-ring-ico{display:block;}
 
     `}</style>
   );
