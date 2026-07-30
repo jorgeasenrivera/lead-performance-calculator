@@ -94,19 +94,25 @@ function field(body, label) {
 // The body's ALERT is "<Alert> - <Dealership>", so we strip the dealership
 // suffix off it to get a clean alert.
 function parseSubject(subject, bodyAlert) {
-  const segs = String(subject || "").split(" - ").map((s) => s.trim()).filter(Boolean);
-  const event = segs[0] || null;
-  let dealership = null;
-  let alert = bodyAlert || null;
-  if (segs.length >= 3) {
-    dealership = segs[segs.length - 1];
-    if (bodyAlert && bodyAlert.toLowerCase().endsWith(dealership.toLowerCase())) {
-      alert = bodyAlert.slice(0, bodyAlert.length - dealership.length).replace(/\s*-\s*$/, "").trim();
-    } else {
-      alert = segs.slice(1, -1).join(" - ") || bodyAlert;
-    }
-  } else if (segs.length === 2 && !bodyAlert) {
-    alert = segs[1];
+  subject = String(subject || "").trim();
+  bodyAlert = String(bodyAlert || "").trim();
+  let event = null, alert = bodyAlert || null, dealership = null;
+
+  // body ALERT is "<alert> - <dealership>"; the dealership is the last " - " piece.
+  if (bodyAlert) {
+    const a = bodyAlert.split(" - ");
+    if (a.length >= 2) { dealership = a[a.length - 1].trim(); alert = a.slice(0, -1).join(" - ").trim(); }
+    else { alert = bodyAlert; }
+  }
+
+  // event = the subject with the trailing bodyAlert removed (handles event types that
+  // themselves contain " - ", e.g. "Sales Appointment - Show").
+  if (bodyAlert && subject.toLowerCase().endsWith(bodyAlert.toLowerCase())) {
+    event = subject.slice(0, subject.length - bodyAlert.length).replace(/\s*-\s*$/, "").trim() || null;
+  } else {
+    const segs = subject.split(" - ").map((s) => s.trim()).filter(Boolean);
+    event = segs[0] || null;
+    if (!dealership && segs.length >= 3) dealership = segs[segs.length - 1];
   }
   return { event, alert: alert || null, dealership };
 }
