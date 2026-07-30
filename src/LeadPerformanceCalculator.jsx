@@ -1828,6 +1828,17 @@ export default function LeadPerformanceCalculator() {
   if (queueParams) {
     return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} /><Style /></Shell>;
   }
+  // --- live floor: public sign-in intercept (before any auth) ---
+  const floorParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const f = p.get("f"), d = p.get("d"), t = p.get("t");
+      return f && d && t ? { store: f, date: d, token: t } : null;
+    } catch { return null; }
+  })();
+  if (floorParams) {
+    return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} /><Style /></Shell>;
+  }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
   if (!config || !authReady) return <Shell><LoadingScreen /><Style /></Shell>;
 
@@ -1910,6 +1921,30 @@ export default function LeadPerformanceCalculator() {
     );
   }
 
+  // ---- Live Floor: its own self-contained module (walk-in / showroom queue) ----
+  if (appModule === "floor") {
+    return (
+      <FloorModule
+        config={config}
+        session={session}
+        accessibleStores={accessibleStores}
+        isAdmin={isAdmin}
+        onSaveConfig={persistConfig}
+        onSignOut={signOut}
+        onToolChange={(mod) => {
+          if (mod === "floor") return;
+          if (mod === "board") { setAppModule("board"); return; }
+          if (mod === "floor") { setAppModule("floor"); return; }
+          if (mod === "activity" && view === "admin") {
+            const first = (isAdmin ? config.stores : accessibleStores)[0];
+            if (first) setView(first.id);
+          }
+          setAppModule(mod);
+          setTab(mod === "activity" ? "checkout" : "board");
+        }} />
+    );
+  }
+
   // The Import tab pulses until the day's uploads have landed, which replaces the
   // "all reports are in" chip that had nothing to say the rest of the day.
   const todayImports = storeData?.months?.[ym()]?.imports?.[today()] || {};
@@ -1959,6 +1994,7 @@ export default function LeadPerformanceCalculator() {
           <ToolSwitcher value={appModule} onChange={(mod) => {
             if (mod === appModule) return;
             if (mod === "board") { setAppModule("board"); return; }
+            if (mod === "floor") { setAppModule("floor"); return; }
             if (mod === "activity" && view === "admin") {
               const first = (isAdmin ? config.stores : accessibleStores)[0];
               if (first) setView(first.id);
@@ -1991,6 +2027,7 @@ export default function LeadPerformanceCalculator() {
           onToolChange={(mod) => {
             if (mod === appModule) return;
             if (mod === "board") { setAppModule("board"); return; }
+            if (mod === "floor") { setAppModule("floor"); return; }
             if (mod === "activity" && view === "admin") {
               const first = (isAdmin ? config.stores : accessibleStores)[0];
               if (first) setView(first.id);
@@ -2013,6 +2050,7 @@ export default function LeadPerformanceCalculator() {
           onToolChange={(mod) => {
             if (mod === appModule) { setDrawerOpen(false); return; }
             if (mod === "board") { setAppModule("board"); setDrawerOpen(false); return; }
+            if (mod === "floor") { setAppModule("floor"); setDrawerOpen(false); return; }
             if (mod === "activity" && view === "admin") {
               const first = (isAdmin ? config.stores : accessibleStores)[0];
               if (first) setView(first.id);
@@ -4473,6 +4511,1174 @@ function QueueTab({ config, store, data, onChange, userName }) {
     </div>
   );
 }
+/* ==========================================================================
+   SMARTFLOOR — "Live Floor" walk-in / showroom queue (v1)
+   --------------------------------------------------------------------------
+   Self-governed floor "up" queue. Same sign-up as The Line (type name + PIN,
+   reuse queue_identity), but driven by DriveCentric deal_events so nobody has
+   to remember to flag themselves — the auto-flip that fixes the old human-only
+   floor system.
+
+   Storage:
+     - floor_public  : per-day floor state row  (id = "<store>:<date>")
+     - queue_identity : REUSED for PINs (shared with The Line)
+     - deal_events    : read-only feed (authenticated read via RLS)
+
+   The event engine keys off the SUBJECT event (seg 1), NOT the ALERT — the two
+   "sold" events (ProspectSoldGeneral / Prospect Sold - Pending) share an identical
+   ALERT+Description and only differ in the subject, and "Sales Appointment - Show"
+   is only distinguishable from a plain visit by its subject.
+   ========================================================================== */
+
+const FLOOR_TABLE = "floor_public";
+const floorRowId = (store, date) => `${store}:${date}`;
+
+// Normalize a dealership name the SAME way the ingest function does, so the
+// admin can type a friendly name and it lines up with deal_events.dealership_norm.
+const floorNormDealer = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+// Floor statuses (superset of the phone-line vocabulary).
+const FLOOR_FLAGS = {
+  waiting:  { label: "In line",       cls: "f-waiting" },
+  customer: { label: "With customer", cls: "f-customer" },
+  lunch:    { label: "At lunch",      cls: "f-lunch" },
+  away:     { label: "Away",          cls: "f-away" },
+};
+const FLOOR_SELF_FLAGS = ["lunch", "away"];
+
+// The actions an event can trigger. The map is (event string) -> action.
+const FLOOR_ACTIONS = {
+  checkin:  "Checked in (with customer)",
+  appt:     "Appointment showed (favored)",
+  proposal: "Proposal (soft signal)",
+  checkout: "Checked out (to bottom)",
+  sold:     "Sold (accelerated up)",
+  ignore:   "Ignore",
+};
+
+// Default event -> action map, from the confirmed DriveCentric vocabulary.
+const FLOOR_DEFAULT_EVENT_MAP = {
+  "PipeVisit": "checkin",
+  "New Prospect Walk In": "checkin",
+  "Sales Appointment - Show": "appt",
+  "PipeProposal": "proposal",
+  "DealCheckedOut": "checkout",
+  "ProspectSoldGeneral": "sold",
+  "Prospect Sold - Pending": "sold",
+};
+
+const FLOOR_DEFAULT_CONFIG = {
+  enabled: true,
+  dealershipNorms: [],     // e.g. ["driver s mart winter park"]
+  eventMap: {},            // per-store overrides merged over the default map
+  timerOn: false,
+  timerMins: 45,
+  soldAscent: 3,           // spots to jump on a sale — never into the top 3
+  apptAscent: 2,           // spots to jump when an appointment shows (favored)
+  accidentalWindowMins: 5, // self-reverse window after an auto check-in
+  overrideCalls: 2,        // ">2 calls AND >2 videos" marks a rep present today
+  overrideVideos: 2,
+};
+function floorCfg(store) {
+  const c = (store && store.floorConfig) || {};
+  return { ...FLOOR_DEFAULT_CONFIG, ...c };
+}
+function floorEventMap(store) {
+  return { ...FLOOR_DEFAULT_EVENT_MAP, ...((store && store.floorConfig && store.floorConfig.eventMap) || {}) };
+}
+
+/* ---- hand-drawn line icons (currentColor, no emoji) ---- */
+function FDoorIcon({ className }) {
+  // walk-in / showroom door
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14.5 3.2 6 5v14l8.5 1.8V3.2z" /><path d="M14.5 4.5H18v15h-3.5" /><circle cx="12.4" cy="12" r=".9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+function FHandshakeIcon({ className }) {
+  // sold
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 9l3-1.5 3.5 2.5 2.5-1 5 3.5" /><path d="M21 9l-3-1.5-4 2.5" /><path d="M11 13l2 2M13.5 11.5l2 2M8.5 14.5l2 2" />
+    </svg>
+  );
+}
+function FApptIcon({ className }) {
+  // appointment (calendar-check)
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 9h17M8 3v3M16 3v3" /><path d="M8.5 14.5l2.2 2.2 4-4.4" />
+    </svg>
+  );
+}
+function FDocIcon({ className }) {
+  // proposal (document)
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /><path d="M9 12h6M9 15.5h6M9 8.5h2" />
+    </svg>
+  );
+}
+function FFlagIcon({ status, className }) {
+  const p = { className, width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
+  if (status === "customer") return (
+    <svg {...p}><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" /><circle cx="17.2" cy="9.2" r="2.3" /><path d="M16 14.4a4.6 4.6 0 0 1 4.5 4.6" /></svg>
+  );
+  if (status === "lunch") return (
+    <svg {...p}><path d="M4 8.5h11.5V13a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8.5z" /><path d="M15.5 9.5H18a2.4 2.4 0 0 1 0 4.8h-2.3" /><path d="M6.5 3.2c-.4.9-.4 1.7 0 2.6M9.5 3.2c-.4.9-.4 1.7 0 2.6" /></svg>
+  );
+  if (status === "away") return (
+    <svg {...p}><path d="M13.5 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h7" /><path d="M11 12h9M16.5 8.5 20.5 12l-4 3.5" /></svg>
+  );
+  return null;
+}
+
+/* ---- Supabase access: per-day floor row (floor_public) ---- */
+async function loadFloorRow(store, date) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from(FLOOR_TABLE).select("data").eq("id", floorRowId(store, date)).maybeSingle();
+    if (error) throw error;
+    return data ? data.data : null;
+  } catch (e) { console.error("loadFloorRow", e); return null; }
+}
+async function saveFloorRow(store, date, data) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from(FLOOR_TABLE).upsert(
+      { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
+    if (error) throw error;
+    return true;
+  } catch (e) { console.error("saveFloorRow", e); return false; }
+}
+async function mutateFloorRow(store, date, fn) {
+  const cur = await loadFloorRow(store, date);
+  const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+  if (!next) return cur;
+  await saveFloorRow(store, date, next);
+  return next;
+}
+
+/* ---- Supabase access: the deal_events feed (read-only) ----
+   Pulls events for this store's dealership_norm(s) that arrived after `sinceIso`.
+   deal_events RLS allows authenticated reads; writes are service-role only. */
+async function loadDealEvents(dealershipNorms, sinceIso) {
+  if (!supabase || !dealershipNorms || !dealershipNorms.length) return [];
+  try {
+    let q = supabase.from("deal_events")
+      .select("received_at,dealership,dealership_norm,event,alert,description,sales,source,raw_subject")
+      .in("dealership_norm", dealershipNorms)
+      .order("received_at", { ascending: true })
+      .limit(300);
+    if (sinceIso) q = q.gt("received_at", sinceIso);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  } catch (e) { console.error("loadDealEvents", e); return []; }
+}
+
+/* ---- match a deal_events "sales" full name to a roster person id ---- */
+function floorMatchSales(salesName, rosterSnap) {
+  const typed = qNormName(salesName);
+  if (!typed || !rosterSnap || !rosterSnap.length) return null;
+  // rosterSnap items carry `name` (full). Rank by first+last token + levenshtein.
+  const ranked = rosterSnap
+    .map((r) => {
+      const full = qNormName(r.name || r.label);
+      const d = qLev(typed, full);
+      const tf = qFirstToken(typed), ff = qFirstToken(full);
+      const tl = typed.split(" ").slice(-1)[0], fl = full.split(" ").slice(-1)[0];
+      const firstEq = tf && tf === ff;
+      const lastEq = tl && tl === fl;
+      return { id: r.id, d, firstEq, lastEq, full };
+    })
+    .sort((a, b) => a.d - b.d);
+  const top = ranked[0];
+  if (!top) return null;
+  // Confident when the string is (near-)exact, or first+last both line up.
+  if (top.d <= 2) return top.id;
+  if (top.firstEq && top.lastEq) return top.id;
+  return null;
+}
+
+/* ---- the event engine: apply a batch of new events to a floor row ----
+   Pure-ish: mutates `cur` (already a deep clone from mutateFloorRow) and returns it.
+   Only people already in the line are affected; anything we can't place is pushed
+   to cur.unmatched[] for the manager to resolve (the secondary-salesperson gap). */
+function floorApplyEvents(cur, events, store) {
+  if (!cur) return cur;
+  const cfg = floorCfg(store);
+  const map = floorEventMap(store);
+  cur.line = cur.line || [];
+  cur.history = cur.history || [];
+  cur.unmatched = cur.unmatched || [];
+  cur.processed = cur.processed || [];
+  const processed = new Set(cur.processed);
+
+  const keyOf = (e) => `${e.received_at}|${e.event}|${e.sales}`;
+  const pushH = (ev) => cur.history.push({ t: qNowIso(), ...ev });
+  const idxOf = (id) => cur.line.findIndex((p) => p.id === id);
+  const moveTo = (i, j) => { const [p] = cur.line.splice(i, 1); cur.line.splice(j, 0, p); };
+
+  for (const e of events) {
+    const k = keyOf(e);
+    if (processed.has(k)) continue;
+    processed.add(k);
+    cur.lastEventAt = e.received_at > (cur.lastEventAt || "") ? e.received_at : cur.lastEventAt;
+
+    const action = map[e.event] || map[(e.alert || "").trim()] || null;
+    if (!action || action === "ignore") continue;
+
+    const pid = floorMatchSales(e.sales, cur.roster || []);
+    if (!pid || idxOf(pid) < 0) {
+      // Named rep isn't in the floor line (or couldn't be matched). Surface it —
+      // this is the secondary-salesperson gap; the alert only names the primary.
+      cur.unmatched.push({ t: e.received_at, sales: e.sales || "(no name)", event: e.event, action, key: k });
+      cur.unmatched = cur.unmatched.slice(-12);
+      continue;
+    }
+    const i = idxOf(pid);
+    const p = cur.line[i];
+
+    if (action === "checkin") {
+      p.status = "customer"; p.statusAt = qNowIso(); p.awayReason = null;
+      p.accidentalUntil = new Date(Date.now() + cfg.accidentalWindowMins * 60000).toISOString();
+      p.autoFlip = true;
+      pushH({ action: "auto-checkin", id: pid, who: p.label, event: e.event });
+    } else if (action === "appt") {
+      // favored ascent (no top-3 cap) + with customer + appointment flag
+      const j = Math.max(i - (cfg.apptAscent || 2), 0);
+      if (j < i) { moveTo(i, j); }
+      const np = cur.line[idxOf(pid)];
+      np.status = "customer"; np.statusAt = qNowIso(); np.awayReason = null;
+      np.appt = true; np.autoFlip = true;
+      np.accidentalUntil = new Date(Date.now() + cfg.accidentalWindowMins * 60000).toISOString();
+      pushH({ action: "auto-appt-show", id: pid, who: np.label, event: e.event, detail: j < i ? `up to #${j + 1}` : "no move" });
+    } else if (action === "proposal") {
+      p.proposal = true; // soft signal — do NOT force in-store presence
+      pushH({ action: "auto-proposal", id: pid, who: p.label, event: e.event });
+    } else if (action === "checkout") {
+      p.status = "waiting"; p.statusAt = qNowIso(); p.joinedAt = qNowIso();
+      p.awayReason = null; p.autoFlip = false; p.appt = false; p.proposal = false;
+      moveTo(idxOf(pid), cur.line.length - 1);
+      pushH({ action: "auto-checkout", id: pid, who: p.label, event: e.event });
+    } else if (action === "sold") {
+      // accelerated ascent — never into the top 3 (final rank must be >= 4)
+      const j = Math.max(i - (cfg.soldAscent || 3), 3);
+      if (j < i && cur.line.length > 3) { moveTo(i, j); pushH({ action: "auto-sold", id: pid, who: p.label, event: e.event, detail: `up to #${j + 1}` }); }
+      else { pushH({ action: "auto-sold", id: pid, who: p.label, event: e.event, detail: "no move (top-3 guard)" }); }
+    }
+  }
+  cur.processed = Array.from(processed).slice(-400);
+  return cur;
+}
+
+/* ---- printable sign-in poster (SmartFloor branded) ---- */
+async function printFloorSignIn({ store, url, date, by }) {
+  let svg = "";
+  try {
+    const qrcode = await loadQRCode();
+    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
+  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
+  const w = window.open("", "lpc_floor_" + store.id, "width=800,height=1040");
+  if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
+  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
+  const doorSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 3.2 6 5v14l8.5 1.8V3.2z"/><path d="M14.5 4.5H18v15h-3.5"/></svg>';
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Live Floor · ${store.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
+    .banner{display:inline-flex;align-items:center;gap:10px;background:#0f9d76;color:#fff;font-weight:700;
+      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
+    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
+    .store{font-size:22px;font-weight:700;color:#334;}
+    .date{font-size:16px;color:#667;margin-top:6px;}
+    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid #0f9d76;border-radius:24px;}
+    .qr svg{display:block;width:100%;height:auto;}
+    .how{font-size:20px;font-weight:700;margin-top:10px;}
+    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
+    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
+    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  </style></head><body>
+    <div class="banner">${doorSvg} Live Floor</div>
+    <h1>Get on the Floor</h1>
+    <div class="store">${store.name}</div>
+    <div class="date">${nice}</div>
+    <div class="qr">${svg}</div>
+    <div class="how">Scan with your phone camera to sign in</div>
+    <div class="sub">Enter your name and PIN to claim your spot for the next walk-up. Your spot updates on its own as customers check in and deals happen. No app, no login. This code only works today.</div>
+    <div class="foot">${foot}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+function floorSignInUrl(storeId, date, token) {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?f=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
+}
+
+/* =========================================================================
+   FloorSignIn — salesperson phone page for the walk-in floor.
+   Mirrors QueueSignIn (name fuzzy-match + PIN, curtain wipe, reuse identities);
+   the "done" screen adds the accidental-check-in self-reverse.
+   ========================================================================= */
+function FloorSignIn({ store, date, token }) {
+  const [row, setRow] = useState(undefined);
+  const [identities, setIdentities] = useState(null);
+  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
+  const [step, setStep] = useState("name");
+  const [shown, setShown] = useState("loading");
+  const [wiping, setWiping] = useState(false);
+  const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
+  const [resolved, setResolved] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [pinMode, setPinMode] = useState("verify");
+  const [switchTo, setSwitchTo] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refetch = useCallback(async () => setRow((await loadFloorRow(store, date)) || null), [store, date]);
+  useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
+
+  const isToday = date === today();
+  const valid = isToday && row && row.token && row.token === token;
+  const line = (row && row.line) || [];
+  const me = line.find((p) => p.id === meId) || null;
+  const roster = (row && row.roster) || [];
+
+  const remember = (id) => {
+    try {
+      if (id) { localStorage.setItem(`lpcf:${store}:${date}`, id); localStorage.setItem(`lpcq:self:${store}`, id); }
+      else localStorage.removeItem(`lpcf:${store}:${date}`);
+    } catch {}
+    setMeId(id);
+  };
+
+  useEffect(() => { if (meId && line.some((p) => p.id === meId)) setStep("done"); }, [meId, line]);
+
+  let screen;
+  if (row === undefined || identities === null) screen = "loading";
+  else if (!isToday || !valid) screen = "invalid";
+  else if (step === "done" && me) screen = "done";
+  else if (step === "pin" && switchTo) screen = "switch";
+  else if (step === "pin" && selected) screen = "pin";
+  else if (step === "pick") screen = "pick";
+  else if (step === "confirm") screen = "confirm";
+  else screen = "name";
+
+  useEffect(() => {
+    if (screen === shown) return;
+    setWiping(true);
+    const t1 = setTimeout(() => setShown(screen), 300);
+    const t2 = setTimeout(() => setWiping(false), 620);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [screen, shown]);
+
+  async function joinAs(person) {
+    setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      cur.line = cur.line || [];
+      if (!cur.line.some((p) => p.id === person.id)) {
+        cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self" });
+      }
+      return cur;
+    });
+    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
+    remember(person.id);
+    if (next) setRow(next);
+    setStep("done"); setPin(""); setPin2(""); setBusy(false);
+  }
+
+  function submitName() {
+    setMsg("");
+    const r = qResolveName(typed, roster);
+    setResolved(r);
+    if (r.kind === "one") pickPerson(r.person);
+    else if (r.kind === "confirm") setStep("confirm");
+    else if (r.kind === "pick") setStep("pick");
+    else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
+  }
+  function pickPerson(p) {
+    setSelected(p); setSwitchTo(null); setMsg("");
+    const hasPin = !!(identities && identities[p.id] && identities[p.id].h);
+    setPinMode(hasPin ? "verify" : "create");
+    setStep("pin");
+  }
+  async function submitPin() {
+    if (!selected) return;
+    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4 to 6 digits."); return; }
+    setBusy(true); setMsg("");
+    const idents = identities || (await loadQueueIdentities(store));
+    if (pinMode === "create") {
+      if (pin !== pin2) { setMsg("The two PINs don't match."); setBusy(false); return; }
+      const clash = await qFindByPin(idents, pin, selected.id);
+      if (clash) { setMsg("That PIN is already taken by someone here. Pick a different one."); setBusy(false); return; }
+      const salt = qRandSalt(); const h = await qHashPin(pin, salt);
+      const nextIds = await mutateQueueIdentities(store, (cur) => { cur[selected.id] = { h, s: salt, label: selected.label, setAt: qNowIso() }; return cur; });
+      setIdentities(nextIds);
+      await joinAs(selected);
+      return;
+    }
+    const rec = idents[selected.id];
+    if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
+    const other = await qFindByPin(idents, pin, null);
+    if (other && other !== selected.id) { setSwitchTo({ id: other, label: idents[other].label || "that person" }); setMsg(""); setBusy(false); return; }
+    setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
+    setBusy(false);
+  }
+
+  async function setFlag(status) {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) {
+        cur.history = cur.history || [];
+        if (status === "waiting") {
+          const from = p.awayReason || (p.status !== "waiting" ? p.status : null);
+          cur.history.push({ t: qNowIso(), action: "back", from, id: meId, who: p.label, by: "self" });
+          p.awayReason = null;
+        } else {
+          p.awayReason = status;
+          cur.history.push({ t: qNowIso(), action: status, id: meId, who: p.label, by: "self" });
+        }
+        p.status = status; p.statusAt = qNowIso();
+      }
+      return cur;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  // accidental check-in: reverse the auto-flip (within the store's window)
+  async function undoCheckin() {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) {
+        p.status = "waiting"; p.statusAt = qNowIso(); p.autoFlip = false; p.accidentalUntil = null;
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: "accidental-undo", id: meId, who: p.label, by: "self" });
+      }
+      return cur;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  async function leave() {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      cur.line = (cur.line || []).filter((x) => x.id !== meId);
+      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", id: meId, who: p.label, by: "self" }); }
+      return cur;
+    });
+    remember(null);
+    if (next) setRow(next);
+    setStep("name"); setBusy(false);
+  }
+
+  const storeName = (row && row.storeName) || "Live Floor";
+  const FloorPill = () => <div className="q-phone-pill f-pill"><FDoorIcon className="q-pill-ico" /> Walk-up floor</div>;
+  const eff = (shown === "done" && !me) ? "name" : shown;
+  let content;
+
+  if (eff === "loading") {
+    content = <div className="q-card q-center"><div className="spin-logo" /><p className="q-muted">Loading…</p></div>;
+  } else if (eff === "invalid") {
+    content = (
+      <div className="q-card q-center">
+        <QClockIcon className="q-x-ico" />
+        <h2>This sign-in code isn't for today</h2>
+        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
+      </div>
+    );
+  } else if (eff === "done" && me) {
+    const myPos = line.findIndex((p) => p.id === meId) + 1;
+    const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
+    const isNext = me.status === "waiting" && availableAhead === 0;
+    const canUndo = me.status === "customer" && me.autoFlip && me.accidentalUntil && new Date(me.accidentalUntil) > new Date();
+    content = (
+      <div className="q-card q-live">
+        <FloorPill />
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>{me.status === "customer" ? "You're with a customer" : "You're on the floor"}</h2></div>
+        <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
+          <div className="q-pos-ring"><div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : <FFlagIcon status={me.status} className="q-ring-ico" />}</div></div>
+          <div className="q-pos-sub">
+            {me.status === "waiting"
+              ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
+              : me.status === "customer"
+                ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " · appointment" : ""}. You'll rejoin the line when they leave.</>
+                : `On ${FLOOR_FLAGS[me.status]?.label}. You'll be passed over until you tap "I'm back."`}
+            <div className="q-wait">On the floor {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+          </div>
+        </div>
+        {canUndo && (
+          <button className="q-btn q-wide f-undo" disabled={busy} onClick={undoCheckin}>Not with a customer — put me back in line</button>
+        )}
+        <div className="q-flags">
+          {me.status !== "waiting" && !canUndo
+            ? <button className="q-btn q-back q-wide" disabled={busy} onClick={() => setFlag("waiting")}>I'm back{FLOOR_FLAGS[me.status] ? ` from ${FLOOR_FLAGS[me.status].label.toLowerCase()}` : ""}</button>
+            : me.status === "waiting"
+              ? FLOOR_SELF_FLAGS.map((f) => (
+                  <button key={f} className={`q-btn ${FLOOR_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>
+                    <FFlagIcon status={f} className="q-fico" />{FLOOR_FLAGS[f].label}
+                  </button>
+                ))
+              : null}
+        </div>
+        <button className="q-leave" disabled={busy} onClick={leave}>Leave the floor</button>
+      </div>
+    );
+  } else if (eff === "switch" && selected && switchTo) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Is this you?</h2></div>
+        <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
+        <p className="q-big-q">Are you {switchTo.label}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
+          <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
+        </div>
+      </div>
+    );
+  } else if (eff === "pin" && selected) {
+    content = (
+      <div className="q-card">
+        <div className="q-head">
+          <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
+          <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
+          <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. It's the same PIN as the phone line." : "So only you can claim your spot."}</p>
+        </div>
+        <div className="q-pin-field">
+          {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
+          <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
+            placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
+        </div>
+        {pinMode === "create" && (
+          <div className="q-pin-field">
+            <label className="q-pin-lbl">Confirm PIN</label>
+            <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
+              placeholder="••••" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
+          </div>
+        )}
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the floor"}</button>
+        <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
+      </div>
+    );
+  } else if (eff === "pick" && resolved && resolved.people) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to "{typed}".</p></div>
+        <div className="q-roster">
+          {resolved.people.map((p) => (
+            <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
+              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">on floor</span> : null}
+            </button>
+          ))}
+        </div>
+        <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
+      </div>
+    );
+  } else if (eff === "confirm" && resolved && resolved.person) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Did you mean…</h2></div>
+        <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
+          <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
+        </div>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="q-card">
+        <FloorPill />
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to claim the next walk-up.</p></div>
+        <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
+          onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={!typed.trim()} onClick={submitName}>Continue</button>
+        {resolved && resolved.kind === "none" && resolved.suggestions && resolved.suggestions.length > 0 && (
+          <div className="q-suggest">
+            <p className="q-muted">Did you mean:</p>
+            <div className="q-roster">
+              {resolved.suggestions.map((p) => (
+                <button key={p.id} className="q-name" onClick={() => pickPerson(p)}>{p.label}{p.role ? <span className="q-role">{p.role}</span> : null}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="q-page f-page">
+      <div className="q-stage" key={eff}>{content}</div>
+      <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorBoard — the manager board. Runs the event engine while it's open.
+   ========================================================================= */
+function FloorBoard({ config, store, userName }) {
+  const [row, setRow] = useState(undefined);
+  const [data, setData] = useState(null);          // store data (roster + daysOff)
+  const [identities, setIdentities] = useState({});
+  const [showQR, setShowQR] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [pendingAssign, setPendingAssign] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [, force] = useReducer((x) => x + 1, 0);
+  const prevLine = useRef([]);
+  const [toast, setToast] = useState(null);
+
+  const date = today();
+  const cfg = floorCfg(store);
+
+  const salesRoster = useMemo(() => {
+    if (!data) return [];
+    const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+    return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
+  }, [data, config.roles]);
+
+  const loadData = useCallback(async () => setData(await loadShared(storeKey(store.id), emptyStoreData())), [store.id]);
+  const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
+  const refetch = useCallback(async () => setRow((await loadFloorRow(store.id, date)) || null), [store.id, date]);
+
+  const ensureRow = useCallback(async () => {
+    if (!data) return;
+    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    const next = await mutateFloorRow(store.id, date, (cur) => {
+      if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [], unmatched: [], processed: [], lastEventAt: null };
+      cur.roster = snap; cur.storeName = store.name;
+      if (!cur.token) cur.token = uid();
+      if (!cur.date) cur.date = date;
+      return cur;
+    });
+    setRow(next);
+  }, [store.id, store.name, date, salesRoster, config.roles, data]);
+
+  useEffect(() => { loadData(); loadIds(); }, [loadData, loadIds]);
+  useEffect(() => { ensureRow(); }, [ensureRow]);
+  useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
+
+  const line = (row && row.line) || [];
+  const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
+
+  // ---- the engine tick: pull new deal_events, apply, and run the timer ----
+  const engineTick = useCallback(async () => {
+    if (!row) return;
+    const norms = (cfg.dealershipNorms || []).filter(Boolean);
+    if (cfg.enabled && norms.length) {
+      const since = row.lastEventAt || `${date}T00:00:00.000Z`;
+      const events = await loadDealEvents(norms, since);
+      if (events.length) {
+        const next = await mutateFloorRow(store.id, date, (cur) => (cur ? floorApplyEvents(cur, events, store) : cur));
+        if (next) setRow(next);
+      }
+    }
+    // timer auto-pass on the leader
+    if (cfg.timerOn) {
+      const cur = await loadFloorRow(store.id, date);
+      if (cur) {
+        const li = (cur.line || []).findIndex((p) => p.status === "waiting");
+        if (li >= 0) {
+          const leader = cur.line[li];
+          const mins = qMinsSince(leader.leaderSince || leader.joinedAt);
+          if (mins >= cfg.timerMins) {
+            const next = await mutateFloorRow(store.id, date, (c) => {
+              const i = (c.line || []).findIndex((p) => p.status === "waiting");
+              if (i < 0) return c;
+              const [p] = c.line.splice(i, 1);
+              p.joinedAt = qNowIso(); p.statusAt = qNowIso(); p.leaderSince = null;
+              c.line.push(p);
+              c.history = c.history || []; c.history.push({ t: qNowIso(), action: "timer-pass", id: p.id, who: p.label });
+              return c;
+            });
+            if (next) setRow(next);
+          }
+        }
+      }
+    }
+  }, [row, cfg.enabled, cfg.dealershipNorms, cfg.timerOn, cfg.timerMins, store, date]);
+
+  useEffect(() => { const t = setInterval(engineTick, 8000); return () => clearInterval(t); }, [engineTick]);
+
+  // stamp leaderSince when the leader changes; fire a move-up toast + sound
+  useEffect(() => {
+    if (!row) return;
+    const prev = prevLine.current;
+    const nowIds = line.map((p) => p.id);
+    // detect anyone whose rank improved
+    const prevPos = {}; prev.forEach((id, i) => { prevPos[id] = i; });
+    let bumped = null;
+    line.forEach((p, i) => { if (prevPos[p.id] != null && i < prevPos[p.id]) bumped = p; });
+    if (bumped) {
+      setToast(`${realName(bumped.id)} moved up`);
+      try { const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); const g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 660; g.gain.value = 0.05; o.start(); setTimeout(() => { o.stop(); a.close(); }, 140); } catch {}
+      setTimeout(() => setToast(null), 2600);
+    }
+    prevLine.current = nowIds;
+    // maintain leaderSince
+    const li = line.findIndex((p) => p.status === "waiting");
+    if (li >= 0 && !line[li].leaderSince) {
+      // set silently on next mutate opportunity (don't thrash the row here)
+    }
+  }, [row]); // eslint-disable-line
+
+  const mirror = (rowData, audit) => { /* light mirror for future coaching: data.floor[date] */ };
+  async function act(mutator, audit) {
+    if (busy) return; setBusy(true);
+    const next = await mutateFloorRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
+  const moveToBack = (cur, id) => {
+    const i = (cur.line || []).findIndex((p) => p.id === id);
+    if (i < 0) return cur;
+    const [p] = cur.line.splice(i, 1);
+    p.joinedAt = qNowIso(); p.status = "waiting"; p.statusAt = qNowIso(); p.awayReason = null; p.autoFlip = false; p.appt = false; p.proposal = false;
+    cur.line.push(p);
+    return cur;
+  };
+
+  const assignNext = () => {
+    const first = line.find((p) => p.status === "waiting");
+    act((cur) => {
+      const i = (cur.line || []).findIndex((p) => p.status === "waiting");
+      if (i < 0) return cur;
+      const p = cur.line[i];
+      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager" });
+      return moveToBack(cur, p.id);
+    }, { action: "Floor: assigned next", detail: first ? realName(first.id) : "" });
+  };
+  const assignSpecific = (id, reason) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason });
+    return moveToBack(cur, id);
+  }, { action: "Floor: assigned (out of order)", detail: `${realName(id)}: ${reason}` });
+  const decline = (id) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
+    return moveToBack(cur, id);
+  }, { action: "Floor: declined", detail: realName(id) });
+  const setFlag = (id, status) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id);
+    if (p) {
+      if (status === "waiting") { pushH(cur, { action: "back", from: p.awayReason || (p.status !== "waiting" ? p.status : null), id, who: p.label, by: "manager" }); p.awayReason = null; p.autoFlip = false; }
+      else { p.awayReason = status; pushH(cur, { action: status, id, who: p.label, by: "manager" }); }
+      p.status = status; p.statusAt = qNowIso();
+    }
+    return cur;
+  });
+  const move = (id, dir) => {
+    const i = line.findIndex((p) => p.id === id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= line.length) return;
+    act((cur) => {
+      const a = cur.line || []; const ci = a.findIndex((p) => p.id === id); const cj = ci + dir;
+      if (ci < 0 || cj < 0 || cj >= a.length) return cur;
+      const [p] = a.splice(ci, 1); a.splice(cj, 0, p);
+      pushH(cur, { action: "reordered", id, who: p.label, by: "manager", detail: `to #${cj + 1}` });
+      return cur;
+    }, { action: "Floor: reordered", detail: `${realName(id)} to #${j + 1}` });
+  };
+  const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Floor: removed", detail: realName(id) });
+  const addPerson = (id) => act((cur) => {
+    cur.line = cur.line || [];
+    if (cur.line.some((p) => p.id === id)) return cur;
+    const label = (cur.roster || []).find((r) => r.id === id)?.label || shortLabel(realName(id));
+    cur.line.push({ id, label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+    pushH(cur, { action: "signed-in", id, who: label, by: "manager" });
+    return cur;
+  }, { action: "Floor: added", detail: realName(id) });
+  const dismissUnmatched = (key) => act((cur) => { cur.unmatched = (cur.unmatched || []).filter((u) => u.key !== key); return cur; });
+  const clearLine = () => {
+    if (!window.confirm("Clear the floor line? Today's history is kept; only the live line is emptied.")) return;
+    act((cur) => { cur.line = []; pushH(cur, { action: "cleared", by: "manager" }); return cur; }, { action: "Floor: line cleared", detail: store.name });
+  };
+  const regenToken = () => {
+    if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
+    act((cur) => { cur.token = uid(); return cur; }, { action: "Floor: code regenerated", detail: store.name });
+  };
+  const resetPin = async (id) => {
+    if (!window.confirm(`Reset ${realName(id)}'s PIN? This is the shared PIN — it also resets it for the phone line. They'll set a new one next sign-in.`)) return;
+    const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
+    setIdentities(next);
+  };
+
+  if (row === undefined || data === null) return <div className="checkout"><p className="muted">Loading the floor…</p></div>;
+
+  const norms = (cfg.dealershipNorms || []).filter(Boolean);
+  const notConfigured = !norms.length;
+  const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
+  const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
+  const url = row ? floorSignInUrl(store.id, date, row.token) : "";
+  const availCount = line.filter((p) => p.status === "waiting").length;
+  const withCust = line.filter((p) => p.status === "customer").length;
+  const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const unmatched = (row && row.unmatched) || [];
+
+  return (
+    <div className="checkout q-tab f-tab">
+      <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
+
+      {notConfigured && (
+        <div className="f-warn">
+          No dealership is linked to this store yet, so deal events won't reach the floor. An admin can add one under
+          <strong> Settings → Live Floor</strong> (the DriveCentric dealership name, e.g. "Driver's Mart Winter Park").
+          The board still works as a manual floor line in the meantime.
+        </div>
+      )}
+
+      <div className="q-board f-board">
+        <div className="q-board-cell q-board-avail"><div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div></div>
+        <div className="q-board-cell"><div className="q-board-n">{line.length}</div><div className="q-board-l">on the floor</div></div>
+        <div className="q-board-cell f-board-cust"><div className="q-board-n">{withCust}</div><div className="q-board-l">with customer</div></div>
+        <div className="q-board-cell q-board-miss"><div className="q-board-n">{expectedNotHere.length}</div><div className="q-board-l">not signed in</div></div>
+        <div className="q-board-actions">
+          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
+        </div>
+      </div>
+
+      {unmatched.length > 0 && (
+        <div className="f-unmatched">
+          <div className="f-unmatched-head">Deal events we couldn't place on the floor</div>
+          <p className="muted f-unmatched-sub">The alert only names the primary salesperson. If one of these is a secondary rep, or the name is a near-miss, add them to the floor and they'll pick up future events.</p>
+          {unmatched.map((u) => (
+            <div key={u.key} className="f-unmatched-row">
+              <span className="f-um-name">{u.sales}</span>
+              <span className="f-um-ev">{u.event} · {FLOOR_ACTIONS[u.action] || u.action}</span>
+              <span className="f-um-when">{qWaitLabel(qMinsSince(u.t))} ago</span>
+              <button className="btn btn-sm" onClick={() => dismissUnmatched(u.key)}>Dismiss</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showPins && (
+        <div className="q-pins-panel">
+          <div className="q-pins-head">Salesperson PINs <span className="muted">(shared with the phone line)</span></div>
+          {pinPeople.length === 0
+            ? <p className="muted">No PINs set yet. They're created the first time each person signs in.</p>
+            : pinPeople.map((p) => (
+                <div key={p.id} className="q-pin-row">
+                  <span className="q-pin-name">{p.name}</span>
+                  <button className="btn btn-sm q-pin-reset" onClick={() => resetPin(p.id)}>Reset PIN</button>
+                </div>
+              ))}
+        </div>
+      )}
+
+      {showQR && (
+        <div className="q-qr-panel">
+          <div className="q-qr-box"><QueueQR url={url} /></div>
+          <div className="q-qr-info">
+            <p><strong>Post this on the showroom floor.</strong> Salespeople scan it, enter their name and PIN, and they're on the floor. Their spot then updates on its own as customers check in and deals happen. It only works today; a fresh code appears each morning.</p>
+            <div className="q-qr-btns">
+              <button className="btn" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+              <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
+              <button className="btn" onClick={regenToken}>New code</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="q-line f-line">
+        {line.length === 0 && <p className="muted q-empty">Nobody's on the floor yet. Post the code, or add someone below.</p>}
+        {line.map((p, i) => {
+          const avail = p.status === "waiting";
+          const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
+          return (
+            <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""} ${p.status === "customer" ? "f-row-cust" : ""}`}>
+              <div className="q-ord">
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up">▲</button>
+                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down">▼</button>
+              </div>
+              <div className="q-rank">{i + 1}</div>
+              <div className="q-who">
+                <div className="q-nm">
+                  {realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}
+                  {p.appt && <span className="f-tag f-tag-appt"><FApptIcon className="f-tag-ico" />appt</span>}
+                  {p.proposal && <span className="f-tag f-tag-prop"><FDocIcon className="f-tag-ico" />proposal</span>}
+                </div>
+                <div className="q-meta">
+                  <span className={`q-chip ${FLOOR_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <FFlagIcon status={p.status} className="q-chip-ico" />}{FLOOR_FLAGS[p.status]?.label || p.status}</span>
+                  <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
+                  {p.autoFlip && <span className="f-auto">auto</span>}
+                </div>
+              </div>
+              <div className="q-row-actions">
+                {pendingAssign === p.id ? (
+                  <div className="q-reason">
+                    <span>Reason:</span>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Language match"); setPendingAssign(null); }}>Language match</button>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Manager pick"); setPendingAssign(null); }}>Other</button>
+                    <button className="btn btn-sm" onClick={() => setPendingAssign(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    {p.status === "customer" && p.autoFlip && <button className="btn btn-sm f-undo-b" onClick={() => setFlag(p.id, "waiting")} title="Reverse an accidental auto check-in">Not a customer</button>}
+                    {!isNext && avail && <button className="btn btn-sm" onClick={() => setPendingAssign(p.id)}>Assign</button>}
+                    <button className="btn btn-sm" onClick={() => decline(p.id)}>Decline</button>
+                    <select className="q-flag-sel" value={p.status} onChange={(e) => setFlag(p.id, e.target.value)}>
+                      <option value="waiting">In line</option>
+                      <option value="customer">With customer</option>
+                      <option value="lunch">Lunch</option>
+                      <option value="away">Away</option>
+                    </select>
+                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)}>✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {expectedNotHere.length > 0 && (
+        <div className="q-missing">
+          <div className="q-missing-head">Scheduled today, not on the floor yet</div>
+          <div className="q-missing-list">
+            {expectedNotHere.map((a) => (
+              <button key={a.id} className="q-missing-chip" title="Add to the floor" onClick={() => addPerson(a.id)}>
+                {a.name}<span className="q-missing-add">+ add</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="q-add">
+        {notInLine.length > 0 && (
+          <>
+            <span className="muted">Add manually:</span>
+            <select className="q-flag-sel" value="" onChange={(e) => { if (e.target.value) addPerson(e.target.value); }}>
+              <option value="">Pick a name…</option>
+              {notInLine.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </>
+        )}
+        {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
+      </div>
+
+      {toast && <div className="f-toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorConfigEditor — admin per-store settings for the floor.
+   ========================================================================= */
+function FloorConfigEditor({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const cfg = floorCfg(store);
+  const map = floorEventMap(store);
+  const [dealerInput, setDealerInput] = useState("");
+  const [evEvent, setEvEvent] = useState("");
+  const [evAction, setEvAction] = useState("checkin");
+
+  const save = (patch, audit) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.floorConfig = { ...floorCfg(s), ...patch };
+    // don't persist the merged defaults for eventMap — keep only real overrides
+    onChange(next, audit || { store: storeId, action: "Changed Live Floor settings", detail: store.name });
+  };
+  const setNum = (field, v, min = 0) => save({ [field]: Math.max(min, v) });
+
+  const addDealer = () => {
+    const norm = floorNormDealer(dealerInput);
+    if (!norm) return;
+    const cur = cfg.dealershipNorms || [];
+    if (cur.includes(norm)) { setDealerInput(""); return; }
+    save({ dealershipNorms: [...cur, norm] }, { store: storeId, action: "Linked dealership to Live Floor", detail: `${store.name}: ${dealerInput.trim()}` });
+    setDealerInput("");
+  };
+  const removeDealer = (norm) => save({ dealershipNorms: (cfg.dealershipNorms || []).filter((d) => d !== norm) });
+
+  const setEventAction = (evt, action) => {
+    const overrides = { ...(store.floorConfig?.eventMap || {}) };
+    if (action === (FLOOR_DEFAULT_EVENT_MAP[evt] || "__none__")) delete overrides[evt];
+    else overrides[evt] = action;
+    save({ eventMap: overrides });
+  };
+  const addEvent = () => {
+    const evt = evEvent.trim();
+    if (!evt) return;
+    setEventAction(evt, evAction);
+    setEvEvent("");
+  };
+
+  const Stepper = ({ label, field, value, hint, min = 0 }) => (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => setNum(field, value - 1, min)} disabled={value <= min}>−</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => setNum(field, value + 1, min)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+
+  const knownEvents = Array.from(new Set([...Object.keys(FLOOR_DEFAULT_EVENT_MAP), ...Object.keys(store.floorConfig?.eventMap || {})]));
+
+  return (
+    <div className="standards f-settings">
+      <div className="card">
+        <h3>Live Floor <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">The floor board self-governs from DriveCentric deal events. Turn it off to run a purely manual floor line.</p>
+        <label className="f-toggle">
+          <input type="checkbox" checked={cfg.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
+          <span>Deal events drive the floor for this store</span>
+        </label>
+      </div>
+
+      <div className="card">
+        <h3>Linked dealerships</h3>
+        <p className="hint">Type the DriveCentric dealership name exactly as it appears in the deal alerts (e.g. "Driver's Mart Winter Park"). Events for these dealerships feed this store. Matching is case- and punctuation-insensitive.</p>
+        <div className="f-dealer-add">
+          <input className="f-input" placeholder="Dealership name from DriveCentric" value={dealerInput}
+            onChange={(e) => setDealerInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addDealer(); }} />
+          <button className="btn" onClick={addDealer}>Add</button>
+        </div>
+        {(cfg.dealershipNorms || []).length === 0
+          ? <p className="muted">None linked yet — the board runs as a manual floor line until you add one.</p>
+          : <div className="f-dealer-list">
+              {(cfg.dealershipNorms || []).map((d) => (
+                <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" onClick={() => removeDealer(d)}>✕</button></span>
+              ))}
+            </div>}
+      </div>
+
+      <div className="card">
+        <h3>Ascent & timer</h3>
+        <div className="stepper-row">
+          <Stepper label="Sold jump" field="soldAscent" value={cfg.soldAscent} hint="spots up on a sale (never into top 3)" min={0} />
+          <Stepper label="Appointment jump" field="apptAscent" value={cfg.apptAscent} hint="spots up when an appt shows (favored)" min={0} />
+          <Stepper label="Accidental-check-in window" field="accidentalWindowMins" value={cfg.accidentalWindowMins} hint="minutes a rep can self-reverse" min={0} />
+        </div>
+        <label className="f-toggle">
+          <input type="checkbox" checked={cfg.timerOn} onChange={(e) => save({ timerOn: e.target.checked })} />
+          <span>Timer on the leader (auto-pass when it expires)</span>
+        </label>
+        {cfg.timerOn && (
+          <div className="stepper-row">
+            <Stepper label="Timer minutes" field="timerMins" value={cfg.timerMins} hint="before the leader is passed" min={1} />
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Event → action map</h3>
+        <p className="hint">How each DriveCentric event moves the floor. Defaults match the known DriveCentric vocabulary; override any of them, or add a new event type as DriveCentric introduces one — no code change needed. Note: the two "sold" events differ only by their subject, so this map keys off the subject event, not the alert.</p>
+        <div className="f-map">
+          {knownEvents.map((evt) => (
+            <div key={evt} className="f-map-row">
+              <span className="f-map-ev">{evt}{FLOOR_DEFAULT_EVENT_MAP[evt] ? "" : <span className="f-map-custom"> · custom</span>}</span>
+              <select className="q-flag-sel" value={map[evt] || "ignore"} onChange={(e) => setEventAction(evt, e.target.value)}>
+                {Object.entries(FLOOR_ACTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+        <div className="f-map-add">
+          <input className="f-input" placeholder="New event (subject phrase)" value={evEvent} onChange={(e) => setEvEvent(e.target.value)} />
+          <select className="q-flag-sel" value={evAction} onChange={(e) => setEvAction(e.target.value)}>
+            {Object.entries(FLOOR_ACTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <button className="btn" onClick={addEvent}>Add event</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Schedule presence <span className="section-sub">applies when Live Floor is built into coaching</span></h3>
+        <p className="hint">A rep who signs onto the floor (or the phone line) counts as present today. These thresholds let activity alone also mark them present. The retroactive coaching fix that clears a "missed scheduled day" flag lands in the next build — these settings are stored now so they're ready.</p>
+        <div className="stepper-row">
+          <Stepper label="Calls to count present" field="overrideCalls" value={cfg.overrideCalls} hint="more than this many calls" min={0} />
+          <Stepper label="Videos to count present" field="overrideVideos" value={cfg.overrideVideos} hint="more than this many videos" min={0} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorModule — the standalone module shell (its own tool, like The Board).
+   ========================================================================= */
+function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig, onToolChange, onSignOut }) {
+  const stores = accessibleStores || [];
+  const [storeId, setStoreId] = useState(() => (stores[0] ? stores[0].id : null));
+  const [subtab, setSubtab] = useState("board");
+  const store = stores.find((s) => s.id === storeId) || stores[0] || null;
+
+  useEffect(() => { if (!store && stores[0]) setStoreId(stores[0].id); }, [stores, store]);
+
+  return (
+    <Shell>
+      <header className="topbar no-print">
+        <div className="brand">
+          <Logo size={36} />
+          <div><div className="brand-title">Lead Performance</div></div>
+        </div>
+        <div className="topbar-right">
+          <ToolSwitcher value="floor" onChange={onToolChange} />
+          {stores.length > 1 && (
+            <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
+              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <span className="whoami">{session.name}</span>
+          <button className="btn-quiet" onClick={onSignOut}>Sign out</button>
+        </div>
+      </header>
+
+      <nav className="seg-wrap no-print">
+        <SegControl
+          items={isAdmin ? [["board", "Live Floor"], ["settings", "Settings"]] : [["board", "Live Floor"]]}
+          value={isAdmin ? subtab : "board"} onChange={setSubtab} />
+      </nav>
+
+      <div key={(store?.id || "none") + subtab} className="page">
+        {!store ? (
+          <div className="checkout"><p className="muted">No store available.</p></div>
+        ) : subtab === "settings" && isAdmin ? (
+          <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
+        ) : (
+          <FloorBoard config={config} store={store} userName={session.name} />
+        )}
+      </div>
+      <Style />
+    </Shell>
+  );
+}
+
 function CheckOutTracker({ config, store, data, onChange }) {
   const [query, setQuery] = useState("");
   const [day, setDay] = useState(today());
@@ -8518,6 +9724,7 @@ function ToolSwitcher({ value, onChange }) {
     ["perf", "Performance"],
     ["activity", "Daily Activity"],
     ["board", "The Board"],
+    ["floor", "Live Floor"],
   ];
   // Same sliding thumb as the tab bar, so switching tools and switching tabs
   // feel like the same gesture rather than two different controls.
@@ -12596,6 +13803,47 @@ function Style() {
 /* v5: center the status icon inside the position ring */
 .q-pos-n{display:flex;align-items:center;justify-content:center;line-height:1;}
 .q-ring-ico{display:block;}
+
+/* ===== SmartFloor / Live Floor — greens where the phone line runs blue ===== */
+.f-banner{background:linear-gradient(180deg,#19c58f,#0f9d76);}
+.f-pill{background:linear-gradient(180deg,#19c58f,#0f9d76);}
+.f-page .q-curtain,.f-curtain{background:linear-gradient(120deg,#0f9d76 0%,#19c58f 55%,#37d3a3 100%);}
+.f-board-cust .q-board-n{color:#7db6ff;}
+.q-chip.f-waiting{background:rgba(255,255,255,.08);}
+.q-chip.f-customer{background:rgba(120,150,255,.20);color:#b9c9ff;}
+.q-chip.f-lunch{background:rgba(255,180,60,.18);color:#ffcf7a;}
+.q-chip.f-away{background:rgba(255,110,110,.18);color:#ffb0b0;}
+.f-row-cust{border-color:rgba(120,150,255,.35);box-shadow:0 0 0 1px rgba(120,150,255,.20) inset;}
+.f-auto{font-size:9px;font-weight:800;letter-spacing:.6px;color:#9fe7cd;background:rgba(15,157,118,.18);padding:1px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
+.f-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:1px 7px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
+.f-tag-ico{width:11px;height:11px;}
+.f-tag-appt{background:rgba(120,150,255,.20);color:#b9c9ff;}
+.f-tag-prop{background:rgba(255,200,90,.18);color:#ffd98a;}
+.f-undo,.f-undo-b{border-color:rgba(255,180,60,.5)!important;}
+.f-warn{margin:0 0 12px;padding:12px 14px;border-radius:12px;background:rgba(255,180,60,.10);border:1px solid rgba(255,180,60,.35);color:#ffd98a;font-size:13px;line-height:1.5;}
+.f-warn strong{color:#ffe9bf;}
+.f-unmatched{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(255,110,110,.08);border:1px solid rgba(255,110,110,.28);}
+.f-unmatched-head{font-weight:800;color:#ffbdbd;margin-bottom:2px;}
+.f-unmatched-sub{font-size:12px;margin:0 0 8px;}
+.f-unmatched-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);}
+.f-um-name{font-weight:700;}
+.f-um-ev{font-size:12px;color:var(--ink-3,#9aa);}
+.f-um-when{font-size:12px;color:var(--ink-3,#9aa);margin-left:auto;}
+.f-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:70;background:#0f9d76;color:#fff;font-weight:700;
+  padding:10px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(15,157,118,.4);animation:ftoast .3s ease both;}
+@keyframes ftoast{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
+/* settings */
+.f-settings .f-toggle{display:flex;align-items:center;gap:10px;font-weight:600;margin-top:8px;cursor:pointer;}
+.f-settings .f-toggle input{width:18px;height:18px;}
+.f-dealer-add,.f-map-add{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.f-input{flex:1;min-width:220px;padding:9px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.15);font:inherit;background:#fff;}
+.f-dealer-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.f-dealer-chip{display:inline-flex;align-items:center;gap:8px;padding:5px 6px 5px 12px;border-radius:999px;background:rgba(15,157,118,.12);color:#0f7d5e;font-weight:600;}
+.f-chip-x{border:none;background:rgba(0,0,0,.08);border-radius:999px;width:20px;height:20px;line-height:1;cursor:pointer;}
+.f-map{margin-top:6px;}
+.f-map-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-top:1px solid rgba(0,0,0,.06);}
+.f-map-ev{flex:1;font-weight:600;}
+.f-map-custom{color:#0f9d76;font-weight:700;font-size:11px;}
 
     `}</style>
   );
