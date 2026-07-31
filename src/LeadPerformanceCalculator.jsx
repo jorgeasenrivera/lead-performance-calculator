@@ -14112,10 +14112,19 @@ function Style() {
    Scoped under .mf so the rest of the manager app is untouched.
    ============================================================ */
 .mf{ --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --glow:rgba(15,179,126,.45);
-  --mfink:#EAF1F8; --mfink2:#93A2BC; --mfink3:#5A6884; --mfcard:rgba(255,255,255,.045); --mfstroke:rgba(255,255,255,.085);
+  --mfink:#EAF1F8; --mfink2:#93A2BC; --mfink3:#7C89A6; --mfcard:rgba(255,255,255,.05); --mfstroke:rgba(255,255,255,.09);
   --mffont:'Geist','Sora','Space Grotesk',system-ui,-apple-system,sans-serif; --mfmono:'Geist Mono','JetBrains Mono',ui-monospace,monospace;
-  font-family:var(--mffont); }
+  --ink:#EAF1F8; --ink-2:#93A2BC; --ink-3:#7C89A6;
+  font-family:var(--mffont); color:var(--mfink);
+  background:radial-gradient(840px 320px at 8% -12%, color-mix(in srgb,var(--a1) 16%, transparent), transparent 60%), #0A0F1A;
+  border:1px solid rgba(255,255,255,.06); border-radius:22px; box-shadow:0 26px 64px -34px rgba(0,0,0,.6); }
 .mf.mf-line{ --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --glow:rgba(85,102,240,.45); }
+.mf .q-opps-head{ color:var(--mfink2); }
+.mf .q-qr-box{ background:#fff; border-radius:14px; padding:12px; }
+.mf .q-qr-info, .mf .q-qr-info p{ color:var(--mfink2); }
+.mf .q-qr-info strong{ color:var(--mfink); }
+.mf .q-pins-head, .mf .q-pin-name{ color:var(--mfink); }
+.mf .f-warn{ color:#ffd98a; }
 
 .mf .q-phone-banner, .mf .q-phone-banner.f-banner{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#04140f; border-radius:14px; font-family:var(--mffont); font-weight:600; letter-spacing:-.01em; }
 
