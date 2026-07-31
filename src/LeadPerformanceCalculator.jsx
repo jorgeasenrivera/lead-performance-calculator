@@ -1967,9 +1967,9 @@ export default function LeadPerformanceCalculator() {
   } else if (currentStore && storeData) {
     if (appModule === "activity") {
       navItems = isAdmin
-        ? [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
-        : [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]];
-      navValue = (isAdmin ? ["checkout", "queue", "coaching", "plates", "import", "actstd"] : ["checkout", "queue", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
+        ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+        : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]];
+      navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
     } else {
       navItems = isAdmin
         ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
@@ -2144,9 +2144,9 @@ export default function LeadPerformanceCalculator() {
             {appModule === "activity" ? (
               <SegControl
                 items={isAdmin
-                  ? [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
-                  : [["checkout", "Check Out"], ["queue", "The Line"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
-                value={(isAdmin ? ["checkout", "queue", "coaching", "plates", "import", "actstd"] : ["checkout", "queue", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
+                  ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+                  : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
+                value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
                 onChange={setTab}
                 attentionId={activityDue ? "import" : null}
                 renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
@@ -2168,8 +2168,7 @@ export default function LeadPerformanceCalculator() {
           <div key={view + tab + appModule} className="page">
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["coaching", "plates", "import", "actstd", "queue"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
-                {tab === "queue" && <QueueTab config={config} store={currentStore} data={storeData} userName={session.name} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -2382,6 +2381,7 @@ function LEADERBOARD_HTML(p) {
 <title>${p.storeName} · Leaderboard</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
     --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
@@ -3925,12 +3925,46 @@ async function printQueueSignIn({ store, url, date, by }) {
 /* =========================================================================
    QueueSignIn — salesperson phone page (curtain wipe between screens)
    ========================================================================= */
+/* ---- salesperson-view dot-matrix atoms (shared by The Line + Live Floor) ----
+   Same dot language as the position numeral. Icons are hand-built bitmaps, not SVG. */
+const SF_ICONS = {
+  customer: ["0011100","0111110","0111110","0011100","0000000","0011100","0111110"],
+  lunch:    ["0000000","1111010","1111011","1111011","1111010","0000000","1111110"],
+  away:     ["0000000","0001000","0000100","1111110","0000100","0001000","0000000"],
+  back:     ["0000000","0110000","0111000","0111100","0111000","0110000","0000000"],
+};
+// analog LED numeral: each digit is keyed by its value so it remounts and "flips" on change
+function DmNumber({ value, up }) {
+  const s = String(value);
+  return (
+    <div className={"dm" + (up ? " dm-up" : "")}>
+      {s.split("").map((ch, i) => (
+        <span className="dm-digit" key={`${i}-${ch}`}>
+          {(LED_FONT[ch] || ["000", "000", "000", "000", "000"]).flatMap((r, ri) =>
+            r.split("").map((b, ci) => <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} />))}
+        </span>
+      ))}
+    </div>
+  );
+}
+function DmIcon({ name, cell = 4 }) {
+  const rows = SF_ICONS[name];
+  if (!rows) return null;
+  return (
+    <span className="dm-ico" style={{ gridTemplateColumns: `repeat(${rows[0].length}, ${cell}px)`, gap: Math.max(1, cell * 0.34) }}>
+      {rows.flatMap((r, ri) => r.split("").map((b, ci) =>
+        <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} style={{ width: cell, height: cell }} />))}
+    </span>
+  );
+}
+
 function QueueSignIn({ store, date, token }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
+  const [shownKey, setShownKey] = useState("loading");
   const [wiping, setWiping] = useState(false);
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
@@ -3974,13 +4008,18 @@ function QueueSignIn({ store, date, token }) {
   else screen = "name";
 
   // curtain: on ANY screen change, sweep the panel across and swap content mid-sweep
+  // A wipe should fire between EVERY page they touch — including flag changes on the
+  // live screen (which don't change `screen`). Key it on screen + live status.
+  const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
   useEffect(() => {
-    if (screen === shown) return;
+    if (liveKey === shownKey) return;
+    // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
+    if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
     setWiping(true);
-    const t1 = setTimeout(() => setShown(screen), 300);
+    const t1 = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 300);
     const t2 = setTimeout(() => setWiping(false), 620);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [screen, shown]);
+  }, [liveKey, shownKey, screen]);
 
   async function joinAs(person) {
     setBusy(true);
@@ -4097,29 +4136,47 @@ function QueueSignIn({ store, date, token }) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
+    const st = me.status;
+    const title = st === "customer" ? "On a call" : st === "lunch" ? "At lunch" : st === "away" ? "Away" : isNext ? "You're up" : "You're in line";
+    const sub = st === "customer" ? "Back in line the moment your call wraps."
+      : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
+      : isNext ? "The next phone opportunity is yours." : `${availableAhead} ahead of you for the next call`;
     content = (
-      <div className="q-card q-live">
-        <PhonePill />
-        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>You're in line</h2></div>
-        <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
-          <div className="q-pos-ring"><div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : <QFlagIcon status={me.status} className="q-ring-ico" />}</div></div>
-          <div className="q-pos-sub">
-            {me.status === "waiting"
-              ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
-              : `On ${QUEUE_FLAGS[me.status]?.label}. You'll be passed over until you tap “I'm back.”`}
-            <div className="q-wait">In line {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+      <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
+        <div className="sf-top">
+          <span className="sf-tag"><span className="sf-live-dot" />The Line</span>
+          <span className="sf-tag">{line.length} in line</span>
+        </div>
+        <div className="sf-poswrap">
+          <div className="sf-aura" />
+          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <div className="sf-meta">
+            <div className="sf-line-1">{title}</div>
+            <div className="sf-line-2">{sub}</div>
+            <div className="sf-wait">In line <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
           </div>
         </div>
-        <div className="q-flags">
-          {me.status !== "waiting"
-            ? <button className="q-btn q-back q-wide" disabled={busy} onClick={() => setFlag("waiting")}>I'm back{QUEUE_FLAGS[me.status] ? ` from ${QUEUE_FLAGS[me.status].label.toLowerCase()}` : ""}</button>
-            : QUEUE_SELF_FLAGS.map((f) => (
-                <button key={f} className={`q-btn ${QUEUE_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>
-                  <QFlagIcon status={f} className="q-fico" />{QUEUE_FLAGS[f].label}
-                </button>
-              ))}
+        <div className="sf-actions">
+          <div className="sf-status-row">
+            {st !== "waiting"
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => setFlag("waiting")}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              : QUEUE_SELF_FLAGS.map((f) => (
+                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => setFlag(f)}>
+                    <DmIcon name={f} cell={4} /><span>{f === "customer" ? "On a call" : f === "lunch" ? "Lunch" : "Away"}</span>
+                  </button>
+                ))}
+          </div>
+          <button className="sf-leave" disabled={busy} onClick={leave}>Leave the line</button>
         </div>
-        <button className="q-leave" disabled={busy} onClick={leave}>Leave the line</button>
+        {isNext && (
+          <div className="sf-uptake">
+            <div className="sf-shock" />
+            <DmNumber value={1} up />
+            <h2>You're up</h2>
+            <p>The next phone opportunity is yours.</p>
+            <button className="sf-go" disabled={busy} onClick={() => setFlag("customer")}>Got it</button>
+          </div>
+        )}
       </div>
     );
   } else if (eff === "switch" && selected && switchTo) {
@@ -4210,8 +4267,8 @@ function QueueSignIn({ store, date, token }) {
   }
 
   return (
-    <div className="q-page">
-      <div className="q-stage" key={eff}>{content}</div>
+    <div className="q-page sf sf-line">
+      <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
     </div>
   );
@@ -4256,6 +4313,125 @@ function queueCoachingStats(data, associateId) {
 /* =========================================================================
    QueueTab — manager board
    ========================================================================= */
+/* ============================================================
+   FLUID UI ATOMS — a small shared kit so the salesperson view and both
+   manager boards feel like one continuous, living system.
+   Inspiration: dot-matrix LED numerals + breathing aura (reminder screen),
+   bold color-fill leaderboard cards + avatar stack (progress screen).
+   ============================================================ */
+const LED_FONT = {
+  "0": ["111", "101", "101", "101", "111"],
+  "1": ["010", "110", "010", "010", "111"],
+  "2": ["111", "001", "111", "100", "111"],
+  "3": ["111", "001", "111", "001", "111"],
+  "4": ["101", "101", "111", "001", "001"],
+  "5": ["111", "100", "111", "001", "111"],
+  "6": ["111", "100", "111", "101", "111"],
+  "7": ["111", "001", "010", "010", "010"],
+  "8": ["111", "101", "111", "101", "111"],
+  "9": ["111", "101", "111", "001", "111"],
+  "#": ["101", "111", "101", "111", "101"],
+};
+function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3 }) {
+  const chars = String(value).split("");
+  const dim = "rgba(255,255,255,.07)";
+  return (
+    <div className="led-num" style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
+      {chars.map((ch, di) => {
+        const rows = LED_FONT[ch];
+        if (!rows) return <div key={di} style={{ width: cell }} />;
+        return (
+          <div key={di} className="led-digit" style={{ display: "grid", gridTemplateColumns: `repeat(3, ${cell}px)`, gap }}>
+            {rows.flatMap((r, ri) => r.split("").map((b, ci) => (
+              <span key={ri + "-" + ci} className="led-dot" style={{ width: cell, height: cell, background: b === "1" ? color : dim, boxShadow: b === "1" ? `0 0 ${Math.round(cell * 1.1)}px ${color}` : "none" }} />
+            )))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function LivingAura({ color = "#4c8bf5", active = false, className = "" }) {
+  return <div className={"living-aura " + (active ? "aura-hot " : "") + className} style={{ "--aura": color }} aria-hidden="true" />;
+}
+// deterministic soft color from a name, for initials avatars
+function hueFromName(s) {
+  let h = 0; const str = String(s || "");
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+  return h;
+}
+function initialsOf(name) {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return ((p[0] || "")[0] || "").toUpperCase() + ((p[1] || "")[0] || "").toUpperCase();
+}
+function AvatarStack({ names, max = 5, accent = "#4c8bf5" }) {
+  const shown = names.slice(0, max);
+  const extra = names.length - shown.length;
+  return (
+    <div className="av-stack">
+      {shown.map((nm, i) => (
+        <span key={i} className="av-chip" style={{ background: `hsl(${hueFromName(nm)} 62% 46%)`, zIndex: max - i }} title={nm}>{initialsOf(nm)}</span>
+      ))}
+      {extra > 0 && <span className="av-chip av-more" style={{ zIndex: 0 }}>+{extra}</span>}
+    </div>
+  );
+}
+
+/* ---- manager "next up" hero + who's-here avatar stack (both boards) ---- */
+function QueueHero({ nextName, waitingNames, accent, kind }) {
+  return (
+    <div className="qh">
+      <div className="qh-stage">
+        <LivingAura color={accent} active={!!nextName} />
+        <div className="qh-inner">
+          <div className="qh-kicker">Next up</div>
+          <div className={"qh-name" + (nextName ? "" : " qh-empty")}>{nextName || "Nobody available"}</div>
+        </div>
+      </div>
+      {waitingNames.length > 0 && (
+        <div className="qh-side">
+          <div className="qh-side-lbl">{kind === "floor" ? "On the floor" : "In line"} · {waitingNames.length}</div>
+          <AvatarStack names={waitingNames} accent={accent} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- live "who got opportunities today" tally, as color-fill leaderboard cards ----
+   The Line counts manager hand-offs; Live Floor also counts walk-ins/appointments that
+   flipped a rep to "with customer" — on the floor, catching an up IS the opportunity. */
+function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"] }) {
+  const act = useMemo(() => new Set(actions), [actions.join(",")]); // eslint-disable-line
+  const rows = useMemo(() => {
+    const counts = {};
+    for (const e of history || []) if (act.has(e.action)) counts[e.id] = (counts[e.id] || 0) + 1;
+    return Object.entries(counts).map(([id, n]) => ({ id, n })).sort((a, b) => b.n - a.n || String(nameOf(a.id)).localeCompare(String(nameOf(b.id))));
+  }, [history, act, nameOf]);
+  const total = rows.reduce((s, r) => s + r.n, 0);
+  const max = rows[0]?.n || 1;
+  return (
+    <div className="q-opps">
+      <div className="q-opps-head">Opportunities today <span className="q-opps-total" style={{ background: accent }}>{total}</span></div>
+      {rows.length === 0
+        ? <p className="muted q-opps-empty">Nobody's caught an opportunity yet today.</p>
+        : <div className="lb-list">
+            {rows.map((r, i) => (
+              <div key={r.id} className={"lb-card" + (i === 0 ? " lb-lead" : "")}>
+                <div className="lb-fill" style={{ width: `${Math.max(14, (r.n / max) * 100)}%`, background: accent, opacity: i === 0 ? 1 : 0.5 - Math.min(0.28, i * 0.05) }} />
+                <div className="lb-body">
+                  <span className="lb-rank">{i + 1}</span>
+                  <span className="lb-nm">{nameOf(r.id)}</span>
+                  {i === 0 && <span className="lb-crown" aria-hidden="true">▲</span>}
+                  <span className="lb-n">{r.n}</span>
+                </div>
+              </div>
+            ))}
+          </div>}
+    </div>
+  );
+}
+
 function QueueTab({ config, store, data, onChange, userName }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
@@ -4409,6 +4585,8 @@ function QueueTab({ config, store, data, onChange, userName }) {
         </div>
       </div>
 
+      <OppsTally history={row?.history} nameOf={realName} accent="#4c8bf5" />
+
       {showPins && (
         <div className="q-pins-panel">
           <div className="q-pins-head">Salesperson PINs</div>
@@ -4436,6 +4614,11 @@ function QueueTab({ config, store, data, onChange, userName }) {
           </div>
         </div>
       )}
+
+      <QueueHero
+        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
+        waitingNames={line.map((p) => realName(p.id))}
+        accent="#4c8bf5" kind="line" />
 
       <div className="q-line">
         {line.length === 0 && <p className="muted q-empty">Nobody's in line yet. Post the code, or add someone below.</p>}
@@ -4835,6 +5018,7 @@ function FloorSignIn({ store, date, token }) {
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
+  const [shownKey, setShownKey] = useState("loading");
   const [wiping, setWiping] = useState(false);
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
@@ -4876,13 +5060,18 @@ function FloorSignIn({ store, date, token }) {
   else if (step === "confirm") screen = "confirm";
   else screen = "name";
 
+  // A wipe should fire between EVERY page they touch — including flag changes on the
+  // live screen (which don't change `screen`). Key it on screen + live status.
+  const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
   useEffect(() => {
-    if (screen === shown) return;
+    if (liveKey === shownKey) return;
+    // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
+    if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
     setWiping(true);
-    const t1 = setTimeout(() => setShown(screen), 300);
+    const t1 = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 300);
     const t2 = setTimeout(() => setWiping(false), 620);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [screen, shown]);
+  }, [liveKey, shownKey, screen]);
 
   async function joinAs(person) {
     setBusy(true);
@@ -5012,36 +5201,48 @@ function FloorSignIn({ store, date, token }) {
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
     const canUndo = me.status === "customer" && me.autoFlip && me.accidentalUntil && new Date(me.accidentalUntil) > new Date();
+    const st = me.status;
+    const title = st === "customer" ? "With a customer" : st === "lunch" ? "At lunch" : st === "away" ? "Stepped away" : isNext ? "You're up" : "You're on the floor";
+    const sub = st === "customer" ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " for your appointment" : ""}. You rejoin when they leave.</>
+      : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
+      : isNext ? "Head to the door. The next one is yours." : `${availableAhead} available ahead of you`;
     content = (
-      <div className="q-card q-live">
-        <FloorPill />
-        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>{me.status === "customer" ? "You're with a customer" : "You're on the floor"}</h2></div>
-        <div className={`q-pos ${isNext ? "q-pos-next" : ""} ${me.status !== "waiting" ? "q-pos-off" : ""}`}>
-          <div className="q-pos-ring"><div className="q-pos-n">{me.status === "waiting" ? `#${myPos}` : <FFlagIcon status={me.status} className="q-ring-ico" />}</div></div>
-          <div className="q-pos-sub">
-            {me.status === "waiting"
-              ? (isNext ? <span className="q-uptag">You're up next</span> : `${availableAhead} available ahead of you`)
-              : me.status === "customer"
-                ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " · appointment" : ""}. You'll rejoin the line when they leave.</>
-                : `On ${FLOOR_FLAGS[me.status]?.label}. You'll be passed over until you tap "I'm back."`}
-            <div className="q-wait">On the floor {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+      <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
+        <div className="sf-top">
+          <span className="sf-tag"><span className="sf-live-dot" />Live Floor</span>
+          <span className="sf-tag">{line.length} on the floor</span>
+        </div>
+        <div className="sf-poswrap">
+          <div className="sf-aura" />
+          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <div className="sf-meta">
+            <div className="sf-line-1">{title}</div>
+            <div className="sf-line-2">{sub}</div>
+            <div className="sf-wait">On the floor <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
           </div>
         </div>
-        {canUndo && (
-          <button className="q-btn q-wide f-undo" disabled={busy} onClick={undoCheckin}>Not with a customer — put me back in line</button>
-        )}
-        <div className="q-flags">
-          {me.status !== "waiting" && !canUndo
-            ? <button className="q-btn q-back q-wide" disabled={busy} onClick={() => setFlag("waiting")}>I'm back{FLOOR_FLAGS[me.status] ? ` from ${FLOOR_FLAGS[me.status].label.toLowerCase()}` : ""}</button>
-            : me.status === "waiting"
-              ? FLOOR_SELF_FLAGS.map((f) => (
-                  <button key={f} className={`q-btn ${FLOOR_FLAGS[f].cls}`} disabled={busy} onClick={() => setFlag(f)}>
-                    <FFlagIcon status={f} className="q-fico" />{FLOOR_FLAGS[f].label}
+        <div className="sf-actions">
+          {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
+          <div className="sf-status-row">
+            {st !== "waiting"
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => setFlag("waiting")}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              : FLOOR_SELF_FLAGS.map((f) => (
+                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => setFlag(f)}>
+                    <DmIcon name={f} cell={4} /><span>{f === "lunch" ? "Lunch" : "Away"}</span>
                   </button>
-                ))
-              : null}
+                ))}
+          </div>
+          <button className="sf-leave" disabled={busy} onClick={leave}>Leave the floor</button>
         </div>
-        <button className="q-leave" disabled={busy} onClick={leave}>Leave the floor</button>
+        {isNext && (
+          <div className="sf-uptake">
+            <div className="sf-shock" />
+            <DmNumber value={1} up />
+            <h2>You're up</h2>
+            <p>Head to the door. The next one is yours.</p>
+            <button className="sf-go" disabled={busy} onClick={() => setFlag("customer")}>I've got it</button>
+          </div>
+        )}
       </div>
     );
   } else if (eff === "switch" && selected && switchTo) {
@@ -5132,8 +5333,8 @@ function FloorSignIn({ store, date, token }) {
   }
 
   return (
-    <div className="q-page f-page">
-      <div className="q-stage" key={eff}>{content}</div>
+    <div className="q-page f-page sf sf-floor">
+      <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
     </div>
   );
@@ -5142,9 +5343,8 @@ function FloorSignIn({ store, date, token }) {
 /* =========================================================================
    FloorBoard — the manager board. Runs the event engine while it's open.
    ========================================================================= */
-function FloorBoard({ config, store, userName }) {
+function FloorBoard({ config, store, data, userName }) {
   const [row, setRow] = useState(undefined);
-  const [data, setData] = useState(null);          // store data (roster + daysOff)
   const [identities, setIdentities] = useState({});
   const [showQR, setShowQR] = useState(false);
   const [showPins, setShowPins] = useState(false);
@@ -5163,7 +5363,6 @@ function FloorBoard({ config, store, userName }) {
     return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
   }, [data, config.roles]);
 
-  const loadData = useCallback(async () => setData(await loadShared(storeKey(store.id), emptyStoreData())), [store.id]);
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const refetch = useCallback(async () => setRow((await loadFloorRow(store.id, date)) || null), [store.id, date]);
 
@@ -5180,7 +5379,7 @@ function FloorBoard({ config, store, userName }) {
     setRow(next);
   }, [store.id, store.name, date, salesRoster, config.roles, data]);
 
-  useEffect(() => { loadData(); loadIds(); }, [loadData, loadIds]);
+  useEffect(() => { loadIds(); }, [loadIds]);
   useEffect(() => { ensureRow(); }, [ensureRow]);
   useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
@@ -5366,6 +5565,8 @@ function FloorBoard({ config, store, userName }) {
         </div>
       </div>
 
+      <OppsTally history={row?.history} nameOf={realName} accent="#0f9d76" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
+
       {unmatched.length > 0 && (
         <div className="f-unmatched">
           <div className="f-unmatched-head">Deal events we couldn't place on the floor</div>
@@ -5408,6 +5609,11 @@ function FloorBoard({ config, store, userName }) {
           </div>
         </div>
       )}
+
+      <QueueHero
+        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
+        waitingNames={line.map((p) => realName(p.id))}
+        accent="#0f9d76" kind="floor" />
 
       <div className="q-line f-line">
         {line.length === 0 && <p className="muted q-empty">Nobody's on the floor yet. Post the code, or add someone below.</p>}
@@ -5635,10 +5841,35 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig, onToolChange, onSignOut }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => (stores[0] ? stores[0].id : null));
+  const [queue, setQueue] = useState("floor");   // "floor" (Live Floor) | "line" (The Line)
   const [subtab, setSubtab] = useState("board");
+  const [data, setData] = useState(null);
+  const [saving, setSaving] = useState(false);
   const store = stores.find((s) => s.id === storeId) || stores[0] || null;
 
   useEffect(() => { if (!store && stores[0]) setStoreId(stores[0].id); }, [stores, store]);
+
+  // Load this store's data once and share it with both boards. Persisting writes the
+  // store row and an audit entry, matching how the rest of the app saves — so The Line's
+  // coaching mirror (data.queue[date]) keeps flowing exactly as before.
+  useEffect(() => {
+    let dead = false;
+    if (!store) { setData(null); return; }
+    setData(null);
+    loadShared(storeKey(store.id), emptyStoreData()).then((d) => { if (!dead) setData(d); });
+    return () => { dead = true; };
+  }, [store?.id]); // eslint-disable-line
+
+  const persist = async (next, audit) => {
+    if (!store) return;
+    setData(next); setSaving(true);
+    await saveShared(storeKey(store.id), next);
+    if (audit) await appendAudit({ user: session?.name, store: store.id, ...audit });
+    setSaving(false);
+  };
+
+  // The settings sub-tab only exists for Live Floor; The Line has no per-store settings here.
+  const effSub = queue === "line" ? "board" : subtab;
 
   return (
     <Shell>
@@ -5648,7 +5879,12 @@ function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig,
           <div><div className="brand-title">Lead Performance</div></div>
         </div>
         <div className="topbar-right">
+          {saving && <span className="save-dot">Saving…</span>}
           <ToolSwitcher value="floor" onChange={onToolChange} />
+          <select className="view-select q-queue-sel" value={queue} onChange={(e) => { setQueue(e.target.value); setSubtab("board"); }}>
+            <option value="floor">Live Floor</option>
+            <option value="line">The Line</option>
+          </select>
           {stores.length > 1 && (
             <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
               {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -5659,19 +5895,23 @@ function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig,
         </div>
       </header>
 
-      <nav className="seg-wrap no-print">
-        <SegControl
-          items={isAdmin ? [["board", "Live Floor"], ["settings", "Settings"]] : [["board", "Live Floor"]]}
-          value={isAdmin ? subtab : "board"} onChange={setSubtab} />
-      </nav>
+      {queue === "floor" && isAdmin && (
+        <nav className="seg-wrap no-print">
+          <SegControl items={[["board", "Live Floor"], ["settings", "Settings"]]} value={subtab} onChange={setSubtab} />
+        </nav>
+      )}
 
-      <div key={(store?.id || "none") + subtab} className="page">
+      <div key={(store?.id || "none") + queue + effSub} className="page">
         {!store ? (
           <div className="checkout"><p className="muted">No store available.</p></div>
-        ) : subtab === "settings" && isAdmin ? (
+        ) : data === null ? (
+          <div className="checkout"><p className="muted">Loading {store.name}…</p></div>
+        ) : queue === "line" ? (
+          <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} />
+        ) : effSub === "settings" && isAdmin ? (
           <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
         ) : (
-          <FloorBoard config={config} store={store} userName={session.name} />
+          <FloorBoard config={config} store={store} data={data} userName={session.name} />
         )}
       </div>
       <Style />
@@ -9724,7 +9964,7 @@ function ToolSwitcher({ value, onChange }) {
     ["perf", "Performance"],
     ["activity", "Daily Activity"],
     ["board", "The Board"],
-    ["floor", "Live Floor"],
+    ["floor", "SmartFloor"],
   ];
   // Same sliding thumb as the tab bar, so switching tools and switching tabs
   // feel like the same gesture rather than two different controls.
@@ -10666,7 +10906,7 @@ function TrendsPanel({ config, stores, data }) {
               <div className="tr-tip" style={{ left: `${(x(hover) / W) * 100}%` }}>
                 <div className="tr-tip-day">
                   {isHour
-                    ? days[hover] + " \u2013 " + HOUR_LABEL((hours[hover] + 1) % 24)
+                    ? days[hover] + " to " + HOUR_LABEL((hours[hover] + 1) % 24)
                     : new Date(days[hover] + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
                 </div>
                 {series.map((sr, si) => (
@@ -13803,6 +14043,175 @@ function Style() {
 /* v5: center the status icon inside the position ring */
 .q-pos-n{display:flex;align-items:center;justify-content:center;line-height:1;}
 .q-ring-ico{display:block;}
+
+/* ===================== FLUID KIT (SmartFloor) ===================== */
+.q-queue-sel{font-weight:700;}
+
+/* breathing radial aura */
+.living-aura{position:absolute;inset:-18%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 50% 46%, var(--aura) 0%, transparent 58%);
+  background:radial-gradient(circle at 50% 46%, var(--aura) 0%, color-mix(in srgb, var(--aura) 55%, transparent) 26%, transparent 60%);
+  filter:blur(10px);opacity:.5;animation:auraBreathe 4.6s ease-in-out infinite;}
+.aura-hot{opacity:.82;animation-duration:2.4s;}
+@keyframes auraBreathe{0%,100%{transform:scale(.9);opacity:.42;}50%{transform:scale(1.08);opacity:.72;}}
+
+/* dot-matrix LED numerals */
+.led-num{align-items:center;justify-content:center;}
+.led-dot{border-radius:50%;display:block;transition:background .25s ease,box-shadow .25s ease;}
+
+/* position display on the salesperson "done" screen */
+.q-pos-stage{position:relative;width:200px;height:200px;margin:2px auto 4px;display:flex;align-items:center;justify-content:center;}
+.q-pos-stage .q-pos-ring{position:relative;z-index:1;width:150px;height:150px;}
+.q-pos-stage .q-pos-ring::after{inset:10px;}
+.q-pos-stage .q-pos-n{min-height:44px;display:flex;align-items:center;justify-content:center;}
+
+/* opportunities leaderboard — color-fill cards */
+.q-opps{margin:0 0 14px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);}
+.q-opps-head{font-weight:800;font-size:13px;letter-spacing:.02em;display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--ink-2,#c8d2e0);}
+.q-opps-total{font-weight:800;font-size:12px;padding:1px 10px;border-radius:999px;color:#fff;}
+.q-opps-empty{margin:0;font-size:13px;}
+.lb-list{display:flex;flex-direction:column;gap:8px;}
+.lb-card{position:relative;overflow:hidden;border-radius:13px;background:rgba(255,255,255,.05);height:46px;display:flex;align-items:center;
+  transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease;}
+.lb-card:hover{transform:translateY(-1px);}
+.lb-fill{position:absolute;left:0;top:0;bottom:0;border-radius:13px;transition:width .6s cubic-bezier(.2,.8,.2,1),opacity .3s ease;}
+.lb-body{position:relative;z-index:1;display:flex;align-items:center;gap:10px;width:100%;padding:0 14px;}
+.lb-rank{font-weight:900;font-size:12px;opacity:.7;min-width:16px;}
+.lb-nm{font-weight:800;font-size:15px;letter-spacing:-.01em;text-shadow:0 1px 6px rgba(0,0,0,.35);}
+.lb-crown{margin-left:2px;font-size:10px;opacity:.9;}
+.lb-n{margin-left:auto;font-weight:900;font-size:22px;letter-spacing:-.02em;text-shadow:0 1px 8px rgba(0,0,0,.4);}
+.lb-lead{box-shadow:0 6px 22px rgba(0,0,0,.28);}
+.lb-lead .lb-nm,.lb-lead .lb-n{color:#fff;}
+
+/* manager "next up" hero + avatar stack */
+.qh{display:flex;gap:14px;align-items:stretch;margin:0 0 14px;flex-wrap:wrap;}
+.qh-stage{position:relative;flex:1;min-width:220px;min-height:96px;border-radius:18px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;}
+.qh-inner{position:relative;z-index:1;padding:16px 20px;}
+.qh-kicker{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.75;margin-bottom:2px;}
+.qh-name{font-size:30px;font-weight:900;letter-spacing:-.02em;line-height:1.05;text-shadow:0 2px 12px rgba(0,0,0,.4);}
+.qh-empty{font-size:20px;opacity:.6;font-weight:700;}
+.qh-side{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 4px;}
+.qh-side-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;opacity:.7;text-transform:uppercase;}
+.av-stack{display:flex;}
+.av-chip{width:38px;height:38px;border-radius:50%;margin-left:-10px;border:2px solid var(--card,#121a2b);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,.3);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1);}
+.av-chip:first-child{margin-left:0;}
+.av-stack:hover .av-chip{transform:translateY(-2px);}
+.av-more{background:rgba(255,255,255,.16)!important;}
+
+/* fluid line rows — smooth settle on reorder */
+.q-row{transition:transform .32s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;}
+.q-row:hover{transform:translateY(-1px);}
+
+/* ============================================================
+   SALESPERSON VIEW — dark, fluid, responsive (The Line + Live Floor)
+   Scoped under .q-page.sf so the manager app is untouched.
+   ============================================================ */
+.q-page.sf{
+  --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --glow:rgba(15,179,126,.5); --ld-off:rgba(124,240,208,.14);
+  --sfink:#EEF2F9; --sfink2:#9BA8BF; --sfink3:#5A6478; --sfcard:rgba(255,255,255,.045); --sfstroke:rgba(255,255,255,.09);
+  --sffont:'Geist','Sora','Space Grotesk',system-ui,-apple-system,sans-serif;
+  --sfmono:'Geist Mono','JetBrains Mono',ui-monospace,monospace;
+  font-family:var(--sffont); color:var(--sfink); letter-spacing:-.005em; padding:0;
+  background:radial-gradient(1000px 680px at 15% -10%, rgba(11,197,197,.05), transparent 60%), #06090F;
+  position:relative; min-height:100dvh;
+}
+.q-page.sf.sf-line{ --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --glow:rgba(85,102,240,.5); --ld-off:rgba(157,195,255,.14); }
+
+/* restyle the shared sign-in surfaces (name / pin / pick / confirm) */
+.sf .q-card{ background:transparent; border:none; box-shadow:none; color:var(--sfink); width:100%; max-width:440px; padding:clamp(20px,6vw,30px); }
+.sf .q-head h2{ font-family:var(--sffont); font-weight:600; letter-spacing:-.03em; font-size:clamp(24px,7vw,30px); color:var(--sfink); }
+.sf .q-kicker{ font-family:var(--sfmono); font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--sfink3); }
+.sf .q-muted{ color:var(--sfink2); font-size:15px; }
+.sf .q-big-q{ color:var(--sfink); font-weight:600; font-size:clamp(20px,6vw,26px); letter-spacing:-.02em; }
+.sf .q-name-in, .sf .q-pin-in{ background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:16px; color:var(--sfink);
+  font-family:var(--sffont); font-size:18px; font-weight:500; padding:16px 18px; width:100%; outline:none; transition:border-color .2s, box-shadow .2s; }
+.sf .q-name-in:focus, .sf .q-pin-in:focus{ border-color:var(--a2); box-shadow:0 0 0 4px color-mix(in srgb, var(--a2) 20%, transparent); }
+.sf .q-name-in::placeholder, .sf .q-pin-in::placeholder{ color:var(--sfink3); }
+.sf .q-pin-lbl{ color:var(--sfink2); font-family:var(--sfmono); font-size:12px; }
+.sf .q-btn{ font-family:var(--sffont); font-weight:600; border-radius:16px; border:none; }
+.sf .q-btn.q-primary, .sf .q-btn.q-back{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#03130d; box-shadow:0 14px 30px -12px var(--glow); }
+.sf .q-btn:not(.q-primary):not(.q-back){ background:var(--sfcard); color:var(--sfink); border:1px solid var(--sfstroke); }
+.sf .q-leave{ color:var(--sfink3); font-family:var(--sfmono); font-size:13px; }
+.sf .q-leave:hover{ color:var(--sfink2); }
+.sf .q-name{ background:var(--sfcard); border:1px solid var(--sfstroke); color:var(--sfink); border-radius:14px; }
+.sf .q-role{ color:var(--sfink3); }
+.sf .q-err{ color:#ff9a9a; }
+.sf .q-phone-pill, .sf .f-pill{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#03130d; }
+.sf .q-stage-pin .q-card{ animation:none; }
+
+/* dot-matrix primitives */
+.sf .dm{ display:flex; gap:calc(var(--cell,12px)*.72); align-items:center; justify-content:center; perspective:600px; }
+.sf .dm-digit{ display:grid; grid-template-columns:repeat(3,var(--cell,12px)); gap:calc(var(--cell,12px)*.44); transform-style:preserve-3d;
+  animation:sfflip .5s cubic-bezier(.3,.7,.25,1) both; }
+.sf .dm-digit:nth-child(2){ animation-delay:.05s; }
+.sf .dm-digit:nth-child(3){ animation-delay:.1s; }
+@keyframes sfflip{ 0%{ transform:rotateX(90deg); opacity:.25; filter:brightness(2.2); } 55%{ transform:rotateX(-9deg); } 100%{ transform:rotateX(0); opacity:1; filter:none; } }
+.sf .ld{ width:var(--cell,12px); height:var(--cell,12px); border-radius:50%; background:var(--ld-off); }
+.sf .ld.on{ background:var(--led); box-shadow:0 0 calc(var(--cell,12px)*.85) var(--led); }
+.sf .dm-ico{ display:inline-grid; }
+.sf .dm-ico .ld.on{ box-shadow:0 0 3px var(--led); }
+
+/* the hero "you're on the floor / in line" screen */
+.sf-live{ width:100%; max-width:460px; display:flex; flex-direction:column; min-height:100dvh; padding:clamp(52px,8vh,70px) clamp(20px,6vw,26px) clamp(24px,5vh,34px); }
+.sf-top{ display:flex; align-items:center; justify-content:space-between; }
+.sf-tag{ display:inline-flex; align-items:center; gap:8px; background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:12px;
+  padding:8px 13px; font-family:var(--sfmono); font-size:12px; color:var(--sfink2); }
+.sf-live-dot{ width:7px; height:7px; border-radius:50%; background:var(--a1); box-shadow:0 0 8px var(--glow); }
+.sf-poswrap{ position:relative; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.sf-aura{ position:absolute; width:min(82vw,340px); height:min(82vw,340px); border-radius:50%;
+  background:radial-gradient(circle at 50% 45%, var(--glow), transparent 62%); opacity:.5; animation:sfbreathe 4.8s ease-in-out infinite; }
+@keyframes sfbreathe{ 0%,100%{ transform:scale(.9); opacity:.4; } 50%{ transform:scale(1.08); opacity:.66; } }
+.sf-ring{ position:relative; width:min(56vw,214px); height:min(56vw,214px); border-radius:50%; display:grid; place-items:center;
+  background:linear-gradient(150deg,var(--a1),var(--a2)); z-index:1; }
+.sf-ring::after{ content:""; position:absolute; inset:8px; border-radius:50%; background:#070b12; }
+.sf-ringface{ position:relative; z-index:1; --cell:clamp(9px,3.3vw,14px); display:grid; place-items:center; }
+.sf-off .sf-ring{ filter:saturate(.35) brightness(.72); }
+.sf-off .sf-aura{ opacity:.14; animation:none; }
+.sf-meta{ margin-top:clamp(20px,4vh,30px); text-align:center; z-index:1; }
+.sf-line-1{ font-size:clamp(20px,6vw,23px); font-weight:600; letter-spacing:-.02em; }
+.sf-line-2{ font-size:clamp(13px,4vw,15px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
+.sf-wait{ font-family:var(--sfmono); font-size:12px; color:var(--sfink3); margin-top:13px; }
+.sf-dot{ color:var(--sfink3); padding:0 .35em; }
+.sf-actions{ display:flex; flex-direction:column; gap:10px; }
+.sf-status-row{ display:flex; gap:8px; }
+.sf-sbtn{ flex:1; appearance:none; cursor:pointer; font-family:var(--sffont); font-weight:500; font-size:clamp(12px,3.4vw,13px); color:var(--sfink2);
+  background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:14px; padding:12px 6px 10px; display:flex; flex-direction:column; align-items:center; gap:7px; transition:.16s; }
+.sf-sbtn:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
+.sf-sbtn:disabled{ opacity:.55; }
+.sf-sbtn.active{ color:#03130d; background:linear-gradient(90deg,var(--a1),var(--a2)); border-color:transparent; }
+.sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
+.sf-leave:hover{ color:var(--sfink2); }
+
+/* full-screen "you're up" takeover */
+.sf-uptake{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  padding:40px; background:linear-gradient(160deg,var(--a1),var(--a2)); animation:sfUpIn .5s cubic-bezier(.2,.85,.25,1) both; }
+@keyframes sfUpIn{ from{ opacity:0; transform:scale(1.04); } to{ opacity:1; transform:none; } }
+.sf-shock{ position:absolute; width:min(52vw,200px); height:min(52vw,200px); border-radius:50%; border:2px solid rgba(255,255,255,.5); animation:sfShock 2s ease-out infinite; }
+@keyframes sfShock{ 0%{ transform:scale(.5); opacity:.7; } 100%{ transform:scale(2.4); opacity:0; } }
+.sf-uptake .dm{ --cell:clamp(12px,4.4vw,17px); --led:#fff; --ld-off:rgba(255,255,255,.3); position:relative; z-index:1; margin-bottom:24px; animation:sfThrob 1.3s ease-in-out infinite; }
+.sf-uptake .dm .ld.on{ box-shadow:0 0 10px rgba(255,255,255,.6); }
+@keyframes sfThrob{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
+.sf-uptake h2{ font-size:clamp(40px,13vw,54px); font-weight:700; letter-spacing:-.04em; color:#04140f; line-height:.95; }
+.sf-uptake p{ margin-top:12px; font-size:clamp(15px,4.4vw,17px); font-weight:500; color:rgba(4,20,15,.78); max-width:340px; }
+.sf-go{ margin-top:32px; background:#04140f; color:#fff; border:none; border-radius:16px; padding:15px 32px; font-family:var(--sffont); font-weight:600; font-size:16px; cursor:pointer; }
+.sf-go:active{ transform:translateY(1px); }
+
+/* PIN screen — its own "something else fun" entrance (a spring pop, no curtain) */
+.q-stage-pin{animation:qpinpop .58s cubic-bezier(.2,.9,.25,1.35) both;transform-origin:center 40%;}
+@keyframes qpinpop{
+  0%{opacity:0;transform:scale(.72) translateY(14px) rotate(-1.2deg);}
+  55%{opacity:1;transform:scale(1.04) translateY(0) rotate(.4deg);}
+  100%{opacity:1;transform:scale(1) translateY(0) rotate(0);}
+}
+.q-stage-pin .q-pin-in{animation:qpinglow 1.1s ease .2s both;}
+@keyframes qpinglow{
+  0%{box-shadow:0 0 0 0 rgba(120,150,255,0);}
+  40%{box-shadow:0 0 0 6px rgba(120,150,255,.18);}
+  100%{box-shadow:0 0 0 0 rgba(120,150,255,0);}
+}
 
 /* ===== SmartFloor / Live Floor — greens where the phone line runs blue ===== */
 .f-banner{background:linear-gradient(180deg,#19c58f,#0f9d76);}
