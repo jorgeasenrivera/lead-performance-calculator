@@ -1541,24 +1541,23 @@ export default function LeadPerformanceCalculator() {
     if (!config || !session) return;
     (async () => {
       const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
-      const all = {};
-      for (const s of accessible) {
-        const r = await loadStrict(storeKey(s.id));
-        if (!r.ok) { setLoadErr(true); return; }   // never let a failed read look like an empty store
-        let d = r.value;
-        if (!d) {
-          const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
-          if (!legacy.ok) { setLoadErr(true); return; }
-          d = legacy.value || emptyStoreData();
-        }
-        all[s.id] = d;
-      }
-      setAdminData(all);
-      // an admin opening the tool is what triggers the daily backup
-      if (session.role === "admin") {
-        runAutoBackup(config, all, session.name).catch(() => {});
-      }
       if (!viewPicked.current) {
+        // First load: pull every accessible store, cache it, pick a starting view.
+        const all = {};
+        for (const s of accessible) {
+          const r = await loadStrict(storeKey(s.id));
+          if (!r.ok) { setLoadErr(true); return; }   // never let a failed read look like an empty store
+          let d = r.value;
+          if (!d) {
+            const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
+            if (!legacy.ok) { setLoadErr(true); return; }
+            d = legacy.value || emptyStoreData();
+          }
+          all[s.id] = d;
+        }
+        setAdminData(all);
+        // an admin opening the tool is what triggers the daily backup
+        if (session.role === "admin") runAutoBackup(config, all, session.name).catch(() => {});
         viewPicked.current = true;
         if (session.role === "admin") {
           setView("admin");
@@ -1568,10 +1567,24 @@ export default function LeadPerformanceCalculator() {
           const first = accessible[0]?.id;
           if (first) { setView(first); setStoreData(all[first]); }
         }
-      } else if (view !== "admin" && view !== "combined" && all[view]) {
-        // config changed while working in a store: refresh that store's data, stay put
-        setStoreData(all[view]);
+        return;
       }
+      // Later runs happen when the config or (more often) the auth session reference
+      // changes -- e.g. a token refresh or tab focus. These must NOT reload or overwrite
+      // the store being worked in: doing so was reverting fresh edits mid-save and then
+      // the next save wrote the reverted copy back, wiping plates. Only fetch stores we
+      // don't already have cached; never touch storeData.
+      const missing = accessible.filter((s) => !adminData[s.id]);
+      if (!missing.length) return;
+      const add = {};
+      for (const s of missing) {
+        const r = await loadStrict(storeKey(s.id));
+        if (!r.ok) continue;
+        let d = r.value;
+        if (!d) { const legacy = await loadStrict(`lpc:store:${s.id}:v1`); d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        add[s.id] = d;
+      }
+      if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
     })();
   }, [config, session]);
 
