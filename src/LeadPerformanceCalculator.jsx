@@ -6296,11 +6296,21 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
           <ToolSwitcher value="floor" onChange={onToolChange} />
-          <select className="view-select q-queue-sel" value={queue} onChange={(e) => { setQueue(e.target.value); setSubtab("board"); }}>
-            <option value="floor">Live Floor</option>
-            <option value="line">The Line</option>
-            <option value="online">Online</option>
-          </select>
+          <div className="qsel" role="tablist" aria-label="Queue">
+            {[["floor", "Live Floor", "#10B981"], ["line", "The Line", "#5566F0"], ["online", "Online", "#8B5CF6"]].map(([val, label, color]) => (
+              <button
+                key={val}
+                type="button"
+                role="tab"
+                aria-selected={queue === val}
+                className={"qsel-pill" + (queue === val ? " on" : "")}
+                style={queue === val ? { background: color, borderColor: color, color: "#fff" } : { background: "#fff", borderColor: color, color }}
+                onClick={() => { setQueue(val); setSubtab("board"); }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {stores.length > 1 && (
             <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
               {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -14535,6 +14545,11 @@ function Style() {
 
 /* ===================== FLUID KIT (SmartFloor) ===================== */
 .q-queue-sel{font-weight:700;}
+.qsel{ display:inline-flex; gap:6px; align-items:center; }
+.qsel-pill{ font-family:inherit; font-weight:700; font-size:13px; line-height:1; padding:8px 13px; border-radius:999px; border:1.5px solid; cursor:pointer; white-space:nowrap; transition:transform .12s ease, filter .12s ease; }
+.qsel-pill:hover{ transform:translateY(-1px); }
+.qsel-pill:active{ transform:translateY(0); }
+.qsel-pill.on{ box-shadow:0 3px 10px -3px rgba(16,32,52,.35); }
 
 /* breathing radial aura */
 .living-aura{position:absolute;inset:-18%;border-radius:50%;pointer-events:none;
