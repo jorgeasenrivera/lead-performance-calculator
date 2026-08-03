@@ -2009,6 +2009,7 @@ export default function LeadPerformanceCalculator() {
           <div className="topbar-right">
             <ToolSwitcher value="board" onChange={(mod) => {
               if (mod === "board") return;
+              if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
               if (mod === "activity" && view === "admin") {
                 const first = (isAdmin ? config.stores : accessibleStores)[0];
                 if (first) setView(first.id);
@@ -2031,9 +2032,10 @@ export default function LeadPerformanceCalculator() {
   }
 
   // ---- Live Floor: its own self-contained module (walk-in / showroom queue) ----
-  if (appModule === "floor") {
+  if (appModule === "floor" || appModule === "line" || appModule === "online") {
     return (
       <FloorModule
+        queue={appModule}
         config={config}
         session={session}
         accessibleStores={accessibleStores}
@@ -2042,9 +2044,9 @@ export default function LeadPerformanceCalculator() {
         onSaveConfig={persistConfig}
         onSignOut={signOut}
         onToolChange={(mod) => {
-          if (mod === "floor") return;
+          if (mod === appModule) return;
           if (mod === "board") { setAppModule("board"); return; }
-          if (mod === "floor") { setAppModule("floor"); return; }
+          if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
           if (mod === "activity" && view === "admin") {
             const first = (isAdmin ? config.stores : accessibleStores)[0];
             if (first) setView(first.id);
@@ -2104,7 +2106,7 @@ export default function LeadPerformanceCalculator() {
           <ToolSwitcher value={appModule} onChange={(mod) => {
             if (mod === appModule) return;
             if (mod === "board") { setAppModule("board"); return; }
-            if (mod === "floor") { setAppModule("floor"); return; }
+            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
             if (mod === "activity" && view === "admin") {
               const first = (isAdmin ? config.stores : accessibleStores)[0];
               if (first) setView(first.id);
@@ -2137,7 +2139,7 @@ export default function LeadPerformanceCalculator() {
           onToolChange={(mod) => {
             if (mod === appModule) return;
             if (mod === "board") { setAppModule("board"); return; }
-            if (mod === "floor") { setAppModule("floor"); return; }
+            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
             if (mod === "activity" && view === "admin") {
               const first = (isAdmin ? config.stores : accessibleStores)[0];
               if (first) setView(first.id);
@@ -2160,7 +2162,7 @@ export default function LeadPerformanceCalculator() {
           onToolChange={(mod) => {
             if (mod === appModule) { setDrawerOpen(false); return; }
             if (mod === "board") { setAppModule("board"); setDrawerOpen(false); return; }
-            if (mod === "floor") { setAppModule("floor"); setDrawerOpen(false); return; }
+            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); setDrawerOpen(false); return; }
             if (mod === "activity" && view === "admin") {
               const first = (isAdmin ? config.stores : accessibleStores)[0];
               if (first) setView(first.id);
@@ -6246,14 +6248,14 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* =========================================================================
    FloorModule — the standalone module shell (its own tool, like The Board).
    ========================================================================= */
-function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, onSaveConfig, onToolChange, onSignOut }) {
+function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onSignOut }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => {
     if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
     return stores[0] ? stores[0].id : null;
   });
-  const [queue, setQueue] = useState("floor");   // "floor" (Live Floor) | "line" (The Line)
   const [subtab, setSubtab] = useState("board");
+  useEffect(() => { setSubtab("board"); }, [queue]);   // switching queue always lands on the board
   const [data, setData] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -6295,22 +6297,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
         </div>
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
-          <ToolSwitcher value="floor" onChange={onToolChange} />
-          <div className="qsel" role="tablist" aria-label="Queue">
-            {[["floor", "Live Floor", "#10B981"], ["line", "The Line", "#5566F0"], ["online", "Online", "#8B5CF6"]].map(([val, label, color]) => (
-              <button
-                key={val}
-                type="button"
-                role="tab"
-                aria-selected={queue === val}
-                className={"qsel-pill" + (queue === val ? " on" : "")}
-                style={queue === val ? { background: color, borderColor: color, color: "#fff" } : { background: "#fff", borderColor: color, color }}
-                onClick={() => { setQueue(val); setSubtab("board"); }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <ToolSwitcher value={queue} onChange={onToolChange} />
           {stores.length > 1 && (
             <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
               {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -10445,7 +10432,11 @@ function ToolSwitcher({ value, onChange }) {
     ["perf", "Performance"],
     ["activity", "Daily Activity"],
     ["board", "The Board"],
-    ["floor", "SmartFloor"],
+  ];
+  const queues = [
+    ["floor", "Live Floor", "#10B981"],
+    ["line", "The Line", "#5566F0"],
+    ["online", "Online", "#8B5CF6"],
   ];
   // Same sliding thumb as the tab bar, so switching tools and switching tabs
   // feel like the same gesture rather than two different controls.
@@ -10454,7 +10445,7 @@ function ToolSwitcher({ value, onChange }) {
   const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
   const measure = useCallback(() => {
     const btn = btnRefs.current[value];
-    if (!btn || !wrapRef.current) return;
+    if (!btn || !wrapRef.current || !tools.some(([id]) => id === value)) { setThumb((t) => ({ ...t, ready: false })); return; }
     setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true });
   }, [value]);
   useEffect(() => {
@@ -10465,16 +10456,28 @@ function ToolSwitcher({ value, onChange }) {
   }, [measure]);
 
   return (
-    <div className="tool-switch" role="group" aria-label="Switch tool" ref={wrapRef}>
-      <div className={"tool-thumb" + (thumb.ready ? " ready" : "")}
-        style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />
-      {tools.map(([id, label]) => (
-        <button key={id} ref={(el) => (btnRefs.current[id] = el)}
-          className={"tool-btn " + (value === id ? "on" : "")}
-          onClick={() => onChange(id)}>
-          {label}
-        </button>
-      ))}
+    <div className="tool-row">
+      <div className="tool-switch" role="group" aria-label="Switch tool" ref={wrapRef}>
+        <div className={"tool-thumb" + (thumb.ready ? " ready" : "")}
+          style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width, opacity: thumb.ready ? 1 : 0 }} />
+        {tools.map(([id, label]) => (
+          <button key={id} ref={(el) => (btnRefs.current[id] = el)}
+            className={"tool-btn " + (value === id ? "on" : "")}
+            onClick={() => onChange(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="qsel" role="group" aria-label="Sign-in queue">
+        {queues.map(([id, label, color]) => (
+          <button key={id} type="button" aria-selected={value === id}
+            className={"qsel-pill" + (value === id ? " on" : "")}
+            style={value === id ? { background: color, borderColor: color, color: "#fff" } : { background: "#fff", borderColor: color, color }}
+            onClick={() => onChange(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -10531,7 +10534,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open, onClose]);
 
-  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "The Board"]];
+  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "The Board"], ["floor", "Live Floor"], ["line", "The Line"], ["online", "Online"]];
   const pick = (id) => { onChange && onChange(id); onClose(); };
 
   return (
@@ -13120,7 +13123,7 @@ function Style() {
         .hamburger { display:flex; order:1; margin-left:auto; }
         .seg-wrap { display:none !important; }
         /* The tool switcher moved into the drawer; account controls stay but tuck under the logo. */
-        .topbar .tool-switch { display:none; }
+        .topbar .tool-row { display:none; }
         .topbar { flex-wrap:wrap; gap:10px; }
         .brand { order:0; }
         .topbar-right { width:100%; order:2; gap:8px 12px; justify-content:flex-start; flex-wrap:wrap; }
@@ -13403,6 +13406,7 @@ function Style() {
       .ac-prints li { list-style:disc; margin:1px 0; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
+      .tool-row { display:inline-flex; align-items:center; gap:12px; flex-wrap:wrap; }
       .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
         border-radius:10px; padding:2px; }
       .tool-thumb { position:absolute; top:2px; bottom:2px; left:0; background:#fff; border-radius:8px;
@@ -14288,7 +14292,7 @@ function Style() {
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
         .topbar-right { gap:8px; }
-        .topbar .tool-switch, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
+        .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
         .hamburger { display:none !important; }                       /* replaced by the bottom bar */
         .brand-title { font-size:16px; }
         .view-select { max-width:46vw; font-size:13px; }
