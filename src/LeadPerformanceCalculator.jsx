@@ -321,6 +321,7 @@ const PIX = {
   arrowdown:["000111000","000111000","000111000","111111111","011111110","001111100","000111000","000010000","000000000"],
   clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
   phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
+  globe:    ["001111100","011000110","110101011","101010101","111111111","101010101","110101011","011000110","001111100"],
   search:   ["001111000","011111100","110000110","110000110","011111100","001111100","000011110","000001110","000000110"],
   plus:     ["000000000","000010000","000010000","000010000","011111110","000010000","000010000","000010000","000000000"],
   trophy:   ["011111110","011111110","110111011","110111011","011111110","000111000","000111000","001111100","011111110"],
@@ -3783,7 +3784,7 @@ const LEAD_VARIANTS = {
     joinTitle: "Get in line", joinSub: "Type your name to claim the next phone opportunity.",
     ready1: "You're in line", wait: "In line", aheadSub: "ahead of you for the next call",
     upSub: "The next phone opportunity is yours.", custTitle: "On a call", custSub: "Back in line the moment your call wraps.",
-    custFlag: "On a call", joinBtn: "Join the line", leave: "Leave the line", empty: "Nobody's in line yet. Post the code, or add someone below.",
+    custFlag: "On a call", joinBtn: "Join the line", bannerLabel: "Phone Opportunities", bannerGlyph: "phone", leave: "Leave the line", empty: "Nobody's in line yet. Post the code, or add someone below.",
   },
   online: {
     kind: "online", dataKey: "queueOnline", param: "o", label: "Online", count: "in the queue",
@@ -3791,7 +3792,7 @@ const LEAD_VARIANTS = {
     joinTitle: "Get in the queue", joinSub: "Type your name to claim the next online lead.",
     ready1: "You're in the queue", wait: "In the queue", aheadSub: "ahead of you for the next lead",
     upSub: "The next online lead is yours.", custTitle: "On a lead", custSub: "Back in the queue when you wrap up.",
-    custFlag: "On a lead", joinBtn: "Join the queue", leave: "Leave the queue", empty: "Nobody's in the queue yet. Post the code, or add someone below.",
+    custFlag: "On a lead", joinBtn: "Join the queue", bannerLabel: "Internet Lead Opportunities", bannerGlyph: "globe", leave: "Leave the queue", empty: "Nobody's in the queue yet. Post the code, or add someone below.",
   },
 };
 
@@ -4573,13 +4574,13 @@ function healthTone(h) { return h >= 85 ? { label: "Healthy", key: "green" } : h
 function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
   const r = (size - width) / 2, c = 2 * Math.PI * r, dash = Math.max(0, Math.min(1, pct || 0)) * c;
   return (
-    <div className="gauge" style={{ width: size, height: size }}>
+    <div className="icg" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--mf-track)" strokeWidth={width} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={"gauge-fg gauge-" + tone} strokeWidth={width} strokeLinecap="round"
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={"icg-fg icg-" + tone} strokeWidth={width} strokeLinecap="round"
           strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
       </svg>
-      <div className="gauge-val">{label}{sub && <span className="gauge-sub">{sub}</span>}</div>
+      <div className="icg-val">{label}{sub && <span className="icg-sub">{sub}</span>}</div>
     </div>
   );
 }
@@ -4619,7 +4620,7 @@ function InstrumentCluster({ metrics, kind, actions }) {
         <GaugeCard label="Coverage" value={mfPct(m.coverage)} pct={m.coverage} tone={covTone} />
         <GaugeCard label="Utilization" value={mfPct(m.utilization)} pct={m.utilization} tone={utilTone} />
         <GaugeCard label="Avg wait" value={m.avgWaitMin + " min"} pct={Math.min(1, m.avgWaitMin / 30)} tone={waitTone} />
-        <GaugeCard label={kind === "floor" ? "Ready advisors" : "Ready reps"} value={String(m.ready)} pct={m.onFloor > 0 ? m.ready / m.onFloor : 0} tone={m.ready > 0 ? "green" : "amber"} />
+        <GaugeCard label="Hand raises" value={String(m.ready)} pct={m.onFloor > 0 ? m.ready / m.onFloor : 0} tone={m.ready > 0 ? "green" : "amber"} />
       </div>
       {actions && <div className="ic-actions">{actions}</div>}
     </div>
@@ -4642,11 +4643,11 @@ const TL_MAP = {
   "left": ["left the floor", "gray"],
   "accidental-undo": ["cleared an auto check-in", "gray"],
 };
-function ActivityTimeline({ history, nameOf }) {
+function ActivityTimeline({ history, nameOf, horizontal }) {
   const events = (history || []).filter((e) => TL_MAP[e.action]).slice(-16).reverse();
   const fmt = (t) => { try { return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
   return (
-    <div className="tl">
+    <div className={"tl" + (horizontal ? " tl-h" : "")}>
       <div className="tl-head">Activity <span className="tl-live">LIVE</span></div>
       {events.length === 0
         ? <p className="tl-empty">Nothing has happened on the floor yet today.</p>
@@ -4745,7 +4746,7 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
       </div>
 
       <div className="sa-list">
-        {candidates.length === 0 && <p className="sa-empty">{query.trim() ? "Nobody " + whoLabel + " matches. Tag your reps below so this can find them." : "Nobody " + whoLabel + " yet."}</p>}
+        {candidates.length === 0 && <p className="sa-empty">{query.trim() ? "Nobody " + whoLabel + " matches. Tag your associates below so this can find them." : "Nobody " + whoLabel + " yet."}</p>}
         {candidates.map((c, idx) => (
           <div key={c.id} className={"sa-row" + (pending === c.id ? " sa-open" : "")}>
             <div className="sa-row-top">
@@ -4946,7 +4947,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   return (
     <div className={`checkout q-tab mf ${variant.mf}`}>
-      <div className="q-phone-banner"><QPhoneIcon className="q-banner-ico" /> Phone Opportunities</div>
+      <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
 
       <InstrumentCluster kind="line"
         metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })}
@@ -5073,9 +5074,9 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
           closeMap={(() => { const m = {}; for (const p of line) { const r = oyoRatios(oyoBaseline(data, norm(realName(p.id)), p.id)); m[p.id] = r ? r[variant.channel] : null; } return m; })()}
           onSaveTags={(next) => onChange({ ...data, repTags: next }, { action: "Updated rep tags", detail: store.name })}
           onAssign={(id, reason) => assignSpecific(id, reason)} />
-        <ActivityTimeline history={row?.history} nameOf={realName} />
       </aside>
       </div>
+      <ActivityTimeline horizontal history={row?.history} nameOf={realName} />
     </div>
   );
 }
@@ -6066,9 +6067,9 @@ function FloorBoard({ config, store, data, onData, userName }) {
           closeMap={(() => { const m = {}; for (const p of line) { const r = oyoRatios(oyoBaseline(data, norm(realName(p.id)), p.id)); m[p.id] = r ? r.close_showroom : null; } return m; })()}
           onSaveTags={(next) => onData && onData({ ...data, repTags: next }, { action: "Updated rep tags", detail: store.name })}
           onAssign={(id, reason) => assignSpecific(id, reason)} />
-        <ActivityTimeline history={row?.history} nameOf={realName} />
       </aside>
       </div>
+      <ActivityTimeline horizontal history={row?.history} nameOf={realName} />
 
       {toast && <div className="f-toast">{toast}</div>}
     </div>
@@ -14621,12 +14622,13 @@ function Style() {
 .mf .q-opps-head{ color:var(--mfink2); }
 .mf .q-opps-total{ color:#fff; }
 .mf .q-opps-empty{ color:var(--mfink3); }
-.mf .lb-card{ background:#F4F6FB; }
-.mf .lb-fill{ opacity:.2 !important; }
-.mf .lb-lead .lb-fill{ opacity:.5 !important; }
-.mf .lb-rank{ color:var(--mfink2); }
-.mf .lb-nm{ color:var(--mfink); text-shadow:none; }
+.mf .lb-card{ background:#F6F7FB; border:1px solid var(--mfline); }
+.mf .lb-fill{ opacity:.1 !important; }
+.mf .lb-lead .lb-fill{ opacity:.2 !important; }
+.mf .lb-rank{ color:var(--mfink3); }
+.mf .lb-nm{ color:var(--mfink); text-shadow:none; font-weight:700; }
 .mf .lb-n{ color:var(--mfink); text-shadow:none; }
+.mf .lb-crown{ color:var(--a1); opacity:1; }
 .mf .lb-lead{ box-shadow:inset 3px 0 0 var(--a1); }
 
 /* next-up hero */
@@ -14668,6 +14670,7 @@ function Style() {
 
 /* panels */
 .mf .q-pins-panel, .mf .q-qr-panel, .mf .q-missing, .mf .f-unmatched, .mf .q-add{ background:#fff; border:1px solid var(--mfline); border-radius:16px; box-shadow:0 1px 2px rgba(16,32,52,.04); }
+.mf .q-add{ padding:12px 16px; }
 .mf .q-pins-head, .mf .q-missing-head, .mf .f-unmatched-head{ font-family:var(--mffont); font-weight:600; color:var(--mfink); }
 .mf .q-pin-name{ color:var(--mfink); }
 .mf .q-qr-box{ background:#fff; }
@@ -14732,12 +14735,12 @@ function Style() {
 .ic-health{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:18px 20px; }
 .ic-health-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; gap:10px; }
 .ic-health-body{ display:flex; align-items:center; gap:18px; margin-top:12px; }
-.gauge{ position:relative; display:inline-grid; place-items:center; flex:0 0 auto; }
-.gauge svg{ display:block; }
-.gauge-fg{ transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1); }
-.gauge-green{ stroke:#10B981; } .gauge-amber{ stroke:#E0A100; } .gauge-red{ stroke:#E5473C; } .gauge-blue{ stroke:#3B6FD4; }
-.gauge-val{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
-.gauge-sub{ display:block; font-family:var(--mfmono); font-size:8px; font-weight:600; letter-spacing:.08em; color:var(--mfink2); margin-top:3px; }
+.icg{ position:relative; display:inline-grid; place-items:center; flex:0 0 auto; background:transparent; }
+.icg svg{ display:block; }
+.icg-fg{ transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1); }
+.icg-green{ stroke:#10B981; } .icg-amber{ stroke:#E0A100; } .icg-red{ stroke:#E5473C; } .icg-blue{ stroke:#3B6FD4; }
+.icg-val{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
+.icg-sub{ display:block; font-family:var(--mfmono); font-size:8px; font-weight:600; letter-spacing:.08em; color:var(--mfink2); margin-top:3px; }
 .ic-health-n{ font-size:42px; font-weight:700; letter-spacing:-.03em; }
 .ic-sup{ flex:1; display:flex; flex-direction:column; gap:9px; min-width:0; }
 .ic-sup-row{ display:flex; align-items:center; gap:8px; font-size:13px; }
@@ -14770,6 +14773,11 @@ function Style() {
 .tl-txt{ font-size:13.5px; color:var(--mfink); }
 .tl-txt strong{ font-weight:700; }
 .tl-t{ font-family:var(--mfmono); font-size:11px; color:var(--mfink3); margin-top:2px; }
+.tl-h .tl-list{ display:flex; flex-direction:row; gap:0; overflow-x:auto; margin-top:14px; padding-bottom:8px; }
+.tl-h .tl-item{ flex:0 0 auto; flex-direction:column; align-items:flex-start; gap:9px; min-width:152px; max-width:210px; padding:0 22px 0 0; }
+.tl-h .tl-item:not(:last-child)::before{ left:14px; right:6px; top:5px; bottom:auto; width:auto; height:2px; }
+.tl-h .tl-dot{ margin-top:0; }
+.tl-h .tl-txt{ white-space:normal; }
 
 /* Settings tab, brought into the light board theme */
 .mf-settings{ max-width:940px; }
