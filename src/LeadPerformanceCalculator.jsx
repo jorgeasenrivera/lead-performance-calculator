@@ -1642,6 +1642,13 @@ export default function LeadPerformanceCalculator() {
       alert("That change was blocked because it would have wiped this store's records. Please reload the page and try again.");
       return;
     }
+    // Keep the saved blob small. Snapshots are by far the biggest bloat (each is
+    // roughly a full copy of the store), and every save ships the whole blob, so a
+    // pile of them is what pushed writes past the database statement timeout. Cap
+    // them hard on EVERY save, so the first save after this permanently shrinks it.
+    if (next && Array.isArray(next.snapshots) && next.snapshots.length > 3) {
+      next.snapshots = next.snapshots.slice(0, 3);
+    }
     setStoreData(next); setSaving(true);
     setAdminData((p) => ({ ...p, [storeId]: next }));
     const ok = await saveShared(storeKey(storeId), next);
@@ -1664,7 +1671,7 @@ export default function LeadPerformanceCalculator() {
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
     snaps.unshift({ t, by: session?.name || "-", reason, data: copy });
-    data.snapshots = snaps.slice(0, 12);
+    data.snapshots = snaps.slice(0, 3);
     return t;   // so an upload can point back at the exact state before it
   };
 
