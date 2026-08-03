@@ -4619,7 +4619,7 @@ function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
 function GaugeCard({ label, value, pct, tone }) {
   return (
     <div className="ic-card">
-      <Gauge pct={pct} size={62} width={7} tone={tone} label={<span className="ic-card-n">{value}</span>} />
+      <Gauge pct={pct} size={62} width={7} tone={tone} label={<span className="ic-card-n">{String(value).replace(/\s*min$/, "")}</span>} />
       <div className="ic-card-meta"><div className="ic-card-l">{label}</div><div className="ic-card-v">{value}</div></div>
     </div>
   );
@@ -4979,15 +4979,22 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   return (
     <div className={`checkout q-tab mf ${variant.mf}`}>
-      <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
-
-      <InstrumentCluster kind="line"
-        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })}
-        actions={<>
+      <div className="q-topline">
+        <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
+        <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
-        </>} />
+        </div>
+      </div>
+
+      <InstrumentCluster kind="line"
+        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })} />
+
+      <QueueHero
+        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
+        waitingNames={line.map((p) => realName(p.id))}
+        accent={variant.accent} kind="line" />
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
 
@@ -5018,11 +5025,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
           </div>
         </div>
       )}
-
-      <QueueHero
-        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
-        waitingNames={line.map((p) => realName(p.id))}
-        accent={variant.accent} kind="line" />
 
       <div className="mf-lower">
       <div className="mf-main">
@@ -5943,7 +5945,14 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   return (
     <div className="checkout q-tab f-tab mf mf-floor">
-      <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
+      <div className="q-topline">
+        <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
+        <div className="q-topline-actions">
+          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
+        </div>
+      </div>
 
       {notConfigured && (
         <div className="f-warn">
@@ -5954,12 +5963,12 @@ function FloorBoard({ config, store, data, onData, userName }) {
       )}
 
       <InstrumentCluster kind="floor"
-        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] })}
-        actions={<>
-          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
-          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
-          <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
-        </>} />
+        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] })} />
+
+      <QueueHero
+        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
+        waitingNames={line.map((p) => realName(p.id))}
+        accent="#0FB37E" kind="floor" />
 
       <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
 
@@ -6005,11 +6014,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
           </div>
         </div>
       )}
-
-      <QueueHero
-        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
-        waitingNames={line.map((p) => realName(p.id))}
-        accent="#0FB37E" kind="floor" />
 
       <div className="mf-lower">
       <div className="mf-main">
@@ -14593,11 +14597,11 @@ function Style() {
 
 /* manager "next up" hero + avatar stack */
 .qh{display:flex;gap:14px;align-items:stretch;margin:0 0 14px;flex-wrap:wrap;}
-.qh-stage{position:relative;flex:1;min-width:220px;min-height:96px;border-radius:18px;overflow:hidden;
+.qh-stage{position:relative;flex:1;min-width:220px;min-height:120px;border-radius:18px;overflow:hidden;
   background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;}
-.qh-inner{position:relative;z-index:1;padding:16px 20px;}
+.qh-inner{position:relative;z-index:1;padding:22px 26px;}
 .qh-kicker{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.75;margin-bottom:2px;}
-.qh-name{font-size:30px;font-weight:900;letter-spacing:-.02em;line-height:1.05;text-shadow:0 2px 12px rgba(0,0,0,.4);}
+.qh-name{font-size:40px;font-weight:900;letter-spacing:-.02em;line-height:1.04;text-shadow:0 2px 12px rgba(0,0,0,.4);}
 .qh-empty{font-size:20px;opacity:.6;font-weight:700;}
 .qh-side{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 4px;}
 .qh-side-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;opacity:.7;text-transform:uppercase;}
@@ -14784,11 +14788,13 @@ function Style() {
 .ic-health{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:18px 20px; }
 .ic-health-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; gap:10px; }
 .ic-health-body{ display:flex; align-items:center; gap:18px; margin-top:12px; }
+.q-topline{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+.q-topline-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .icg{ position:relative; display:inline-grid; place-items:center; flex:0 0 auto; background:transparent; }
 .icg svg{ display:block; }
 .icg-fg{ transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1); }
 .icg-green{ stroke:#10B981; } .icg-amber{ stroke:#E0A100; } .icg-red{ stroke:#E5473C; } .icg-blue{ stroke:#3B6FD4; }
-.icg-val{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
+.icg-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
 .icg-sub{ display:block; font-family:var(--mfmono); font-size:8px; font-weight:600; letter-spacing:.08em; color:var(--mfink2); margin-top:3px; }
 .ic-health-n{ font-size:42px; font-weight:700; letter-spacing:-.03em; }
 .ic-sup{ flex:1; display:flex; flex-direction:column; gap:9px; min-width:0; }
