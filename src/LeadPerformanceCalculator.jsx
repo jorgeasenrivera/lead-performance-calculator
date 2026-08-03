@@ -302,6 +302,64 @@ function currentStreak(data, a, std) {
   }
   return { dir, len };
 }
+/* ============================================================================
+   Dot-matrix icon system. Every icon is a 9x9 grid of dots (lit only), drawn
+   with currentColor so it inherits text color and scales via CSS. This is the
+   salesperson dot-matrix language carried across the whole app.
+   ========================================================================= */
+const PIX = {
+  chart:    ["000000000","000000110","000000110","000110110","000110110","110110110","110110110","110110110","000000000"],
+  calendar: ["010000010","111111111","100000001","101101101","100000001","101101101","100000001","111111111","000000000"],
+  clipboard:["000111000","011111110","010000010","010111010","010000010","010111010","010000010","011111110","000000000"],
+  gear:     ["001010100","011111110","111000111","010000010","110000011","010000010","111000111","011111110","001010100"],
+  user:     ["000111000","001111100","001111100","000111000","000000000","011111110","111111111","111111111","000000000"],
+  users:    ["010001000","111011100","111011100","010001000","000000000","110111011","111111111","111111111","000000000"],
+  check:    ["000000000","000000011","000000110","000001100","010011000","011110000","001100000","000000000","000000000"],
+  close:    ["000000000","011000110","011000110","001101100","000111000","001101100","011000110","011000110","000000000"],
+  arrow:    ["000000000","000010000","000011000","111111100","111111110","111111100","000011000","000010000","000000000"],
+  arrowup:  ["000010000","000111000","001111100","011111110","111111111","000111000","000111000","000111000","000000000"],
+  arrowdown:["000111000","000111000","000111000","111111111","011111110","001111100","000111000","000010000","000000000"],
+  clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
+  phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
+  search:   ["001111000","011111100","110000110","110000110","011111100","001111100","000011110","000001110","000000110"],
+  plus:     ["000000000","000010000","000010000","000010000","011111110","000010000","000010000","000010000","000000000"],
+  trophy:   ["011111110","011111110","110111011","110111011","011111110","000111000","000111000","001111100","011111110"],
+  flame:    ["000010000","000110000","001110000","001111000","011011100","110001110","110000110","011001100","001111000"],
+  lunch:    ["000101000","001010000","000101000","111111100","100000100","100000110","100000100","111111000","000000000"],
+  away:     ["011111100","010000100","010000100","010011100","010011110","010011100","010000100","010000100","011111100"],
+  door:     ["011111100","010000110","010000010","010001010","010000010","010000010","010000010","010000010","011111110"],
+  handshake:["000000000","000011000","011011110","111111111","011111110","111111111","011011110","000011000","000000000"],
+  doc:      ["011111000","010000100","010000110","010111110","010000010","010111010","010000010","011111110","000000000"],
+  star:     ["000010000","000111000","000111000","111111111","011111110","001111100","011111110","010001000","100000001"],
+  bolt:     ["000011100","000111000","001110000","011111100","000011100","000111000","001110000","011100000","000000000"],
+  dot:      ["000000000","000000000","000111000","001111100","001111100","001111100","000111000","000000000","000000000"],
+};
+function PixIcon({ glyph, size = 20, className, style, title }) {
+  const rows = PIX[glyph] || PIX.dot;
+  const n = rows.length;
+  const cell = size / n;
+  const r = +(cell * 0.40).toFixed(2);
+  const dots = [];
+  for (let y = 0; y < n; y++) {
+    const row = rows[y];
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] === "1") dots.push(<circle key={y * n + x} cx={+((x + 0.5) * cell).toFixed(2)} cy={+((y + 0.5) * cell).toFixed(2)} r={r} />);
+    }
+  }
+  return (
+    <svg className={"pix" + (className ? " " + className : "")} style={style} width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="currentColor" aria-hidden={title ? undefined : "true"} role={title ? "img" : undefined}>
+      {title ? <title>{title}</title> : null}{dots}
+    </svg>
+  );
+}
+function pixSvgString(glyph, size = 18, color = "currentColor") {
+  const rows = PIX[glyph] || PIX.dot;
+  const n = rows.length, cell = size / n, r = (cell * 0.40).toFixed(2);
+  let dots = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < rows[y].length; x++)
+    if (rows[y][x] === "1") dots += `<circle cx="${((x + 0.5) * cell).toFixed(1)}" cy="${((y + 0.5) * cell).toFixed(1)}" r="${r}"/>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" fill="${color}">${dots}</svg>`;
+}
 function StreakIcon({ data, a, std, min = 3 }) {
   const { dir, len } = currentStreak(data, a, std);
   if (!dir || len < min) return null;
@@ -309,7 +367,7 @@ function StreakIcon({ data, a, std, min = 3 }) {
   return (
     <span className={"streak " + (up ? "streak-up" : "streak-down")}
       title={up ? `On a ${len}-day streak: calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
-      {up ? "🔥" : "🧊"}<span className="streak-n">{len}</span>
+      {up ? <PixIcon glyph="flame" size={14} /> : <PixIcon glyph="arrowdown" size={14} />}<span className="streak-n">{len}</span>
     </span>
   );
 }
@@ -559,7 +617,7 @@ function useFavicon() {
         document.head.appendChild(pre);
         const f = document.createElement("link");
         f.id = "lpc-fonts"; f.rel = "stylesheet";
-        f.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap";
+        f.href = "https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap";
         document.head.appendChild(f);
       }
     } catch {}
@@ -1141,13 +1199,13 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 
 const AUTH_ENABLED = true;
 
-async function loadShared(key, fallback) {
+async function loadShared(key, fallback, throwOnError) {
   if (!supabase) return fallback;
   try {
     const { data, error } = await supabase.from("app_data").select("value").eq("key", key).maybeSingle();
     if (error) throw error;
     return data ? data.value : fallback;
-  } catch (e) { console.error("load failed", key, e); return fallback; }
+  } catch (e) { console.error("load failed", key, e); if (throwOnError) throw e; return fallback; }
 }
 async function saveShared(key, value) {
   if (!supabase) return false;
@@ -1348,6 +1406,7 @@ export default function LeadPerformanceCalculator() {
   const [appModule, setAppModule] = useState("perf");
   const [view, setView] = useState("admin");
   const [storeData, setStoreData] = useState(null);
+  const [storeLoadFailed, setStoreLoadFailed] = useState(false);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1534,8 +1593,14 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     (async () => {
-      const d = adminData[view] || (await loadShared(storeKey(view), emptyStoreData()));
-      setStoreData(d);
+      if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
+      try {
+        const d = await loadShared(storeKey(view), emptyStoreData(), true); // throw on a real load error
+        setStoreData(d); setStoreLoadFailed(false);
+      } catch (e) {
+        // A failed load must NOT masquerade as an empty store, or the next save wipes it.
+        setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+      }
       setTab("board");
     })();
   }, [view]); // eslint-disable-line
@@ -1547,6 +1612,16 @@ export default function LeadPerformanceCalculator() {
     setSaving(false);
   };
   const persistStore = async (storeId, next, audit) => {
+    if (storeLoadFailed) {
+      alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page, make sure everything is showing, then try again.");
+      return;
+    }
+    const looksEmpty = (o) => !o || (!(o.roster || []).length && !Object.keys(o.months || {}).length && !Object.keys(o.activity || {}).length && !(o.plateRegistry || []).length);
+    const prior = adminData[storeId] || storeData;
+    if (prior && !looksEmpty(prior) && looksEmpty(next)) {
+      alert("That change was blocked because it would have wiped this store's records. Please reload the page and try again.");
+      return;
+    }
     setStoreData(next); setSaving(true);
     setAdminData((p) => ({ ...p, [storeId]: next }));
     await saveShared(storeKey(storeId), next);
@@ -1817,16 +1892,19 @@ export default function LeadPerformanceCalculator() {
         : assoc.name,
     });
   };
-  // --- phone-lead queue: public sign-in intercept (before any auth) ---
+  // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
   const queueParams = (() => {
     try {
       const p = new URLSearchParams(window.location.search);
-      const q = p.get("q"), d = p.get("d"), t = p.get("t");
-      return q && d && t ? { store: q, date: d, token: t } : null;
+      const d = p.get("d"), t = p.get("t");
+      const q = p.get("q"), o = p.get("o");
+      if (q && d && t) return { store: q, date: d, token: t, variant: LEAD_VARIANTS.line };
+      if (o && d && t) return { store: o, date: d, token: t, variant: LEAD_VARIANTS.online };
+      return null;
     } catch { return null; }
   })();
   if (queueParams) {
-    return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} /><Style /></Shell>;
+    return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} variant={queueParams.variant} /><Style /></Shell>;
   }
   // --- live floor: public sign-in intercept (before any auth) ---
   const floorParams = (() => {
@@ -1928,6 +2006,7 @@ export default function LeadPerformanceCalculator() {
         config={config}
         session={session}
         accessibleStores={accessibleStores}
+        currentStoreId={view !== "admin" && view !== "combined" ? view : null}
         isAdmin={isAdmin}
         onSaveConfig={persistConfig}
         onSignOut={signOut}
@@ -2166,10 +2245,11 @@ export default function LeadPerformanceCalculator() {
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
           <div key={view + tab + appModule} className="page">
+            {storeLoadFailed && <div className="load-warn">This store's data didn't load fully, so changes are paused to protect your records. Reload the page, confirm everything is showing, then continue.</div>}
             {appModule === "activity" ? (
               <>
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
-                {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
@@ -2386,7 +2466,7 @@ function LEADERBOARD_HTML(p) {
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
     --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
   html,body { height:100%; }
-  body { font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
+  body { font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
     font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
     background:#0E2033; overflow:hidden; }
   /* Store colors mode: the whole backdrop derives from the store's brand palette,
@@ -2445,7 +2525,7 @@ function LEADERBOARD_HTML(p) {
   .total { text-align:right; }
   .total-num { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
   .total-cap { font-size:calc(1.5vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
-  .clock { text-align:right; font-family:'Space Grotesk','Inter',sans-serif; }
+  .clock { text-align:right; font-family:'Space Grotesk',sans-serif; }
   .clock-time { font-size:calc(3.2vh * var(--tscale)); font-weight:700; }
   .clock-date { font-size:1.5vh; color:#9FC2E4; display:flex; align-items:center; gap:.4vw; justify-content:flex-end; }
   .live { width:.8vh; height:.8vh; border-radius:50%; background:#69E08A; flex:0 0 auto;
@@ -3683,7 +3763,7 @@ function ImportBadge({ storeData, activity }) {
 
 const QUEUE_TABLE = "queue_public";
 const QUEUE_ID_TABLE = "queue_identity";
-const queueRowId = (store, date) => `${store}:${date}`;
+const queueRowId = (store, date, kind) => (!kind || kind === "line" ? `${store}:${date}` : `${store}:${date}:${kind}`);
 
 const QUEUE_FLAGS = {
   waiting:  { label: "In line",       cls: "q-waiting" },
@@ -3693,33 +3773,38 @@ const QUEUE_FLAGS = {
 };
 const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
 
+/* The Line and Online are the same lead-queue mechanic with different wording,
+   accent, data slot, and close-rate channel. The Line's config is byte-identical
+   to its current behavior so nothing about it changes. */
+const LEAD_VARIANTS = {
+  line: {
+    kind: "line", dataKey: "queue", param: "q", label: "The Line", count: "in line",
+    channel: "close_phone", closeLabel: "phone close", sf: "sf-line", mf: "mf-line", accent: "#5566F0",
+    joinTitle: "Get in line", joinSub: "Type your name to claim the next phone opportunity.",
+    ready1: "You're in line", wait: "In line", aheadSub: "ahead of you for the next call",
+    upSub: "The next phone opportunity is yours.", custTitle: "On a call", custSub: "Back in line the moment your call wraps.",
+    custFlag: "On a call", joinBtn: "Join the line", leave: "Leave the line", empty: "Nobody's in line yet. Post the code, or add someone below.",
+  },
+  online: {
+    kind: "online", dataKey: "queueOnline", param: "o", label: "Online", count: "in the queue",
+    channel: "close_internet", closeLabel: "online close", sf: "sf-online", mf: "mf-online", accent: "#8B5CF6",
+    joinTitle: "Get in the queue", joinSub: "Type your name to claim the next online lead.",
+    ready1: "You're in the queue", wait: "In the queue", aheadSub: "ahead of you for the next lead",
+    upSub: "The next online lead is yours.", custTitle: "On a lead", custSub: "Back in the queue when you wrap up.",
+    custFlag: "On a lead", joinBtn: "Join the queue", leave: "Leave the queue", empty: "Nobody's in the queue yet. Post the code, or add someone below.",
+  },
+};
+
 /* ---- hand-drawn line icons (currentColor, no emoji) ---- */
 function QPhoneIcon({ className }) {
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6.4 3h3l1.5 4-2 1.4a11 11 0 0 0 4.7 4.7l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.4 5.2 2 2 0 0 1 6.4 3z" />
-    </svg>
-  );
+  return <PixIcon glyph="phone" size={16} className={className} />;
 }
 function QClockIcon({ className }) {
-  return (
-    <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.4 2" />
-    </svg>
-  );
+  return <PixIcon glyph="clock" size={22} className={className} />;
 }
 function QFlagIcon({ status, className }) {
-  const p = { className, width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
-  if (status === "lunch") return (
-    <svg {...p}><path d="M4 8.5h11.5V13a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8.5z" /><path d="M15.5 9.5H18a2.4 2.4 0 0 1 0 4.8h-2.3" /><path d="M6.5 3.2c-.4.9-.4 1.7 0 2.6M9.5 3.2c-.4.9-.4 1.7 0 2.6" /></svg>
-  );
-  if (status === "customer") return (
-    <svg {...p}><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" /><circle cx="17.2" cy="9.2" r="2.3" /><path d="M16 14.4a4.6 4.6 0 0 1 4.5 4.6" /></svg>
-  );
-  if (status === "away") return (
-    <svg {...p}><path d="M13.5 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h7" /><path d="M11 12h9M16.5 8.5 20.5 12l-4 3.5" /></svg>
-  );
-  return null;
+  const g = status === "lunch" ? "lunch" : status === "away" ? "away" : status === "customer" ? "user" : null;
+  return g ? <PixIcon glyph={g} size={18} className={className} /> : null;
 }
 
 const shortLabel = (name) => {
@@ -3734,28 +3819,28 @@ const qMinsSince = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date
 const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`);
 
 /* ---- Supabase access: the per-day line row (queue_public) ---- */
-async function loadQueueRow(store, date) {
+async function loadQueueRow(store, date, kind) {
   if (!supabase) return null;
   try {
-    const { data, error } = await supabase.from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date)).maybeSingle();
+    const { data, error } = await supabase.from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date, kind)).maybeSingle();
     if (error) throw error;
     return data ? data.data : null;
   } catch (e) { console.error("loadQueueRow", e); return null; }
 }
-async function saveQueueRow(store, date, data) {
+async function saveQueueRow(store, date, data, kind) {
   if (!supabase) return false;
   try {
     const { error } = await supabase.from(QUEUE_TABLE).upsert(
-      { id: queueRowId(store, date), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
+      { id: queueRowId(store, date, kind), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
     if (error) throw error;
     return true;
   } catch (e) { console.error("saveQueueRow", e); return false; }
 }
-async function mutateQueueRow(store, date, fn) {
-  const cur = await loadQueueRow(store, date);
+async function mutateQueueRow(store, date, fn, kind) {
+  const cur = await loadQueueRow(store, date, kind);
   const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
   if (!next) return cur;
-  await saveQueueRow(store, date, next);
+  await saveQueueRow(store, date, next, kind);
   return next;
 }
 
@@ -3855,9 +3940,9 @@ function loadQRCode() {
   });
   return _qrPromise;
 }
-function queueSignInUrl(storeId, date, token) {
+function queueSignInUrl(storeId, date, token, param = "q") {
   const base = window.location.origin + window.location.pathname;
-  return `${base}?q=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
+  return `${base}?${param}=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
 }
 function QueueQR({ url, cell = 6 }) {
   const ref = useRef(null);
@@ -3890,13 +3975,13 @@ async function printQueueSignIn({ store, url, date, by }) {
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
-  const phoneSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 3h3l1.5 4-2 1.4a11 11 0 0 0 4.7 4.7l1.4-2 4 1.5v3a2 2 0 0 1-2.2 2A16 16 0 0 1 4.4 5.2 2 2 0 0 1 6.4 3z"/></svg>';
+  const phoneSvg = pixSvgString("phone", 18);
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line · ${store.name}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
+    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
     .banner{display:inline-flex;align-items:center;gap:10px;background:#4c8bf5;color:#fff;font-weight:700;
       font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
     h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
@@ -3934,6 +4019,17 @@ const SF_ICONS = {
   back:     ["0000000","0110000","0111000","0111100","0111000","0110000","0000000"],
 };
 // analog LED numeral: each digit is keyed by its value so it remounts and "flips" on change
+// light haptic feedback where supported (no-op elsewhere)
+function buzz(pattern) { try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
+// bridge to the native app shell (Expo WebView) for iOS Live Activities / widgets. No-op in a normal browser.
+function postToNativeShell(payload) {
+  try {
+    const w = typeof window !== "undefined" ? window : null;
+    if (w && w.ReactNativeWebView && typeof w.ReactNativeWebView.postMessage === "function") {
+      w.ReactNativeWebView.postMessage(JSON.stringify({ type: "queue", payload }));
+    }
+  } catch (e) {}
+}
 function DmNumber({ value, up }) {
   const s = String(value);
   return (
@@ -3958,7 +4054,7 @@ function DmIcon({ name, cell = 4 }) {
   );
 }
 
-function QueueSignIn({ store, date, token }) {
+function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
@@ -3976,7 +4072,8 @@ function QueueSignIn({ store, date, token }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const refetch = useCallback(async () => setRow((await loadQueueRow(store, date)) || null), [store, date]);
+  const refetch = useCallback(async () => setRow((await loadQueueRow(store, date, variant.kind)) || null), [store, date, variant.kind]);
+  const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
@@ -3985,6 +4082,16 @@ function QueueSignIn({ store, date, token }) {
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
   const roster = (row && row.roster) || [];
+  const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
+  useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
+  const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
+  const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
+  useEffect(() => {
+    if (!me || myIdx < 0) return;
+    postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
+      rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
+      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString() });
+  }, [me && me.status, myIdx, aheadCount, iAmUp]); // eslint-disable-line
 
   const remember = (id) => {
     try {
@@ -4023,7 +4130,7 @@ function QueueSignIn({ store, date, token }) {
 
   async function joinAs(person) {
     setBusy(true);
-    const next = await mutateQueueRow(store, date, (cur) => {
+    const next = await mutateRow((cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
       if (!cur.line.some((p) => p.id === person.id)) {
@@ -4080,7 +4187,7 @@ function QueueSignIn({ store, date, token }) {
 
   async function setFlag(status) {
     if (busy || !meId) return; setBusy(true);
-    const next = await mutateQueueRow(store, date, (cur) => {
+    const next = await mutateRow((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -4102,7 +4209,7 @@ function QueueSignIn({ store, date, token }) {
   }
   async function leave() {
     if (busy || !meId) return; setBusy(true);
-    const next = await mutateQueueRow(store, date, (cur) => {
+    const next = await mutateRow((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
@@ -4137,15 +4244,15 @@ function QueueSignIn({ store, date, token }) {
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
     const st = me.status;
-    const title = st === "customer" ? "On a call" : st === "lunch" ? "At lunch" : st === "away" ? "Away" : isNext ? "You're up" : "You're in line";
-    const sub = st === "customer" ? "Back in line the moment your call wraps."
+    const title = st === "customer" ? variant.custTitle : st === "lunch" ? "At lunch" : st === "away" ? "Away" : isNext ? "You're up" : variant.ready1;
+    const sub = st === "customer" ? variant.custSub
       : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
-      : isNext ? "The next phone opportunity is yours." : `${availableAhead} ahead of you for the next call`;
+      : isNext ? variant.upSub : `${availableAhead} ${variant.aheadSub}`;
     content = (
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
-          <span className="sf-tag"><span className="sf-live-dot" />The Line</span>
-          <span className="sf-tag">{line.length} in line</span>
+          <span className="sf-tag"><span className="sf-live-dot" />{variant.label}</span>
+          <span className="sf-tag">{line.length} {variant.count}</span>
         </div>
         <div className="sf-poswrap">
           <div className="sf-aura" />
@@ -4153,28 +4260,28 @@ function QueueSignIn({ store, date, token }) {
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
             <div className="sf-line-2">{sub}</div>
-            <div className="sf-wait">In line <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+            <div className="sf-wait">{variant.wait} <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
           </div>
         </div>
         <div className="sf-actions">
           <div className="sf-status-row">
             {st !== "waiting"
-              ? <button className="sf-sbtn active" disabled={busy} onClick={() => setFlag("waiting")}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><DmIcon name="back" cell={4} /><span>Back in</span></button>
               : QUEUE_SELF_FLAGS.map((f) => (
-                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => setFlag(f)}>
-                    <DmIcon name={f} cell={4} /><span>{f === "customer" ? "On a call" : f === "lunch" ? "Lunch" : "Away"}</span>
+                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
+                    <DmIcon name={f} cell={4} /><span>{f === "customer" ? variant.custFlag : f === "lunch" ? "Lunch" : "Away"}</span>
                   </button>
                 ))}
           </div>
-          <button className="sf-leave" disabled={busy} onClick={leave}>Leave the line</button>
+          <button className="sf-leave" disabled={busy} onClick={leave}>{variant.leave}</button>
         </div>
         {isNext && (
           <div className="sf-uptake">
             <div className="sf-shock" />
             <DmNumber value={1} up />
             <h2>You're up</h2>
-            <p>The next phone opportunity is yours.</p>
-            <button className="sf-go" disabled={busy} onClick={() => setFlag("customer")}>Got it</button>
+            <p>{variant.upSub}</p>
+            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setFlag("customer"); }}>Got it</button>
           </div>
         )}
       </div>
@@ -4214,7 +4321,7 @@ function QueueSignIn({ store, date, token }) {
           </div>
         )}
         {msg && <p className="q-err">{msg}</p>}
-        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the line"}</button>
+        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : variant.joinBtn}</button>
         <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
       </div>
     );
@@ -4225,7 +4332,7 @@ function QueueSignIn({ store, date, token }) {
         <div className="q-roster">
           {resolved.people.map((p) => (
             <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
-              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">in line</span> : null}
+              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">{variant.count}</span> : null}
             </button>
           ))}
         </div>
@@ -4247,7 +4354,7 @@ function QueueSignIn({ store, date, token }) {
     content = (
       <div className="q-card">
         <PhonePill />
-        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get in line</h2><p className="q-muted">Type your name to claim the next phone opportunity.</p></div>
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p></div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
           onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
         {msg && <p className="q-err">{msg}</p>}
@@ -4267,7 +4374,7 @@ function QueueSignIn({ store, date, token }) {
   }
 
   return (
-    <div className="q-page sf sf-line">
+    <div className={`q-page sf ${variant.sf}`}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
     </div>
@@ -4432,7 +4539,273 @@ function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"]
   );
 }
 
-function QueueTab({ config, store, data, onChange, userName }) {
+/* ---- Manager instrument cluster: Floor Health, gauges, and metrics ---- */
+function jainIndex(counts) {
+  const xs = counts.filter((n) => n > 0);
+  if (xs.length === 0) return 1;
+  const sum = xs.reduce((a, b) => a + b, 0);
+  const sumSq = xs.reduce((a, b) => a + b * b, 0);
+  return sumSq > 0 ? (sum * sum) / (xs.length * sumSq) : 1;
+}
+function computeFloorMetrics({ line, roster, data, date, history, oppActions }) {
+  const scheduled = (roster || []).filter((a) => !isOff(data, a.id, date)).length;
+  const onFloor = line.length;
+  const waiting = line.filter((p) => p.status === "waiting");
+  const ready = waiting.length;
+  const withCust = line.filter((p) => p.status === "customer").length;
+  const coverage = scheduled > 0 ? Math.min(1, onFloor / scheduled) : (onFloor > 0 ? 1 : 0);
+  const utilization = onFloor > 0 ? withCust / onFloor : 0;
+  const avgWaitMin = ready > 0 ? Math.round(waiting.reduce((a, p) => a + qMinsSince(p.joinedAt), 0) / ready) : 0;
+  const acts = new Set(oppActions || ["assigned"]);
+  const counts = {};
+  for (const e of history || []) if (acts.has(e.action) && e.id) counts[e.id] = (counts[e.id] || 0) + 1;
+  const totalOpps = Object.values(counts).reduce((a, b) => a + b, 0);
+  const fairnessRaw = jainIndex(Object.values(counts));
+  const fairnessScore = totalOpps > 0 ? fairnessRaw : 0.5;   // don't reward a floor that hasn't run yet
+  const flow = onFloor === 0 ? 0 : (avgWaitMin <= 20 ? 1 : Math.max(0, (60 - avgWaitMin) / 40));
+  const readiness = ready > 0 ? 1 : (onFloor > 0 ? 0.4 : 0);
+  const health = Math.round(100 * (0.40 * coverage + 0.25 * fairnessScore + 0.20 * flow + 0.15 * readiness));
+  return { scheduled, onFloor, ready, withCust, coverage, utilization, avgWaitMin, fairness: totalOpps > 0 ? fairnessRaw : null, health, notSignedIn: Math.max(0, scheduled - onFloor) };
+}
+const mfPct = (x) => Math.round((x || 0) * 100) + "%";
+function healthTone(h) { return h >= 85 ? { label: "Healthy", key: "green" } : h >= 65 ? { label: "Fair", key: "amber" } : { label: "Low", key: "red" }; }
+
+function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
+  const r = (size - width) / 2, c = 2 * Math.PI * r, dash = Math.max(0, Math.min(1, pct || 0)) * c;
+  return (
+    <div className="gauge" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--mf-track)" strokeWidth={width} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={"gauge-fg gauge-" + tone} strokeWidth={width} strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      </svg>
+      <div className="gauge-val">{label}{sub && <span className="gauge-sub">{sub}</span>}</div>
+    </div>
+  );
+}
+function GaugeCard({ label, value, pct, tone }) {
+  return (
+    <div className="ic-card">
+      <Gauge pct={pct} size={62} width={7} tone={tone} label={<span className="ic-card-n">{value}</span>} />
+      <div className="ic-card-meta"><div className="ic-card-l">{label}</div><div className="ic-card-v">{value}</div></div>
+    </div>
+  );
+}
+function InstrumentCluster({ metrics, kind, actions }) {
+  const m = metrics, tone = healthTone(m.health);
+  const covTone = m.coverage >= 0.85 ? "green" : m.coverage >= 0.6 ? "amber" : "red";
+  const utilTone = m.utilization >= 0.35 ? "green" : "amber";
+  const waitTone = m.avgWaitMin <= 20 ? "green" : m.avgWaitMin <= 40 ? "amber" : "red";
+  const sup = [
+    ["Coverage", mfPct(m.coverage), covTone],
+    ["Utilization", mfPct(m.utilization), utilTone],
+    ["Fairness", m.fairness == null ? "n/a" : mfPct(m.fairness), m.fairness == null ? "amber" : m.fairness >= 0.8 ? "green" : "amber"],
+    ["Avg wait", m.avgWaitMin + " min", waitTone],
+  ];
+  return (
+    <div className="ic">
+      <div className="ic-health">
+        <div className="ic-health-head">Floor Health <span className={"ic-pill ic-" + tone.key}>{tone.label}</span></div>
+        <div className="ic-health-body">
+          <Gauge pct={m.health / 100} size={132} width={14} tone={tone.key} label={<span className="ic-health-n">{m.health}</span>} sub="FLOOR HEALTH" />
+          <div className="ic-sup">
+            {sup.map(([l, v, t]) => (
+              <div key={l} className="ic-sup-row"><span className={"ic-dot ic-" + t} /><span className="ic-sup-l">{l}</span><span className="ic-sup-v">{v}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="ic-gauges">
+        <GaugeCard label="Coverage" value={mfPct(m.coverage)} pct={m.coverage} tone={covTone} />
+        <GaugeCard label="Utilization" value={mfPct(m.utilization)} pct={m.utilization} tone={utilTone} />
+        <GaugeCard label="Avg wait" value={m.avgWaitMin + " min"} pct={Math.min(1, m.avgWaitMin / 30)} tone={waitTone} />
+        <GaugeCard label={kind === "floor" ? "Ready advisors" : "Ready reps"} value={String(m.ready)} pct={m.onFloor > 0 ? m.ready / m.onFloor : 0} tone={m.ready > 0 ? "green" : "amber"} />
+      </div>
+      {actions && <div className="ic-actions">{actions}</div>}
+    </div>
+  );
+}
+
+const TL_MAP = {
+  "signed-in": ["joined the floor", "green"],
+  "assigned": ["took the next up", "green"],
+  "auto-checkin": ["is with a walk-in", "green"],
+  "auto-appt-show": ["appointment arrived", "violet"],
+  "auto-proposal": ["sent a proposal", "blue"],
+  "auto-sold": ["marked a deal sold", "green"],
+  "auto-checkout": ["customer checked out", "gray"],
+  "lunch": ["went to lunch", "amber"],
+  "away": ["stepped away", "red"],
+  "back": ["is back in", "green"],
+  "declined": ["was passed", "gray"],
+  "timer-pass": ["passed on the timer", "gray"],
+  "left": ["left the floor", "gray"],
+  "accidental-undo": ["cleared an auto check-in", "gray"],
+};
+function ActivityTimeline({ history, nameOf }) {
+  const events = (history || []).filter((e) => TL_MAP[e.action]).slice(-16).reverse();
+  const fmt = (t) => { try { return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+  return (
+    <div className="tl">
+      <div className="tl-head">Activity <span className="tl-live">LIVE</span></div>
+      {events.length === 0
+        ? <p className="tl-empty">Nothing has happened on the floor yet today.</p>
+        : <div className="tl-list">
+            {events.map((e, i) => {
+              const [verb, tone] = TL_MAP[e.action];
+              const who = e.who || (nameOf ? nameOf(e.id) : null) || "Someone";
+              return (
+                <div key={i} className="tl-item">
+                  <span className={"tl-dot tl-" + tone} />
+                  <div className="tl-body"><div className="tl-txt"><strong>{who}</strong> {verb}</div><div className="tl-t">{fmt(e.t)}</div></div>
+                </div>
+              );
+            })}
+          </div>}
+    </div>
+  );
+}
+
+/* ---- Smart assign: query the line by need (language, closer, etc.) and
+   skip someone forward, with a required reason. Tags are per-rep, stored on
+   store data (data.repTags) and shared by The Line and Live Floor. ---- */
+const SA_SUGGESTED = ["Spanish", "Bilingual", "Top closer", "Finance", "Trucks", "Luxury", "New"];
+const SA_STOP = new Set(["speaker","speakers","who","best","has","have","the","a","an","on","in","phones","phone","is","are","and","for","with","of","to","give","this","lead","leads","that","need","needs","someone","rep","up","next","line","floor","the","most"]);
+const SA_REASONS = ["Language match", "Top closer", "Customer asked for them", "Manager pick"];
+const SA_PERF = new Set(["closer", "close", "closing", "closes", "percentage", "pct", "rate", "best", "top", "highest", "strongest"]);
+const SA_SYN = { close:"closer", closing:"closer", closes:"closer", closer:"closer", percentage:"closer", pct:"closer", rate:"closer",
+  espanol:"spanish", "español":"spanish", hispanic:"spanish", latino:"spanish", bilingual:"bilingual",
+  truck:"trucks", trucks:"trucks", luxury:"luxury", highline:"luxury", finance:"finance", financing:"finance", credit:"finance", newbie:"new", rookie:"new" };
+function saMatch(query, name, tags) {
+  const q = String(query || "").toLowerCase().trim();
+  if (!q) return { score: 0, hit: [] };
+  const terms = q.split(/[^a-z0-9]+/).filter((t) => t && !SA_STOP.has(t));
+  if (!terms.length) return { score: 0, hit: [] };
+  const lname = name.toLowerCase();
+  const ltags = tags.map((t) => t.toLowerCase());
+  let score = 0; const hit = [];
+  for (const t of terms) {
+    const e = SA_SYN[t] || t;
+    const tagHit = ltags.find((tag) => tag.includes(t) || t.includes(tag) || tag.includes(e));
+    if (tagHit) { score += 2; if (!hit.includes(tagHit)) hit.push(tagHit); }
+    else if (lname.includes(t)) score += 1;
+  }
+  return { score, hit };
+}
+function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, closeMap, closeLabel }) {
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState(null);   // {id} awaiting a reason
+  const [reason, setReason] = useState("");
+  const [manage, setManage] = useState(false);
+  const [tagInput, setTagInput] = useState({});    // per-rep add-tag text
+  const tagsOf = (id) => (repTags && repTags[id]) || [];
+  const closeOf = (id) => (closeMap && closeMap[id] != null ? closeMap[id] : null);
+
+  const isPerf = useMemo(() => String(query).toLowerCase().split(/[^a-z]+/).some((w) => SA_PERF.has(w)), [query]);
+  const candidates = useMemo(() => {
+    const terms = String(query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t && !SA_STOP.has(t));
+    const tagTerms = terms.filter((t) => !SA_PERF.has(t));
+    const rows = line.map((p) => {
+      const name = realName(p.id);
+      const m = saMatch(tagTerms.join(" "), name, tagsOf(p.id));
+      return { id: p.id, name, tags: tagsOf(p.id), status: p.status, close: closeOf(p.id), ...m };
+    });
+    let out = tagTerms.length ? rows.filter((r) => r.score > 0) : rows;
+    if (isPerf) out = out.slice().sort((a, b) => ((b.close ?? -1) - (a.close ?? -1)) || (b.score - a.score) || a.name.localeCompare(b.name));
+    else if (query.trim()) out = out.slice().sort((a, b) => (b.score - a.score) || a.name.localeCompare(b.name));
+    else out = out.slice().sort((a, b) => a.name.localeCompare(b.name));
+    return out;
+  }, [line, query, repTags, realName, isPerf, closeMap]);
+
+  const allTags = useMemo(() => {
+    const set = new Set(SA_SUGGESTED);
+    Object.values(repTags || {}).forEach((arr) => (arr || []).forEach((t) => set.add(t)));
+    return Array.from(set);
+  }, [repTags]);
+
+  const addTag = (id, t) => {
+    const tag = String(t || "").trim(); if (!tag) return;
+    const cur = tagsOf(id);
+    if (cur.some((x) => x.toLowerCase() === tag.toLowerCase())) return;
+    onSaveTags({ ...(repTags || {}), [id]: [...cur, tag] });
+    setTagInput((s) => ({ ...s, [id]: "" }));
+  };
+  const removeTag = (id, t) => onSaveTags({ ...(repTags || {}), [id]: tagsOf(id).filter((x) => x !== t) });
+  const doAssign = (id) => { const r = reason.trim(); if (!r) return; onAssign(id, r); setPending(null); setReason(""); setQuery(""); };
+
+  const whoLabel = kind === "floor" ? "on the floor" : "in the line";
+  return (
+    <div className="sa">
+      <div className="sa-head">Smart assign</div>
+      <p className="sa-sub">Type what the {kind === "floor" ? "customer" : "lead"} needs and skip the right person forward. A skip always needs a reason.</p>
+      <input className="sa-input" value={query} placeholder={kind === "floor" ? "e.g. spanish speaker, best showroom closer" : "e.g. spanish speaker, best closing percentage"}
+        onChange={(e) => setQuery(e.target.value)} />
+      <div className="sa-chips">
+        {allTags.slice(0, 8).map((t) => <button key={t} className="sa-chip" onClick={() => setQuery(t)}>{t}</button>)}
+      </div>
+
+      <div className="sa-list">
+        {candidates.length === 0 && <p className="sa-empty">{query.trim() ? "Nobody " + whoLabel + " matches. Tag your reps below so this can find them." : "Nobody " + whoLabel + " yet."}</p>}
+        {candidates.map((c, idx) => (
+          <div key={c.id} className={"sa-row" + (pending === c.id ? " sa-open" : "")}>
+            <div className="sa-row-top">
+              <span className="mf-av sa-av" style={{ background: `hsl(${hueFromName(c.name)} 52% 42%)` }}>{initialsOf(c.name)}</span>
+              <div className="sa-who">
+                <div className="sa-nm">{c.name}{isPerf && idx === 0 && c.close != null && <span className="sa-best">top</span>}</div>
+                <div className="sa-tags">
+                  {c.close != null && <span className="sa-close">{Math.round(c.close * 100)}% {closeLabel}</span>}
+                  {c.tags.map((t) => <span key={t} className={"sa-tag" + (c.hit.includes(t.toLowerCase()) ? " sa-tag-hit" : "")}>{t}</span>)}
+                  {c.tags.length === 0 && c.close == null && <span className="sa-notag">no tags yet</span>}
+                </div>
+              </div>
+              {pending === c.id
+                ? <button className="btn btn-sm" onClick={() => { setPending(null); setReason(""); }}>Cancel</button>
+                : <button className="btn btn-sm btn-primary" onClick={() => { setPending(c.id); setReason(""); }}>Skip to them</button>}
+            </div>
+            {pending === c.id && (
+              <div className="sa-reason">
+                <div className="sa-reason-lbl">Reason for skipping the line</div>
+                <div className="sa-chips">
+                  {SA_REASONS.map((r) => <button key={r} className={"sa-chip" + (reason === r ? " sa-chip-on" : "")} onClick={() => setReason(r)}>{r}</button>)}
+                </div>
+                <input className="sa-input" value={reason} placeholder="Or type a reason" onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAssign(c.id); }} />
+                <button className="btn btn-primary sa-confirm" disabled={!reason.trim()} onClick={() => doAssign(c.id)}>Assign to {c.name.split(" ")[0]}</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button className="sa-manage-toggle" onClick={() => setManage((v) => !v)}>{manage ? "Done tagging" : "Manage tags"}</button>
+      {manage && (
+        <div className="sa-manage">
+          {line.length === 0 && <p className="sa-empty">Nobody {whoLabel} to tag yet.</p>}
+          {line.map((p) => {
+            const name = realName(p.id);
+            return (
+              <div key={p.id} className="sa-mrow">
+                <div className="sa-nm">{name}</div>
+                <div className="sa-tags">
+                  {tagsOf(p.id).map((t) => <span key={t} className="sa-tag sa-tag-edit">{t}<button className="sa-tag-x" onClick={() => removeTag(p.id, t)}>×</button></span>)}
+                </div>
+                <div className="sa-add">
+                  <input className="sa-input sa-add-in" value={tagInput[p.id] || ""} placeholder="Add a tag"
+                    onChange={(e) => setTagInput((s) => ({ ...s, [p.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") addTag(p.id, tagInput[p.id]); }} />
+                  <div className="sa-chips">
+                    {SA_SUGGESTED.filter((t) => !tagsOf(p.id).some((x) => x.toLowerCase() === t.toLowerCase())).slice(0, 4).map((t) => <button key={t} className="sa-chip" onClick={() => addTag(p.id, t)}>{t}</button>)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
   const [showPins, setShowPins] = useState(false);
@@ -4448,11 +4821,12 @@ function QueueTab({ config, store, data, onChange, userName }) {
     return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
   }, [data.roster, config.roles]);
 
-  const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date)) || null), [store.id, date]);
+  const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date, variant.kind)) || null), [store.id, date, variant.kind]);
+  const mutateRow = (fn) => mutateQueueRow(store.id, date, fn, variant.kind);
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const ensureRow = useCallback(async () => {
     const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
-    const next = await mutateQueueRow(store.id, date, (cur) => {
+    const next = await mutateRow((cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
       cur.roster = snap; cur.storeName = store.name;
       if (!cur.token) cur.token = uid();
@@ -4477,15 +4851,15 @@ function QueueTab({ config, store, data, onChange, userName }) {
 
   const mirror = (rowData, audit) => {
     const next = JSON.parse(JSON.stringify(data));
-    next.queue = next.queue || {};
-    next.queue[date] = rowData;
-    const days = Object.keys(next.queue).sort();
-    while (days.length > 60) delete next.queue[days.shift()];
+    next[variant.dataKey] = next[variant.dataKey] || {};
+    next[variant.dataKey][date] = rowData;
+    const days = Object.keys(next[variant.dataKey]).sort();
+    while (days.length > 60) delete next[variant.dataKey][days.shift()];
     onChange(next, audit);
   };
   async function act(mutator, audit) {
     if (busy) return; setBusy(true);
-    const next = await mutateQueueRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
+    const next = await mutateRow((cur) => (cur ? mutator(cur) : cur));
     if (next) { setRow(next); mirror(next, audit); }
     setBusy(false);
   }
@@ -4566,26 +4940,23 @@ function QueueTab({ config, store, data, onChange, userName }) {
   if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
-  const url = row ? queueSignInUrl(store.id, date, row.token) : "";
+  const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
   const availCount = line.filter((p) => p.status === "waiting").length;
   const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   return (
-    <div className="checkout q-tab mf mf-line">
+    <div className={`checkout q-tab mf ${variant.mf}`}>
       <div className="q-phone-banner"><QPhoneIcon className="q-banner-ico" /> Phone Opportunities</div>
 
-      <div className="q-board">
-        <div className="q-board-cell q-board-avail"><div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div></div>
-        <div className="q-board-cell"><div className="q-board-n">{line.length}</div><div className="q-board-l">in the line</div></div>
-        <div className="q-board-cell q-board-miss"><div className="q-board-n">{expectedNotHere.length}</div><div className="q-board-l">not signed in</div></div>
-        <div className="q-board-actions">
+      <InstrumentCluster kind="line"
+        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })}
+        actions={<>
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
-        </div>
-      </div>
+        </>} />
 
-      <OppsTally history={row?.history} nameOf={realName} accent="#5566F0" />
+      <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
 
       {showPins && (
         <div className="q-pins-panel">
@@ -4605,7 +4976,7 @@ function QueueTab({ config, store, data, onChange, userName }) {
         <div className="q-qr-panel">
           <div className="q-qr-box"><QueueQR url={url} /></div>
           <div className="q-qr-info">
-            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're in line. No login. It only works today; a fresh code appears each morning.</p>
+            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're {variant.count}. No login. It only works today; a fresh code appears each morning.</p>
             <div className="q-qr-btns">
               <button className="btn" onClick={() => printQueueSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
               <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
@@ -4618,10 +4989,12 @@ function QueueTab({ config, store, data, onChange, userName }) {
       <QueueHero
         nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
         waitingNames={line.map((p) => realName(p.id))}
-        accent="#5566F0" kind="line" />
+        accent={variant.accent} kind="line" />
 
+      <div className="mf-lower">
+      <div className="mf-main">
       <div className="q-line">
-        {line.length === 0 && <p className="muted q-empty">Nobody's in line yet. Post the code, or add someone below.</p>}
+        {line.length === 0 && <p className="muted q-empty">{variant.empty}</p>}
         {line.map((p, i) => {
           const avail = p.status === "waiting";
           const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
@@ -4691,6 +5064,17 @@ function QueueTab({ config, store, data, onChange, userName }) {
           </>
         )}
         {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
+      </div>
+      </div>
+      <aside className="mf-side">
+        <SmartAssign line={line} realName={realName} kind="line"
+          repTags={(data && data.repTags) || {}}
+          closeLabel={variant.closeLabel}
+          closeMap={(() => { const m = {}; for (const p of line) { const r = oyoRatios(oyoBaseline(data, norm(realName(p.id)), p.id)); m[p.id] = r ? r[variant.channel] : null; } return m; })()}
+          onSaveTags={(next) => onChange({ ...data, repTags: next }, { action: "Updated rep tags", detail: store.name })}
+          onAssign={(id, reason) => assignSpecific(id, reason)} />
+        <ActivityTimeline history={row?.history} nameOf={realName} />
+      </aside>
       </div>
     </div>
   );
@@ -4773,49 +5157,20 @@ function floorEventMap(store) {
 
 /* ---- hand-drawn line icons (currentColor, no emoji) ---- */
 function FDoorIcon({ className }) {
-  // walk-in / showroom door
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14.5 3.2 6 5v14l8.5 1.8V3.2z" /><path d="M14.5 4.5H18v15h-3.5" /><circle cx="12.4" cy="12" r=".9" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <PixIcon glyph="door" size={16} className={className} />;
 }
 function FHandshakeIcon({ className }) {
-  // sold
-  return (
-    <svg className={className} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 9l3-1.5 3.5 2.5 2.5-1 5 3.5" /><path d="M21 9l-3-1.5-4 2.5" /><path d="M11 13l2 2M13.5 11.5l2 2M8.5 14.5l2 2" />
-    </svg>
-  );
+  return <PixIcon glyph="handshake" size={20} className={className} />;
 }
 function FApptIcon({ className }) {
-  // appointment (calendar-check)
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 9h17M8 3v3M16 3v3" /><path d="M8.5 14.5l2.2 2.2 4-4.4" />
-    </svg>
-  );
+  return <PixIcon glyph="calendar" size={16} className={className} />;
 }
 function FDocIcon({ className }) {
-  // proposal (document)
-  return (
-    <svg className={className} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /><path d="M9 12h6M9 15.5h6M9 8.5h2" />
-    </svg>
-  );
+  return <PixIcon glyph="doc" size={16} className={className} />;
 }
 function FFlagIcon({ status, className }) {
-  const p = { className, width: "20", height: "20", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.9", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" };
-  if (status === "customer") return (
-    <svg {...p}><circle cx="9" cy="8" r="3.2" /><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" /><circle cx="17.2" cy="9.2" r="2.3" /><path d="M16 14.4a4.6 4.6 0 0 1 4.5 4.6" /></svg>
-  );
-  if (status === "lunch") return (
-    <svg {...p}><path d="M4 8.5h11.5V13a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8.5z" /><path d="M15.5 9.5H18a2.4 2.4 0 0 1 0 4.8h-2.3" /><path d="M6.5 3.2c-.4.9-.4 1.7 0 2.6M9.5 3.2c-.4.9-.4 1.7 0 2.6" /></svg>
-  );
-  if (status === "away") return (
-    <svg {...p}><path d="M13.5 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h7" /><path d="M11 12h9M16.5 8.5 20.5 12l-4 3.5" /></svg>
-  );
-  return null;
+  const g = status === "lunch" ? "lunch" : status === "away" ? "away" : status === "customer" ? "user" : null;
+  return g ? <PixIcon glyph={g} size={18} className={className} /> : null;
 }
 
 /* ---- Supabase access: per-day floor row (floor_public) ---- */
@@ -4971,13 +5326,13 @@ async function printFloorSignIn({ store, url, date, by }) {
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
-  const doorSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 3.2 6 5v14l8.5 1.8V3.2z"/><path d="M14.5 4.5H18v15h-3.5"/></svg>';
+  const doorSvg = pixSvgString("door", 18);
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Live Floor · ${store.name}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
+    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
     .banner{display:inline-flex;align-items:center;gap:10px;background:#0f9d76;color:#fff;font-weight:700;
       font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
     h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
@@ -5040,6 +5395,17 @@ function FloorSignIn({ store, date, token }) {
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
   const roster = (row && row.roster) || [];
+  const variant = { label: "Live Floor" };
+  const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
+  useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
+  const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
+  const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
+  useEffect(() => {
+    if (!me || myIdx < 0) return;
+    postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
+      rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
+      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString() });
+  }, [me && me.status, myIdx, aheadCount, iAmUp]); // eslint-disable-line
 
   const remember = (id) => {
     try {
@@ -5226,9 +5592,9 @@ function FloorSignIn({ store, date, token }) {
           {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           <div className="sf-status-row">
             {st !== "waiting"
-              ? <button className="sf-sbtn active" disabled={busy} onClick={() => setFlag("waiting")}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><DmIcon name="back" cell={4} /><span>Back in</span></button>
               : FLOOR_SELF_FLAGS.map((f) => (
-                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => setFlag(f)}>
+                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
                     <DmIcon name={f} cell={4} /><span>{f === "lunch" ? "Lunch" : "Away"}</span>
                   </button>
                 ))}
@@ -5241,7 +5607,7 @@ function FloorSignIn({ store, date, token }) {
             <DmNumber value={1} up />
             <h2>You're up</h2>
             <p>Head to the door. The next one is yours.</p>
-            <button className="sf-go" disabled={busy} onClick={() => setFlag("customer")}>I've got it</button>
+            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setFlag("customer"); }}>I've got it</button>
           </div>
         )}
       </div>
@@ -5344,7 +5710,7 @@ function FloorSignIn({ store, date, token }) {
 /* =========================================================================
    FloorBoard — the manager board. Runs the event engine while it's open.
    ========================================================================= */
-function FloorBoard({ config, store, data, userName }) {
+function FloorBoard({ config, store, data, onData, userName }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState({});
   const [showQR, setShowQR] = useState(false);
@@ -5554,17 +5920,13 @@ function FloorBoard({ config, store, data, userName }) {
         </div>
       )}
 
-      <div className="q-board f-board">
-        <div className="q-board-cell q-board-avail"><div className="q-board-n">{availCount}</div><div className="q-board-l">available now</div></div>
-        <div className="q-board-cell"><div className="q-board-n">{line.length}</div><div className="q-board-l">on the floor</div></div>
-        <div className="q-board-cell f-board-cust"><div className="q-board-n">{withCust}</div><div className="q-board-l">with customer</div></div>
-        <div className="q-board-cell q-board-miss"><div className="q-board-n">{expectedNotHere.length}</div><div className="q-board-l">not signed in</div></div>
-        <div className="q-board-actions">
+      <InstrumentCluster kind="floor"
+        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] })}
+        actions={<>
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
-        </div>
-      </div>
+        </>} />
 
       <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
 
@@ -5616,6 +5978,8 @@ function FloorBoard({ config, store, data, userName }) {
         waitingNames={line.map((p) => realName(p.id))}
         accent="#0FB37E" kind="floor" />
 
+      <div className="mf-lower">
+      <div className="mf-main">
       <div className="q-line f-line">
         {line.length === 0 && <p className="muted q-empty">Nobody's on the floor yet. Post the code, or add someone below.</p>}
         {line.map((p, i) => {
@@ -5694,6 +6058,17 @@ function FloorBoard({ config, store, data, userName }) {
         )}
         {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
       </div>
+      </div>
+      <aside className="mf-side">
+        <SmartAssign line={line} realName={realName} kind="floor"
+          repTags={(data && data.repTags) || {}}
+          closeLabel="showroom close"
+          closeMap={(() => { const m = {}; for (const p of line) { const r = oyoRatios(oyoBaseline(data, norm(realName(p.id)), p.id)); m[p.id] = r ? r.close_showroom : null; } return m; })()}
+          onSaveTags={(next) => onData && onData({ ...data, repTags: next }, { action: "Updated rep tags", detail: store.name })}
+          onAssign={(id, reason) => assignSpecific(id, reason)} />
+        <ActivityTimeline history={row?.history} nameOf={realName} />
+      </aside>
+      </div>
 
       {toast && <div className="f-toast">{toast}</div>}
     </div>
@@ -5758,8 +6133,8 @@ function FloorConfigEditor({ config, storeId, onChange }) {
   const knownEvents = Array.from(new Set([...Object.keys(FLOOR_DEFAULT_EVENT_MAP), ...Object.keys(store.floorConfig?.eventMap || {})]));
 
   return (
-    <div className="standards f-settings">
-      <div className="card">
+    <div className="standards f-settings mf mf-floor mf-settings">
+      <div className="mf-settings-banner">Live Floor settings</div>      <div className="card">
         <h3>Live Floor <span className="section-sub">{store.name}</span></h3>
         <p className="hint">The floor board self-governs from DriveCentric deal events. Turn it off to run a purely manual floor line.</p>
         <label className="f-toggle">
@@ -5840,12 +6215,16 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* =========================================================================
    FloorModule — the standalone module shell (its own tool, like The Board).
    ========================================================================= */
-function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig, onToolChange, onSignOut }) {
+function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, onSaveConfig, onToolChange, onSignOut }) {
   const stores = accessibleStores || [];
-  const [storeId, setStoreId] = useState(() => (stores[0] ? stores[0].id : null));
+  const [storeId, setStoreId] = useState(() => {
+    if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
+    return stores[0] ? stores[0].id : null;
+  });
   const [queue, setQueue] = useState("floor");   // "floor" (Live Floor) | "line" (The Line)
   const [subtab, setSubtab] = useState("board");
   const [data, setData] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const store = stores.find((s) => s.id === storeId) || stores[0] || null;
 
@@ -5857,13 +6236,16 @@ function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig,
   useEffect(() => {
     let dead = false;
     if (!store) { setData(null); return; }
-    setData(null);
-    loadShared(storeKey(store.id), emptyStoreData()).then((d) => { if (!dead) setData(d); });
+    setData(null); setLoadFailed(false);
+    loadShared(storeKey(store.id), emptyStoreData(), true)
+      .then((d) => { if (!dead) setData(d); })
+      .catch(() => { if (!dead) { setData(emptyStoreData()); setLoadFailed(true); } });
     return () => { dead = true; };
   }, [store?.id]); // eslint-disable-line
 
   const persist = async (next, audit) => {
     if (!store) return;
+    if (loadFailed) { alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
     setData(next); setSaving(true);
     await saveShared(storeKey(store.id), next);
     if (audit) await appendAudit({ user: session?.name, store: store.id, ...audit });
@@ -5871,7 +6253,7 @@ function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig,
   };
 
   // The settings sub-tab only exists for Live Floor; The Line has no per-store settings here.
-  const effSub = queue === "line" ? "board" : subtab;
+  const effSub = queue === "floor" ? subtab : "board";
 
   return (
     <Shell>
@@ -5886,6 +6268,7 @@ function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig,
           <select className="view-select q-queue-sel" value={queue} onChange={(e) => { setQueue(e.target.value); setSubtab("board"); }}>
             <option value="floor">Live Floor</option>
             <option value="line">The Line</option>
+            <option value="online">Online</option>
           </select>
           {stores.length > 1 && (
             <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
@@ -5908,12 +6291,12 @@ function FloorModule({ config, session, accessibleStores, isAdmin, onSaveConfig,
           <div className="checkout"><p className="muted">No store available.</p></div>
         ) : data === null ? (
           <div className="checkout"><p className="muted">Loading {store.name}…</p></div>
-        ) : queue === "line" ? (
-          <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} />
+        ) : queue === "line" || queue === "online" ? (
+          <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} variant={LEAD_VARIANTS[queue]} />
         ) : effSub === "settings" && isAdmin ? (
           <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
         ) : (
-          <FloorBoard config={config} store={store} data={data} userName={session.name} />
+          <FloorBoard config={config} store={store} data={data} onData={persist} userName={session.name} />
         )}
       </div>
       <Style />
@@ -9047,7 +9430,7 @@ const BEHAVIOURS = [
   { id: "email", label: "Emails per day", kind: "num", impact: 9 },
 ];
 
-function CoachingPanel({ config, store, data, onChange }) {
+function CoachingPanel({ config, store, data, onChange, userName }) {
   const [openId, setOpenId] = useState(null);
   const M = data.months?.[ym()];
 
@@ -9146,7 +9529,7 @@ function CoachingPanel({ config, store, data, onChange }) {
 
         {openRow
           ? <div className="coach-detail coach-detail-open" key={openRow.a.id}>
-              <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} data={data} onChange={onChange} />
+              <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} data={data} onChange={onChange} userName={userName} />
             </div>
           : <div className="coach-detail coach-empty">
               <div className="coach-empty-inner">
@@ -9276,6 +9659,34 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
         '<td class="r ' + state + '"><span class="mk">' + mark + '</span>' + word + '</td></tr>';
     }).join("") : "";
 
+  // ---- speedometer gauges for the print-off ----
+  const clamp01 = (x) => Math.max(0, Math.min(1, x || 0));
+  const gTone = (p) => (p >= 0.9 ? "#1E8E5A" : p >= 0.6 ? "#C77F16" : "#C0392B");
+  const speedo = (pctRaw, color) => {
+    const R = 28, cx = 34, cy = 34, len = Math.PI * R, p = clamp01(pctRaw);
+    const ang = Math.PI - p * Math.PI;
+    const nx = (cx + Math.cos(ang) * (R - 4)).toFixed(1), ny = (cy - Math.sin(ang) * (R - 4)).toFixed(1);
+    const arc = "M " + (cx - R) + " " + cy + " A " + R + " " + R + " 0 0 1 " + (cx + R) + " " + cy;
+    return '<svg width="68" height="40" viewBox="0 0 68 40">' +
+      '<path d="' + arc + '" fill="none" stroke="#E4E8ED" stroke-width="6" stroke-linecap="round"/>' +
+      '<path d="' + arc + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + (p * len).toFixed(1) + " " + len.toFixed(1) + '"/>' +
+      '<line x1="' + cx + '" y1="' + cy + '" x2="' + nx + '" y2="' + ny + '" stroke="#12212F" stroke-width="2" stroke-linecap="round"/>' +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="2.6" fill="#12212F"/></svg>';
+  };
+  const gauCell = (pctRaw, valStr, label, color) =>
+    '<div class="gau"><div class="gau-dial">' + speedo(pctRaw, color) + "</div><b>" + valStr + "</b><span>" + label + "</span></div>";
+  const closeVals = ratios ? [ratios.close_phone, ratios.close_showroom, ratios.close_internet].filter((v) => v != null) : [];
+  const closeRate = closeVals.length ? closeVals.reduce((a, b) => a + b, 0) / closeVals.length : null;
+  const pacePct = goal > 0 ? pace / goal : 0;
+  const delivPct = goal > 0 ? delivered / goal : 0;
+  const gaugesHtml = goal > 0
+    ? ('<div class="gauges">' +
+        gauCell(pacePct, Math.round(pacePct * 100) + "%", monthEnd ? "Final pace" : "Pace to goal", gTone(clamp01(pacePct))) +
+        gauCell(delivPct, Math.round(delivPct * 100) + "%", "Delivered", gTone(clamp01(delivPct))) +
+        (closeRate != null ? gauCell(closeRate, (closeRate * 100).toFixed(0) + "%", "Close rate", "#2B3844") : "") +
+      "</div>")
+    : "";
+
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
 '@page { size: letter portrait; margin: 12mm; }' +
@@ -9289,6 +9700,11 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.goalbox { text-align:right; }' +
 '.goalbox b { font-size:26px; font-weight:800; color:#12212F; display:block; line-height:1; }' +
 '.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
+'.gauges { display:flex; gap:8px; margin:8px 0 2px; }' +
+'.gau { flex:1; text-align:center; border:1px solid #DDE3E9; border-radius:8px; padding:6px 4px 5px; }' +
+'.gau-dial { display:flex; justify-content:center; }' +
+'.gau b { display:block; font-size:15px; font-weight:800; letter-spacing:-.02em; margin-top:1px; }' +
+'.gau span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
 'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
 '.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
 '.why.bad { border-left-color:#1A2430; border-left-width:6px; background:#E9ECEF; }' +
@@ -9332,6 +9748,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
   (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>' + (monthEnd ? "Final units" : "Units this month") + '</span></div>' : '') +
 '</div>' +
+gaugesHtml +
 
 '<h2>' + (monthEnd ? "How the month finished" : "Where you stand today") + '</h2>' +
 '<div class="why ' + headClass + '"><b>' + headTitle + '</b>' + esc(headBody) + '</div>' +
@@ -9775,7 +10192,7 @@ function HourlyBlock({ data, name, store }) {
   );
 }
 
-function AssociateCard({ config, store, row, topAvg, topCount, data, onChange }) {
+function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, userName }) {
   const { a, stats, act, units } = row;
   const goal = data.goals?.[a.id]?.monthly ?? 0;
   const role = config.roles.find((x) => x.id === a.roleId);
@@ -9838,6 +10255,17 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
     catch (e) { alert("Couldn't copy automatically. Use Print instead."); }
   };
 
+  const recordPrint = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.coachingPrints = next.coachingPrints || {};
+    const list = next.coachingPrints[a.id] || [];
+    list.unshift({ by: userName || "Someone", at: new Date().toISOString() });
+    next.coachingPrints[a.id] = list.slice(0, 12);
+    onChange(next, { action: "Printed coaching one-pager", detail: a.name });
+  };
+  const prints = (data.coachingPrints || {})[a.id] || [];
+  const fmtPrint = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " at " + new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
   return (
     <div className="card assoc-card-full print-area">
       <div className="ac-head">
@@ -9852,7 +10280,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
           </button>
           <button className="btn-ghost" onClick={copy}>Copy summary</button>
           <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
-            onClick={() => printOnePager({
+            onClick={() => { recordPrint(); printOnePager({
               store, config, a, stats, ev: row.ev,
               restriction: (data.restrictions || {})[a.id],
               mtd: oyoMTD(data, norm(a.name), stats),
@@ -9862,11 +10290,21 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange })
               workingDays: personWorkingDaysInMonth(data, a),
               elapsedDays: Math.max(1, daysWorkedThisMonth(data, a)),
               topAvg, topCount, act,
-            })}>
+            }); }}>
             Print one-pager
           </button>
         </div>
         {!goal && <p className="hint no-print">Set a monthly goal below and the one-pager unlocks.</p>}
+        {prints.length > 0 && (
+          <div className="ac-prints no-print">
+            <span>Last printed by <b>{prints[0].by}</b> · {fmtPrint(prints[0].at)}</span>
+            {prints.length > 1 && (
+              <details><summary>Print history ({prints.length})</summary>
+                <ul>{prints.map((p, i) => <li key={i}>{p.by} · {fmtPrint(p.at)}</li>)}</ul>
+              </details>
+            )}
+          </div>
+        )}
       </div>
 
       <OwnYourOutcome store={store} data={data} a={a} monthStats={stats} onChange={onChange} />
@@ -10377,7 +10815,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
   const bandRef = useRef(null);
-  useParallax(bandRef);
+  // Parallax removed: nothing else in the app drifts on scroll, so the hero stays put.
 
   return (
     <div className="hero" style={brandVars}>
@@ -11998,8 +12436,9 @@ function Style() {
            comes from the same hand. --spring stays for the snappier UI bits. */
         --ease: cubic-bezier(.22,1,.36,1);
         --ease-bloop: cubic-bezier(.34,1.56,.64,1);
-        --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-        --font-display: "Space Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --font-ui: 'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
       }
 
       html { scroll-behavior: smooth; }
@@ -12181,6 +12620,14 @@ function Style() {
       .hf-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#F5847A,#E59200);
         transition: width .9s var(--ease); }
       .hf-sub { font-size:11px; color:var(--ink-2); margin-top:7px; }
+      /* Weakest standard: reversed to a mostly-orange tile with white text so it stands out. */
+      .hf-fix { background: linear-gradient(135deg, #F7973A, #E5661A); border-color: rgba(255,255,255,.3);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.38), 0 10px 26px -10px rgba(197,86,20,.55); }
+      .hf-fix .hf-cap { color: rgba(255,255,255,.85); }
+      .hf-fix .hf-metric { color: #fff; }
+      .hf-fix .hf-sub { color: rgba(255,255,255,.92); }
+      .hf-fix .hf-bar { background: rgba(255,255,255,.3); }
+      .hf-fix .hf-fill { background: #fff; }
       .hf-list { display:flex; flex-direction:column; gap:5px; margin-top:11px; }
       .hf-person { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
         border:none; background:transparent; font:inherit; padding:7px 9px; border-radius:10px;
@@ -12422,7 +12869,7 @@ function Style() {
       /* ---- loading screen ---- */
       /* ============ cinematic loading sequence ============ */
       .lseq { position:fixed; inset:0; z-index:500; overflow:hidden; background:#0E2033;
-        font-family:'Space Grotesk','Inter',system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
+        font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
       .lseq-bg { position:absolute; inset:0; opacity:0; animation:lseqBgIn .8s ease .1s forwards; background:
         radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
         radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
@@ -12786,7 +13233,7 @@ function Style() {
         display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; }
       .stop-title { font-size:21px; font-weight:800; letter-spacing:-.02em; }
       .stop-sub { color:var(--ink-2); font-size:13.5px; margin-top:4px; }
-      .stop-file { font-family:ui-monospace,Menlo,monospace; background:rgba(0,0,0,.06); padding:1px 7px; border-radius:6px; font-size:12.5px; }
+      .stop-file { font-family:var(--font-mono); background:rgba(0,0,0,.06); padding:1px 7px; border-radius:6px; font-size:12.5px; }
       .guide-steps { list-style:none; margin:18px 0 0; padding:0; display:flex; flex-direction:column; gap:20px; }
       .guide-steps > li { border:1px solid var(--line); border-radius:16px; padding:16px 18px; background:rgba(0,0,0,.012); }
       .guide-step-head { display:flex; align-items:center; gap:11px; margin-bottom:6px; }
@@ -12893,8 +13340,9 @@ function Style() {
          - A gradient fade below the bar (::after) so elements ease out from under it
            instead of popping across a hard edge. */
       .topbar { position: sticky; top: 0; z-index: 30; display:flex; align-items:center; justify-content:space-between;
-        padding:12px 24px; background: rgba(252,253,254,.78); backdrop-filter: saturate(170%) blur(16px);
-        -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(255,255,255,.55);
+        padding:12px 24px; background: rgba(255,255,255,.9); backdrop-filter: saturate(170%) blur(16px);
+        -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(16,32,52,.07);
+        box-shadow: 0 1px 0 rgba(16,32,52,.02), 0 8px 24px -18px rgba(16,32,52,.16);
         flex-wrap:wrap; gap:10px;
         transform: translateZ(0); will-change: backdrop-filter; backface-visibility: hidden; }
       .topbar::after { content:""; position:absolute; left:0; right:0; top:100%; height:16px; pointer-events:none;
@@ -12904,6 +13352,14 @@ function Style() {
       .brand-sub { font-size:11px; color:var(--ink-2); letter-spacing:.02em; }
       .topbar-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
       .save-dot { font-size:12px; color:var(--ink-3); animation: pulse 1.2s ease infinite; }
+      .load-warn { background:#FDECEA; border:1px solid #F5B7B1; color:#B3372E; padding:12px 16px; border-radius:12px; margin-bottom:16px; font-weight:600; font-size:14px; }
+      .pix { display:inline-block; vertical-align:middle; flex:0 0 auto; }
+      .ac-prints { font-size:12px; color:var(--ink-2); margin-top:8px; }
+      .ac-prints b { color:var(--ink); font-weight:700; }
+      .ac-prints details { margin-top:4px; }
+      .ac-prints summary { cursor:pointer; color:var(--blue); font-weight:600; }
+      .ac-prints ul { margin:5px 0 0 18px; }
+      .ac-prints li { list-style:disc; margin:1px 0; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
       .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
@@ -12978,10 +13434,10 @@ function Style() {
       .noaccess-row:last-child { border-bottom:none; }
       .noaccess-row span { color:var(--ink-3); }
       .noaccess-row b { text-align:right; word-break:break-all; }
-      .noaccess-row b.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+      .noaccess-row b.mono { font-family:var(--font-mono); font-size:12px; }
       .noaccess-hint { margin:14px 0 16px; }
       .acct-id { display:inline-block; margin-left:8px; font-size:10.5px; color:var(--ink-3);
-        background:rgba(0,0,0,.05); padding:1px 6px; border-radius:99px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+        background:rgba(0,0,0,.05); padding:1px 6px; border-radius:99px; font-family:var(--font-mono); }
       .dupe-tag { display:inline-block; margin-left:8px; font-size:10px; font-weight:800; text-transform:uppercase;
         letter-spacing:.04em; background:rgba(229,71,60,.13); color:#C13529; padding:1px 7px; border-radius:99px; }
       .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
@@ -14116,13 +14572,14 @@ function Style() {
   --a1:#10B981; --a2:#06C1B6; --glow:rgba(16,185,129,.35);
   --mfink:#17202E; --mfink2:#5E6B82; --mfink3:#98A2B3;
   --mfline:rgba(16,32,52,.08);
-  --mffont:'Geist','Sora','Space Grotesk',system-ui,-apple-system,sans-serif;
-  --mfmono:'Geist Mono','JetBrains Mono',ui-monospace,monospace;
+  --mffont:var(--font-ui);
+  --mfmono:var(--font-mono);
   --c-blue:#3B6FD4; --c-blue-bg:#EEF3FF; --c-violet:#7C5CFF; --c-violet-bg:#F2EEFF;
   --c-amber:#B7791F; --c-amber-bg:#FFF6E6; --c-rose:#E5473C; --c-rose-bg:#FFEEF0;
   font-family:var(--mffont); color:var(--mfink);
 }
 .mf.mf-line{ --a1:#4C6FFF; --a2:#28B7F0; --glow:rgba(76,111,255,.3); }
+.mf.mf-online{ --a1:#8B5CF6; --a2:#C05CF0; --glow:rgba(139,92,246,.32); }
 
 /* soft one-time entrance */
 .mf > *{ animation:mfRise .5s cubic-bezier(.2,.8,.2,1) both; }
@@ -14223,6 +14680,118 @@ function Style() {
 .mf .f-warn strong{ color:#5E4610; }
 @media (prefers-reduced-motion:reduce){ .mf > *, .mf .q-board-avail{ animation:none; } }
 
+/* use more of the screen + two-column lower region */
+.checkout.mf{ max-width:min(1820px, 97vw); }
+.mf-lower{ display:grid; grid-template-columns:1fr; gap:16px; }
+.mf-main{ min-width:0; }
+.mf-side{ min-width:0; }
+@media (min-width:1080px){ .mf-lower{ grid-template-columns:minmax(0,1fr) 370px; align-items:start; } }
+
+/* Smart assign panel */
+.sa{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:16px; position:sticky; top:16px; }
+.sa-head{ font-family:var(--mffont); font-weight:600; font-size:16px; color:var(--mfink); letter-spacing:-.01em; }
+.sa-sub{ color:var(--mfink2); font-size:12.5px; margin:5px 0 12px; line-height:1.45; }
+.sa-input{ width:100%; background:#F6F7FB; border:1px solid var(--mfline); border-radius:12px; padding:10px 12px; font-family:var(--mffont); font-size:14px; color:var(--mfink); outline:none; transition:border-color .18s, box-shadow .18s; }
+.sa-input:focus{ border-color:var(--a1); box-shadow:0 0 0 3px color-mix(in srgb,var(--a1) 18%, transparent); }
+.sa-input::placeholder{ color:var(--mfink3); }
+.sa-chips{ display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+.sa-chip{ background:#F1F3F8; border:1px solid var(--mfline); border-radius:999px; padding:5px 11px; font-size:12px; color:var(--mfink2); cursor:pointer; font-family:var(--mffont); transition:.15s; }
+.sa-chip:hover{ color:var(--mfink); border-color:var(--a1); }
+.sa-chip-on{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; border-color:transparent; }
+.sa-list{ display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+.sa-empty{ color:var(--mfink3); font-size:13px; padding:8px 2px; line-height:1.5; }
+.sa-row{ border:1px solid var(--mfline); border-radius:14px; padding:10px; background:#fff; transition:border-color .18s, box-shadow .18s; }
+.sa-row.sa-open{ border-color:var(--a1); box-shadow:0 0 0 2px color-mix(in srgb,var(--a1) 22%, transparent); }
+.sa-row-top{ display:flex; align-items:center; gap:10px; }
+.sa .sa-av{ width:34px; height:34px; margin:0; }
+.sa-who{ flex:1; min-width:0; }
+.sa-nm{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); }
+.sa-tags{ display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.sa-tag{ background:#EEF3FF; color:var(--c-blue); border-radius:7px; padding:1px 7px; font-size:11px; font-family:var(--mfmono); }
+.sa-tag-hit{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; }
+.sa-notag{ color:var(--mfink3); font-size:11px; font-style:italic; }
+.sa-close{ background:color-mix(in srgb,var(--a1) 15%, transparent); color:var(--a1); border-radius:7px; padding:1px 8px; font-size:11px; font-family:var(--mfmono); font-weight:500; }
+.sa-best{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; font-family:var(--mfmono); font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; padding:1px 7px; border-radius:999px; margin-left:7px; vertical-align:middle; }
+.sa-reason{ margin-top:10px; border-top:1px solid var(--mfline); padding-top:10px; }
+.sa-reason-lbl{ font-size:12px; color:var(--mfink2); margin-bottom:8px; font-weight:600; }
+.sa-confirm{ width:100%; margin-top:8px; }
+.sa-manage-toggle{ margin-top:12px; width:100%; background:transparent; border:1px dashed var(--mfline); border-radius:12px; padding:9px; color:var(--mfink2); font-family:var(--mfmono); font-size:12px; cursor:pointer; transition:.15s; }
+.sa-manage-toggle:hover{ color:var(--mfink); border-color:var(--a1); }
+.sa-manage{ margin-top:10px; display:flex; flex-direction:column; gap:10px; }
+.sa-mrow{ border:1px solid var(--mfline); border-radius:12px; padding:10px; }
+.sa-tag-edit{ display:inline-flex; align-items:center; gap:4px; }
+.sa-tag-x{ border:none; background:transparent; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:0 0 0 2px; }
+.sa-add{ margin-top:8px; }
+.sa-add-in{ margin-bottom:6px; }
+
+/* instrument cluster (Floor Health + gauges) */
+.mf{ --mf-track:#EBEEF3; }
+.ic{ display:grid; grid-template-columns:minmax(300px,360px) 1fr; gap:14px; align-items:stretch; margin-bottom:16px; }
+.ic-actions{ grid-column:1/-1; display:flex; gap:8px; flex-wrap:wrap; }
+@media (max-width:900px){ .ic{ grid-template-columns:1fr; } }
+.ic-health{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:18px 20px; }
+.ic-health-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; gap:10px; }
+.ic-health-body{ display:flex; align-items:center; gap:18px; margin-top:12px; }
+.gauge{ position:relative; display:inline-grid; place-items:center; flex:0 0 auto; }
+.gauge svg{ display:block; }
+.gauge-fg{ transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1); }
+.gauge-green{ stroke:#10B981; } .gauge-amber{ stroke:#E0A100; } .gauge-red{ stroke:#E5473C; } .gauge-blue{ stroke:#3B6FD4; }
+.gauge-val{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
+.gauge-sub{ display:block; font-family:var(--mfmono); font-size:8px; font-weight:600; letter-spacing:.08em; color:var(--mfink2); margin-top:3px; }
+.ic-health-n{ font-size:42px; font-weight:700; letter-spacing:-.03em; }
+.ic-sup{ flex:1; display:flex; flex-direction:column; gap:9px; min-width:0; }
+.ic-sup-row{ display:flex; align-items:center; gap:8px; font-size:13px; }
+.ic-sup-l{ color:var(--mfink2); }
+.ic-sup-v{ margin-left:auto; font-weight:700; color:var(--mfink); font-family:var(--mffont); }
+.ic-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+.ic-dot.ic-green{ background:#10B981; } .ic-dot.ic-amber{ background:#E0A100; } .ic-dot.ic-red{ background:#E5473C; }
+.ic-pill{ font-family:var(--mfmono); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border-radius:999px; }
+.ic-pill.ic-green{ background:#E9F8F1; color:#0A7F5A; } .ic-pill.ic-amber{ background:#FDF3DD; color:#8A6410; } .ic-pill.ic-red{ background:#FDECEA; color:#B3372E; }
+.ic-gauges{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+@media (min-width:1300px){ .ic-gauges{ grid-template-columns:repeat(4,1fr); } }
+.ic-card{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04); padding:14px 16px; display:flex; align-items:center; gap:12px; transition:transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s; }
+.ic-card:hover{ transform:translateY(-2px); box-shadow:0 10px 26px -16px rgba(16,32,52,.28); }
+.ic-card-n{ font-size:15px; font-weight:700; }
+.ic-card-meta{ min-width:0; }
+.ic-card-l{ font-family:var(--mfmono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mfink2); }
+.ic-card-v{ font-family:var(--mffont); font-weight:700; font-size:19px; color:var(--mfink); margin-top:2px; }
+
+/* activity timeline */
+.tl{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 10px 26px -20px rgba(16,32,52,.2); padding:16px; margin-top:14px; }
+.tl-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; justify-content:space-between; color:var(--mfink); }
+.tl-live{ font-family:var(--mfmono); font-size:10px; font-weight:700; letter-spacing:.08em; color:#0A7F5A; background:#E9F8F1; padding:3px 9px; border-radius:999px; }
+.tl-empty{ color:var(--mfink3); font-size:13px; margin-top:8px; }
+.tl-list{ margin-top:12px; }
+.tl-item{ display:flex; gap:12px; padding-bottom:16px; position:relative; }
+.tl-item:not(:last-child)::before{ content:""; position:absolute; left:5px; top:14px; bottom:0; width:2px; background:var(--mfline); }
+.tl-dot{ width:12px; height:12px; border-radius:50%; flex:0 0 auto; margin-top:2px; box-shadow:0 0 0 3px #fff; position:relative; z-index:1; }
+.tl-green{ background:#10B981; } .tl-amber{ background:#E0A100; } .tl-red{ background:#E5473C; } .tl-blue{ background:#3B6FD4; } .tl-violet{ background:#7C5CFF; } .tl-gray{ background:#98A2B3; }
+.tl-body{ min-width:0; }
+.tl-txt{ font-size:13.5px; color:var(--mfink); }
+.tl-txt strong{ font-weight:700; }
+.tl-t{ font-family:var(--mfmono); font-size:11px; color:var(--mfink3); margin-top:2px; }
+
+/* Settings tab, brought into the light board theme */
+.mf-settings{ max-width:940px; }
+.mf-settings-banner{ display:inline-flex; align-items:center; gap:8px; background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; font-family:var(--mffont); font-weight:600; font-size:13px; letter-spacing:.01em; padding:9px 17px; border-radius:999px; box-shadow:0 10px 24px -12px var(--glow); margin-bottom:16px; }
+.mf-settings .card{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -22px rgba(16,32,52,.2); padding:20px; margin-bottom:14px; }
+.mf-settings h3{ font-family:var(--mffont); font-weight:600; letter-spacing:-.01em; color:var(--mfink); font-size:17px; }
+.mf-settings .section-sub{ color:var(--mfink3); font-weight:500; font-size:13px; }
+.mf-settings .hint{ color:var(--mfink2); font-size:13px; line-height:1.5; }
+.mf-settings .f-toggle{ color:var(--mfink); }
+.mf-settings .f-input{ background:#F6F7FB; border:1px solid var(--mfline); border-radius:12px; color:var(--mfink); font-family:var(--mffont); padding:10px 12px; }
+.mf-settings .f-input:focus{ border-color:var(--a1); box-shadow:0 0 0 3px color-mix(in srgb,var(--a1) 18%, transparent); outline:none; }
+.mf-settings .f-dealer-chip{ background:color-mix(in srgb,var(--a1) 12%, #fff); color:var(--a1); border-radius:999px; font-family:var(--mfmono); }
+.mf-settings .f-chip-x{ background:rgba(0,0,0,.06); }
+.mf-settings .stepper{ background:#F6F7FB; border:1px solid var(--mfline); border-radius:12px; }
+.mf-settings .stepper-btn{ color:var(--a1); font-weight:700; }
+.mf-settings .stepper-value{ font-family:var(--mfmono); color:var(--mfink); font-weight:600; }
+.mf-settings .stepper-label{ font-family:var(--mfmono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mfink2); }
+.mf-settings .stepper-hint{ color:var(--mfink3); font-size:12px; }
+.mf-settings .f-map-row{ border-top:1px solid var(--mfline); }
+.mf-settings .f-map-ev{ color:var(--mfink); font-weight:500; }
+.mf-settings .f-map-custom{ color:var(--a1); }
+
 /* ============================================================
    SALESPERSON VIEW — dark, fluid, responsive (The Line + Live Floor)
    Scoped under .q-page.sf so the manager app is untouched.
@@ -14230,13 +14799,14 @@ function Style() {
 .q-page.sf{
   --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --glow:rgba(15,179,126,.5); --ld-off:rgba(124,240,208,.14);
   --sfink:#EEF2F9; --sfink2:#9BA8BF; --sfink3:#5A6478; --sfcard:rgba(255,255,255,.045); --sfstroke:rgba(255,255,255,.09);
-  --sffont:'Geist','Sora','Space Grotesk',system-ui,-apple-system,sans-serif;
-  --sfmono:'Geist Mono','JetBrains Mono',ui-monospace,monospace;
+  --sffont:var(--font-ui);
+  --sfmono:var(--font-mono);
   font-family:var(--sffont); color:var(--sfink); letter-spacing:-.005em; padding:0;
   background:radial-gradient(1000px 680px at 15% -10%, rgba(11,197,197,.05), transparent 60%), #06090F;
-  position:relative; min-height:100dvh;
+  position:fixed; inset:0; width:100%; height:100dvh; min-height:100dvh; overflow-y:auto; border-radius:0; z-index:100;
 }
 .q-page.sf.sf-line{ --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --glow:rgba(85,102,240,.5); --ld-off:rgba(157,195,255,.14); }
+.q-page.sf.sf-online{ --a1:#8B5CF6; --a2:#C05CF0; --led:#D8B4FE; --glow:rgba(139,92,246,.5); --ld-off:rgba(216,180,254,.16); }
 
 /* restyle the shared sign-in surfaces (name / pin / pick / confirm) */
 .sf .q-card{ background:transparent; border:none; box-shadow:none; color:var(--sfink); width:100%; max-width:440px; padding:clamp(20px,6vw,30px); }
@@ -14267,7 +14837,7 @@ function Style() {
 .sf .dm-digit:nth-child(2){ animation-delay:.05s; }
 .sf .dm-digit:nth-child(3){ animation-delay:.1s; }
 @keyframes sfflip{ 0%{ transform:rotateX(90deg); opacity:.25; filter:brightness(2.2); } 55%{ transform:rotateX(-9deg); } 100%{ transform:rotateX(0); opacity:1; filter:none; } }
-.sf .ld{ width:var(--cell,12px); height:var(--cell,12px); border-radius:50%; background:var(--ld-off); }
+.sf .ld{ width:var(--cell,12px); height:var(--cell,12px); border-radius:50%; background:transparent; }
 .sf .ld.on{ background:var(--led); box-shadow:0 0 calc(var(--cell,12px)*.85) var(--led); }
 .sf .dm-ico{ display:inline-grid; }
 .sf .dm-ico .ld.on{ box-shadow:0 0 3px var(--led); }
