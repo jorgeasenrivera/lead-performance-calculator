@@ -1208,13 +1208,19 @@ async function loadShared(key, fallback, throwOnError) {
     return data ? data.value : fallback;
   } catch (e) { console.error("load failed", key, e); if (throwOnError) throw e; return fallback; }
 }
+let lastSaveError = null;
 async function saveShared(key, value) {
-  if (!supabase) return false;
+  if (!supabase) { lastSaveError = "No database client"; return false; }
   try {
     const { error } = await supabase.from("app_data").upsert({ key, value }, { onConflict: "key" });
     if (error) throw error;
+    lastSaveError = null;
     return true;
-  } catch (e) { console.error("save failed", key, e); return false; }
+  } catch (e) {
+    console.error("save failed", key, e);
+    lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+    return false;
+  }
 }
 
 // ---- auth ----
@@ -1641,7 +1647,7 @@ export default function LeadPerformanceCalculator() {
     const ok = await saveShared(storeKey(storeId), next);
     setSaving(false);
     if (!ok) {
-      alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a connection drop or a database write-permission (RLS) problem, not something you did. Please try again; if it keeps happening, your database is rejecting the write and an admin needs to check the app_data write policy.");
+      alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a database write-permission (RLS) problem or a dropped connection.\n\nExact error from the database:\n" + (lastSaveError || "unknown") + "\n\nPlease send this exact message to your admin.");
       return;
     }
     if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
