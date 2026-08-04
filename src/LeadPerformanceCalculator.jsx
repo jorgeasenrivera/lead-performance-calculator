@@ -11189,8 +11189,8 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             <button className="help-btn" onClick={onHelp} title="How to pull the Appointment and Video reports">? Help</button>
           </div>
           <div className="check-group-label">Upload these</div>
-          {aDay.slice(0, 7) !== today().slice(0, 7) && (
-            <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date(aDay + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
+          {(activityDay || today()).slice(0, 7) !== today().slice(0, 7) && (
+            <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
           )}
           <div className={"check " + (t.appointment ? "done" : "")}>
             <span className="check-box">{t.appointment ? "✓" : ""}</span>Appointment report
