@@ -71,7 +71,7 @@ const METRIC_FIX = {
     steps: [
       "Chase the shown-but-unsold before touching a single new lead.",
       "Confirm the day before. A confirmed appointment closes far better than a hoped-for one.",
-      "Find who is sitting on leads untouched for three days and reassign or re-engage.",
+      "Find in mining your leads that haven't been touched in more than 3 days and clear out all of your first row daily.",
     ],
   },
   engagedVideoPct: {
@@ -9293,6 +9293,7 @@ function oyoMTD(data, nameKey, monthStats, monthKey) {
     pctPhone: s.phonePct ?? null,
     pctCampaign: s.campaignPct ?? null,
     apptCreated: sum("apptCreated"),
+    apptScheduled: sum("apptScheduled"),
     apptConfirmed: sum("apptConfirmed"),
     apptShowed: sum("apptShow"),
     calls: sum("calls"),
@@ -9621,8 +9622,9 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, rati
     rcTile("Internet Delivery %", stats.internetPct, chStd("internet"), (stats.internetUnits || 0), (stats.internetLeads || 0), true) +
     rcTile("Phone Closing %", stats.phonePct, chStd("phone"), (stats.phoneUnits || 0), (stats.phoneLeads || 0), true) +
     rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), (stats.showroomLeads || 0), true);
-  const driverKeys = ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
-  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("");
+  const driverKeys = ["apptVideoDayPct", "engagedVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
+  const apptShownPct = (mtd.apptScheduled > 0) ? (mtd.apptShowed || 0) / mtd.apptScheduled : ((mtd.apptCreated > 0) ? (mtd.apptShowed || 0) / mtd.apptCreated : null);
+  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + rcTile("Appointments Shown %", apptShownPct, null, 0, 0, false);
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
     'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
     ', engaged video ' + pct(stats.engagedVideoPct) + (stdOf("engagedVideoPct") != null ? ' against ' + stdOf("engagedVideoPct") + '%' : '') + '. ' +
@@ -9659,6 +9661,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, rati
     'th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;border-bottom:1px solid #E4E8EE;padding:4px 6px;font-weight:700;}' +
     'td{padding:5px 6px;border-bottom:1px solid #F0F2F5;}' +
     '.r{text-align:right;}.g{color:#0B8F66;font-weight:700;}.b{color:#E5473C;font-weight:700;}' +
+    '.goalbox{text-align:right;flex:0 0 auto;}.goalbox b{font-size:22px;font-weight:800;display:block;color:#1B2A3B;line-height:1;}.goalbox span{font-size:10px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
     '@media print{.sheet{padding:0;}}';
   const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptCreated", "Appointments set"]];
   const rnd = (n) => Math.round(n);
@@ -9666,30 +9669,31 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, rati
   // units, so the targets scale off their own real effort at that unit count, not a blend.
   const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
   const perUnitOf = (id) => (lastUnits > 0 ? (mtd[id] || 0) / lastUnits : null);
-  const shortRows = (goalLast > 0 && lastUnits > 0) ? OUT.map(([id, label]) => {
+  const shortRows = (goalLast > 0 && lastUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
     const per = perUnitOf(id); if (per == null) return "";
-    const need = rnd(per * goalLast); const did = rnd(mtd[id] || 0); const gap = need - did; const ok = gap <= 0;
+    const need = rnd((per * goalLast) / workingDays); const did = rnd((mtd[id] || 0) / workingDays); const gap = need - did; const ok = gap <= 0;
     return '<tr><td>' + label + '</td><td class="r">' + need + '</td><td class="r">' + did + '</td><td class="r ' + (ok ? "g" : "b") + '">' + (ok ? "on target" : "short by " + gap) + '</td></tr>';
   }).filter(Boolean).join("") : "";
   const paceRows = (goalThis > 0 && lastUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
     const per = perUnitOf(id); if (per == null) return "";
-    const perMonth = per * goalThis; const perDay = perMonth / workingDays;
-    return '<tr><td>' + label + '</td><td class="r"><b>' + (Math.round(perDay * 10) / 10) + '</b> / day</td><td class="r">' + rnd(perMonth) + ' this month</td></tr>';
+    const perDay = (per * goalThis) / workingDays;
+    return '<tr><td>' + label + '</td><td class="r"><b>' + (Math.round(perDay * 10) / 10) + '</b> / day</td></tr>';
   }).filter(Boolean).join("") : "";
   const effortHtml =
     '<h2>Effort to hit last month\'s goal</h2>' +
     (goalLast > 0 && shortRows
-      ? '<p class="note">At the effort per unit you actually ran last month, this is the outreach it took to reach ' + goalLast + '. Where you fell short is where the cars slipped.</p><table><thead><tr><th>Activity</th><th class="r">Needed</th><th class="r">You did</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
+      ? '<p class="note">At the effort per unit you actually ran last month, this is the outreach it took to reach ' + goalLast + '. Where you fell short is where the cars slipped.</p><table><thead><tr><th>Activity</th><th class="r">Needed Daily</th><th class="r">Daily Average</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
       : '<div class="why flat"><b>Not enough of last month is on file.</b> This is built from last month\'s goal, delivery, and daily activity together. Set the goal and seed last month\'s Delivery Summary and Daily Activity, and the comparison fills in.</div>') +
     '<h2>Your pace this month</h2>' +
     (goalThis > 0 && paceRows
-      ? '<p class="note">Built from your own effort per unit last month: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Per day</th><th class="r">This month</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
+      ? '<p class="note">Built from your own effort per unit last month: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Daily Effort</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
       : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> The daily targets come from your own effort per unit last month, so last month\'s delivery and activity need to be seeded too.</div>');
   const html =
     '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body><div class="sheet">' +
     '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
     '<div class="nm">' + esc(a.name) + '</div>' +
-    '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div></div>' +
+    '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
+    '<div class="goalbox"><b>' + (Math.round(lastUnits * 10) / 10) + '</b><span>Units delivered</span></div></div>' +
     '<h2>You vs the store standard</h2>' +
     '<p class="note">Measured against your tier on The Board, not against anyone else. Change a standard there and this moves with it.</p>' +
     '<div class="rc-lbl">The result</div><div class="rc-grid">' + resultHtml + '</div>' +
