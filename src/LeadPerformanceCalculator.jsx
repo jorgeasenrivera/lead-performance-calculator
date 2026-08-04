@@ -4690,7 +4690,7 @@ function ActivityTimeline({ history, nameOf, horizontal }) {
               return (
                 <div key={i} className="tl-item">
                   <span className={"tl-dot tl-" + tone} />
-                  <div className="tl-body"><div className="tl-txt"><strong>{who}</strong> {verb}</div><div className="tl-t">{fmt(e.t)}</div></div>
+                  <div className="tl-body"><div className="tl-txt"><strong>{who}</strong> {verb}{e.ref ? <span className="tl-ref"> \u00b7 {e.ref}</span> : null}</div><div className="tl-t">{fmt(e.t)}</div></div>
                 </div>
               );
             })}
@@ -4908,19 +4908,28 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   const assignNext = () => {
     const first = line.find((p) => p.status === "waiting");
+    if (!first) return;
+    const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
     act((cur) => {
       const i = (cur.line || []).findIndex((p) => p.status === "waiting");
       if (i < 0) return cur;
       const p = cur.line[i];
-      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager" });
+      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager", ref: rf });
       return moveToBack(cur, p.id);
-    }, { action: "Queue: assigned next", detail: first ? realName(first.id) : "" });
+    }, { action: "Queue: assigned next", detail: realName(first.id) + (rf ? " \u00b7 " + rf : "") });
   };
-  const assignSpecific = (id, reason) => act((cur) => {
+  const assignSpecific = (id, reason) => {
+    const ref = window.prompt(`Assigning ${realName(id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
+    act((cur) => {
     const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
-    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason });
+    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason, ref: rf });
     return moveToBack(cur, id);
-  }, { action: "Queue: assigned (out of order)", detail: `${realName(id)}: ${reason}` });
+  }, { action: "Queue: assigned (out of order)", detail: `${realName(id)}: ${reason}${rf ? " \u00b7 " + rf : ""}` });
+  };
   const decline = (id) => act((cur) => {
     const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
     pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
@@ -5869,19 +5878,28 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   const assignNext = () => {
     const first = line.find((p) => p.status === "waiting");
+    if (!first) return;
+    const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
     act((cur) => {
       const i = (cur.line || []).findIndex((p) => p.status === "waiting");
       if (i < 0) return cur;
       const p = cur.line[i];
-      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager" });
+      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager", ref: rf });
       return moveToBack(cur, p.id);
-    }, { action: "Floor: assigned next", detail: first ? realName(first.id) : "" });
+    }, { action: "Floor: assigned next", detail: realName(first.id) + (rf ? " \u00b7 " + rf : "") });
   };
-  const assignSpecific = (id, reason) => act((cur) => {
+  const assignSpecific = (id, reason) => {
+    const ref = window.prompt(`Assigning ${realName(id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
+    act((cur) => {
     const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
-    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason });
+    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason, ref: rf });
     return moveToBack(cur, id);
-  }, { action: "Floor: assigned (out of order)", detail: `${realName(id)}: ${reason}` });
+  }, { action: "Floor: assigned (out of order)", detail: `${realName(id)}: ${reason}${rf ? " \u00b7 " + rf : ""}` });
+  };
   const decline = (id) => act((cur) => {
     const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
     pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
@@ -14677,12 +14695,12 @@ function Style() {
 .mf .q-opps-empty{ color:var(--mfink3); }
 .mf .lb-card{ background:#F6F7FB; border:1px solid var(--mfline); }
 .mf .lb-fill{ opacity:.1 !important; }
-.mf .lb-lead .lb-fill{ opacity:.2 !important; }
+.mf .lb-lead .lb-fill{ opacity:0 !important; }
 .mf .lb-rank{ color:var(--mfink3); }
 .mf .lb-nm{ color:var(--mfink); text-shadow:none; font-weight:700; }
 .mf .lb-n{ color:var(--mfink); text-shadow:none; }
 .mf .lb-crown{ color:var(--a1); opacity:1; }
-.mf .lb-lead{ box-shadow:inset 3px 0 0 var(--a1); }
+.mf .lb-lead{ border-color:transparent; background:linear-gradient(120deg, color-mix(in srgb,var(--a1) 12%, #fff), #fff 70%); box-shadow:0 0 0 1.5px color-mix(in srgb,var(--a1) 55%, transparent), 0 14px 30px -16px var(--glow); }
 
 /* next-up hero */
 .mf .qh-stage{ background:#fff; border:1px solid var(--mfline); box-shadow:0 1px 2px rgba(16,32,52,.04),0 14px 34px -22px rgba(16,32,52,.24); }
@@ -14828,6 +14846,7 @@ function Style() {
 .tl-txt{ font-size:13.5px; color:var(--mfink); }
 .tl-txt strong{ font-weight:700; }
 .tl-t{ font-family:var(--mfmono); font-size:11px; color:var(--mfink3); margin-top:2px; }
+.tl-ref{ font-family:var(--mfmono); font-weight:600; color:var(--mfink2); }
 .tl-h .tl-list{ display:flex; flex-direction:row; gap:0; overflow-x:auto; margin-top:14px; padding-bottom:8px; }
 .tl-h .tl-item{ flex:0 0 auto; flex-direction:column; align-items:flex-start; gap:9px; min-width:152px; max-width:210px; padding:0 22px 0 0; }
 .tl-h .tl-item:not(:last-child)::before{ left:14px; right:6px; top:5px; bottom:auto; width:auto; height:2px; }
