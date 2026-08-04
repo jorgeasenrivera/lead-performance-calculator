@@ -9662,25 +9662,29 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, rati
     '@media print{.sheet{padding:0;}}';
   const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptCreated", "Appointments set"]];
   const rnd = (n) => Math.round(n);
-  const shortRows = (goalLast > 0 && ratios) ? OUT.map(([id, label]) => {
-    const per = ratios[id]; if (per == null) return "";
+  // Effort per unit is what THIS associate actually did last month to reach last month's
+  // units, so the targets scale off their own real effort at that unit count, not a blend.
+  const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
+  const perUnitOf = (id) => (lastUnits > 0 ? (mtd[id] || 0) / lastUnits : null);
+  const shortRows = (goalLast > 0 && lastUnits > 0) ? OUT.map(([id, label]) => {
+    const per = perUnitOf(id); if (per == null) return "";
     const need = rnd(per * goalLast); const did = rnd(mtd[id] || 0); const gap = need - did; const ok = gap <= 0;
     return '<tr><td>' + label + '</td><td class="r">' + need + '</td><td class="r">' + did + '</td><td class="r ' + (ok ? "g" : "b") + '">' + (ok ? "on target" : "short by " + gap) + '</td></tr>';
   }).filter(Boolean).join("") : "";
-  const paceRows = (goalThis > 0 && ratios && workingDays > 0) ? OUT.map(([id, label]) => {
-    const per = ratios[id]; if (per == null) return "";
+  const paceRows = (goalThis > 0 && lastUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
+    const per = perUnitOf(id); if (per == null) return "";
     const perMonth = per * goalThis; const perDay = perMonth / workingDays;
     return '<tr><td>' + label + '</td><td class="r"><b>' + (Math.round(perDay * 10) / 10) + '</b> / day</td><td class="r">' + rnd(perMonth) + ' this month</td></tr>';
   }).filter(Boolean).join("") : "";
   const effortHtml =
     '<h2>Effort to hit last month\'s goal</h2>' +
     (goalLast > 0 && shortRows
-      ? '<p class="note">At your own conversion, this is the outreach it took to reach ' + goalLast + '. Where the effort fell short is where the cars slipped.</p><table><thead><tr><th>Activity</th><th class="r">Needed</th><th class="r">You did</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
-      : '<div class="why flat"><b>Last month\'s goal was not on file.</b> Set the goal on this rep\'s coaching card and this comparison fills in next month.</div>') +
+      ? '<p class="note">At the effort per unit you actually ran last month, this is the outreach it took to reach ' + goalLast + '. Where you fell short is where the cars slipped.</p><table><thead><tr><th>Activity</th><th class="r">Needed</th><th class="r">You did</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
+      : '<div class="why flat"><b>Not enough of last month is on file.</b> This is built from last month\'s goal, delivery, and daily activity together. Set the goal and seed last month\'s Delivery Summary and Daily Activity, and the comparison fills in.</div>') +
     '<h2>Your pace this month</h2>' +
     (goalThis > 0 && paceRows
-      ? '<p class="note">For your ' + goalThis + '-unit goal this month, this is the daily effort to stay on pace.</p><table><thead><tr><th>Activity</th><th class="r">Per day</th><th class="r">This month</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
-      : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> Enter it on the coaching card and the daily targets appear here.</div>');
+      ? '<p class="note">Built from your own effort per unit last month: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Per day</th><th class="r">This month</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
+      : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> The daily targets come from your own effort per unit last month, so last month\'s delivery and activity need to be seeded too.</div>');
   const html =
     '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body><div class="sheet">' +
     '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
