@@ -9596,7 +9596,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 // The one-pager. It exists to answer two questions in a room, on paper:
 //   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
 // Everything on it is derived from this person's own numbers, so it is not an opinion.
-function printMonthEndRecap({ store, a, stats, ev, mtd }) {
+function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, ratios, workingDays }) {
   const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
   if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -9655,7 +9655,32 @@ function printMonthEndRecap({ store, a, stats, ev, mtd }) {
     '.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +
     '.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +
     '.play ul{margin:4px 0 0 23px;padding:0;}.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +
+    'table{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:12px;}' +
+    'th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;border-bottom:1px solid #E4E8EE;padding:4px 6px;font-weight:700;}' +
+    'td{padding:5px 6px;border-bottom:1px solid #F0F2F5;}' +
+    '.r{text-align:right;}.g{color:#0B8F66;font-weight:700;}.b{color:#E5473C;font-weight:700;}' +
     '@media print{.sheet{padding:0;}}';
+  const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptCreated", "Appointments set"]];
+  const rnd = (n) => Math.round(n);
+  const shortRows = (goalLast > 0 && ratios) ? OUT.map(([id, label]) => {
+    const per = ratios[id]; if (per == null) return "";
+    const need = rnd(per * goalLast); const did = rnd(mtd[id] || 0); const gap = need - did; const ok = gap <= 0;
+    return '<tr><td>' + label + '</td><td class="r">' + need + '</td><td class="r">' + did + '</td><td class="r ' + (ok ? "g" : "b") + '">' + (ok ? "on target" : "short by " + gap) + '</td></tr>';
+  }).filter(Boolean).join("") : "";
+  const paceRows = (goalThis > 0 && ratios && workingDays > 0) ? OUT.map(([id, label]) => {
+    const per = ratios[id]; if (per == null) return "";
+    const perMonth = per * goalThis; const perDay = perMonth / workingDays;
+    return '<tr><td>' + label + '</td><td class="r"><b>' + (Math.round(perDay * 10) / 10) + '</b> / day</td><td class="r">' + rnd(perMonth) + ' this month</td></tr>';
+  }).filter(Boolean).join("") : "";
+  const effortHtml =
+    '<h2>Effort to hit last month\'s goal</h2>' +
+    (goalLast > 0 && shortRows
+      ? '<p class="note">At your own conversion, this is the outreach it took to reach ' + goalLast + '. Where the effort fell short is where the cars slipped.</p><table><thead><tr><th>Activity</th><th class="r">Needed</th><th class="r">You did</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
+      : '<div class="why flat"><b>Last month\'s goal was not on file.</b> Set the goal on this rep\'s coaching card and this comparison fills in next month.</div>') +
+    '<h2>Your pace this month</h2>' +
+    (goalThis > 0 && paceRows
+      ? '<p class="note">For your ' + goalThis + '-unit goal this month, this is the daily effort to stay on pace.</p><table><thead><tr><th>Activity</th><th class="r">Per day</th><th class="r">This month</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
+      : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> Enter it on the coaching card and the daily targets appear here.</div>');
   const html =
     '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body><div class="sheet">' +
     '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
@@ -9669,6 +9694,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd }) {
     '<h2>The effort, in order</h2>' +
     '<p class="note">Closing is the result; activity is the input. Put the effort here first, in this order.</p>' +
     playsHtml +
+    effortHtml +
     '<h2>Notes</h2><div class="line"></div><div class="line"></div><div class="line"></div>' +
     '</div></body></html>';
   w.document.write(html); w.document.close();
@@ -9981,7 +10007,11 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const setGoal = (v) => {
     const next = JSON.parse(JSON.stringify(data));
     next.goals = next.goals || {};
-    next.goals[a.id] = { ...(next.goals[a.id] || {}), monthly: Math.max(0, parseInt(v) || 0) };
+    const g = Math.max(0, parseInt(v) || 0);
+    const prevG = next.goals[a.id] || {};
+    // Remember the goal for the current month so a past-month recap can be measured
+    // against the goal that was actually in force then, not whatever the goal is now.
+    next.goals[a.id] = { ...prevG, monthly: g, byMonth: { ...(prevG.byMonth || {}), [ym()]: g } };
     onChange(next, { action: "Set monthly goal", detail: `${a.name}: ${v}` });
   };
 
@@ -10431,7 +10461,10 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
                 const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
                 const lmStats = data.months?.[lmKey]?.stats?.[norm(a.name)] || {};
                 const lmEv = evaluateAssociate(lmStats, config.standards?.[store.id]?.[a.roleId]?.tiers);
-                printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey) });
+                const gRec = data.goals?.[a.id] || {};
+                const goalThis = (gRec.byMonth && gRec.byMonth[ym()] != null) ? gRec.byMonth[ym()] : (gRec.monthly ?? 0);
+                const goalLast = (gRec.byMonth && gRec.byMonth[lmKey] != null) ? gRec.byMonth[lmKey] : (gRec.monthly ?? 0);
+                printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey), goalLast, goalThis, ratios: oyoRatios(oyoBaseline(data, norm(a.name), a.id)), workingDays: personWorkingDaysInMonth(data, a) });
               }}>
               Month-end recap
             </button>
