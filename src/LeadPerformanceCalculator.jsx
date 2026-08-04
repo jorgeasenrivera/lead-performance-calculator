@@ -1677,10 +1677,11 @@ export default function LeadPerformanceCalculator() {
 
   // Apply already-typed report entries. Ambiguous delivery files are resolved before we get here.
   const applyEntries = async (entries) => {
-    const month = ym(); const day = today();
-    // Daily Activity can be aimed at an earlier day (e.g. a report pulled the next
-    // morning). Everything else is month-to-date and always lands on today.
+    // The picked date drives BOTH the activity day AND the month that everything else
+    // (Delivery Summary and the other month-to-date reports) lands in, so a report can
+    // be seeded into a past month, not only the current one.
     const actDay = (activityDay && activityDay <= today()) ? activityDay : today();
+    const month = actDay.slice(0, 7); const day = actDay;
     let next = JSON.parse(JSON.stringify(storeData));
     const snapT = snapshotStore(next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
@@ -9266,8 +9267,8 @@ const emptyBaseline = () => ({
 
 // Everything this person has done this month, summed straight out of the imports.
 // This is the MTD sheet, built from the Daily Activity report instead of typed in.
-function oyoMTD(data, nameKey, monthStats) {
-  const days = Object.keys(data.activity || {}).filter((d) => d.startsWith(ym()));
+function oyoMTD(data, nameKey, monthStats, monthKey) {
+  const days = Object.keys(data.activity || {}).filter((d) => d.startsWith(monthKey || ym()));
   const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
   const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
 
@@ -10422,7 +10423,14 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
           </button>
           {new Date().getDate() <= 10 && (
             <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
-              onClick={() => { recordPrint(); printMonthEndRecap({ store, a, stats, ev: row.ev, mtd: oyoMTD(data, norm(a.name), stats) }); }}>
+              onClick={() => {
+                recordPrint();
+                const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
+                const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
+                const lmStats = data.months?.[lmKey]?.stats?.[norm(a.name)] || {};
+                const lmEv = evaluateAssociate(lmStats, config.standards?.[store.id]?.[a.roleId]?.tiers);
+                printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey) });
+              }}>
               Month-end recap
             </button>
           )}
@@ -11181,6 +11189,9 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             <button className="help-btn" onClick={onHelp} title="How to pull the Appointment and Video reports">? Help</button>
           </div>
           <div className="check-group-label">Upload these</div>
+          {aDay.slice(0, 7) !== today().slice(0, 7) && (
+            <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date(aDay + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
+          )}
           <div className={"check " + (t.appointment ? "done" : "")}>
             <span className="check-box">{t.appointment ? "✓" : ""}</span>Appointment report
           </div>
