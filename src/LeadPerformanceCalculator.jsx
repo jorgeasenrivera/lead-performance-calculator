@@ -9671,6 +9671,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   // plus observed), so the recap and the board never disagree. per-car effort x goal / days.
   const bUnits = (base && base.units) || 0;
   const bDays = (base && base.daysWorked) || 0;
+  const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
   const perCarOf = (id) => (bUnits > 0 ? (base[id] || 0) / bUnits : null);
   const dailyAvgOf = (id) => (bDays > 0 ? (base[id] || 0) / bDays : null);
   const shortRows = (goalLast > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
