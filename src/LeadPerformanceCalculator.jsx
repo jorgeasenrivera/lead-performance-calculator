@@ -2306,7 +2306,7 @@ export default function LeadPerformanceCalculator() {
                       query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc} />
                   </div>
                 )}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
                 {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
@@ -11180,46 +11180,56 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
       </div>
     );
   }
+  const seedDay = (activityDay && activityDay <= today()) ? activityDay : today();
+  const seedMonth = seedDay.slice(0, 7);
+  const curMonth = today().slice(0, 7);
+  const seeding = seedMonth !== curMonth;
+  const seedMonthLabel = new Date(seedDay + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const seedT = seeding ? Object.assign({}, ...Object.values(data.months?.[seedMonth]?.imports || {})) : t;
   return (
     <div className="import">
       <div className="import-grid">
         <div className="card checklist">
           <div className="checklist-title">
-            Today's Imports <span className="section-sub">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span>
+            {seeding ? "Imports for " + seedMonthLabel : "Today's Imports"} <span className="section-sub">{seeding ? "seeding a past month" : new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span>
+            {setActivityDay && (
+              <input type="month" className="seed-month" value={seedMonth} max={curMonth} title="Choose the month these reports import into"
+                onChange={(e) => { const v = e.target.value; if (v && v <= curMonth) setActivityDay(v + "-01"); }} />
+            )}
             <button className="help-btn" onClick={onHelp} title="How to pull the Appointment and Video reports">? Help</button>
           </div>
           <div className="check-group-label">Upload these</div>
           {(activityDay || today()).slice(0, 7) !== today().slice(0, 7) && (
             <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
           )}
-          <div className={"check " + (t.appointment ? "done" : "")}>
-            <span className="check-box">{t.appointment ? "✓" : ""}</span>Appointment report
+          <div className={"check " + (seedT.appointment ? "done" : "")}>
+            <span className="check-box">{seedT.appointment ? "✓" : ""}</span>Appointment report
           </div>
-          <div className={"check " + (t.video ? "done" : "")}>
-            <span className="check-box">{t.video ? "✓" : ""}</span>Video report
+          <div className={"check " + (seedT.video ? "done" : "")}>
+            <span className="check-box">{seedT.video ? "✓" : ""}</span>Video report
           </div>
 
           <div className="check-group-label">Arriving automatically</div>
-          <div className={"check readonly " + (t.delivery ? "done" : "")}>
-            <span className="check-box">{t.delivery ? "✓" : "·"}</span>
+          <div className={"check readonly " + (seedT.delivery ? "done" : "")}>
+            <span className="check-box">{seedT.delivery ? "✓" : "·"}</span>
             Delivery Summary
             <span className="check-note">
-              {t.delivery
-                ? "landed today, all channels"
+              {seedT.delivery
+                ? (seeding ? "on file for " + seedMonthLabel : "landed today, all channels")
                 : "emailed in on schedule — nothing to upload"}
             </span>
           </div>
-          {!t.delivery && (
+          {!seedT.delivery && (
             <p className="hint">
               If this hasn't ticked by mid-morning, the email pipeline may be stuck. You can still
               pull the Delivery Summary by hand and drop it below — hit <strong>Help</strong> for the steps.
             </p>
           )}
-          <div className={"check " + (t["delivery-campaign"] ? "done" : "")}>
-            <span className="check-box">{t["delivery-campaign"] ? "✓" : ""}</span>Campaign Delivery Summary
+          <div className={"check " + (seedT["delivery-campaign"] ? "done" : "")}>
+            <span className="check-box">{seedT["delivery-campaign"] ? "✓" : ""}</span>Campaign Delivery Summary
             <span className="check-note">units only, no percentage</span>
           </div>
-          {!(t.delivery && t.appointment && t.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
+          {!(seedT.delivery && seedT.appointment && seedT.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
         </div>
         <div className={"dropzone " + (dropActive ? "active" : "")}
           onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
@@ -11227,7 +11237,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
           onClick={() => fileRef.current?.click()}>
           <div className="dz-icon"><span>⇩</span></div>
-          <div className="dz-title"><span className="dz-drop">Drop today's reports here</span><span className="dz-tap">Choose today's reports</span></div>
+          <div className="dz-title"><span className="dz-drop">{seeding ? "Drop " + seedMonthLabel + " reports here" : "Drop today's reports here"}</span><span className="dz-tap">{seeding ? "Choose " + seedMonthLabel + " reports" : "Choose today's reports"}</span></div>
           <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically; to backfill a missed day or carry on while the automation is down, drop the PDF straight in and it is read here the same way.</div>
           <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
             onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
@@ -14120,6 +14130,8 @@ function Style() {
       .act-day-date { font:inherit; font-size:13px; padding:5px 9px; border:1px solid var(--line); border-radius:9px;
         background:#fff; color:var(--ink); cursor:pointer; }
       .act-day-date:hover { border-color:var(--blue); }
+      .seed-month { font:inherit; font-size:13px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; margin-left:auto; cursor:pointer; }
+      .seed-month:hover { border-color:var(--blue); }
       .act-backfill { color:var(--blue); }
       .seg-small { display:inline-flex; background:var(--ink-e, rgba(0,0,0,.05)); border-radius:9px; padding:2px; gap:2px; }
       .seg-opt { border:none; background:transparent; font:inherit; font-size:13px; font-weight:700; color:var(--ink-2);
