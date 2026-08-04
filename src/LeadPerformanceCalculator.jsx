@@ -9615,10 +9615,12 @@ function printMonthEndRecap({ store, a, stats, ev, mtd }) {
       (showCounts ? '<div class="rc-c">' + (opps > 0 ? closed + ' closed / ' + opps + ' opportunities' : 'no opportunities logged') + '</div>' : '') +
       '</div>';
   };
+  const thr = normThresholds(store.thresholds);
+  const chStd = (ch) => (thr && thr[ch] && thr[ch].green != null ? thr[ch].green : null);
   const resultHtml =
-    rcTile("Internet Delivery %", stats.deliveredPct, stdOf("deliveredPct"), (mtd.unitsInternet || 0), (mtd.oppInternet || 0), true) +
-    rcTile("Phone Closing %", closeOf(mtd.oppPhone, mtd.unitsPhone), null, (mtd.unitsPhone || 0), (mtd.oppPhone || 0), true) +
-    rcTile("Showroom Closing %", closeOf(mtd.oppShowroom, mtd.unitsShowroom), null, (mtd.unitsShowroom || 0), (mtd.oppShowroom || 0), true);
+    rcTile("Internet Delivery %", stats.internetPct, chStd("internet"), (stats.internetUnits || 0), (stats.internetLeads || 0), true) +
+    rcTile("Phone Closing %", stats.phonePct, chStd("phone"), (stats.phoneUnits || 0), (stats.phoneLeads || 0), true) +
+    rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), (stats.showroomLeads || 0), true);
   const driverKeys = ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
   const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("");
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
