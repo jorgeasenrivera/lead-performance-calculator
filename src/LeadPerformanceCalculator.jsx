@@ -9595,6 +9595,83 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 // The one-pager. It exists to answer two questions in a room, on paper:
 //   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
 // Everything on it is derived from this person's own numbers, so it is not an opinion.
+function printMonthEndRecap({ store, a, stats, ev, mtd }) {
+  const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
+  if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const pct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
+  const now = new Date();
+  const lastMonthName = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  const reqMin = {}; ((ev && ev.tier && ev.tier.requirements) ? ev.tier.requirements : []).forEach((r) => { reqMin[r.metric] = r.min; });
+  const stdOf = (m) => (reqMin[m] != null ? reqMin[m] : null);
+  const closeOf = (opp, un) => (opp > 0 ? (un || 0) / opp : null);
+  const rcTile = (label, val, std, closed, opps, showCounts) => {
+    const below = std != null && val != null && val < std / 100;
+    const tone = std == null ? "flat" : (below ? "bad" : "good");
+    return '<div class="rc-tile ' + tone + '"><div class="rc-t">' + esc(label) + '</div>' +
+      '<div class="rc-v">' + pct(val) + '</div>' +
+      (std != null ? '<div class="rc-s">standard ' + std + '%</div>' : '<div class="rc-s">reference</div>') +
+      (showCounts ? '<div class="rc-c">' + (opps > 0 ? closed + ' closed / ' + opps + ' opportunities' : 'no opportunities logged') + '</div>' : '') +
+      '</div>';
+  };
+  const resultHtml =
+    rcTile("Internet Delivery %", stats.deliveredPct, stdOf("deliveredPct"), (mtd.unitsInternet || 0), (mtd.oppInternet || 0), true) +
+    rcTile("Phone Closing %", closeOf(mtd.oppPhone, mtd.unitsPhone), null, (mtd.unitsPhone || 0), (mtd.oppPhone || 0), true) +
+    rcTile("Showroom Closing %", closeOf(mtd.oppShowroom, mtd.unitsShowroom), null, (mtd.unitsShowroom || 0), (mtd.oppShowroom || 0), true);
+  const driverKeys = ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
+  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("");
+  const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
+    'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
+    ', engaged video ' + pct(stats.engagedVideoPct) + (stdOf("engagedVideoPct") != null ? ' against ' + stdOf("engagedVideoPct") + '%' : '') + '. ' +
+    'That video is how you drive the experience and build excitement before the call. Raise those two and the closing follows, it is the video that gets them in the door ready, not the pitch on the day.</div>';
+  const playOrder = ["engagedVideoPct", "apptVideoDayPct", "bhVideoPct", "deliveredPct"];
+  const belowPlays = playOrder.filter((m) => { const s = stdOf(m); const v = stats[m]; return s != null && (v == null || v < s / 100) && METRIC_FIX[m]; });
+  const playsHtml = belowPlays.length
+    ? belowPlays.map((m, i) => { const fx = METRIC_FIX[m]; return '<div class="play"><div class="play-h"><span class="play-n">' + (i + 1) + '</span>' + esc(fx.play) + '<span class="play-tgt">' + esc(METRICS[m].short) + ' &rarr; ' + stdOf(m) + '%</span></div><ul>' + fx.steps.map((s) => '<li>' + esc(s) + '</li>').join("") + '</ul></div>'; }).join("")
+    : '<div class="why good"><b>Every driver is at standard.</b> Hold the video habits and the closing holds with them.</div>';
+  const CSS =
+    'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1B2A3B;margin:0;background:#fff;}' +
+    '.sheet{max-width:760px;margin:0 auto;padding:26px 30px;}' +
+    '.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1B2A3B;padding-bottom:10px;margin-bottom:4px;}' +
+    '.badge{display:inline-block;background:#1B2A3B;color:#fff;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:5px;}' +
+    '.nm{font-size:23px;font-weight:800;margin-top:6px;}.sub{font-size:12px;color:#5E6B82;}' +
+    'h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#1B2A3B;margin:15px 0 5px;border-bottom:1px solid #E4E8EE;padding-bottom:3px;}' +
+    '.note{font-size:10.5px;color:#5E6B82;margin:0 0 8px;}' +
+    '.why{border-radius:8px;padding:9px 12px;font-size:12px;margin:8px 0;}' +
+    '.why.flat{background:#F1F5F9;}.why.good{background:#E7F7F0;}.why b{display:block;margin-bottom:2px;}' +
+    '.line{border-bottom:1px solid #9AA5B1;height:20px;margin-bottom:4px;}' +
+    '.rc-lbl{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:12px 0 5px;}' +
+    '.rc-grid{display:flex;gap:8px;margin-bottom:4px;}' +
+    '.rc-tile{flex:1;border:1.3px solid #E4E8EE;border-radius:9px;padding:8px 10px;}' +
+    '.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +
+    '.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +
+    '.rc-v{font-size:21px;font-weight:800;color:#1B2A3B;line-height:1.1;margin-top:1px;}' +
+    '.rc-s{font-size:9px;color:#7A8699;}.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +
+    '.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:7px;padding:6px 10px;margin-bottom:6px;}' +
+    '.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +
+    '.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +
+    '.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +
+    '.play ul{margin:4px 0 0 23px;padding:0;}.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +
+    '@media print{.sheet{padding:0;}}';
+  const html =
+    '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body><div class="sheet">' +
+    '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
+    '<div class="nm">' + esc(a.name) + '</div>' +
+    '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div></div>' +
+    '<h2>You vs the store standard</h2>' +
+    '<p class="note">Measured against your tier on The Board, not against anyone else. Change a standard there and this moves with it.</p>' +
+    '<div class="rc-lbl">The result</div><div class="rc-grid">' + resultHtml + '</div>' +
+    '<div class="rc-lbl">What drives it</div><div class="rc-grid">' + driverHtml + '</div>' +
+    causal +
+    '<h2>The effort, in order</h2>' +
+    '<p class="note">Closing is the result; activity is the input. Put the effort here first, in this order.</p>' +
+    playsHtml +
+    '<h2>Notes</h2><div class="line"></div><div class="line"></div><div class="line"></div>' +
+    '</div></body></html>';
+  w.document.write(html); w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
+}
+
 function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act }) {
   const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
   if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
@@ -9737,45 +9814,6 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
       "</div>")
     : "";
 
-  // ---- MONTH-END: recap measured against store standard (fed by The Board tiers) ----
-  const reqMin = {}; ((ev && ev.tier && ev.tier.requirements) ? ev.tier.requirements : []).forEach((r) => { reqMin[r.metric] = r.min; });
-  const stdOf = (m) => (reqMin[m] != null ? reqMin[m] : null);
-  const closeOf = (opp, un) => (opp > 0 ? (un || 0) / opp : null);
-  const rcTile = (label, val, std, closed, opps, showCounts) => {
-    const below = std != null && val != null && val < std / 100;
-    const tone = std == null ? "flat" : (below ? "bad" : "good");
-    return '<div class="rc-tile ' + tone + '"><div class="rc-t">' + esc(label) + '</div>' +
-      '<div class="rc-v">' + pct(val) + '</div>' +
-      (std != null ? '<div class="rc-s">standard ' + std + '%</div>' : '<div class="rc-s">reference</div>') +
-      (showCounts ? '<div class="rc-c">' + (opps > 0 ? closed + ' closed / ' + opps + ' opportunities' : 'no opportunities logged') + '</div>' : '') +
-      '</div>';
-  };
-  const resultHtml =
-    rcTile("Internet Delivery %", stats.deliveredPct, stdOf("deliveredPct"), (mtd.unitsInternet || 0), (mtd.oppInternet || 0), true) +
-    rcTile("Phone Closing %", closeOf(mtd.oppPhone, mtd.unitsPhone), null, (mtd.unitsPhone || 0), (mtd.oppPhone || 0), true) +
-    rcTile("Showroom Closing %", closeOf(mtd.oppShowroom, mtd.unitsShowroom), null, (mtd.unitsShowroom || 0), (mtd.oppShowroom || 0), true);
-  const driverKeys = ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
-  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("");
-  const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
-    'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
-    ', engaged video ' + pct(stats.engagedVideoPct) + (stdOf("engagedVideoPct") != null ? ' against ' + stdOf("engagedVideoPct") + '%' : '') + '. ' +
-    'That video is how you drive the experience and build excitement before the call. Raise those two and the closing follows, it is the video that gets them in the door ready, not the pitch on the day.</div>';
-  const playOrder = ["engagedVideoPct", "apptVideoDayPct", "bhVideoPct", "deliveredPct"];
-  const belowPlays = playOrder.filter((m) => { const s = stdOf(m); const v = stats[m]; return s != null && (v == null || v < s / 100) && METRIC_FIX[m]; });
-  const playsHtml = belowPlays.length
-    ? belowPlays.map((m, i) => { const fx = METRIC_FIX[m]; return '<div class="play"><div class="play-h"><span class="play-n">' + (i + 1) + '</span>' + esc(fx.play) + '<span class="play-tgt">' + esc(METRICS[m].short) + ' &rarr; ' + stdOf(m) + '%</span></div><ul>' + fx.steps.map((s) => '<li>' + esc(s) + '</li>').join("") + '</ul></div>'; }).join("")
-    : '<div class="why good"><b>Every driver is at standard.</b> Hold the video habits and the closing holds with them.</div>';
-  const recapHtml =
-    '<h2>You vs the store standard</h2>' +
-    '<p class="note">Measured against your tier on The Board, not against anyone else. Change a standard there and this moves with it.</p>' +
-    '<div class="rc-lbl">The result</div><div class="rc-grid">' + resultHtml + '</div>' +
-    '<div class="rc-lbl">What drives it</div><div class="rc-grid">' + driverHtml + '</div>' +
-    causal +
-    '<h2>The effort, in order</h2>' +
-    '<p class="note">Closing is the result; activity is the input. Put the effort here first, in this order.</p>' +
-    playsHtml +
-    '<h2>Notes</h2><div class="line"></div><div class="line"></div><div class="line"></div>';
-
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
 '@page { size: letter portrait; margin: 12mm; }' +
@@ -9841,9 +9879,9 @@ gaugesHtml +
 
 '<h2>' + (monthEnd ? "How the month finished" : "Where you stand today") + '</h2>' +
 '<div class="why ' + headClass + '"><b>' + headTitle + '</b>' + esc(headBody) + '</div>' +
-(monthEnd ? recapHtml : (failRows ?
+(failRows ?
   '<table style="margin-top:6px"><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Focus</th></tr></thead><tbody>' +
-  failRows + '</tbody></table>' : '')) +
+  failRows + '</tbody></table>' : '') +
 
 '<h2>Results this month</h2>' +
 '<div class="stats">' +
@@ -9853,7 +9891,7 @@ gaugesHtml +
   '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom delivered</span></div>' +
 '</div>' +
 
-(!monthEnd && behaviourRows ?
+(behaviourRows ?
 '<h2>Behavior vs the Top ' + (topCount || 6) + ' Sales Associates in Your Store</h2>' +
 '<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
 '<tbody>' + behaviourRows + '</tbody></table>' +
@@ -10382,6 +10420,12 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
             }); }}>
             Print one-pager
           </button>
+          {new Date().getDate() <= 10 && (
+            <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
+              onClick={() => { recordPrint(); printMonthEndRecap({ store, a, stats, ev: row.ev, mtd: oyoMTD(data, norm(a.name), stats) }); }}>
+              Month-end recap
+            </button>
+          )}
         </div>
         {!goal && <p className="hint no-print">Set a monthly goal below and the one-pager unlocks.</p>}
         {prints.length > 0 && (
