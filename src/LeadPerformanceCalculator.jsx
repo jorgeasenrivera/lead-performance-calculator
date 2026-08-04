@@ -9597,7 +9597,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 // The one-pager. It exists to answer two questions in a room, on paper:
 //   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
 // Everything on it is derived from this person's own numbers, so it is not an opinion.
-function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, ratios, workingDays }) {
+function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base, ratios, workingDays }) {
   const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
   if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -9623,8 +9623,10 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, rati
     rcTile("Phone Closing %", stats.phonePct, chStd("phone"), (stats.phoneUnits || 0), (stats.phoneLeads || 0), true) +
     rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), (stats.showroomLeads || 0), true);
   const driverKeys = ["apptVideoDayPct", "engagedVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
-  const apptShownPct = (mtd.apptScheduled > 0) ? (mtd.apptShowed || 0) / mtd.apptScheduled : ((mtd.apptCreated > 0) ? (mtd.apptShowed || 0) / mtd.apptCreated : null);
-  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + rcTile("Appointments Shown %", apptShownPct, null, 0, 0, false);
+  const bDaysW = (base && base.daysWorked) || 0;
+  const apptShownCount = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
+  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month</div></div>';
+  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + apptTile;
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
     'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
     ', engaged video ' + pct(stats.engagedVideoPct) + (stdOf("engagedVideoPct") != null ? ' against ' + stdOf("engagedVideoPct") + '%' : '') + '. ' +
@@ -9636,58 +9638,60 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, rati
     : '<div class="why good"><b>Every driver is at standard.</b> Hold the video habits and the closing holds with them.</div>';
   const CSS =
     'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1B2A3B;margin:0;background:#fff;}' +
-    '.sheet{max-width:760px;margin:0 auto;padding:26px 30px;}' +
+    '.sheet{max-width:760px;margin:0 auto;padding:16px 26px;font-size:12px;}' +
     '.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1B2A3B;padding-bottom:10px;margin-bottom:4px;}' +
     '.badge{display:inline-block;background:#1B2A3B;color:#fff;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:5px;}' +
-    '.nm{font-size:23px;font-weight:800;margin-top:6px;}.sub{font-size:12px;color:#5E6B82;}' +
-    'h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:#1B2A3B;margin:15px 0 5px;border-bottom:1px solid #E4E8EE;padding-bottom:3px;}' +
-    '.note{font-size:10.5px;color:#5E6B82;margin:0 0 8px;}' +
-    '.why{border-radius:8px;padding:9px 12px;font-size:12px;margin:8px 0;}' +
+    '.nm{font-size:20px;font-weight:800;margin-top:3px;}.sub{font-size:11px;color:#5E6B82;}' +
+    'h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:#1B2A3B;margin:9px 0 3px;border-bottom:1px solid #E4E8EE;padding-bottom:2px;}' +
+    '.note{font-size:9.5px;color:#5E6B82;margin:0 0 4px;}' +
+    '.why{border-radius:7px;padding:6px 10px;font-size:11px;margin:5px 0;}' +
     '.why.flat{background:#F1F5F9;}.why.good{background:#E7F7F0;}.why b{display:block;margin-bottom:2px;}' +
-    '.line{border-bottom:1px solid #9AA5B1;height:20px;margin-bottom:4px;}' +
-    '.rc-lbl{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:12px 0 5px;}' +
-    '.rc-grid{display:flex;gap:8px;margin-bottom:4px;}' +
-    '.rc-tile{flex:1;border:1.3px solid #E4E8EE;border-radius:9px;padding:8px 10px;}' +
+    '.line{border-bottom:1px solid #9AA5B1;height:15px;margin-bottom:3px;}' +
+    '.rc-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:7px 0 3px;}' +
+    '.rc-grid{display:flex;gap:6px;margin-bottom:2px;}' +
+    '.rc-tile{flex:1;border:1.2px solid #E4E8EE;border-radius:8px;padding:6px 8px;}' +
     '.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +
     '.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +
-    '.rc-v{font-size:21px;font-weight:800;color:#1B2A3B;line-height:1.1;margin-top:1px;}' +
+    '.rc-v{font-size:18px;font-weight:800;color:#1B2A3B;line-height:1.05;margin-top:1px;}' +
     '.rc-s{font-size:9px;color:#7A8699;}.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +
-    '.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:7px;padding:6px 10px;margin-bottom:6px;}' +
+    '.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:6px;padding:5px 9px;margin-bottom:4px;}' +
     '.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +
     '.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +
     '.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +
-    '.play ul{margin:4px 0 0 23px;padding:0;}.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +
-    'table{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:12px;}' +
+    '.play ul{margin:2px 0 0 22px;padding:0;}.play li{font-size:9.5px;color:#33445E;margin:0;}' +
+    'table{width:100%;border-collapse:collapse;margin:2px 0 6px;font-size:11px;}' +
     'th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;border-bottom:1px solid #E4E8EE;padding:4px 6px;font-weight:700;}' +
-    'td{padding:5px 6px;border-bottom:1px solid #F0F2F5;}' +
+    'td{padding:3px 6px;border-bottom:1px solid #F0F2F5;}' +
     '.r{text-align:right;}.g{color:#0B8F66;font-weight:700;}.b{color:#E5473C;font-weight:700;}' +
-    '.goalbox{text-align:right;flex:0 0 auto;}.goalbox b{font-size:22px;font-weight:800;display:block;color:#1B2A3B;line-height:1;}.goalbox span{font-size:10px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
+    '.goalbox{text-align:right;flex:0 0 auto;}.goalbox b{font-size:19px;font-weight:800;display:block;color:#1B2A3B;line-height:1;}.goalbox span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
     '@media print{.sheet{padding:0;}}';
   const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptCreated", "Appointments set"]];
   const rnd = (n) => Math.round(n);
-  // Effort per unit is what THIS associate actually did last month to reach last month's
-  // units, so the targets scale off their own real effort at that unit count, not a blend.
-  const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
-  const perUnitOf = (id) => (lastUnits > 0 ? (mtd[id] || 0) / lastUnits : null);
-  const shortRows = (goalLast > 0 && lastUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
-    const per = perUnitOf(id); if (per == null) return "";
-    const need = rnd((per * goalLast) / workingDays); const did = rnd((mtd[id] || 0) / workingDays); const gap = need - did; const ok = gap <= 0;
+  // Built from the same 90-day conversion history the coaching page reads (seeded baseline
+  // plus observed), so the recap and the board never disagree. per-car effort x goal / days.
+  const bUnits = (base && base.units) || 0;
+  const bDays = (base && base.daysWorked) || 0;
+  const perCarOf = (id) => (bUnits > 0 ? (base[id] || 0) / bUnits : null);
+  const dailyAvgOf = (id) => (bDays > 0 ? (base[id] || 0) / bDays : null);
+  const shortRows = (goalLast > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
+    const per = perCarOf(id); if (per == null) return "";
+    const need = rnd((per * goalLast) / workingDays); const did = rnd(dailyAvgOf(id) || 0); const gap = need - did; const ok = gap <= 0;
     return '<tr><td>' + label + '</td><td class="r">' + need + '</td><td class="r">' + did + '</td><td class="r ' + (ok ? "g" : "b") + '">' + (ok ? "on target" : "short by " + gap) + '</td></tr>';
   }).filter(Boolean).join("") : "";
-  const paceRows = (goalThis > 0 && lastUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
-    const per = perUnitOf(id); if (per == null) return "";
+  const paceRows = (goalThis > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
+    const per = perCarOf(id); if (per == null) return "";
     const perDay = (per * goalThis) / workingDays;
     return '<tr><td>' + label + '</td><td class="r"><b>' + (Math.round(perDay * 10) / 10) + '</b> / day</td></tr>';
   }).filter(Boolean).join("") : "";
   const effortHtml =
     '<h2>Effort to hit last month\'s goal</h2>' +
     (goalLast > 0 && shortRows
-      ? '<p class="note">At the effort per unit you actually ran last month, this is the outreach it took to reach ' + goalLast + '. Where you fell short is where the cars slipped.</p><table><thead><tr><th>Activity</th><th class="r">Needed Daily</th><th class="r">Daily Average</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
-      : '<div class="why flat"><b>Not enough of last month is on file.</b> This is built from last month\'s goal, delivery, and daily activity together. Set the goal and seed last month\'s Delivery Summary and Daily Activity, and the comparison fills in.</div>') +
+      ? '<p class="note">At your 90-day effort per unit (the same history the board uses), this is the daily outreach it takes to reach ' + goalLast + '. Where your average falls short is where the cars slip.</p><table><thead><tr><th>Activity</th><th class="r">Needed Daily</th><th class="r">Daily Average</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
+      : '<div class="why flat"><b>Not enough conversion history on file.</b> Seed this rep\'s 90-day baseline and set the goal, and this fills in.</div>') +
     '<h2>Your pace this month</h2>' +
     (goalThis > 0 && paceRows
-      ? '<p class="note">Built from your own effort per unit last month: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Daily Effort</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
-      : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> The daily targets come from your own effort per unit last month, so last month\'s delivery and activity need to be seeded too.</div>');
+      ? '<p class="note">Built from your 90-day effort per unit: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Daily Effort</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
+      : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> The daily targets come from your 90-day conversion history.</div>');
   const html =
     '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body><div class="sheet">' +
     '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
@@ -9904,7 +9908,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.sign div { flex:1; }' +
 '.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
 '.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
-'.rc-lbl{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:12px 0 5px;}' +'.rc-grid{display:flex;gap:8px;margin-bottom:4px;}' +'.rc-tile{flex:1;border:1.3px solid #E4E8EE;border-radius:9px;padding:8px 10px;}' +'.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}' +'.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}' +'.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +'.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +'.rc-v{font-size:21px;font-weight:800;color:#1B2A3B;line-height:1.1;margin-top:1px;}' +'.rc-s{font-size:9px;color:#7A8699;}' +'.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +'.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:7px;padding:6px 10px;margin-bottom:6px;}' +'.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +'.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +'.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +'.play ul{margin:4px 0 0 23px;padding:0;}' +'.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +'</style></head><body><div class="sheet">' +
+'.rc-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:7px 0 3px;}' +'.rc-grid{display:flex;gap:6px;margin-bottom:2px;}' +'.rc-tile{flex:1;border:1.2px solid #E4E8EE;border-radius:8px;padding:6px 8px;}' +'.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}' +'.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}' +'.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +'.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +'.rc-v{font-size:18px;font-weight:800;color:#1B2A3B;line-height:1.05;margin-top:1px;}' +'.rc-s{font-size:9px;color:#7A8699;}' +'.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +'.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:6px;padding:5px 9px;margin-bottom:4px;}' +'.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +'.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +'.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +'.play ul{margin:4px 0 0 23px;padding:0;}' +'.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +'</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
   '<div>' + (monthEnd ? '<div class="badge">' + esc(lastMonthName) + ' month-end review</div>' : '<div class="badge">Coaching plan &middot; ' + esc(thisMonthName) + '</div>') +
@@ -10472,7 +10476,8 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
                 const gRec = data.goals?.[a.id] || {};
                 const goalThis = (gRec.byMonth && gRec.byMonth[ym()] != null) ? gRec.byMonth[ym()] : (gRec.monthly ?? 0);
                 const goalLast = (gRec.byMonth && gRec.byMonth[lmKey] != null) ? gRec.byMonth[lmKey] : (gRec.monthly ?? 0);
-                printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey), goalLast, goalThis, ratios: oyoRatios(oyoBaseline(data, norm(a.name), a.id)), workingDays: personWorkingDaysInMonth(data, a) });
+                const base = oyoBaseline(data, norm(a.name), a.id);
+                printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey), goalLast, goalThis, base, ratios: oyoRatios(base), workingDays: personWorkingDaysInMonth(data, a) });
               }}>
               Month-end recap
             </button>
