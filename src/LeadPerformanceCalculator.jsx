@@ -9664,6 +9664,8 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     'td{padding:3px 6px;border-bottom:1px solid #F0F2F5;}' +
     '.r{text-align:right;}.g{color:#0B8F66;font-weight:700;}.b{color:#E5473C;font-weight:700;}' +
     '.goalbox{text-align:right;flex:0 0 auto;}.goalbox b{font-size:19px;font-weight:800;display:block;color:#1B2A3B;line-height:1;}.goalbox span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
+    '.csi{display:flex;align-items:center;gap:8px;margin:5px 0 2px;}.csi-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;}.csi-fill{flex:1;border-bottom:1px solid #9AA5B1;height:15px;}' +
+    '.signs{display:flex;gap:26px;margin-top:16px;}.sig{flex:1;}.sig-line{border-bottom:1px solid #1B2A3B;height:26px;}.sig span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
     '@media print{.sheet{padding:0;}}';
   const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptCreated", "Appointments set"]];
   const rnd = (n) => Math.round(n);
@@ -9708,7 +9710,9 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     '<p class="note">Closing is the result; activity is the input. Put the effort here first, in this order.</p>' +
     playsHtml +
     effortHtml +
-    '<h2>Notes</h2><div class="line"></div><div class="line"></div><div class="line"></div>' +
+    '<h2>Notes</h2><div class="line"></div><div class="line"></div>' +
+    '<div class="csi"><span class="csi-l">CSI</span><span class="csi-fill"></span></div>' +
+    '<div class="signs"><div class="sig"><div class="sig-line"></div><span>Salesperson signature</span></div><div class="sig"><div class="sig-line"></div><span>Manager signature</span></div></div>' +
     '</div></body></html>';
   w.document.write(html); w.document.close();
   setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
