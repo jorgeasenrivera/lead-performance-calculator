@@ -9746,7 +9746,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   const bDaysW = (base && base.daysWorked) || 0;
   const apptShownBase = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
   const apptShownCount = (stats.apptShowedMTD != null) ? stats.apptShowedMTD : ((mtd.apptShowed > 0) ? mtd.apptShowed : apptShownBase);
-  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month</div></div>';
+  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month <span style="color:#c33">[dbg showMTD=' + stats.apptShowedMTD + ' schedMTD=' + stats.apptScheduledMTD + ' mtdShown=' + (mtd && mtd.apptShowed) + ']</span></div></div>';
   const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + apptTile;
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
     'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
