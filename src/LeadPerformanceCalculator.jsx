@@ -7101,6 +7101,77 @@ function parseHollerGrid(rows, roster, targetYear, targetMonth) {
   return { matched, unmatched: Object.keys(unmatched), teams };
 }
 
+// Classic-Mazda style: every cell is "Name Status" (e.g. "Mike OFF", "Carlos VAC",
+// "Amanda 9 - C"), with real dates in the week-header rows. OFF or VAC in a person's
+// cell means a day off. Names sit inside the cells, not in a separate column.
+function looksLikeNameGrid(rows) {
+  const re = /^[A-Za-z][A-Za-z.'\- ]*\s+(\d|off\b|vac\b)/i;
+  let hits = 0;
+  for (const r of (rows || [])) for (const c of (r || [])) {
+    if (re.test(String(c == null ? "" : c).trim())) { hits++; if (hits >= 8) return true; }
+  }
+  return false;
+}
+
+function nameGridDate(raw) {
+  let s = String(raw == null ? "" : raw).trim(); if (!s) return null;
+  s = s.split("T")[0].split(" ")[0];
+  const d = normalizeDate(s); if (d) return d;
+  if (/^\d{4,6}$/.test(s)) {
+    const serial = parseInt(s, 10);
+    if (serial > 20000 && serial < 80000) {
+      const dt = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      return dt.toISOString().slice(0, 10);
+    }
+  }
+  return null;
+}
+
+function parseNameGrid(rows, roster, targetYear, targetMonth) {
+  const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
+  const toRoster = (raw) => {
+    const k = norm(raw); if (rosterByNorm.has(k)) return rosterByNorm.get(k);
+    const first = k.split(" ")[0];
+    for (const [rn, real] of rosterByNorm) if (rn.split(" ")[0] === first) return real;
+    return null;
+  };
+  const off = {}; const unmatched = {};
+  const markOff = (rawName, date) => {
+    const rn = toRoster(rawName);
+    if (!rn) { const key = rawName.trim(); if (key) unmatched[key] = (unmatched[key] || 0) + 1; return; }
+    (off[rn] = off[rn] || new Set()).add(date);
+  };
+  // week-header rows are the ones where several cells read as real dates
+  const dateRows = [];
+  rows.forEach((r, i) => {
+    const dts = (r || []).map((c) => nameGridDate(c));
+    if (dts.filter(Boolean).length >= 4) dateRows.push([i, dts]);
+  });
+  const nameRe = /^([A-Za-z][A-Za-z.'\- ]*?)\s+(.+)$/;
+  for (let w = 0; w < dateRows.length; w++) {
+    const [didx, dvals] = dateRows[w];
+    const end = w + 1 < dateRows.length ? dateRows[w + 1][0] : rows.length;
+    for (let ridx = didx + 1; ridx < end; ridx++) {
+      const r = rows[ridx]; if (!r) continue;
+      r.forEach((cell, col) => {
+        const date = dvals[col]; if (!date) return;
+        const txt = String(cell == null ? "" : cell).trim(); if (!txt) return;
+        const m = txt.match(nameRe); if (!m) return;
+        if (/\b(off|vac)\b/i.test(m[2])) markOff(m[1], date);
+      });
+    }
+  }
+  const prefix = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+  const matched = [];
+  for (const [name, set] of Object.entries(off)) {
+    const days = [...set].filter((d) => d.startsWith(prefix)).sort();
+    if (!days.length) continue;
+    const a = roster.find((x) => x.name === name);
+    if (a) matched.push({ id: a.id, name, dates: days });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams: {} };
+}
+
 function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
   const [err, setErr] = useState("");
@@ -7164,7 +7235,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
         // keep only sheets that actually contain a schedule grid (either style)
         const gridSheets = wb.SheetNames.filter((n) => {
-          try { const rr = toRows(wb.Sheets[n]); return looksLikeHollerGrid(rr) || looksLikeBlankGrid(rr); } catch (e) { return false; }
+          try { const rr = toRows(wb.Sheets[n]); return looksLikeHollerGrid(rr) || looksLikeBlankGrid(rr) || looksLikeNameGrid(rr); } catch (e) { return false; }
         });
         const usable = gridSheets.length ? gridSheets : wb.SheetNames;
         if (usable.length === 1) {
@@ -7221,6 +7292,19 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         matched: res.matched, unmatched: res.unmatched, total, grid: true, blankGrid: true,
         monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams,
       });
+      return;
+    }
+
+    // ---- Name-in-cell grid: each cell is "Name OFF/VAC/time" (Classic Mazda style) ----
+    if (looksLikeNameGrid(rows)) {
+      const { ty, tm } = detectSheetMonth(rows, monthHint);
+      const res = parseNameGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (!res.matched.length && !res.unmatched.length) {
+        setErr("Detected a name schedule, but couldn't read any OFF or VAC days for this month. The layout may differ from expected.");
+        return;
+      }
+      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
       return;
     }
 
@@ -9531,6 +9615,15 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 
   return (
     <div className="coaching">
+      {new Date().getDate() <= 10 && (
+        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Month-end recaps</h3>
+            <p className="hint" style={{ margin: "2px 0 0" }}>Print last month's review for every associate with data, one page each.</p>
+          </div>
+          <button className="btn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>Print all Month-End recaps</button>
+        </div>
+      )}
       {withData.length === 0 ? (
         <div className="card">
           <h3>What the strongest people do differently</h3>
@@ -9597,9 +9690,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 // The one-pager. It exists to answer two questions in a room, on paper:
 //   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
 // Everything on it is derived from this person's own numbers, so it is not an opinion.
-function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base, ratios, workingDays }) {
-  const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
-  if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
+function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base, ratios, workingDays, returnHtml }) {
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const pct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
   const now = new Date();
@@ -9695,8 +9786,8 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     (goalThis > 0 && paceRows
       ? '<p class="note">Built from your 90-day effort per unit: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Daily Effort</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
       : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> The daily targets come from your 90-day conversion history.</div>');
-  const html =
-    '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body><div class="sheet">' +
+  const sheet =
+    '<div class="sheet">' +
     '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
     '<div class="nm">' + esc(a.name) + '</div>' +
     '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
@@ -9713,9 +9804,40 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     '<h2>Notes</h2><div class="line"></div><div class="line"></div>' +
     '<div class="csi"><span class="csi-l">CSI</span><span class="csi-fill"></span></div>' +
     '<div class="signs"><div class="sig"><div class="sig-line"></div><span>Salesperson signature</span></div><div class="sig"><div class="sig-line"></div><span>Manager signature</span></div></div>' +
-    '</div></body></html>';
-  w.document.write(html); w.document.close();
+    '</div>';
+  if (returnHtml) return { css: CSS, sheet };
+  const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
+  if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body>' + sheet + '</body></html>');
+  w.document.close();
   setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
+}
+
+function printAllMonthEndRecaps({ store, config, data }) {
+  const w = window.open("", "lpc_recap_all", "width=850,height=1050");
+  if (!w) { alert("Allow pop-ups to print the recaps."); return; }
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
+  const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
+  const coachRoles = new Set((config.roles || []).filter((r) => r.coaching !== false).map((r) => r.id));
+  const lmStatsAll = data.months?.[lmKey]?.stats || {};
+  const people = (data.roster || []).filter((a) => a.roleId && coachRoles.has(a.roleId) && lmStatsAll[norm(a.name)]);
+  let css = "";
+  const sheets = people.map((a) => {
+    const lmStats = lmStatsAll[norm(a.name)] || {};
+    const lmEv = evaluateAssociate(lmStats, config.standards?.[store.id]?.[a.roleId]?.tiers);
+    const gRec = data.goals?.[a.id] || {};
+    const goalThis = (gRec.byMonth && gRec.byMonth[ym()] != null) ? gRec.byMonth[ym()] : (gRec.monthly ?? 0);
+    const goalLast = (gRec.byMonth && gRec.byMonth[lmKey] != null) ? gRec.byMonth[lmKey] : (gRec.monthly ?? 0);
+    const base = oyoBaseline(data, norm(a.name), a.id);
+    const out = printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey), goalLast, goalThis, base, ratios: oyoRatios(base), workingDays: personWorkingDaysInMonth(data, a), returnHtml: true });
+    css = out.css;
+    return out.sheet;
+  }).filter(Boolean);
+  if (!sheets.length) { w.close(); alert("No associates with last month's data to print yet."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Month-end recaps &middot; ' + esc(store.name) + '</title><style>' + css + '.sheet + .sheet{page-break-before:always;}</style></head><body>' + sheets.join("") + '</body></html>');
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 450);
 }
 
 function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act }) {
