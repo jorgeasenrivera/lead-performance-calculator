@@ -1648,8 +1648,10 @@ export default function LeadPerformanceCalculator() {
     // roughly a full copy of the store), and every save ships the whole blob, so a
     // pile of them is what pushed writes past the database statement timeout. Cap
     // them hard on EVERY save, so the first save after this permanently shrinks it.
-    if (next && Array.isArray(next.snapshots) && next.snapshots.length > 3) {
-      next.snapshots = next.snapshots.slice(0, 3);
+    // Snapshots are full copies of the store and the single biggest bloat in the saved
+    // blob; keep only the most recent one so writes stay well under the DB timeout.
+    if (next && Array.isArray(next.snapshots) && next.snapshots.length > 1) {
+      next.snapshots = next.snapshots.slice(0, 1);
     }
     // A server-side auto-import (email ingest) may have written this store's months or
     // activity while this browser sat open with an older copy. Re-read the server's
@@ -1659,15 +1661,10 @@ export default function LeadPerformanceCalculator() {
     try {
       const serverCopy = await loadShared(storeKey(storeId), null, true);
       if (serverCopy && typeof serverCopy === "object") {
-        const orig = adminData[storeId] || {};
         const mergeField = (field) => {
           const out = { ...(next[field] || {}) };
           const srv = serverCopy[field] || {};
-          const og = orig[field] || {};
-          for (const k of Object.keys(srv)) {
-            const weTouched = JSON.stringify((next[field] || {})[k]) !== JSON.stringify(og[k]);
-            if (!weTouched) out[k] = srv[k];
-          }
+          for (const k of Object.keys(srv)) if (!(k in out)) out[k] = srv[k];
           return out;
         };
         next.months = mergeField("months");
@@ -1696,7 +1693,7 @@ export default function LeadPerformanceCalculator() {
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
     snaps.unshift({ t, by: session?.name || "-", reason, data: copy });
-    data.snapshots = snaps.slice(0, 3);
+    data.snapshots = snaps.slice(0, 1);
     return t;   // so an upload can point back at the exact state before it
   };
 
@@ -9741,7 +9738,8 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), (stats.showroomLeads || 0), true);
   const driverKeys = ["apptVideoDayPct", "engagedVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
   const bDaysW = (base && base.daysWorked) || 0;
-  const apptShownCount = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
+  const apptShownBase = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
+  const apptShownCount = (mtd.apptShowed > 0) ? mtd.apptShowed : apptShownBase;
   const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month</div></div>';
   const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + apptTile;
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
@@ -9784,15 +9782,22 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     '.csi{display:flex;align-items:center;gap:8px;margin:5px 0 2px;}.csi-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;}.csi-fill{flex:1;border-bottom:1px solid #9AA5B1;height:15px;}' +
     '.signs{display:flex;gap:26px;margin-top:16px;}.sig{flex:1;}.sig-line{border-bottom:1px solid #1B2A3B;height:26px;}.sig span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
     '@media print{.sheet{padding:0;}}';
-  const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptCreated", "Appointments set"]];
+  const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptScheduled", "Appointments set"]];
   const rnd = (n) => Math.round(n);
   // Built from the same 90-day conversion history the coaching page reads (seeded baseline
   // plus observed), so the recap and the board never disagree. per-car effort x goal / days.
   const bUnits = (base && base.units) || 0;
   const bDays = (base && base.daysWorked) || 0;
   const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
-  const perCarOf = (id) => (bUnits > 0 ? (base[id] || 0) / bUnits : null);
-  const dailyAvgOf = (id) => (bDays > 0 ? (base[id] || 0) / bDays : null);
+  // Appointments set live in last month's daily activity, not the seeded baseline, so pull
+  // that one from the month itself (mtd) when it's on file; everything else stays on the
+  // 90-day history so it agrees with the coaching page.
+  const perCarOf = (id) => (id === "apptScheduled")
+    ? (lastUnits > 0 ? (mtd.apptScheduled || 0) / lastUnits : null)
+    : (bUnits > 0 ? (base[id] || 0) / bUnits : null);
+  const dailyAvgOf = (id) => (id === "apptScheduled")
+    ? (workingDays > 0 ? (mtd.apptScheduled || 0) / workingDays : null)
+    : (bDays > 0 ? (base[id] || 0) / bDays : null);
   const shortRows = (goalLast > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
     const per = perCarOf(id); if (per == null) return "";
     const need = rnd((per * goalLast) / workingDays); const did = rnd(dailyAvgOf(id) || 0); const gap = need - did; const ok = gap <= 0;
