@@ -59,11 +59,12 @@ const METRIC_TINY = {
 // calls today" with something a manager can actually hand to a person.
 const METRIC_FIX = {
   apptVideoDayPct: {
-    play: "Record tomorrow's videos tonight",
+    play: "Get ahead of tomorrow's appointments",
     steps: [
-      "Pull tomorrow's appointment list at close and record then, not the morning of.",
-      "Name the vehicle and the appointment time in the first five seconds.",
+      "Look forward for your appointments, check all appointments that are coming in 48 hours to tomorrow's visits. Confirm them prior - not the morning of.",
+      "Name the vehicle and the appointment time in the first 10 seconds.",
       "It only counts if it lands before the appointment starts, so send it early.",
+      "Then be ready for them: arrive early, have the vehicle pulled up and the paperwork started before they walk in.",
     ],
   },
   deliveredPct: {
@@ -9783,15 +9784,24 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     return '<div class="rc-tile ' + tone + '"><div class="rc-t">' + esc(label) + '</div>' +
       '<div class="rc-v">' + pct(val) + '</div>' +
       (std != null ? '<div class="rc-s">standard ' + std + '%</div>' : '<div class="rc-s">reference</div>') +
-      (showCounts ? '<div class="rc-c">' + (opps > 0 ? closed + ' closed / ' + opps + ' opportunities' : 'no opportunities logged') + '</div>' : '') +
+      (showCounts ? '<div class="rc-c">' + (opps > 0 ? closed + ' closed / ' + opps + ' opportunities' : 'no Delivery Summary on file for this month') + '</div>' : '') +
       '</div>';
   };
   const thr = normThresholds(store.thresholds);
   const chStd = (ch) => (thr && thr[ch] && thr[ch].green != null ? thr[ch].green : null);
+  // Opportunities come off the Delivery Summary. If a store did not import one for
+  // this month, fall back to the opportunity counts the Daily Activity report carries
+  // for the same channel, so the sold-versus-opportunities line still says something
+  // instead of going blank.
+  const oppsOf = (ch, actOpp) => {
+    const fromSummary = stats[ch + "Leads"];
+    if (fromSummary != null && fromSummary > 0) return fromSummary;
+    return (mtd && actOpp != null) ? actOpp : 0;
+  };
   const resultHtml =
-    rcTile("Internet Delivery %", stats.internetPct, chStd("internet"), (stats.internetUnits || 0), (stats.internetLeads || 0), true) +
-    rcTile("Phone Closing %", stats.phonePct, chStd("phone"), (stats.phoneUnits || 0), (stats.phoneLeads || 0), true) +
-    rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), (stats.showroomLeads || 0), true);
+    rcTile("Internet Delivery %", stats.internetPct, chStd("internet"), (stats.internetUnits || 0), oppsOf("internet", mtd && mtd.oppInternet), true) +
+    rcTile("Phone Closing %", stats.phonePct, chStd("phone"), (stats.phoneUnits || 0), oppsOf("phone", mtd && mtd.oppPhone), true) +
+    rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), oppsOf("showroom", mtd && mtd.oppShowroom), true);
   const driverKeys = ["apptVideoDayPct", "engagedVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
   const bDaysW = (base && base.daysWorked) || 0;
   const apptShownBase = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
@@ -9801,7 +9811,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
     'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
     ', engaged video ' + pct(stats.engagedVideoPct) + (stdOf("engagedVideoPct") != null ? ' against ' + stdOf("engagedVideoPct") + '%' : '') + '. ' +
-    'That video is how you drive the experience and build excitement before the call. Raise those two and the closing follows, it is the video that gets them in the door ready, not the pitch on the day.</div>';
+    'Video is how you drive the experience and build excitement before the visit. Raise those two and the closing follows, it is the video that gets them in the door, not the visit.</div>';
   const playOrder = ["engagedVideoPct", "apptVideoDayPct", "bhVideoPct", "deliveredPct"];
   const belowPlays = playOrder.filter((m) => { const s = stdOf(m); const v = stats[m]; return s != null && (v == null || v < s / 100) && METRIC_FIX[m]; });
   const playsHtml = belowPlays.length
