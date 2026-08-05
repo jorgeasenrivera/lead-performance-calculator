@@ -9778,6 +9778,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     'th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;border-bottom:1px solid #E4E8EE;padding:4px 6px;font-weight:700;}' +
     'td{padding:3px 6px;border-bottom:1px solid #F0F2F5;}' +
     '.r{text-align:right;}.g{color:#0B8F66;font-weight:700;}.b{color:#E5473C;font-weight:700;}' +
+    '.hd-stats{display:flex;gap:16px;flex:0 0 auto;}' +
     '.goalbox{text-align:right;flex:0 0 auto;}.goalbox b{font-size:19px;font-weight:800;display:block;color:#1B2A3B;line-height:1;}.goalbox span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
     '.csi{display:flex;align-items:center;gap:8px;margin:5px 0 2px;}.csi-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;}.csi-fill{flex:1;border-bottom:1px solid #9AA5B1;height:15px;}' +
     '.signs{display:flex;gap:26px;margin-top:16px;}.sig{flex:1;}.sig-line{border-bottom:1px solid #1B2A3B;height:26px;}.sig span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
@@ -9788,6 +9789,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   // plus observed), so the recap and the board never disagree. per-car effort x goal / days.
   const bUnits = (base && base.units) || 0;
   const bDays = (base && base.daysWorked) || 0;
+  const limitedHistory = !base || (base.daysWorked || 0) < 55;
   const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
   // Appointments set live in last month's daily activity, not the seeded baseline, so pull
   // that one from the month itself (mtd) when it's on file; everything else stays on the
@@ -9822,9 +9824,11 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
     '<div class="nm">' + esc(a.name) + '</div>' +
     '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
-    '<div class="goalbox"><b>' + (Math.round(lastUnits * 10) / 10) + '</b><span>Units delivered</span></div></div>' +
+    '<div class="hd-stats"><div class="goalbox"><b>' + (Math.round(lastUnits * 10) / 10) + '</b><span>Units delivered</span></div>' +
+    '<div class="goalbox"><b>' + (goalThis > 0 ? goalThis : "-") + '</b><span>Goal this month</span></div></div></div>' +
     '<h2>You vs the store standard</h2>' +
     '<p class="note">Measured against your tier on The Board, not against anyone else. Change a standard there and this moves with it.</p>' +
+    (limitedHistory ? '<div class="why flat"><b>New associate.</b> Less than a full quarter of history is on file, so the averages and targets below are provisional and sharpen as more days build up.</div>' : '') +
     '<div class="rc-lbl">The result</div><div class="rc-grid">' + resultHtml + '</div>' +
     '<div class="rc-lbl">What drives it</div><div class="rc-grid">' + driverHtml + '</div>' +
     causal +
