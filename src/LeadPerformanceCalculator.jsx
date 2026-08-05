@@ -1438,6 +1438,9 @@ export default function LeadPerformanceCalculator() {
   // Which day a Daily Activity import should land on. Reports are often pulled the
   // next morning, so the manager can aim an import at yesterday without renaming files.
   const [activityDay, setActivityDay] = useState(today());
+  // Whether the dropped Daily Activity file is one day's numbers or a whole month's
+  // cumulative pull. A month file is not a day and must never be filed as one.
+  const [activityScope, setActivityScope] = useState("day");
   const [saving, setSaving] = useState(false);
   const [loadErr, setLoadErr] = useState(false);
   const fileRef = useRef(null);
@@ -1702,8 +1705,13 @@ export default function LeadPerformanceCalculator() {
     // The picked date drives BOTH the activity day AND the month that everything else
     // (Delivery Summary and the other month-to-date reports) lands in, so a report can
     // be seeded into a past month, not only the current one.
-    const actDay = (activityDay && activityDay <= today()) ? activityDay : today();
+    const monthScope = activityScope === "month";
+    const pickDay = (activityDay && activityDay <= today()) ? activityDay : today();
+    // A whole-month import is anchored to the first of that month for record-keeping,
+    // but nothing is written into the per-day activity history.
+    const actDay = monthScope ? pickDay.slice(0, 7) + "-01" : pickDay;
     const month = actDay.slice(0, 7); const day = actDay;
+    try { console.log("[LPC import] activityDay=" + activityDay + " actDay=" + actDay + " month=" + month + " today=" + today() + " types=" + JSON.stringify((entries || []).map((e) => e && e.type))); } catch (e) {}
     let next = JSON.parse(JSON.stringify(storeData));
     const snapT = snapshotStore(next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
@@ -1743,7 +1751,34 @@ export default function LeadPerformanceCalculator() {
         : REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || (type === "activity" ? "Daily Activity" : type);
       let count = 0;
 
-      if (type === "activity") {
+      if (type === "activity" && monthScope) {
+        // A cumulative month pull. Writing it into next.activity would make one file
+        // look like a single day and wreck every per-day average, so it is stamped as
+        // the month's own totals and the recap reads those instead of summing days.
+        next.months[month] = next.months[month] || { stats: {}, imports: {} };
+        next.months[month].stats = next.months[month].stats || {};
+        const mWork = workingDaysInMonth(month);
+        for (const [key, rec] of Object.entries(parsed)) {
+          next.months[month].stats[key] = {
+            ...(next.months[month].stats[key] || {}),
+            apptShowedMTD: rec.actApptShow,
+            apptScheduledMTD: rec.actApptScheduled,
+            activityMTD: {
+              days: mWork,
+              calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
+              text: rec.actText, email: rec.actEmail,
+              apptCreated: rec.actApptCreated, apptScheduled: rec.actApptScheduled,
+              apptConfirmed: rec.actApptConfirmed, apptShow: rec.actApptShow,
+              oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
+              oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
+              tasks: rec.actCompletedTasks,
+              uploadedAt: new Date().toISOString(),
+            },
+          };
+          count++;
+        }
+        log.push({ ok: true, msg: `Filed as the month total for ${monthLabel(month)} · ${count} people. Per-day history for that month was not touched.` });
+      } else if (type === "activity") {
         if (!next.activity) next.activity = {};
         // "Open Tasks" is a live backlog snapshot, so a report pulled for a past date
         // often comes back without it. Keep whatever was already recorded for that day
@@ -1768,12 +1803,9 @@ export default function LeadPerformanceCalculator() {
             apptNoShow: rec.actApptNoShow,
             uploadedAt: new Date().toISOString(),
           };
-          // Also stamp this report's per-person appointment totals onto the month's stats, so
-          // the month-end recap can read a single month total (like the delivery summary) rather
-          // than summing 30 per-day auto-import rows that don't reconstruct the month.
-          next.months[month] = next.months[month] || { stats: {}, imports: {} };
-          next.months[month].stats = next.months[month].stats || {};
-          next.months[month].stats[key] = { ...(next.months[month].stats[key] || {}), apptShowedMTD: rec.actApptShow, apptScheduledMTD: rec.actApptScheduled };
+          // Deliberately NOT stamped onto the month totals. A day file only holds one
+          // day, and the hourly auto-import runs on today, so stamping here would
+          // overwrite a good month total with a single day's number.
           count++;
         }
         // Say so plainly rather than letting the task rate quietly go blank.
@@ -1918,7 +1950,7 @@ export default function LeadPerformanceCalculator() {
     if (log.length) setImportLog(log);
     if (ambiguous.length) setPendingChannels({ ambiguous, ready });
     else if (ready.length) await applyEntries(ready);
-  }, [storeData, view, session]); // eslint-disable-line
+  }, [storeData, view, session, activityDay]); // eslint-disable-line
 
 
   const moveAssociate = async (name, targetName, roleId) => {
@@ -2313,7 +2345,7 @@ export default function LeadPerformanceCalculator() {
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
               </>
             ) : (
@@ -9386,12 +9418,17 @@ function oyoMTD(data, nameKey, monthStats, monthKey) {
   const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
 
   const s = monthStats || {};
+  // If a whole-month Daily Activity report was imported for this month, that single
+  // cumulative pull is the authority. Summing per-day auto-import rows does not
+  // reconstruct a month cleanly, so prefer the stamped total wherever we have one.
+  const a = s.activityMTD || null;
+  const pick = (f) => (a && a[f] != null) ? a[f] : sum(f);
   return {
-    daysElapsed: rows.length,          // days we actually have data for, not a guess
-    oppShowroom: sum("oppShowroom"),
-    oppInternet: sum("oppInternet"),
-    oppPhone: sum("oppPhone"),
-    oppCampaign: sum("oppCampaign"),
+    daysElapsed: (a && a.days) || rows.length,   // days we actually have data for, not a guess
+    oppShowroom: pick("oppShowroom"),
+    oppInternet: pick("oppInternet"),
+    oppPhone: pick("oppPhone"),
+    oppCampaign: pick("oppCampaign"),
     // units per channel come from the Delivery Summaries, which are the authority on units
     unitsShowroom: s.showroomUnits ?? 0,
     unitsInternet: s.internetUnits ?? 0,
@@ -9405,16 +9442,16 @@ function oyoMTD(data, nameKey, monthStats, monthKey) {
     pctInternet: s.internetPct ?? null,
     pctPhone: s.phonePct ?? null,
     pctCampaign: s.campaignPct ?? null,
-    apptCreated: sum("apptCreated"),
-    apptScheduled: sum("apptScheduled"),
-    apptConfirmed: sum("apptConfirmed"),
-    apptShowed: sum("apptShow"),
-    calls: sum("calls"),
-    contacted: sum("contacted"),
-    text: sum("text"),
-    email: sum("email"),
-    video: sum("video"),
-    tasks: sum("tasks"),
+    apptCreated: pick("apptCreated"),
+    apptScheduled: pick("apptScheduled"),
+    apptConfirmed: pick("apptConfirmed"),
+    apptShowed: pick("apptShow"),
+    calls: pick("calls"),
+    contacted: pick("contacted"),
+    text: pick("text"),
+    email: pick("email"),
+    video: pick("video"),
+    tasks: pick("tasks"),
   };
 }
 
@@ -9422,6 +9459,19 @@ function oyoMTD(data, nameKey, monthStats, monthKey) {
 // Pacing has to use this, not the number of reports imported: if you have only
 // uploaded twice, elapsed is not 2, it is however many working days have actually
 // passed. That mistake is what produced "24 days left" halfway through the month.
+// Working days in a given month (Sundays excluded). For the month in progress this
+// counts only the days gone by, so a per-day average is not diluted by days that
+// have not happened yet.
+function workingDaysInMonth(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const t = today();
+  const cap = (monthKey === t.slice(0, 7)) ? Number(t.slice(8, 10)) : lastDay;
+  let n = 0;
+  for (let d = 1; d <= cap; d++) if (new Date(y, m - 1, d).getDay() !== 0) n++;
+  return n;
+}
+
 function workingDaysElapsed() {
   const t = today();                 // dealership time
   const [y, m, d] = t.split("-").map(Number);
@@ -9746,7 +9796,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   const bDaysW = (base && base.daysWorked) || 0;
   const apptShownBase = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
   const apptShownCount = (stats.apptShowedMTD != null) ? stats.apptShowedMTD : ((mtd.apptShowed > 0) ? mtd.apptShowed : apptShownBase);
-  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month <span style="color:#c33">[dbg showMTD=' + stats.apptShowedMTD + ' mtdShown=' + (mtd && mtd.apptShowed) + ' days=' + (mtd && mtd.daysElapsed) + ']</span></div></div>';
+  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month</div></div>';
   const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + apptTile;
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
     'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
@@ -10513,8 +10563,18 @@ function HourlyBlock({ data, name, store }) {
             y={H - PB - ((H - PT - PB) * x.calls) / maxCalls} height={((H - PT - PB) * x.calls) / maxCalls} rx="3" />
         ))}
         <path className="hr-line" fill="none"
-          d={hours.map((x, i) => (x.rate == null ? null : `${i === 0 ? "M" : "L"} ${(i * bw + bw / 2).toFixed(1)} ${y(x.rate).toFixed(1)}`))
-            .filter(Boolean).join(" ")} />
+          d={(() => {
+            // The first hour often has no rate yet, and dropping it used to leave the
+            // path starting with an L, which is not a valid path start. Whichever hour
+            // is the first one with a number has to be the moveto.
+            let started = false;
+            return hours.map((x, i) => {
+              if (x.rate == null) return null;
+              const seg = (started ? "L" : "M") + " " + (i * bw + bw / 2).toFixed(1) + " " + y(x.rate).toFixed(1);
+              started = true;
+              return seg;
+            }).filter(Boolean).join(" ");
+          })()} />
         {hours.map((x, i) => (x.rate == null ? null : (
           <circle key={x.h} className="hr-dot" cx={i * bw + bw / 2} cy={y(x.rate)} r="3.4" />
         )))}
@@ -11327,7 +11387,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 }
 
 /* ---------------- Import ---------------- */
-function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, flags = [], onHelp, onChange }) {
+function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
   const FlagBanner = () => flags.length > 0 ? (
@@ -11351,31 +11411,47 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
       || recs.map((r) => r.uploadedAt).filter(Boolean).sort().slice(-1)[0]
       || null;
     const already = !!(data.activity?.[aDay] && Object.keys(data.activity[aDay]).length);
+    // Whole-month mode: one cumulative pull stands in for the month, so what matters
+    // is whether that month already carries a stamped total, not a per-day tick.
+    const monthMode = activityScope === "month";
+    const aMonth = aDay.slice(0, 7);
+    const mStats = Object.values(data.months?.[aMonth]?.stats || {});
+    const monthHasTotal = mStats.some((s) => s && s.activityMTD);
+    const monthStamp = mStats.map((s) => s && s.activityMTD && s.activityMTD.uploadedAt).filter(Boolean).sort().slice(-1)[0] || null;
     const fmtStamp = (s) => new Date(s).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
     return (
       <div className="import">
         <div className="import-grid">
           <div className="card checklist">
-            <div className="checklist-title">Daily Activity Import <span className="section-sub">{dayLabel(aDay)}</span></div>
+            <div className="checklist-title">Daily Activity Import <span className="section-sub">{monthMode ? monthLabel(aMonth) : dayLabel(aDay)}</span></div>
             <div className="act-day-pick">
               <span className="act-day-label">Import for</span>
               <div className="seg-small">
-                <button className={"seg-opt " + (aDay === today() ? "on" : "")} onClick={() => setActivityDay(today())}>Today</button>
-                <button className={"seg-opt " + (aDay === yday ? "on" : "")} onClick={() => setActivityDay(yday)}>Yesterday</button>
+                <button className={"seg-opt " + (!monthMode && aDay === today() ? "on" : "")} onClick={() => { setActivityScope && setActivityScope("day"); setActivityDay(today()); }}>Today</button>
+                <button className={"seg-opt " + (!monthMode && aDay === yday ? "on" : "")} onClick={() => { setActivityScope && setActivityScope("day"); setActivityDay(yday); }}>Yesterday</button>
+                <button className={"seg-opt " + (monthMode ? "on" : "")} onClick={() => { setActivityScope && setActivityScope("month"); }}>Whole month</button>
               </div>
-              {/* Backfill any past day — pull an older export and land it on the right date. */}
-              <input type="date" className="act-day-date" value={aDay} max={today()}
-                onChange={(e) => { if (e.target.value && e.target.value <= today()) setActivityDay(e.target.value); }} />
+              {monthMode
+                ? <input type="month" className="act-day-date" value={aMonth} max={ym()}
+                    onChange={(e) => { const v = e.target.value; if (v && v <= ym()) setActivityDay(v + "-01"); }} />
+                : <input type="date" className="act-day-date" value={aDay} max={today()}
+                    onChange={(e) => { if (e.target.value && e.target.value <= today()) setActivityDay(e.target.value); }} />}
             </div>
-            {aDay !== today() && aDay !== yday && (
+            {monthMode ? (
+              <p className="hint act-backfill">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It is filed as that month's totals and does not touch day-by-day history.</p>
+            ) : (aDay !== today() && aDay !== yday) ? (
               <p className="hint act-backfill">Backfilling <strong>{dayLabel(aDay)}</strong>. The report will land on that date.</p>
-            )}
-            <div className={"check " + (already ? "done" : "")}>
-              <span className="check-box">{already ? "✓" : ""}</span>Standard Daily Activity report
+            ) : null}
+            <div className={"check " + ((monthMode ? monthHasTotal : already) ? "done" : "")}>
+              <span className="check-box">{(monthMode ? monthHasTotal : already) ? "✓" : ""}</span>Standard Daily Activity report
             </div>
-            {lastStamp
-              ? <p className="hint act-last">Last upload for {aDay === today() ? "today" : "this day"}: <strong>{fmtStamp(lastStamp)}</strong>. Re-importing replaces it.</p>
-              : <p className="hint">No Daily Activity imported for {dayLabel(aDay)} yet. Drop the export to build the Check Out sheet.</p>}
+            {monthMode
+              ? (monthHasTotal
+                  ? <p className="hint act-last">Month total on file for <strong>{monthLabel(aMonth)}</strong>{monthStamp ? <> · imported {fmtStamp(monthStamp)}</> : null}. Re-importing replaces it.</p>
+                  : <p className="hint">No month total for {monthLabel(aMonth)} yet. Drop the full-month export to backfill it.</p>)
+              : lastStamp
+                ? <p className="hint act-last">Last upload for {aDay === today() ? "today" : "this day"}: <strong>{fmtStamp(lastStamp)}</strong>. Re-importing replaces it.</p>
+                : <p className="hint">No Daily Activity imported for {dayLabel(aDay)} yet. Drop the export to build the Check Out sheet.</p>}
           </div>
           <div className={"dropzone " + (dropActive ? "active" : "")}
             onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
@@ -11383,8 +11459,10 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
             onClick={() => fileRef.current?.click()}>
             <div className="dz-icon"><span>⇩</span></div>
-            <div className="dz-title"><span className="dz-drop">Drop</span><span className="dz-tap">Choose</span> the Daily Activity report for {aDay === today() ? "today" : dayLabel(aDay)}</div>
-            <div className="dz-sub">The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet.{aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : ""}</div>
+            <div className="dz-title"><span className="dz-drop">Drop</span><span className="dz-tap">Choose</span> the Daily Activity report for {monthMode ? monthLabel(aMonth) : (aDay === today() ? "today" : dayLabel(aDay))}</div>
+            <div className="dz-sub">{monthMode
+              ? "The Standard Daily Activity report pulled across the whole month. It becomes that month's totals, which is what the month-end recap reads."
+              : "The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet." + (aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : "")}</div>
             <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
               onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
           </div>
