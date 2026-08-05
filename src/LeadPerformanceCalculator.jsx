@@ -318,7 +318,9 @@ const PIX = {
   close:    ["000000000","011000110","011000110","001101100","000111000","001101100","011000110","011000110","000000000"],
   arrow:    ["000000000","000010000","000011000","111111100","111111110","111111100","000011000","000010000","000000000"],
   arrowup:  ["000010000","000111000","001111100","011111110","111111111","000111000","000111000","000111000","000000000"],
-  arrowdown:["000111000","000111000","000111000","111111111","011111110","001111100","000111000","000010000","000000000"],
+  arrowdown:[["000111000","000111000","000111000","111111111","011111110","001111100","000111000","000010000","000000000"]][0],
+  triup:    ["000000000","000010000","000111000","001111100","011111110","111111111","000000000","000000000","000000000"],
+  tridown:  ["000000000","000000000","000000000","111111111","011111110","001111100","000111000","000010000","000000000"],
   clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
   phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
   globe:    ["001111100","011000110","110101011","101010101","111111111","101010101","110101011","011000110","001111100"],
@@ -368,7 +370,7 @@ function StreakIcon({ data, a, std, min = 3 }) {
   return (
     <span className={"streak " + (up ? "streak-up" : "streak-down")}
       title={up ? `On a ${len}-day streak: calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
-      {up ? <PixIcon glyph="flame" size={14} /> : <PixIcon glyph="arrowdown" size={14} />}<span className="streak-n">{len}</span>
+      {up ? <PixIcon glyph="triup" size={12} /> : <PixIcon glyph="tridown" size={12} />}<span className="streak-n">{len}</span>
     </span>
   );
 }
@@ -2660,15 +2662,16 @@ function LEADERBOARD_HTML(p) {
   .gear:hover { opacity:1; background:rgba(255,255,255,.14); }
   /* ---- Bars style (Digital-Dealership-System look): one huge striped bar per person ---- */
   .lb2 { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
-  .lb2 th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
-    padding:.6vh .5vw; border-bottom:1px solid rgba(255,255,255,.14); text-align:left; }
+  .lb2 th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.04em; color:#A8CBEA;
+    padding:.6vh .4vw; border-bottom:1px solid rgba(255,255,255,.14); text-align:left;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .lb2 td { padding:var(--rowpad) .5vw; font-size:var(--rowfs); }
   .lb2 tbody tr:nth-child(odd) { background:rgba(255,255,255,.045); }
   .lb2 tbody tr td:first-child { border-radius:1vh 0 0 1vh; }
   .lb2 tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
   .lb2 .rank { width:5%; text-align:center; }
   .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lb2 .sold2 { width:7%; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+  .lb2 .sold2 { width:10%; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
     font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
   /* Each % column is a fixed width and its contents are centred, so every pill is
      the same size across the whole board. The pill has a fixed width too (all
@@ -2684,9 +2687,9 @@ function LEADERBOARD_HTML(p) {
   .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.35em; justify-content:flex-start; }
   .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .66); }
   .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .72); }
-  .lb2 .sold2 { width:7%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
+  .lb2 .sold2 { width:10%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
   .lb2 .sold2 .soldnum { display:inline-block; }
-  .lb2 .carcell { width:29%; padding-left:.6vw; }
+  .lb2 .carcell { width:26%; padding-left:.6vw; }
   /* soft "holding the last board" banner when a refresh is distrusted */
   .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
     background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
