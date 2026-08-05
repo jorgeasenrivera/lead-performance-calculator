@@ -734,7 +734,7 @@ function parseReport(rows, type) {
       rec.actText = toNum(row[idx("Text")]);
       rec.actEmail = toNum(row[idx("Email")]);
       rec.actApptCreated = toNum(row[idx("Created")]);
-      rec.actApptShow = toNum(row[idx("Show")]);
+      rec.actApptShow = toNum(row[idx("Show")]) ?? toNum(row[idx("Total Show")]) ?? toNum(row[idx("Appt Show")]) ?? toNum(row[idx("Shown")]);
       rec.actOppsTotal = toNum(row[idx("Total")]);
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
       // "Open Tasks" is the posted/outstanding task count on the Workplan; the completion
