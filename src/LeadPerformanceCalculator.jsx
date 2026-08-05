@@ -1651,6 +1651,29 @@ export default function LeadPerformanceCalculator() {
     if (next && Array.isArray(next.snapshots) && next.snapshots.length > 3) {
       next.snapshots = next.snapshots.slice(0, 3);
     }
+    // A server-side auto-import (email ingest) may have written this store's months or
+    // activity while this browser sat open with an older copy. Re-read the server's
+    // current blob and adopt its month/activity entries for any key WE did not touch,
+    // so a client save can only preserve a fresh auto-import, never erase it. Our own
+    // edits still win, and we never drop a key we already have.
+    try {
+      const serverCopy = await loadShared(storeKey(storeId), null, true);
+      if (serverCopy && typeof serverCopy === "object") {
+        const orig = adminData[storeId] || {};
+        const mergeField = (field) => {
+          const out = { ...(next[field] || {}) };
+          const srv = serverCopy[field] || {};
+          const og = orig[field] || {};
+          for (const k of Object.keys(srv)) {
+            const weTouched = JSON.stringify((next[field] || {})[k]) !== JSON.stringify(og[k]);
+            if (!weTouched) out[k] = srv[k];
+          }
+          return out;
+        };
+        next.months = mergeField("months");
+        next.activity = mergeField("activity");
+      }
+    } catch (e) { /* if the re-read fails, just save what we have */ }
     setStoreData(next); setSaving(true);
     setAdminData((p) => ({ ...p, [storeId]: next }));
     const ok = await saveShared(storeKey(storeId), next);
