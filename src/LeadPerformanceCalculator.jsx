@@ -1768,6 +1768,12 @@ export default function LeadPerformanceCalculator() {
             apptNoShow: rec.actApptNoShow,
             uploadedAt: new Date().toISOString(),
           };
+          // Also stamp this report's per-person appointment totals onto the month's stats, so
+          // the month-end recap can read a single month total (like the delivery summary) rather
+          // than summing 30 per-day auto-import rows that don't reconstruct the month.
+          next.months[month] = next.months[month] || { stats: {}, imports: {} };
+          next.months[month].stats = next.months[month].stats || {};
+          next.months[month].stats[key] = { ...(next.months[month].stats[key] || {}), apptShowedMTD: rec.actApptShow, apptScheduledMTD: rec.actApptScheduled };
           count++;
         }
         // Say so plainly rather than letting the task rate quietly go blank.
@@ -9739,8 +9745,8 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   const driverKeys = ["apptVideoDayPct", "engagedVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
   const bDaysW = (base && base.daysWorked) || 0;
   const apptShownBase = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
-  const apptShownCount = (mtd.apptShowed > 0) ? mtd.apptShowed : apptShownBase;
-  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month <span style="color:#c33">[dbg shown=' + (mtd && mtd.apptShowed) + ' sched=' + (mtd && mtd.apptScheduled) + ' base=' + apptShownBase + ' days=' + (mtd && mtd.daysElapsed) + ']</span></div></div>';
+  const apptShownCount = (stats.apptShowedMTD != null) ? stats.apptShowedMTD : ((mtd.apptShowed > 0) ? mtd.apptShowed : apptShownBase);
+  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month</div></div>';
   const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + apptTile;
   const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
     'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
@@ -9794,11 +9800,12 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
   // Appointments set live in last month's daily activity, not the seeded baseline, so pull
   // that one from the month itself (mtd) when it's on file; everything else stays on the
   // 90-day history so it agrees with the coaching page.
+  const apptSched = (stats.apptScheduledMTD != null) ? stats.apptScheduledMTD : (mtd.apptScheduled || 0);
   const perCarOf = (id) => (id === "apptScheduled")
-    ? (lastUnits > 0 ? (mtd.apptScheduled || 0) / lastUnits : null)
+    ? (lastUnits > 0 ? apptSched / lastUnits : null)
     : (bUnits > 0 ? (base[id] || 0) / bUnits : null);
   const dailyAvgOf = (id) => (id === "apptScheduled")
-    ? (workingDays > 0 ? (mtd.apptScheduled || 0) / workingDays : null)
+    ? (workingDays > 0 ? apptSched / workingDays : null)
     : (bDays > 0 ? (base[id] || 0) / bDays : null);
   const shortRows = (goalLast > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
     const per = perCarOf(id); if (per == null) return "";
