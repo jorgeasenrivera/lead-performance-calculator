@@ -355,7 +355,7 @@ const PIX5 = {
   warn:     ["00100","00100","01110","01110","11111"],
   triup:    ["00100","01110","11111","00000","00000"],
   tridown:  ["00000","00000","11111","01110","00100"],
-  dot:      ["00000","00100","01110","00100","00000"],
+  dot:      ["00000","00000","00100","00000","00000"],
 };
 
 function PixIcon({ glyph, size = 20, className, style, title }) {
@@ -2333,12 +2333,22 @@ export default function LeadPerformanceCalculator() {
             setTab(mod === "activity" ? "checkout" : "board");
           }} />
 
-          <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
-            {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
-            {isAdmin && appModule !== "activity" && <option value="admin">All Stores</option>}
-            {isOverseer && appModule !== "activity" && (session.stores || []).length > 1 && <option value="combined">Combined (my stores)</option>}
-            {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          {/* A picker with one entry is furniture. It only appears once there is
+              actually somewhere else to go. */}
+          {(() => {
+            const showAll = isAdmin && appModule !== "activity";
+            const showCombined = isOverseer && appModule !== "activity" && (session.stores || []).length > 1;
+            const choices = accessibleStores.length + (showAll ? 1 : 0) + (showCombined ? 1 : 0);
+            if (choices < 2) return null;
+            return (
+              <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
+                {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
+                {showAll && <option value="admin">All Stores</option>}
+                {showCombined && <option value="combined">Combined (my stores)</option>}
+                {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            );
+          })()}
 
           <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
           <button className="btn-quiet" onClick={signOut}>Sign out</button>
@@ -2852,23 +2862,25 @@ function LEADERBOARD_HTML(p) {
   @keyframes shine { 0% { background-position:180% 0; } 55%,100% { background-position:-60% 0; } }
 
   .pill { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(var(--rowfs) * 1.05);
-    padding:.3vh 0; border-radius:.9vh; display:inline-block; width:7vw; text-align:center;
-    box-sizing:border-box; font-variant-numeric:tabular-nums; }
+    padding:.3vh 0; border-radius:.9vh; display:inline-flex; align-items:center; justify-content:center;
+    width:7vw; text-align:center; box-sizing:border-box; font-variant-numeric:tabular-nums; }
   .pill.g { background:var(--greenbg); color:var(--green); }
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
   .pill.dim { background:rgba(255,255,255,.07); color:#6E93BC; }
-  .pill-mark { display:inline-flex; align-items:center; margin-right:.35vw; opacity:1;
+  .pill-mark { display:inline-flex; align-items:center; line-height:0; margin-right:.35vw; opacity:1;
     font-size:calc(var(--rowfs) * 1.05); }
   /* Every dot glyph is one em square and inherits the colour of the text around it,
      so a mark, an arrow and a car all scale with the row rather than fighting it. */
-  .pix9 { width:1em; height:1em; display:inline-block; vertical-align:-.1em; fill:currentColor; }
+  .pix9 { width:1em; height:1em; display:block; fill:currentColor; }
   .pix-flat { opacity:.5; }
   /* The trend slot is a fixed width. It used to size itself to its contents, so a
      row carrying a delta pushed its pill sideways and the column stopped lining up. */
-  .move { display:inline-flex; align-items:center; gap:.2vw; margin-left:.45vw;
-    width:3.6vw; min-width:3.6vw; flex:0 0 3.6vw; justify-content:flex-start; }
+  .move { display:inline-flex; align-items:center; gap:.25vw; justify-content:flex-start;
+    position:absolute; left:100%; top:50%; transform:translateY(-50%); margin-left:.5vw;
+    width:3.6vw; min-width:3.6vw; }
   .lb .pcell { text-align:center; }
+  .pcell-in { position:relative; }
   .lb .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
   .trend { font-size:calc(var(--rowfs) * 1.0); display:inline-flex; align-items:center; }
   .delta { font-size:calc(var(--rowfs) * .72); font-weight:700; font-variant-numeric:tabular-nums; }
@@ -2908,7 +2920,7 @@ function LEADERBOARD_HTML(p) {
      and horizontal scroll (already built) covers any overflow. */
   .lb2 .pcell2 .pill { width:5.6em; min-width:0; padding:.28em 0; text-align:center;
     font-size:calc(var(--rowfs) * .96); }
-  .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.35em; justify-content:flex-start; }
+  .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.4em; justify-content:flex-start; }
   .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .66); }
   .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .95); }
   .lb2 .sold2 { width:10%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
@@ -6893,7 +6905,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <span className="stat-dim">{withData.length} of {rows.length} with data</span>
       </div>
       <div className="search-wrap">
-        <span className="search-icon">⌕</span>
+        <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${store.name}`} />
         {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
@@ -8357,9 +8369,9 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 function AssocSearch({ value, onChange, store }) {
   return (
     <div className="search-wrap search-top">
-      <span className="search-icon">⌕</span>
+      <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
       <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
-        placeholder={`Search associates at ${store.name}`} />
+        placeholder="Search associates" />
       {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
     </div>
   );
@@ -8788,7 +8800,7 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
         <span className="stat-dim">● {counts.off} off leads</span>
       </div>
       <div className="search-wrap">
-        <span className="search-icon">⌕</span>
+        <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search across all my stores" />
         {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
@@ -11218,9 +11230,9 @@ function ToolSwitcher({ value, onChange }) {
     ["board", "The Board"],
   ];
   const queues = [
-    ["floor", "Live Floor", "#10B981"],
-    ["line", "The Line", "#5566F0"],
-    ["online", "Online", "#8B5CF6"],
+    ["floor", "Live Floor", "#10B981", "door"],
+    ["line", "The Line", "#5566F0", "phone"],
+    ["online", "Online", "#8B5CF6", "globe"],
   ];
   // Same sliding thumb as the tab bar, so switching tools and switching tabs
   // feel like the same gesture rather than two different controls.
@@ -11253,12 +11265,13 @@ function ToolSwitcher({ value, onChange }) {
         ))}
       </div>
       <div className="qsel" role="group" aria-label="Sign-in queue">
-        {queues.map(([id, label, color]) => (
+        {queues.map(([id, label, color, glyph], i) => (
           <button key={id} type="button" aria-selected={value === id}
             className={"qsel-pill" + (value === id ? " on" : "")}
-            style={value === id ? { background: color, borderColor: color, color: "#fff" } : { background: "#fff", borderColor: color, color }}
+            style={{ background: color, borderColor: color, "--qd": (i * 0.42) + "s" }}
             onClick={() => onChange(id)}>
-            {label}
+            <PixIcon glyph={glyph} size={15} className="qsel-ico" />
+            <span className="qsel-lbl">{label}</span>
           </button>
         ))}
       </div>
@@ -13406,9 +13419,12 @@ function Style() {
       ::selection { background: rgba(42,94,155,.2); }
 
       /* ---- store hero (manager landing) ---- */
-      .hero { position:relative; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      /* Full bleed: the band runs to both edges of the window rather than sitting in
+         the page gutters, so the store's colour reaches the corners of the screen. */
+      .hero { position:relative; margin-bottom: 26px; margin-inline: calc(50% - 50vw);
+        --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
       .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
-        padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
+        padding:30px clamp(20px, 4.5vw, 60px); border-radius:0; position:relative; overflow:visible; z-index:8;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: heroIn .6s var(--spring) both; }
@@ -13932,7 +13948,7 @@ function Style() {
         .lpc, .lpc * { will-change: auto !important; }
 
         /* nothing loops forever behind a scrolling surface */
-        .logo-anim, .hero-band::after, .dz-icon, .star-badge,
+        .logo-anim, .hero-band::after, .qsel-pill::before, .dz-icon, .star-badge,
         .chip-warn .chip-dot, .leader-crown, .logo-loading .logo-spin, .logo-loading .logo-trail {
           animation: none !important;
         }
@@ -14485,7 +14501,8 @@ function Style() {
       .search-top .search-input:focus { background:#fff; border-color:rgba(42,94,155,.35);
         box-shadow: 0 0 0 4px rgba(42,94,155,.14); }
       .seg-wrap { align-items:center; gap:16px; }
-      .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-3); font-size:16px; }
+      .search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--ink-3);
+        display:flex; align-items:center; pointer-events:none; }
       .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
         border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
       .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
@@ -15401,10 +15418,23 @@ function Style() {
 /* ===================== FLUID KIT (SmartFloor) ===================== */
 .q-queue-sel{font-weight:700;}
 .qsel{ display:inline-flex; gap:6px; align-items:center; }
-.qsel-pill{ font-family:inherit; font-weight:700; font-size:13px; line-height:1; padding:8px 13px; border-radius:999px; border:1.5px solid; cursor:pointer; white-space:nowrap; transition:transform .12s ease, filter .12s ease; }
-.qsel-pill:hover{ transform:translateY(-1px); }
+.qsel-pill{ font-family:inherit; font-weight:700; font-size:13px; line-height:1; padding:8px 14px; border-radius:999px;
+  border:1.5px solid; cursor:pointer; white-space:nowrap; color:#fff; position:relative; overflow:hidden;
+  display:inline-flex; align-items:center; gap:7px;
+  box-shadow:0 2px 8px -3px rgba(16,32,52,.45);
+  transition:transform .12s ease, filter .12s ease, box-shadow .2s ease; }
+.qsel-ico{ position:relative; z-index:1; opacity:.95; }
+.qsel-lbl{ position:relative; z-index:1; }
+/* A light runs across each pill, left to right, one after the other, the way a
+   sequential indicator sweeps. The icon end lights first because that is where
+   the eye lands. */
+.qsel-pill::before{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(100deg, transparent 18%, rgba(255,255,255,.55) 50%, transparent 82%);
+  transform:translateX(-120%); animation:qsweep 3.4s ease-in-out infinite; animation-delay:var(--qd,0s); }
+@keyframes qsweep{ 0%{ transform:translateX(-120%); } 55%,100%{ transform:translateX(120%); } }
+.qsel-pill:hover{ transform:translateY(-1px); filter:brightness(1.06); }
 .qsel-pill:active{ transform:translateY(0); }
-.qsel-pill.on{ box-shadow:0 3px 10px -3px rgba(16,32,52,.35); }
+.qsel-pill.on{ box-shadow:0 3px 12px -2px rgba(16,32,52,.5), 0 0 0 3px rgba(255,255,255,.75); }
 
 /* breathing radial aura */
 .living-aura{position:absolute;inset:-18%;border-radius:50%;pointer-events:none;
