@@ -2636,12 +2636,14 @@ export default function LeadPerformanceCalculator() {
             )}
             {appModule !== "activity" && tab === "board" &&
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
+            {appModule === "activity" && (tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) &&
+              <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
           <div key={view + tab + appModule} className="page">
             {storeLoadFailed && <div className="load-warn">This store's data didn't load fully, so changes are paused to protect your records. Reload the page, confirm everything is showing, then continue.</div>}
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -6982,8 +6984,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   );
 }
 
-function CheckOutTracker({ config, store, data, onChange }) {
-  const [query, setQuery] = useState("");
+function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const [day, setDay] = useState(today());
   const [showSchedule, setShowSchedule] = useState(false);
   const [showReport, setShowReport] = useState(false);
@@ -7112,13 +7113,6 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
         <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
         <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
-        {/* Same position and shape as the search on Performance, rather than a
-            full-width box wedged between the stats and the table. */}
-        <div className="search-wrap search-top">
-          <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
-          <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search associates" />
-          {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
-        </div>
       </div>
       {noShowSuspects.length > 0 && (
         <div className="co-callout">
@@ -7231,7 +7225,9 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />
       )}
       {showReport && (
-        <DayReportModal store={store} day={day} rows={rows} offenders={offenders} onCopy={copyDayReport} onClose={() => setShowReport(false)} />
+        <DayReportModal store={store} day={day} rows={rows} offenders={offenders}
+          streaks={Object.fromEntries(roster.map((a) => [a.id, currentStreak(data, a, std)]))}
+          onCopy={copyDayReport} onClose={() => setShowReport(false)} />
       )}
     </div>
   );
@@ -7241,13 +7237,218 @@ function CheckOutTracker({ config, store, data, onChange }) {
    A clean two-column recap for the manager: today's check-out on the left, the
    running month-to-date top offenders on the right. Replaces the plain text copy,
    though the text version is still one click away for pasting into a chat. */
-function DayReportModal({ store, day, rows, offenders, onCopy, onClose }) {
+/* Draw the report as a picture.
+   A manager pastes this into a group chat, and text loses the shape of it: which
+   names sit together, who is climbing, who is sliding. Canvas rather than a
+   screenshot library so there is nothing to load and nothing to go stale, and the
+   result is a real PNG on the clipboard. */
+function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName }) {
+  const S = 2;                                  // draw at 2x for a crisp paste
+  const W = 1040;
+  const PAD = 34, COLGAP = 26;
+  const colW = (W - PAD * 2 - COLGAP) / 2;
+
+  // Measure first so the canvas is exactly as tall as the content.
+  const leftRows = flagged.length + (clean.length ? 1 : 0) + (off.length ? 1 : 0);
+  const hLeft = 120 + (flagged.length ? 34 + flagged.length * 30 : 0)
+    + (clean.length ? 34 + Math.ceil(clean.length / 3) * 30 : 0)
+    + (off.length ? 34 + Math.ceil(off.length / 3) * 30 : 0);
+  const hRight = 120 + (offenders.length ? offenders.slice(0, 14).length * 34 : 40);
+  const H = 118 + Math.max(hLeft, hRight) + PAD;
+
+  const cv = document.createElement("canvas");
+  cv.width = W * S; cv.height = H * S;
+  const c = cv.getContext("2d");
+  c.scale(S, S);
+  const F = (w, sz) => `${w} ${sz}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+  const round = (x, y, w, h, r) => {
+    c.beginPath();
+    c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  };
+
+  c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
+
+  // header band in the store's colour
+  const g = c.createLinearGradient(0, 0, W, 96);
+  const brand = (store.brand && store.brand.primary) || "#2A5E9B";
+  const brand2 = (store.brand && store.brand.dark) || brand;
+  g.addColorStop(0, brand); g.addColorStop(1, brand2);
+  c.fillStyle = g; c.fillRect(0, 0, W, 96);
+  c.fillStyle = "#FFFFFF"; c.font = F(800, 27);
+  c.fillText("Daily report", PAD, 44);
+  c.font = F(600, 15); c.globalAlpha = 0.92;
+  c.fillText(`${store.name} · ${dayLabel}`, PAD, 70);
+  c.globalAlpha = 1;
+
+  // three tallies, top right
+  const tallies = [[clean.length, "QUALIFIED"], [flagged.length, "WITH POINTS"], [off.length, "OFF"]];
+  let tx = W - PAD - tallies.length * 104 - (tallies.length - 1) * 8;
+  for (const [n, lbl] of tallies) {
+    c.fillStyle = "rgba(255,255,255,.18)"; round(tx, 22, 104, 54, 12); c.fill();
+    c.fillStyle = "#FFFFFF"; c.font = F(800, 24); c.textAlign = "center";
+    c.fillText(String(n), tx + 52, 48);
+    c.font = F(700, 9.5); c.globalAlpha = .9;
+    c.fillText(lbl, tx + 52, 66); c.globalAlpha = 1;
+    c.textAlign = "left"; tx += 112;
+  }
+
+  // A streak is the one thing text cannot carry: a triangle and a number says
+  // "third day running" at a glance, which is the whole point of the picture.
+  const streakMark = (x, y, st) => {
+    if (!st || !st.dir || st.len < 3) return 0;
+    const up = st.dir === "up";
+    c.fillStyle = up ? "#1B9E63" : "#D64532";
+    c.beginPath();
+    if (up) { c.moveTo(x + 5, y - 8); c.lineTo(x + 10, y); c.lineTo(x, y); }
+    else { c.moveTo(x, y - 8); c.lineTo(x + 10, y - 8); c.lineTo(x + 5, y); }
+    c.closePath(); c.fill();
+    c.font = F(800, 11.5);
+    c.fillText(String(st.len), x + 13, y);
+    return 26;
+  };
+
+  let y = 118;
+  const colY = y;
+
+  // ---- left column: today ----
+  c.fillStyle = "#8A93A0"; c.font = F(800, 11);
+  c.fillText("TODAY", PAD, y); y += 26;
+
+  const block = (label) => { c.fillStyle = "#8A93A0"; c.font = F(800, 10.5); c.fillText(label.toUpperCase(), PAD, y); y += 22; };
+  const chipRow = (names, fill, ink) => {
+    let cx = PAD;
+    for (const nm of names) {
+      c.font = F(700, 12.5);
+      const w = c.measureText(nm).width + 20;
+      if (cx + w > PAD + colW) { cx = PAD; y += 30; }
+      c.fillStyle = fill; round(cx, y - 15, w, 24, 12); c.fill();
+      c.fillStyle = ink; c.fillText(nm, cx + 10, y + 1);
+      cx += w + 6;
+    }
+    y += 34;
+  };
+
+  if (flagged.length) {
+    block("Needs follow-up");
+    for (const r of flagged) {
+      c.fillStyle = "#111820"; c.font = F(800, 14);
+      c.fillText(r.a.name, PAD, y);
+      const nameW = c.measureText(r.a.name).width;
+      const used = streakMark(PAD + nameW + 8, y, streaks[r.a.id]);
+      c.fillStyle = "#8A93A0"; c.font = F(600, 12);
+      c.fillText(r.missed.map((m) => (m === "rocked" ? "RockEd" : m)).join(", "), PAD + nameW + 10 + used, y);
+      const pb = String(r.points);
+      c.fillStyle = r.points >= 3 ? "#FBE3DF" : r.points === 2 ? "#FCEFD9" : "#FBE3DF";
+      round(PAD + colW - 34, y - 15, 30, 22, 11); c.fill();
+      c.fillStyle = r.points >= 3 ? "#C0392B" : "#9C6412"; c.font = F(800, 12.5); c.textAlign = "center";
+      c.fillText(pb, PAD + colW - 19, y + 1); c.textAlign = "left";
+      y += 30;
+    }
+    y += 4;
+  }
+  if (clean.length) { block("Qualified"); chipRow(clean.map((r) => r.a.name), "#E4F4EA", "#177245"); }
+  if (off.length) { block("Off"); chipRow(off.map((r) => r.a.name), "#EEF1F4", "#6B7480"); }
+
+  // ---- right column: month to date ----
+  const rx = PAD + colW + COLGAP;
+  c.fillStyle = "#FAF7FA"; round(rx - 14, colY - 24, colW + 28, H - colY - PAD + 16, 16); c.fill();
+  let ry = colY;
+  c.fillStyle = "#8A93A0"; c.font = F(800, 11);
+  c.fillText("TOP OFFENDERS", rx, ry);
+  c.font = F(700, 10.5); c.fillStyle = "#A8B0BA";
+  c.fillText(`${monthName.toUpperCase()} TO DATE`, rx + c.measureText("TOP OFFENDERS").width + 34, ry);
+  ry += 28;
+
+  if (!offenders.length) {
+    c.fillStyle = "#8A93A0"; c.font = F(600, 13);
+    c.fillText("Nobody has a point this month. Worth saying out loud.", rx, ry);
+  } else {
+    let i = 1;
+    for (const r of offenders.slice(0, 14)) {
+      c.fillStyle = "#EDE9F5"; round(rx, ry - 15, 22, 22, 11); c.fill();
+      c.fillStyle = "#6B5BC0"; c.font = F(800, 11.5); c.textAlign = "center";
+      c.fillText(String(i), rx + 11, ry + 1); c.textAlign = "left";
+      c.fillStyle = "#111820"; c.font = F(800, 14);
+      c.fillText(r.a.name, rx + 32, ry + 1);
+      const nw = c.measureText(r.a.name).width;
+      streakMark(rx + 32 + nw + 8, ry + 1, streaks[r.a.id]);
+      c.fillStyle = "#8A93A0"; c.font = F(600, 11.5);
+      const dtxt = `${r.worked} day${r.worked === 1 ? "" : "s"}`;
+      c.textAlign = "right";
+      c.fillText(dtxt, rx + colW - 46, ry + 1);
+      c.fillStyle = "#C0392B"; c.font = F(800, 16);
+      c.fillText(String(r.points), rx + colW, ry + 1);
+      c.textAlign = "left";
+      ry += 34; i++;
+    }
+    if (offenders.length > 14) {
+      c.fillStyle = "#A8B0BA"; c.font = F(600, 11.5);
+      c.fillText(`and ${offenders.length - 14} more`, rx + 32, ry + 2);
+    }
+  }
+  return cv;
+}
+
+function DayReportStreak({ st }) {
+  if (!st || !st.dir || st.len < 3) return null;
+  const up = st.dir === "up";
+  return (
+    <span className={"streak " + (up ? "streak-up" : "streak-down")}
+      title={up ? `${st.len} days running` : `${st.len} days missing all three`}>
+      <PixIcon glyph={up ? "triup" : "tridown"} size={12} /><span className="streak-n">{st.len}</span>
+    </span>
+  );
+}
+
+function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onClose }) {
   const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const withData = rows.filter((r) => r.hasData && !r.off);
   const clean = withData.filter((r) => r.points === 0);
   const flagged = withData.filter((r) => r.points > 0).sort((a, b) => b.points - a.points);
   const off = rows.filter((r) => r.off);
   const monthName = new Date().toLocaleDateString("en-US", { month: "long" });
+  const [imgState, setImgState] = useState(null);   // null | working | copied | error
+  const [imgErr, setImgErr] = useState("");
+
+  const build = () => drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName });
+
+  const copyImage = async () => {
+    setImgState("working"); setImgErr("");
+    try {
+      const cv = build();
+      const blob = await new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error("could not render"))), "image/png"));
+      // Safari and Firefox do not all allow an image on the clipboard. Falling back
+      // to a download means the manager still leaves with the picture.
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        setImgState("copied");
+        setTimeout(() => setImgState(null), 3000);
+      } else {
+        download(blob);
+        setImgState(null);
+        setImgErr("This browser will not put an image on the clipboard, so it downloaded instead.");
+      }
+    } catch (e) {
+      setImgState(null);
+      setImgErr("Could not copy the image: " + String(e.message || e) + ". Try Save image instead.");
+    }
+  };
+
+  const download = (blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `daily-report-${store.name.replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}-${day}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  const saveImage = () => {
+    try { build().toBlob((b) => b && download(b), "image/png"); }
+    catch (e) { setImgErr("Could not build the image: " + String(e.message || e)); }
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal dayreport-modal" onClick={(e) => e.stopPropagation()}>
@@ -7257,11 +7458,18 @@ function DayReportModal({ store, day, rows, offenders, onCopy, onClose }) {
             <p className="plate-hist-sub">{store.name} · {dayLabel}</p>
           </div>
           <div className="dr-head-actions">
+            {/* The picture is the default: it is what actually gets pasted into a
+                group chat. Text stays for anywhere an image will not go. */}
+            <button className="btn" onClick={copyImage} disabled={imgState === "working"}>
+              {imgState === "working" ? "Building..." : imgState === "copied" ? "Copied" : "Copy as image"}
+            </button>
+            <button className="btn secondary" onClick={saveImage}>Save image</button>
             <button className="btn secondary" onClick={onCopy}>Copy as text</button>
             <button className="btn-x" onClick={onClose}>✕</button>
           </div>
         </div>
 
+        {imgErr && <p className="sched-err">{imgErr}</p>}
         <div className="dr-cols">
           {/* LEFT: today */}
           <div className="dr-col">
@@ -7276,7 +7484,7 @@ function DayReportModal({ store, day, rows, offenders, onCopy, onClose }) {
                 <div className="dr-block-label">Needs follow-up</div>
                 {flagged.map((r) => (
                   <div key={r.a.id} className="dr-row">
-                    <span className="dr-name">{r.a.name}</span>
+                    <span className="dr-name">{r.a.name}<DayReportStreak st={streaks[r.a.id]} /></span>
                     <span className="dr-miss">{r.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")}</span>
                     <span className={"pt-badge pt-" + r.points}>{r.points}</span>
                   </div>
@@ -7307,7 +7515,7 @@ function DayReportModal({ store, day, rows, offenders, onCopy, onClose }) {
                 {offenders.map((r, i) => (
                   <div key={r.a.id} className="dr-rank-row">
                     <span className="dr-rank-n">{i + 1}</span>
-                    <b className="dr-rank-name">{r.a.name}</b>
+                    <b className="dr-rank-name">{r.a.name}<DayReportStreak st={streaks[r.a.id]} /></b>
                     <span className="dr-rank-worked">{r.worked} day{r.worked === 1 ? "" : "s"}</span>
                     <span className={"dr-rank-pts pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
                   </div>
