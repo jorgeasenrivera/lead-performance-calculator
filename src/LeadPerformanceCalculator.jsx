@@ -11270,7 +11270,7 @@ function ToolSwitcher({ value, onChange }) {
             className={"qsel-pill" + (value === id ? " on" : "")}
             style={{ background: color, borderColor: color, "--qd": (i * 0.42) + "s" }}
             onClick={() => onChange(id)}>
-            <PixIcon glyph={glyph} size={15} className="qsel-ico" />
+            <PixIcon glyph={glyph} size={13} className="qsel-ico" />
             <span className="qsel-lbl">{label}</span>
           </button>
         ))}
@@ -14266,7 +14266,7 @@ function Style() {
       .ac-prints li { list-style:disc; margin:1px 0; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
-      .tool-row { display:inline-flex; align-items:center; gap:12px; flex-wrap:wrap; }
+      .tool-row { display:inline-flex; align-items:stretch; gap:12px; flex-wrap:wrap; }
       .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
         border-radius:10px; padding:2px; }
       .tool-thumb { position:absolute; top:2px; bottom:2px; left:0; background:#fff; border-radius:8px;
@@ -15421,10 +15421,10 @@ function Style() {
 
 /* ===================== FLUID KIT (SmartFloor) ===================== */
 .q-queue-sel{font-weight:700;}
-.qsel{ display:inline-flex; gap:6px; align-items:center; }
-.qsel-pill{ font-family:inherit; font-weight:700; font-size:13px; line-height:1; padding:8px 14px; border-radius:999px;
-  border:1.5px solid; cursor:pointer; white-space:nowrap; color:#fff; position:relative; overflow:hidden;
-  display:inline-flex; align-items:center; gap:7px;
+.qsel{ display:inline-flex; gap:6px; align-items:stretch; }
+.qsel-pill{ font-family:inherit; font-weight:600; font-size:12.5px; line-height:1; padding:0 13px; border-radius:999px;
+  border:0; cursor:pointer; white-space:nowrap; color:#fff; position:relative; overflow:hidden;
+  display:inline-flex; align-items:center; gap:6px;
   box-shadow:0 2px 8px -3px rgba(16,32,52,.45);
   transition:transform .12s ease, filter .12s ease, box-shadow .2s ease; }
 .qsel-ico{ position:relative; z-index:1; opacity:.95; }
