@@ -8046,6 +8046,31 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     if (short) return { entry: short, fuller: t.trim().toUpperCase() };
     return null;
   };
+  // How many single-character edits apart two tags are. Cheap, and enough to catch
+  // the ways a plate actually gets mistyped: one wrong character, one missing, one
+  // extra, or two swapped.
+  const tagDistance = (a, b) => {
+    if (a === b) return 0;
+    if (Math.abs(a.length - b.length) > 1) return 9;
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return dp[a.length][b.length];
+  };
+  const nearestKnown = (t) => {
+    const T = normTag(t);
+    if (T.length < 4) return null;
+    let best = null;
+    for (const r of registry) {
+      if (r.retired) continue;
+      const d = tagDistance(T, normTag(r.tag));
+      if (d === 1 && (!best || d < best.d)) best = { entry: r, d };
+    }
+    return best ? best.entry : null;
+  };
+
   // append an event to a plate's own custody history so the trail survives on the record
   const withEvent = (plate, action, detail) => ({
     ...plate,
@@ -8053,6 +8078,68 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   });
 
   const [plateErr, setPlateErr] = useState("");
+  const [masterOpen, setMasterOpen] = useState(false);
+  const [bulk, setBulk] = useState("");
+
+  /* ---- Master plate list ----
+     The registry stops being something the tracker only learns by accident and
+     becomes a list a manager can keep straight: add the drawer of dealer plates in
+     one go, fix a number that was entered wrong, retire one that has gone. */
+  const addBulkPlates = () => {
+    const wanted = bulk.split(/[\n,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (!wanted.length) return;
+    const have = new Set(registry.map((r) => normTag(r.tag)));
+    const fresh = [];
+    for (const t of wanted) {
+      const T = normTag(t);
+      if (!T || have.has(T)) continue;
+      have.add(T);
+      fresh.push({ id: uid(), tag: t, reusable: true, addedAt: new Date().toISOString() });
+    }
+    if (!fresh.length) { setPlateErr("Every one of those is already on the master list."); return; }
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = [...(next.plateRegistry || []), ...fresh];
+    setBulk(""); setPlateErr("");
+    onChange(next, { action: "Added plates to the master list", detail: fresh.map((f) => f.tag).join(", ") });
+  };
+
+  // Renaming has to carry the past with it, or the custody trail splits in two.
+  const renameRegistry = (id, raw) => {
+    const nt = String(raw || "").trim().toUpperCase();
+    const entry = registry.find((r) => r.id === id);
+    if (!entry || !nt || nt === entry.tag) return;
+    if (registry.some((r) => r.id !== id && normTag(r.tag) === normTag(nt))) {
+      setPlateErr(`${nt} is already on the master list.`); return;
+    }
+    const old = entry.tag;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, tag: nt } : r);
+    for (const d of Object.keys(next.plates || {})) {
+      next.plates[d] = next.plates[d].map((p) => p.tag === old
+        ? { ...p, tag: nt, history: [...(p.history || []), { t: new Date().toISOString(), by: userName, action: "Plate renumbered", detail: `${old} is ${nt}; records relinked` }] }
+        : p);
+    }
+    setPlateErr("");
+    onChange(next, { action: "Renumbered plate", detail: `${old} → ${nt}` });
+  };
+
+  const setRegistryFlag = (id, field, value, label) => {
+    const entry = registry.find((r) => r.id === id); if (!entry) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, [field]: value } : r);
+    onChange(next, { action: label, detail: entry.tag });
+  };
+
+  const removeRegistry = (id) => {
+    const entry = registry.find((r) => r.id === id); if (!entry) return;
+    const used = Object.values(data.plates || {}).some((list) => (list || []).some((p) => p.tag === entry.tag));
+    if (used) {
+      if (!window.confirm(`${entry.tag} has been logged out before. Removing it from the master list does NOT delete that history, but it will stop being suggested.\n\nRetiring it instead keeps it on the list, greyed out. Remove it anyway?`)) return;
+    } else if (!window.confirm(`Remove ${entry.tag} from the master plate list?`)) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = (next.plateRegistry || []).filter((r) => r.id !== id);
+    onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
+  };
   const addPlate = () => {
     let t = tag.trim().toUpperCase(); if (!t) return;
     setPlateErr("");
@@ -8080,11 +8167,19 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         t = hit.entry.tag;      // shorthand: use the canonical number on the record
       }
     } else {
-      // Brand new plate: remember it, and ask whether it's one that will be reused.
-      const reusable = window.confirm(`${t} is new to the tracker.\n\nIs this a plate that will be REUSED (a dealer plate)?\n\nOK = yes, reusable · Cancel = one-time`);
-      registryMutate = (next) => {
-        next.plateRegistry = [...(next.plateRegistry || []), { id: uid(), tag: t, reusable, addedAt: new Date().toISOString() }];
-      };
+      // Nothing in the master list matches. Before accepting it as a new plate, check
+      // whether it is one character away from a plate that IS on the list, because
+      // that is almost always a typo rather than a plate nobody has logged before.
+      const near = nearestKnown(t);
+      if (near && window.confirm(`${t} is not on the master plate list.\n\nDid you mean ${near.tag}?\n\nOK = yes, use ${near.tag} · Cancel = no, ${t} really is a new plate`)) {
+        enteredAs = t;
+        t = near.tag;
+      } else {
+        const reusable = window.confirm(`${t} will be added to the master plate list.\n\nIs this a plate that will be REUSED (a dealer plate)?\n\nOK = yes, reusable · Cancel = one-time`);
+        registryMutate = (next) => {
+          next.plateRegistry = [...(next.plateRegistry || []), { id: uid(), tag: t, reusable, addedAt: new Date().toISOString() }];
+        };
+      }
     }
     // Never came back on an earlier day: hard stop until it's marked returned.
     if (missingTags.has(t)) {
@@ -8187,7 +8282,8 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   // Tags nobody is holding. A plate that is still out cannot go out again, so
   // offering it would only produce the error message a moment later.
   const outNow = new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
-  const freeTags = registry.map((r) => r.tag).filter((t) => !outNow.has(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const freeTags = registry.filter((r) => !r.retired).map((r) => r.tag)
+    .filter((t) => !outNow.has(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   // Mark a prior day's plate returned from the missing banner, with the late return on the record.
   const markReturnedPrior = (d, id) => {
@@ -8223,8 +8319,56 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
         </select>
         <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
+        <button className="btn secondary" onClick={() => setMasterOpen((v) => !v)}>
+          {masterOpen ? "Hide master plate list" : `Master plate list (${registry.filter((r) => !r.retired).length})`}
+        </button>
         <span className="hint">Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when.</span>
       </div>
+      {masterOpen && (
+        <div className="card">
+          <h3>Master plate list</h3>
+          <p className="hint">
+            Every plate the store owns. This is what the one-click row suggests from, and what a
+            typed tag is checked against, so a number that is one character off gets questioned
+            rather than quietly becoming a second plate. Retiring keeps the history and stops the
+            suggestions; removing takes it off the list entirely.
+          </p>
+          <div className="inline-form">
+            <textarea className="plate-bulk" value={bulk} onChange={(e) => setBulk(e.target.value)}
+              placeholder={"Paste or type plates, one per line or comma separated\ne.g. DLR-1042, DLR-1043"} rows={2} />
+            <button className="btn" onClick={addBulkPlates}>Add to list</button>
+          </div>
+          {registry.length === 0
+            ? <p className="hint">Nothing on the list yet. Paste the drawer of dealer plates above and they will be ready to one-click from tomorrow.</p>
+            : <table className="roster-table wide">
+                <thead><tr><th>Tag</th><th>Type</th><th>Status</th><th>Right now</th><th /></tr></thead>
+                <tbody>
+                  {[...registry].sort((a, b) => String(a.tag).localeCompare(String(b.tag), undefined, { numeric: true })).map((r) => (
+                    <tr key={r.id} className={r.retired ? "plate-retired" : ""}>
+                      <td>
+                        <input className="plate-assignee-in" defaultValue={r.tag}
+                          onBlur={(e) => renameRegistry(r.id, e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                      </td>
+                      <td>
+                        <button className="btn-quiet" title="A dealer plate goes back in the drawer and out again; a one-time plate does not."
+                          onClick={() => setRegistryFlag(r.id, "reusable", !r.reusable, r.reusable ? "Marked plate one-time" : "Marked plate reusable")}>
+                          {r.reusable ? "Reusable" : "One-time"}
+                        </button>
+                      </td>
+                      <td>
+                        <button className="btn-quiet" onClick={() => setRegistryFlag(r.id, "retired", !r.retired, r.retired ? "Returned plate to service" : "Retired plate")}>
+                          {r.retired ? "Retired" : "In service"}
+                        </button>
+                      </td>
+                      <td>{outNow.has(r.tag) ? <span className="plate-state-out">Out</span> : <span className="plate-state-in">Available</span>}</td>
+                      <td><button className="btn-x danger" onClick={() => removeRegistry(r.id)}>Remove</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>}
+        </div>
+      )}
       <div className="card">
         <div className="inline-form">
           {/* Still free text, so a brand new tag can always be typed. The list just
@@ -14630,6 +14774,11 @@ function Style() {
       .co-callout-btn { font-family:inherit; font-size:12.5px; font-weight:700; padding:6px 12px; border-radius:999px;
         border:1px solid #E3C983; background:#fff; color:#8A6314; cursor:pointer; transition:background .15s, transform .12s; }
       .co-callout-btn:hover { background:#FBEFD4; transform:translateY(-1px); }
+      .plate-bulk { flex:1 1 320px; min-width:220px; padding:9px 11px; border-radius:10px; font-family:inherit; font-size:13px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); resize:vertical; }
+      .plate-retired { opacity:.55; }
+      .plate-state-out { color:var(--red); font-weight:700; font-size:12.5px; }
+      .plate-state-in { color:var(--ink-3); font-size:12.5px; }
       .plate-picks { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
       .plate-picks-lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
         color:var(--ink-3); margin-right:2px; }
