@@ -342,6 +342,8 @@ const PIX = {
   star:     ["000010000","000111000","000111000","111111111","011111110","001111100","011111110","010001000","100000001"],
   bolt:     ["000011100","000111000","001110000","011111100","000011100","000111000","001110000","011100000","000000000"],
   dot:      ["000000000","000000000","000111000","001111100","001111100","001111100","000111000","000000000","000000000"],
+  warn:     ["000010000","000111000","001101100","011101110","011101110","111111111","111101111","111111111","000000000"],
+  car:      ["000000000","000000000","000111100","001111110","011111111","111111111","111111111","011000110","000000000"],
 };
 function PixIcon({ glyph, size = 20, className, style, title }) {
   const rows = PIX[glyph] || PIX.dot;
@@ -2843,9 +2845,18 @@ function LEADERBOARD_HTML(p) {
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
   .pill.dim { background:rgba(255,255,255,.07); color:#6E93BC; }
-  .pill-mark { font-size:calc(var(--rowfs) * .85); margin-right:.3vw; opacity:.9; }
-  .move { display:inline-flex; align-items:center; gap:.2vw; margin-left:.45vw; min-width:3.4vw;
-    justify-content:flex-start; }
+  .pill-mark { display:inline-flex; align-items:center; margin-right:.3vw; opacity:.95;
+    font-size:calc(var(--rowfs) * .85); }
+  /* Every dot glyph is one em square and inherits the colour of the text around it,
+     so a mark, an arrow and a car all scale with the row rather than fighting it. */
+  .pix9 { width:1em; height:1em; display:inline-block; vertical-align:-.1em; fill:currentColor; }
+  .pix-flat { opacity:.5; }
+  /* The trend slot is a fixed width. It used to size itself to its contents, so a
+     row carrying a delta pushed its pill sideways and the column stopped lining up. */
+  .move { display:inline-flex; align-items:center; gap:.2vw; margin-left:.45vw;
+    width:3.6vw; min-width:3.6vw; flex:0 0 3.6vw; justify-content:flex-start; }
+  .lb .pcell { text-align:center; }
+  .lb .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
   .trend { font-size:calc(var(--rowfs) * .78); }
   .delta { font-size:calc(var(--rowfs) * .72); font-weight:700; font-variant-numeric:tabular-nums; }
   .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#5C7F9F; }
@@ -2932,7 +2943,8 @@ function LEADERBOARD_HTML(p) {
     animation: carsIn .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
   @keyframes carsIn { from { opacity:0; transform:translateX(-1vw); } to { opacity:1; transform:none; } }
   .cars-inner { display:flex; align-items:center; flex-wrap:nowrap; gap:0 .1vw; width:100%; }
-  .car { width:calc(var(--rowfs) * var(--csz, 1)); height:calc(var(--rowfs) * var(--csz, 1)); flex:0 0 auto; }
+  .car { width:calc(var(--rowfs) * var(--csz, 1)); height:calc(var(--rowfs) * var(--csz, 1)); flex:0 0 auto;
+    fill:var(--carfill); }
   .cars.g { --carfill:#3ECf6E; } .cars.y { --carfill:#EFD75A; } .cars.r { --carfill:#EF6A72; }
   /* the delivered number sits right of the % pills now, with its trend beside it */
   .lb2 .sold2 .move { min-width:0; margin-left:.3vw; }
@@ -3018,6 +3030,23 @@ function LEADERBOARD_HTML(p) {
 </div>
 <script>
   var CFG = ${JSON.stringify(p)};
+  // Same dot-matrix language as the rest of the tool. Drawn on a 9x9 grid at 1em so
+  // every mark scales with the row text instead of being pinned to a pixel size.
+  var PIXG = ${JSON.stringify({ check: PIX.check, close: PIX.close, warn: PIX.warn, triup: PIX.triup, tridown: PIX.tridown, car: PIX.car, dot: PIX.dot })};
+  function pix(g, cls, frac){
+    var rows = PIXG[g] || PIXG.dot, out = '';
+    for (var y = 0; y < rows.length; y++) {
+      var r = rows[y];
+      for (var x = 0; x < r.length; x++) {
+        if (r[x] !== '1') continue;
+        // frac fills the glyph left to right, which is how a half unit is drawn
+        var lit = (frac == null) || (((x + 0.5) / 9) <= frac);
+        out += '<circle cx="' + (x + 0.5) + '" cy="' + (y + 0.5) + '" r="0.36"'
+          + (lit ? '' : ' fill="rgba(255,255,255,.13)"') + '/>';
+      }
+    }
+    return '<svg class="pix9' + (cls ? ' ' + cls : '') + '" viewBox="0 0 9 9">' + out + '</svg>';
+  }
   function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
   // No external library and no CDN. A TV on a dealership network may not be able to
   // reach an external CDN at all, and an import that never resolves left it stuck on
@@ -3088,42 +3117,29 @@ function LEADERBOARD_HTML(p) {
   // number exactly. If the leader is over CAP whole cars we DON'T rescale the
   // count (that broke the 1-car-per-unit promise and rounded 5.5 up to 6); we draw
   // the honest cars up to CAP and append a "+N" so the row still fits a TV.
-  // clipPath ids must be unique per row — ids are global in one SVG document, so a
-  // shared "hcH" let a later row's half-car borrow an earlier row's clip.
   var CAR_ROW = 0;
   function cars(sold, maxSold){
     // Cars shrink to fit: the row-leader's count sets the size for everyone, so the
     // whole column shares one scale and the biggest month still fits on one line.
     // Past HARDCAP even that is illegible, so those overflow into a "+N".
     var HARDCAP = 34;
-    var uid = 'r' + (CAR_ROW++) + '_';
+    CAR_ROW++;
     var whole = Math.floor(sold + 1e-6);
     var half = (sold - whole) >= 0.5 - 1e-6 ? 1 : 0;
     var CAP = HARDCAP;
-    var carPath = 'M2 13 L4.5 8 Q5.2 6.6 6.8 6.6 L17.2 6.6 Q18.8 6.6 19.5 8 L22 13 '
-      + 'Q23 13.2 23 15 L23 17.6 Q23 18.4 22.2 18.4 L20.4 18.4 Q20 20.4 18.2 20.4 '
-      + 'Q16.4 20.4 16 18.4 L8 18.4 Q7.6 20.4 5.8 20.4 Q4 20.4 3.6 18.4 L1.8 18.4 '
-      + 'Q1 18.4 1 17.6 L1 15 Q1 13.2 2 13 Z';
-    function car(frac, key){
-      var cid = 'hc' + uid + key;
-      var body = '<path d="'+carPath+'" fill="rgba(255,255,255,.09)" stroke="rgba(255,255,255,.20)" stroke-width="1"/>';
-      var fill = frac <= 0 ? '' :
-        '<path d="'+carPath+'" fill="var(--carfill)"'
-        + (frac < 1 ? ' clip-path="url(#'+cid+')"' : '') + '/>';
-      var clip = (frac > 0 && frac < 1)
-        ? '<clipPath id="'+cid+'"><rect x="0" y="0" width="12" height="27"/></clipPath>' : '';
-      return '<svg class="car" viewBox="0 0 24 24">'+clip+body+fill+'</svg>';
-    }
+    // A dot car. A half unit lights the left half of the grid, so the split still
+    // reads honestly from across the floor without any clip paths to collide.
+    function car(frac){ return pix('car', 'car', frac <= 0 ? 0 : frac); }
     var drawWhole = Math.min(whole, CAP);
     // The most anyone sold decides the shared car size: more cars => smaller cars,
     // clamped so a light day's cars don't balloon. Set once per render on the row.
     var peak = Math.min(Math.max(maxSold, 1), CAP + (half ? 0.5 : 0));
     var sizeEm = Math.max(0.62, Math.min(1.15, 22 / peak));
     var out = '<span class="cars-inner" style="--csz:' + sizeEm.toFixed(3) + '">';
-    for (var i=0;i<drawWhole;i++) out += car(1, i);
-    if (whole <= CAP && half) out += car(0.5, 'H');
+    for (var i=0;i<drawWhole;i++) out += car(1);
+    if (whole <= CAP && half) out += car(0.5);
     if (whole > CAP) out += '<span class="car-more">+'+(whole - CAP + (half ? 0.5 : 0))+'</span>';
-    if (!whole && !half) out += car(0, 'z');
+    if (!whole && !half) out += car(0);
     out += '</span>';
     return out;
   }
@@ -3151,14 +3167,14 @@ function LEADERBOARD_HTML(p) {
     return 'r';
   }
   // symbol as well as colour, so the board reads for colour-blind viewers too
-  function toneMark(t){ return t==='g' ? '\\u2713' : t==='y' ? '\\u26a0\\uFE0E' : '\\u2717'; }
+  function toneMark(t){ return pix(t === 'g' ? 'check' : t === 'y' ? 'warn' : 'close'); }
   // direction AND distance moved since the previous report, in percentage points
   function arrow(cur, prev){
-    if (cur==null||prev==null) return ['flat','·',''];
+    if (cur==null||prev==null) return ['flat', pix('dot','pix-flat'), ''];
     var d = (cur - prev) * 100;
-    if (d > 0.05)  return ['up','▲','+'+d.toFixed(1)];
-    if (d < -0.05) return ['down','▼', d.toFixed(1)];
-    return ['flat','·',''];
+    if (d > 0.05)  return ['up', pix('triup'), '+'+d.toFixed(1)];
+    if (d < -0.05) return ['down', pix('tridown'), d.toFixed(1)];
+    return ['flat', pix('dot','pix-flat'), ''];
   }
   function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
   function num(v){ return v==null?0:v; }
@@ -3178,8 +3194,10 @@ function LEADERBOARD_HTML(p) {
     var boardRoles = {};
     (CFG.roles||[]).forEach(function(r){ boardRoles[r.id] = true; });
 
+    var gone = {};
+    (CFG.departed || store.departed || []).forEach(function(n){ gone[norm(n)] = true; });
     var people = (store.roster||[])
-      .filter(function(a){ return a.roleId && boardRoles[a.roleId]; })
+      .filter(function(a){ return a.roleId && boardRoles[a.roleId] && !gone[norm(a.name)]; })
       .map(function(a){
         var s = M.stats[norm(a.name)] || {};
         var iU=num(s.internetUnits), pU=num(s.phoneUnits), rU=num(s.showroomUnits);
@@ -3243,14 +3261,14 @@ function LEADERBOARD_HTML(p) {
     var rowPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;                // vh
 
     function cell(pct, prevVal, ch){
-      if (pct == null) return '<td class="pcell"><span class="pill dim">-</span></td>';
+      if (pct == null) return '<td class="pcell"><span class="pcell-in"><span class="pill dim">-</span><span class="move"></span></span></td>';
       var tn = tone(pct, ch);
       var ar = arrow(pct, prevVal);
       var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
-      return '<td class="pcell">' +
+      return '<td class="pcell"><span class="pcell-in">' +
         '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span>' +
         '<span class="move"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>' +
-      '</td>';
+      '</span></td>';
     }
 
     var maxSold = people.reduce(function(m,x){ return Math.max(m, x.sold); }, 0) || 1;
@@ -3851,8 +3869,10 @@ function buildBoardPayload(config, storeId, sdata) {
   const src = ((sdata && sdata.months) || {})[key]?.stats || {};
   const stats = {}; const roster = []; const ticker = [];
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store?.activityStandards || {}) };
+  const gone = departedNames(sdata);
   for (const a of (sdata && sdata.roster) || []) {
     if (!a.roleId || !onBoard.has(a.roleId)) continue;
+    if (gone.has(norm(a.name))) continue;
     roster.push({ name: a.name, roleId: a.roleId });
     const s = src[norm(a.name)];
     if (s) {
@@ -3876,6 +3896,7 @@ function buildBoardPayload(config, storeId, sdata) {
     ym: key,
     ticker,
     roster,
+    departed: [...gone],
     months: { [key]: { stats } },
     updatedAt: new Date().toISOString(),
   };
