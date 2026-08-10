@@ -196,6 +196,11 @@ function mapDailyActivityGrid(lines) {
 
   let storeName = null, sawHeaderSig = false;
   let nameParts = [];
+  // Some exports print the first person's name in the same block as the store
+  // heading. Those fragments are carried to the next data row instead of being
+  // swallowed, which is what used to drop that person from the whole report AND
+  // corrupt the store name so nothing could be routed.
+  let storeParts = null, pendingName = null;
   const people = {};
 
   for (const L of lines) {
@@ -208,11 +213,26 @@ function mapDailyActivityGrid(lines) {
       if (rowTag !== "All") continue;
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 19) continue;
-      const nm = nameParts.join(" ").replace(/\s+/g, " ").trim();
+      const parts = nameParts.slice();
+      let nm = parts.join(" ").replace(/\s+/g, " ").trim();
       nameParts = [];
-      if (!nm) continue;
       const v = nums.slice(0, 19).map(val);
-      if (!storeName) { storeName = nm; continue; }
+      if (!storeName) {
+        if (!nm) continue;
+        storeName = nm;
+        storeParts = parts;
+        // anything past the first fragment may belong to a person, not the store
+        if (parts.length > 1) pendingName = parts.slice(1).join(" ").replace(/\s+/g, " ").trim();
+        continue;
+      }
+      // A data row with no name of its own is the tell: its name was absorbed
+      // into the store heading above. Give it back, and trim the store name.
+      if (!nm && pendingName) {
+        nm = pendingName;
+        storeName = (storeParts && storeParts[0]) ? storeParts[0].trim() : storeName;
+      }
+      pendingName = null;
+      if (!nm) continue;
       people[norm(nm)] = { displayName: nm, cols: v };
       continue;
     }
@@ -442,6 +462,54 @@ async function sbPut(key, value) {
   if (!r.ok) throw new Error(`supabase write ${r.status}: ${await r.text()}`);
 }
 
+/* ---------- the TV board row ----------
+   The board on the wall reads its own sanitized row, and until now only a
+   browser ever wrote it. That meant every screen sat on figures from the last
+   time a manager happened to save something, while the hourly import quietly
+   moved the real numbers underneath. The import refreshes it now.
+
+   Branding, thresholds and display tuning are left exactly as the app
+   published them: this only replaces the parts that come from the data, so
+   there is no second copy of the app's styling rules to drift out of step. */
+const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
+  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits"];
+
+async function refreshBoardRow(storeId, sdata) {
+  const boardKey = `lpc:board:${storeId}:v1`;
+  const prev = await sbGet(boardKey);
+  // No row yet means the board has never been opened for this store. Creating a
+  // half-formed one here would put an unbranded board on a wall, so leave it.
+  if (!prev) return { published: false, why: "no board row yet; open The Board once from the tool" };
+
+  const month = ymET();
+  const src = ((sdata && sdata.months) || {})[month]?.stats || {};
+  const gone = new Set((((sdata && sdata.departed) || [])).map((x) => norm(x.name)));
+  const onBoard = new Set((prev.roles || []).map((r) => r.id));
+  const stats = {}; const roster = [];
+
+  for (const a of (sdata && sdata.roster) || []) {
+    if (!a.roleId || !onBoard.has(a.roleId)) continue;
+    if (gone.has(norm(a.name))) continue;
+    roster.push({ name: a.name, roleId: a.roleId });
+    const s = src[norm(a.name)];
+    if (!s) continue;
+    const keep = {};
+    for (const f of BOARD_STAT_FIELDS) if (s[f] !== undefined) keep[f] = s[f];
+    stats[norm(a.name)] = keep;
+  }
+
+  await sbPut(boardKey, {
+    ...prev,
+    ym: month,
+    roster,
+    departed: [...gone],
+    boardDisplay: (sdata && sdata.boardDisplay) || prev.boardDisplay || null,
+    months: { [month]: { stats } },
+    updatedAt: new Date().toISOString(),
+  });
+  return { published: true, people: roster.length };
+}
+
 /* ---------- the merge: a faithful port of the app's applyEntries ---------- */
 function applyToStore(data, entries, sourceLabel) {
   const month = ymET(); const day = todayET();
@@ -453,14 +521,20 @@ function applyToStore(data, entries, sourceLabel) {
   M.imports[day] = M.imports[day] || {};
   const aliases = next.aliases || {};
   const canon = (k) => aliases[k] || k;
-  const excludedSet = new Set((next.excluded || []).map(norm));
+  // Roll-up rows that are not people, plus anyone who has left the store. Both
+  // have to be kept out or the import quietly puts them back on the roster.
+  const excludedSet = new Set([
+    ...(next.excluded || []).map(norm),
+    ...((next.departed || []).map((x) => norm(x.name))),
+  ]);
   const results = [];
 
   const snapCopy = JSON.parse(JSON.stringify({
     roster: next.roster, months: next.months, activity: next.activity,
     plates: next.plates, restrictions: next.restrictions, aliases: next.aliases,
     stars: next.stars, goals: next.goals, baselines: next.baselines, qualified: next.qualified,
-    repeatFlags: next.repeatFlags, excluded: next.excluded, daysOff: next.daysOff,
+    repeatFlags: next.repeatFlags, excluded: next.excluded, departed: next.departed,
+    daysOff: next.daysOff, daysOffAt: next.daysOffAt,
     statsExcluded: next.statsExcluded, plateRegistry: next.plateRegistry,
   }));
 
@@ -511,6 +585,9 @@ function applyToStore(data, entries, sourceLabel) {
         };
         count++;
       }
+      // NOTE: month-level totals are deliberately NOT stamped here. This report
+      // is one day's pull, and stamping it as the month would overwrite a real
+      // whole-month figure with a single day's number every hour.
 
       // The activity report is a running daily total, so two pulls an hour apart
       // describe that hour. Keeping every import lets the app difference them into
@@ -579,6 +656,36 @@ function applyToStore(data, entries, sourceLabel) {
 
 /* ---------- routing helpers ---------- */
 const squash = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/* Match a store name read out of a PDF against the configured stores.
+
+   Exact equality was too brittle to trust. A PDF heading picks up whatever the
+   layout puts next to it — a stray first name, a suffix, a line break landing in
+   an awkward place — and one contaminated character meant an entire day's report
+   was thrown away. A configured store name that the parsed heading BEGINS with is
+   a match, longest name winning so "Driver's Mart Winter Park" is never beaten by
+   a shorter store that happens to share a prefix. */
+function matchStoreByName(stores, parsedName) {
+  const P = squash(parsedName);
+  if (!P) return null;
+  let best = null;
+  const consider = (s, cand, quality) => {
+    if (!cand) return;
+    if (!best || cand.length > best.len) best = { store: s, len: cand.length, quality };
+  };
+  for (const s of stores || []) {
+    for (const cand of [squash(s.name), squash(s.id)]) {
+      if (!cand) continue;
+      if (P === cand) { consider(s, cand, "exact"); continue; }
+      // the heading carries the store name plus something extra
+      if (P.startsWith(cand) && cand.length >= 6) { consider(s, cand, "prefix"); continue; }
+      // the heading was truncated, but is long enough to be unambiguous
+      if (cand.startsWith(P) && P.length >= 10) consider(s, cand, "truncated");
+    }
+  }
+  return best ? { store: best.store, quality: best.quality } : null;
+}
+
 function channelFrom(text) {
   const t = String(text || "").toLowerCase();
   if (t.includes("internet")) return "internet";
@@ -594,9 +701,9 @@ async function readRaw(req) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "POST only" });
   if ((req.headers["x-ingest-secret"] || "") !== process.env.INGEST_SECRET) {
-    return res.status(401).json({ error: "bad secret" });
+    return res.status(401).json({ ok: false, error: "bad secret" });
   }
   try {
     const raw = await readRaw(req);
@@ -612,11 +719,17 @@ export default async function handler(req, res) {
     const atts = mail.attachments || [];
     const csvs = atts.filter((a) => /csv$/i.test(a.filename || "") || /text\/csv/i.test(a.mimeType || ""));
     const pdfs = atts.filter((a) => /pdf$/i.test(a.filename || "") || /application\/pdf/i.test(a.mimeType || ""));
-    if (!csvs.length && !pdfs.length) return res.status(200).json({ skipped: "no CSV or PDF attachment" });
+    // Mail with no report attached is not a failure; nothing was expected of it.
+    if (!csvs.length && !pdfs.length) {
+      return res.status(200).json({ ok: true, skipped: "no CSV or PDF attachment" });
+    }
 
     const entries = [];
     const skippedFiles = [];
     const pdfReads = [];
+    // Anything that parsed cleanly and then had nowhere to go. This is the case
+    // that used to answer 200 and disappear, taking a whole day's report with it.
+    const failures = [];
 
     for (const a of csvs) {
       const text = Buffer.from(a.content).toString("utf8").replace(/^\ufeff/, "");
@@ -634,7 +747,8 @@ export default async function handler(req, res) {
 
     // PDFs: each grid names its own store, so ONE shared address works for
     // every store. If the parsed store matches no real store, the parse is
-    // suspect and NOTHING is written.
+    // suspect and NOTHING is written — but it is now reported as a failure
+    // rather than being buried in a 200.
     for (const a of pdfs) {
       try {
         const lines = await extractPdfLines(Buffer.from(a.content));
@@ -649,19 +763,21 @@ export default async function handler(req, res) {
         }
 
         if (mapped) {
-          const byHeader = (cfg?.stores || []).find((s) => squash(s.name) === squash(mapped.storeName));
-          if (!byHeader) {
-            pdfReads.push({ file: a.filename, mapped: false, kind,
-              note: `parsed store "${mapped.storeName}" matches no store; nothing written`,
+          const hit = matchStoreByName(cfg?.stores, mapped.storeName);
+          if (!hit) {
+            const note = `parsed store "${mapped.storeName}" matches no store; nothing written`;
+            pdfReads.push({ file: a.filename, mapped: false, kind, note,
               parsedPeople: mapped.rows.slice(2).map((r) => r[0]) });
+            failures.push({ file: a.filename, why: note });
             continue;
           }
-          store = byHeader;
+          store = hit.store;
           entries.push({ rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
             actDay: kind === "activity"
               ? (activityDateFrom(a.filename) || activityDateFrom(subject))
               : null });
           const read = { file: a.filename, kind, store: mapped.storeName,
+            matchedStore: hit.store.id, matchQuality: hit.quality,
             people: mapped.rows.length - 2, mapped: true,
             names: mapped.rows.slice(2).map((r) => r[0]) };
           // VERIFY on the first Delivery Summary import: this is the
@@ -673,27 +789,62 @@ export default async function handler(req, res) {
           for (const L of lines.slice(0, 40)) {
             dbg.push(L.parts.map((p) => p.str).join(" | "));
           }
-          pdfReads.push({ file: a.filename, mapped: false,
-            note: "PDF layout not recognized; nothing written",
-            debugLines: dbg });
+          const note = "PDF layout not recognized; nothing written";
+          pdfReads.push({ file: a.filename, mapped: false, note, debugLines: dbg });
+          failures.push({ file: a.filename, why: note });
         }
       } catch (e) {
-        skippedFiles.push({ file: a.filename, why: "PDF read failed: " + String(e.message || e) });
+        const why = "PDF read failed: " + String(e.message || e);
+        skippedFiles.push({ file: a.filename, why });
+        failures.push({ file: a.filename, why });
       }
     }
 
-    if (!store) return res.status(200).json({
-      skipped: `no store matches address "${to}" or any PDF header`, skippedFiles, pdfReads });
-    if (!entries.length) return res.status(200).json({ skipped: skippedFiles, pdfReads });
+    // From here on, every exit that writes nothing answers with a failing status
+    // and ok:false, so the Cloudflare worker records an error and the run shows
+    // up red instead of blending into the successes.
+    if (!store) {
+      const why = `no store matches address "${to}" or any PDF header`;
+      console.error("ingest:", why);
+      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
+    }
+    if (!entries.length) {
+      const why = "nothing in this message could be read as a report";
+      console.error("ingest:", why, JSON.stringify(skippedFiles));
+      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
+    }
 
     const key = `lpc:store:${store.id}:v2`;
     const data = await sbGet(key);
-    if (!data) return res.status(200).json({ skipped: `store ${store.id} has no data document yet` });
+    if (!data) {
+      const why = `store ${store.id} has no data document yet`;
+      console.error("ingest:", why);
+      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
+    }
     const { next, results } = applyToStore(data, entries, "Auto-import (email)");
     await sbPut(key, next);
-    return res.status(200).json({ ok: true, store: store.id, results, skippedFiles, pdfReads });
+
+    // Push the fresh figures to the wall. A board that cannot be refreshed must
+    // not sink the import that already succeeded, so this is reported, not thrown.
+    let board;
+    try {
+      board = await refreshBoardRow(store.id, next);
+    } catch (e) {
+      board = { published: false, why: String(e.message || e) };
+      console.error("ingest: board refresh failed for", store.id, board.why);
+    }
+
+    // Some files landed and others did not. The import stands, but the message
+    // says so out loud rather than reporting a clean success.
+    if (failures.length) {
+      console.error("ingest: partial success for", store.id, JSON.stringify(failures));
+      return res.status(422).json({ ok: false, error: "some attachments could not be filed",
+        store: store.id, results, board, failures, skippedFiles, pdfReads });
+    }
+
+    return res.status(200).json({ ok: true, store: store.id, results, board, skippedFiles, pdfReads });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: String(e.message || e) });
+    return res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 }
