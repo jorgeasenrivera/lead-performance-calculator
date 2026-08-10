@@ -20,6 +20,11 @@ const GUIDE_IMG_VIDEO_REPORT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAS
 const CONFIG_KEY = "lpc:config:v2";
 const AUDIT_KEY = "lpc:audit:v2";
 const storeKey = (id) => `lpc:store:${id}:v2`;
+// A TV runs the board with nobody signed in, so it must never be able to read the
+// full store blob. This row holds only what the screen actually draws: names, the
+// month's channel figures, and the look. No goals, no PINs, no notes, no history.
+const boardKey = (id) => `lpc:board:${id}:v1`;
+const boardTvUrl = (id) => window.location.origin + window.location.pathname + "?board=" + encodeURIComponent(id);
 
 const METRICS = {
   deliveredPct: { label: "Internet Lead Delivery %", short: "Delivery %", kind: "pct" },
@@ -840,6 +845,10 @@ function mapDailyActivityGrid(lines) {
 
   let storeName = null, sawHeaderSig = false;
   let nameParts = [];
+  // Some exports print the first person's name in the same block as the store
+  // heading. Those fragments get carried to the next data row instead of being
+  // swallowed, which is what used to drop that person from the whole report.
+  let storeParts = null, pendingName = null;
   const people = {};
 
   for (const L of lines) {
@@ -852,11 +861,26 @@ function mapDailyActivityGrid(lines) {
       if (rowTag !== "All") continue;
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 19) continue;
-      const nm = nameParts.join(" ").replace(/\s+/g, " ").trim();
+      const parts = nameParts.slice();
+      let nm = parts.join(" ").replace(/\s+/g, " ").trim();
       nameParts = [];
-      if (!nm) continue;
       const v = nums.slice(0, 19).map(val);
-      if (!storeName) { storeName = nm; continue; }
+      if (!storeName) {
+        if (!nm) continue;
+        storeName = nm;
+        storeParts = parts;
+        // anything past the first fragment may belong to a person, not the store
+        if (parts.length > 1) pendingName = parts.slice(1).join(" ").replace(/\s+/g, " ").trim();
+        continue;
+      }
+      // A data row with no name of its own is the tell: its name was absorbed into
+      // the store heading above. Give it back, and trim the store name to match.
+      if (!nm && pendingName) {
+        nm = pendingName;
+        storeName = (storeParts && storeParts[0]) ? storeParts[0].trim() : storeName;
+      }
+      pendingName = null;
+      if (!nm) continue;
       people[norm(nm)] = { displayName: nm, cols: v };
       continue;
     }
@@ -1683,6 +1707,9 @@ export default function LeadPerformanceCalculator() {
       alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a database write-permission (RLS) problem or a dropped connection.\n\nExact error from the database:\n" + (lastSaveError || "unknown") + "\n\nPlease send this exact message to your admin.");
       return;
     }
+    // Refresh the TV row so every casted screen picks this up on its next poll.
+    // Failing this must never fail the save, so it is deliberately swallowed.
+    if (config) publishBoard(config, storeId, next);
     if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
   };
 
@@ -1999,6 +2026,14 @@ export default function LeadPerformanceCalculator() {
   if (queueParams) {
     return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} variant={queueParams.variant} /><Style /></Shell>;
   }
+  // --- casted board: a TV pointed at this URL, no sign-in, read-only ---
+  const boardParams = (() => {
+    try {
+      const b = new URLSearchParams(window.location.search).get("board");
+      return b ? { store: b } : null;
+    } catch { return null; }
+  })();
+  if (boardParams) return <BoardScreen storeId={boardParams.store} />;
   // --- live floor: public sign-in intercept (before any auth) ---
   const floorParams = (() => {
     try {
@@ -2886,6 +2921,10 @@ function LEADERBOARD_HTML(p) {
     access: CFG.tokens.access_token,
     refresh: CFG.tokens.refresh_token
   } : null;
+  // The board row is readable with the anon key alone, which is what lets a TV with
+  // nobody signed in sit there for weeks. A signed-in session is used when one was
+  // handed over, but nothing here depends on it.
+  var DB = CFG.db || (CFG.tokens ? { url: CFG.tokens.url, anonKey: CFG.tokens.anonKey } : null);
 
   function withTimeout(promise, ms){
     return Promise.race([
@@ -2912,16 +2951,16 @@ function LEADERBOARD_HTML(p) {
   }
 
   async function getStore(){
-    if (!TOK) return { __err: 'This board was opened without a signed-in session. Open it again from the tool.' };
-    var url = CFG.tokens.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(CFG.storeKey) + '&select=value';
+    if (!DB) return { __err: 'This board has no database details. Open it again from the tool.' };
+    var url = DB.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(CFG.storeKey) + '&select=value';
     function headers(){
-      return { apikey: CFG.tokens.anonKey, Authorization: 'Bearer ' + TOK.access };
+      return { apikey: DB.anonKey, Authorization: 'Bearer ' + (TOK ? TOK.access : DB.anonKey) };
     }
     try {
       var res = await withTimeout(fetch(url, { headers: headers() }), 12000);
       if (res.status === 401 || res.status === 403) {
         var ok = await refreshToken();
-        if (!ok) return { __err: 'The session for this board expired. Open it again from the tool.' };
+        if (!ok) return { __err: 'This screen cannot read the board row. Check the database read rule for lpc:board keys.' };
         res = await withTimeout(fetch(url, { headers: headers() }), 12000);
       }
       if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
@@ -3478,7 +3517,7 @@ function LEADERBOARD_HTML(p) {
     document.getElementById('tsave').onclick = async function(){
       var msg = document.getElementById('tmsg');
       try {
-        var op = window.opener;
+        var op = window.opener || (window.parent !== window ? window.parent : null);
         if (op && op.__lpcSaveBoardDisplay) {
           var ok = await op.__lpcSaveBoardDisplay(CFG.storeId, DISP);
           msg.textContent = ok ? 'Saved for this store.' : 'Could not save.';
@@ -3631,6 +3670,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
           <h2 className="bl-title">{s.name}</h2>
           <p className="hint">The Board opened in its own window, sized for a TV or big screen. It refreshes on its own every 30 seconds.</p>
           <button className="btn" onClick={() => onLaunch(s.id)}>Open it again</button>
+          <CastLink storeId={s.id} />
           <button className="btn-link" onClick={onBack}>← Back to start</button>
         </div>
       </div>
@@ -3654,50 +3694,175 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
           );
         })}
       </div>
+      <div className="bl-cast">
+        {stores.map((s) => <CastLink key={s.id} storeId={s.id} label={s.name} />)}
+      </div>
       <button className="btn-link" onClick={onBack}>← Back to start</button>
     </div>
   );
+}
+
+// The address a TV is pointed at. Copy it once, set it as the screen's start page,
+// and nobody has to touch it again.
+function CastLink({ storeId, label }) {
+  const [said, setSaid] = useState(false);
+  const url = boardTvUrl(storeId);
+  return (
+    <button className="btn-link cast-link" title={url}
+      onClick={() => {
+        navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
+          () => window.prompt("Copy this address into the TV's browser:", url));
+      }}>
+      {said ? "Copied" : (label ? "Copy TV link for " + label : "Copy the TV link")}
+    </button>
+  );
+}
+
+// The only fields the board draws. Anything not on this list never leaves the
+// private store row, which is the whole point of publishing a separate one.
+const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
+  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits"];
+
+function buildBoardPayload(config, storeId, sdata) {
+  const store = (config?.stores || []).find((s) => s.id === storeId);
+  const onBoard = new Set((config?.roles || []).filter((r) => r.onBoard !== false).map((r) => r.id));
+  const key = ym();
+  const src = ((sdata && sdata.months) || {})[key]?.stats || {};
+  const stats = {}; const roster = []; const ticker = [];
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store?.activityStandards || {}) };
+  for (const a of (sdata && sdata.roster) || []) {
+    if (!a.roleId || !onBoard.has(a.roleId)) continue;
+    roster.push({ name: a.name, roleId: a.roleId });
+    const s = src[norm(a.name)];
+    if (s) {
+      const keep = {};
+      for (const f of BOARD_STAT_FIELDS) if (s[f] !== undefined) keep[f] = s[f];
+      stats[norm(a.name)] = keep;
+    }
+    try {
+      const { dir, len } = currentStreak(sdata, a, std);
+      if (dir === "up" && len >= 3) ticker.push(`&#128293; ${a.name} is on a ${len}-day streak`);
+    } catch (e) {}
+  }
+  return {
+    storeId,
+    storeName: store?.name || "Store",
+    icon: store?.icon || null,
+    brand: store?.brand || DEFAULT_BRAND,
+    thresholds: normThresholds(store?.thresholds),
+    roles: (config?.roles || []).filter((r) => r.onBoard !== false).map((r) => ({ id: r.id })),
+    boardDisplay: (sdata && sdata.boardDisplay) || null,
+    ym: key,
+    ticker,
+    roster,
+    months: { [key]: { stats } },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Publish the TV row. Called after every save so a casted screen never goes stale.
+async function publishBoard(config, storeId, sdata) {
+  try { return await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata)); }
+  catch (e) { return false; }
 }
 
 // Opens a standalone, auto-refreshing leaderboard in a new window sized for a TV.
 async function openLeaderboard(config, storeId) {
   const w = window.open("", "lpc_leaderboard_" + storeId, "width=1600,height=900");
   if (!w) { alert("Please allow pop-ups for this site to open the leaderboard on a second screen."); return; }
-  const store = config.stores.find((s) => s.id === storeId);
-  const thresholds = normThresholds(store?.thresholds);
-  // The board runs on a TV all day, so it carries the signed-in user's tokens and
-  // refreshes them itself. Without this it would lose access once the data is locked down.
-  const tokens = await getTokens();
-  // Streak callouts for the bars-style ticker. Computed here (the app has the streak
-  // logic); refreshed whenever the board is opened. The board adds live leader and
-  // top-channel items itself on every data refresh.
-  let tickerStreaks = [];
-  try {
-    const sdata = await loadShared(`lpc:store:${storeId}:v2`);
-    if (sdata) {
-      const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store?.activityStandards || {}) };
-      const onBoard = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-      for (const a of (sdata.roster || []).filter((x) => x.roleId && onBoard.has(x.roleId))) {
-        const { dir, len } = currentStreak(sdata, a, std);
-        if (dir === "up" && len >= 3) tickerStreaks.push(`&#128293; ${a.name} is on a ${len}-day streak`);
-      }
-    }
-  } catch {}
+  // Publish the sanitized TV row first, so this window and any casted screen are
+  // reading the exact same thing.
+  let sdata = null;
+  try { sdata = await loadShared(storeKey(storeId)); } catch (e) {}
+  const board = buildBoardPayload(config, storeId, sdata || {});
+  await publishBoard(config, storeId, sdata || {});
   const payload = {
-    storeId,
-    storeKey: `lpc:store:${storeId}:v2`,
-    storeName: store?.name || "Store",
-    icon: store?.icon || null,
-    brand: store?.brand || DEFAULT_BRAND,
-    thresholds,
-    roles: config.roles.filter((r) => r.onBoard !== false),
-    ym: ym(),
-    ticker: tickerStreaks,
-    tokens,
+    ...board,
+    storeKey: boardKey(storeId),
+    db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
+    tokens: null,
   };
   w.document.open();
   w.document.write(LEADERBOARD_HTML(payload));
   w.document.close();
+}
+
+/* ---------------- Casted board (kiosk) ----------------
+   A TV is pointed at ?board=<storeId> and left alone. Because this is a real page
+   and not a written-into popup, a reboot recovers on its own and a reload picks up
+   whatever code is currently deployed. Nobody signs in: it reads the published
+   board row with the anon key and nothing else. */
+
+// Reload when a new build ships, so a screen that has been up for weeks is never
+// running last month's layout. Vercel fingerprints its asset filenames, so a plain
+// comparison against the served page is enough, no version endpoint needed.
+function useBuildWatchdog() {
+  useEffect(() => {
+    const names = (nodes) => nodes.map((n) => String(n).split("/").pop()).filter(Boolean);
+    const mine = names([...document.querySelectorAll('script[src],link[rel="stylesheet"]')]
+      .map((n) => n.getAttribute("src") || n.getAttribute("href")).filter(Boolean));
+    let dead = false;
+    const check = async () => {
+      if (dead || !mine.length) return;
+      try {
+        const res = await fetch(window.location.pathname + "?_build=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return;
+        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+        const theirs = names([...doc.querySelectorAll('script[src],link[rel="stylesheet"]')]
+          .map((n) => n.getAttribute("src") || n.getAttribute("href")).filter(Boolean));
+        if (theirs.length && theirs.some((n) => !mine.includes(n)) && !dead) window.location.reload();
+      } catch (e) { /* offline: try again next time */ }
+    };
+    const build = setInterval(check, 10 * 60 * 1000);
+    // A clean start every night. This is also what rolls the board onto a new month,
+    // since the month it draws is fixed when the page loads.
+    const nightly = setInterval(() => {
+      const d = new Date();
+      if (d.getHours() === 4 && d.getMinutes() < 6) window.location.reload();
+    }, 5 * 60 * 1000);
+    return () => { dead = true; clearInterval(build); clearInterval(nightly); };
+  }, []);
+}
+
+function BoardScreen({ storeId }) {
+  const [html, setHtml] = useState(null);
+  const [msg, setMsg] = useState("Loading the board...");
+  useBuildWatchdog();
+  useEffect(() => {
+    let dead = false, done = false;
+    const boot = async () => {
+      try {
+        const row = await loadShared(boardKey(storeId), null, true);
+        if (dead) return;
+        if (!row) {
+          setMsg("No board has been published for this store yet. Open The Board once from the tool and this screen will fill in.");
+          return;
+        }
+        done = true;
+        setHtml(LEADERBOARD_HTML({
+          ...row,
+          storeKey: boardKey(storeId),
+          db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
+          tokens: null,
+        }));
+      } catch (e) {
+        if (!dead) setMsg("No connection to the database. This screen keeps trying on its own.");
+      }
+    };
+    boot();
+    // Only retries until it has something to draw; after that the board refreshes itself.
+    const t = setInterval(() => { if (!done) boot(); }, 60 * 1000);
+    return () => { dead = true; clearInterval(t); };
+  }, [storeId]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#0B1622", overflow: "hidden" }}>
+      {html
+        ? <iframe title="The Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
+        : <div style={{ height: "100%", display: "grid", placeItems: "center", padding: "32px", textAlign: "center",
+            color: "#CFE0F0", font: "500 20px/1.5 system-ui, -apple-system, sans-serif" }}>{msg}</div>}
+    </div>
+  );
 }
 
 /* ---------------- Login (real accounts) ---------------- */
@@ -6506,6 +6671,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
     return {
       a, rec, qual, off,
       calls: rec.calls, video: rec.video,
+      tasks: rec.tasks, tasksPosted: rec.tasksPosted,
       callsMet: rec.calls != null && rec.calls >= std.minCalls,
       videoMet: rec.video != null && rec.video >= std.minVideos,
       rockedMet: qual === "yes",
@@ -6553,7 +6719,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <div className="card checkout-card">
           <table className="checkout-table">
             <thead><tr>
-              <th>Name</th><th>Calls</th><th>Videos</th><th>RockEd</th><th>Points</th><th>Off</th>
+              <th>Name</th><th>Calls</th><th>Videos</th><th>Tasks</th><th>RockEd</th><th>Points</th><th>Off</th>
             </tr></thead>
             <tbody>
               {rows.map((r) => (
@@ -6566,6 +6732,15 @@ function CheckOutTracker({ config, store, data, onChange }) {
                   <td className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark">{r.videoMet ? "\u2713" : "\u2717"}</span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
+                  </td>
+                  {/* Completed tasks so far today. There is no standard on it, so it is
+                      shown plainly rather than graded: it is context for the conversation,
+                      not another point on the board. Open tasks sit behind it where the
+                      report carried them. */}
+                  <td className="co-tasks">
+                    {r.hasData
+                      ? <><b>{r.tasks ?? "-"}</b>{r.tasksPosted != null && <span className="cell-need" title="Tasks posted for the day"> / {r.tasksPosted}</span>}</>
+                      : "-"}
                   </td>
                   {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
                   <td>
@@ -14185,6 +14360,9 @@ function Style() {
       .checkout-table td:first-child { text-align:left; }
       .cell-g { color:#1E7A3C; font-weight:700; } .cell-r { color:#C13529; font-weight:700; }
       .cell-need { color:var(--ink-3); font-weight:500; font-size:11px; }
+      .bl-cast { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:14px 0 4px; }
+      .cast-link { font-size:13px; }
+      .co-tasks { white-space:nowrap; }
       .co-nodata { opacity:.5; }
       .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
       .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
