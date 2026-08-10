@@ -13357,6 +13357,9 @@ function Style() {
       /* One focus ring for the whole app, only when keyboarding. */
       .lpc :focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:8px; }
       .lpc :focus:not(:focus-visible) { outline:none; }
+      /* The browser's default body margin was leaving a strip down both sides, so
+         the top bar stopped short of the corners. */
+      html, body { margin:0; padding:0; }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: var(--font-ui);
         font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
@@ -13419,12 +13422,9 @@ function Style() {
       ::selection { background: rgba(42,94,155,.2); }
 
       /* ---- store hero (manager landing) ---- */
-      /* Full bleed: the band runs to both edges of the window rather than sitting in
-         the page gutters, so the store's colour reaches the corners of the screen. */
-      .hero { position:relative; margin-bottom: 26px; margin-inline: calc(50% - 50vw);
-        --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      .hero { position:relative; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
       .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
-        padding:30px clamp(20px, 4.5vw, 60px); border-radius:0; position:relative; overflow:visible; z-index:8;
+        padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: heroIn .6s var(--spring) both; }
@@ -14501,8 +14501,12 @@ function Style() {
       .search-top .search-input:focus { background:#fff; border-color:rgba(42,94,155,.35);
         box-shadow: 0 0 0 4px rgba(42,94,155,.14); }
       .seg-wrap { align-items:center; gap:16px; }
-      .search-icon { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--ink-3);
-        display:flex; align-items:center; pointer-events:none; }
+      .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-2);
+        display:flex; align-items:center; pointer-events:none; opacity:.85; z-index:1; }
+      /* Centred wording, with the padding kept equal on both sides so the text sits
+         on the true centre of the box rather than off the magnifier. */
+      .search-input { text-align:center; }
+      .search-input::placeholder { text-align:center; }
       .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
         border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
       .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
@@ -15429,9 +15433,9 @@ function Style() {
    sequential indicator sweeps. The icon end lights first because that is where
    the eye lands. */
 .qsel-pill::before{ content:""; position:absolute; inset:0; pointer-events:none;
-  background:linear-gradient(100deg, transparent 18%, rgba(255,255,255,.55) 50%, transparent 82%);
-  transform:translateX(-120%); animation:qsweep 3.4s ease-in-out infinite; animation-delay:var(--qd,0s); }
-@keyframes qsweep{ 0%{ transform:translateX(-120%); } 55%,100%{ transform:translateX(120%); } }
+  background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.26) 50%, transparent 74%);
+  transform:translateX(-120%); animation:qsweep 5.4s ease-in-out infinite; animation-delay:var(--qd,0s); }
+@keyframes qsweep{ 0%{ transform:translateX(-120%); } 34%,100%{ transform:translateX(120%); } }
 .qsel-pill:hover{ transform:translateY(-1px); filter:brightness(1.06); }
 .qsel-pill:active{ transform:translateY(0); }
 .qsel-pill.on{ box-shadow:0 3px 12px -2px rgba(16,32,52,.5), 0 0 0 3px rgba(255,255,255,.75); }
