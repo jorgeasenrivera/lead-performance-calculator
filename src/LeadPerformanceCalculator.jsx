@@ -1415,6 +1415,34 @@ async function runAutoBackup(config, adminData, byName) {
 
 const emptyStoreData = () => ({ roster: [], months: {} });
 
+/* ---- People who have left ----
+   Taking someone off the roster was never enough on its own: the next report still
+   carried their name and the import put them straight back. Someone who has left is
+   recorded here instead, which lifts them off every current list AND tells the
+   importer to leave them alone. Their history stays exactly where it is, and the
+   whole thing is reversible if they come back or it was done by mistake. */
+const departedNames = (d) => new Set((((d && d.departed) || [])).map((x) => norm(x.name)));
+
+// Take someone off the floor. Returns a mutated copy; the caller saves it.
+function markDeparted(data, assoc, by) {
+  const next = JSON.parse(JSON.stringify(data));
+  next.roster = (next.roster || []).filter((x) => x.id !== assoc.id);
+  next.departed = [...(next.departed || []).filter((x) => norm(x.name) !== norm(assoc.name)),
+    { id: assoc.id, name: assoc.name, roleId: assoc.roleId || null, at: new Date().toISOString(), by: by || "-" }];
+  return next;
+}
+
+// Put someone back, exactly as they were.
+function undoDeparted(data, name) {
+  const next = JSON.parse(JSON.stringify(data));
+  const rec = (next.departed || []).find((x) => norm(x.name) === norm(name));
+  next.departed = (next.departed || []).filter((x) => norm(x.name) !== norm(name));
+  if (rec && !(next.roster || []).some((x) => norm(x.name) === norm(name))) {
+    next.roster = [...(next.roster || []), { id: rec.id || uid(), name: rec.name, roleId: rec.roleId || null, order: (next.roster || []).length }];
+  }
+  return next;
+}
+
 async function appendAudit(entry) {
   const log = await loadShared(AUDIT_KEY, []);
   log.unshift({ t: new Date().toISOString(), ...entry });
@@ -1748,7 +1776,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
-      repeatFlags: data.repeatFlags, excluded: data.excluded, daysOff: data.daysOff, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
+      repeatFlags: data.repeatFlags, excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -1792,7 +1820,9 @@ export default function LeadPerformanceCalculator() {
       // fold every incoming name through the alias map, and drop anything on the
       // exclusion list. Reports contain roll-up rows like "Team A" that are not
       // people, and letting them through skews every average on the board.
-      const excluded = new Set((next.excluded || []).map(norm));
+      // Roll-up rows that are not people, plus anyone who has left the store. Both
+      // have to be kept out or the import quietly puts them back on the roster.
+      const excluded = new Set([...(next.excluded || []).map(norm), ...departedNames(next)]);
       const parsed = {};
       let skipped = 0;
       for (const [k, v] of Object.entries(raw)) {
@@ -2435,7 +2465,7 @@ export default function LeadPerformanceCalculator() {
                 {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
                 {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
-                {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
               </>
             )}
           </div>
@@ -9309,7 +9339,7 @@ function BaselineImport({ data, onChange }) {
       return;
     }
     const parsed = parseReport(rows, "activity");
-    const excluded = new Set((data.excluded || []).map(norm));
+    const excluded = new Set([...(data.excluded || []).map(norm), ...departedNames(data)]);
     const aliases = data.aliases || {};
     const people = [];
     for (const [k, rec] of Object.entries(parsed)) {
@@ -10917,6 +10947,10 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
             {isStatsExcluded ? "✓ Out of store stats" : "Exclude from store stats"}
           </button>
           <button className="btn-ghost" onClick={copy}>Copy summary</button>
+          <button className="btn-ghost danger" onClick={() => {
+            if (!window.confirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`)) return;
+            onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
+          }}>No longer here</button>
           <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
             onClick={() => { recordPrint(); printOnePager({
               store, config, a, stats, ev: row.ev,
@@ -12349,7 +12383,7 @@ function StandardsEditor({ config, storeId, onChange }) {
 }
 
 /* ---------------- Roster editor ---------------- */
-function RosterEditor({ config, data, onChange }) {
+function RosterEditor({ config, data, onChange, userName }) {
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
   const [mergeFrom, setMergeFrom] = useState("");
@@ -12440,12 +12474,18 @@ function RosterEditor({ config, data, onChange }) {
     a.roleId = rid || null;
     onChange(next, { action: "Changed position", detail: `${a.name} → ${config.roles.find((r) => r.id === rid)?.name || "Needs a position"}` });
   };
+  // Taking someone off used to be undone by the very next import, which is how a
+  // person who had left kept reappearing. This records the departure instead.
   const remove = (id) => {
-    const next = JSON.parse(JSON.stringify(data));
-    const a = next.roster.find((x) => x.id === id);
-    next.roster = next.roster.filter((x) => x.id !== id);
-    onChange(next, { action: "Removed associate", detail: a?.name });
+    const a = (data.roster || []).find((x) => x.id === id);
+    if (!a) return;
+    if (!window.confirm(`${a.name} has left the store?\n\nThey come off every current list right away and future reports will not add them back. Their history stays on file, and you can bring them back from the Former associates list below.`)) return;
+    onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
   };
+  const bringBack = (name) => {
+    onChange(undoDeparted(data, name), { action: "Brought associate back", detail: name });
+  };
+  const former = [...((data.departed) || [])].sort((x, y) => String(y.at).localeCompare(String(x.at)));
   return (
     <div className="roster">
       <div className="card">
@@ -12457,6 +12497,27 @@ function RosterEditor({ config, data, onChange }) {
           <button className="btn" onClick={add}>Add Associate</button>
         </div>
         <p className="hint">Names must match DriveCentric exports exactly (not case-sensitive). Anyone who shows up in a report but isn't listed here gets added automatically under "Needs a Position." Roster changes are recorded in the audit log.</p>
+      </div>
+
+      <div className="card">
+        <h3>Former associates</h3>
+        <p className="hint">
+          Anyone who has left the store. They are off the roster, the check out sheet, the line and the board,
+          and no report will add them back. Everything they did is still on file, so past months read correctly.
+          Bring someone back and they pick up right where they were.
+        </p>
+        {former.length === 0
+          ? <p className="hint">Nobody yet. Use <b>No longer here</b> on a person's card, or Remove on the roster below.</p>
+          : <div className="domain-list">
+              {former.map((f) => (
+                <span key={f.name} className="domain-chip">
+                  {f.name}<span className="hint" style={{ marginLeft: 6 }}>
+                    left {f.at ? new Date(f.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "-"}
+                  </span>
+                  <button className="btn-x" title="Put them back on the roster" onClick={() => bringBack(f.name)}>Bring back</button>
+                </span>
+              ))}
+            </div>}
       </div>
 
       <div className="card">
@@ -13832,6 +13893,8 @@ function Style() {
       .store-item-name { display:flex; align-items:center; gap:8px; min-width:0; }
       .store-item-name b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .store-item-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .btn-ghost.danger { color:var(--red); }
+      .btn-ghost.danger:hover { background:rgba(229,71,60,.08); border-color:rgba(229,71,60,.35); }
       .btn-x.danger { color:var(--red); }
       .btn-x.danger:hover { background:rgba(229,71,60,.1); }
 
