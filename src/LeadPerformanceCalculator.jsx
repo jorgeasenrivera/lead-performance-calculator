@@ -1235,6 +1235,16 @@ async function loadShared(key, fallback, throwOnError) {
     return data ? data.value : fallback;
   } catch (e) { console.error("load failed", key, e); if (throwOnError) throw e; return fallback; }
 }
+// The plate log is worked by several managers at once, so it has to be re-read
+// often. Pulling the whole store blob on a timer would be brutal, so this asks the
+// database for the two plate fields and nothing else.
+async function loadPlatesOnly(key) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("app_data")
+    .select("p:value->plates, r:value->plateRegistry").eq("key", key).maybeSingle();
+  if (error) throw error;
+  return data ? { plates: data.p || {}, registry: data.r || [] } : null;
+}
 let lastSaveError = null;
 async function saveShared(key, value) {
   if (!supabase) { lastSaveError = "No database client"; return false; }
@@ -1697,6 +1707,9 @@ export default function LeadPerformanceCalculator() {
         };
         next.months = mergeField("months");
         next.activity = mergeField("activity");
+        // Same protection for the plate log: a day another manager started while this
+        // browser sat open is kept rather than dropped on save.
+        next.plates = mergeField("plates");
       }
     } catch (e) { /* if the re-read fails, just save what we have */ }
     setStoreData(next); setSaving(true);
@@ -1712,6 +1725,22 @@ export default function LeadPerformanceCalculator() {
     if (config) publishBoard(config, storeId, next);
     if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
   };
+
+  // Someone else logged a plate out, or marked one back in. Take their plate fields
+  // into this browser's copy without writing anything back, so the screen keeps up
+  // with the log instead of showing a stale one until somebody refreshes.
+  const adoptRemotePlates = useCallback((storeId, plates, plateRegistry) => {
+    const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+    setStoreData((prev) => {
+      if (!prev || (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry))) return prev;
+      return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
+    });
+    setAdminData((p) => {
+      const cur = p[storeId];
+      if (!cur || (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry))) return p;
+      return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
+    });
+  }, []);
 
   // Keep a rolling set of restore points so a bad import is never fatal.
   const snapshotStore = (data, reason) => {
@@ -2380,7 +2409,7 @@ export default function LeadPerformanceCalculator() {
               <>
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
-                {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
+                {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
               </>
@@ -7680,8 +7709,31 @@ function normalizeDate(s) {
 }
 
 /* ---------------- License Plate Tracker ---------------- */
-function PlateTracker({ data, onChange, userName }) {
+function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const [day, setDay] = useState(today());
+  // Several people share this log at once. Re-read the plate fields on a short timer
+  // and whenever the tab comes back to the front, so a plate someone else logged out
+  // shows up here on its own. A read is skipped while a save of our own is in flight,
+  // so the server's older copy can never land on top of a change being written.
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
+  useEffect(() => {
+    if (!storeId || !onRemote) return;
+    let dead = false;
+    const pull = async () => {
+      if (dead || savingRef.current || document.hidden) return;
+      try {
+        const got = await loadPlatesOnly(storeKey(storeId));
+        if (!dead && got && !savingRef.current) onRemote(storeId, got.plates, got.registry);
+      } catch (e) { /* a blip: the next tick tries again */ }
+    };
+    pull();
+    const t = setInterval(pull, 10000);
+    const onShow = () => { if (!document.hidden) pull(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [storeId, onRemote]);
   const [tag, setTag] = useState("");
   const [assignee, setAssignee] = useState("");
   const [historyFor, setHistoryFor] = useState(null); // plate id whose custody log is open
