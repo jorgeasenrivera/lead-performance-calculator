@@ -1368,8 +1368,36 @@ async function listStoreKeys() {
 // carries its own version without anyone remembering to bump a number.
 const APP_VERSION = (typeof __APP_VERSION__ !== "undefined") ? __APP_VERSION__ : "preview";
 
-const BACKUP_INDEX_KEY = "lpc:backups:index:v1";
-const backupKey = (id) => `lpc:backup:${id}:v1`;
+/* ---- Backup keys ----
+   A backup used to be one row holding every store at once, which meant no rule
+   could ever be written for it: there is no single store to check access against.
+   That is why every write was refused. It is now split. Each store's copy lives
+   under its own id, so it is gated by exactly the same store-access rule as the
+   live data, and the config and audit log ride along in a config row, which every
+   signed-in user may already read. */
+const BACKUP_INDEX_KEY = "lpc:config:backups-index:v1";
+const backupStoreKey = (storeId, id) => `lpc:backup:${storeId}:${id}:v1`;
+const backupMetaKey = (id) => `lpc:config:backup:${id}:v1`;
+
+// Just the header of a backup: config, audit and which stores it holds. Enough to
+// answer questions about a backup without dragging every store blob back down.
+async function fetchBackupMeta(entry) {
+  if (!entry) return null;
+  return await loadShared(backupMetaKey(entry.id), null);
+}
+
+// Reassemble a split backup into the single object the restore screen expects.
+async function fetchBackup(entry) {
+  if (!entry) return null;
+  const meta = await loadShared(backupMetaKey(entry.id), null);
+  if (!meta) return null;
+  const stores = {};
+  for (const sid of (entry.storeIds || meta.storeIds || [])) {
+    const d = await loadShared(backupStoreKey(sid, entry.id), null);
+    if (d) stores[sid] = d;
+  }
+  return { ...meta, stores };
+}
 const AUTO_BACKUP_EVERY_HOURS = 20;   // once a working day
 const KEEP_BACKUPS = 14;
 
@@ -1391,24 +1419,43 @@ async function runAutoBackup(config, adminData, byName) {
   if (Object.keys(stores).length === 0) return index;
 
   const id = new Date().toISOString().replace(/[:.]/g, "-");
-  const payload = {
+  const storeIds = Object.keys(stores);
+  const exportedAt = new Date().toISOString();
+
+  // Each store first. If any one of them cannot be written the backup is incomplete,
+  // and an incomplete backup that looks complete is worse than none at all.
+  for (const sid of storeIds) {
+    const ok = await saveShared(backupStoreKey(sid, id), stores[sid]);
+    if (!ok) {
+      console.error("backup failed for store", sid, lastSaveError);
+      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null);
+      return index;
+    }
+  }
+  const meta = {
     app: "lead-performance-calculator",
     version: 2,
-    exportedAt: new Date().toISOString(),
+    exportedAt,
     auto: true,
     by: byName || "auto",
     config,
-    stores,
+    storeIds,
     audit: await loadShared(AUDIT_KEY, []),
   };
+  const okMeta = await saveShared(backupMetaKey(id), meta);
+  if (!okMeta) {
+    console.error("backup meta failed", lastSaveError);
+    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null);
+    return index;
+  }
 
-  const ok = await saveShared(backupKey(id), payload);
-  if (!ok) return index;
-
-  const next = [{ id, t: payload.exportedAt, stores: Object.keys(stores).length, auto: true }, ...index];
+  const next = [{ id, t: exportedAt, stores: storeIds.length, storeIds, auto: true }, ...index];
   const keep = next.slice(0, KEEP_BACKUPS);
   // free the space used by anything that fell off the end
-  for (const old of next.slice(KEEP_BACKUPS)) await saveShared(backupKey(old.id), null);
+  for (const old of next.slice(KEEP_BACKUPS)) {
+    for (const sid of (old.storeIds || [])) await saveShared(backupStoreKey(sid, old.id), null);
+    await saveShared(backupMetaKey(old.id), null);
+  }
   await saveShared(BACKUP_INDEX_KEY, keep);
   return keep;
 }
@@ -8782,7 +8829,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
   }, []);
 
   // pull one of the automatic snapshots back out of the database
-  const fetchAuto = async (id) => await loadShared(backupKey(id), null);
+  const fetchAuto = async (entry) => await fetchBackup(entry);
 
   const [orphans, setOrphans] = useState(null);
 
@@ -8814,7 +8861,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
     // being reset to a blank default.
     let found = null;
     for (const b of (autoList || [])) {
-      const snap = await fetchAuto(b.id);
+      const snap = await fetchBackupMeta(b);
       const s = snap?.config?.stores?.find((x) => x.id === o.id);
       if (s) { found = { store: s, standards: snap.config.standards?.[o.id], when: b.t }; break; }
     }
@@ -8855,7 +8902,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
 
   const downloadAuto = async (b) => {
     setBusy(true);
-    const data = await fetchAuto(b.id);
+    const data = await fetchAuto(b);
     setBusy(false);
     if (!data) { setMsg("That backup couldn't be read."); return; }
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -8877,7 +8924,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
       "Download a fresh backup first if you're unsure."
     )) return;
     setBusy(true);
-    const data = await fetchAuto(b.id);
+    const data = await fetchAuto(b);
     if (!data) { setBusy(false); setMsg("That backup couldn't be read."); return; }
     await onRestoreAll(data);
     setBusy(false);
