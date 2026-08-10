@@ -377,7 +377,7 @@ const PIX = {
   clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
   phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
   globe:    ["001111100","011000110","110101011","101010101","111111111","101010101","110101011","011000110","001111100"],
-  search:   ["001111000","011111100","110000110","110000110","011111100","001111100","000011110","000001110","000000110"],
+  search:   ["011110000","111111000","110011000","110011000","111111000","011110000","000011100","000001110","000000111"],
   plus:     ["000000000","000010000","000010000","000010000","011111110","000010000","000010000","000010000","000000000"],
   trophy:   ["011111110","011111110","110111011","110111011","011111110","000111000","000111000","001111100","011111110"],
   flame:    ["000010000","000110000","001110000","001111000","011011100","110001110","110000110","011001100","001111000"],
@@ -9153,7 +9153,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 function AssocSearch({ value, onChange, store }) {
   return (
     <div className="search-wrap search-top">
-      <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
+      <span className="search-icon"><PixIcon glyph="search" size={16} fine /></span>
       <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
         placeholder="Search associates" />
       {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
@@ -9584,7 +9584,7 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
         <span className="stat-dim">● {counts.off} off leads</span>
       </div>
       <div className="search-wrap">
-        <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
+        <span className="search-icon"><PixIcon glyph="search" size={16} fine /></span>
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search across all my stores" />
         {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
@@ -15305,8 +15305,10 @@ function Style() {
       .search-top .search-input:focus { background:#fff; border-color:rgba(42,94,155,.35);
         box-shadow: 0 0 0 4px rgba(42,94,155,.14); }
       .seg-wrap { align-items:center; gap:16px; }
-      .search-icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--ink-2);
-        display:flex; align-items:center; pointer-events:none; opacity:.85; z-index:1; }
+      .search-icon { position:absolute; left:14px; top:0; bottom:0; color:var(--ink-2);
+        display:flex; align-items:center; justify-content:center; line-height:0;
+        pointer-events:none; opacity:.9; z-index:1; }
+      .search-icon .pix { display:block; }
       /* Centred wording, with the padding kept equal on both sides so the text sits
          on the true centre of the box rather than off the magnifier. */
       .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
