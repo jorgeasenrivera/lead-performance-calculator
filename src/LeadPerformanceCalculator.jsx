@@ -4973,10 +4973,17 @@ function QueueHero({ nextName, waitingNames, accent, kind, onAssign, assignDisab
    flipped a rep to "with customer" — on the floor, catching an up IS the opportunity. */
 function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"] }) {
   const act = useMemo(() => new Set(actions), [actions.join(",")]); // eslint-disable-line
+  // The stock number or lead name typed at hand-off is already on the history entry.
+  // Carrying it through means the tally answers "which ones?", not just "how many?".
   const rows = useMemo(() => {
-    const counts = {};
-    for (const e of history || []) if (act.has(e.action)) counts[e.id] = (counts[e.id] || 0) + 1;
-    return Object.entries(counts).map(([id, n]) => ({ id, n })).sort((a, b) => b.n - a.n || String(nameOf(a.id)).localeCompare(String(nameOf(b.id))));
+    const by = {};
+    for (const e of history || []) {
+      if (!act.has(e.action)) continue;
+      const b = by[e.id] || (by[e.id] = { id: e.id, n: 0, refs: [] });
+      b.n += 1;
+      b.refs.push({ ref: (e.ref || "").trim(), t: e.t || e.at || null, reason: e.reason || "" });
+    }
+    return Object.values(by).sort((a, b) => b.n - a.n || String(nameOf(a.id)).localeCompare(String(nameOf(b.id))));
   }, [history, act, nameOf]);
   const total = rows.reduce((s, r) => s + r.n, 0);
   const max = rows[0]?.n || 1;
@@ -4995,6 +5002,15 @@ function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"]
                   {i === 0 && <span className="lb-crown" aria-hidden="true">▲</span>}
                   <span className="lb-n">{r.n}</span>
                 </div>
+                {r.refs.some((x) => x.ref) && (
+                  <div className="lb-refs">
+                    {r.refs.map((x, k) => (
+                      <span key={k} className="lb-ref" title={[x.reason ? "Skipped forward: " + x.reason : "", x.t ? new Date(x.t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""].filter(Boolean).join(" · ")}>
+                        {x.ref || "no reference"}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>}
@@ -8096,6 +8112,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     return Object.values(latest).filter((x) => x.day < day && !x.plate.checkedIn);
   })();
   const missingTags = new Set(missing.map((x) => x.plate.tag));
+  // Tags nobody is holding. A plate that is still out cannot go out again, so
+  // offering it would only produce the error message a moment later.
+  const outNow = new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
+  const freeTags = registry.map((r) => r.tag).filter((t) => !outNow.has(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   // Mark a prior day's plate returned from the missing banner, with the late return on the record.
   const markReturnedPrior = (d, id) => {
@@ -8135,14 +8155,33 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       </div>
       <div className="card">
         <div className="inline-form">
-          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag / plate #" onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 140 }} />
-          <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-            <option value="">Assign to</option>
-            {roster.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
-          </select>
+          {/* Still free text, so a brand new tag can always be typed. The list just
+              saves the typing when it is one already on the wall. */}
+          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag / plate #"
+            list="plate-free-tags" autoComplete="off"
+            onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 150 }} />
+          <datalist id="plate-free-tags">
+            {freeTags.map((t) => <option key={t} value={t} />)}
+          </datalist>
+          <input value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="Assign to"
+            list="plate-assignees" autoComplete="off"
+            onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 200 }} />
+          <datalist id="plate-assignees">
+            {roster.map((a) => <option key={a.id} value={a.name} />)}
+          </datalist>
           <button className="btn" onClick={addPlate}>Add plate</button>
         </div>
-        <p className="hint">The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late.</p>
+        {freeTags.length > 0 && (
+          <div className="plate-picks">
+            <span className="plate-picks-lbl">Not out right now</span>
+            {freeTags.slice(0, 18).map((t) => (
+              <button key={t} type="button" className={"plate-pick" + (tag === t ? " on" : "")}
+                onClick={() => setTag(t)}>{t}</button>
+            ))}
+            {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
+          </div>
+        )}
+        <p className="hint">The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.</p>
       </div>
       <div className="card">
         {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
@@ -8153,11 +8192,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                 <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
                   <td><b>{p.tag}</b></td>
                   <td>
-                    <select value={p.assignee || ""} onChange={(e) => setPlateAssignee(p.id, e.target.value)}>
-                      <option value="">Unassigned</option>
-                      {roster.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
-                      {p.assignee && !roster.some((a) => a.name === p.assignee) && <option value={p.assignee}>{p.assignee}</option>}
-                    </select>
+                    <input className="plate-assignee-in" defaultValue={p.assignee || ""} placeholder="Unassigned"
+                      list="plate-assignees" autoComplete="off"
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v !== (p.assignee || "")) setPlateAssignee(p.id, v); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
                   </td>
                   <td>
                     {editingTime === p.id ? (
@@ -14513,6 +14551,16 @@ function Style() {
         display:flex; align-items:center; pointer-events:none; opacity:.85; z-index:1; }
       /* Centred wording, with the padding kept equal on both sides so the text sits
          on the true centre of the box rather than off the magnifier. */
+      .plate-picks { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+      .plate-picks-lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+        color:var(--ink-3); margin-right:2px; }
+      .plate-pick { font-family:inherit; font-size:12.5px; font-weight:700; padding:5px 11px; border-radius:999px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(118,118,128,.08); color:var(--ink); cursor:pointer;
+        transition:background .15s, border-color .15s, transform .12s; }
+      .plate-pick:hover { background:rgba(42,94,155,.10); border-color:rgba(42,94,155,.3); transform:translateY(-1px); }
+      .plate-pick.on { background:var(--blue); border-color:var(--blue); color:#fff; }
+      .plate-assignee-in { width:100%; min-width:120px; padding:7px 10px; border-radius:9px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); font-family:inherit; font-size:13px; }
       .search-input { text-align:center; }
       .search-input::placeholder { text-align:center; }
       .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
@@ -15512,6 +15560,10 @@ function Style() {
 .qh-name{font-size:40px;font-weight:900;letter-spacing:-.02em;line-height:1.04;text-shadow:0 2px 12px rgba(0,0,0,.4);}
 .qh-empty{font-size:20px;opacity:.6;font-weight:700;}
 .qh-side{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 4px;}
+/* what each opportunity actually was, under the person who took it */
+.lb-refs{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 9px 34px;}
+.lb-ref{font-size:11px;font-weight:600;letter-spacing:.01em;padding:2px 8px;border-radius:999px;
+  background:rgba(16,32,52,.07);color:var(--ink-2);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis;}
 @media (max-width: 640px){
   .qh-stage{flex-wrap:wrap;}
   .qh-inner{padding-bottom:8px;}
