@@ -1273,6 +1273,14 @@ async function loadShared(key, fallback, throwOnError) {
 // The plate log is worked by several managers at once, so it has to be re-read
 // often. Pulling the whole store blob on a timer would be brutal, so this asks the
 // database for the two plate fields and nothing else.
+// When the row was last written, without pulling the row itself down. The store blob
+// is far too big to poll, but one timestamp is nothing.
+async function loadStoreStamp(key) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("app_data").select("updated_at").eq("key", key).maybeSingle();
+  if (error) throw error;
+  return data ? data.updated_at : null;
+}
 async function loadPlatesOnly(key) {
   if (!supabase) return null;
   const { data, error } = await supabase.from("app_data")
@@ -1560,6 +1568,11 @@ export default function LeadPerformanceCalculator() {
   const [appModule, setAppModule] = useState("perf");
   const [view, setView] = useState("admin");
   const [storeData, setStoreData] = useState(null);
+  // What the server row said when this browser last read it. The email ingest writes
+  // straight to the database, so without this an open tab keeps showing the tool as
+  // it was when the store was opened and the auto-imports look like they never ran.
+  const storeStampRef = useRef(null);
+  const savingRef = useRef(false);
   const [storeLoadFailed, setStoreLoadFailed] = useState(false);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
@@ -1766,6 +1779,7 @@ export default function LeadPerformanceCalculator() {
       if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
       try {
         const d = await loadShared(storeKey(view), emptyStoreData(), true); // throw on a real load error
+        try { storeStampRef.current = await loadStoreStamp(storeKey(view)); } catch (e) { storeStampRef.current = null; }
         setStoreData(d); setStoreLoadFailed(false);
       } catch (e) {
         // A failed load must NOT masquerade as an empty store, or the next save wipes it.
@@ -1774,6 +1788,33 @@ export default function LeadPerformanceCalculator() {
       setTab("board");
     })();
   }, [view]); // eslint-disable-line
+
+  /* ---- Keep up with the email ingest ----
+     The worker imports on its own schedule and writes to the database directly. A tab
+     that has been open since this morning would otherwise show neither the numbers nor
+     the upload history from any of it. Poll the row's timestamp, and only when it has
+     actually moved pull the row down. */
+  useEffect(() => {
+    if (!config || !session || view === "admin" || view === "combined") return;
+    let dead = false;
+    const pull = async () => {
+      if (dead || savingRef.current || document.hidden) return;
+      try {
+        const stamp = await loadStoreStamp(storeKey(view));
+        if (!stamp || dead || stamp === storeStampRef.current) return;
+        const fresh = await loadShared(storeKey(view), null, true);
+        if (!fresh || dead || savingRef.current) return;
+        storeStampRef.current = stamp;
+        setStoreData(fresh);
+        setAdminData((p) => (p[view] ? { ...p, [view]: fresh } : p));
+      } catch (e) { /* a blip: the next tick tries again */ }
+    };
+    const t = setInterval(pull, 60000);
+    const onShow = () => { if (!document.hidden) pull(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [view, config, session]); // eslint-disable-line
 
   const persistConfig = async (next, audit) => {
     setConfig(next); setSaving(true);
@@ -1839,10 +1880,10 @@ export default function LeadPerformanceCalculator() {
         }
       }
     } catch (e) { /* if the re-read fails, just save what we have */ }
-    setStoreData(next); setSaving(true);
+    setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
     const ok = await saveShared(storeKey(storeId), next);
-    setSaving(false);
+    setSaving(false); savingRef.current = false;
     if (!ok) {
       alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a database write-permission (RLS) problem or a dropped connection.\n\nExact error from the database:\n" + (lastSaveError || "unknown") + "\n\nPlease send this exact message to your admin.");
       return;
@@ -1850,6 +1891,7 @@ export default function LeadPerformanceCalculator() {
     // Refresh the TV row so every casted screen picks this up on its next poll.
     // Failing this must never fail the save, so it is deliberately swallowed.
     if (config) publishBoard(config, storeId, next);
+    try { storeStampRef.current = await loadStoreStamp(storeKey(storeId)); } catch (e) {}
     if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
   };
 
