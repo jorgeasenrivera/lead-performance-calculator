@@ -3729,7 +3729,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
           <h2 className="bl-title">{s.name}</h2>
           <p className="hint">The Board opened in its own window, sized for a TV or big screen. It refreshes on its own every 30 seconds.</p>
           <button className="btn" onClick={() => onLaunch(s.id)}>Open it again</button>
-          <CastLink storeId={s.id} />
+          <CastLink storeId={s.id} config={config} />
           <button className="btn-link" onClick={onBack}>← Back to start</button>
         </div>
       </div>
@@ -3754,7 +3754,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
         })}
       </div>
       <div className="bl-cast">
-        {stores.map((s) => <CastLink key={s.id} storeId={s.id} label={s.name} />)}
+        {stores.map((s) => <CastLink key={s.id} storeId={s.id} label={s.name} config={config} />)}
       </div>
       <button className="btn-link" onClick={onBack}>← Back to start</button>
     </div>
@@ -3763,17 +3763,32 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
 
 // The address a TV is pointed at. Copy it once, set it as the screen's start page,
 // and nobody has to touch it again.
-function CastLink({ storeId, label }) {
+function CastLink({ storeId, label, config }) {
   const [said, setSaid] = useState(false);
+  const [pub, setPub] = useState(null);   // null | "working" | {ok, err}
   const url = boardTvUrl(storeId);
+  const publish = async () => {
+    setPub("working");
+    const r = await publishBoardNow(config, storeId);
+    setPub(r);
+    if (r.ok) setTimeout(() => setPub(null), 4000);
+  };
   return (
-    <button className="btn-link cast-link" title={url}
-      onClick={() => {
-        navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
-          () => window.prompt("Copy this address into the TV's browser:", url));
-      }}>
-      {said ? "Copied" : (label ? "Copy TV link for " + label : "Copy the TV link")}
-    </button>
+    <span className="cast-wrap">
+      <button className="btn-link cast-link" title={url}
+        onClick={() => {
+          navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
+            () => window.prompt("Copy this address into the TV's browser:", url));
+        }}>
+        {said ? "Copied" : (label ? "Copy TV link for " + label : "Copy the TV link")}
+      </button>
+      <button className="btn-link cast-link" onClick={publish} disabled={pub === "working"}>
+        {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : "Publish to TVs")}
+      </button>
+      {pub && pub !== "working" && !pub.ok && (
+        <span className="cast-err">Could not publish: {pub.err}. The TVs cannot show anything until this is fixed.</span>
+      )}
+    </span>
   );
 }
 
@@ -3820,9 +3835,26 @@ function buildBoardPayload(config, storeId, sdata) {
 }
 
 // Publish the TV row. Called after every save so a casted screen never goes stale.
+// A failure here must never fail the save, but it must not vanish either: a board
+// row that never got written looks exactly like a board that was never opened.
 async function publishBoard(config, storeId, sdata) {
-  try { return await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata)); }
-  catch (e) { return false; }
+  try {
+    const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
+    if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
+    return { ok, err: ok ? null : (lastSaveError || "unknown") };
+  } catch (e) {
+    console.error("board publish failed", boardKey(storeId), e);
+    return { ok: false, err: (e && (e.message || e.code)) || String(e) };
+  }
+}
+
+// Publish on demand, loading the store's own data first. Used by the Publish button
+// so a TV can be brought to life without opening the board window at all.
+async function publishBoardNow(config, storeId) {
+  let sdata = null;
+  try { sdata = await loadShared(storeKey(storeId), null, true); }
+  catch (e) { return { ok: false, err: "Could not read this store's data: " + ((e && (e.message || e.code)) || String(e)) }; }
+  return publishBoard(config, storeId, sdata || {});
 }
 
 // Opens a standalone, auto-refreshing leaderboard in a new window sized for a TV.
@@ -3834,7 +3866,11 @@ async function openLeaderboard(config, storeId) {
   let sdata = null;
   try { sdata = await loadShared(storeKey(storeId)); } catch (e) {}
   const board = buildBoardPayload(config, storeId, sdata || {});
-  await publishBoard(config, storeId, sdata || {});
+  const pub = await publishBoard(config, storeId, sdata || {});
+  if (!pub.ok) {
+    alert("This board opened here, but it could NOT be published for the TVs.\n\nExact error from the database:\n" + pub.err
+      + "\n\nA casted screen will keep saying no board has been published until this is fixed. It is almost always a write-permission (RLS) rule on lpc:board keys.");
+  }
   const payload = {
     ...board,
     storeKey: boardKey(storeId),
@@ -3894,7 +3930,7 @@ function BoardScreen({ storeId }) {
         const row = await loadShared(boardKey(storeId), null, true);
         if (dead) return;
         if (!row) {
-          setMsg("No board has been published for this store yet. Open The Board once from the tool and this screen will fill in.");
+          setMsg("Nothing to read for this store yet. Either the board has not been published from the tool, or this screen is not allowed to read it. In the tool, open The Board and use Publish to TVs, which will name the exact problem.");
           return;
         }
         done = true;
@@ -14477,6 +14513,8 @@ function Style() {
       .cell-need { color:var(--ink-3); font-weight:500; font-size:11px; }
       .bl-cast { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:14px 0 4px; }
       .cast-link { font-size:13px; }
+      .cast-wrap { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
+      .cast-err { color:var(--red); font-size:12px; max-width:520px; }
       .co-tasks { white-space:nowrap; }
       .co-nodata { opacity:.5; }
       .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
