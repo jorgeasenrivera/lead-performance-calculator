@@ -4940,7 +4940,7 @@ function AvatarStack({ names, max = 5, accent = "#4c8bf5" }) {
 }
 
 /* ---- manager "next up" hero + who's-here avatar stack (both boards) ---- */
-function QueueHero({ nextName, waitingNames, accent, kind }) {
+function QueueHero({ nextName, waitingNames, accent, kind, onAssign, assignDisabled, assignBusy }) {
   return (
     <div className="qh">
       <div className="qh-stage">
@@ -4949,6 +4949,14 @@ function QueueHero({ nextName, waitingNames, accent, kind }) {
           <div className="qh-kicker">Next up</div>
           <div className={"qh-name" + (nextName ? "" : " qh-empty")}>{nextName || "Nobody available"}</div>
         </div>
+        {/* The button belongs beside the name it hands the customer to, not tucked in
+            a row of small utilities at the top of the page. */}
+        {onAssign && (
+          <button className="qh-assign" disabled={assignDisabled} onClick={onAssign}>
+            <span className="qh-assign-lbl">{assignBusy ? "Assigning" : "Assign " + (nextName ? nextName.split(" ")[0] : "next")}</span>
+            <PixIcon glyph="arrow" size={15} className="qh-assign-ico" />
+          </button>
+        )}
       </div>
       {waitingNames.length > 0 && (
         <div className="qh-side">
@@ -5415,7 +5423,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
-          <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
         </div>
       </div>
 
@@ -5425,7 +5432,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       <QueueHero
         nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
         waitingNames={line.map((p) => realName(p.id))}
-        accent={variant.accent} kind="line" />
+        accent={variant.accent} kind="line"
+        onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
 
@@ -6390,7 +6398,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
-          <button className="btn btn-primary q-assign-btn" disabled={busy || availCount === 0} onClick={assignNext}>Assign next →</button>
         </div>
       </div>
 
@@ -6408,7 +6415,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
       <QueueHero
         nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
         waitingNames={line.map((p) => realName(p.id))}
-        accent="#0FB37E" kind="floor" />
+        accent="#0FB37E" kind="floor"
+        onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
 
       <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
 
@@ -15481,10 +15489,34 @@ function Style() {
 .qh-stage{position:relative;flex:1;min-width:220px;min-height:120px;border-radius:18px;overflow:hidden;
   background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;}
 .qh-inner{position:relative;z-index:1;padding:22px 26px;}
+/* The hand-off action, sitting on the same card as the name it hands over. Large
+   target, right-hand side, out of the way of the text at every width. */
+.qh-assign{position:relative;z-index:2;margin:0 26px 0 auto;flex:0 0 auto;cursor:pointer;
+  display:inline-flex;align-items:center;gap:10px;padding:15px 22px;border:0;border-radius:999px;
+  font-family:inherit;font-size:15px;font-weight:700;letter-spacing:-.01em;color:#fff;
+  background:linear-gradient(100deg,var(--a1,#4c8bf5),var(--a2,#7b5cf0));
+  box-shadow:0 14px 30px -14px var(--glow,rgba(76,139,245,.7)),inset 0 1px 0 rgba(255,255,255,.28);
+  overflow:hidden;transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .25s,filter .2s;}
+.qh-assign::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);
+  transform:translateX(-130%);transition:transform .6s cubic-bezier(.2,.8,.2,1);}
+.qh-assign:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.05);
+  box-shadow:0 20px 38px -14px var(--glow,rgba(76,139,245,.75)),inset 0 1px 0 rgba(255,255,255,.3);}
+.qh-assign:hover:not(:disabled)::after{transform:translateX(130%);}
+.qh-assign:active:not(:disabled){transform:translateY(0) scale(.985);}
+.qh-assign-ico{transition:transform .25s cubic-bezier(.2,.8,.2,1);}
+.qh-assign:hover:not(:disabled) .qh-assign-ico{transform:translateX(4px);}
+.qh-assign:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;filter:saturate(.5);}
+.qh-assign-lbl{position:relative;z-index:1;}
 .qh-kicker{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.75;margin-bottom:2px;}
 .qh-name{font-size:40px;font-weight:900;letter-spacing:-.02em;line-height:1.04;text-shadow:0 2px 12px rgba(0,0,0,.4);}
 .qh-empty{font-size:20px;opacity:.6;font-weight:700;}
 .qh-side{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 4px;}
+@media (max-width: 640px){
+  .qh-stage{flex-wrap:wrap;}
+  .qh-inner{padding-bottom:8px;}
+  .qh-assign{margin:0 22px 20px 22px;width:calc(100% - 44px);justify-content:center;}
+}
 .qh-side-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;opacity:.7;text-transform:uppercase;}
 .av-stack{display:flex;}
 .av-chip{width:38px;height:38px;border-radius:50%;margin-left:-10px;border:2px solid var(--card,#121a2b);
