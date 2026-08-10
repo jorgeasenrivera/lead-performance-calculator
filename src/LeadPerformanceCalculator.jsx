@@ -345,6 +345,19 @@ const PIX = {
   warn:     ["000010000","000111000","001101100","011101110","011101110","111111111","111101111","111111111","000000000"],
   car:      ["000000000","000000000","000111100","001111110","011111111","111111111","111111111","011000110","000000000"],
 };
+/* The same marks on a coarse grid. A 9x9 check at the size it renders beside a
+   percentage puts every dot under a pixel or two on a TV, which reads as fuzz. Five
+   fat dots hold their shape at any distance. Cars stay on the 9x9 grid: they are
+   drawn large enough for the detail to survive. */
+const PIX5 = {
+  check:    ["00000","00001","00010","10100","01000"],
+  close:    ["10001","01010","00100","01010","10001"],
+  warn:     ["00100","00100","01110","01110","11111"],
+  triup:    ["00100","01110","11111","00000","00000"],
+  tridown:  ["00000","00000","11111","01110","00100"],
+  dot:      ["00000","00100","01110","00100","00000"],
+};
+
 function PixIcon({ glyph, size = 20, className, style, title }) {
   const rows = PIX[glyph] || PIX.dot;
   const n = rows.length;
@@ -2845,8 +2858,8 @@ function LEADERBOARD_HTML(p) {
   .pill.y { background:var(--yellowbg); color:var(--yellow); }
   .pill.r { background:var(--redbg); color:var(--red); }
   .pill.dim { background:rgba(255,255,255,.07); color:#6E93BC; }
-  .pill-mark { display:inline-flex; align-items:center; margin-right:.3vw; opacity:.95;
-    font-size:calc(var(--rowfs) * .85); }
+  .pill-mark { display:inline-flex; align-items:center; margin-right:.35vw; opacity:1;
+    font-size:calc(var(--rowfs) * 1.05); }
   /* Every dot glyph is one em square and inherits the colour of the text around it,
      so a mark, an arrow and a car all scale with the row rather than fighting it. */
   .pix9 { width:1em; height:1em; display:inline-block; vertical-align:-.1em; fill:currentColor; }
@@ -2857,7 +2870,7 @@ function LEADERBOARD_HTML(p) {
     width:3.6vw; min-width:3.6vw; flex:0 0 3.6vw; justify-content:flex-start; }
   .lb .pcell { text-align:center; }
   .lb .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
-  .trend { font-size:calc(var(--rowfs) * .78); }
+  .trend { font-size:calc(var(--rowfs) * 1.0); display:inline-flex; align-items:center; }
   .delta { font-size:calc(var(--rowfs) * .72); font-weight:700; font-variant-numeric:tabular-nums; }
   .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#5C7F9F; }
 
@@ -2897,7 +2910,7 @@ function LEADERBOARD_HTML(p) {
     font-size:calc(var(--rowfs) * .96); }
   .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.35em; justify-content:flex-start; }
   .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .66); }
-  .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .72); }
+  .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .95); }
   .lb2 .sold2 { width:10%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
   .lb2 .sold2 .soldnum { display:inline-block; }
   .lb2 .carcell { width:26%; padding-left:.6vw; }
@@ -3032,20 +3045,26 @@ function LEADERBOARD_HTML(p) {
   var CFG = ${JSON.stringify(p)};
   // Same dot-matrix language as the rest of the tool. Drawn on a 9x9 grid at 1em so
   // every mark scales with the row text instead of being pinned to a pixel size.
-  var PIXG = ${JSON.stringify({ check: PIX.check, close: PIX.close, warn: PIX.warn, triup: PIX.triup, tridown: PIX.tridown, car: PIX.car, dot: PIX.dot })};
+  var PIXG = ${JSON.stringify({ car: PIX.car, dot: PIX.dot })};
+  // The small marks use the coarse grid so they stay crisp beside the numbers.
+  var PIX5 = ${JSON.stringify(PIX5)};
   function pix(g, cls, frac){
-    var rows = PIXG[g] || PIXG.dot, out = '';
-    for (var y = 0; y < rows.length; y++) {
-      var r = rows[y];
-      for (var x = 0; x < r.length; x++) {
-        if (r[x] !== '1') continue;
+    var rows = PIX5[g] || PIXG[g] || PIX5.dot, out = '';
+    var n = rows.length;
+    // Fatter dots on the coarse grid: fewer of them, so each one can carry more.
+    var r = n <= 5 ? 0.46 : 0.38;
+    for (var y = 0; y < n; y++) {
+      var row = rows[y];
+      for (var x = 0; x < row.length; x++) {
+        if (row[x] !== '1') continue;
         // frac fills the glyph left to right, which is how a half unit is drawn
-        var lit = (frac == null) || (((x + 0.5) / 9) <= frac);
-        out += '<circle cx="' + (x + 0.5) + '" cy="' + (y + 0.5) + '" r="0.36"'
+        var lit = (frac == null) || (((x + 0.5) / row.length) <= frac);
+        out += '<circle cx="' + (x + 0.5) + '" cy="' + (y + 0.5) + '" r="' + r + '"'
           + (lit ? '' : ' fill="rgba(255,255,255,.13)"') + '/>';
       }
     }
-    return '<svg class="pix9' + (cls ? ' ' + cls : '') + '" viewBox="0 0 9 9">' + out + '</svg>';
+    return '<svg class="pix9' + (cls ? ' ' + cls : '') + '" viewBox="0 0 ' + n + ' ' + n + '"'
+      + ' shape-rendering="geometricPrecision">' + out + '</svg>';
   }
   function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
   // No external library and no CDN. A TV on a dealership network may not be able to
