@@ -278,6 +278,33 @@ function workedAnyway(data, aId, d) {
   }
   return false;
 }
+/* Is there a schedule on file covering this person and this month? Without one
+   there is nothing to be absent from, and guessing would mark a new hire off on
+   their first week. */
+function isScheduled(data, aId, d) {
+  const list = data.daysOff?.[aId];
+  if (!Array.isArray(list) || !list.length) return false;
+  const mo = String(d).slice(0, 7);
+  return list.some((x) => String(x).slice(0, 7) === mo);
+}
+
+/* Did the activity report actually run for this day? If nothing landed at all,
+   silence proves nothing about any individual: it means the import is missing.
+   Every automatic decision below hangs on this. */
+function activityLandedOn(data, d) {
+  const rows = data.activity?.[d];
+  if (!rows) return false;
+  return Object.values(rows).some((r) => r && ((r.calls || 0) > 0 || (r.video || 0) > 0));
+}
+
+/* Scheduled to work, the report ran, and still no sign of them. */
+function looksAbsent(data, aId, d) {
+  if (!isScheduled(data, aId, d)) return false;
+  if (data.daysOff?.[aId]?.includes(d)) return false;   // already off
+  if (!activityLandedOn(data, d)) return false;
+  return !workedAnyway(data, aId, d);
+}
+
 function isOff(data, aId, d) {
   if (!(data.daysOff?.[aId] && data.daysOff[aId].includes(d))) return false;
   return !workedAnyway(data, aId, d);
@@ -378,11 +405,14 @@ const PIX5 = {
   dot:      ["00000","00000","00100","00000","00000"],
 };
 
-function PixIcon({ glyph, size = 20, className, style, title }) {
-  const rows = PIX[glyph] || PIX.dot;
+function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
+  // The marks that appear at text size come off the coarse grid, the same as The
+  // Board, so a tick beside a number is fat dots that hold their shape rather than
+  // twenty dots the size of a pixel. Pass fine to force the detailed grid.
+  const rows = (!fine && PIX5[glyph]) || PIX[glyph] || PIX.dot;
   const n = rows.length;
   const cell = size / n;
-  const r = +(cell * 0.40).toFixed(2);
+  const r = +(cell * (n <= 5 ? 0.46 : 0.40)).toFixed(2);
   const dots = [];
   for (let y = 0; y < n; y++) {
     const row = rows[y];
@@ -411,7 +441,7 @@ function StreakIcon({ data, a, std, min = 3 }) {
   return (
     <span className={"streak " + (up ? "streak-up" : "streak-down")}
       title={up ? `On a ${len}-day streak: calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
-      {up ? <PixIcon glyph="triup" size={12} /> : <PixIcon glyph="tridown" size={12} />}<span className="streak-n">{len}</span>
+      {up ? <PixIcon glyph="triup" size={13} /> : <PixIcon glyph="tridown" size={13} />}<span className="streak-n">{len}</span>
     </span>
   );
 }
@@ -1789,6 +1819,43 @@ export default function LeadPerformanceCalculator() {
     })();
   }, [view]); // eslint-disable-line
 
+  /* ---- Close out unanswered absences ----
+     A day that has ended with a scheduled person showing no calls, no videos and no
+     sign-in is an absence nobody got round to recording. Once the day is finished
+     there is nothing left to wait for, so it is applied. Three conditions keep this
+     honest: the day must be over, the schedule must have had them in, and the
+     activity report must have run that day, because a missing import would
+     otherwise mark the entire floor absent. Every one is written to the audit log
+     under Auto close-out, and any of them can be undone by hand. */
+  useEffect(() => {
+    if (!config || !session || !storeData || view === "admin" || view === "combined") return;
+    const t = today();
+    const days = Object.keys(storeData.activity || {})
+      .filter((d) => d < t && d.slice(0, 7) === ym())
+      .sort();
+    if (!days.length) return;
+    const roster = (storeData.roster || []).filter((a) => a.roleId);
+    const found = [];
+    for (const d of days) {
+      for (const a of roster) if (looksAbsent(storeData, a.id, d)) found.push({ id: a.id, name: a.name, d });
+    }
+    if (!found.length) return;
+    const next = JSON.parse(JSON.stringify(storeData));
+    next.daysOff = next.daysOff || {};
+    next.daysOffAt = next.daysOffAt || {};
+    const stamp = new Date().toISOString();
+    for (const f of found) {
+      const set = new Set(next.daysOff[f.id] || []);
+      set.add(f.d);
+      next.daysOff[f.id] = [...set].sort();
+      next.daysOffAt[f.id] = stamp;
+    }
+    const detail = found.length <= 6
+      ? found.map((f) => `${f.name} ${f.d}`).join(", ")
+      : `${found.length} days across ${new Set(found.map((f) => f.id)).size} people`;
+    persistStore(view, next, { action: "Auto close-out: marked day off, no activity", detail });
+  }, [storeData, view, config, session]); // eslint-disable-line
+
   /* ---- Keep up with the email ingest ----
      The worker imports on its own schedule and writes to the database directly. A tab
      that has been open since this morning would otherwise show neither the numbers nor
@@ -2297,12 +2364,7 @@ export default function LeadPerformanceCalculator() {
     return (
       <Shell>
         <header className="topbar no-print">
-          <div className="brand">
-            <Logo size={36} />
-            <div>
-              <div className="brand-title">Lead Performance</div>
-              </div>
-          </div>
+          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} />
           <div className="topbar-right">
             <ToolSwitcher value="board" onChange={(mod) => {
               if (mod === "board") return;
@@ -2314,8 +2376,6 @@ export default function LeadPerformanceCalculator() {
               setAppModule(mod);
               setTab(mod === "activity" ? "checkout" : "board");
             }} />
-            <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
-            <button className="btn-quiet" onClick={signOut}>Sign out</button>
           </div>
         </header>
         <div className="page">
@@ -2391,12 +2451,7 @@ export default function LeadPerformanceCalculator() {
   return (
     <Shell>
       <header className="topbar no-print">
-        <div className="brand">
-          <Logo size={36} />
-          <div>
-            <div className="brand-title">Lead Performance</div>
-          </div>
-        </div>
+        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} />
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
 
@@ -2429,8 +2484,6 @@ export default function LeadPerformanceCalculator() {
             );
           })()}
 
-          <span className="whoami">{session.name}{isOverseer && <span className="role-tag">BDC Oversight</span>}</span>
-          <button className="btn-quiet" onClick={signOut}>Sign out</button>
         </div>
         {navItems && (
           <button className="hamburger no-print" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
@@ -3665,16 +3718,24 @@ function LEADERBOARD_HTML(p) {
       return;                                        // skip this render entirely
     }
     var wsold = (LAST && !LAST.__err && s && !s.__err) ? newlySold(LAST, s) : [];
-    if (s && s.boardDisplay && !s.__err) {
-      // only adopt saved settings on the first load, so a live adjustment is not
-      // stamped over every fifteen minutes
-      if (!LAST) {
-        DISP.tscale = s.boardDisplay.tscale || 1;
-        DISP.style = s.boardDisplay.style || DISP.style;
-        DISP.bg = s.boardDisplay.bg || DISP.bg;
-        DISP.squeeze = s.boardDisplay.squeeze || 1;
-        DISP.pad = s.boardDisplay.pad || 0;
-      }
+    if (!LAST) {
+      // First load only, so a live adjustment is never stamped over on refresh.
+      // The store's published setting is the starting point; anything set on this
+      // particular screen wins over it, because somebody stood in front of this
+      // television and decided the text was the wrong size for this room.
+      var d = (s && !s.__err && s.boardDisplay) ? s.boardDisplay : {};
+      var mine = {};
+      try { mine = JSON.parse(localStorage.getItem(DKEY) || '{}') || {}; } catch (e) {}
+      var pick = function(k, dflt){
+        if (mine[k] != null) return mine[k];
+        if (d[k] != null) return d[k];
+        return dflt;
+      };
+      DISP.tscale  = pick('tscale', 1);
+      DISP.style   = pick('style', DISP.style);
+      DISP.bg      = pick('bg', DISP.bg);
+      DISP.squeeze = pick('squeeze', 1);
+      DISP.pad     = pick('pad', 0);
     }
     if (s && !s.__err) LAST = s;
     applyDisp();
@@ -3688,6 +3749,7 @@ function LEADERBOARD_HTML(p) {
   /* ---------- display tuning ---------- */
   // Read whatever was saved for this store, and let the person at the TV change it.
   var DISP = { tscale: 1, squeeze: 1, pad: 0, style: 'classic', bg: 'navy' };
+  var DKEY = 'lpc:disp:' + (CFG.storeId || 'board');
 
   function applyDisp(){
     var b = CFG.brand || {};
@@ -3751,12 +3813,16 @@ function LEADERBOARD_HTML(p) {
     document.getElementById('tsave').onclick = async function(){
       var msg = document.getElementById('tmsg');
       try {
+        // Always keep it on the screen itself first, so a reboot, a nightly
+        // reload or a new build cannot undo what someone set by hand.
+        var kept = false;
+        try { localStorage.setItem(DKEY, JSON.stringify(DISP)); kept = true; } catch (e) {}
         var op = window.opener || (window.parent !== window ? window.parent : null);
         if (op && op.__lpcSaveBoardDisplay) {
           var ok = await op.__lpcSaveBoardDisplay(CFG.storeId, DISP);
-          msg.textContent = ok ? 'Saved for this store.' : 'Could not save.';
+          msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
         } else {
-          msg.textContent = 'Keep the tool window open to save this.';
+          msg.textContent = kept ? 'Saved on this screen. Save from the tool to set it everywhere.' : 'Could not save.';
         }
       } catch (e) { msg.textContent = 'Could not save.'; }
       setTimeout(function(){ msg.textContent = ''; }, 4000);
@@ -4134,6 +4200,43 @@ function BoardScreen({ storeId }) {
         ? <iframe title="The Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
         : <div style={{ height: "100%", display: "grid", placeItems: "center", padding: "32px", textAlign: "center",
             color: "#CFE0F0", font: "500 20px/1.5 system-ui, -apple-system, sans-serif" }}>{msg}</div>}
+    </div>
+  );
+}
+
+/* The mark in the corner is the only thing that has to be in the top bar, so it
+   carries the account rather than spending width on a title nobody reads twice. */
+function BrandMenu({ session, isOverseer, isAdmin, onSignOut }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const initials = String(session?.name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  return (
+    <div className="brand" ref={ref}>
+      <button className={"brand-btn" + (open ? " on" : "")} onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu" aria-expanded={open} title={session?.name || "Account"}>
+        <Logo size={36} />
+      </button>
+      {open && (
+        <div className="brand-menu" role="menu">
+          <div className="bm-head">
+            <span className="bm-avatar">{initials}</span>
+            <span className="bm-who">
+              <b>{session?.name}</b>
+              <span className="bm-role">{isAdmin ? "Administrator" : isOverseer ? "BDC Oversight" : "Manager"}</span>
+            </span>
+          </div>
+          <div className="bm-app">Lead Performance</div>
+          <button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -6950,14 +7053,13 @@ function CheckOutTracker({ config, store, data, onChange }) {
       () => alert("Couldn't copy automatically. Your browser may be blocking clipboard access.")
     );
   };
-  // People scheduled on today with no sign of them at all, once the day is far
-  // enough along for that to mean something. Only ever a prompt.
+  // People the schedule says are working today, whose report has run, and who
+  // still have nothing at all against their name. Anyone with no schedule on file
+  // is left alone: there is nothing to be absent from.
   const noShowSuspects = (() => {
     if (day !== today()) return [];
     if (new Date().getHours() < 14) return [];
-    return roster
-      .filter((a) => !isOff(data, a.id, day) && !workedAnyway(data, a.id, day))
-      .map((a) => ({ a }));
+    return roster.filter((a) => looksAbsent(data, a.id, day)).map((a) => ({ a }));
   })();
   const monthDays = activityDays.filter((d) => d.startsWith(ym()));
 
@@ -7010,12 +7112,19 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
         <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
         <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
+        {/* Same position and shape as the search on Performance, rather than a
+            full-width box wedged between the stats and the table. */}
+        <div className="search-wrap search-top">
+          <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
+          <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search associates" />
+          {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
+        </div>
       </div>
       {noShowSuspects.length > 0 && (
         <div className="co-callout">
           <div className="co-callout-head">
             <b>Nothing logged today for {noShowSuspects.length === 1 ? noShowSuspects[0].a.name : noShowSuspects.length + " people"}</b>
-            <span className="hint">It is past 2pm and no calls, videos, texts, tasks or line sign-in have come through. That usually means they called out. Marking them off keeps the day from counting against them.</span>
+            <span className="hint">The schedule has them in today, the activity report has run, and there are no calls, videos or line sign-in against their name. That usually means they called out. Mark them off and the day stops counting against them; leave it and it will be closed out as a day off after midnight.</span>
           </div>
           <div className="co-callout-list">
             {noShowSuspects.map((r) => (
@@ -7027,15 +7136,10 @@ function CheckOutTracker({ config, store, data, onChange }) {
         </div>
       )}
       <div className="checkout-summary">
-        <span className="stat-pass">✓ {rockedCount} clean</span>
+        <span className="stat-pass"><PixIcon glyph="check" size={13} /> {rockedCount} clean</span>
         <span className="stat-fail">● {withData.length - rockedCount} with points</span>
         {todayOff > 0 && <span className="stat-dim">{todayOff} off today</span>}
         <span className="stat-dim">{withData.length} of {rows.length} with data</span>
-      </div>
-      <div className="search-wrap">
-        <span className="search-icon"><PixIcon glyph="search" size={15} /></span>
-        <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${store.name}`} />
-        {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
       <div className="checkout-split">
         <div className="card checkout-card">
@@ -7055,11 +7159,11 @@ function CheckOutTracker({ config, store, data, onChange }) {
                       <span className="co-off-tag co-worked" title="Scheduled off, but calls or videos were logged, so the day counts. Mark them off to override.">Off · worked</span>}
                   </td>
                   <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
-                    {r.hasData && <span className="cell-mark">{r.callsMet ? "\u2713" : "\u2717"}</span>}
+                    {r.hasData && <span className="cell-mark"><PixIcon glyph={r.callsMet ? "check" : "close"} size={13} /></span>}
                     {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
                   </td>
                   <td className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
-                    {r.hasData && <span className="cell-mark">{r.videoMet ? "\u2713" : "\u2717"}</span>}
+                    {r.hasData && <span className="cell-mark"><PixIcon glyph={r.videoMet ? "check" : "close"} size={13} /></span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
                   {/* Completed tasks so far today. There is no standard on it, so it is
@@ -7076,7 +7180,8 @@ function CheckOutTracker({ config, store, data, onChange }) {
                     <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : r.qual === "no" ? "no" : "")}
                       disabled={r.off} onClick={() => cycleQualified(norm(r.a.name))}
                       title="RockEd: tap to mark Qualified, tap again for Not qualified, again to clear.">
-                      {r.qual === "yes" ? "✓ Qualified" : r.qual === "no" ? "✗ Not yet" : "Mark"}
+                      {r.qual === "yes" ? <><PixIcon glyph="check" size={12} /> Qualified</>
+                        : r.qual === "no" ? <><PixIcon glyph="close" size={12} /> Not yet</> : "Mark"}
                     </button>
                   </td>
                   <td>
@@ -7086,7 +7191,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
                   </td>
                   <td>
                     <button className={"off-toggle " + (r.off ? "on" : "")} onClick={() => toggleOff(r.a)} title={r.off ? "Marked off. Click to clear." : "Mark this person off for the day."}>
-                      {r.off ? "✓ Off" : "Mark off"}
+                      {r.off ? <><PixIcon glyph="check" size={12} /> Off</> : "Mark off"}
                     </button>
                   </td>
                 </tr>
@@ -7632,7 +7737,11 @@ function parseHollerGrid(rows, roster, targetYear, targetMonth) {
   const unmatched = {};
   const markOff = (rawName, date) => {
     const rn = toRoster(rawName);
-    if (!rn) { unmatched[rawName.trim()] = (unmatched[rawName.trim()] || 0) + 1; return; }
+    if (!rn) {
+      const k = rawName.trim();
+      (unmatched[k] = unmatched[k] || new Set()).add(date);
+      return;
+    }
     (off[rn] = off[rn] || new Set()).add(date);
   };
 
@@ -7664,7 +7773,10 @@ function parseHollerGrid(rows, roster, targetYear, targetMonth) {
     const a = roster.find((x) => x.name === name);
     if (a) matched.push({ id: a.id, name, dates: days });
   }
-  return { matched, unmatched: Object.keys(unmatched), teams };
+  return { matched, unmatched: Object.keys(unmatched), teams,
+    unmatchedRows: Object.entries(unmatched)
+      .map(([name, set]) => ({ name, dates: [...set].filter((d) => d.startsWith(prefix)).sort() }))
+      .filter((u) => u.dates.length) };
 }
 
 // Classic-Mazda style: every cell is "Name Status" (e.g. "Mike OFF", "Carlos VAC",
@@ -7693,6 +7805,45 @@ function nameGridDate(raw) {
   return null;
 }
 
+/* Rank the roster against a name a sheet used, best guess first, and say WHY each
+   one is a candidate. The reason matters more than the ranking: with a Juan Pablo
+   Diaz and a Juan Ruiz lopez on the same roster, "shares a first name" is the
+   warning that this is exactly the pair a machine should not choose between. */
+function rankNameCandidates(raw, roster) {
+  const q = norm(raw);
+  const qTok = q.split(" ").filter(Boolean);
+  const dist = (a, b) => {
+    if (a === b) return 0;
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return dp[a.length][b.length];
+  };
+  const scored = [];
+  for (const a of roster) {
+    const n = norm(a.name);
+    const tok = n.split(" ").filter(Boolean);
+    let score = 0, why = "";
+    if (n === q) { score = 100; why = "exact"; }
+    else if (n.startsWith(q) || q.startsWith(n)) { score = 80; why = "starts the same"; }
+    else if (qTok[0] && tok[0] === qTok[0]) {
+      const sharers = roster.filter((x) => norm(x.name).split(" ")[0] === qTok[0]).length;
+      score = sharers > 1 ? 55 : 70;
+      why = sharers > 1 ? `careful: ${sharers} people share this first name` : "same first name";
+    } else if (qTok[0] && qTok[0].length >= 3 && tok.some((t) => t.startsWith(qTok[0]))) { score = 50; why = "name is a shortening"; }
+    else {
+      const d = dist(q, n);
+      if (d <= 2) { score = 45 - d * 5; why = "spelled almost the same"; }
+      else if (tok[0] && qTok[0] && dist(tok[0], qTok[0]) <= 1) { score = 35; why = "first name is one letter off"; }
+      else score = 1;
+    }
+    scored.push({ a, score, why });
+  }
+  return scored.sort((x, y) => y.score - x.score || x.a.name.localeCompare(y.a.name)).slice(0, 8);
+}
+
 function parseNameGrid(rows, roster, targetYear, targetMonth) {
   const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
   const toRoster = (raw) => {
@@ -7704,7 +7855,11 @@ function parseNameGrid(rows, roster, targetYear, targetMonth) {
   const off = {}; const unmatched = {};
   const markOff = (rawName, date) => {
     const rn = toRoster(rawName);
-    if (!rn) { const key = rawName.trim(); if (key) unmatched[key] = (unmatched[key] || 0) + 1; return; }
+    if (!rn) {
+      const key = rawName.trim();
+      if (key) (unmatched[key] = unmatched[key] || new Set()).add(date);
+      return;
+    }
     (off[rn] = off[rn] || new Set()).add(date);
   };
   // week-header rows are the ones where several cells read as real dates
@@ -7735,11 +7890,26 @@ function parseNameGrid(rows, roster, targetYear, targetMonth) {
     const a = roster.find((x) => x.name === name);
     if (a) matched.push({ id: a.id, name, dates: days });
   }
-  return { matched, unmatched: Object.keys(unmatched), teams: {} };
+  return { matched, unmatched: Object.keys(unmatched), teams: {},
+    unmatchedRows: Object.entries(unmatched)
+      .map(([name, set]) => ({ name, dates: [...set].filter((d) => d.startsWith(prefix)).sort() }))
+      .filter((u) => u.dates.length) };
 }
 
 function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
+  // Answers to "who is this?", keyed by the name the sheet used. Held here until
+  // Apply, so nothing is written to the roster on a file the manager rejects.
+  const [aliasPick, setAliasPick] = useState({});
+  // A name answered on an earlier upload is already known, so the row comes up
+  // pre-filled and the manager only confirms.
+  const knownAliasId = (raw) => {
+    const target = (data.aliases || {})[norm(raw)];
+    if (!target) return "";
+    const a = roster.find((x) => norm(x.name) === target);
+    return a ? a.id : "";
+  };
+  const pickFor = (raw) => (aliasPick[raw] !== undefined ? aliasPick[raw] : knownAliasId(raw));
   const [err, setErr] = useState("");
   const [sheetPick, setSheetPick] = useState(null); // { sheets:[names], rowsBySheet:{name:rows} } when an xlsx has many tabs
   const [busy, setBusy] = useState(false);
@@ -7912,13 +8082,29 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
     next.daysOff = next.daysOff || {};
     next.daysOffAt = next.daysOffAt || {};
     const stamp = new Date().toISOString();
-    for (const m of preview.matched) {
+    const toApply = preview.matched.map((m) => ({ ...m }));
+    // Answers given in the review rows: remember the nickname, then treat that
+    // person exactly as if the sheet had used their full name.
+    next.aliases = next.aliases || {};
+    let learned = 0;
+    for (const u of preview.unmatchedRows || []) {
+      const id = pickFor(u.name);
+      if (!id) continue;
+      const a = roster.find((x) => x.id === id);
+      if (!a) continue;
+      next.aliases[norm(u.name)] = norm(a.name);
+      learned++;
+      toApply.push({ id: a.id, name: a.name, dates: u.dates });
+    }
+    for (const m of toApply) {
       const set = new Set(next.daysOff[m.id] || []);
       m.dates.forEach((d) => set.add(d));
       next.daysOff[m.id] = [...set].sort();
       next.daysOffAt[m.id] = stamp;
     }
-    onChange(next, { action: "Applied schedule", detail: `${store.name} · ${preview.total} off-days across ${preview.matched.filter((m) => m.dates.length).length} people` });
+    onChange(next, { action: "Applied schedule",
+      detail: `${store.name} · ${preview.total} off-days across ${preview.matched.filter((m) => m.dates.length).length} people`
+        + (learned ? ` · learned ${learned} name${learned === 1 ? "" : "s"}` : "") });
     onClose();
   };
 
@@ -7983,12 +8169,40 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
                   <span className="sched-dates">{m.dates.map((d) => new Date(d + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })).join(", ")}</span>
                 </div>
               ))}
-              {preview.unmatched.length > 0 && (
-                <p className="sched-err">Couldn't match to the roster, skipped: {preview.unmatched.join(", ")}. If one is a nickname, rename them on the Roster tab to match, then re-upload.</p>
+              {(preview.unmatchedRows || []).length > 0 && (
+                <div className="sched-ask">
+                  <div className="sched-ask-head">
+                    <b>Who are these?</b>
+                    <span className="hint">
+                      The sheet uses names the roster does not. Point each one at the right person and the answer is
+                      remembered, so the next upload places them without asking. Anything left as "not on the roster"
+                      is skipped, exactly as before.
+                    </span>
+                  </div>
+                  {(preview.unmatchedRows || []).map((u) => {
+                    const cands = rankNameCandidates(u.name, roster);
+                    return (
+                      <div key={u.name} className="sched-ask-row">
+                        <span className="sched-ask-name">
+                          <b>{u.name}</b>
+                          <span className="sched-dates">{u.dates.length} day{u.dates.length === 1 ? "" : "s"} off</span>
+                        </span>
+                        <select value={pickFor(u.name)} onChange={(e) => setAliasPick((p) => ({ ...p, [u.name]: e.target.value }))}>
+                          <option value="">Not on the roster, skip</option>
+                          {cands.map((c) => (
+                            <option key={c.a.id} value={c.a.id}>
+                              {c.a.name}{c.why ? ` — ${c.why}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
             <div className="sched-actions">
-              <button className="btn secondary" onClick={() => setPreview(null)}>Choose another file</button>
+              <button className="btn secondary" onClick={() => { setPreview(null); setAliasPick({}); }}>Choose another file</button>
               <button className="btn" onClick={apply}>Apply {preview.total} off-days</button>
             </div>
           </>
@@ -14570,6 +14784,26 @@ function Style() {
       .ac-prints li { list-style:disc; margin:1px 0; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
+      .brand { position:relative; }
+      .brand-btn { background:none; border:0; padding:0; cursor:pointer; border-radius:12px; line-height:0;
+        transition:transform .14s ease, box-shadow .18s ease; }
+      .brand-btn:hover { transform:translateY(-1px); }
+      .brand-btn.on { box-shadow:0 0 0 3px rgba(42,94,155,.28); }
+      .brand-menu { position:absolute; top:calc(100% + 10px); left:0; z-index:60; min-width:230px;
+        background:#fff; border:1px solid rgba(16,32,52,.10); border-radius:16px; padding:8px;
+        box-shadow:0 22px 48px -20px rgba(16,32,52,.42); }
+      .bm-head { display:flex; align-items:center; gap:11px; padding:10px 10px 12px; }
+      .bm-avatar { width:38px; height:38px; border-radius:999px; flex:0 0 auto; display:flex; align-items:center;
+        justify-content:center; font-weight:800; font-size:14px; letter-spacing:.02em; color:#fff;
+        background:linear-gradient(135deg,#2A5E9B,#5566F0); }
+      .bm-who { display:flex; flex-direction:column; gap:2px; min-width:0; }
+      .bm-who b { font-size:14px; }
+      .bm-role { font-size:11.5px; color:var(--ink-3); }
+      .bm-app { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+        padding:8px 10px; border-top:1px solid rgba(16,32,52,.08); }
+      .bm-item { display:block; width:100%; text-align:left; font-family:inherit; font-size:13.5px; font-weight:600;
+        padding:9px 10px; border:0; border-radius:10px; background:none; color:var(--ink); cursor:pointer; }
+      .bm-item:hover { background:rgba(42,94,155,.09); }
       .tool-row { display:inline-flex; align-items:stretch; gap:12px; flex-wrap:wrap; }
       .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
         border-radius:10px; padding:2px; }
@@ -14945,6 +15179,19 @@ function Style() {
       .checkout-table td:first-child { text-align:left; }
       .cell-g { color:#1E7A3C; font-weight:700; } .cell-r { color:#C13529; font-weight:700; }
       .cell-need { color:var(--ink-3); font-weight:500; font-size:11px; }
+      /* The dot marks are boxes, not glyphs, so they need centring against the
+         digits rather than resting on the baseline like the characters did. */
+      .checkout-table td { vertical-align:middle; }
+      .cell-mark { display:inline-flex; align-items:center; vertical-align:middle; margin-right:5px; line-height:0; }
+      .streak { display:inline-flex; align-items:center; gap:2px; vertical-align:middle; }
+      .sched-ask { margin-top:14px; padding:12px 14px; border-radius:14px; background:#FFF8E8; border:1px solid #F2DFAE; }
+      .sched-ask-head { display:flex; flex-direction:column; gap:3px; margin-bottom:10px; }
+      .sched-ask-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+        padding:7px 0; border-top:1px solid rgba(16,32,52,.07); }
+      .sched-ask-row:first-of-type { border-top:0; }
+      .sched-ask-name { display:flex; flex-direction:column; gap:1px; }
+      .sched-ask-row select { max-width:340px; }
+      .stat-pass, .co-qual, .co-offbtn { display:inline-flex; align-items:center; gap:5px; }
       .bl-cast { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:14px 0 4px; }
       .cast-link { font-size:13px; }
       .cast-wrap { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
