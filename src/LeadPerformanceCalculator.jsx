@@ -266,8 +266,11 @@ function offDaysFor(data, aId) {
 function workedAnyway(data, aId, d) {
   const a = (data.roster || []).find((x) => x.id === aId);
   if (!a) return false;
+  // Calls and videos only. Texts and emails fire from automated follow-up whether or
+  // not the person is in the building, and completed tasks can close the same way, so
+  // counting those would flag almost everybody as present on their day off.
   const rec = data.activity?.[d]?.[norm(a.name)];
-  if (rec && ((rec.calls || 0) > 0 || (rec.video || 0) > 0 || (rec.text || 0) > 0 || (rec.email || 0) > 0 || (rec.tasks || 0) > 0)) return true;
+  if (rec && ((rec.calls || 0) > 0 || (rec.video || 0) > 0)) return true;
   // signing into the line or the floor is the same evidence, just earlier in the day
   for (const key of ["queue", "queueOnline", "floor"]) {
     const row = data[key]?.[d];
@@ -7001,7 +7004,14 @@ function CheckOutTracker({ config, store, data, onChange }) {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
-                  <td><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />{r.off && <span className="co-off-tag">Off</span>}</td>
+                  <td><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
+                    {r.off && <span className="co-off-tag">Off</span>}
+                    {/* Scheduled off, but they made calls or sent videos. Say so, rather
+                        than quietly counting the day and leaving the manager to wonder
+                        why the schedule looks like it skipped them. */}
+                    {!r.off && (data.daysOff?.[r.a.id] || []).includes(day) &&
+                      <span className="co-off-tag co-worked" title="Scheduled off, but calls or videos were logged, so the day counts. Mark them off to override.">Off · worked</span>}
+                  </td>
                   <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark">{r.callsMet ? "\u2713" : "\u2717"}</span>}
                     {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
@@ -14613,6 +14623,7 @@ function Style() {
         display:flex; align-items:center; pointer-events:none; opacity:.85; z-index:1; }
       /* Centred wording, with the padding kept equal on both sides so the text sits
          on the true centre of the box rather than off the magnifier. */
+      .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
       .co-callout { background:#FFF8E8; border:1px solid #F2DFAE; border-radius:14px; padding:12px 16px; margin-bottom:12px; }
       .co-callout-head { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
       .co-callout-list { display:flex; flex-wrap:wrap; gap:7px; }
