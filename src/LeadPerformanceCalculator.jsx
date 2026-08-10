@@ -7244,147 +7244,189 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
    result is a real PNG on the clipboard. */
 function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName }) {
   const S = 2;                                  // draw at 2x for a crisp paste
-  const W = 1040;
-  const PAD = 34, COLGAP = 26;
+  const W = 1080;
+  const PAD = 40, COLGAP = 30;
   const colW = (W - PAD * 2 - COLGAP) / 2;
+  const HEAD = 104;                             // header band
+  const GAP = 26;                               // clear air under the band
+  const ROW = 32, CHIProw = 32;
 
-  // Measure first so the canvas is exactly as tall as the content.
-  const leftRows = flagged.length + (clean.length ? 1 : 0) + (off.length ? 1 : 0);
-  const hLeft = 120 + (flagged.length ? 34 + flagged.length * 30 : 0)
-    + (clean.length ? 34 + Math.ceil(clean.length / 3) * 30 : 0)
-    + (off.length ? 34 + Math.ceil(off.length / 3) * 30 : 0);
-  const hRight = 120 + (offenders.length ? offenders.slice(0, 14).length * 34 : 40);
-  const H = 118 + Math.max(hLeft, hRight) + PAD;
+  // The same two faces the rest of the tool uses: Space Grotesk for anything that
+  // is a name or a number, Geist for the quiet supporting text. Both are already
+  // loaded by the page, so the picture matches the screen it came from.
+  const DISPLAY = "'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const UI = "'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const INK = "#101820", INK2 = "#5A6472", INK3 = "#8A93A0";
+
+  // Measure before allocating, so nothing is clipped and no slab of white is left.
+  const cf = document.createElement("canvas").getContext("2d");
+  const wrapChips = (names, font, maxW) => {
+    cf.font = font;
+    let lines = 1, x = 0;
+    for (const nm of names) {
+      const w = cf.measureText(nm).width + 22;
+      if (x + w > maxW) { lines++; x = w + 7; } else x += w + 7;
+    }
+    return lines;
+  };
+  const chipFont = `700 13px ${UI}`;
+  const cleanLines = clean.length ? wrapChips(clean.map((r) => r.a.name), chipFont, colW) : 0;
+  const offLines = off.length ? wrapChips(off.map((r) => r.a.name), chipFont, colW) : 0;
+
+  const hLeft = 30
+    + (flagged.length ? 26 + flagged.length * ROW + 10 : 0)
+    + (clean.length ? 26 + cleanLines * CHIProw + 10 : 0)
+    + (off.length ? 26 + offLines * CHIProw + 10 : 0);
+  const shown = offenders.slice(0, 14);
+  const hRight = 34 + (shown.length ? shown.length * 34 : 30) + (offenders.length > 14 ? 26 : 0);
+  const body = Math.max(hLeft, hRight) + 18;
+  const H = HEAD + GAP + body + PAD;
 
   const cv = document.createElement("canvas");
   cv.width = W * S; cv.height = H * S;
   const c = cv.getContext("2d");
   c.scale(S, S);
-  const F = (w, sz) => `${w} ${sz}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+  c.textBaseline = "alphabetic";
   const round = (x, y, w, h, r) => {
     c.beginPath();
     c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
     c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
   };
+  const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
 
   c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
 
-  // header band in the store's colour
-  const g = c.createLinearGradient(0, 0, W, 96);
+  /* ---- header band ---- */
   const brand = (store.brand && store.brand.primary) || "#2A5E9B";
   const brand2 = (store.brand && store.brand.dark) || brand;
+  const g = c.createLinearGradient(0, 0, W, HEAD);
   g.addColorStop(0, brand); g.addColorStop(1, brand2);
-  c.fillStyle = g; c.fillRect(0, 0, W, 96);
-  c.fillStyle = "#FFFFFF"; c.font = F(800, 27);
-  c.fillText("Daily report", PAD, 44);
-  c.font = F(600, 15); c.globalAlpha = 0.92;
-  c.fillText(`${store.name} · ${dayLabel}`, PAD, 70);
+  c.fillStyle = g; c.fillRect(0, 0, W, HEAD);
+
+  c.fillStyle = "#FFFFFF"; c.font = `700 30px ${DISPLAY}`;
+  c.fillText("Daily report", PAD, 47);
+  c.font = `500 15px ${UI}`; c.globalAlpha = 0.9;
+  c.fillText(`${store.name} · ${dayLabel}`, PAD, 74);
   c.globalAlpha = 1;
 
-  // three tallies, top right
   const tallies = [[clean.length, "QUALIFIED"], [flagged.length, "WITH POINTS"], [off.length, "OFF"]];
-  let tx = W - PAD - tallies.length * 104 - (tallies.length - 1) * 8;
+  const tW = 108, tGap = 10;
+  let tx = W - PAD - (tallies.length * tW + (tallies.length - 1) * tGap);
   for (const [n, lbl] of tallies) {
-    c.fillStyle = "rgba(255,255,255,.18)"; round(tx, 22, 104, 54, 12); c.fill();
-    c.fillStyle = "#FFFFFF"; c.font = F(800, 24); c.textAlign = "center";
-    c.fillText(String(n), tx + 52, 48);
-    c.font = F(700, 9.5); c.globalAlpha = .9;
-    c.fillText(lbl, tx + 52, 66); c.globalAlpha = 1;
-    c.textAlign = "left"; tx += 112;
+    c.fillStyle = "rgba(255,255,255,.16)"; round(tx, 26, tW, 52, 13); c.fill();
+    c.textAlign = "center";
+    c.fillStyle = "#FFFFFF"; c.font = `700 24px ${DISPLAY}`;
+    c.fillText(String(n), tx + tW / 2, 53);
+    c.font = `600 9.5px ${UI}`; c.globalAlpha = .88;
+    c.fillText(lbl, tx + tW / 2, 69); c.globalAlpha = 1;
+    c.textAlign = "left"; tx += tW + tGap;
   }
 
-  // A streak is the one thing text cannot carry: a triangle and a number says
-  // "third day running" at a glance, which is the whole point of the picture.
-  const streakMark = (x, y, st) => {
+  /* ---- a streak: the one thing text cannot carry ---- */
+  const streakW = (st) => {
+    if (!st || !st.dir || st.len < 3) return 0;
+    cf.font = `700 12px ${DISPLAY}`;
+    return 11 + cf.measureText(String(st.len)).width + 8;
+  };
+  const streak = (x, baseline, st) => {
     if (!st || !st.dir || st.len < 3) return 0;
     const up = st.dir === "up";
-    c.fillStyle = up ? "#1B9E63" : "#D64532";
+    const col = up ? "#178A57" : "#D2402C";
+    const cy = baseline - 4;
+    c.fillStyle = col;
     c.beginPath();
-    if (up) { c.moveTo(x + 5, y - 8); c.lineTo(x + 10, y); c.lineTo(x, y); }
-    else { c.moveTo(x, y - 8); c.lineTo(x + 10, y - 8); c.lineTo(x + 5, y); }
+    if (up) { c.moveTo(x + 4.5, cy - 5); c.lineTo(x + 9, cy + 3); c.lineTo(x, cy + 3); }
+    else { c.moveTo(x, cy - 5); c.lineTo(x + 9, cy - 5); c.lineTo(x + 4.5, cy + 3); }
     c.closePath(); c.fill();
-    c.font = F(800, 11.5);
-    c.fillText(String(st.len), x + 13, y);
-    return 26;
+    c.font = `700 12px ${DISPLAY}`;
+    c.fillText(String(st.len), x + 12, baseline);
+    return streakW(st);
   };
 
-  let y = 118;
-  const colY = y;
-
-  // ---- left column: today ----
-  c.fillStyle = "#8A93A0"; c.font = F(800, 11);
-  c.fillText("TODAY", PAD, y); y += 26;
-
-  const block = (label) => { c.fillStyle = "#8A93A0"; c.font = F(800, 10.5); c.fillText(label.toUpperCase(), PAD, y); y += 22; };
-  const chipRow = (names, fill, ink) => {
-    let cx = PAD;
-    for (const nm of names) {
-      c.font = F(700, 12.5);
-      const w = c.measureText(nm).width + 20;
-      if (cx + w > PAD + colW) { cx = PAD; y += 30; }
-      c.fillStyle = fill; round(cx, y - 15, w, 24, 12); c.fill();
-      c.fillStyle = ink; c.fillText(nm, cx + 10, y + 1);
-      cx += w + 6;
-    }
-    y += 34;
+  /* ---- left column ---- */
+  let y = HEAD + GAP + 14;
+  const label = (t) => {
+    c.fillStyle = INK3; c.font = `600 10.5px ${UI}`;
+    c.save(); c.letterSpacing = "0.08em";
+    c.fillText(t.toUpperCase(), PAD, y); c.restore();
+    y += 24;
   };
 
+  label("Today");
+  y -= 6;
   if (flagged.length) {
-    block("Needs follow-up");
+    label("Needs follow-up");
     for (const r of flagged) {
-      c.fillStyle = "#111820"; c.font = F(800, 14);
-      c.fillText(r.a.name, PAD, y);
-      const nameW = c.measureText(r.a.name).width;
-      const used = streakMark(PAD + nameW + 8, y, streaks[r.a.id]);
-      c.fillStyle = "#8A93A0"; c.font = F(600, 12);
-      c.fillText(r.missed.map((m) => (m === "rocked" ? "RockEd" : m)).join(", "), PAD + nameW + 10 + used, y);
-      const pb = String(r.points);
-      c.fillStyle = r.points >= 3 ? "#FBE3DF" : r.points === 2 ? "#FCEFD9" : "#FBE3DF";
-      round(PAD + colW - 34, y - 15, 30, 22, 11); c.fill();
-      c.fillStyle = r.points >= 3 ? "#C0392B" : "#9C6412"; c.font = F(800, 12.5); c.textAlign = "center";
-      c.fillText(pb, PAD + colW - 19, y + 1); c.textAlign = "left";
-      y += 30;
+      const rowY = y + 4;
+      c.fillStyle = INK; c.font = `700 14.5px ${DISPLAY}`;
+      c.fillText(r.a.name, PAD, rowY);
+      let x = PAD + c.measureText(r.a.name).width + 9;
+      x += streak(x, rowY, streaks[r.a.id]);
+      c.fillStyle = INK3; c.font = `400 12.5px ${UI}`;
+      c.fillText(r.missed.map((m) => (m === "rocked" ? "RockEd" : cap(m))).join(", "), x, rowY);
+      const hot = r.points >= 3;
+      c.fillStyle = hot ? "#FCE6E2" : "#FDF1DC";
+      round(PAD + colW - 32, rowY - 14, 32, 21, 10.5); c.fill();
+      c.fillStyle = hot ? "#C0392B" : "#9A6410"; c.font = `700 12.5px ${DISPLAY}`;
+      c.textAlign = "center"; c.fillText(String(r.points), PAD + colW - 16, rowY + 1); c.textAlign = "left";
+      y += ROW;
     }
-    y += 4;
+    y += 10;
   }
-  if (clean.length) { block("Qualified"); chipRow(clean.map((r) => r.a.name), "#E4F4EA", "#177245"); }
-  if (off.length) { block("Off"); chipRow(off.map((r) => r.a.name), "#EEF1F4", "#6B7480"); }
+  const chips = (names, fill, ink) => {
+    let x = PAD;
+    c.font = chipFont;
+    for (const nm of names) {
+      const w = c.measureText(nm).width + 22;
+      if (x + w > PAD + colW) { x = PAD; y += CHIProw; }
+      c.fillStyle = fill; round(x, y - 15, w, 24, 12); c.fill();
+      c.fillStyle = ink; c.font = chipFont; c.fillText(nm, x + 11, y + 1);
+      x += w + 7;
+    }
+    y += CHIProw + 10;
+  };
+  if (clean.length) { label("Qualified"); y += 2; chips(clean.map((r) => r.a.name), "#E6F5EC", "#177245"); }
+  if (off.length) { label("Off"); y += 2; chips(off.map((r) => r.a.name), "#EFF2F5", "#69727E"); }
 
-  // ---- right column: month to date ----
+  /* ---- right column ---- */
   const rx = PAD + colW + COLGAP;
-  c.fillStyle = "#FAF7FA"; round(rx - 14, colY - 24, colW + 28, H - colY - PAD + 16, 16); c.fill();
-  let ry = colY;
-  c.fillStyle = "#8A93A0"; c.font = F(800, 11);
-  c.fillText("TOP OFFENDERS", rx, ry);
-  c.font = F(700, 10.5); c.fillStyle = "#A8B0BA";
-  c.fillText(`${monthName.toUpperCase()} TO DATE`, rx + c.measureText("TOP OFFENDERS").width + 34, ry);
-  ry += 28;
+  const panelTop = HEAD + GAP - 8;
+  c.fillStyle = "#F9F7FB";
+  round(rx - 16, panelTop, colW + 32, H - panelTop - PAD + 10, 18); c.fill();
 
-  if (!offenders.length) {
-    c.fillStyle = "#8A93A0"; c.font = F(600, 13);
+  let ry = panelTop + 32;
+  c.fillStyle = INK3; c.font = `600 10.5px ${UI}`;
+  c.fillText("TOP OFFENDERS", rx, ry);
+  const thw = c.measureText("TOP OFFENDERS").width;
+  c.fillStyle = "#AEB6C0";
+  c.fillText(`${monthName.toUpperCase()} TO DATE`, rx + thw + 14, ry);
+  ry += 30;
+
+  if (!shown.length) {
+    c.fillStyle = INK3; c.font = `400 13px ${UI}`;
     c.fillText("Nobody has a point this month. Worth saying out loud.", rx, ry);
   } else {
     let i = 1;
-    for (const r of offenders.slice(0, 14)) {
-      c.fillStyle = "#EDE9F5"; round(rx, ry - 15, 22, 22, 11); c.fill();
-      c.fillStyle = "#6B5BC0"; c.font = F(800, 11.5); c.textAlign = "center";
-      c.fillText(String(i), rx + 11, ry + 1); c.textAlign = "left";
-      c.fillStyle = "#111820"; c.font = F(800, 14);
-      c.fillText(r.a.name, rx + 32, ry + 1);
-      const nw = c.measureText(r.a.name).width;
-      streakMark(rx + 32 + nw + 8, ry + 1, streaks[r.a.id]);
-      c.fillStyle = "#8A93A0"; c.font = F(600, 11.5);
-      const dtxt = `${r.worked} day${r.worked === 1 ? "" : "s"}`;
+    for (const r of shown) {
+      c.fillStyle = "#EDE9F6"; round(rx, ry - 15, 23, 23, 11.5); c.fill();
+      c.fillStyle = "#6A5AC0"; c.font = `700 11.5px ${DISPLAY}`;
+      c.textAlign = "center"; c.fillText(String(i), rx + 11.5, ry + 1); c.textAlign = "left";
+
+      c.fillStyle = INK; c.font = `700 14.5px ${DISPLAY}`;
+      c.fillText(r.a.name, rx + 34, ry + 1);
+      streak(rx + 34 + c.measureText(r.a.name).width + 9, ry + 1, streaks[r.a.id]);
+
       c.textAlign = "right";
-      c.fillText(dtxt, rx + colW - 46, ry + 1);
-      c.fillStyle = "#C0392B"; c.font = F(800, 16);
-      c.fillText(String(r.points), rx + colW, ry + 1);
+      c.fillStyle = INK3; c.font = `400 12px ${UI}`;
+      c.fillText(`${r.worked} day${r.worked === 1 ? "" : "s"}`, rx + colW - 42, ry + 1);
+      c.fillStyle = "#C0392B"; c.font = `700 17px ${DISPLAY}`;
+      c.fillText(String(r.points), rx + colW, ry + 2);
       c.textAlign = "left";
       ry += 34; i++;
     }
     if (offenders.length > 14) {
-      c.fillStyle = "#A8B0BA"; c.font = F(600, 11.5);
-      c.fillText(`and ${offenders.length - 14} more`, rx + 32, ry + 2);
+      c.fillStyle = "#AEB6C0"; c.font = `400 12px ${UI}`;
+      c.fillText(`and ${offenders.length - 14} more`, rx + 34, ry + 4);
     }
   }
   return cv;
@@ -7413,9 +7455,25 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onC
 
   const build = () => drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName });
 
+  // Canvas silently substitutes a system face for a webfont that has not loaded,
+  // which is exactly how the first paste of the day ends up looking wrong.
+  const ready = async () => {
+    if (!document.fonts || !document.fonts.load) return;
+    try {
+      await Promise.all([
+        document.fonts.load("700 30px 'Space Grotesk'"),
+        document.fonts.load("700 15px 'Space Grotesk'"),
+        document.fonts.load("400 13px 'Geist'"),
+        document.fonts.load("600 11px 'Geist'"),
+      ]);
+      await document.fonts.ready;
+    } catch (e) { /* fall back to whatever is available */ }
+  };
+
   const copyImage = async () => {
     setImgState("working"); setImgErr("");
     try {
+      await ready();
       const cv = build();
       const blob = await new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error("could not render"))), "image/png"));
       // Safari and Firefox do not all allow an image on the clipboard. Falling back
@@ -7444,8 +7502,8 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onC
     setTimeout(() => URL.revokeObjectURL(url), 4000);
   };
 
-  const saveImage = () => {
-    try { build().toBlob((b) => b && download(b), "image/png"); }
+  const saveImage = async () => {
+    try { await ready(); build().toBlob((b) => b && download(b), "image/png"); }
     catch (e) { setImgErr("Could not build the image: " + String(e.message || e)); }
   };
 
