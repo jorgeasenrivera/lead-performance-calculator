@@ -259,8 +259,25 @@ function offDaysFor(data, aId) {
   const set = data.daysOff?.[aId];
   return set ? new Set(set) : new Set();
 }
+// Someone can only be counted absent while there is no sign of them. A person who
+// was scheduled off but is making calls, sending videos or standing in the line was
+// clearly here, and the schedule is simply out of date. Evidence wins over the plan,
+// and nothing is rewritten to make it so: the schedule stays as uploaded.
+function workedAnyway(data, aId, d) {
+  const a = (data.roster || []).find((x) => x.id === aId);
+  if (!a) return false;
+  const rec = data.activity?.[d]?.[norm(a.name)];
+  if (rec && ((rec.calls || 0) > 0 || (rec.video || 0) > 0 || (rec.text || 0) > 0 || (rec.email || 0) > 0 || (rec.tasks || 0) > 0)) return true;
+  // signing into the line or the floor is the same evidence, just earlier in the day
+  for (const key of ["queue", "queueOnline", "floor"]) {
+    const row = data[key]?.[d];
+    if (row && (row.line || []).some((p) => p.id === aId)) return true;
+  }
+  return false;
+}
 function isOff(data, aId, d) {
-  return !!(data.daysOff?.[aId] && data.daysOff[aId].includes(d));
+  if (!(data.daysOff?.[aId] && data.daysOff[aId].includes(d))) return false;
+  return !workedAnyway(data, aId, d);
 }
 // Points for one person on one day: one point per missed required item
 // (calls, videos, RockEd), each judged independently. 0-3. Days off and days with
@@ -1800,6 +1817,23 @@ export default function LeadPerformanceCalculator() {
         // Same protection for the plate log: a day another manager started while this
         // browser sat open is kept rather than dropped on save.
         next.plates = mergeField("plates");
+        // The schedule was the worst case of this. A browser that had been open since
+        // before an upload carried an empty daysOff, and saving anything at all wiped
+        // the month for everybody. Each person now carries the time their off-days
+        // were last written, and whichever side wrote last is the one kept.
+        {
+          const mine = { ...(next.daysOff || {}) };
+          const mineAt = { ...(next.daysOffAt || {}) };
+          const srv = serverCopy.daysOff || {};
+          const srvAt = serverCopy.daysOffAt || {};
+          for (const id of Object.keys(srv)) {
+            const theirs = srvAt[id] || "";
+            const ours = mineAt[id] || "";
+            if (!(id in mine) || theirs > ours) { mine[id] = srv[id]; mineAt[id] = theirs || ours; }
+          }
+          next.daysOff = mine;
+          next.daysOffAt = mineAt;
+        }
       }
     } catch (e) { /* if the re-read fails, just save what we have */ }
     setStoreData(next); setSaving(true);
@@ -1838,7 +1872,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
-      repeatFlags: data.repeatFlags, excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
+      repeatFlags: data.repeatFlags, excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -6839,6 +6873,7 @@ function CheckOutTracker({ config, store, data, onChange }) {
     const list = new Set(next.daysOff[a.id] || []);
     if (list.has(day)) list.delete(day); else list.add(day);
     next.daysOff[a.id] = [...list].sort();
+    next.daysOffAt = { ...(next.daysOffAt || {}), [a.id]: new Date().toISOString() };
     onChange(next, { action: list.has(day) ? "Marked day off" : "Cleared day off", detail: `${a.name} · ${day}` });
   };
 
@@ -6870,6 +6905,15 @@ function CheckOutTracker({ config, store, data, onChange }) {
       () => alert("Couldn't copy automatically. Your browser may be blocking clipboard access.")
     );
   };
+  // People scheduled on today with no sign of them at all, once the day is far
+  // enough along for that to mean something. Only ever a prompt.
+  const noShowSuspects = (() => {
+    if (day !== today()) return [];
+    if (new Date().getHours() < 14) return [];
+    return roster
+      .filter((a) => !isOff(data, a.id, day) && !workedAnyway(data, a.id, day))
+      .map((a) => ({ a }));
+  })();
   const monthDays = activityDays.filter((d) => d.startsWith(ym()));
 
   // Month-to-date points per person, for the Top Offenders panel.
@@ -6922,6 +6966,21 @@ function CheckOutTracker({ config, store, data, onChange }) {
         <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
         <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
       </div>
+      {noShowSuspects.length > 0 && (
+        <div className="co-callout">
+          <div className="co-callout-head">
+            <b>Nothing logged today for {noShowSuspects.length === 1 ? noShowSuspects[0].a.name : noShowSuspects.length + " people"}</b>
+            <span className="hint">It is past 2pm and no calls, videos, texts, tasks or line sign-in have come through. That usually means they called out. Marking them off keeps the day from counting against them.</span>
+          </div>
+          <div className="co-callout-list">
+            {noShowSuspects.map((r) => (
+              <button key={r.a.id} className="co-callout-btn" onClick={() => toggleOff(r.a)}>
+                Mark {r.a.name} off
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="checkout-summary">
         <span className="stat-pass">✓ {rockedCount} clean</span>
         <span className="stat-fail">● {withData.length - rockedCount} with points</span>
@@ -7799,10 +7858,13 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
     if (!preview) return;
     const next = JSON.parse(JSON.stringify(data));
     next.daysOff = next.daysOff || {};
+    next.daysOffAt = next.daysOffAt || {};
+    const stamp = new Date().toISOString();
     for (const m of preview.matched) {
       const set = new Set(next.daysOff[m.id] || []);
       m.dates.forEach((d) => set.add(d));
       next.daysOff[m.id] = [...set].sort();
+      next.daysOffAt[m.id] = stamp;
     }
     onChange(next, { action: "Applied schedule", detail: `${store.name} · ${preview.total} off-days across ${preview.matched.filter((m) => m.dates.length).length} people` });
     onClose();
@@ -14551,6 +14613,12 @@ function Style() {
         display:flex; align-items:center; pointer-events:none; opacity:.85; z-index:1; }
       /* Centred wording, with the padding kept equal on both sides so the text sits
          on the true centre of the box rather than off the magnifier. */
+      .co-callout { background:#FFF8E8; border:1px solid #F2DFAE; border-radius:14px; padding:12px 16px; margin-bottom:12px; }
+      .co-callout-head { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
+      .co-callout-list { display:flex; flex-wrap:wrap; gap:7px; }
+      .co-callout-btn { font-family:inherit; font-size:12.5px; font-weight:700; padding:6px 12px; border-radius:999px;
+        border:1px solid #E3C983; background:#fff; color:#8A6314; cursor:pointer; transition:background .15s, transform .12s; }
+      .co-callout-btn:hover { background:#FBEFD4; transform:translateY(-1px); }
       .plate-picks { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
       .plate-picks-lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
         color:var(--ink-3); margin-right:2px; }
