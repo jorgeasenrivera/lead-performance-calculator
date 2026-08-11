@@ -3920,7 +3920,7 @@ function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
     if (doneRef.current) return;
     doneRef.current = true;
     setExiting(true);
-    setTimeout(() => onDone.current(), 620);
+    setTimeout(() => onDone.current(), 950);   // must match the ldxOut duration
   }, []);
 
   useEffect(() => {
@@ -15139,9 +15139,19 @@ function Style() {
          frame of this and the first frame of the app are the same picture. */
       .ldx { position:fixed; inset:0; z-index:120; overflow:hidden;
         background:var(--bg); animation: ldxIn .45s var(--ease) both; }
-      .ldx.is-exiting { animation: ldxOut .6s var(--ease) forwards; }
+      .ldx.is-exiting { animation: ldxOut .95s cubic-bezier(.3,0,.2,1) forwards; }
+      /* the skeleton's own shapes step back a beat before the layer does, so the
+         real page appears to come forward rather than the overlay being pulled off */
+      .ldx.is-exiting .ldx-page { animation: ldxPageOut .55s var(--ease) forwards; }
+      .ldx.is-exiting .ldx-bloom { animation: ldxBloomOut .7s var(--ease) forwards; }
+      @keyframes ldxPageOut { to { opacity:0; transform:scale(1.012); } }
+      @keyframes ldxBloomOut { to { opacity:0; } }
       @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
-      @keyframes ldxOut { to { opacity:0; filter:blur(6px); } }
+      @keyframes ldxOut {
+        0%   { opacity:1; filter:blur(0); }
+        45%  { opacity:.55; filter:blur(1.5px); }
+        100% { opacity:0; filter:blur(4px); }
+      }
 
       /* The glow the mark throws as it opens: the page's own aurora, brought
          forward rather than invented for the occasion. */
@@ -15204,13 +15214,19 @@ function Style() {
       .ldx-pills, .ldx-queues { display:flex; gap:8px; align-items:center; }
       .ldx-pills { margin-left:auto; background:rgba(16,32,52,.05); border-radius:10px; padding:3px; }
       .ldx-bar > :last-child { margin-right:0; }
-      .ldx-pills i { width:74px; height:23px; border-radius:8px; background:rgba(16,32,52,.08); }
+      .ldx-pills i { height:28px; border-radius:8px; background:rgba(16,32,52,.08); }
+      .ldx-pills i:nth-child(1) { width:99px; background:#fff; }
+      .ldx-pills i:nth-child(2) { width:93px; }
+      .ldx-pills i:nth-child(3) { width:79px; }
       .ldx-pills i:first-child { background:#fff; }
-      .ldx-queues i { width:77px; height:24px; border-radius:999px; position:relative; overflow:hidden; }
+      .ldx-queues i { height:28px; border-radius:999px; position:relative; overflow:hidden; }
+      .ldx-queues i:nth-child(1) { width:103px; }
+      .ldx-queues i:nth-child(2) { width:94px; }
+      .ldx-queues i:nth-child(3) { width:84px; }
       .ldx-queues i:nth-child(1) { background:#10B981; }
       .ldx-queues i:nth-child(2) { background:#5566F0; }
       .ldx-queues i:nth-child(3) { background:#8B5CF6; }
-      .ldx-store { width:275px; height:32px; border-radius:10px; border:1px solid rgba(16,32,52,.14);
+      .ldx-store { width:274px; height:29px; border-radius:10px; border:1px solid rgba(16,32,52,.14);
         background:#fff; margin-left:12px; flex:0 0 auto; }
       @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
 
@@ -15223,13 +15239,13 @@ function Style() {
       .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
       .ldx-tabs { display:flex; align-items:center; gap:5px; padding:6px;
         background:rgba(16,32,52,.05); border-radius:14px; }
-      .ldx-tabs i { height:30px; border-radius:9px; background:transparent; }
+      .ldx-tabs i { height:36px; border-radius:9px; background:transparent; }
       .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:102px; }
-      .ldx-tabs i:nth-child(2) { width:98px; }
-      .ldx-tabs i:nth-child(3) { width:81px; }
-      .ldx-tabs i:nth-child(4) { width:68px; }
-      .ldx-tabs i:nth-child(5) { width:79px; }
-      .ldx-tabs i:nth-child(6) { width:64px; }
+      .ldx-tabs i:nth-child(2) { width:103px; }
+      .ldx-tabs i:nth-child(3) { width:96px; }
+      .ldx-tabs i:nth-child(4) { width:72px; }
+      .ldx-tabs i:nth-child(5) { width:94px; }
+      .ldx-tabs i:nth-child(6) { width:70px; }
       .ldx-search { width:301px; height:36px; border-radius:13px; background:rgba(16,32,52,.06); flex:0 0 auto; }
 
       .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
@@ -15248,8 +15264,8 @@ function Style() {
       .ldx-hero-right { display:flex; align-items:center; gap:21px; }
       .ldx-ring { width:98px; height:98px; flex:0 0 auto; }
       .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
-      .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:9; }
-      .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:9; stroke-linecap:round;
+      .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:7.5; }
+      .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:7.5; stroke-linecap:round;
         stroke-dasharray:264; stroke-dashoffset:264;
         animation: ldxRing 1.4s var(--ease) both; animation-delay:.9s; }
       @keyframes ldxRing { to { stroke-dashoffset:78; } }
