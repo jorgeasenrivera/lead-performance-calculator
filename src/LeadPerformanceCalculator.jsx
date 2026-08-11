@@ -3927,7 +3927,7 @@ function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
     bumpIntroCount();
     const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
     if (mq && mq.matches) { doneRef.current = true; onDone.current(); return; }
-    const t = setTimeout(finish, 3200);
+    const t = setTimeout(finish, 3550);
     return () => clearTimeout(t);
   }, [finish]);
 
@@ -14288,7 +14288,7 @@ function Style() {
       ::selection { background: rgba(42,94,155,.2); }
 
       /* ---- store hero (manager landing) ---- */
-      .hero { position:relative; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      .hero { position:relative; z-index:180; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
       .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
         padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
@@ -14349,11 +14349,11 @@ function Style() {
       .hh-meta b { color:#fff; font-family:var(--font-display); font-size:13px; }
       .hh-meta span { color:rgba(255,255,255,.5); }
       /* Closing rates on hover, same bloop as the dials. */
-      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:60;
+      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
         transition: opacity .16s ease, transform .38s var(--ease-bloop);
-        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
+        background:#FFFFFF; border:1px solid rgba(0,0,0,.07); border-radius:16px;
         padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3); }
       .hero-health:hover .health-pop { opacity:1; transform: translateY(0) scale(1); }
       .health-pop::after { content:""; position:absolute; right:42px; bottom:100%; width:12px; height:12px;
@@ -14377,7 +14377,7 @@ function Style() {
       .hh-row.dim { background:rgba(255,255,255,.12); }
 
       /* ---- the "why, and who" row ---- */
-      .hero-focus { position:relative; z-index:26; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
+      .hero-focus { position:relative; z-index:200; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
         animation: tileIn .5s var(--spring) .32s both; }
       .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
         padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
@@ -14408,14 +14408,14 @@ function Style() {
       .hf-tag.now { background:rgba(229,71,60,.14); color:#C13529; }
       .hf-tag.soon { background:rgba(255,159,10,.16); color:#95600A; }
       .hf-fix { position:relative; }
-      .hf-pop { position:absolute; left:0; top:calc(100% + 12px); width:300px; z-index:45;
+      .hf-pop { position:absolute; left:0; top:calc(100% + 12px); width:300px; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top left;
         transition: opacity .16s ease, transform .38s var(--ease-bloop);
-        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
+        background:#FFFFFF; border:1px solid rgba(0,0,0,.07); border-radius:16px;
         padding:14px 16px 13px; box-shadow: 0 16px 42px rgba(31,54,86,.26); }
       .hf-fix { position:relative; }
-      .hf-fix:hover, .hf-fix.popped { z-index:70; }
+      .hf-fix:hover, .hf-fix.popped { z-index:220; }
       .hf-fix:hover .hf-pop { opacity:1; transform: translateY(0) scale(1); }
 
       /* the card the manager was sent to, briefly haloed so they land on it */
@@ -15171,18 +15171,19 @@ function Style() {
         margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
         background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
           color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
-        animation: ldxBloom 3.2s cubic-bezier(.34,1.4,.64,1) both; }
+        animation: ldxBloom 3.4s cubic-bezier(.34,1.4,.64,1) both; }
       .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
           color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
-        animation-delay:.18s; animation-duration:3.5s; }
+        animation-delay:.1s; animation-duration:3.4s; }
       @keyframes ldxBloom {
         0%   { transform:scale(.02); opacity:0; }
-        12%  { opacity:1; }
-        66%  { transform:scale(.98); opacity:.95; }
-        /* swell, then pull in with the pill rather than fading out on its own */
-        76%  { transform:scale(1.06); opacity:1; }
-        90%  { transform:scale(.34); opacity:.55; }
-        100% { transform:scale(.12); opacity:0; }
+        10%  { opacity:1; }
+        56%  { transform:scale(.98); opacity:.95; }
+        /* swell, then pull in with the pill, finishing before the mark sets off */
+        62%  { transform:scale(1.06); opacity:1; }
+        70%  { transform:scale(.28); opacity:.4; }
+        74%  { transform:scale(.08); opacity:0; }
+        100% { transform:scale(.08); opacity:0; }
       }
 
       /* The mark travels to the exact spot it occupies in the header: 24px in from
@@ -15190,15 +15191,18 @@ function Style() {
          Transform only, so it moves smoothly. */
       .ldx-mark { position:fixed; left:0; top:0; z-index:4; width:72px; height:72px; transform-origin:0 0;
         filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--sp) 42%, transparent));
-        animation: ldxMark 2.9s var(--ease) both; }
+        animation: ldxMark 3.4s var(--ease) both; }
       /* With the origin at the top left, the centre hold needs the half-size offset
          written in, and the landing is simply the header's own coordinates: 30px in
          from the left, 12px down, at half of 72 to make 36. */
       @keyframes ldxMark {
-        0%   { transform:translate(calc(50vw - 18px), calc(42vh - 18px)) scale(.5); opacity:0; }
-        13%  { transform:translate(calc(50vw - 40px), calc(42vh - 40px)) scale(1.12); opacity:1; }
-        30%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
-        62%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
+        0%   { transform:translate(calc(50vw - 27px), calc(42vh - 18px)) scale(.5); opacity:0; }
+        9%   { transform:translate(calc(50vw - 49px), calc(42vh - 40px)) scale(1.12); opacity:1; }
+        20%  { transform:translate(calc(50vw - 45px), calc(42vh - 36px)) scale(1); opacity:1; }
+        /* holds while the name comes and goes, then leaves once the glow is gone */
+        74%  { transform:translate(calc(50vw - 45px), calc(42vh - 36px)) scale(1); opacity:1; }
+        94%  { transform:translate(17px, 9px) scale(.5); opacity:1;
+               filter:drop-shadow(0 0 0 transparent); }
         100% { transform:translate(17px, 9px) scale(.5); opacity:1;
                filter:drop-shadow(0 0 0 transparent); }
       }
@@ -15207,16 +15211,17 @@ function Style() {
         font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-.015em;
         box-shadow:0 16px 34px -16px rgba(16,32,52,.5), inset 0 1px 0 rgba(255,255,255,.22);
         transform-origin:50% 0;
-        animation: ldxPill 2.6s cubic-bezier(.34,1.56,.64,1) both; }
+        animation: ldxPill 3.4s cubic-bezier(.34,1.56,.64,1) both; }
       /* Drops in past its resting point, settles, then springs back up and out just
          before the mark leaves for the header. */
       @keyframes ldxPill {
         0%    { opacity:0; transform:translateY(-30px) scale(.86); }
-        12%   { opacity:1; transform:translateY(7px) scale(1.03); }
-        20%   { transform:translateY(0) scale(1); }
-        70%   { opacity:1; transform:translateY(0) scale(1); }
-        80%   { transform:translateY(5px) scale(1.02); }
-        100%  { opacity:0; transform:translateY(-34px) scale(.9); }
+        9%    { opacity:1; transform:translateY(7px) scale(1.03); }
+        16%   { transform:translateY(0) scale(1); }
+        56%   { opacity:1; transform:translateY(0) scale(1); }
+        61%   { transform:translateY(5px) scale(1.03); }
+        70%   { opacity:0; transform:translateY(-30px) scale(.88); }
+        100%  { opacity:0; transform:translateY(-30px) scale(.88); }
       }
 
       /* ---- the dashboard's own shapes ---- */
