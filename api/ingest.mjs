@@ -462,6 +462,43 @@ async function sbPut(key, value) {
   if (!r.ok) throw new Error(`supabase write ${r.status}: ${await r.text()}`);
 }
 
+/* Read, change, write, but only if nobody moved it underneath us.
+   The browsers now guard their saves with a revision number; this has to play the
+   same game or an import would quietly overwrite a manager's work, which is the
+   very failure this is meant to end. */
+async function sbSwap(key, apply, tries = 5) {
+  const { url, key: k } = SB();
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const cur = await sbGet(key);
+    if (!cur) return { ok: false, why: "row does not exist" };
+    const rev = Number(cur.rev) || 0;
+    const next = { ...apply(cur), rev: rev + 1 };
+    const q = `${url}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}&value->>rev=eq.${rev}`;
+    const r = await fetch(q, {
+      method: "PATCH",
+      headers: { apikey: k, Authorization: `Bearer ${k}`, "Content-Type": "application/json",
+        Prefer: "return=representation" },
+      body: JSON.stringify({ value: next }),
+    });
+    if (!r.ok) throw new Error(`supabase swap ${r.status}: ${await r.text()}`);
+    const rows = await r.json();
+    if (rows.length) return { ok: true, rev: next.rev, attempts: attempt + 1 };
+    await new Promise((res) => setTimeout(res, 120 * (attempt + 1)));
+  }
+  return { ok: false, why: "row kept changing under the import" };
+}
+
+/* ---------- split activity rows ----------
+   Activity is written one row per day so the hourly import stops competing with
+   managers for a single document. The import touches today only, so it writes one
+   small row instead of rewriting an entire store. The embedded copy is kept in step
+   as well, until every browser is reading split rows. */
+const actKey = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
+
+async function sbPutActivityDay(storeId, day, rows) {
+  await sbPut(actKey(storeId, day), rows);
+}
+
 /* ---------- the TV board row ----------
    The board on the wall reads its own sanitized row, and until now only a
    browser ever wrote it. That meant every screen sat on figures from the last
@@ -827,8 +864,32 @@ export default async function handler(req, res) {
       console.error("ingest:", why);
       return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
     }
-    const { next, results } = applyToStore(data, entries, "Auto-import (email)");
-    await sbPut(key, next);
+    // Apply inside the swap, so a retry re-applies to whatever the row now holds
+    // rather than replaying against the copy we first read.
+    let next = null, lastResults = [];
+    const swap = await sbSwap(key, (cur) => {
+      const out = applyToStore(cur, entries, "Auto-import (email)");
+      next = out.next; lastResults = out.results;
+      return out.next;
+    });
+    if (!swap.ok) {
+      const why = `could not write ${store.id}: ${swap.why}`;
+      console.error("ingest:", why);
+      return res.status(409).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
+    }
+
+    // The day rows the import just touched, each written on its own. A failure here
+    // is worth reporting but not worth failing the import: the same data is in the
+    // document that was just written successfully.
+    const dayWrites = [];
+    for (const r of results) {
+      if (r.type !== "activity" || !r.day) continue;
+      const rows = next && next.activity && next.activity[r.day];
+      if (!rows) continue;
+      try { await sbPutActivityDay(store.id, r.day, rows); dayWrites.push(r.day); }
+      catch (e) { console.error("ingest: day row write failed", store.id, r.day, String(e.message || e)); }
+    }
+    const results = lastResults;
 
     // Push the fresh figures to the wall. A board that cannot be refreshed must
     // not sink the import that already succeeded, so this is reported, not thrown.
@@ -848,7 +909,7 @@ export default async function handler(req, res) {
         store: store.id, results, board, failures, skippedFiles, pdfReads });
     }
 
-    return res.status(200).json({ ok: true, store: store.id, results, board, skippedFiles, pdfReads });
+    return res.status(200).json({ ok: true, store: store.id, results, board, dayWrites, skippedFiles, pdfReads });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: String(e.message || e) });
