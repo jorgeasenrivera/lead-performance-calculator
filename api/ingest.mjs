@@ -785,12 +785,18 @@ export default async function handler(req, res) {
           if (pairings) read.pairings = pairings.slice(0, 12);
           pdfReads.push(read);
         } else {
+          // Forty bare lines was not enough to work out what an unknown layout is:
+          // no column headings, no idea how many values a row carries, no sense of
+          // where anything sits. This dumps more of the page and keeps the x of each
+          // fragment, which is what tells a name apart from a column of figures.
           const dbg = [];
-          for (const L of lines.slice(0, 40)) {
-            dbg.push(L.parts.map((p) => p.str).join(" | "));
+          for (const L of lines.slice(0, 120)) {
+            dbg.push(L.parts.map((p) => `${p.str}@${Math.round(p.x)}`).join(" | "));
           }
           const note = "PDF layout not recognized; nothing written";
-          pdfReads.push({ file: a.filename, mapped: false, note, debugLines: dbg });
+          pdfReads.push({ file: a.filename, mapped: false, note,
+            pages: lines.length ? lines[lines.length - 1].pg : 0,
+            lineCount: lines.length, debugLines: dbg });
           failures.push({ file: a.filename, why: note });
         }
       } catch (e) {
