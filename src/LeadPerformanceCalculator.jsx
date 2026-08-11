@@ -2716,6 +2716,7 @@ export default function LeadPerformanceCalculator() {
       {introPlaying && (
         <LoadingSequence
           storeName={currentStore?.name || (isAdmin ? "your stores" : "your board")}
+          brand={currentStore?.brand}
           onComplete={() => {
             markIntroPlayed(session.userId || session.id);
             setIntroDone(true);
@@ -3868,101 +3869,70 @@ function LEADERBOARD_HTML(p) {
    in, fills the back, and morphs into a decorative version of The Board (no real data),
    then hands off into the Performance page. ~10 seconds, then onComplete fires. A Skip
    affordance appears only after someone has seen it a few times. */
-function LoadingSequence({ storeName, onComplete }) {
+/* ---------------- Sign-in handover, part two ----------------
+   The mark left the login card growing. This picks it up at exactly that size,
+   blooms it into the page, and assembles the shape of the manager's own dashboard
+   underneath it, so the last frame of the animation IS the first frame of the app.
+   No stand-in table of invented names, no full-screen blue: the aurora and the card
+   shapes are the ones already on the page. */
+function LoadingSequence({ storeName, brand, onComplete }) {
   const [seen] = useState(() => introSeenCount());
   const [exiting, setExiting] = useState(false);
   const doneRef = useRef(false);
-  // Held in a ref so the timers below never restart when the parent re-renders.
   const onDone = useRef(onComplete);
   onDone.current = onComplete;
 
   const finish = useCallback(() => {
     if (doneRef.current) return;
     doneRef.current = true;
-    // Blur and scale away first, revealing the app that is already sitting
-    // underneath, then unmount. EXIT_MS must match the lseqOut keyframe.
     setExiting(true);
-    setTimeout(() => onDone.current(), 640);
+    setTimeout(() => onDone.current(), 620);
   }, []);
 
   useEffect(() => {
     bumpIntroCount();
-    // reduced-motion: honor the OS setting and hand over with no animation at all
     const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
     if (mq && mq.matches) { doneRef.current = true; onDone.current(); return; }
-    const t = setTimeout(finish, 5000);
+    const t = setTimeout(finish, 3200);
     return () => clearTimeout(t);
   }, [finish]);
 
-  // decorative board rows — fixed, not real data
-  const ROWS = [
-    ["Marcus Bell", 62, 41, 22, "g"], ["Diana Cho", 58, 38, 19, "g"],
-    ["Andre Watts", 47, 33, 15, "y"], ["Priya Nair", 44, 28, 17, "g"],
-    ["Sam Rivera", 39, 25, 12, "y"], ["Tess Okafor", 31, 22, 9, "r"],
-  ];
-  const MEDALS = ["\uD83E\uDD47", "\uD83E\uDD48", "\uD83E\uDD49"];
-  const spark = (seed) => {
-    let pts = [], v = 50;
-    for (let i = 0; i <= 20; i++) { v += (Math.sin(seed * i * .7) + Math.random() - .5) * 16; v = Math.max(8, Math.min(92, v)); pts.push(v); }
-    const step = 100 / 20;
-    const d = pts.map((p, i) => `${i === 0 ? "M" : "L"} ${(i * step).toFixed(1)} ${(100 - p).toFixed(1)}`).join(" ");
-    return { d, cls: pts[pts.length - 1] >= pts[0] ? "up" : "down" };
+  const vars = {
+    "--ld-p": (brand && brand.primary) || "#2A5E9B",
+    "--ld-d": (brand && brand.dark) || "#1D4674",
+    "--ld-a": (brand && brand.accent) || "#C1D730",
   };
-  const mark = (t) => t === "g" ? "\u2713" : t === "y" ? "\u26A0\uFE0E" : "\u2717";
 
   return (
-    <div className={"lseq" + (exiting ? " is-exiting" : "")}>
-      <div className="lseq-bg" />
-      <div className="lseq-aurora" />
+    <div className={"ldx" + (exiting ? " is-exiting" : "")} style={vars}>
+      {/* the glow the mark throws as it opens up */}
+      <div className="ldx-bloom" />
+      <div className="ldx-bloom two" />
 
-      <div className="lseq-board">
-        <div className="lseq-btitle">
-          <span className="lseq-dot" /><h1>The Board</h1><span className="lseq-sub">Live · Today</span>
+      {/* the page assembling itself, in the page's own shapes */}
+      <div className="ldx-page">
+        <div className="ldx-bar">
+          <span className="ldx-mark-slot" />
+          <span className="ldx-pills"><i /><i /><i /></span>
+          <span className="ldx-queues"><i /><i /><i /></span>
         </div>
-        <div className="lseq-head">
-          <div>Associate</div><div>Internet</div><div>Phone</div><div>Showroom</div><div>Units</div>
+        <div className="ldx-tabs"><i /><i /><i /><i /></div>
+        <div className="ldx-hero">
+          <div className="ldx-hero-logo" />
+          <div className="ldx-hero-text"><span className="w1" /><span className="w2" /><span className="w3" /></div>
+          <div className="ldx-ring"><svg viewBox="0 0 100 100"><circle className="ldx-ring-bg" cx="50" cy="50" r="42" /><circle className="ldx-ring-fg" cx="50" cy="50" r="42" /></svg></div>
         </div>
-        <div className="lseq-rows">
-          {ROWS.map((r, i) => {
-            const [name, inet, ph, sh, tone] = r; const s = spark(i + 1);
-            return (
-              <div key={name} className="lseq-row" style={{ animationDelay: (2.2 + i * 0.09) + "s" }}>
-                <div className="lseq-name">{i < 3 ? <span className="lseq-medal">{MEDALS[i]}</span> : <span className="lseq-rank">{i + 1}</span>}{name}</div>
-                <div>
-                  <span className={"lseq-pill " + tone}><span className="lseq-mk">{mark(tone)}</span>{inet}%</span>
-                  <div className="lseq-spark"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path className={s.cls} d={s.d} /></svg></div>
-                </div>
-                <div><span className="lseq-units">{ph}</span></div>
-                <div><span className="lseq-units">{sh}</span></div>
-                <div><span className="lseq-units">{inet + ph + sh}</span></div>
-              </div>
-            );
-          })}
+        <div className="ldx-cards">
+          <div className="ldx-card tall" />
+          <div className="ldx-card wide"><i /><i /><i /></div>
         </div>
       </div>
 
-      <div className="lseq-logowrap">
-        <div className="lseq-streak" />
-        <div className="lseq-badge">
-          <svg viewBox="0 0 64 64" aria-hidden="true">
-            <defs><linearGradient id="lseqg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#2A5E9B" /><stop offset="100%" stopColor="#1D4674" /></linearGradient></defs>
-            <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lseqg)" />
-            <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
-            <circle cx="15" cy="32" r="2.5" fill="#C1D730" />
-            <path className="lseq-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
-            <g className="lseq-needle"><line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" /></g>
-            <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
-          </svg>
-        </div>
-        <div className="lseq-word">
-          <h1>Lead Performance</h1>
-        </div>
-      </div>
+      {/* the mark itself: the one thing carried over from the login card */}
+      <div className="ldx-mark"><Logo size={72} /></div>
+      <div className="ldx-word">{storeName ? storeName : "your board"}</div>
 
-      <div className="lseq-loadword">Loading {storeName ? storeName : "your board"}…</div>
-      <div className="lseq-loadbar"><div className="lseq-fill" /></div>
-
-      {seen >= 3 && <button className="lseq-skip" onClick={finish}>Skip →</button>}
+      {seen >= 3 && <button className="ldx-skip" onClick={finish}>Skip</button>}
     </div>
   );
 }
@@ -15085,6 +15055,119 @@ function Style() {
       .ac-prints li { list-style:disc; margin:1px 0; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
+      /* ---------- the page assembling itself ----------
+         Sits on the app's own light background rather than a colour of its own, so
+         the last frame of this and the first frame of the dashboard are the same
+         picture. Timings overlap deliberately: the bloom is still opening while the
+         bar is already sliding in. */
+      .ldx { position:fixed; inset:0; z-index:120; overflow:hidden;
+        background:var(--bg); animation: ldxIn .5s var(--ease) both; }
+      .ldx.is-exiting { animation: ldxOut .6s var(--ease) forwards; }
+      @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
+      @keyframes ldxOut { to { opacity:0; transform:scale(1.03); filter:blur(7px); } }
+
+      /* The glow the mark throws as it opens. This is the aurora already on the
+         page, brought forward rather than invented for the occasion. */
+      .ldx-bloom { position:absolute; left:50%; top:44%; width:120vmax; height:120vmax;
+        margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
+        background:radial-gradient(circle, color-mix(in srgb, var(--ld-p) 42%, transparent) 0%,
+          color-mix(in srgb, var(--ld-p) 16%, transparent) 34%, transparent 62%);
+        animation: ldxBloom 2.6s var(--ease) both; }
+      .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--ld-a) 34%, transparent) 0%,
+          color-mix(in srgb, var(--ld-a) 12%, transparent) 30%, transparent 58%);
+        animation-delay:.18s; animation-duration:2.9s; }
+      @keyframes ldxBloom {
+        0%   { transform:scale(.02); opacity:0; }
+        18%  { opacity:1; }
+        70%  { opacity:.55; }
+        100% { transform:scale(1); opacity:.28; }
+      }
+
+      /* the mark, arriving at the size it left the login card and settling */
+      .ldx-mark { position:absolute; left:50%; top:44%; translate:-50% -50%; z-index:3;
+        filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--ld-p) 45%, transparent));
+        animation: ldxMark 2.4s var(--ease) both; }
+      @keyframes ldxMark {
+        0%   { transform:scale(.5); opacity:0; }
+        14%  { transform:scale(1.14); opacity:1; }
+        34%  { transform:scale(1); opacity:1; }
+        76%  { transform:scale(1) translateY(0); opacity:1; }
+        100% { transform:scale(.42) translateY(-34vh); opacity:0; }
+      }
+      .ldx-word { position:absolute; left:0; right:0; top:calc(44% + 74px); z-index:3; text-align:center;
+        font-family:var(--font-display); font-weight:700; font-size:22px; letter-spacing:-.01em;
+        color:var(--ink); animation: ldxWord 2.4s var(--ease) both; }
+      @keyframes ldxWord {
+        0%,10% { opacity:0; transform:translateY(10px); }
+        26%    { opacity:1; transform:none; }
+        72%    { opacity:1; }
+        100%   { opacity:0; transform:translateY(-16px); }
+      }
+
+      /* the dashboard's own shapes, arriving in reading order */
+      .ldx-page { position:absolute; inset:0; z-index:2; padding:0; opacity:.92; }
+      .ldx-bar { position:absolute; top:0; left:0; right:0; height:58px; background:rgba(255,255,255,.86);
+        border-bottom:1px solid rgba(16,32,52,.07); display:flex; align-items:center; gap:18px; padding:0 24px;
+        animation: ldxBar .6s var(--ease) both; animation-delay:.55s; }
+      .ldx-mark-slot { width:36px; height:36px; border-radius:11px; background:rgba(16,32,52,.10); }
+      .ldx-pills, .ldx-queues { display:flex; gap:8px; }
+      .ldx-pills { margin-left:auto; }
+      .ldx-pills i { width:78px; height:26px; border-radius:9px; background:rgba(16,32,52,.09); }
+      .ldx-queues i { width:74px; height:26px; border-radius:999px; }
+      .ldx-queues i:nth-child(1) { background:rgba(16,185,129,.75); }
+      .ldx-queues i:nth-child(2) { background:rgba(85,102,240,.75); }
+      .ldx-queues i:nth-child(3) { background:rgba(139,92,246,.75); margin-right:auto; }
+      @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
+
+      .ldx-tabs { position:absolute; top:76px; left:24px; display:flex; gap:10px;
+        animation: ldxRise .55s var(--ease) both; animation-delay:.72s; }
+      .ldx-tabs i { width:88px; height:34px; border-radius:12px; background:rgba(255,255,255,.75); }
+      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.5); }
+
+      .ldx-hero { position:absolute; top:128px; left:24px; right:24px; height:172px; border-radius:24px;
+        display:flex; align-items:center; gap:22px; padding:0 30px; overflow:hidden;
+        background:linear-gradient(100deg, var(--ld-p), var(--ld-d));
+        animation: ldxHero .8s var(--ease-bloop) both; animation-delay:.86s; }
+      .ldx-hero-logo { width:64px; height:64px; border-radius:18px; background:rgba(255,255,255,.9); flex:0 0 auto; }
+      .ldx-hero-text { display:flex; flex-direction:column; gap:10px; }
+      .ldx-hero-text span { display:block; border-radius:7px; background:rgba(255,255,255,.34); }
+      .ldx-hero-text .w1 { width:150px; height:11px; }
+      .ldx-hero-text .w2 { width:300px; height:26px; background:rgba(255,255,255,.85); }
+      .ldx-hero-text .w3 { width:180px; height:11px; }
+      .ldx-ring { margin-left:auto; width:96px; height:96px; }
+      .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+      .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:9; }
+      .ldx-ring-fg { fill:none; stroke:var(--ld-a); stroke-width:9; stroke-linecap:round;
+        stroke-dasharray:264; stroke-dashoffset:264;
+        animation: ldxRing 1.5s var(--ease) both; animation-delay:1.05s; }
+      @keyframes ldxRing { to { stroke-dashoffset:80; } }
+      @keyframes ldxHero {
+        from { transform:translateY(26px) scale(.97); opacity:0; filter:blur(5px); }
+        to   { transform:none; opacity:1; filter:blur(0); }
+      }
+
+      .ldx-cards { position:absolute; top:322px; left:24px; right:24px; display:flex; gap:20px; }
+      .ldx-card { border-radius:20px; background:rgba(255,255,255,.82); box-shadow:0 18px 40px -28px rgba(16,32,52,.5);
+        animation: ldxRise .6s var(--ease) both; }
+      .ldx-card.tall { width:300px; height:196px; background:linear-gradient(150deg,#F19A3E,#E4632A); animation-delay:1.02s; }
+      .ldx-card.wide { flex:1; height:196px; padding:26px 28px; display:flex; flex-direction:column; gap:18px; animation-delay:1.14s; }
+      .ldx-card.wide i { display:block; height:16px; border-radius:8px; background:rgba(16,32,52,.09); }
+      .ldx-card.wide i:nth-child(1) { width:64%; }
+      .ldx-card.wide i:nth-child(2) { width:52%; }
+      .ldx-card.wide i:nth-child(3) { width:58%; }
+      @keyframes ldxRise { from { transform:translateY(22px); opacity:0; } to { transform:none; opacity:1; } }
+
+      .ldx-skip { position:absolute; right:20px; bottom:18px; z-index:4; font-family:inherit; font-size:12.5px;
+        font-weight:700; padding:7px 14px; border-radius:999px; border:0; cursor:pointer;
+        background:rgba(16,32,52,.08); color:var(--ink-2); }
+      @media (max-width: 820px) {
+        .ldx-hero { height:150px; } .ldx-cards { flex-direction:column; }
+        .ldx-card.tall, .ldx-card.wide { width:auto; height:110px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ldx, .ldx * { animation:none !important; }
+      }
+
       /* ---------- sign-in handover ----------
          One continuous move in three overlapping beats. Nothing waits its turn
          politely: the card comes apart while the wash is already blooming, and the
