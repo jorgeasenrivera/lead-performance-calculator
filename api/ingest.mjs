@@ -882,6 +882,10 @@ export default async function handler(req, res) {
       return res.status(409).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
     }
 
+    // Declared before it is used. The swap callback fills this in, and the loop
+    // below reads it, so the order matters.
+    const results = lastResults;
+
     // The day rows the import just touched, each written on its own. A failure here
     // is worth reporting but not worth failing the import: the same data is in the
     // document that was just written successfully.
@@ -893,7 +897,6 @@ export default async function handler(req, res) {
       try { await sbPutActivityDay(store.id, r.day, rows); dayWrites.push(r.day); }
       catch (e) { console.error("ingest: day row write failed", store.id, r.day, String(e.message || e)); }
     }
-    const results = lastResults;
 
     // Push the fresh figures to the wall. A board that cannot be refreshed must
     // not sink the import that already succeeded, so this is reported, not thrown.
