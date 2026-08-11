@@ -3952,6 +3952,16983 @@ function LoadingSequence({ storeName, brand, onComplete }) {
           <span className="ldx-queues"><i /><i /><i /></span>
           <span className="ldx-store" />
         </div>
+        {/* The sub-nav and its search. Leaving these out was what let the hero ride
+            up the page: the skeleton has to reserve the same rows the app does. */}
+        {/* Same container the dashboard uses: 1440 max, 32px gutters, centred. The
+            skeleton has to land on the real layout, not near it. */}
+        <div className="ldx-board">
+          {/* The sub-nav and its search. Leaving these out was what let the hero ride
+              up the page: the skeleton has to reserve the same rows the app does. */}
+          <div className="ldx-nav">
+            <span className="ldx-tabs"><i /><i /><i /><i /><i /><i /></span>
+            <span className="ldx-search" />
+          </div>
+          <div className="ldx-hero">
+            <div className="ldx-hero-id">
+              <div className="ldx-hero-logo" />
+              <div className="ldx-hero-text"><span className="w1" /><span className="w2" /><span className="w3" /></div>
+            </div>
+            <div className="ldx-hero-right">
+              <div className="ldx-ring"><svg viewBox="0 0 100 100"><circle className="ldx-ring-bg" cx="50" cy="50" r="42" /><circle className="ldx-ring-fg" cx="50" cy="50" r="42" /></svg></div>
+              <div className="ldx-hero-side"><span className="s1" /><span className="s2" /><span className="s3" /></div>
+            </div>
+          </div>
+          <div className="ldx-cards">
+            <div className="ldx-card tall" />
+            <div className="ldx-card wide"><i /><i /><i /></div>
+          </div>
+        </div>
+      </div>
+
+      {/* the mark itself: the one thing carried over from the login card */}
+      {/* The mark does not fade. It travels to where it will live in the header,
+          which is what stitches this screen to the one it becomes. */}
+      <div className="ldx-mark"><Logo size={72} /></div>
+      <div className="ldx-word" style={bf ? { fontFamily: `'${bf.family}', var(--font-display)` } : undefined}>
+        {storeName || "your board"}
+      </div>
+
+      {seen >= 3 && <button className="ldx-skip" onClick={finish}>Skip</button>}
+    </div>
+  );
+}
+
+/* ---------------- Board launcher (after sign-in, role-aware) ---------------- */
+function BoardLauncher({ config, session, onLaunch, onBack }) {
+  const isAdmin = session.role === "admin";
+  const stores = isAdmin ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
+  const single = stores.length === 1;
+  const [opened, setOpened] = useState(false);
+
+  // A manager belongs to exactly one store, so their board opens straight away, with no picker.
+  useEffect(() => {
+    if (single && !opened) { onLaunch(stores[0].id); setOpened(true); }
+  }, [single, opened]); // eslint-disable-line
+
+  if (stores.length === 0) {
+    return <div className="empty">No store is assigned to your account yet, so there's no board to show. Ask your group admin to grant you store access.</div>;
+  }
+
+  if (single) {
+    const s = stores[0];
+    return (
+      <div className="board-launch">
+        <div className="card board-launch-card">
+          <div className="bl-logo">{s.icon ? <img src={s.icon} alt="" /> : <Logo size={54} animated />}</div>
+          <h2 className="bl-title">{s.name}</h2>
+          <p className="hint">The Board opened in its own window, sized for a TV or big screen. It refreshes on its own every 30 seconds.</p>
+          <button className="btn" onClick={() => onLaunch(s.id)}>Open it again</button>
+          <CastLink storeId={s.id} config={config} />
+          <button className="btn-link" onClick={onBack}>← Back to start</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin and Centralized BDC pick which store's board to throw on the screen.
+  return (
+    <div className="board-launch">
+      <h2 className="section-title">The Board <span className="section-sub">choose a store</span></h2>
+      <p className="hint">Opens a live leaderboard in its own window, sized for a TV. Managers skip this step, their board opens straight to their own store.</p>
+      <div className="bl-grid">
+        {stores.map((s) => {
+          const b = s.brand || DEFAULT_BRAND;
+          return (
+            <button key={s.id} className="bl-tile" style={{ "--sp": b.primary, "--sd": b.deep }} onClick={() => onLaunch(s.id)}>
+              <span className="bl-tile-logo">{s.icon ? <img src={s.icon} alt="" /> : <span className="bl-tile-ph">{s.name[0]}</span>}</span>
+              <span className="bl-tile-name">{s.name}</span>
+              <span className="bl-tile-go">Open ↗</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="bl-cast">
+        {stores.map((s) => <CastLink key={s.id} storeId={s.id} label={s.name} config={config} />)}
+      </div>
+      <button className="btn-link" onClick={onBack}>← Back to start</button>
+    </div>
+  );
+}
+
+// The address a TV is pointed at. Copy it once, set it as the screen's start page,
+// and nobody has to touch it again.
+function CastLink({ storeId, label, config }) {
+  const [said, setSaid] = useState(false);
+  const [pub, setPub] = useState(null);   // null | "working" | {ok, err}
+  const url = boardTvUrl(storeId);
+  const publish = async () => {
+    setPub("working");
+    const r = await publishBoardNow(config, storeId);
+    setPub(r);
+    if (r.ok) setTimeout(() => setPub(null), 4000);
+  };
+  return (
+    <span className="cast-wrap">
+      <button className="btn-link cast-link" title={url}
+        onClick={() => {
+          navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
+            () => window.prompt("Copy this address into the TV's browser:", url));
+        }}>
+        {said ? "Copied" : (label ? "Copy TV link for " + label : "Copy the TV link")}
+      </button>
+      <button className="btn-link cast-link" onClick={publish} disabled={pub === "working"}>
+        {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : "Publish to TVs")}
+      </button>
+      {pub && pub !== "working" && !pub.ok && (
+        <span className="cast-err">Could not publish: {pub.err}. The TVs cannot show anything until this is fixed.</span>
+      )}
+    </span>
+  );
+}
+
+// The only fields the board draws. Anything not on this list never leaves the
+// private store row, which is the whole point of publishing a separate one.
+const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
+  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits"];
+
+function buildBoardPayload(config, storeId, sdata) {
+  const store = (config?.stores || []).find((s) => s.id === storeId);
+  const onBoard = new Set((config?.roles || []).filter((r) => r.onBoard !== false).map((r) => r.id));
+  const key = ym();
+  const src = ((sdata && sdata.months) || {})[key]?.stats || {};
+  const stats = {}; const roster = []; const ticker = [];
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store?.activityStandards || {}) };
+  const gone = departedNames(sdata);
+  for (const a of (sdata && sdata.roster) || []) {
+    if (!a.roleId || !onBoard.has(a.roleId)) continue;
+    if (gone.has(norm(a.name))) continue;
+    roster.push({ name: a.name, roleId: a.roleId });
+    const s = src[norm(a.name)];
+    if (s) {
+      const keep = {};
+      for (const f of BOARD_STAT_FIELDS) if (s[f] !== undefined) keep[f] = s[f];
+      stats[norm(a.name)] = keep;
+    }
+    try {
+      const { dir, len } = currentStreak(sdata, a, std);
+      if (dir === "up" && len >= 3) ticker.push(`&#128293; ${a.name} is on a ${len}-day streak`);
+    } catch (e) {}
+  }
+  return {
+    storeId,
+    storeName: store?.name || "Store",
+    icon: store?.icon || null,
+    brand: store?.brand || DEFAULT_BRAND,
+    thresholds: normThresholds(store?.thresholds),
+    roles: (config?.roles || []).filter((r) => r.onBoard !== false).map((r) => ({ id: r.id })),
+    boardDisplay: (sdata && sdata.boardDisplay) || null,
+    ym: key,
+    ticker,
+    roster,
+    departed: [...gone],
+    months: { [key]: { stats } },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Publish the TV row. Called after every save so a casted screen never goes stale.
+// A failure here must never fail the save, but it must not vanish either: a board
+// row that never got written looks exactly like a board that was never opened.
+async function publishBoard(config, storeId, sdata) {
+  try {
+    const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
+    if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
+    return { ok, err: ok ? null : (lastSaveError || "unknown") };
+  } catch (e) {
+    console.error("board publish failed", boardKey(storeId), e);
+    return { ok: false, err: (e && (e.message || e.code)) || String(e) };
+  }
+}
+
+// Publish on demand, loading the store's own data first. Used by the Publish button
+// so a TV can be brought to life without opening the board window at all.
+async function publishBoardNow(config, storeId) {
+  let sdata = null;
+  try { sdata = await loadShared(storeKey(storeId), null, true); }
+  catch (e) { return { ok: false, err: "Could not read this store's data: " + ((e && (e.message || e.code)) || String(e)) }; }
+  return publishBoard(config, storeId, sdata || {});
+}
+
+// Opens a standalone, auto-refreshing leaderboard in a new window sized for a TV.
+async function openLeaderboard(config, storeId) {
+  const w = window.open("", "lpc_leaderboard_" + storeId, "width=1600,height=900");
+  if (!w) { alert("Please allow pop-ups for this site to open the leaderboard on a second screen."); return; }
+  // Publish the sanitized TV row first, so this window and any casted screen are
+  // reading the exact same thing.
+  let sdata = null;
+  try { sdata = await loadShared(storeKey(storeId)); } catch (e) {}
+  const board = buildBoardPayload(config, storeId, sdata || {});
+  const pub = await publishBoard(config, storeId, sdata || {});
+  if (!pub.ok) {
+    alert("This board opened here, but it could NOT be published for the TVs.\n\nExact error from the database:\n" + pub.err
+      + "\n\nA casted screen will keep saying no board has been published until this is fixed. It is almost always a write-permission (RLS) rule on lpc:board keys.");
+  }
+  const payload = {
+    ...board,
+    storeKey: boardKey(storeId),
+    db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
+    tokens: null,
+  };
+  w.document.open();
+  w.document.write(LEADERBOARD_HTML(payload));
+  w.document.close();
+}
+
+/* ---------------- Casted board (kiosk) ----------------
+   A TV is pointed at ?board=<storeId> and left alone. Because this is a real page
+   and not a written-into popup, a reboot recovers on its own and a reload picks up
+   whatever code is currently deployed. Nobody signs in: it reads the published
+   board row with the anon key and nothing else. */
+
+// Reload when a new build ships, so a screen that has been up for weeks is never
+// running last month's layout. Vercel fingerprints its asset filenames, so a plain
+// comparison against the served page is enough, no version endpoint needed.
+function useBuildWatchdog() {
+  useEffect(() => {
+    const names = (nodes) => nodes.map((n) => String(n).split("/").pop()).filter(Boolean);
+    const mine = names([...document.querySelectorAll('script[src],link[rel="stylesheet"]')]
+      .map((n) => n.getAttribute("src") || n.getAttribute("href")).filter(Boolean));
+    let dead = false;
+    const check = async () => {
+      if (dead || !mine.length) return;
+      try {
+        const res = await fetch(window.location.pathname + "?_build=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return;
+        const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+        const theirs = names([...doc.querySelectorAll('script[src],link[rel="stylesheet"]')]
+          .map((n) => n.getAttribute("src") || n.getAttribute("href")).filter(Boolean));
+        if (theirs.length && theirs.some((n) => !mine.includes(n)) && !dead) window.location.reload();
+      } catch (e) { /* offline: try again next time */ }
+    };
+    const build = setInterval(check, 10 * 60 * 1000);
+    // A clean start every night. This is also what rolls the board onto a new month,
+    // since the month it draws is fixed when the page loads.
+    const nightly = setInterval(() => {
+      const d = new Date();
+      if (d.getHours() === 4 && d.getMinutes() < 6) window.location.reload();
+    }, 5 * 60 * 1000);
+    return () => { dead = true; clearInterval(build); clearInterval(nightly); };
+  }, []);
+}
+
+function BoardScreen({ storeId }) {
+  const [html, setHtml] = useState(null);
+  const [msg, setMsg] = useState("Loading the board...");
+  useBuildWatchdog();
+  useEffect(() => {
+    let dead = false, done = false;
+    const boot = async () => {
+      try {
+        const row = await loadShared(boardKey(storeId), null, true);
+        if (dead) return;
+        if (!row) {
+          setMsg("Nothing to read for this store yet. Either the board has not been published from the tool, or this screen is not allowed to read it. In the tool, open The Board and use Publish to TVs, which will name the exact problem.");
+          return;
+        }
+        done = true;
+        setHtml(LEADERBOARD_HTML({
+          ...row,
+          storeKey: boardKey(storeId),
+          db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
+          tokens: null,
+        }));
+      } catch (e) {
+        if (!dead) setMsg("No connection to the database. This screen keeps trying on its own.");
+      }
+    };
+    boot();
+    // Only retries until it has something to draw; after that the board refreshes itself.
+    const t = setInterval(() => { if (!done) boot(); }, 60 * 1000);
+    return () => { dead = true; clearInterval(t); };
+  }, [storeId]);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#0B1622", overflow: "hidden" }}>
+      {html
+        ? <iframe title="The Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
+        : <div style={{ height: "100%", display: "grid", placeItems: "center", padding: "32px", textAlign: "center",
+            color: "#CFE0F0", font: "500 20px/1.5 system-ui, -apple-system, sans-serif" }}>{msg}</div>}
+    </div>
+  );
+}
+
+/* The mark in the corner is the only thing that has to be in the top bar, so it
+   carries the account rather than spending width on a title nobody reads twice. */
+function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const initials = String(session?.name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+  return (
+    <div className="brand" ref={ref}>
+      <button className={"brand-btn" + (open ? " on" : "")} onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu" aria-expanded={open} title={session?.name || "Account"}>
+        <Logo size={36} />
+      </button>
+      {open && (
+        <div className="brand-menu" role="menu">
+          <div className="bm-head">
+            <span className="bm-avatar">{initials}</span>
+            <span className="bm-who">
+              <b>{session?.name}</b>
+              <span className="bm-role">{isAdmin ? "Administrator" : isOverseer ? "BDC Oversight" : "Manager"}</span>
+            </span>
+          </div>
+          <div className="bm-app">Lead Performance</div>
+          {onReplayIntro && (
+            <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
+          )}
+          <button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Login (real accounts) ---------------- */
+function Login({ config, onBack, onAuthed }) {
+  const [mode, setMode] = useState("signin"); // signin | signup | forgot
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [name, setName] = useState("");
+  const [err, setErr] = useState("");
+  const [ok, setOk] = useState("");
+  const [busy, setBusy] = useState(false);
+  // "leaving" runs the deconstruction. The card does not simply disappear: its
+  // parts leave in different directions at different moments, and the mark stays
+  // put and travels, so the eye has something continuous to hold on to while the
+  // app assembles behind it.
+  const [leaving, setLeaving] = useState(false);
+
+  const domains = config.approvedDomains || [];
+  const canRegister = config.registrationOpen && domains.length > 0;
+
+  const signIn = async () => {
+    setErr(""); setOk("");
+    if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
+    setBusy(true);
+    const res = await authSignIn(email.trim().toLowerCase(), password);
+    if (res.error) { setBusy(false); setErr(res.error); return; }
+    // Authenticated. Take the card apart, THEN hand over: the app mounting
+    // underneath is what the deconstruction is uncovering.
+    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq && mq.matches) { setBusy(false); onAuthed(); return; }
+    setLeaving(true);
+    setTimeout(() => { setBusy(false); onAuthed(); }, 760);
+  };
+
+  const signUp = async () => {
+    setErr(""); setOk("");
+    const e = email.trim().toLowerCase();
+    if (!e.includes("@")) { setErr("Enter a valid email."); return; }
+    if (!name.trim()) { setErr("Enter your full name."); return; }
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    if (password !== password2) { setErr("The two passwords do not match."); return; }
+    // The very first account created becomes the admin, so it is not domain-gated.
+    if (domains.length > 0 && !domains.includes(domainOf(e))) {
+      setErr("Email must be on an approved company domain (" + domains.join(", ") + ").");
+      return;
+    }
+    setBusy(true);
+    const res = await authSignUp(e, password, name.trim());
+    setBusy(false);
+    if (res.error) { setErr(res.error); return; }
+    setOk("Account created.");
+    onAuthed();
+  };
+
+  const forgot = async () => {
+    setErr(""); setOk("");
+    const e = email.trim().toLowerCase();
+    if (!e.includes("@")) { setErr("Enter your email first."); return; }
+    setBusy(true);
+    const res = await authResetPassword(e);
+    setBusy(false);
+    if (res.error) { setErr(res.error); return; }
+    setOk("If that email has an account, a reset link is on its way. Check your inbox.");
+  };
+
+  return (
+    <div className={"login" + (leaving ? " is-leaving" : "")}>
+      {/* The wash is the thread through the whole move: it blooms out of the card,
+          covers the join, and contracts away as the app builds. */}
+      {leaving && <div className="login-wash" />}
+      <div className={"login-card " + (busy ? "login-busy" : "")}>
+        <div className="login-logo"><Logo size={64} animated={!busy && !leaving} loading={busy && !leaving} /></div>
+        <h1 className="login-title">Lead Performance</h1>
+        <p className="login-sub">{busy ? "Signing you in…" : "Sign in to continue"}</p>
+
+        {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
+
+        {mode === "signin" && (
+          <>
+            <label>Work email</label>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+              placeholder="you@company.com" autoComplete="username" />
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="Your password" autoComplete="current-password" />
+            {err && <div className="login-err">{err}</div>}
+            {ok && <div className="login-ok">{ok}</div>}
+            <button className="btn wide" onClick={signIn} disabled={busy}>{busy ? "Signing in..." : "Sign In"}</button>
+            <button className="btn-link" onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot password?</button>
+            <div className="login-divider"><span>or</span></div>
+            <button className="btn-outline wide" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
+            {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
+          </>
+        )}
+
+        {mode === "signup" && (
+          <>
+            <p className="setup-note">
+              {canRegister
+                ? "Create your account. Your group admin grants store access after you register."
+                : "Create your account. Heads up: the very first account created becomes the group admin."}
+            </p>
+            <label>Work email</label>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+              placeholder="you@company.com" autoComplete="username" />
+            <label>Full name</label>
+            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="First Last" />
+            <label>Password</label>
+            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+              placeholder="At least 8 characters" autoComplete="new-password" />
+            <label>Confirm password</label>
+            <input type="password" value={password2} onChange={(e) => { setPassword2(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && signUp()} placeholder="Repeat it" autoComplete="new-password" />
+            {err && <div className="login-err">{err}</div>}
+            {ok && <div className="login-ok">{ok}</div>}
+            <button className="btn wide" onClick={signUp} disabled={busy}>{busy ? "Creating..." : "Create Account"}</button>
+            <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setPassword(""); setPassword2(""); }}>Back to sign in</button>
+          </>
+        )}
+
+        {mode === "forgot" && (
+          <>
+            <p className="setup-note">Enter your email and we will send a link to set a new password.</p>
+            <label>Work email</label>
+            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+              onKeyDown={(e) => e.key === "Enter" && forgot()} placeholder="you@company.com" />
+            {err && <div className="login-err">{err}</div>}
+            {ok && <div className="login-ok">{ok}</div>}
+            <button className="btn wide" onClick={forgot} disabled={busy}>{busy ? "Sending..." : "Send reset link"}</button>
+            <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Waiting on approval ---------------- */
+function PendingScreen({ profile, onSignOut }) {
+  const first = (profile.name || "").split(" ")[0];
+  return (
+    <div className="login">
+      <div className="login-card">
+        <div className="login-logo"><Logo size={64} animated /></div>
+        <h1 className="login-title">Almost there</h1>
+        <p className="setup-note">
+          Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
+          Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
+        </p>
+        <button className="btn wide" onClick={onSignOut}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Import badge ---------------- */
+function ImportBadge({ storeData, activity }) {
+  const M = storeData.months[ym()];
+  const t = M?.imports?.[today()] || {};
+  if (activity) {
+    return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? "✓" : "0/1"}</span>;
+  }
+  // Delivery Summaries arrive by email, so the manager only uploads two.
+  const done = ["appointment", "video"].filter((k) => t[k]).length;
+  return <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>{done}/2</span>;
+}
+
+/* ---------------- Check Out Tracker (Daily Activity) ---------------- */
+/* ===== PHONE-LEAD QUEUE ("The Line") — v4 ===== */
+
+const QUEUE_TABLE = "queue_public";
+const QUEUE_ID_TABLE = "queue_identity";
+const queueRowId = (store, date, kind) => (!kind || kind === "line" ? `${store}:${date}` : `${store}:${date}:${kind}`);
+
+const QUEUE_FLAGS = {
+  waiting:  { label: "In line",       cls: "q-waiting" },
+  lunch:    { label: "At lunch",      cls: "q-lunch" },
+  customer: { label: "With customer", cls: "q-customer" },
+  away:     { label: "Away",          cls: "q-away" },
+};
+const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
+
+/* The Line and Online are the same lead-queue mechanic with different wording,
+   accent, data slot, and close-rate channel. The Line's config is byte-identical
+   to its current behavior so nothing about it changes. */
+const LEAD_VARIANTS = {
+  line: {
+    kind: "line", dataKey: "queue", param: "q", label: "The Line", count: "in line",
+    channel: "close_phone", closeLabel: "phone close", sf: "sf-line", mf: "mf-line", accent: "#5566F0",
+    joinTitle: "Get in line", joinSub: "Type your name to claim the next phone opportunity.",
+    ready1: "You're in line", wait: "In line", aheadSub: "ahead of you for the next call",
+    upSub: "The next phone opportunity is yours.", custTitle: "On a call", custSub: "Back in line the moment your call wraps.",
+    custFlag: "On a call", joinBtn: "Join the line", bannerLabel: "Phone Opportunities", bannerGlyph: "phone", leave: "Leave the line", empty: "Nobody's in line yet. Post the code, or add someone below.",
+  },
+  online: {
+    kind: "online", dataKey: "queueOnline", param: "o", label: "Online", count: "in the queue",
+    channel: "close_internet", closeLabel: "online close", sf: "sf-online", mf: "mf-online", accent: "#8B5CF6",
+    joinTitle: "Get in the queue", joinSub: "Type your name to claim the next online lead.",
+    ready1: "You're in the queue", wait: "In the queue", aheadSub: "ahead of you for the next lead",
+    upSub: "The next online lead is yours.", custTitle: "On a lead", custSub: "Back in the queue when you wrap up.",
+    custFlag: "On a lead", joinBtn: "Join the queue", bannerLabel: "Internet Lead Opportunities", bannerGlyph: "globe", leave: "Leave the queue", empty: "Nobody's in the queue yet. Post the code, or add someone below.",
+  },
+};
+
+/* ---- hand-drawn line icons (currentColor, no emoji) ---- */
+function QPhoneIcon({ className }) {
+  return <PixIcon glyph="phone" size={16} className={className} />;
+}
+function QClockIcon({ className }) {
+  return <PixIcon glyph="clock" size={22} className={className} />;
+}
+function QFlagIcon({ status, className }) {
+  const g = status === "lunch" ? "lunch" : status === "away" ? "away" : status === "customer" ? "user" : null;
+  return g ? <PixIcon glyph={g} size={18} className={className} /> : null;
+}
+
+const shortLabel = (name) => {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || "");
+};
+const qNormName = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const qFirstToken = (s) => qNormName(s).split(" ")[0] || "";
+
+const qNowIso = () => new Date().toISOString();
+const qMinsSince = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000)) : 0);
+const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`);
+
+/* ---- Supabase access: the per-day line row (queue_public) ---- */
+async function loadQueueRow(store, date, kind) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date, kind)).maybeSingle();
+    if (error) throw error;
+    return data ? data.data : null;
+  } catch (e) { console.error("loadQueueRow", e); return null; }
+}
+async function saveQueueRow(store, date, data, kind) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from(QUEUE_TABLE).upsert(
+      { id: queueRowId(store, date, kind), store, qdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
+    if (error) throw error;
+    return true;
+  } catch (e) { console.error("saveQueueRow", e); return false; }
+}
+async function mutateQueueRow(store, date, fn, kind) {
+  const cur = await loadQueueRow(store, date, kind);
+  const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+  if (!next) return cur;
+  await saveQueueRow(store, date, next, kind);
+  return next;
+}
+
+/* ---- Supabase access: the persistent identity row (queue_identity), one per store ---- */
+async function loadQueueIdentities(store) {
+  if (!supabase) return {};
+  try {
+    const { data, error } = await supabase.from(QUEUE_ID_TABLE).select("data").eq("id", store).maybeSingle();
+    if (error) throw error;
+    return (data && data.data) || {};
+  } catch (e) { console.error("loadQueueIdentities", e); return {}; }
+}
+async function mutateQueueIdentities(store, fn) {
+  const cur = await loadQueueIdentities(store);
+  const next = fn(JSON.parse(JSON.stringify(cur || {})));
+  if (!next) return cur;
+  if (supabase) {
+    try {
+      const { error } = await supabase.from(QUEUE_ID_TABLE).upsert(
+        { id: store, data: next, updated_at: qNowIso() }, { onConflict: "id" });
+      if (error) throw error;
+    } catch (e) { console.error("saveQueueIdentities", e); }
+  }
+  return next;
+}
+
+/* ---- PIN hashing (Web Crypto; plaintext never stored or sent) ---- */
+const qRandSalt = () => {
+  const a = new Uint8Array(8);
+  (window.crypto || window.msCrypto).getRandomValues(a);
+  return Array.from(a).map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+async function qHashPin(pin, salt) {
+  const enc = new TextEncoder().encode(`${salt}:${pin}`);
+  const buf = await (window.crypto.subtle).digest("SHA-256", enc);
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function qFindByPin(identities, pin, exceptId) {
+  for (const id of Object.keys(identities || {})) {
+    if (exceptId && id === exceptId) continue;
+    const rec = identities[id];
+    if (!rec || !rec.h || !rec.s) continue;
+    // eslint-disable-next-line no-await-in-loop
+    if ((await qHashPin(pin, rec.s)) === rec.h) return id;
+  }
+  return null;
+}
+
+/* ---- fuzzy name matching against the published roster ({id,label,role}) ---- */
+function qLev(a, b) {
+  a = a || ""; b = b || "";
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+function qRankRoster(typed, roster) {
+  const t = qNormName(typed), tf = qFirstToken(t);
+  return (roster || []).map((r) => {
+    const lab = qNormName(r.label), lf = qFirstToken(lab);
+    const d = Math.min(qLev(t, lab), qLev(tf, lf));
+    return { ...r, d, firstEq: lf === tf };
+  }).sort((a, b) => a.d - b.d);
+}
+function qResolveName(typed, roster) {
+  const ranked = qRankRoster(typed, roster);
+  if (!ranked.length) return { kind: "none", suggestions: [] };
+  const exact = ranked.filter((r) => r.d === 0);
+  const firstMatches = ranked.filter((r) => r.firstEq);
+  if (exact.length === 1) return { kind: "one", person: exact[0] };
+  if (firstMatches.length > 1) return { kind: "pick", people: firstMatches.slice(0, 6) };
+  if (firstMatches.length === 1 && ranked[0].firstEq) return { kind: "one", person: firstMatches[0] };
+  if (ranked[0].d <= 2) return { kind: "confirm", person: ranked[0] };
+  return { kind: "none", suggestions: ranked.slice(0, 4) };
+}
+
+/* ---- QR loader + renderer ---- */
+let _qrPromise = null;
+function loadQRCode() {
+  if (typeof window !== "undefined" && window.qrcode) return Promise.resolve(window.qrcode);
+  if (_qrPromise) return _qrPromise;
+  _qrPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
+    s.async = true;
+    s.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error("qrcode init failed")));
+    s.onerror = () => { _qrPromise = null; reject(new Error("qrcode load failed")); };
+    document.head.appendChild(s);
+  });
+  return _qrPromise;
+}
+function queueSignInUrl(storeId, date, token, param = "q") {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?${param}=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
+}
+function QueueQR({ url, cell = 6 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    let dead = false;
+    loadQRCode().then((qrcode) => {
+      if (dead || !ref.current) return;
+      try {
+        const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+        ref.current.innerHTML = qr.createSvgTag({ cellSize: cell, margin: 2, scalable: true });
+        const svg = ref.current.querySelector("svg");
+        if (svg) { svg.style.width = "100%"; svg.style.height = "auto"; svg.removeAttribute("width"); svg.removeAttribute("height"); }
+      } catch (e) { if (ref.current) ref.current.textContent = "QR error"; }
+    }).catch(() => { if (ref.current) ref.current.textContent = "QR unavailable"; });
+    return () => { dead = true; };
+  }, [url, cell]);
+  return <div ref={ref} className="q-qr" aria-label="Sign-in QR code" />;
+}
+
+/* ---- printable sign-in poster (matches the app font; NextUp-ready) ---- */
+async function printQueueSignIn({ store, url, date, by }) {
+  let svg = "";
+  try {
+    const qrcode = await loadQRCode();
+    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
+  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
+  const w = window.open("", "lpc_qr_" + store.id, "width=800,height=1040");
+  if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
+  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
+  const phoneSvg = pixSvgString("phone", 18);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line · ${store.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
+    .banner{display:inline-flex;align-items:center;gap:10px;background:#4c8bf5;color:#fff;font-weight:700;
+      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
+    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
+    .store{font-size:22px;font-weight:700;color:#334;}
+    .date{font-size:16px;color:#667;margin-top:6px;}
+    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid #4c8bf5;border-radius:24px;}
+    .qr svg{display:block;width:100%;height:auto;}
+    .how{font-size:20px;font-weight:700;margin-top:10px;}
+    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
+    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
+    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  </style></head><body>
+    <div class="banner">${phoneSvg} Phone Opportunities</div>
+    <h1>Get in Line</h1>
+    <div class="store">${store.name}</div>
+    <div class="date">${nice}</div>
+    <div class="qr">${svg}</div>
+    <div class="how">Scan with your phone camera to sign in</div>
+    <div class="sub">Enter your name and your PIN to claim your spot for the next phone opportunity. No app, no login. This code only works today.</div>
+    <div class="foot">${foot}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+/* =========================================================================
+   QueueSignIn — salesperson phone page (curtain wipe between screens)
+   ========================================================================= */
+/* ---- salesperson-view dot-matrix atoms (shared by The Line + Live Floor) ----
+   Same dot language as the position numeral. Icons are hand-built bitmaps, not SVG. */
+const SF_ICONS = {
+  customer: ["0011100","0111110","0111110","0011100","0000000","0011100","0111110"],
+  lunch:    ["0000000","1111010","1111011","1111011","1111010","0000000","1111110"],
+  away:     ["0000000","0001000","0000100","1111110","0000100","0001000","0000000"],
+  back:     ["0000000","0110000","0111000","0111100","0111000","0110000","0000000"],
+};
+// analog LED numeral: each digit is keyed by its value so it remounts and "flips" on change
+// light haptic feedback where supported (no-op elsewhere)
+function buzz(pattern) { try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
+// bridge to the native app shell (Expo WebView) for iOS Live Activities / widgets. No-op in a normal browser.
+function postToNativeShell(payload) {
+  try {
+    const w = typeof window !== "undefined" ? window : null;
+    if (w && w.ReactNativeWebView && typeof w.ReactNativeWebView.postMessage === "function") {
+      w.ReactNativeWebView.postMessage(JSON.stringify({ type: "queue", payload }));
+    }
+  } catch (e) {}
+}
+function DmNumber({ value, up }) {
+  const s = String(value);
+  return (
+    <div className={"dm" + (up ? " dm-up" : "")}>
+      {s.split("").map((ch, i) => (
+        <span className="dm-digit" key={`${i}-${ch}`}>
+          {(LED_FONT[ch] || ["000", "000", "000", "000", "000"]).flatMap((r, ri) =>
+            r.split("").map((b, ci) => <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} />))}
+        </span>
+      ))}
+    </div>
+  );
+}
+function DmIcon({ name, cell = 4 }) {
+  const rows = SF_ICONS[name];
+  if (!rows) return null;
+  return (
+    <span className="dm-ico" style={{ gridTemplateColumns: `repeat(${rows[0].length}, ${cell}px)`, gap: Math.max(1, cell * 0.34) }}>
+      {rows.flatMap((r, ri) => r.split("").map((b, ci) =>
+        <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} style={{ width: cell, height: cell }} />))}
+    </span>
+  );
+}
+
+function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
+  const [row, setRow] = useState(undefined);
+  const [identities, setIdentities] = useState(null);
+  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
+  const [step, setStep] = useState("name");
+  const [shown, setShown] = useState("loading");
+  const [shownKey, setShownKey] = useState("loading");
+  const [wiping, setWiping] = useState(false);
+  const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
+  const [resolved, setResolved] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [pinMode, setPinMode] = useState("verify");
+  const [switchTo, setSwitchTo] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refetch = useCallback(async () => setRow((await loadQueueRow(store, date, variant.kind)) || null), [store, date, variant.kind]);
+  const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
+  useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
+
+  const isToday = date === today();
+  const valid = isToday && row && row.token && row.token === token;
+  const line = (row && row.line) || [];
+  const me = line.find((p) => p.id === meId) || null;
+  const roster = (row && row.roster) || [];
+  const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
+  useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
+  const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
+  const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
+  useEffect(() => {
+    if (!me || myIdx < 0) return;
+    postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
+      rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
+      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString() });
+  }, [me && me.status, myIdx, aheadCount, iAmUp]); // eslint-disable-line
+
+  const remember = (id) => {
+    try {
+      if (id) { localStorage.setItem(`lpcq:${store}:${date}`, id); localStorage.setItem(`lpcq:self:${store}`, id); }
+      else localStorage.removeItem(`lpcq:${store}:${date}`);
+    } catch {}
+    setMeId(id);
+  };
+
+  useEffect(() => { if (meId && line.some((p) => p.id === meId)) setStep("done"); }, [meId, line]);
+
+  // which screen should be visible right now (drives the curtain wipe)
+  let screen;
+  if (row === undefined || identities === null) screen = "loading";
+  else if (!isToday || !valid) screen = "invalid";
+  else if (step === "done" && me) screen = "done";
+  else if (step === "pin" && switchTo) screen = "switch";
+  else if (step === "pin" && selected) screen = "pin";
+  else if (step === "pick") screen = "pick";
+  else if (step === "confirm") screen = "confirm";
+  else screen = "name";
+
+  // curtain: on ANY screen change, sweep the panel across and swap content mid-sweep
+  // A wipe should fire between EVERY page they touch — including flag changes on the
+  // live screen (which don't change `screen`). Key it on screen + live status.
+  const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
+  useEffect(() => {
+    if (liveKey === shownKey) return;
+    // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
+    if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
+    setWiping(true);
+    const t1 = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 300);
+    const t2 = setTimeout(() => setWiping(false), 620);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [liveKey, shownKey, screen]);
+
+  async function joinAs(person) {
+    setBusy(true);
+    const next = await mutateRow((cur) => {
+      if (!cur) return null;
+      cur.line = cur.line || [];
+      if (!cur.line.some((p) => p.id === person.id)) {
+        cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self" });
+      }
+      return cur;
+    });
+    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
+    remember(person.id);
+    if (next) setRow(next);
+    setStep("done"); setPin(""); setPin2(""); setBusy(false);
+  }
+
+  function submitName() {
+    setMsg("");
+    const r = qResolveName(typed, roster);
+    setResolved(r);
+    if (r.kind === "one") pickPerson(r.person);
+    else if (r.kind === "confirm") setStep("confirm");
+    else if (r.kind === "pick") setStep("pick");
+    else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
+  }
+  function pickPerson(p) {
+    setSelected(p); setSwitchTo(null); setMsg("");
+    const hasPin = !!(identities && identities[p.id] && identities[p.id].h);
+    setPinMode(hasPin ? "verify" : "create");
+    setStep("pin");
+  }
+
+  async function submitPin() {
+    if (!selected) return;
+    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4 to 6 digits."); return; }
+    setBusy(true); setMsg("");
+    const idents = identities || (await loadQueueIdentities(store));
+    if (pinMode === "create") {
+      if (pin !== pin2) { setMsg("The two PINs don't match."); setBusy(false); return; }
+      const clash = await qFindByPin(idents, pin, selected.id);
+      if (clash) { setMsg("That PIN is already taken by someone here. Pick a different one."); setBusy(false); return; }
+      const salt = qRandSalt(); const h = await qHashPin(pin, salt);
+      const nextIds = await mutateQueueIdentities(store, (cur) => { cur[selected.id] = { h, s: salt, label: selected.label, setAt: qNowIso() }; return cur; });
+      setIdentities(nextIds);
+      await joinAs(selected);
+      return;
+    }
+    const rec = idents[selected.id];
+    if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
+    const other = await qFindByPin(idents, pin, null);
+    if (other && other !== selected.id) { setSwitchTo({ id: other, label: idents[other].label || "that person" }); setMsg(""); setBusy(false); return; }
+    setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
+    setBusy(false);
+  }
+
+  async function setFlag(status) {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateRow((cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) {
+        cur.history = cur.history || [];
+        if (status === "waiting") {
+          const from = p.awayReason || (p.status !== "waiting" ? p.status : null);
+          cur.history.push({ t: qNowIso(), action: "back", from, id: meId, who: p.label, by: "self" });
+          p.awayReason = null;
+        } else {
+          p.awayReason = status;
+          cur.history.push({ t: qNowIso(), action: status, id: meId, who: p.label, by: "self" });
+        }
+        p.status = status; p.statusAt = qNowIso();
+      }
+      return cur;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  async function leave() {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateRow((cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      cur.line = (cur.line || []).filter((x) => x.id !== meId);
+      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", from: p.awayReason || null, id: meId, who: p.label, by: "self" }); }
+      return cur;
+    });
+    remember(null);
+    if (next) setRow(next);
+    setStep("name"); setBusy(false);
+  }
+
+  /* ---------- render ---------- */
+  const storeName = (row && row.storeName) || "Phone Line";
+  const PhonePill = () => <div className="q-phone-pill"><QPhoneIcon className="q-pill-ico" /> Phone opportunity</div>;
+
+  // content is chosen by `shown`, which lags `screen` and swaps behind the curtain
+  const eff = (shown === "done" && !me) ? "name" : shown;
+  let content;
+
+  if (eff === "loading") {
+    content = <div className="q-card q-center"><div className="spin-logo" /><p className="q-muted">Loading…</p></div>;
+  } else if (eff === "invalid") {
+    content = (
+      <div className="q-card q-center">
+        <QClockIcon className="q-x-ico" />
+        <h2>This sign-in code isn't for today</h2>
+        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
+      </div>
+    );
+  } else if (eff === "done" && me) {
+    const myPos = line.findIndex((p) => p.id === meId) + 1;
+    const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
+    const isNext = me.status === "waiting" && availableAhead === 0;
+    const st = me.status;
+    const title = st === "customer" ? variant.custTitle : st === "lunch" ? "At lunch" : st === "away" ? "Away" : isNext ? "You're up" : variant.ready1;
+    const sub = st === "customer" ? variant.custSub
+      : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
+      : isNext ? variant.upSub : `${availableAhead} ${variant.aheadSub}`;
+    content = (
+      <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
+        <div className="sf-top">
+          <span className="sf-tag"><span className="sf-live-dot" />{variant.label}</span>
+          <span className="sf-tag">{line.length} {variant.count}</span>
+        </div>
+        <div className="sf-poswrap">
+          <div className="sf-aura" />
+          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <div className="sf-meta">
+            <div className="sf-line-1">{title}</div>
+            <div className="sf-line-2">{sub}</div>
+            <div className="sf-wait">{variant.wait} <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+          </div>
+        </div>
+        <div className="sf-actions">
+          <div className="sf-status-row">
+            {st !== "waiting"
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              : QUEUE_SELF_FLAGS.map((f) => (
+                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
+                    <DmIcon name={f} cell={4} /><span>{f === "customer" ? variant.custFlag : f === "lunch" ? "Lunch" : "Away"}</span>
+                  </button>
+                ))}
+          </div>
+          <button className="sf-leave" disabled={busy} onClick={leave}>{variant.leave}</button>
+        </div>
+        {isNext && (
+          <div className="sf-uptake">
+            <div className="sf-shock" />
+            <DmNumber value={1} up />
+            <h2>You're up</h2>
+            <p>{variant.upSub}</p>
+            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setFlag("customer"); }}>Got it</button>
+          </div>
+        )}
+      </div>
+    );
+  } else if (eff === "switch" && selected && switchTo) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Is this you?</h2></div>
+        <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
+        <p className="q-big-q">Are you {switchTo.label}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
+          <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
+        </div>
+      </div>
+    );
+  } else if (eff === "pin" && selected) {
+    content = (
+      <div className="q-card">
+        <div className="q-head">
+          <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
+          <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
+          <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. You'll use it to sign in, and to get back in if you close this tab." : "So only you can claim your spot."}</p>
+        </div>
+        <div className="q-pin-field">
+          {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
+          <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
+            placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
+        </div>
+        {pinMode === "create" && (
+          <div className="q-pin-field">
+            <label className="q-pin-lbl">Confirm PIN</label>
+            <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
+              placeholder="••••" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
+          </div>
+        )}
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : variant.joinBtn}</button>
+        <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
+      </div>
+    );
+  } else if (eff === "pick" && resolved && resolved.people) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p></div>
+        <div className="q-roster">
+          {resolved.people.map((p) => (
+            <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
+              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">{variant.count}</span> : null}
+            </button>
+          ))}
+        </div>
+        <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
+      </div>
+    );
+  } else if (eff === "confirm" && resolved && resolved.person) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Did you mean…</h2></div>
+        <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
+          <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
+        </div>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="q-card">
+        <PhonePill />
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p></div>
+        <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
+          onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={!typed.trim()} onClick={submitName}>Continue</button>
+        {resolved && resolved.kind === "none" && resolved.suggestions && resolved.suggestions.length > 0 && (
+          <div className="q-suggest">
+            <p className="q-muted">Did you mean:</p>
+            <div className="q-roster">
+              {resolved.suggestions.map((p) => (
+                <button key={p.id} className="q-name" onClick={() => pickPerson(p)}>{p.label}{p.role ? <span className="q-role">{p.role}</span> : null}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`q-page sf ${variant.sf}`}>
+      <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
+      <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   queueCoachingStats — roll a person's line history into coaching numbers
+   ========================================================================= */
+function queueCoachingStats(data, associateId) {
+  const q = (data && data.queue) || {};
+  const dates = Object.keys(q).sort();
+  let scheduledDays = 0, signedDays = 0, missedScheduled = 0, taken = 0, declined = 0;
+  const unavail = { lunch: 0, away: 0, customer: 0 };
+  for (const d of dates) {
+    const rowd = q[d]; if (!rowd) continue;
+    const scheduled = !isOff(data, associateId, d);
+    if (scheduled) scheduledDays++;
+    const evs = (rowd.history || []).filter((e) => e.id === associateId).sort((a, b) => (a.t < b.t ? -1 : 1));
+    const signed = evs.some((e) => e.action === "signed-in");
+    if (signed) signedDays++;
+    if (scheduled && !signed) missedScheduled++;
+    taken += evs.filter((e) => e.action === "assigned").length;
+    declined += evs.filter((e) => e.action === "declined").length;
+    let openStatus = null, openAt = null;
+    for (const e of evs) {
+      if (["lunch", "away", "customer"].includes(e.action)) { openStatus = e.action; openAt = e.t; }
+      else if (["back", "assigned", "left"].includes(e.action) && openStatus) {
+        unavail[openStatus] += Math.max(0, (new Date(e.t) - new Date(openAt)) / 60000);
+        openStatus = null; openAt = null;
+      }
+    }
+  }
+  const total = taken + declined;
+  return {
+    hasData: dates.length > 0 && (signedDays > 0 || scheduledDays > 0),
+    scheduledDays, signedDays, missedScheduled, taken, declined,
+    acceptRate: total > 0 ? taken / total : null,
+    unavailMin: Math.round(unavail.lunch + unavail.away + unavail.customer),
+  };
+}
+
+/* =========================================================================
+   QueueTab — manager board
+   ========================================================================= */
+/* ============================================================
+   FLUID UI ATOMS — a small shared kit so the salesperson view and both
+   manager boards feel like one continuous, living system.
+   Inspiration: dot-matrix LED numerals + breathing aura (reminder screen),
+   bold color-fill leaderboard cards + avatar stack (progress screen).
+   ============================================================ */
+const LED_FONT = {
+  "0": ["111", "101", "101", "101", "111"],
+  "1": ["010", "110", "010", "010", "111"],
+  "2": ["111", "001", "111", "100", "111"],
+  "3": ["111", "001", "111", "001", "111"],
+  "4": ["101", "101", "111", "001", "001"],
+  "5": ["111", "100", "111", "001", "111"],
+  "6": ["111", "100", "111", "101", "111"],
+  "7": ["111", "001", "010", "010", "010"],
+  "8": ["111", "101", "111", "101", "111"],
+  "9": ["111", "101", "111", "001", "111"],
+  "#": ["101", "111", "101", "111", "101"],
+};
+function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3 }) {
+  const chars = String(value).split("");
+  const dim = "rgba(255,255,255,.07)";
+  return (
+    <div className="led-num" style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
+      {chars.map((ch, di) => {
+        const rows = LED_FONT[ch];
+        if (!rows) return <div key={di} style={{ width: cell }} />;
+        return (
+          <div key={di} className="led-digit" style={{ display: "grid", gridTemplateColumns: `repeat(3, ${cell}px)`, gap }}>
+            {rows.flatMap((r, ri) => r.split("").map((b, ci) => (
+              <span key={ri + "-" + ci} className="led-dot" style={{ width: cell, height: cell, background: b === "1" ? color : dim, boxShadow: b === "1" ? `0 0 ${Math.round(cell * 1.1)}px ${color}` : "none" }} />
+            )))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+function LivingAura({ color = "#4c8bf5", active = false, className = "" }) {
+  return <div className={"living-aura " + (active ? "aura-hot " : "") + className} style={{ "--aura": color }} aria-hidden="true" />;
+}
+// deterministic soft color from a name, for initials avatars
+function hueFromName(s) {
+  let h = 0; const str = String(s || "");
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+  return h;
+}
+function initialsOf(name) {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return ((p[0] || "")[0] || "").toUpperCase() + ((p[1] || "")[0] || "").toUpperCase();
+}
+function AvatarStack({ names, max = 5, accent = "#4c8bf5" }) {
+  const shown = names.slice(0, max);
+  const extra = names.length - shown.length;
+  return (
+    <div className="av-stack">
+      {shown.map((nm, i) => (
+        <span key={i} className="av-chip" style={{ background: `hsl(${hueFromName(nm)} 62% 46%)`, zIndex: max - i }} title={nm}>{initialsOf(nm)}</span>
+      ))}
+      {extra > 0 && <span className="av-chip av-more" style={{ zIndex: 0 }}>+{extra}</span>}
+    </div>
+  );
+}
+
+/* ---- manager "next up" hero + who's-here avatar stack (both boards) ---- */
+function QueueHero({ nextName, waitingNames, accent, kind, onAssign, assignDisabled, assignBusy }) {
+  return (
+    <div className="qh">
+      <div className="qh-stage">
+        <LivingAura color={accent} active={!!nextName} />
+        <div className="qh-inner">
+          <div className="qh-kicker">Next up</div>
+          <div className={"qh-name" + (nextName ? "" : " qh-empty")}>{nextName || "Nobody available"}</div>
+        </div>
+        {/* The button belongs beside the name it hands the customer to, not tucked in
+            a row of small utilities at the top of the page. */}
+        {onAssign && (
+          <button className="qh-assign" disabled={assignDisabled} onClick={onAssign}>
+            <span className="qh-assign-lbl">{assignBusy ? "Assigning" : "Assign " + (nextName ? nextName.split(" ")[0] : "next")}</span>
+            <PixIcon glyph="arrow" size={15} className="qh-assign-ico" />
+          </button>
+        )}
+      </div>
+      {waitingNames.length > 0 && (
+        <div className="qh-side">
+          <div className="qh-side-lbl">{kind === "floor" ? "On the floor" : "In line"} · {waitingNames.length}</div>
+          <AvatarStack names={waitingNames} accent={accent} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- live "who got opportunities today" tally, as color-fill leaderboard cards ----
+   The Line counts manager hand-offs; Live Floor also counts walk-ins/appointments that
+   flipped a rep to "with customer" — on the floor, catching an up IS the opportunity. */
+function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"] }) {
+  const act = useMemo(() => new Set(actions), [actions.join(",")]); // eslint-disable-line
+  // The stock number or lead name typed at hand-off is already on the history entry.
+  // Carrying it through means the tally answers "which ones?", not just "how many?".
+  const rows = useMemo(() => {
+    const by = {};
+    for (const e of history || []) {
+      if (!act.has(e.action)) continue;
+      const b = by[e.id] || (by[e.id] = { id: e.id, n: 0, refs: [] });
+      b.n += 1;
+      b.refs.push({ ref: (e.ref || "").trim(), t: e.t || e.at || null, reason: e.reason || "" });
+    }
+    return Object.values(by).sort((a, b) => b.n - a.n || String(nameOf(a.id)).localeCompare(String(nameOf(b.id))));
+  }, [history, act, nameOf]);
+  const total = rows.reduce((s, r) => s + r.n, 0);
+  const max = rows[0]?.n || 1;
+  return (
+    <div className="q-opps">
+      <div className="q-opps-head">Opportunities today <span className="q-opps-total" style={{ background: accent }}>{total}</span></div>
+      {rows.length === 0
+        ? <p className="muted q-opps-empty">Nobody's caught an opportunity yet today.</p>
+        : <div className="lb-list">
+            {rows.map((r, i) => (
+              <div key={r.id} className={"lb-card" + (i === 0 ? " lb-lead" : "")}>
+                <div className="lb-fill" style={{ width: `${Math.max(14, (r.n / max) * 100)}%`, background: accent, opacity: i === 0 ? 1 : 0.5 - Math.min(0.28, i * 0.05) }} />
+                <div className="lb-body">
+                  <span className="lb-rank">{i + 1}</span>
+                  <span className="lb-nm">{nameOf(r.id)}</span>
+                  {i === 0 && <span className="lb-crown" aria-hidden="true">▲</span>}
+                  <span className="lb-n">{r.n}</span>
+                </div>
+                {r.refs.some((x) => x.ref) && (
+                  <div className="lb-refs">
+                    {r.refs.map((x, k) => (
+                      <span key={k} className="lb-ref" title={[x.reason ? "Skipped forward: " + x.reason : "", x.t ? new Date(x.t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""].filter(Boolean).join(" · ")}>
+                        {x.ref || "no reference"}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>}
+    </div>
+  );
+}
+
+/* ---- Manager instrument cluster: Floor Health, gauges, and metrics ---- */
+function jainIndex(counts) {
+  const xs = counts.filter((n) => n > 0);
+  if (xs.length === 0) return 1;
+  const sum = xs.reduce((a, b) => a + b, 0);
+  const sumSq = xs.reduce((a, b) => a + b * b, 0);
+  return sumSq > 0 ? (sum * sum) / (xs.length * sumSq) : 1;
+}
+function computeFloorMetrics({ line, roster, data, date, history, oppActions }) {
+  const scheduled = (roster || []).filter((a) => !isOff(data, a.id, date)).length;
+  const onFloor = line.length;
+  const waiting = line.filter((p) => p.status === "waiting");
+  const ready = waiting.length;
+  const withCust = line.filter((p) => p.status === "customer").length;
+  const coverage = scheduled > 0 ? Math.min(1, onFloor / scheduled) : (onFloor > 0 ? 1 : 0);
+  const utilization = onFloor > 0 ? withCust / onFloor : 0;
+  const avgWaitMin = ready > 0 ? Math.round(waiting.reduce((a, p) => a + qMinsSince(p.joinedAt), 0) / ready) : 0;
+  const acts = new Set(oppActions || ["assigned"]);
+  const counts = {};
+  for (const e of history || []) if (acts.has(e.action) && e.id) counts[e.id] = (counts[e.id] || 0) + 1;
+  const totalOpps = Object.values(counts).reduce((a, b) => a + b, 0);
+  const fairnessRaw = jainIndex(Object.values(counts));
+  const fairnessScore = totalOpps > 0 ? fairnessRaw : 0.5;   // don't reward a floor that hasn't run yet
+  const flow = onFloor === 0 ? 0 : (avgWaitMin <= 20 ? 1 : Math.max(0, (60 - avgWaitMin) / 40));
+  const readiness = ready > 0 ? 1 : (onFloor > 0 ? 0.4 : 0);
+  const health = Math.round(100 * (0.40 * coverage + 0.25 * fairnessScore + 0.20 * flow + 0.15 * readiness));
+  return { scheduled, onFloor, ready, withCust, coverage, utilization, avgWaitMin, fairness: totalOpps > 0 ? fairnessRaw : null, health, notSignedIn: Math.max(0, scheduled - onFloor) };
+}
+const mfPct = (x) => Math.round((x || 0) * 100) + "%";
+function healthTone(h) { return h >= 85 ? { label: "Healthy", key: "green" } : h >= 65 ? { label: "Fair", key: "amber" } : { label: "Low", key: "red" }; }
+
+function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
+  const r = (size - width) / 2, c = 2 * Math.PI * r, dash = Math.max(0, Math.min(1, pct || 0)) * c;
+  return (
+    <div className="icg" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--mf-track)" strokeWidth={width} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={"icg-fg icg-" + tone} strokeWidth={width} strokeLinecap="round"
+          strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+      </svg>
+      <div className="icg-val">{label}{sub && <span className="icg-sub">{sub}</span>}</div>
+    </div>
+  );
+}
+function GaugeCard({ label, value, pct, tone }) {
+  return (
+    <div className="ic-card">
+      <Gauge pct={pct} size={62} width={7} tone={tone} label={<span className="ic-card-n">{String(value).replace(/\s*min$/, "")}</span>} />
+      <div className="ic-card-meta"><div className="ic-card-l">{label}</div><div className="ic-card-v">{value}</div></div>
+    </div>
+  );
+}
+function InstrumentCluster({ metrics, kind, actions }) {
+  const m = metrics, tone = healthTone(m.health);
+  const covTone = m.coverage >= 0.85 ? "green" : m.coverage >= 0.6 ? "amber" : "red";
+  const utilTone = m.utilization >= 0.35 ? "green" : "amber";
+  const waitTone = m.avgWaitMin <= 20 ? "green" : m.avgWaitMin <= 40 ? "amber" : "red";
+  const sup = [
+    ["Coverage", mfPct(m.coverage), covTone],
+    ["Utilization", mfPct(m.utilization), utilTone],
+    ["Fairness", m.fairness == null ? "n/a" : mfPct(m.fairness), m.fairness == null ? "amber" : m.fairness >= 0.8 ? "green" : "amber"],
+    ["Avg wait", m.avgWaitMin + " min", waitTone],
+  ];
+  return (
+    <div className="ic">
+      <div className="ic-health">
+        <div className="ic-health-head">Floor Health <span className={"ic-pill ic-" + tone.key}>{tone.label}</span></div>
+        <div className="ic-health-body">
+          <Gauge pct={m.health / 100} size={132} width={14} tone={tone.key} label={<span className="ic-health-n">{m.health}</span>} sub="FLOOR HEALTH" />
+          <div className="ic-sup">
+            {sup.map(([l, v, t]) => (
+              <div key={l} className="ic-sup-row"><span className={"ic-dot ic-" + t} /><span className="ic-sup-l">{l}</span><span className="ic-sup-v">{v}</span></div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="ic-gauges">
+        <GaugeCard label="Coverage" value={mfPct(m.coverage)} pct={m.coverage} tone={covTone} />
+        <GaugeCard label="Utilization" value={mfPct(m.utilization)} pct={m.utilization} tone={utilTone} />
+        <GaugeCard label="Avg wait" value={m.avgWaitMin + " min"} pct={Math.min(1, m.avgWaitMin / 30)} tone={waitTone} />
+        <GaugeCard label="Hand raises" value={String(m.ready)} pct={m.onFloor > 0 ? m.ready / m.onFloor : 0} tone={m.ready > 0 ? "green" : "amber"} />
+      </div>
+      {actions && <div className="ic-actions">{actions}</div>}
+    </div>
+  );
+}
+
+const TL_MAP = {
+  "signed-in": ["joined the floor", "green"],
+  "assigned": ["took the next up", "green"],
+  "auto-checkin": ["is with a walk-in", "green"],
+  "auto-appt-show": ["appointment arrived", "violet"],
+  "auto-proposal": ["sent a proposal", "blue"],
+  "auto-sold": ["marked a deal sold", "green"],
+  "auto-checkout": ["customer checked out", "gray"],
+  "lunch": ["went to lunch", "amber"],
+  "away": ["stepped away", "red"],
+  "back": ["is back in", "green"],
+  "declined": ["was passed", "gray"],
+  "timer-pass": ["passed on the timer", "gray"],
+  "left": ["left the floor", "gray"],
+  "accidental-undo": ["cleared an auto check-in", "gray"],
+};
+function ActivityTimeline({ history, nameOf, horizontal }) {
+  const events = (history || []).filter((e) => TL_MAP[e.action]).slice(-16).reverse();
+  const fmt = (t) => { try { return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+  return (
+    <div className={"tl" + (horizontal ? " tl-h" : "")}>
+      <div className="tl-head">Activity <span className="tl-live">LIVE</span></div>
+      {events.length === 0
+        ? <p className="tl-empty">Nothing has happened on the floor yet today.</p>
+        : <div className="tl-list">
+            {events.map((e, i) => {
+              const [verb, tone] = TL_MAP[e.action];
+              const who = e.who || (nameOf ? nameOf(e.id) : null) || "Someone";
+              return (
+                <div key={i} className="tl-item">
+                  <span className={"tl-dot tl-" + tone} />
+                  <div className="tl-body"><div className="tl-txt"><strong>{who}</strong> {verb}{e.ref ? <span className="tl-ref"> \u00b7 {e.ref}</span> : null}</div><div className="tl-t">{fmt(e.t)}</div></div>
+                </div>
+              );
+            })}
+          </div>}
+    </div>
+  );
+}
+
+/* ---- Smart assign: query the line by need (language, closer, etc.) and
+   skip someone forward, with a required reason. Tags are per-rep, stored on
+   store data (data.repTags) and shared by The Line and Live Floor. ---- */
+const SA_SUGGESTED = ["Spanish", "Bilingual", "Top closer", "Finance", "Trucks", "Luxury", "New"];
+const SA_STOP = new Set(["speaker","speakers","who","best","has","have","the","a","an","on","in","phones","phone","is","are","and","for","with","of","to","give","this","lead","leads","that","need","needs","someone","rep","up","next","line","floor","the","most"]);
+const SA_REASONS = ["Language match", "Top closer", "Customer asked for them", "Manager pick"];
+const SA_PERF = new Set(["closer", "close", "closing", "closes", "percentage", "pct", "rate", "best", "top", "highest", "strongest"]);
+const SA_SYN = { close:"closer", closing:"closer", closes:"closer", closer:"closer", percentage:"closer", pct:"closer", rate:"closer",
+  espanol:"spanish", "español":"spanish", hispanic:"spanish", latino:"spanish", bilingual:"bilingual",
+  truck:"trucks", trucks:"trucks", luxury:"luxury", highline:"luxury", finance:"finance", financing:"finance", credit:"finance", newbie:"new", rookie:"new" };
+function saMatch(query, name, tags) {
+  const q = String(query || "").toLowerCase().trim();
+  if (!q) return { score: 0, hit: [] };
+  const terms = q.split(/[^a-z0-9]+/).filter((t) => t && !SA_STOP.has(t));
+  if (!terms.length) return { score: 0, hit: [] };
+  const lname = name.toLowerCase();
+  const ltags = tags.map((t) => t.toLowerCase());
+  let score = 0; const hit = [];
+  for (const t of terms) {
+    const e = SA_SYN[t] || t;
+    const tagHit = ltags.find((tag) => tag.includes(t) || t.includes(tag) || tag.includes(e));
+    if (tagHit) { score += 2; if (!hit.includes(tagHit)) hit.push(tagHit); }
+    else if (lname.includes(t)) score += 1;
+  }
+  return { score, hit };
+}
+function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, closeMap, closeLabel }) {
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState(null);   // {id} awaiting a reason
+  const [reason, setReason] = useState("");
+  const [manage, setManage] = useState(false);
+  const [tagInput, setTagInput] = useState({});    // per-rep add-tag text
+  const tagsOf = (id) => (repTags && repTags[id]) || [];
+  const closeOf = (id) => (closeMap && closeMap[id] != null ? closeMap[id] : null);
+
+  const isPerf = useMemo(() => String(query).toLowerCase().split(/[^a-z]+/).some((w) => SA_PERF.has(w)), [query]);
+  const candidates = useMemo(() => {
+    const terms = String(query || "").toLowerCase().split(/[^a-z0-9]+/).filter((t) => t && !SA_STOP.has(t));
+    const tagTerms = terms.filter((t) => !SA_PERF.has(t));
+    const rows = line.map((p) => {
+      const name = realName(p.id);
+      const m = saMatch(tagTerms.join(" "), name, tagsOf(p.id));
+      return { id: p.id, name, tags: tagsOf(p.id), status: p.status, close: closeOf(p.id), ...m };
+    });
+    let out = tagTerms.length ? rows.filter((r) => r.score > 0) : rows;
+    if (isPerf) out = out.slice().sort((a, b) => ((b.close ?? -1) - (a.close ?? -1)) || (b.score - a.score) || a.name.localeCompare(b.name));
+    else if (query.trim()) out = out.slice().sort((a, b) => (b.score - a.score) || a.name.localeCompare(b.name));
+    else out = out.slice().sort((a, b) => a.name.localeCompare(b.name));
+    return out;
+  }, [line, query, repTags, realName, isPerf, closeMap]);
+
+  const allTags = useMemo(() => {
+    const set = new Set(SA_SUGGESTED);
+    Object.values(repTags || {}).forEach((arr) => (arr || []).forEach((t) => set.add(t)));
+    return Array.from(set);
+  }, [repTags]);
+
+  const addTag = (id, t) => {
+    const tag = String(t || "").trim(); if (!tag) return;
+    const cur = tagsOf(id);
+    if (cur.some((x) => x.toLowerCase() === tag.toLowerCase())) return;
+    onSaveTags({ ...(repTags || {}), [id]: [...cur, tag] });
+    setTagInput((s) => ({ ...s, [id]: "" }));
+  };
+  const removeTag = (id, t) => onSaveTags({ ...(repTags || {}), [id]: tagsOf(id).filter((x) => x !== t) });
+  const doAssign = (id) => { const r = reason.trim(); if (!r) return; onAssign(id, r); setPending(null); setReason(""); setQuery(""); };
+
+  const whoLabel = kind === "floor" ? "on the floor" : "in the line";
+  return (
+    <div className="sa">
+      <div className="sa-head">Smart assign</div>
+      <p className="sa-sub">Type what the {kind === "floor" ? "customer" : "lead"} needs and skip the right person forward. A skip always needs a reason.</p>
+      <input className="sa-input" value={query} placeholder={kind === "floor" ? "e.g. spanish speaker, best showroom closer" : "e.g. spanish speaker, best closing percentage"}
+        onChange={(e) => setQuery(e.target.value)} />
+      <div className="sa-chips">
+        {allTags.slice(0, 8).map((t) => <button key={t} className="sa-chip" onClick={() => setQuery(t)}>{t}</button>)}
+      </div>
+
+      <div className="sa-list">
+        {candidates.length === 0 && <p className="sa-empty">{query.trim() ? "Nobody " + whoLabel + " matches. Tag your associates below so this can find them." : "Nobody " + whoLabel + " yet."}</p>}
+        {candidates.map((c, idx) => (
+          <div key={c.id} className={"sa-row" + (pending === c.id ? " sa-open" : "")}>
+            <div className="sa-row-top">
+              <span className="mf-av sa-av" style={{ background: `hsl(${hueFromName(c.name)} 52% 42%)` }}>{initialsOf(c.name)}</span>
+              <div className="sa-who">
+                <div className="sa-nm">{c.name}{isPerf && idx === 0 && c.close != null && <span className="sa-best">top</span>}</div>
+                <div className="sa-tags">
+                  {c.close != null && <span className="sa-close">{Math.round(c.close * 100)}% {closeLabel}</span>}
+                  {c.tags.map((t) => <span key={t} className={"sa-tag" + (c.hit.includes(t.toLowerCase()) ? " sa-tag-hit" : "")}>{t}</span>)}
+                  {c.tags.length === 0 && c.close == null && <span className="sa-notag">no tags yet</span>}
+                </div>
+              </div>
+              {pending === c.id
+                ? <button className="btn btn-sm" onClick={() => { setPending(null); setReason(""); }}>Cancel</button>
+                : <button className="btn btn-sm btn-primary" onClick={() => { setPending(c.id); setReason(""); }}>Skip to them</button>}
+            </div>
+            {pending === c.id && (
+              <div className="sa-reason">
+                <div className="sa-reason-lbl">Reason for skipping the line</div>
+                <div className="sa-chips">
+                  {SA_REASONS.map((r) => <button key={r} className={"sa-chip" + (reason === r ? " sa-chip-on" : "")} onClick={() => setReason(r)}>{r}</button>)}
+                </div>
+                <input className="sa-input" value={reason} placeholder="Or type a reason" onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAssign(c.id); }} />
+                <button className="btn btn-primary sa-confirm" disabled={!reason.trim()} onClick={() => doAssign(c.id)}>Assign to {c.name.split(" ")[0]}</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <button className="sa-manage-toggle" onClick={() => setManage((v) => !v)}>{manage ? "Done tagging" : "Manage tags"}</button>
+      {manage && (
+        <div className="sa-manage">
+          {line.length === 0 && <p className="sa-empty">Nobody {whoLabel} to tag yet.</p>}
+          {line.map((p) => {
+            const name = realName(p.id);
+            return (
+              <div key={p.id} className="sa-mrow">
+                <div className="sa-nm">{name}</div>
+                <div className="sa-tags">
+                  {tagsOf(p.id).map((t) => <span key={t} className="sa-tag sa-tag-edit">{t}<button className="sa-tag-x" onClick={() => removeTag(p.id, t)}>×</button></span>)}
+                </div>
+                <div className="sa-add">
+                  <input className="sa-input sa-add-in" value={tagInput[p.id] || ""} placeholder="Add a tag"
+                    onChange={(e) => setTagInput((s) => ({ ...s, [p.id]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter") addTag(p.id, tagInput[p.id]); }} />
+                  <div className="sa-chips">
+                    {SA_SUGGESTED.filter((t) => !tagsOf(p.id).some((x) => x.toLowerCase() === t.toLowerCase())).slice(0, 4).map((t) => <button key={t} className="sa-chip" onClick={() => addTag(p.id, t)}>{t}</button>)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
+  const [row, setRow] = useState(undefined);
+  const [showQR, setShowQR] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [identities, setIdentities] = useState({});
+  const [pendingAssign, setPendingAssign] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [, force] = useReducer((x) => x + 1, 0);
+
+  const date = today();
+
+  const salesRoster = useMemo(() => {
+    const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+    return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.roster, config.roles]);
+
+  const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date, variant.kind)) || null), [store.id, date, variant.kind]);
+  const mutateRow = (fn) => mutateQueueRow(store.id, date, fn, variant.kind);
+  const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
+  const ensureRow = useCallback(async () => {
+    const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    const next = await mutateRow((cur) => {
+      if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
+      cur.roster = snap; cur.storeName = store.name;
+      if (!cur.token) cur.token = uid();
+      if (!cur.date) cur.date = date;
+      return cur;
+    });
+    setRow(next);
+  }, [store.id, store.name, date, salesRoster, config.roles]);
+
+  useEffect(() => { ensureRow(); }, [ensureRow]);
+  useEffect(() => { loadIds(); }, [loadIds]);
+  useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
+
+  const line = (row && row.line) || [];
+  const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
+
+  const expectedNotHere = useMemo(
+    () => salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id)),
+    [salesRoster, data, date, line]
+  );
+
+  const mirror = (rowData, audit) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next[variant.dataKey] = next[variant.dataKey] || {};
+    next[variant.dataKey][date] = rowData;
+    const days = Object.keys(next[variant.dataKey]).sort();
+    while (days.length > 60) delete next[variant.dataKey][days.shift()];
+    onChange(next, audit);
+  };
+  async function act(mutator, audit) {
+    if (busy) return; setBusy(true);
+    const next = await mutateRow((cur) => (cur ? mutator(cur) : cur));
+    if (next) { setRow(next); mirror(next, audit); }
+    setBusy(false);
+  }
+  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
+  const moveToBack = (cur, id) => {
+    const i = (cur.line || []).findIndex((p) => p.id === id);
+    if (i < 0) return cur;
+    const [p] = cur.line.splice(i, 1);
+    p.joinedAt = qNowIso(); p.status = "waiting"; p.statusAt = qNowIso(); p.awayReason = null;
+    cur.line.push(p);
+    return cur;
+  };
+
+  const assignNext = () => {
+    const first = line.find((p) => p.status === "waiting");
+    if (!first) return;
+    const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
+    act((cur) => {
+      const i = (cur.line || []).findIndex((p) => p.status === "waiting");
+      if (i < 0) return cur;
+      const p = cur.line[i];
+      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager", ref: rf });
+      return moveToBack(cur, p.id);
+    }, { action: "Queue: assigned next", detail: realName(first.id) + (rf ? " \u00b7 " + rf : "") });
+  };
+  const assignSpecific = (id, reason) => {
+    const ref = window.prompt(`Assigning ${realName(id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
+    act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason, ref: rf });
+    return moveToBack(cur, id);
+  }, { action: "Queue: assigned (out of order)", detail: `${realName(id)}: ${reason}${rf ? " \u00b7 " + rf : ""}` });
+  };
+  const decline = (id) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
+    return moveToBack(cur, id);
+  }, { action: "Queue: declined", detail: realName(id) });
+  const setFlag = (id, status) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id);
+    if (p) {
+      if (status === "waiting") { pushH(cur, { action: "back", from: p.awayReason || (p.status !== "waiting" ? p.status : null), id, who: p.label, by: "manager" }); p.awayReason = null; }
+      else { p.awayReason = status; pushH(cur, { action: status, id, who: p.label, by: "manager" }); }
+      p.status = status; p.statusAt = qNowIso();
+    }
+    return cur;
+  });
+  const move = (id, dir) => {
+    const i = line.findIndex((p) => p.id === id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= line.length) return;
+    act((cur) => {
+      const a = cur.line || []; const ci = a.findIndex((p) => p.id === id); const cj = ci + dir;
+      if (ci < 0 || cj < 0 || cj >= a.length) return cur;
+      const [p] = a.splice(ci, 1); a.splice(cj, 0, p);
+      pushH(cur, { action: "reordered", id, who: p.label, by: "manager", detail: `to #${cj + 1}` });
+      return cur;
+    }, { action: "Queue: reordered", detail: `${realName(id)} to #${j + 1}` });
+  };
+  const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Queue: removed", detail: realName(id) });
+  const addPerson = (id) => act((cur) => {
+    cur.line = cur.line || [];
+    if (cur.line.some((p) => p.id === id)) return cur;
+    const label = (cur.roster || []).find((r) => r.id === id)?.label || shortLabel(realName(id));
+    cur.line.push({ id, label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+    pushH(cur, { action: "signed-in", id, who: label, by: "manager" });
+    return cur;
+  }, { action: "Queue: added", detail: realName(id) });
+  const clearLine = () => {
+    if (!window.confirm("Clear the current line? Today's history is kept for coaching; only the live line is emptied.")) return;
+    act((cur) => { cur.line = []; pushH(cur, { action: "cleared", by: "manager" }); return cur; }, { action: "Queue: line cleared", detail: store.name });
+  };
+  const regenToken = () => {
+    if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
+    act((cur) => { cur.token = uid(); return cur; }, { action: "Queue: code regenerated", detail: store.name });
+  };
+  const resetPin = async (id) => {
+    if (!window.confirm(`Reset ${realName(id)}'s PIN? They'll set a new one the next time they sign in.`)) return;
+    const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
+    setIdentities(next);
+    act((cur) => { pushH(cur, { action: "pin-reset", id, who: realName(id), by: "manager" }); return cur; }, { action: "Queue: PIN reset", detail: realName(id) });
+  };
+
+  if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
+
+  const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
+  const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
+  const availCount = line.filter((p) => p.status === "waiting").length;
+  const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  return (
+    <div className={`checkout q-tab mf ${variant.mf}`}>
+      <div className="q-topline">
+        <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
+        <div className="q-topline-actions">
+          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+        </div>
+      </div>
+
+      <InstrumentCluster kind="line"
+        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })} />
+
+      <QueueHero
+        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
+        waitingNames={line.map((p) => realName(p.id))}
+        accent={variant.accent} kind="line"
+        onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+
+      <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
+
+      {showPins && (
+        <div className="q-pins-panel">
+          <div className="q-pins-head">Salesperson PINs</div>
+          {pinPeople.length === 0
+            ? <p className="muted">No PINs set yet. They're created the first time each person signs in.</p>
+            : pinPeople.map((p) => (
+                <div key={p.id} className="q-pin-row">
+                  <span className="q-pin-name">{p.name}</span>
+                  <button className="btn btn-sm q-pin-reset" onClick={() => resetPin(p.id)}>Reset PIN</button>
+                </div>
+              ))}
+        </div>
+      )}
+
+      {showQR && (
+        <div className="q-qr-panel">
+          <div className="q-qr-box"><QueueQR url={url} /></div>
+          <div className="q-qr-info">
+            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're {variant.count}. No login. It only works today; a fresh code appears each morning.</p>
+            <div className="q-qr-btns">
+              <button className="btn" onClick={() => printQueueSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+              <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
+              <button className="btn" onClick={regenToken}>New code</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mf-lower">
+      <div className="mf-main">
+      <div className="q-line">
+        {line.length === 0 && <p className="muted q-empty">{variant.empty}</p>}
+        {line.map((p, i) => {
+          const avail = p.status === "waiting";
+          const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
+          return (
+            <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""}`}>
+              <div className="q-ord">
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up">▲</button>
+                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down">▼</button>
+              </div>
+              <div className="q-rank">{i + 1}</div>
+              <span className="mf-av" style={{ background: `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
+              <div className="q-who">
+                <div className="q-nm">{realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}</div>
+                <div className="q-meta">
+                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <QFlagIcon status={p.status} className="q-chip-ico" />}{QUEUE_FLAGS[p.status]?.label || p.status}</span>
+                  <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
+                </div>
+              </div>
+              <div className="q-row-actions">
+                {pendingAssign === p.id ? (
+                  <div className="q-reason">
+                    <span>Reason:</span>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Language match"); setPendingAssign(null); }}>Language match</button>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Manager pick"); setPendingAssign(null); }}>Other</button>
+                    <button className="btn btn-sm" onClick={() => setPendingAssign(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    {!isNext && avail && <button className="btn btn-sm" onClick={() => setPendingAssign(p.id)}>Assign</button>}
+                    <button className="btn btn-sm" onClick={() => decline(p.id)}>Decline</button>
+                    <select className="q-flag-sel" value={p.status} onChange={(e) => setFlag(p.id, e.target.value)}>
+                      <option value="waiting">In line</option>
+                      <option value="lunch">Lunch</option>
+                      <option value="customer">With customer</option>
+                      <option value="away">Away</option>
+                    </select>
+                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)}>✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {expectedNotHere.length > 0 && (
+        <div className="q-missing">
+          <div className="q-missing-head">Scheduled today, not in line yet</div>
+          <div className="q-missing-list">
+            {expectedNotHere.map((a) => (
+              <button key={a.id} className="q-missing-chip" title="Add to the line" onClick={() => addPerson(a.id)}>
+                {a.name}<span className="q-missing-add">+ add</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="q-add">
+        {notInLine.length > 0 && (
+          <>
+            <span className="muted">Add manually:</span>
+            <select className="q-flag-sel" value="" onChange={(e) => { if (e.target.value) addPerson(e.target.value); }}>
+              <option value="">Pick a name…</option>
+              {notInLine.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </>
+        )}
+        {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
+      </div>
+      </div>
+      <aside className="mf-side">
+        <SmartAssign line={line} realName={realName} kind="line"
+          repTags={(data && data.repTags) || {}}
+          closeLabel={variant.closeLabel}
+          closeMap={(() => { const m = {}; for (const p of line) { const r = oyoRatios(oyoBaseline(data, norm(realName(p.id)), p.id)); m[p.id] = r ? r[variant.channel] : null; } return m; })()}
+          onSaveTags={(next) => onChange({ ...data, repTags: next }, { action: "Updated rep tags", detail: store.name })}
+          onAssign={(id, reason) => assignSpecific(id, reason)} />
+      </aside>
+      </div>
+      <ActivityTimeline horizontal history={row?.history} nameOf={realName} />
+    </div>
+  );
+}
+/* ==========================================================================
+   SMARTFLOOR — "Live Floor" walk-in / showroom queue (v1)
+   --------------------------------------------------------------------------
+   Self-governed floor "up" queue. Same sign-up as The Line (type name + PIN,
+   reuse queue_identity), but driven by DriveCentric deal_events so nobody has
+   to remember to flag themselves — the auto-flip that fixes the old human-only
+   floor system.
+
+   Storage:
+     - floor_public  : per-day floor state row  (id = "<store>:<date>")
+     - queue_identity : REUSED for PINs (shared with The Line)
+     - deal_events    : read-only feed (authenticated read via RLS)
+
+   The event engine keys off the SUBJECT event (seg 1), NOT the ALERT — the two
+   "sold" events (ProspectSoldGeneral / Prospect Sold - Pending) share an identical
+   ALERT+Description and only differ in the subject, and "Sales Appointment - Show"
+   is only distinguishable from a plain visit by its subject.
+   ========================================================================== */
+
+const FLOOR_TABLE = "floor_public";
+const floorRowId = (store, date) => `${store}:${date}`;
+
+// Normalize a dealership name the SAME way the ingest function does, so the
+// admin can type a friendly name and it lines up with deal_events.dealership_norm.
+const floorNormDealer = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+// Floor statuses (superset of the phone-line vocabulary).
+const FLOOR_FLAGS = {
+  waiting:  { label: "In line",       cls: "f-waiting" },
+  customer: { label: "With customer", cls: "f-customer" },
+  lunch:    { label: "At lunch",      cls: "f-lunch" },
+  away:     { label: "Away",          cls: "f-away" },
+};
+const FLOOR_SELF_FLAGS = ["lunch", "away"];
+
+// The actions an event can trigger. The map is (event string) -> action.
+const FLOOR_ACTIONS = {
+  checkin:  "Checked in (with customer)",
+  appt:     "Appointment showed (favored)",
+  proposal: "Proposal (soft signal)",
+  checkout: "Checked out (to bottom)",
+  sold:     "Sold (accelerated up)",
+  ignore:   "Ignore",
+};
+
+// Default event -> action map, from the confirmed DriveCentric vocabulary.
+const FLOOR_DEFAULT_EVENT_MAP = {
+  "PipeVisit": "checkin",
+  "New Prospect Walk In": "checkin",
+  "Sales Appointment - Show": "appt",
+  "PipeProposal": "proposal",
+  "DealCheckedOut": "checkout",
+  "ProspectSoldGeneral": "sold",
+  "Prospect Sold - Pending": "sold",
+};
+
+const FLOOR_DEFAULT_CONFIG = {
+  enabled: true,
+  dealershipNorms: [],     // e.g. ["driver s mart winter park"]
+  eventMap: {},            // per-store overrides merged over the default map
+  timerOn: false,
+  timerMins: 45,
+  soldAscent: 3,           // spots to jump on a sale — never into the top 3
+  apptAscent: 2,           // spots to jump when an appointment shows (favored)
+  accidentalWindowMins: 5, // self-reverse window after an auto check-in
+  overrideCalls: 2,        // ">2 calls AND >2 videos" marks a rep present today
+  overrideVideos: 2,
+};
+function floorCfg(store) {
+  const c = (store && store.floorConfig) || {};
+  return { ...FLOOR_DEFAULT_CONFIG, ...c };
+}
+function floorEventMap(store) {
+  return { ...FLOOR_DEFAULT_EVENT_MAP, ...((store && store.floorConfig && store.floorConfig.eventMap) || {}) };
+}
+
+/* ---- hand-drawn line icons (currentColor, no emoji) ---- */
+function FDoorIcon({ className }) {
+  return <PixIcon glyph="door" size={16} className={className} />;
+}
+function FHandshakeIcon({ className }) {
+  return <PixIcon glyph="handshake" size={20} className={className} />;
+}
+function FApptIcon({ className }) {
+  return <PixIcon glyph="calendar" size={16} className={className} />;
+}
+function FDocIcon({ className }) {
+  return <PixIcon glyph="doc" size={16} className={className} />;
+}
+function FFlagIcon({ status, className }) {
+  const g = status === "lunch" ? "lunch" : status === "away" ? "away" : status === "customer" ? "user" : null;
+  return g ? <PixIcon glyph={g} size={18} className={className} /> : null;
+}
+
+/* ---- Supabase access: per-day floor row (floor_public) ---- */
+async function loadFloorRow(store, date) {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase.from(FLOOR_TABLE).select("data").eq("id", floorRowId(store, date)).maybeSingle();
+    if (error) throw error;
+    return data ? data.data : null;
+  } catch (e) { console.error("loadFloorRow", e); return null; }
+}
+async function saveFloorRow(store, date, data) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from(FLOOR_TABLE).upsert(
+      { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
+    if (error) throw error;
+    return true;
+  } catch (e) { console.error("saveFloorRow", e); return false; }
+}
+async function mutateFloorRow(store, date, fn) {
+  const cur = await loadFloorRow(store, date);
+  const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+  if (!next) return cur;
+  await saveFloorRow(store, date, next);
+  return next;
+}
+
+/* ---- Supabase access: the deal_events feed (read-only) ----
+   Pulls events for this store's dealership_norm(s) that arrived after `sinceIso`.
+   deal_events RLS allows authenticated reads; writes are service-role only. */
+async function loadDealEvents(dealershipNorms, sinceIso) {
+  if (!supabase || !dealershipNorms || !dealershipNorms.length) return [];
+  try {
+    let q = supabase.from("deal_events")
+      .select("received_at,dealership,dealership_norm,event,alert,description,sales,source,raw_subject")
+      .in("dealership_norm", dealershipNorms)
+      .order("received_at", { ascending: true })
+      .limit(300);
+    if (sinceIso) q = q.gt("received_at", sinceIso);
+    const { data, error } = await q;
+    if (error) throw error;
+    return data || [];
+  } catch (e) { console.error("loadDealEvents", e); return []; }
+}
+
+/* ---- match a deal_events "sales" full name to a roster person id ---- */
+function floorMatchSales(salesName, rosterSnap) {
+  const typed = qNormName(salesName);
+  if (!typed || !rosterSnap || !rosterSnap.length) return null;
+  // rosterSnap items carry `name` (full). Rank by first+last token + levenshtein.
+  const ranked = rosterSnap
+    .map((r) => {
+      const full = qNormName(r.name || r.label);
+      const d = qLev(typed, full);
+      const tf = qFirstToken(typed), ff = qFirstToken(full);
+      const tl = typed.split(" ").slice(-1)[0], fl = full.split(" ").slice(-1)[0];
+      const firstEq = tf && tf === ff;
+      const lastEq = tl && tl === fl;
+      return { id: r.id, d, firstEq, lastEq, full };
+    })
+    .sort((a, b) => a.d - b.d);
+  const top = ranked[0];
+  if (!top) return null;
+  // Confident when the string is (near-)exact, or first+last both line up.
+  if (top.d <= 2) return top.id;
+  if (top.firstEq && top.lastEq) return top.id;
+  return null;
+}
+
+/* ---- the event engine: apply a batch of new events to a floor row ----
+   Pure-ish: mutates `cur` (already a deep clone from mutateFloorRow) and returns it.
+   Only people already in the line are affected; anything we can't place is pushed
+   to cur.unmatched[] for the manager to resolve (the secondary-salesperson gap). */
+function floorApplyEvents(cur, events, store) {
+  if (!cur) return cur;
+  const cfg = floorCfg(store);
+  const map = floorEventMap(store);
+  cur.line = cur.line || [];
+  cur.history = cur.history || [];
+  cur.unmatched = cur.unmatched || [];
+  cur.processed = cur.processed || [];
+  const processed = new Set(cur.processed);
+
+  const keyOf = (e) => `${e.received_at}|${e.event}|${e.sales}`;
+  const pushH = (ev) => cur.history.push({ t: qNowIso(), ...ev });
+  const idxOf = (id) => cur.line.findIndex((p) => p.id === id);
+  const moveTo = (i, j) => { const [p] = cur.line.splice(i, 1); cur.line.splice(j, 0, p); };
+
+  for (const e of events) {
+    const k = keyOf(e);
+    if (processed.has(k)) continue;
+    processed.add(k);
+    cur.lastEventAt = e.received_at > (cur.lastEventAt || "") ? e.received_at : cur.lastEventAt;
+
+    const action = map[e.event] || map[(e.alert || "").trim()] || null;
+    if (!action || action === "ignore") continue;
+
+    const pid = floorMatchSales(e.sales, cur.roster || []);
+    if (!pid || idxOf(pid) < 0) {
+      // Named rep isn't in the floor line (or couldn't be matched). Surface it —
+      // this is the secondary-salesperson gap; the alert only names the primary.
+      cur.unmatched.push({ t: e.received_at, sales: e.sales || "(no name)", event: e.event, action, key: k });
+      cur.unmatched = cur.unmatched.slice(-12);
+      continue;
+    }
+    const i = idxOf(pid);
+    const p = cur.line[i];
+
+    if (action === "checkin") {
+      p.status = "customer"; p.statusAt = qNowIso(); p.awayReason = null;
+      p.accidentalUntil = new Date(Date.now() + cfg.accidentalWindowMins * 60000).toISOString();
+      p.autoFlip = true;
+      pushH({ action: "auto-checkin", id: pid, who: p.label, event: e.event });
+    } else if (action === "appt") {
+      // favored ascent (no top-3 cap) + with customer + appointment flag
+      const j = Math.max(i - (cfg.apptAscent || 2), 0);
+      if (j < i) { moveTo(i, j); }
+      const np = cur.line[idxOf(pid)];
+      np.status = "customer"; np.statusAt = qNowIso(); np.awayReason = null;
+      np.appt = true; np.autoFlip = true;
+      np.accidentalUntil = new Date(Date.now() + cfg.accidentalWindowMins * 60000).toISOString();
+      pushH({ action: "auto-appt-show", id: pid, who: np.label, event: e.event, detail: j < i ? `up to #${j + 1}` : "no move" });
+    } else if (action === "proposal") {
+      p.proposal = true; // soft signal — do NOT force in-store presence
+      pushH({ action: "auto-proposal", id: pid, who: p.label, event: e.event });
+    } else if (action === "checkout") {
+      p.status = "waiting"; p.statusAt = qNowIso(); p.joinedAt = qNowIso();
+      p.awayReason = null; p.autoFlip = false; p.appt = false; p.proposal = false;
+      moveTo(idxOf(pid), cur.line.length - 1);
+      pushH({ action: "auto-checkout", id: pid, who: p.label, event: e.event });
+    } else if (action === "sold") {
+      // accelerated ascent — never into the top 3 (final rank must be >= 4)
+      const j = Math.max(i - (cfg.soldAscent || 3), 3);
+      if (j < i && cur.line.length > 3) { moveTo(i, j); pushH({ action: "auto-sold", id: pid, who: p.label, event: e.event, detail: `up to #${j + 1}` }); }
+      else { pushH({ action: "auto-sold", id: pid, who: p.label, event: e.event, detail: "no move (top-3 guard)" }); }
+    }
+  }
+  cur.processed = Array.from(processed).slice(-400);
+  return cur;
+}
+
+/* ---- printable sign-in poster (SmartFloor branded) ---- */
+async function printFloorSignIn({ store, url, date, by }) {
+  let svg = "";
+  try {
+    const qrcode = await loadQRCode();
+    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
+  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
+  const w = window.open("", "lpc_floor_" + store.id, "width=800,height=1040");
+  if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
+  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
+  const doorSvg = pixSvgString("door", 18);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Live Floor · ${store.name}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
+    .banner{display:inline-flex;align-items:center;gap:10px;background:#0f9d76;color:#fff;font-weight:700;
+      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
+    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
+    .store{font-size:22px;font-weight:700;color:#334;}
+    .date{font-size:16px;color:#667;margin-top:6px;}
+    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid #0f9d76;border-radius:24px;}
+    .qr svg{display:block;width:100%;height:auto;}
+    .how{font-size:20px;font-weight:700;margin-top:10px;}
+    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
+    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
+    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  </style></head><body>
+    <div class="banner">${doorSvg} Live Floor</div>
+    <h1>Get on the Floor</h1>
+    <div class="store">${store.name}</div>
+    <div class="date">${nice}</div>
+    <div class="qr">${svg}</div>
+    <div class="how">Scan with your phone camera to sign in</div>
+    <div class="sub">Enter your name and PIN to claim your spot for the next walk-up. Your spot updates on its own as customers check in and deals happen. No app, no login. This code only works today.</div>
+    <div class="foot">${foot}</div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+function floorSignInUrl(storeId, date, token) {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?f=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
+}
+
+/* =========================================================================
+   FloorSignIn — salesperson phone page for the walk-in floor.
+   Mirrors QueueSignIn (name fuzzy-match + PIN, curtain wipe, reuse identities);
+   the "done" screen adds the accidental-check-in self-reverse.
+   ========================================================================= */
+function FloorSignIn({ store, date, token }) {
+  const [row, setRow] = useState(undefined);
+  const [identities, setIdentities] = useState(null);
+  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
+  const [step, setStep] = useState("name");
+  const [shown, setShown] = useState("loading");
+  const [shownKey, setShownKey] = useState("loading");
+  const [wiping, setWiping] = useState(false);
+  const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
+  const [resolved, setResolved] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [pin, setPin] = useState("");
+  const [pin2, setPin2] = useState("");
+  const [pinMode, setPinMode] = useState("verify");
+  const [switchTo, setSwitchTo] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refetch = useCallback(async () => setRow((await loadFloorRow(store, date)) || null), [store, date]);
+  useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
+
+  const isToday = date === today();
+  const valid = isToday && row && row.token && row.token === token;
+  const line = (row && row.line) || [];
+  const me = line.find((p) => p.id === meId) || null;
+  const roster = (row && row.roster) || [];
+  const variant = { label: "Live Floor" };
+  const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
+  useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
+  const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
+  const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
+  useEffect(() => {
+    if (!me || myIdx < 0) return;
+    postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
+      rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
+      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString() });
+  }, [me && me.status, myIdx, aheadCount, iAmUp]); // eslint-disable-line
+
+  const remember = (id) => {
+    try {
+      if (id) { localStorage.setItem(`lpcf:${store}:${date}`, id); localStorage.setItem(`lpcq:self:${store}`, id); }
+      else localStorage.removeItem(`lpcf:${store}:${date}`);
+    } catch {}
+    setMeId(id);
+  };
+
+  useEffect(() => { if (meId && line.some((p) => p.id === meId)) setStep("done"); }, [meId, line]);
+
+  let screen;
+  if (row === undefined || identities === null) screen = "loading";
+  else if (!isToday || !valid) screen = "invalid";
+  else if (step === "done" && me) screen = "done";
+  else if (step === "pin" && switchTo) screen = "switch";
+  else if (step === "pin" && selected) screen = "pin";
+  else if (step === "pick") screen = "pick";
+  else if (step === "confirm") screen = "confirm";
+  else screen = "name";
+
+  // A wipe should fire between EVERY page they touch — including flag changes on the
+  // live screen (which don't change `screen`). Key it on screen + live status.
+  const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
+  useEffect(() => {
+    if (liveKey === shownKey) return;
+    // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
+    if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
+    setWiping(true);
+    const t1 = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 300);
+    const t2 = setTimeout(() => setWiping(false), 620);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [liveKey, shownKey, screen]);
+
+  async function joinAs(person) {
+    setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      cur.line = cur.line || [];
+      if (!cur.line.some((p) => p.id === person.id)) {
+        cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self" });
+      }
+      return cur;
+    });
+    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
+    remember(person.id);
+    if (next) setRow(next);
+    setStep("done"); setPin(""); setPin2(""); setBusy(false);
+  }
+
+  function submitName() {
+    setMsg("");
+    const r = qResolveName(typed, roster);
+    setResolved(r);
+    if (r.kind === "one") pickPerson(r.person);
+    else if (r.kind === "confirm") setStep("confirm");
+    else if (r.kind === "pick") setStep("pick");
+    else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
+  }
+  function pickPerson(p) {
+    setSelected(p); setSwitchTo(null); setMsg("");
+    const hasPin = !!(identities && identities[p.id] && identities[p.id].h);
+    setPinMode(hasPin ? "verify" : "create");
+    setStep("pin");
+  }
+  async function submitPin() {
+    if (!selected) return;
+    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4 to 6 digits."); return; }
+    setBusy(true); setMsg("");
+    const idents = identities || (await loadQueueIdentities(store));
+    if (pinMode === "create") {
+      if (pin !== pin2) { setMsg("The two PINs don't match."); setBusy(false); return; }
+      const clash = await qFindByPin(idents, pin, selected.id);
+      if (clash) { setMsg("That PIN is already taken by someone here. Pick a different one."); setBusy(false); return; }
+      const salt = qRandSalt(); const h = await qHashPin(pin, salt);
+      const nextIds = await mutateQueueIdentities(store, (cur) => { cur[selected.id] = { h, s: salt, label: selected.label, setAt: qNowIso() }; return cur; });
+      setIdentities(nextIds);
+      await joinAs(selected);
+      return;
+    }
+    const rec = idents[selected.id];
+    if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
+    const other = await qFindByPin(idents, pin, null);
+    if (other && other !== selected.id) { setSwitchTo({ id: other, label: idents[other].label || "that person" }); setMsg(""); setBusy(false); return; }
+    setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
+    setBusy(false);
+  }
+
+  async function setFlag(status) {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) {
+        cur.history = cur.history || [];
+        if (status === "waiting") {
+          const from = p.awayReason || (p.status !== "waiting" ? p.status : null);
+          cur.history.push({ t: qNowIso(), action: "back", from, id: meId, who: p.label, by: "self" });
+          p.awayReason = null;
+        } else {
+          p.awayReason = status;
+          cur.history.push({ t: qNowIso(), action: status, id: meId, who: p.label, by: "self" });
+        }
+        p.status = status; p.statusAt = qNowIso();
+      }
+      return cur;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  // accidental check-in: reverse the auto-flip (within the store's window)
+  async function undoCheckin() {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) {
+        p.status = "waiting"; p.statusAt = qNowIso(); p.autoFlip = false; p.accidentalUntil = null;
+        cur.history = cur.history || [];
+        cur.history.push({ t: qNowIso(), action: "accidental-undo", id: meId, who: p.label, by: "self" });
+      }
+      return cur;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  async function leave() {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateFloorRow(store, date, (cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      cur.line = (cur.line || []).filter((x) => x.id !== meId);
+      if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", id: meId, who: p.label, by: "self" }); }
+      return cur;
+    });
+    remember(null);
+    if (next) setRow(next);
+    setStep("name"); setBusy(false);
+  }
+
+  const storeName = (row && row.storeName) || "Live Floor";
+  const FloorPill = () => <div className="q-phone-pill f-pill"><FDoorIcon className="q-pill-ico" /> Walk-up floor</div>;
+  const eff = (shown === "done" && !me) ? "name" : shown;
+  let content;
+
+  if (eff === "loading") {
+    content = <div className="q-card q-center"><div className="spin-logo" /><p className="q-muted">Loading…</p></div>;
+  } else if (eff === "invalid") {
+    content = (
+      <div className="q-card q-center">
+        <QClockIcon className="q-x-ico" />
+        <h2>This sign-in code isn't for today</h2>
+        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
+      </div>
+    );
+  } else if (eff === "done" && me) {
+    const myPos = line.findIndex((p) => p.id === meId) + 1;
+    const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
+    const isNext = me.status === "waiting" && availableAhead === 0;
+    const canUndo = me.status === "customer" && me.autoFlip && me.accidentalUntil && new Date(me.accidentalUntil) > new Date();
+    const st = me.status;
+    const title = st === "customer" ? "With a customer" : st === "lunch" ? "At lunch" : st === "away" ? "Stepped away" : isNext ? "You're up" : "You're on the floor";
+    const sub = st === "customer" ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " for your appointment" : ""}. You rejoin when they leave.</>
+      : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
+      : isNext ? "Head to the door. The next one is yours." : `${availableAhead} available ahead of you`;
+    content = (
+      <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
+        <div className="sf-top">
+          <span className="sf-tag"><span className="sf-live-dot" />Live Floor</span>
+          <span className="sf-tag">{line.length} on the floor</span>
+        </div>
+        <div className="sf-poswrap">
+          <div className="sf-aura" />
+          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <div className="sf-meta">
+            <div className="sf-line-1">{title}</div>
+            <div className="sf-line-2">{sub}</div>
+            <div className="sf-wait">On the floor <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
+          </div>
+        </div>
+        <div className="sf-actions">
+          {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
+          <div className="sf-status-row">
+            {st !== "waiting"
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              : FLOOR_SELF_FLAGS.map((f) => (
+                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
+                    <DmIcon name={f} cell={4} /><span>{f === "lunch" ? "Lunch" : "Away"}</span>
+                  </button>
+                ))}
+          </div>
+          <button className="sf-leave" disabled={busy} onClick={leave}>Leave the floor</button>
+        </div>
+        {isNext && (
+          <div className="sf-uptake">
+            <div className="sf-shock" />
+            <DmNumber value={1} up />
+            <h2>You're up</h2>
+            <p>Head to the door. The next one is yours.</p>
+            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setFlag("customer"); }}>I've got it</button>
+          </div>
+        )}
+      </div>
+    );
+  } else if (eff === "switch" && selected && switchTo) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Is this you?</h2></div>
+        <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
+        <p className="q-big-q">Are you {switchTo.label}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
+          <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
+        </div>
+      </div>
+    );
+  } else if (eff === "pin" && selected) {
+    content = (
+      <div className="q-card">
+        <div className="q-head">
+          <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
+          <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
+          <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. It's the same PIN as the phone line." : "So only you can claim your spot."}</p>
+        </div>
+        <div className="q-pin-field">
+          {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
+          <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
+            placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
+        </div>
+        {pinMode === "create" && (
+          <div className="q-pin-field">
+            <label className="q-pin-lbl">Confirm PIN</label>
+            <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
+              placeholder="••••" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
+          </div>
+        )}
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the floor"}</button>
+        <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
+      </div>
+    );
+  } else if (eff === "pick" && resolved && resolved.people) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to "{typed}".</p></div>
+        <div className="q-roster">
+          {resolved.people.map((p) => (
+            <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
+              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">on floor</span> : null}
+            </button>
+          ))}
+        </div>
+        <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
+      </div>
+    );
+  } else if (eff === "confirm" && resolved && resolved.person) {
+    content = (
+      <div className="q-card">
+        <div className="q-head"><h2>Did you mean…</h2></div>
+        <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
+        <div className="q-flags">
+          <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
+          <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
+        </div>
+      </div>
+    );
+  } else {
+    content = (
+      <div className="q-card">
+        <FloorPill />
+        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to claim the next walk-up.</p></div>
+        <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
+          onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
+        {msg && <p className="q-err">{msg}</p>}
+        <button className="q-btn q-primary q-wide" disabled={!typed.trim()} onClick={submitName}>Continue</button>
+        {resolved && resolved.kind === "none" && resolved.suggestions && resolved.suggestions.length > 0 && (
+          <div className="q-suggest">
+            <p className="q-muted">Did you mean:</p>
+            <div className="q-roster">
+              {resolved.suggestions.map((p) => (
+                <button key={p.id} className="q-name" onClick={() => pickPerson(p)}>{p.label}{p.role ? <span className="q-role">{p.role}</span> : null}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="q-page f-page sf sf-floor">
+      <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
+      <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorBoard — the manager board. Runs the event engine while it's open.
+   ========================================================================= */
+function FloorBoard({ config, store, data, onData, userName }) {
+  const [row, setRow] = useState(undefined);
+  const [identities, setIdentities] = useState({});
+  const [showQR, setShowQR] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [pendingAssign, setPendingAssign] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [, force] = useReducer((x) => x + 1, 0);
+  const prevLine = useRef([]);
+  const [toast, setToast] = useState(null);
+
+  const date = today();
+  const cfg = floorCfg(store);
+
+  const salesRoster = useMemo(() => {
+    if (!data) return [];
+    const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+    return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
+  }, [data, config.roles]);
+
+  const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
+  const refetch = useCallback(async () => setRow((await loadFloorRow(store.id, date)) || null), [store.id, date]);
+
+  const ensureRow = useCallback(async () => {
+    if (!data) return;
+    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    const next = await mutateFloorRow(store.id, date, (cur) => {
+      if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [], unmatched: [], processed: [], lastEventAt: null };
+      cur.roster = snap; cur.storeName = store.name;
+      if (!cur.token) cur.token = uid();
+      if (!cur.date) cur.date = date;
+      return cur;
+    });
+    setRow(next);
+  }, [store.id, store.name, date, salesRoster, config.roles, data]);
+
+  useEffect(() => { loadIds(); }, [loadIds]);
+  useEffect(() => { ensureRow(); }, [ensureRow]);
+  useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
+
+  const line = (row && row.line) || [];
+  const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
+
+  // ---- the engine tick: pull new deal_events, apply, and run the timer ----
+  const engineTick = useCallback(async () => {
+    if (!row) return;
+    const norms = (cfg.dealershipNorms || []).filter(Boolean);
+    if (cfg.enabled && norms.length) {
+      const since = row.lastEventAt || `${date}T00:00:00.000Z`;
+      const events = await loadDealEvents(norms, since);
+      if (events.length) {
+        const next = await mutateFloorRow(store.id, date, (cur) => (cur ? floorApplyEvents(cur, events, store) : cur));
+        if (next) setRow(next);
+      }
+    }
+    // timer auto-pass on the leader
+    if (cfg.timerOn) {
+      const cur = await loadFloorRow(store.id, date);
+      if (cur) {
+        const li = (cur.line || []).findIndex((p) => p.status === "waiting");
+        if (li >= 0) {
+          const leader = cur.line[li];
+          const mins = qMinsSince(leader.leaderSince || leader.joinedAt);
+          if (mins >= cfg.timerMins) {
+            const next = await mutateFloorRow(store.id, date, (c) => {
+              const i = (c.line || []).findIndex((p) => p.status === "waiting");
+              if (i < 0) return c;
+              const [p] = c.line.splice(i, 1);
+              p.joinedAt = qNowIso(); p.statusAt = qNowIso(); p.leaderSince = null;
+              c.line.push(p);
+              c.history = c.history || []; c.history.push({ t: qNowIso(), action: "timer-pass", id: p.id, who: p.label });
+              return c;
+            });
+            if (next) setRow(next);
+          }
+        }
+      }
+    }
+  }, [row, cfg.enabled, cfg.dealershipNorms, cfg.timerOn, cfg.timerMins, store, date]);
+
+  useEffect(() => { const t = setInterval(engineTick, 8000); return () => clearInterval(t); }, [engineTick]);
+
+  // stamp leaderSince when the leader changes; fire a move-up toast + sound
+  useEffect(() => {
+    if (!row) return;
+    const prev = prevLine.current;
+    const nowIds = line.map((p) => p.id);
+    // detect anyone whose rank improved
+    const prevPos = {}; prev.forEach((id, i) => { prevPos[id] = i; });
+    let bumped = null;
+    line.forEach((p, i) => { if (prevPos[p.id] != null && i < prevPos[p.id]) bumped = p; });
+    if (bumped) {
+      setToast(`${realName(bumped.id)} moved up`);
+      try { const a = new (window.AudioContext || window.webkitAudioContext)(); const o = a.createOscillator(); const g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 660; g.gain.value = 0.05; o.start(); setTimeout(() => { o.stop(); a.close(); }, 140); } catch {}
+      setTimeout(() => setToast(null), 2600);
+    }
+    prevLine.current = nowIds;
+    // maintain leaderSince
+    const li = line.findIndex((p) => p.status === "waiting");
+    if (li >= 0 && !line[li].leaderSince) {
+      // set silently on next mutate opportunity (don't thrash the row here)
+    }
+  }, [row]); // eslint-disable-line
+
+  const mirror = (rowData, audit) => { /* light mirror for future coaching: data.floor[date] */ };
+  async function act(mutator, audit) {
+    if (busy) return; setBusy(true);
+    const next = await mutateFloorRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
+    if (next) setRow(next);
+    setBusy(false);
+  }
+  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
+  const moveToBack = (cur, id) => {
+    const i = (cur.line || []).findIndex((p) => p.id === id);
+    if (i < 0) return cur;
+    const [p] = cur.line.splice(i, 1);
+    p.joinedAt = qNowIso(); p.status = "waiting"; p.statusAt = qNowIso(); p.awayReason = null; p.autoFlip = false; p.appt = false; p.proposal = false;
+    cur.line.push(p);
+    return cur;
+  };
+
+  const assignNext = () => {
+    const first = line.find((p) => p.status === "waiting");
+    if (!first) return;
+    const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
+    act((cur) => {
+      const i = (cur.line || []).findIndex((p) => p.status === "waiting");
+      if (i < 0) return cur;
+      const p = cur.line[i];
+      pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager", ref: rf });
+      return moveToBack(cur, p.id);
+    }, { action: "Floor: assigned next", detail: realName(first.id) + (rf ? " \u00b7 " + rf : "") });
+  };
+  const assignSpecific = (id, reason) => {
+    const ref = window.prompt(`Assigning ${realName(id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    if (ref === null) return;
+    const rf = ref.trim();
+    act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason, ref: rf });
+    return moveToBack(cur, id);
+  }, { action: "Floor: assigned (out of order)", detail: `${realName(id)}: ${reason}${rf ? " \u00b7 " + rf : ""}` });
+  };
+  const decline = (id) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id); if (!p) return cur;
+    pushH(cur, { action: "declined", id, who: p.label, by: "manager" });
+    return moveToBack(cur, id);
+  }, { action: "Floor: declined", detail: realName(id) });
+  const setFlag = (id, status) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id);
+    if (p) {
+      if (status === "waiting") { pushH(cur, { action: "back", from: p.awayReason || (p.status !== "waiting" ? p.status : null), id, who: p.label, by: "manager" }); p.awayReason = null; p.autoFlip = false; }
+      else { p.awayReason = status; pushH(cur, { action: status, id, who: p.label, by: "manager" }); }
+      p.status = status; p.statusAt = qNowIso();
+    }
+    return cur;
+  });
+  const move = (id, dir) => {
+    const i = line.findIndex((p) => p.id === id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= line.length) return;
+    act((cur) => {
+      const a = cur.line || []; const ci = a.findIndex((p) => p.id === id); const cj = ci + dir;
+      if (ci < 0 || cj < 0 || cj >= a.length) return cur;
+      const [p] = a.splice(ci, 1); a.splice(cj, 0, p);
+      pushH(cur, { action: "reordered", id, who: p.label, by: "manager", detail: `to #${cj + 1}` });
+      return cur;
+    }, { action: "Floor: reordered", detail: `${realName(id)} to #${j + 1}` });
+  };
+  const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Floor: removed", detail: realName(id) });
+  const addPerson = (id) => act((cur) => {
+    cur.line = cur.line || [];
+    if (cur.line.some((p) => p.id === id)) return cur;
+    const label = (cur.roster || []).find((r) => r.id === id)?.label || shortLabel(realName(id));
+    cur.line.push({ id, label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
+    pushH(cur, { action: "signed-in", id, who: label, by: "manager" });
+    return cur;
+  }, { action: "Floor: added", detail: realName(id) });
+  const dismissUnmatched = (key) => act((cur) => { cur.unmatched = (cur.unmatched || []).filter((u) => u.key !== key); return cur; });
+  const clearLine = () => {
+    if (!window.confirm("Clear the floor line? Today's history is kept; only the live line is emptied.")) return;
+    act((cur) => { cur.line = []; pushH(cur, { action: "cleared", by: "manager" }); return cur; }, { action: "Floor: line cleared", detail: store.name });
+  };
+  const regenToken = () => {
+    if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
+    act((cur) => { cur.token = uid(); return cur; }, { action: "Floor: code regenerated", detail: store.name });
+  };
+  const resetPin = async (id) => {
+    if (!window.confirm(`Reset ${realName(id)}'s PIN? This is the shared PIN — it also resets it for the phone line. They'll set a new one next sign-in.`)) return;
+    const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
+    setIdentities(next);
+  };
+
+  if (row === undefined || data === null) return <div className="checkout"><p className="muted">Loading the floor…</p></div>;
+
+  const norms = (cfg.dealershipNorms || []).filter(Boolean);
+  const notConfigured = !norms.length;
+  const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
+  const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
+  const url = row ? floorSignInUrl(store.id, date, row.token) : "";
+  const availCount = line.filter((p) => p.status === "waiting").length;
+  const withCust = line.filter((p) => p.status === "customer").length;
+  const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const unmatched = (row && row.unmatched) || [];
+
+  return (
+    <div className="checkout q-tab f-tab mf mf-floor">
+      <div className="q-topline">
+        <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
+        <div className="q-topline-actions">
+          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+        </div>
+      </div>
+
+      {notConfigured && (
+        <div className="f-warn">
+          No dealership is linked to this store yet, so deal events won't reach the floor. An admin can add one under
+          <strong> Settings → Live Floor</strong> (the DriveCentric dealership name, e.g. "Driver's Mart Winter Park").
+          The board still works as a manual floor line in the meantime.
+        </div>
+      )}
+
+      <InstrumentCluster kind="floor"
+        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] })} />
+
+      <QueueHero
+        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
+        waitingNames={line.map((p) => realName(p.id))}
+        accent="#0FB37E" kind="floor"
+        onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+
+      <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
+
+      {unmatched.length > 0 && (
+        <div className="f-unmatched">
+          <div className="f-unmatched-head">Deal events we couldn't place on the floor</div>
+          <p className="muted f-unmatched-sub">The alert only names the primary salesperson. If one of these is a secondary rep, or the name is a near-miss, add them to the floor and they'll pick up future events.</p>
+          {unmatched.map((u) => (
+            <div key={u.key} className="f-unmatched-row">
+              <span className="f-um-name">{u.sales}</span>
+              <span className="f-um-ev">{u.event} · {FLOOR_ACTIONS[u.action] || u.action}</span>
+              <span className="f-um-when">{qWaitLabel(qMinsSince(u.t))} ago</span>
+              <button className="btn btn-sm" onClick={() => dismissUnmatched(u.key)}>Dismiss</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showPins && (
+        <div className="q-pins-panel">
+          <div className="q-pins-head">Salesperson PINs <span className="muted">(shared with the phone line)</span></div>
+          {pinPeople.length === 0
+            ? <p className="muted">No PINs set yet. They're created the first time each person signs in.</p>
+            : pinPeople.map((p) => (
+                <div key={p.id} className="q-pin-row">
+                  <span className="q-pin-name">{p.name}</span>
+                  <button className="btn btn-sm q-pin-reset" onClick={() => resetPin(p.id)}>Reset PIN</button>
+                </div>
+              ))}
+        </div>
+      )}
+
+      {showQR && (
+        <div className="q-qr-panel">
+          <div className="q-qr-box"><QueueQR url={url} /></div>
+          <div className="q-qr-info">
+            <p><strong>Post this on the showroom floor.</strong> Salespeople scan it, enter their name and PIN, and they're on the floor. Their spot then updates on its own as customers check in and deals happen. It only works today; a fresh code appears each morning.</p>
+            <div className="q-qr-btns">
+              <button className="btn" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+              <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
+              <button className="btn" onClick={regenToken}>New code</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mf-lower">
+      <div className="mf-main">
+      <div className="q-line f-line">
+        {line.length === 0 && <p className="muted q-empty">Nobody's on the floor yet. Post the code, or add someone below.</p>}
+        {line.map((p, i) => {
+          const avail = p.status === "waiting";
+          const isNext = avail && line.slice(0, i).every((x) => x.status !== "waiting");
+          return (
+            <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""} ${p.status === "customer" ? "f-row-cust" : ""}`}>
+              <div className="q-ord">
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up">▲</button>
+                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down">▼</button>
+              </div>
+              <div className="q-rank">{i + 1}</div>
+              <span className="mf-av" style={{ background: `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
+              <div className="q-who">
+                <div className="q-nm">
+                  {realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}
+                  {p.appt && <span className="f-tag f-tag-appt"><FApptIcon className="f-tag-ico" />appt</span>}
+                  {p.proposal && <span className="f-tag f-tag-prop"><FDocIcon className="f-tag-ico" />proposal</span>}
+                </div>
+                <div className="q-meta">
+                  <span className={`q-chip ${FLOOR_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <FFlagIcon status={p.status} className="q-chip-ico" />}{FLOOR_FLAGS[p.status]?.label || p.status}</span>
+                  <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
+                  {p.autoFlip && <span className="f-auto">auto</span>}
+                </div>
+              </div>
+              <div className="q-row-actions">
+                {pendingAssign === p.id ? (
+                  <div className="q-reason">
+                    <span>Reason:</span>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Language match"); setPendingAssign(null); }}>Language match</button>
+                    <button className="btn btn-sm" onClick={() => { assignSpecific(p.id, "Manager pick"); setPendingAssign(null); }}>Other</button>
+                    <button className="btn btn-sm" onClick={() => setPendingAssign(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    {p.status === "customer" && p.autoFlip && <button className="btn btn-sm f-undo-b" onClick={() => setFlag(p.id, "waiting")} title="Reverse an accidental auto check-in">Not a customer</button>}
+                    {!isNext && avail && <button className="btn btn-sm" onClick={() => setPendingAssign(p.id)}>Assign</button>}
+                    <button className="btn btn-sm" onClick={() => decline(p.id)}>Decline</button>
+                    <select className="q-flag-sel" value={p.status} onChange={(e) => setFlag(p.id, e.target.value)}>
+                      <option value="waiting">In line</option>
+                      <option value="customer">With customer</option>
+                      <option value="lunch">Lunch</option>
+                      <option value="away">Away</option>
+                    </select>
+                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)}>✕</button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {expectedNotHere.length > 0 && (
+        <div className="q-missing">
+          <div className="q-missing-head">Scheduled today, not on the floor yet</div>
+          <div className="q-missing-list">
+            {expectedNotHere.map((a) => (
+              <button key={a.id} className="q-missing-chip" title="Add to the floor" onClick={() => addPerson(a.id)}>
+                {a.name}<span className="q-missing-add">+ add</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="q-add">
+        {notInLine.length > 0 && (
+          <>
+            <span className="muted">Add manually:</span>
+            <select className="q-flag-sel" value="" onChange={(e) => { if (e.target.value) addPerson(e.target.value); }}>
+              <option value="">Pick a name…</option>
+              {notInLine.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </>
+        )}
+        {line.length > 0 && <button className="btn btn-sm q-clear" onClick={clearLine}>Clear line</button>}
+      </div>
+      </div>
+      <aside className="mf-side">
+        <SmartAssign line={line} realName={realName} kind="floor"
+          repTags={(data && data.repTags) || {}}
+          closeLabel="showroom close"
+          closeMap={(() => { const m = {}; for (const p of line) { const r = oyoRatios(oyoBaseline(data, norm(realName(p.id)), p.id)); m[p.id] = r ? r.close_showroom : null; } return m; })()}
+          onSaveTags={(next) => onData && onData({ ...data, repTags: next }, { action: "Updated rep tags", detail: store.name })}
+          onAssign={(id, reason) => assignSpecific(id, reason)} />
+      </aside>
+      </div>
+      <ActivityTimeline horizontal history={row?.history} nameOf={realName} />
+
+      {toast && <div className="f-toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorConfigEditor — admin per-store settings for the floor.
+   ========================================================================= */
+function FloorConfigEditor({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const cfg = floorCfg(store);
+  const map = floorEventMap(store);
+  const [dealerInput, setDealerInput] = useState("");
+  const [evEvent, setEvEvent] = useState("");
+  const [evAction, setEvAction] = useState("checkin");
+
+  const save = (patch, audit) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.floorConfig = { ...floorCfg(s), ...patch };
+    // don't persist the merged defaults for eventMap — keep only real overrides
+    onChange(next, audit || { store: storeId, action: "Changed Live Floor settings", detail: store.name });
+  };
+  const setNum = (field, v, min = 0) => save({ [field]: Math.max(min, v) });
+
+  const addDealer = () => {
+    const norm = floorNormDealer(dealerInput);
+    if (!norm) return;
+    const cur = cfg.dealershipNorms || [];
+    if (cur.includes(norm)) { setDealerInput(""); return; }
+    save({ dealershipNorms: [...cur, norm] }, { store: storeId, action: "Linked dealership to Live Floor", detail: `${store.name}: ${dealerInput.trim()}` });
+    setDealerInput("");
+  };
+  const removeDealer = (norm) => save({ dealershipNorms: (cfg.dealershipNorms || []).filter((d) => d !== norm) });
+
+  const setEventAction = (evt, action) => {
+    const overrides = { ...(store.floorConfig?.eventMap || {}) };
+    if (action === (FLOOR_DEFAULT_EVENT_MAP[evt] || "__none__")) delete overrides[evt];
+    else overrides[evt] = action;
+    save({ eventMap: overrides });
+  };
+  const addEvent = () => {
+    const evt = evEvent.trim();
+    if (!evt) return;
+    setEventAction(evt, evAction);
+    setEvEvent("");
+  };
+
+  const Stepper = ({ label, field, value, hint, min = 0 }) => (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => setNum(field, value - 1, min)} disabled={value <= min}>−</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => setNum(field, value + 1, min)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+
+  const knownEvents = Array.from(new Set([...Object.keys(FLOOR_DEFAULT_EVENT_MAP), ...Object.keys(store.floorConfig?.eventMap || {})]));
+
+  return (
+    <div className="standards f-settings mf mf-floor mf-settings">
+      <div className="mf-settings-banner">Live Floor settings</div>      <div className="card">
+        <h3>Live Floor <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">The floor board self-governs from DriveCentric deal events. Turn it off to run a purely manual floor line.</p>
+        <label className="f-toggle">
+          <input type="checkbox" checked={cfg.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
+          <span>Deal events drive the floor for this store</span>
+        </label>
+      </div>
+
+      <div className="card">
+        <h3>Linked dealerships</h3>
+        <p className="hint">Type the DriveCentric dealership name exactly as it appears in the deal alerts (e.g. "Driver's Mart Winter Park"). Events for these dealerships feed this store. Matching is case- and punctuation-insensitive.</p>
+        <div className="f-dealer-add">
+          <input className="f-input" placeholder="Dealership name from DriveCentric" value={dealerInput}
+            onChange={(e) => setDealerInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addDealer(); }} />
+          <button className="btn" onClick={addDealer}>Add</button>
+        </div>
+        {(cfg.dealershipNorms || []).length === 0
+          ? <p className="muted">None linked yet — the board runs as a manual floor line until you add one.</p>
+          : <div className="f-dealer-list">
+              {(cfg.dealershipNorms || []).map((d) => (
+                <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" onClick={() => removeDealer(d)}>✕</button></span>
+              ))}
+            </div>}
+      </div>
+
+      <div className="card">
+        <h3>Ascent & timer</h3>
+        <div className="stepper-row">
+          <Stepper label="Sold jump" field="soldAscent" value={cfg.soldAscent} hint="spots up on a sale (never into top 3)" min={0} />
+          <Stepper label="Appointment jump" field="apptAscent" value={cfg.apptAscent} hint="spots up when an appt shows (favored)" min={0} />
+          <Stepper label="Accidental-check-in window" field="accidentalWindowMins" value={cfg.accidentalWindowMins} hint="minutes a rep can self-reverse" min={0} />
+        </div>
+        <label className="f-toggle">
+          <input type="checkbox" checked={cfg.timerOn} onChange={(e) => save({ timerOn: e.target.checked })} />
+          <span>Timer on the leader (auto-pass when it expires)</span>
+        </label>
+        {cfg.timerOn && (
+          <div className="stepper-row">
+            <Stepper label="Timer minutes" field="timerMins" value={cfg.timerMins} hint="before the leader is passed" min={1} />
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Event → action map</h3>
+        <p className="hint">How each DriveCentric event moves the floor. Defaults match the known DriveCentric vocabulary; override any of them, or add a new event type as DriveCentric introduces one — no code change needed. Note: the two "sold" events differ only by their subject, so this map keys off the subject event, not the alert.</p>
+        <div className="f-map">
+          {knownEvents.map((evt) => (
+            <div key={evt} className="f-map-row">
+              <span className="f-map-ev">{evt}{FLOOR_DEFAULT_EVENT_MAP[evt] ? "" : <span className="f-map-custom"> · custom</span>}</span>
+              <select className="q-flag-sel" value={map[evt] || "ignore"} onChange={(e) => setEventAction(evt, e.target.value)}>
+                {Object.entries(FLOOR_ACTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+        <div className="f-map-add">
+          <input className="f-input" placeholder="New event (subject phrase)" value={evEvent} onChange={(e) => setEvEvent(e.target.value)} />
+          <select className="q-flag-sel" value={evAction} onChange={(e) => setEvAction(e.target.value)}>
+            {Object.entries(FLOOR_ACTIONS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <button className="btn" onClick={addEvent}>Add event</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>Schedule presence <span className="section-sub">applies when Live Floor is built into coaching</span></h3>
+        <p className="hint">A rep who signs onto the floor (or the phone line) counts as present today. These thresholds let activity alone also mark them present. The retroactive coaching fix that clears a "missed scheduled day" flag lands in the next build — these settings are stored now so they're ready.</p>
+        <div className="stepper-row">
+          <Stepper label="Calls to count present" field="overrideCalls" value={cfg.overrideCalls} hint="more than this many calls" min={0} />
+          <Stepper label="Videos to count present" field="overrideVideos" value={cfg.overrideVideos} hint="more than this many videos" min={0} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorModule — the standalone module shell (its own tool, like The Board).
+   ========================================================================= */
+function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onSignOut }) {
+  const stores = accessibleStores || [];
+  const [storeId, setStoreId] = useState(() => {
+    if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
+    return stores[0] ? stores[0].id : null;
+  });
+  const [subtab, setSubtab] = useState("board");
+  useEffect(() => { setSubtab("board"); }, [queue]);   // switching queue always lands on the board
+  const [data, setData] = useState(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const store = stores.find((s) => s.id === storeId) || stores[0] || null;
+
+  useEffect(() => { if (!store && stores[0]) setStoreId(stores[0].id); }, [stores, store]);
+
+  // Load this store's data once and share it with both boards. Persisting writes the
+  // store row and an audit entry, matching how the rest of the app saves — so The Line's
+  // coaching mirror (data.queue[date]) keeps flowing exactly as before.
+  useEffect(() => {
+    let dead = false;
+    if (!store) { setData(null); return; }
+    setData(null); setLoadFailed(false);
+    loadShared(storeKey(store.id), emptyStoreData(), true)
+      .then((d) => { if (!dead) setData(d); })
+      .catch(() => { if (!dead) { setData(emptyStoreData()); setLoadFailed(true); } });
+    return () => { dead = true; };
+  }, [store?.id]); // eslint-disable-line
+
+  const persist = async (next, audit) => {
+    if (!store) return;
+    if (loadFailed) { alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
+    setData(next); setSaving(true);
+    await saveShared(storeKey(store.id), next);
+    if (audit) await appendAudit({ user: session?.name, store: store.id, ...audit });
+    setSaving(false);
+  };
+
+  // The settings sub-tab only exists for Live Floor; The Line has no per-store settings here.
+  const effSub = queue === "floor" ? subtab : "board";
+
+  return (
+    <Shell>
+      <header className="topbar no-print">
+        <div className="brand">
+          <Logo size={36} />
+          <div><div className="brand-title">Lead Performance</div></div>
+        </div>
+        <div className="topbar-right">
+          {saving && <span className="save-dot">Saving…</span>}
+          <ToolSwitcher value={queue} onChange={onToolChange} />
+          {stores.length > 1 && (
+            <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
+              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <span className="whoami">{session.name}</span>
+          <button className="btn-quiet" onClick={onSignOut}>Sign out</button>
+        </div>
+      </header>
+
+      {queue === "floor" && isAdmin && (
+        <nav className="seg-wrap no-print">
+          <SegControl items={[["board", "Live Floor"], ["settings", "Settings"]]} value={subtab} onChange={setSubtab} />
+        </nav>
+      )}
+
+      <div key={(store?.id || "none") + queue + effSub} className="page">
+        {!store ? (
+          <div className="checkout"><p className="muted">No store available.</p></div>
+        ) : data === null ? (
+          <div className="checkout"><p className="muted">Loading {store.name}…</p></div>
+        ) : queue === "line" || queue === "online" ? (
+          <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} variant={LEAD_VARIANTS[queue]} />
+        ) : effSub === "settings" && isAdmin ? (
+          <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
+        ) : (
+          <FloorBoard config={config} store={store} data={data} onData={persist} userName={session.name} />
+        )}
+      </div>
+      <Style />
+    </Shell>
+  );
+}
+
+function CheckOutTracker({ config, store, data, onChange, query = "" }) {
+  const [day, setDay] = useState(today());
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
+  const activityDays = Object.keys(data.activity || {}).sort().reverse();
+  const dayData = data.activity?.[day] || {};
+
+  const starsFor = (k) => data.stars?.[day]?.[k];
+  // RockEd is now a simple qualified/not-qualified mark. Cycle: unset → qualified → not.
+  const qualState = (k) => {
+    const q = data.qualified?.[day]?.[k];
+    if (q === true) return "yes";
+    if (q === false) return "no";
+    const s = data.stars?.[day]?.[k]; // legacy stars still count as qualified
+    if (s != null) return s >= (std.rockEdStars ?? 40) ? "yes" : "no";
+    return "unset";
+  };
+  const cycleQualified = (k) => {
+    const cur = qualState(k);
+    const nextVal = cur === "unset" ? true : cur === "yes" ? false : null;
+    const next = JSON.parse(JSON.stringify(data));
+    next.qualified = next.qualified || {};
+    next.qualified[day] = next.qualified[day] || {};
+    // clear any legacy star value so the two don't fight
+    if (next.stars?.[day]) delete next.stars[day][k];
+    if (nextVal === null) delete next.qualified[day][k];
+    else next.qualified[day][k] = nextVal;
+    onChange(next);
+  };
+
+  // Toggle a person's day off (manual). Schedule upload writes the same structure.
+  const toggleOff = (a) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.daysOff = next.daysOff || {};
+    const list = new Set(next.daysOff[a.id] || []);
+    if (list.has(day)) list.delete(day); else list.add(day);
+    next.daysOff[a.id] = [...list].sort();
+    next.daysOffAt = { ...(next.daysOffAt || {}), [a.id]: new Date().toISOString() };
+    onChange(next, { action: list.has(day) ? "Marked day off" : "Cleared day off", detail: `${a.name} · ${day}` });
+  };
+
+  const q = norm(query);
+  // Left-side sheet is alphabetical by name so managers can find anyone fast.
+  // Check Out is a sales-floor sheet: only roles that are coached on sales behaviours
+  // appear (Sales Associate and Service to Sales). BDC agents and managers stay off it.
+  const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
+
+  // A clean text recap of the day the manager can paste into a group chat or email.
+  const copyDayReport = () => {
+    const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const lines = [`Daily Check Out · ${store.name} · ${dayLabel}`, ""];
+    const list = roster.map((a) => ({ a, dp: dayPoints(data, a, day, std), off: isOff(data, a.id, day) }));
+    const clean = list.filter((r) => !r.off && !r.dp.noData && r.dp.points === 0);
+    const flagged = list.filter((r) => !r.off && !r.dp.noData && r.dp.points > 0).sort((x, y) => y.dp.points - x.dp.points);
+    const off = list.filter((r) => r.off);
+    if (clean.length) lines.push(`✅ Qualified (${clean.length}): ${clean.map((r) => r.a.name).join(", ")}`, "");
+    if (flagged.length) {
+      lines.push(`⚠️ Needs follow-up (${flagged.length}):`);
+      for (const r of flagged) lines.push(`  • ${r.a.name}: ${r.dp.points} pt${r.dp.points === 1 ? "" : "s"} (missed ${r.dp.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")})`);
+      lines.push("");
+    }
+    if (off.length) lines.push(`🌴 Off: ${off.map((r) => r.a.name).join(", ")}`);
+    const text = lines.join("\n").trim();
+    navigator.clipboard.writeText(text).then(
+      () => alert("Day's report copied. Paste it into your group chat or email."),
+      () => alert("Couldn't copy automatically. Your browser may be blocking clipboard access.")
+    );
+  };
+  // People the schedule says are working today, whose report has run, and who
+  // still have nothing at all against their name. Anyone with no schedule on file
+  // is left alone: there is nothing to be absent from.
+  const noShowSuspects = (() => {
+    if (day !== today()) return [];
+    if (new Date().getHours() < 14) return [];
+    return roster.filter((a) => looksAbsent(data, a.id, day)).map((a) => ({ a }));
+  })();
+  const monthDays = activityDays.filter((d) => d.startsWith(ym()));
+
+  // Month-to-date points per person, for the Top Offenders panel.
+  const mtdPoints = {};
+  for (const a of roster) {
+    let pts = 0;
+    for (const d of monthDays) pts += dayPoints(data, a, d, std).points;
+    mtdPoints[a.id] = pts;
+  }
+
+  const rows = roster.map((a) => {
+    const dp = dayPoints(data, a, day, std);
+    const rec = dayData[norm(a.name)] || {};
+    const qual = qualState(norm(a.name));
+    const off = isOff(data, a.id, day);
+    const hasData = !dp.noData && !off;
+    return {
+      a, rec, qual, off,
+      calls: rec.calls, video: rec.video,
+      tasks: rec.tasks, tasksPosted: rec.tasksPosted,
+      callsMet: rec.calls != null && rec.calls >= std.minCalls,
+      videoMet: rec.video != null && rec.video >= std.minVideos,
+      rockedMet: qual === "yes",
+      hasData, points: dp.points, missed: dp.missed,
+      mtd: mtdPoints[a.id] || 0,
+      worked: daysWorkedThisMonth(data, a),
+    };
+  }).filter((r) => !q || norm(r.a.name).includes(q));
+
+  // Top Offenders: most month-to-date points first. Only people with points show.
+  const offenders = roster
+    .map((a) => ({ a, points: mtdPoints[a.id] || 0, worked: daysWorkedThisMonth(data, a) }))
+    .filter((r) => r.points > 0)
+    .sort((x, y) => y.points - x.points);
+
+  const rockedCount = rows.filter((r) => r.hasData && r.points === 0).length;
+  const withData = rows.filter((r) => r.hasData);
+  const todayOff = rows.filter((r) => r.off).length;
+
+  if (activityDays.length === 0)
+    return <div className="empty">No Daily Activity imported yet. Drop today's Standard Daily Activity report in the Import tab to build the checkout sheet.</div>;
+
+  return (
+    <div className="checkout">
+      <div className="gm-toolbar">
+        <select value={day} onChange={(e) => setDay(e.target.value)}>
+          {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+        </select>
+        <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
+        <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
+        <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
+      </div>
+      {noShowSuspects.length > 0 && (
+        <div className="co-callout">
+          <div className="co-callout-head">
+            <b>Nothing logged today for {noShowSuspects.length === 1 ? noShowSuspects[0].a.name : noShowSuspects.length + " people"}</b>
+            <span className="hint">The schedule has them in today, the activity report has run, and there are no calls, videos or line sign-in against their name. That usually means they called out. Mark them off and the day stops counting against them; leave it and it will be closed out as a day off after midnight.</span>
+          </div>
+          <div className="co-callout-list">
+            {noShowSuspects.map((r) => (
+              <button key={r.a.id} className="co-callout-btn" onClick={() => toggleOff(r.a)}>
+                Mark {r.a.name} off
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="checkout-summary">
+        <span className="stat-pass"><PixIcon glyph="check" size={13} /> {rockedCount} clean</span>
+        <span className="stat-fail">● {withData.length - rockedCount} with points</span>
+        {todayOff > 0 && <span className="stat-dim">{todayOff} off today</span>}
+        <span className="stat-dim">{withData.length} of {rows.length} with data</span>
+      </div>
+      <div className="checkout-split">
+        <div className="card checkout-card">
+          <table className="checkout-table">
+            <thead><tr>
+              <th>Name</th><th>Calls</th><th>Videos</th><th>Tasks</th><th>RockEd</th><th>Points</th><th>Off</th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
+                  <td><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
+                    {r.off && <span className="co-off-tag">Off</span>}
+                    {/* Scheduled off, but they made calls or sent videos. Say so, rather
+                        than quietly counting the day and leaving the manager to wonder
+                        why the schedule looks like it skipped them. */}
+                    {!r.off && (data.daysOff?.[r.a.id] || []).includes(day) &&
+                      <span className="co-off-tag co-worked" title="Scheduled off, but calls or videos were logged, so the day counts. Mark them off to override.">Off · worked</span>}
+                  </td>
+                  <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
+                    {r.hasData && <span className="cell-mark"><PixIcon glyph={r.callsMet ? "check" : "close"} size={13} /></span>}
+                    {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
+                  </td>
+                  <td className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
+                    {r.hasData && <span className="cell-mark"><PixIcon glyph={r.videoMet ? "check" : "close"} size={13} /></span>}
+                    {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
+                  </td>
+                  {/* Completed tasks so far today. There is no standard on it, so it is
+                      shown plainly rather than graded: it is context for the conversation,
+                      not another point on the board. Open tasks sit behind it where the
+                      report carried them. */}
+                  <td className="co-tasks">
+                    {r.hasData
+                      ? <><b>{r.tasks ?? "-"}</b>{r.tasksPosted != null && <span className="cell-need" title="Tasks posted for the day"> / {r.tasksPosted}</span>}</>
+                      : "-"}
+                  </td>
+                  {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
+                  <td>
+                    <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : r.qual === "no" ? "no" : "")}
+                      disabled={r.off} onClick={() => cycleQualified(norm(r.a.name))}
+                      title="RockEd: tap to mark Qualified, tap again for Not qualified, again to clear.">
+                      {r.qual === "yes" ? <><PixIcon glyph="check" size={12} /> Qualified</>
+                        : r.qual === "no" ? <><PixIcon glyph="close" size={12} /> Not yet</> : "Mark"}
+                    </button>
+                  </td>
+                  <td>
+                    {r.off ? <span className="pt-badge off">—</span>
+                      : !r.hasData ? <span className="pt-badge dim">no data</span>
+                      : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>{r.points} {r.points === 1 ? "pt" : "pts"}</span>}
+                  </td>
+                  <td>
+                    <button className={"off-toggle " + (r.off ? "on" : "")} onClick={() => toggleOff(r.a)} title={r.off ? "Marked off. Click to clear." : "Mark this person off for the day."}>
+                      {r.off ? <><PixIcon glyph="check" size={12} /> Off</> : "Mark off"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <aside className="checkout-side">
+          <div className={"card offender-card " + (offenders.length === 0 ? "offender-clear" : "")}>
+            <h3 className="off-title">
+              {offenders.length === 0 ? "No points this month" : "Top offenders"}
+              <span className="section-sub">{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
+            </h3>
+            {offenders.length === 0 ? (
+              <p className="hint">Nobody has accrued a point this month. Worth saying out loud.</p>
+            ) : (
+              <>
+                <p className="hint">Most points month-to-date. One point per missed item (calls, videos, RockEd), days off excluded.</p>
+                <ol className="offender-rank">
+                  {offenders.map((r, i) => (
+                    <div key={r.a.id} className="offender-rank-row">
+                      <span className="orr-rank">{i + 1}</span>
+                      <b className="orr-name">{r.a.name}</b>
+                      <span className="orr-worked">{r.worked} day{r.worked === 1 ? "" : "s"} worked</span>
+                      <span className={"orr-points pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
+                    </div>
+                  ))}
+                </ol>
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
+
+      {showSchedule && (
+        <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />
+      )}
+      {showReport && (
+        <DayReportModal store={store} day={day} rows={rows} offenders={offenders}
+          streaks={Object.fromEntries(roster.map((a) => [a.id, currentStreak(data, a, std)]))}
+          onCopy={copyDayReport} onClose={() => setShowReport(false)} />
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Daily report (visual) ----------------
+   A clean two-column recap for the manager: today's check-out on the left, the
+   running month-to-date top offenders on the right. Replaces the plain text copy,
+   though the text version is still one click away for pasting into a chat. */
+/* Draw the report as a picture.
+   A manager pastes this into a group chat, and text loses the shape of it: which
+   names sit together, who is climbing, who is sliding. Canvas rather than a
+   screenshot library so there is nothing to load and nothing to go stale, and the
+   result is a real PNG on the clipboard. */
+function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName }) {
+  const S = 2;                                  // draw at 2x for a crisp paste
+  const W = 1080;
+  const PAD = 40, COLGAP = 30;
+  const colW = (W - PAD * 2 - COLGAP) / 2;
+  const HEAD = 104;                             // header band
+  const GAP = 26;                               // clear air under the band
+  const ROW = 32, CHIProw = 32;
+
+  // The same two faces the rest of the tool uses: Space Grotesk for anything that
+  // is a name or a number, Geist for the quiet supporting text. Both are already
+  // loaded by the page, so the picture matches the screen it came from.
+  const DISPLAY = "'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const UI = "'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif";
+  const INK = "#101820", INK2 = "#5A6472", INK3 = "#8A93A0";
+
+  // Measure before allocating, so nothing is clipped and no slab of white is left.
+  const cf = document.createElement("canvas").getContext("2d");
+  const wrapChips = (names, font, maxW) => {
+    cf.font = font;
+    let lines = 1, x = 0;
+    for (const nm of names) {
+      const w = cf.measureText(nm).width + 22;
+      if (x + w > maxW) { lines++; x = w + 7; } else x += w + 7;
+    }
+    return lines;
+  };
+  const chipFont = `700 13px ${UI}`;
+  const cleanLines = clean.length ? wrapChips(clean.map((r) => r.a.name), chipFont, colW) : 0;
+  const offLines = off.length ? wrapChips(off.map((r) => r.a.name), chipFont, colW) : 0;
+
+  const hLeft = 30
+    + (flagged.length ? 26 + flagged.length * ROW + 10 : 0)
+    + (clean.length ? 26 + cleanLines * CHIProw + 10 : 0)
+    + (off.length ? 26 + offLines * CHIProw + 10 : 0);
+  const shown = offenders.slice(0, 14);
+  const hRight = 34 + (shown.length ? shown.length * 34 : 30) + (offenders.length > 14 ? 26 : 0);
+  const body = Math.max(hLeft, hRight) + 18;
+  const H = HEAD + GAP + body + PAD;
+
+  const cv = document.createElement("canvas");
+  cv.width = W * S; cv.height = H * S;
+  const c = cv.getContext("2d");
+  c.scale(S, S);
+  c.textBaseline = "alphabetic";
+  const round = (x, y, w, h, r) => {
+    c.beginPath();
+    c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  };
+  const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+
+  c.fillStyle = "#FFFFFF"; c.fillRect(0, 0, W, H);
+
+  /* ---- header band ---- */
+  const brand = (store.brand && store.brand.primary) || "#2A5E9B";
+  const brand2 = (store.brand && store.brand.dark) || brand;
+  const g = c.createLinearGradient(0, 0, W, HEAD);
+  g.addColorStop(0, brand); g.addColorStop(1, brand2);
+  c.fillStyle = g; c.fillRect(0, 0, W, HEAD);
+
+  c.fillStyle = "#FFFFFF"; c.font = `700 30px ${DISPLAY}`;
+  c.fillText("Daily report", PAD, 47);
+  c.font = `500 15px ${UI}`; c.globalAlpha = 0.9;
+  c.fillText(`${store.name} · ${dayLabel}`, PAD, 74);
+  c.globalAlpha = 1;
+
+  const tallies = [[clean.length, "QUALIFIED"], [flagged.length, "WITH POINTS"], [off.length, "OFF"]];
+  const tW = 108, tGap = 10;
+  let tx = W - PAD - (tallies.length * tW + (tallies.length - 1) * tGap);
+  for (const [n, lbl] of tallies) {
+    c.fillStyle = "rgba(255,255,255,.16)"; round(tx, 26, tW, 52, 13); c.fill();
+    c.textAlign = "center";
+    c.fillStyle = "#FFFFFF"; c.font = `700 24px ${DISPLAY}`;
+    c.fillText(String(n), tx + tW / 2, 53);
+    c.font = `600 9.5px ${UI}`; c.globalAlpha = .88;
+    c.fillText(lbl, tx + tW / 2, 69); c.globalAlpha = 1;
+    c.textAlign = "left"; tx += tW + tGap;
+  }
+
+  /* ---- a streak: the one thing text cannot carry ---- */
+  const streakW = (st) => {
+    if (!st || !st.dir || st.len < 3) return 0;
+    cf.font = `700 12px ${DISPLAY}`;
+    return 11 + cf.measureText(String(st.len)).width + 8;
+  };
+  const streak = (x, baseline, st) => {
+    if (!st || !st.dir || st.len < 3) return 0;
+    const up = st.dir === "up";
+    const col = up ? "#178A57" : "#D2402C";
+    const cy = baseline - 4;
+    c.fillStyle = col;
+    c.beginPath();
+    if (up) { c.moveTo(x + 4.5, cy - 5); c.lineTo(x + 9, cy + 3); c.lineTo(x, cy + 3); }
+    else { c.moveTo(x, cy - 5); c.lineTo(x + 9, cy - 5); c.lineTo(x + 4.5, cy + 3); }
+    c.closePath(); c.fill();
+    c.font = `700 12px ${DISPLAY}`;
+    c.fillText(String(st.len), x + 12, baseline);
+    return streakW(st);
+  };
+
+  /* ---- left column ---- */
+  let y = HEAD + GAP + 14;
+  const label = (t) => {
+    c.fillStyle = INK3; c.font = `600 10.5px ${UI}`;
+    c.save(); c.letterSpacing = "0.08em";
+    c.fillText(t.toUpperCase(), PAD, y); c.restore();
+    y += 24;
+  };
+
+  label("Today");
+  y -= 6;
+  if (flagged.length) {
+    label("Needs follow-up");
+    for (const r of flagged) {
+      const rowY = y + 4;
+      c.fillStyle = INK; c.font = `700 14.5px ${DISPLAY}`;
+      c.fillText(r.a.name, PAD, rowY);
+      let x = PAD + c.measureText(r.a.name).width + 9;
+      x += streak(x, rowY, streaks[r.a.id]);
+      c.fillStyle = INK3; c.font = `400 12.5px ${UI}`;
+      c.fillText(r.missed.map((m) => (m === "rocked" ? "RockEd" : cap(m))).join(", "), x, rowY);
+      const hot = r.points >= 3;
+      c.fillStyle = hot ? "#FCE6E2" : "#FDF1DC";
+      round(PAD + colW - 32, rowY - 14, 32, 21, 10.5); c.fill();
+      c.fillStyle = hot ? "#C0392B" : "#9A6410"; c.font = `700 12.5px ${DISPLAY}`;
+      c.textAlign = "center"; c.fillText(String(r.points), PAD + colW - 16, rowY + 1); c.textAlign = "left";
+      y += ROW;
+    }
+    y += 10;
+  }
+  const chips = (names, fill, ink) => {
+    let x = PAD;
+    c.font = chipFont;
+    for (const nm of names) {
+      const w = c.measureText(nm).width + 22;
+      if (x + w > PAD + colW) { x = PAD; y += CHIProw; }
+      c.fillStyle = fill; round(x, y - 15, w, 24, 12); c.fill();
+      c.fillStyle = ink; c.font = chipFont; c.fillText(nm, x + 11, y + 1);
+      x += w + 7;
+    }
+    y += CHIProw + 10;
+  };
+  if (clean.length) { label("Qualified"); y += 2; chips(clean.map((r) => r.a.name), "#E6F5EC", "#177245"); }
+  if (off.length) { label("Off"); y += 2; chips(off.map((r) => r.a.name), "#EFF2F5", "#69727E"); }
+
+  /* ---- right column ---- */
+  const rx = PAD + colW + COLGAP;
+  const panelTop = HEAD + GAP - 8;
+  c.fillStyle = "#F9F7FB";
+  round(rx - 16, panelTop, colW + 32, H - panelTop - PAD + 10, 18); c.fill();
+
+  let ry = panelTop + 32;
+  c.fillStyle = INK3; c.font = `600 10.5px ${UI}`;
+  c.fillText("TOP OFFENDERS", rx, ry);
+  const thw = c.measureText("TOP OFFENDERS").width;
+  c.fillStyle = "#AEB6C0";
+  c.fillText(`${monthName.toUpperCase()} TO DATE`, rx + thw + 14, ry);
+  ry += 30;
+
+  if (!shown.length) {
+    c.fillStyle = INK3; c.font = `400 13px ${UI}`;
+    c.fillText("Nobody has a point this month. Worth saying out loud.", rx, ry);
+  } else {
+    let i = 1;
+    for (const r of shown) {
+      c.fillStyle = "#EDE9F6"; round(rx, ry - 15, 23, 23, 11.5); c.fill();
+      c.fillStyle = "#6A5AC0"; c.font = `700 11.5px ${DISPLAY}`;
+      c.textAlign = "center"; c.fillText(String(i), rx + 11.5, ry + 1); c.textAlign = "left";
+
+      c.fillStyle = INK; c.font = `700 14.5px ${DISPLAY}`;
+      c.fillText(r.a.name, rx + 34, ry + 1);
+      streak(rx + 34 + c.measureText(r.a.name).width + 9, ry + 1, streaks[r.a.id]);
+
+      c.textAlign = "right";
+      c.fillStyle = INK3; c.font = `400 12px ${UI}`;
+      c.fillText(`${r.worked} day${r.worked === 1 ? "" : "s"}`, rx + colW - 42, ry + 1);
+      c.fillStyle = "#C0392B"; c.font = `700 17px ${DISPLAY}`;
+      c.fillText(String(r.points), rx + colW, ry + 2);
+      c.textAlign = "left";
+      ry += 34; i++;
+    }
+    if (offenders.length > 14) {
+      c.fillStyle = "#AEB6C0"; c.font = `400 12px ${UI}`;
+      c.fillText(`and ${offenders.length - 14} more`, rx + 34, ry + 4);
+    }
+  }
+  return cv;
+}
+
+function DayReportStreak({ st }) {
+  if (!st || !st.dir || st.len < 3) return null;
+  const up = st.dir === "up";
+  return (
+    <span className={"streak " + (up ? "streak-up" : "streak-down")}
+      title={up ? `${st.len} days running` : `${st.len} days missing all three`}>
+      <PixIcon glyph={up ? "triup" : "tridown"} size={12} /><span className="streak-n">{st.len}</span>
+    </span>
+  );
+}
+
+function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onClose }) {
+  const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+  const withData = rows.filter((r) => r.hasData && !r.off);
+  const clean = withData.filter((r) => r.points === 0);
+  const flagged = withData.filter((r) => r.points > 0).sort((a, b) => b.points - a.points);
+  const off = rows.filter((r) => r.off);
+  const monthName = new Date().toLocaleDateString("en-US", { month: "long" });
+  const [imgState, setImgState] = useState(null);   // null | working | copied | error
+  const [imgErr, setImgErr] = useState("");
+
+  const build = () => drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName });
+
+  // Canvas silently substitutes a system face for a webfont that has not loaded,
+  // which is exactly how the first paste of the day ends up looking wrong.
+  const ready = async () => {
+    if (!document.fonts || !document.fonts.load) return;
+    try {
+      await Promise.all([
+        document.fonts.load("700 30px 'Space Grotesk'"),
+        document.fonts.load("700 15px 'Space Grotesk'"),
+        document.fonts.load("400 13px 'Geist'"),
+        document.fonts.load("600 11px 'Geist'"),
+      ]);
+      await document.fonts.ready;
+    } catch (e) { /* fall back to whatever is available */ }
+  };
+
+  const copyImage = async () => {
+    setImgState("working"); setImgErr("");
+    try {
+      await ready();
+      const cv = build();
+      const blob = await new Promise((ok, no) => cv.toBlob((b) => (b ? ok(b) : no(new Error("could not render"))), "image/png"));
+      // Safari and Firefox do not all allow an image on the clipboard. Falling back
+      // to a download means the manager still leaves with the picture.
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        setImgState("copied");
+        setTimeout(() => setImgState(null), 3000);
+      } else {
+        download(blob);
+        setImgState(null);
+        setImgErr("This browser will not put an image on the clipboard, so it downloaded instead.");
+      }
+    } catch (e) {
+      setImgState(null);
+      setImgErr("Could not copy the image: " + String(e.message || e) + ". Try Save image instead.");
+    }
+  };
+
+  const download = (blob) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `daily-report-${store.name.replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}-${day}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
+  const saveImage = async () => {
+    try { await ready(); build().toBlob((b) => b && download(b), "image/png"); }
+    catch (e) { setImgErr("Could not build the image: " + String(e.message || e)); }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal dayreport-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="plate-hist-head">
+          <div>
+            <h2 className="plate-hist-title">Daily report</h2>
+            <p className="plate-hist-sub">{store.name} · {dayLabel}</p>
+          </div>
+          <div className="dr-head-actions">
+            {/* The picture is the default: it is what actually gets pasted into a
+                group chat. Text stays for anywhere an image will not go. */}
+            <button className="btn" onClick={copyImage} disabled={imgState === "working"}>
+              {imgState === "working" ? "Building..." : imgState === "copied" ? "Copied" : "Copy as image"}
+            </button>
+            <button className="btn secondary" onClick={saveImage}>Save image</button>
+            <button className="btn secondary" onClick={onCopy}>Copy as text</button>
+            <button className="btn-x" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        {imgErr && <p className="sched-err">{imgErr}</p>}
+        <div className="dr-cols">
+          {/* LEFT: today */}
+          <div className="dr-col">
+            <div className="dr-col-title">Today</div>
+            <div className="dr-tallies">
+              <div className="dr-tally g"><b>{clean.length}</b><span>Qualified</span></div>
+              <div className="dr-tally r"><b>{flagged.length}</b><span>With points</span></div>
+              <div className="dr-tally d"><b>{off.length}</b><span>Off</span></div>
+            </div>
+            {flagged.length > 0 && (
+              <div className="dr-block">
+                <div className="dr-block-label">Needs follow-up</div>
+                {flagged.map((r) => (
+                  <div key={r.a.id} className="dr-row">
+                    <span className="dr-name">{r.a.name}<DayReportStreak st={streaks[r.a.id]} /></span>
+                    <span className="dr-miss">{r.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")}</span>
+                    <span className={"pt-badge pt-" + r.points}>{r.points}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {clean.length > 0 && (
+              <div className="dr-block">
+                <div className="dr-block-label">Qualified</div>
+                <div className="dr-chips">{clean.map((r) => <span key={r.a.id} className="dr-chip g">{r.a.name}</span>)}</div>
+              </div>
+            )}
+            {off.length > 0 && (
+              <div className="dr-block">
+                <div className="dr-block-label">Off</div>
+                <div className="dr-chips">{off.map((r) => <span key={r.a.id} className="dr-chip d">{r.a.name}</span>)}</div>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: running total */}
+          <div className="dr-col dr-col-alt">
+            <div className="dr-col-title">Top offenders <span className="section-sub">{monthName} to date</span></div>
+            {offenders.length === 0 ? (
+              <p className="hint">Nobody has a point this month. Worth saying out loud.</p>
+            ) : (
+              <ol className="dr-rank">
+                {offenders.map((r, i) => (
+                  <div key={r.a.id} className="dr-rank-row">
+                    <span className="dr-rank-n">{i + 1}</span>
+                    <b className="dr-rank-name">{r.a.name}<DayReportStreak st={streaks[r.a.id]} /></b>
+                    <span className="dr-rank-worked">{r.worked} day{r.worked === 1 ? "" : "s"}</span>
+                    <span className={"dr-rank-pts pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
+                  </div>
+                ))}
+              </ol>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const num = (v) => (v == null ? 0 : v);
+
+/* ---------------- Monthly schedule upload ----------------
+   CSV with a Name column and either a list of off-dates, or one column per date with
+   an off-marker. Flexible so a manager can paste from most scheduling tools. We map
+   names to roster ids and write data.daysOff[id] = [YYYY-MM-DD, ...]. */
+/* Load SheetJS (xlsx) from a CDN the first time an Excel file is opened. Doing it at
+   runtime instead of bundling means the Vite build never has to resolve the package, so
+   deployment doesn't depend on it being installed. Cached after the first load. */
+let _xlsxPromise = null;
+/* Load pdf.js from a CDN the first time a PDF schedule is opened. Like the xlsx loader,
+   this keeps the Vite build free of the dependency. */
+let _pdfjsPromise = null;
+/* ---------------- PDF calendar schedule parser ----------------
+   A digitally-exported schedule PDF lays out a month as a calendar: 7 day columns
+   (Sun–Sat), each day cell holding a date number and a list of "Name shift" / "Name OFF"
+   / "Name VAC" lines. We take pdf.js text items (each with an x/y position), cluster them
+   into columns and rows to reconstruct the cells, find each cell's date, and read the
+   off/VAC lines. Names are matched to the store roster (first name is enough here). */
+function parsePdfItems(items, pageWidth) {
+  // items: [{ str, x, y }] with y increasing downward
+  // 1) find the 7 day-column x-centers from the weekday header band (top of page)
+  const cleaned = items.map((it) => ({ str: (it.str || "").trim(), x: it.x, y: it.y })).filter((it) => it.str);
+  return cleaned;
+}
+
+// Turn positioned text items into per-person off-days for the target month.
+function parsePdfSchedule(items, pageWidth, roster, targetYear, targetMonth) {
+  const cleaned = items.map((it) => ({ str: (it.str || "").trim(), x: it.x, y: it.y })).filter((it) => it.str);
+  if (!cleaned.length) return { matched: [], unmatched: [], empty: true };
+
+  // Column boundaries: split the page into 7 equal day columns. Header names (Sunday…
+  // Saturday) confirm orientation but equal splits are robust to slight skew.
+  const minX = Math.min(...cleaned.map((c) => c.x));
+  const maxX = Math.max(...cleaned.map((c) => c.x));
+  const span = Math.max(1, maxX - minX);
+  const colOf = (x) => Math.min(6, Math.max(0, Math.floor(((x - minX) / span) * 7 + 0.0001)));
+
+  // Rows (weeks): a date-number line starts each week band. Collect all standalone
+  // 1–2 digit numbers as candidate day markers, with their y and column.
+  const dayMarkers = cleaned
+    .filter((c) => /^\d{1,2}$/.test(c.str))
+    .map((c) => ({ day: parseInt(c.str), y: c.y, col: colOf(c.x) }))
+    .filter((c) => c.day >= 1 && c.day <= 31);
+
+  // Group day markers into week bands by y (markers on the same week share a y ~band).
+  dayMarkers.sort((a, b) => a.y - b.y);
+  const weeks = [];
+  const Y_TOL = 22;
+  for (const m of dayMarkers) {
+    let band = weeks.find((w) => Math.abs(w.y - m.y) < Y_TOL);
+    if (!band) { band = { y: m.y, cells: {} }; weeks.push(band); }
+    // keep the first date seen in a column for that band
+    if (band.cells[m.col] == null) band.cells[m.col] = { day: m.day, y: m.y };
+  }
+  weeks.sort((a, b) => a.y - b.y);
+  if (!weeks.length) return { matched: [], unmatched: [], empty: true };
+
+  // Build a lookup: for a given (col, y) find which week/day it belongs to — a text
+  // line belongs to the week band immediately above-or-equal to its y in that column.
+  const dateFor = (col, y) => {
+    let best = null;
+    for (const w of weeks) {
+      const cell = w.cells[col];
+      if (cell && cell.y <= y + 6) { if (!best || cell.y > best.y) best = cell; }
+    }
+    return best ? best.day : null;
+  };
+
+  // Roster name matching on first name (the schedule uses first names).
+  const rosterByFirst = new Map();
+  for (const a of roster) {
+    const first = norm(a.name).split(" ")[0];
+    if (!rosterByFirst.has(first)) rosterByFirst.set(first, a);
+  }
+  const off = {};       // roster id -> Set(dates)
+  const unmatched = {};
+  const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+
+  // Each line like "Brian - OFF", "Tommy VAC", "Michael 9-6". Only OFF/VAC matter.
+  for (const c of cleaned) {
+    const m = c.str.match(/^([A-Za-z][A-Za-z.'-]*)\s*[-–—]?\s*(OFF|VAC|VACATION)\b/i);
+    if (!m) continue;
+    const first = norm(m[1]).split(" ")[0];
+    const col = colOf(c.x);
+    const day = dateFor(col, c.y);
+    if (!day || day > daysInMonth) continue;
+    const date = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const a = rosterByFirst.get(first);
+    if (a) (off[a.id] = off[a.id] || new Set()).add(date);
+    else unmatched[m[1]] = (unmatched[m[1]] || 0) + 1;
+  }
+
+  const matched = [];
+  for (const [id, set] of Object.entries(off)) {
+    const a = roster.find((x) => x.id === id);
+    matched.push({ id, name: a?.name || id, dates: [...set].sort() });
+  }
+  return { matched, unmatched: Object.keys(unmatched), empty: matched.length === 0 && !Object.keys(unmatched).length };
+}
+
+function loadPdfJs() {
+  if (typeof window !== "undefined" && window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (_pdfjsPromise) return _pdfjsPromise;
+  _pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.async = true;
+    s.onload = () => {
+      if (!window.pdfjsLib) { reject(new Error("pdf.js failed to initialize")); return; }
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = () => { _pdfjsPromise = null; reject(new Error("pdf.js failed to load")); };
+    document.head.appendChild(s);
+  });
+  return _pdfjsPromise;
+}
+
+function loadXLSX() {
+  if (typeof window !== "undefined" && window.XLSX) return Promise.resolve(window.XLSX);
+  if (_xlsxPromise) return _xlsxPromise;
+  _xlsxPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+    s.async = true;
+    s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error("xlsx failed to initialize"));
+    s.onerror = () => { _xlsxPromise = null; reject(new Error("xlsx failed to load")); };
+    document.head.appendChild(s);
+  });
+  return _xlsxPromise;
+}
+
+/* ---------------- Holler grid schedule parser ----------------
+   Some stores keep a dense monthly grid: week blocks of a date row, three team rows
+   (A/B/C with a per-day shift or OFF), then individual OFF/VAC lines, plus a legend on
+   the right that lists each team's members. Teams change month to month, so the roster
+   is read from that legend rather than hardcoded. Returns per-person off-days for the
+   target month, plus any names that didn't match the store roster (to clarify by hand). */
+/* ---------------- Blank-grid schedule parser (Driver's Mart style) ----------------
+   A different convention from the Holler grid: instead of writing OFF, a person simply
+   has no shift that day. Layout is a week block per date row, with a label column (a
+   person's name, or a team letter whose roster is listed to the left) and seven day
+   columns. A cell with a shift means working; blank or VAC means not working.
+   Teams and individuals both appear, so both are read. */
+/* Work out which month a schedule sheet covers. The title sits in a different cell in
+   every workbook, so check the tab name first and then scan the top rows for a
+   "July 2026" / "Jul-26" style label rather than assuming one fixed cell. */
+function detectSheetMonth(rows, monthHint) {
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
+  const candidates = [String(monthHint || "")];
+  for (let r = 0; r < Math.min(8, rows.length); r++) {
+    for (let c = 0; c < Math.min(14, (rows[r] || []).length); c++) {
+      const v = String((rows[r] || [])[c] || "").trim();
+      if (v) candidates.push(v);
+    }
+  }
+  for (const cand of candidates) {
+    const mm = cand.toLowerCase().match(/([a-z]{3,})[-\s]?(\d{2,4})/);
+    if (!mm) continue;
+    const mi = MONTHS.findIndex((mo) => mm[1].startsWith(mo));
+    if (mi < 0) continue;
+    tm = mi + 1;
+    const yr = mm[2];
+    ty = yr.length === 2 ? 2000 + parseInt(yr) : parseInt(yr);
+    return { ty, tm };
+  }
+  return { ty, tm };
+}
+
+
+
+
+/* Find the sheet's geometry rather than assuming fixed columns: readers differ on
+   whether leading blank columns survive, so locate the run of day-number columns and
+   take the label column as the nearest text column to their left. */
+function dmGeometry(rows) {
+  let best = null;
+  for (let r = 0; r < rows.length; r++) {
+    const cols = [];
+    const row = rows[r] || [];
+    for (let c = 0; c < row.length; c++) {
+      const v = String(row[c] == null ? "" : row[c]).trim();
+      if (/^\d{1,2}$/.test(v) && +v >= 1 && +v <= 31) cols.push(c);
+    }
+    if (cols.length < 4) continue;
+    // keep the widest contiguous-ish run (a week is 7 adjacent columns)
+    const runs = [];
+    let run = [cols[0]];
+    for (let i = 1; i < cols.length; i++) {
+      if (cols[i] - cols[i - 1] <= 2) run.push(cols[i]);
+      else { runs.push(run); run = [cols[i]]; }
+    }
+    runs.push(run);
+    const widest = runs.sort((a, b) => b.length - a.length)[0];
+    if (widest.length >= 4 && (!best || widest.length > best.length)) best = widest;
+  }
+  if (!best) return null;
+  // a full week spans 7 columns starting at the run's left edge
+  const start = best[0], end = Math.max(best[best.length - 1], start + 6);
+  const dayCols = [];
+  for (let c = end - 6; c <= end; c++) dayCols.push(c);
+  // label column: nearest column left of the days that carries text
+  let labelCol = Math.max(0, dayCols[0] - 1);
+  for (let c = dayCols[0] - 1; c >= 0; c--) {
+    let hits = 0;
+    for (let r = 0; r < rows.length; r++) {
+      const v = String((rows[r] || [])[c] == null ? "" : (rows[r] || [])[c]).trim();
+      if (v && !/^\d+$/.test(v)) hits++;
+    }
+    if (hits >= 4) { labelCol = c; break; }
+  }
+  return { dayCols, labelCol };
+}
+
+const dmCell = (rows, r, c) => {
+  const v = rows[r] ? rows[r][c] : null;
+  if (v == null) return "";
+  return String(v).trim();
+};
+
+function looksLikeBlankGrid(rows) {
+  const g = dmGeometry(rows);
+  if (!g) return false;
+  // must have at least two week bands and labels under them
+  let dateRows = 0;
+  for (let r = 0; r < rows.length; r++) {
+    const nums = g.dayCols.map((c) => dmCell(rows, r, c)).filter((v) => /^\d{1,2}$/.test(v));
+    if (nums.length >= 4) dateRows++;
+  }
+  if (dateRows < 2) return false;
+  let labels = 0;
+  for (let r = 0; r < rows.length; r++) {
+    const l = dmCell(rows, r, g.labelCol);
+    if (l && !/^\d+$/.test(l)) labels++;
+  }
+  return labels >= 4;
+}
+
+/* Match a schedule label ("Thomas", "Juan R", "Jose B") to a roster person.
+   Exact first, then token-prefix so "Juan R" finds "Juan Rodriguez" without also
+   grabbing "Juan Pablo". Ambiguous matches are reported rather than guessed. */
+function matchRosterName(label, roster) {
+  const L = norm(label);
+  if (!L) return null;
+  const exact = roster.find((a) => norm(a.name) === L);
+  if (exact) return exact;
+  const lt = L.split(" ");
+  const hits = roster.filter((a) => {
+    const rt = norm(a.name).split(" ");
+    if (lt.length > rt.length) return false;
+    return lt.every((t, i) => rt[i] && rt[i].startsWith(t));
+  });
+  if (hits.length === 1) return hits[0];
+  return null;   // none, or ambiguous — surface it instead of picking wrongly
+}
+
+function parseBlankGrid(rows, roster, targetYear, targetMonth) {
+  const geo = dmGeometry(rows);
+  if (!geo) return { matched: [], unmatched: [], teams: {}, empty: true };
+  const { dayCols, labelCol } = geo;
+
+  // Team rosters sit to the left of the schedule: a "Team X (Lead)" header with member
+  // names listed beneath it. Scan the columns left of the label column for that shape.
+  const teams = {}; const used = [];
+  let cur = null;
+  for (let r = 0; r < rows.length; r++) {
+    let head = "";
+    for (let c = 0; c < labelCol; c++) {
+      const v = dmCell(rows, r, c);
+      if (/^team\b/i.test(v)) { head = v; break; }
+    }
+    if (head) {
+      const m = head.match(/team\s*([A-D])\b/i);
+      let letter = m ? m[1].toUpperCase() : ["A", "B", "C", "D"].find((L) => !used.includes(L));
+      if (!letter) letter = String(used.length + 1);
+      used.push(letter); cur = letter; teams[letter] = [];
+      continue;
+    }
+    if (!cur) continue;
+    for (let c = 0; c < labelCol; c++) {
+      const nm = dmCell(rows, r, c);
+      if (nm && !/^\d+$/.test(nm) && !/^team\b/i.test(nm)) { teams[cur].push(nm); break; }
+    }
+  }
+
+  const dateRows = [];
+  for (let r = 0; r < rows.length; r++) {
+    const vals = dayCols.map((c) => dmCell(rows, r, c));
+    if (vals.filter((v) => /^\d{1,2}$/.test(v)).length >= 4) dateRows.push(r);
+  }
+  if (!dateRows.length) return { matched: [], unmatched: [], teams, empty: true };
+
+  const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+  const off = {};
+  const unmatched = {};
+  const markOff = (label, date) => {
+    const a = matchRosterName(label, roster);
+    if (!a) { unmatched[label] = (unmatched[label] || 0) + 1; return; }
+    (off[a.id] = off[a.id] || new Set()).add(date);
+  };
+
+  for (let i = 0; i < dateRows.length; i++) {
+    const dr = dateRows[i];
+    const end = i + 1 < dateRows.length ? dateRows[i + 1] : rows.length;
+    const daynums = dayCols.map((c) => dmCell(rows, dr, c));
+    for (let r = dr + 1; r < end; r++) {
+      const label = dmCell(rows, r, labelCol);
+      if (!label || /^open$/i.test(label)) continue;      // unfilled slot, not a person
+      const people = /^[A-D]$/i.test(label) ? (teams[label.toUpperCase()] || []) : [label];
+      if (!people.length) continue;
+      dayCols.forEach((c, ci) => {
+        const dn = daynums[ci];
+        if (!/^\d{1,2}$/.test(dn)) return;                // column has no date this week
+        const day = parseInt(dn);
+        if (day < 1 || day > daysInMonth) return;
+        const v = dmCell(rows, r, c);
+        const working = !!v && !/^(vac|vacation|off)$/i.test(v);
+        if (working) return;
+        const date = `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        people.forEach((p) => markOff(p, date));
+      });
+    }
+  }
+
+  const matched = [];
+  for (const [id, set] of Object.entries(off)) {
+    const a = roster.find((x) => x.id === id);
+    matched.push({ id, name: a?.name || id, dates: [...set].sort() });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams, empty: !matched.length && !Object.keys(unmatched).length };
+}
+
+const SCHED_DAYCOLS = [0, 3, 6, 9, 12, 15, 18];
+
+function looksLikeHollerGrid(rows) {
+  for (let i = 0; i < rows.length - 2; i++) {
+    const a = (rows[i][0] || "").trim();
+    const b = (rows[i + 1] && rows[i + 1][0] || "").trim();
+    const c = (rows[i + 2] && rows[i + 2][0] || "").trim();
+    if (a === "A" && b === "B" && c === "C") return true;
+  }
+  return false;
+}
+
+function readLegendTeams(rows) {
+  let legCol = -1;
+  for (let c = 19; c <= 30 && legCol < 0; c++) {
+    let letters = 0;
+    for (const r of rows) { const v = (r[c] || "").trim(); if (/^[A-D]$/.test(v)) letters++; }
+    if (letters >= 3) legCol = c;
+  }
+  const teams = {};
+  if (legCol < 0) return teams;
+  let cur = null;
+  for (const r of rows) {
+    const v = (r[legCol] || "").trim();
+    if (/^[A-D]$/.test(v)) { cur = v; teams[cur] = []; }
+    else if (cur && v && !/^\d+$/.test(v) && v.length >= 2) teams[cur].push(v);
+  }
+  return teams;
+}
+
+// Resolve the seven day cells of a week header to real dates for the target month,
+// handling the prior-month lead-in (…30, 1…) and the next-month tail (…31, 1).
+function resolveWeekDates(dvals, ty, tm) {
+  const dn = dvals.map((v) => /^\d{1,2}$/.test(String(v).trim()) ? parseInt(v) : null);
+  const dts = new Array(7).fill(null);
+  let reset = null;
+  for (let k = 1; k < 7; k++) if (dn[k] === 1 && dn[k - 1] && dn[k - 1] > 20) { reset = k; break; }
+  if (reset != null && reset <= 3 && dn[0] && dn[0] >= 27) {
+    let pm = tm - 1, py = ty; if (pm === 0) { pm = 12; py = ty - 1; }
+    for (let k = 0; k < reset; k++) if (dn[k]) dts[k] = [py, pm, dn[k]];
+    for (let k = reset; k < 7; k++) if (dn[k]) dts[k] = [ty, tm, dn[k]];
+    return dts;
+  }
+  let m = tm, y = ty, prev = null;
+  for (let k = 0; k < 7; k++) {
+    if (dn[k] == null) continue;
+    if (prev != null && dn[k] < prev) { m++; if (m === 13) { m = 1; y++; } }
+    dts[k] = [y, m, dn[k]]; prev = dn[k];
+  }
+  return dts;
+}
+const dts2str = (dt) => dt ? `${dt[0]}-${String(dt[1]).padStart(2, "0")}-${String(dt[2]).padStart(2, "0")}` : null;
+
+function parseHollerGrid(rows, roster, targetYear, targetMonth) {
+  const teams = readLegendTeams(rows);
+  const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
+  const nameMap = new Map();
+  for (const members of Object.values(teams)) {
+    for (const m of members) {
+      const first = m.replace(/\s+S$/i, "").trim();
+      nameMap.set(norm(first), m);
+      nameMap.set(norm(m), m);
+    }
+  }
+  const toRoster = (raw) => {
+    const legend = nameMap.get(norm(raw)) || raw;
+    if (rosterByNorm.has(norm(legend))) return rosterByNorm.get(norm(legend));
+    const firstTok = norm(legend).split(" ")[0];
+    for (const [rn, real] of rosterByNorm) if (rn.split(" ")[0] === firstTok) return real;
+    return null;
+  };
+
+  const dateRows = [];
+  rows.forEach((r, i) => {
+    const vals = SCHED_DAYCOLS.map((c) => (r[c] || "").trim());
+    if (vals.filter((v) => /^\d{1,2}$/.test(v)).length >= 6) dateRows.push([i, vals]);
+  });
+
+  const off = {};
+  const unmatched = {};
+  const markOff = (rawName, date) => {
+    const rn = toRoster(rawName);
+    if (!rn) {
+      const k = rawName.trim();
+      (unmatched[k] = unmatched[k] || new Set()).add(date);
+      return;
+    }
+    (off[rn] = off[rn] || new Set()).add(date);
+  };
+
+  for (let w = 0; w < dateRows.length; w++) {
+    const [didx, dvals] = dateRows[w];
+    const end = w + 1 < dateRows.length ? dateRows[w + 1][0] : rows.length;
+    const dts = resolveWeekDates(dvals, targetYear, targetMonth);
+    for (let ridx = didx + 1; ridx < end; ridx++) {
+      const r = rows[ridx]; if (!r) continue;
+      SCHED_DAYCOLS.forEach((dc, k) => {
+        const cell = (r[dc] || "").trim();
+        const note = (r[dc + 2] || "").trim();
+        const date = dts2str(dts[k]); if (!date) return;
+        if (cell === "A" || cell === "B" || cell === "C") {
+          if (note.toUpperCase() === "OFF") (teams[cell] || []).forEach((m) => markOff(m, date));
+        } else if (!cell && note) {
+          const m1 = note.toUpperCase().match(/^([A-Z]+)\s+(OFF|VAC)\b/);
+          if (m1) markOff(m1[1], date);
+        }
+      });
+    }
+  }
+
+  const prefix = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+  const matched = [];
+  for (const [name, set] of Object.entries(off)) {
+    const days = [...set].filter((d) => d.startsWith(prefix)).sort();
+    if (!days.length) continue;
+    const a = roster.find((x) => x.name === name);
+    if (a) matched.push({ id: a.id, name, dates: days });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams,
+    unmatchedRows: Object.entries(unmatched)
+      .map(([name, set]) => ({ name, dates: [...set].filter((d) => d.startsWith(prefix)).sort() }))
+      .filter((u) => u.dates.length) };
+}
+
+// Classic-Mazda style: every cell is "Name Status" (e.g. "Mike OFF", "Carlos VAC",
+// "Amanda 9 - C"), with real dates in the week-header rows. OFF or VAC in a person's
+// cell means a day off. Names sit inside the cells, not in a separate column.
+function looksLikeNameGrid(rows) {
+  const re = /^[A-Za-z][A-Za-z.'\- ]*\s+(\d|off\b|vac\b)/i;
+  let hits = 0;
+  for (const r of (rows || [])) for (const c of (r || [])) {
+    if (re.test(String(c == null ? "" : c).trim())) { hits++; if (hits >= 8) return true; }
+  }
+  return false;
+}
+
+function nameGridDate(raw) {
+  let s = String(raw == null ? "" : raw).trim(); if (!s) return null;
+  s = s.split("T")[0].split(" ")[0];
+  const d = normalizeDate(s); if (d) return d;
+  if (/^\d{4,6}$/.test(s)) {
+    const serial = parseInt(s, 10);
+    if (serial > 20000 && serial < 80000) {
+      const dt = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      return dt.toISOString().slice(0, 10);
+    }
+  }
+  return null;
+}
+
+/* Rank the roster against a name a sheet used, best guess first, and say WHY each
+   one is a candidate. The reason matters more than the ranking: with a Juan Pablo
+   Diaz and a Juan Ruiz lopez on the same roster, "shares a first name" is the
+   warning that this is exactly the pair a machine should not choose between. */
+function rankNameCandidates(raw, roster) {
+  const q = norm(raw);
+  const qTok = q.split(" ").filter(Boolean);
+  const dist = (a, b) => {
+    if (a === b) return 0;
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return dp[a.length][b.length];
+  };
+  const scored = [];
+  for (const a of roster) {
+    const n = norm(a.name);
+    const tok = n.split(" ").filter(Boolean);
+    let score = 0, why = "";
+    if (n === q) { score = 100; why = "exact"; }
+    else if (n.startsWith(q) || q.startsWith(n)) { score = 80; why = "starts the same"; }
+    else if (qTok[0] && tok[0] === qTok[0]) {
+      const sharers = roster.filter((x) => norm(x.name).split(" ")[0] === qTok[0]).length;
+      score = sharers > 1 ? 55 : 70;
+      why = sharers > 1 ? `careful: ${sharers} people share this first name` : "same first name";
+    } else if (qTok[0] && qTok[0].length >= 3 && tok.some((t) => t.startsWith(qTok[0]))) { score = 50; why = "name is a shortening"; }
+    else {
+      const d = dist(q, n);
+      if (d <= 2) { score = 45 - d * 5; why = "spelled almost the same"; }
+      else if (tok[0] && qTok[0] && dist(tok[0], qTok[0]) <= 1) { score = 35; why = "first name is one letter off"; }
+      else score = 1;
+    }
+    scored.push({ a, score, why });
+  }
+  return scored.sort((x, y) => y.score - x.score || x.a.name.localeCompare(y.a.name)).slice(0, 8);
+}
+
+function parseNameGrid(rows, roster, targetYear, targetMonth) {
+  const rosterByNorm = new Map(roster.map((a) => [norm(a.name), a.name]));
+  const toRoster = (raw) => {
+    const k = norm(raw); if (rosterByNorm.has(k)) return rosterByNorm.get(k);
+    const first = k.split(" ")[0];
+    for (const [rn, real] of rosterByNorm) if (rn.split(" ")[0] === first) return real;
+    return null;
+  };
+  const off = {}; const unmatched = {};
+  const markOff = (rawName, date) => {
+    const rn = toRoster(rawName);
+    if (!rn) {
+      const key = rawName.trim();
+      if (key) (unmatched[key] = unmatched[key] || new Set()).add(date);
+      return;
+    }
+    (off[rn] = off[rn] || new Set()).add(date);
+  };
+  // week-header rows are the ones where several cells read as real dates
+  const dateRows = [];
+  rows.forEach((r, i) => {
+    const dts = (r || []).map((c) => nameGridDate(c));
+    if (dts.filter(Boolean).length >= 4) dateRows.push([i, dts]);
+  });
+  const nameRe = /^([A-Za-z][A-Za-z.'\- ]*?)\s+(.+)$/;
+  for (let w = 0; w < dateRows.length; w++) {
+    const [didx, dvals] = dateRows[w];
+    const end = w + 1 < dateRows.length ? dateRows[w + 1][0] : rows.length;
+    for (let ridx = didx + 1; ridx < end; ridx++) {
+      const r = rows[ridx]; if (!r) continue;
+      r.forEach((cell, col) => {
+        const date = dvals[col]; if (!date) return;
+        const txt = String(cell == null ? "" : cell).trim(); if (!txt) return;
+        const m = txt.match(nameRe); if (!m) return;
+        if (/\b(off|vac)\b/i.test(m[2])) markOff(m[1], date);
+      });
+    }
+  }
+  const prefix = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+  const matched = [];
+  for (const [name, set] of Object.entries(off)) {
+    const days = [...set].filter((d) => d.startsWith(prefix)).sort();
+    if (!days.length) continue;
+    const a = roster.find((x) => x.name === name);
+    if (a) matched.push({ id: a.id, name, dates: days });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams: {},
+    unmatchedRows: Object.entries(unmatched)
+      .map(([name, set]) => ({ name, dates: [...set].filter((d) => d.startsWith(prefix)).sort() }))
+      .filter((u) => u.dates.length) };
+}
+
+function ScheduleUpload({ store, roster, data, onClose, onChange }) {
+  const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
+  // Answers to "who is this?", keyed by the name the sheet used. Held here until
+  // Apply, so nothing is written to the roster on a file the manager rejects.
+  const [aliasPick, setAliasPick] = useState({});
+  // A name answered on an earlier upload is already known, so the row comes up
+  // pre-filled and the manager only confirms.
+  const knownAliasId = (raw) => {
+    const target = (data.aliases || {})[norm(raw)];
+    if (!target) return "";
+    const a = roster.find((x) => norm(x.name) === target);
+    return a ? a.id : "";
+  };
+  const pickFor = (raw) => (aliasPick[raw] !== undefined ? aliasPick[raw] : knownAliasId(raw));
+  const [err, setErr] = useState("");
+  const [sheetPick, setSheetPick] = useState(null); // { sheets:[names], rowsBySheet:{name:rows} } when an xlsx has many tabs
+  const [busy, setBusy] = useState(false);
+
+  // Turn a dropped file into rows (2D array). CSV is read directly; xlsx is read with
+  // SheetJS, loaded on demand. A workbook can hold many monthly tabs, so if there's more
+  // than one non-empty sheet we let the manager pick which month to import.
+  const readFile = async (file) => {
+    setErr(""); setBusy(true);
+    try {
+      const nameLc = (file.name || "").toLowerCase();
+      if (nameLc.endsWith(".pdf")) {
+        let pdfjs;
+        try { pdfjs = await loadPdfJs(); } catch (e) {
+          setErr("Couldn't load the PDF reader. Check your connection and try again.");
+          setBusy(false); return;
+        }
+        const buf = await file.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: buf }).promise;
+        let items = [], fullText = "";
+        for (let pn = 1; pn <= pdf.numPages; pn++) {
+          const page = await pdf.getPage(pn);
+          const vp = page.getViewport({ scale: 1 });
+          const tc = await page.getTextContent();
+          for (const it of tc.items) {
+            const tx = it.transform; // [a,b,c,d,e,f] — e,f are x,y (y up from bottom)
+            items.push({ str: it.str, x: tx[4], y: vp.height - tx[5] }); // flip y so it increases downward
+            fullText += " " + it.str;
+          }
+        }
+        if (!items.length || fullText.trim().length < 20) {
+          setErr("This PDF has no readable text; it looks like a scan or photo. Export the schedule as a PDF from your scheduling software (not a scanned copy), or save it as CSV/Excel.");
+          setBusy(false); return;
+        }
+        // month from the page text (e.g. "JULY 2026")
+        const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+        let ty = parseInt(ym().slice(0, 4)), tm = parseInt(ym().slice(5, 7));
+        const mm = fullText.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*(\d{4})/);
+        if (mm) { tm = MONTHS.indexOf(mm[1]) + 1; ty = parseInt(mm[2]); }
+        const res = parsePdfSchedule(items, 612, roster, ty, tm);
+        if (res.empty) {
+          setErr("Read the PDF, but couldn't find any OFF or VAC entries to apply. The layout may differ from a standard calendar schedule.");
+          setBusy(false); return;
+        }
+        const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+        setBusy(false);
+        setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, pdf: true,
+          monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: {} });
+        return;
+      }
+      if (nameLc.endsWith(".xlsx") || nameLc.endsWith(".xls") || nameLc.endsWith(".xlsm")) {
+        let XLSX;
+        try { XLSX = await loadXLSX(); } catch (e) {
+          setErr("This is an Excel file, but the reader couldn't load. Check your connection and try again, or save the month's tab as CSV and upload that.");
+          setBusy(false); return;
+        }
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+        // keep only sheets that actually contain a schedule grid (either style)
+        const gridSheets = wb.SheetNames.filter((n) => {
+          try { const rr = toRows(wb.Sheets[n]); return looksLikeHollerGrid(rr) || looksLikeBlankGrid(rr) || looksLikeNameGrid(rr); } catch (e) { return false; }
+        });
+        const usable = gridSheets.length ? gridSheets : wb.SheetNames;
+        if (usable.length === 1) {
+          setBusy(false);
+          parseRows(toRows(wb.Sheets[usable[0]]), usable[0]);
+          return;
+        }
+        // many tabs → let them pick. Default-highlight the one matching the current month.
+        const rowsBySheet = {};
+        for (const n of usable) rowsBySheet[n] = toRows(wb.Sheets[n]);
+        setBusy(false);
+        setSheetPick({ sheets: usable, rowsBySheet });
+        return;
+      }
+      // CSV
+      const text = await file.text();
+      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
+      setBusy(false);
+      parseRows(rows, null);
+    } catch (e) {
+      setBusy(false);
+      setErr("Couldn't read that file. If it's an Excel export, try the .xlsx directly, or save the tab as CSV.");
+    }
+  };
+
+  const parse = async (rows, monthHint) => parseRows(rows, monthHint);
+  const parseRows = (rows, monthHint) => {
+    setErr("");
+    if (!rows || !rows.length) { setErr("That file looks empty."); return; }
+
+    // ---- Auto-detect the Holler team-grid format ----
+    if (looksLikeHollerGrid(rows)) {
+      const { ty, tm } = detectSheetMonth(rows, monthHint);
+      const res = parseHollerGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (!res.matched.length && !res.unmatched.length) {
+        setErr("Detected a team grid, but couldn't read any off-days. The layout may differ from expected.");
+        return;
+      }
+      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
+      return;
+    }
+
+    // ---- Blank-grid style: a shift means working, an empty cell means off ----
+    if (looksLikeBlankGrid(rows)) {
+      const { ty, tm } = detectSheetMonth(rows, monthHint);
+      const res = parseBlankGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (res.empty) {
+        setErr("Detected a schedule grid, but couldn't read any days off. The layout may differ from expected.");
+        return;
+      }
+      setPreview({
+        matched: res.matched, unmatched: res.unmatched, total, grid: true, blankGrid: true,
+        monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams,
+      });
+      return;
+    }
+
+    // ---- Name-in-cell grid: each cell is "Name OFF/VAC/time" (Classic Mazda style) ----
+    if (looksLikeNameGrid(rows)) {
+      const { ty, tm } = detectSheetMonth(rows, monthHint);
+      const res = parseNameGrid(rows, roster, ty, tm);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (!res.matched.length && !res.unmatched.length) {
+        setErr("Detected a name schedule, but couldn't read any OFF or VAC days for this month. The layout may differ from expected.");
+        return;
+      }
+      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true, monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams });
+      return;
+    }
+
+    // ---- Otherwise, the simple Name + dates format ----
+    const header = rows[0].map((h) => String(h || "").trim());
+    const lower = header.map((h) => h.toLowerCase());
+    const nameCol = lower.findIndex((h) => h.includes("name") || h.includes("associate") || h.includes("employee"));
+    if (nameCol < 0) { setErr("Couldn't find a Name column. Add a header row with a 'Name' column, or upload the monthly team grid."); return; }
+
+    const offCol = lower.findIndex((h) => h.includes("off") || h.includes("pto") || h.includes("vacation") || h.includes("dates"));
+    const dateCols = header.map((h, i) => ({ i, d: normalizeDate(h) })).filter((c) => c.d && c.i !== nameCol);
+
+    const rosterByName = new Map(roster.map((a) => [norm(a.name), a]));
+    const matched = [], unmatched = [];
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r]; if (!row) continue;
+      const nm = String(row[nameCol] || "").trim(); if (!nm) continue;
+      const a = rosterByName.get(norm(nm));
+      let dates = [];
+      if (dateCols.length) {
+        for (const c of dateCols) {
+          const v = String(row[c.i] || "").trim().toLowerCase();
+          if (v && ["off", "x", "v", "pto", "vac", "vacation", "1", "true", "yes"].includes(v)) dates.push(c.d);
+        }
+      } else if (offCol >= 0) {
+        dates = String(row[offCol] || "").split(/[;,\s]+/).map(normalizeDate).filter(Boolean);
+      }
+      dates = [...new Set(dates)].filter((d) => d.startsWith(ym().slice(0, 4))); // sane year guard
+      if (a) matched.push({ name: nm, id: a.id, dates });
+      else if (dates.length) unmatched.push(nm);
+    }
+    if (!matched.length && !unmatched.length) { setErr("No off-days found. Check the format below."); return; }
+    setPreview({ matched, unmatched, total: matched.reduce((n, m) => n + m.dates.length, 0) });
+  };
+
+  const apply = () => {
+    if (!preview) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.daysOff = next.daysOff || {};
+    next.daysOffAt = next.daysOffAt || {};
+    const stamp = new Date().toISOString();
+    const toApply = preview.matched.map((m) => ({ ...m }));
+    // Answers given in the review rows: remember the nickname, then treat that
+    // person exactly as if the sheet had used their full name.
+    next.aliases = next.aliases || {};
+    let learned = 0;
+    for (const u of preview.unmatchedRows || []) {
+      const id = pickFor(u.name);
+      if (!id) continue;
+      const a = roster.find((x) => x.id === id);
+      if (!a) continue;
+      next.aliases[norm(u.name)] = norm(a.name);
+      learned++;
+      toApply.push({ id: a.id, name: a.name, dates: u.dates });
+    }
+    for (const m of toApply) {
+      const set = new Set(next.daysOff[m.id] || []);
+      m.dates.forEach((d) => set.add(d));
+      next.daysOff[m.id] = [...set].sort();
+      next.daysOffAt[m.id] = stamp;
+    }
+    onChange(next, { action: "Applied schedule",
+      detail: `${store.name} · ${preview.total} off-days across ${preview.matched.filter((m) => m.dates.length).length} people`
+        + (learned ? ` · learned ${learned} name${learned === 1 ? "" : "s"}` : "") });
+    onClose();
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal sched-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="plate-hist-head">
+          <div>
+            <h2 className="plate-hist-title">Upload monthly schedule</h2>
+            <p className="plate-hist-sub">Applies days off and vacation for the month. Off-days are excluded from the point system and from days worked.</p>
+          </div>
+          <button className="btn-x" onClick={onClose}>✕</button>
+        </div>
+
+        {sheetPick ? (
+          <div className="sched-sheetpick">
+            <p className="hint">This workbook has several monthly tabs. Which month do you want to import?</p>
+            <div className="sched-sheet-list">
+              {sheetPick.sheets.map((n) => (
+                <button key={n} className="sched-sheet-btn" onClick={() => { const rows = sheetPick.rowsBySheet[n]; setSheetPick(null); parseRows(rows, n); }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <div className="sched-actions">
+              <button className="btn secondary" onClick={() => setSheetPick(null)}>Back</button>
+            </div>
+          </div>
+        ) : !preview ? (
+          <>
+            <label className="sched-drop">
+              <input type="file" accept=".csv,.xlsx,.xls,.xlsm,.pdf" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; }} />
+              <div className="dz-icon"><span>⇩</span></div>
+              <div className="dz-title">{busy ? "Reading…" : <><span className="dz-drop">Drop or choose</span><span className="dz-tap">Choose</span> the schedule</>}</div>
+              <div className="dz-sub">Upload an <b>Excel workbook</b>, <b>CSV</b>, or <b>PDF</b>. Team grids and name-based calendar PDFs are read automatically, including team and individual OFF/VAC days. A simple <b>Name + Off Dates</b> CSV works too.</div>
+            </label>
+            {err && <p className="sched-err">{err}</p>}
+            <div className="sched-help">
+              <div className="sched-help-title">What it reads</div>
+              <code>The monthly grid as-is: A/B/C team rows, the team legend on the right, and every “NAME OFF” / “NAME VAC” line. Excel files with many month tabs will ask which month.</code>
+              <div className="sched-or">or a simple CSV</div>
+              <code>Name, Off Dates<br />Marcus Bell, 2026-07-04; 2026-07-11</code>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="sched-preview">
+              {preview.grid && (
+                <div className="sched-detected">
+                  <span className="sched-detected-tag">{preview.pdf ? "PDF schedule read" : preview.blankGrid ? "Schedule grid read" : "Team grid detected"}</span>
+                  {preview.pdf
+                    ? `${preview.monthLabel} · read from the calendar, matched by first name`
+                    : preview.blankGrid
+                      ? `${preview.monthLabel} · a blank cell is a day off. Teams read: ${Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ") || "none"}`
+                      : `${preview.monthLabel} · teams read from the sheet: ${Object.entries(preview.teams || {}).map(([t, m]) => `${t} (${m.length})`).join(", ")}`}
+                </div>
+              )}
+              <p className="hint">{preview.total} off-days for {preview.matched.filter((m) => m.dates.length).length} people. Review, then apply.</p>
+              {preview.matched.filter((m) => m.dates.length).map((m) => (
+                <div key={m.id} className="sched-prow">
+                  <b>{m.name}</b>
+                  <span className="sched-dates">{m.dates.map((d) => new Date(d + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })).join(", ")}</span>
+                </div>
+              ))}
+              {(preview.unmatchedRows || []).length > 0 && (
+                <div className="sched-ask">
+                  <div className="sched-ask-head">
+                    <b>Who are these?</b>
+                    <span className="hint">
+                      The sheet uses names the roster does not. Point each one at the right person and the answer is
+                      remembered, so the next upload places them without asking. Anything left as "not on the roster"
+                      is skipped, exactly as before.
+                    </span>
+                  </div>
+                  {(preview.unmatchedRows || []).map((u) => {
+                    const cands = rankNameCandidates(u.name, roster);
+                    return (
+                      <div key={u.name} className="sched-ask-row">
+                        <span className="sched-ask-name">
+                          <b>{u.name}</b>
+                          <span className="sched-dates">{u.dates.length} day{u.dates.length === 1 ? "" : "s"} off</span>
+                        </span>
+                        <select value={pickFor(u.name)} onChange={(e) => setAliasPick((p) => ({ ...p, [u.name]: e.target.value }))}>
+                          <option value="">Not on the roster, skip</option>
+                          {cands.map((c) => (
+                            <option key={c.a.id} value={c.a.id}>
+                              {c.a.name}{c.why ? ` — ${c.why}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="sched-actions">
+              <button className="btn secondary" onClick={() => { setPreview(null); setAliasPick({}); }}>Choose another file</button>
+              <button className="btn" onClick={apply}>Apply {preview.total} off-days</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// accept 2026-07-04, 07/04/2026, 7/4, etc → YYYY-MM-DD (current year if omitted)
+function normalizeDate(s) {
+  s = String(s || "").trim(); if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (m) {
+    const yr = m[3] ? (m[3].length === 2 ? "20" + m[3] : m[3]) : today().slice(0, 4);
+    return `${yr}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+  }
+  return null;
+}
+
+/* ---------------- License Plate Tracker ---------------- */
+function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
+  const [day, setDay] = useState(today());
+  // Several people share this log at once. Re-read the plate fields on a short timer
+  // and whenever the tab comes back to the front, so a plate someone else logged out
+  // shows up here on its own. A read is skipped while a save of our own is in flight,
+  // so the server's older copy can never land on top of a change being written.
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
+  useEffect(() => {
+    if (!storeId || !onRemote) return;
+    let dead = false;
+    const pull = async () => {
+      if (dead || savingRef.current || document.hidden) return;
+      try {
+        const got = await loadPlatesOnly(storeKey(storeId));
+        if (!dead && got && !savingRef.current) onRemote(storeId, got.plates, got.registry);
+      } catch (e) { /* a blip: the next tick tries again */ }
+    };
+    pull();
+    const t = setInterval(pull, 10000);
+    const onShow = () => { if (!document.hidden) pull(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [storeId, onRemote]);
+  const [tag, setTag] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [historyFor, setHistoryFor] = useState(null); // plate id whose custody log is open
+  const [editingTime, setEditingTime] = useState(null); // plate id whose time is being edited
+  const plates = data.plates || {}; // { day: [ {id, tag, assignee, checkedOut, checkedIn, by, takenAt, history:[...]} ] }
+  const dayPlates = plates[day] || [];
+  const roster = (data.roster || []).filter((a) => a.roleId).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Build a datetime-local value (local time) from an ISO string, and back.
+  const isoToLocalInput = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const off = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - off).toISOString().slice(0, 16);
+  };
+  const localInputToIso = (val) => val ? new Date(val).toISOString() : null;
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+  const fmtTimeShort = (iso) => iso ? new Date(iso).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
+
+  const save = (nextDayPlates, audit, mutate) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[day] = nextDayPlates;
+    if (mutate) mutate(next);          // registry updates ride in the same write
+    onChange(next, audit);
+  };
+
+  /* ---- Plate registry ----
+     Every tag ever logged is remembered in data.plateRegistry, with whether it's a
+     reusable (dealer) plate. Entries match on the END of the number, because people
+     shorthand plates by their last characters: "1UP" finds "7771UP". If the full
+     number shows up later than the shorthand, the registry upgrades itself to the
+     full number and every past record is relinked so the plate's history stays one
+     unbroken trail. */
+  const registry = data.plateRegistry || [];
+  const normTag = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const findRegistryMatch = (t) => {
+    const T = normTag(t);
+    if (!T) return null;
+    const exact = registry.find((r) => normTag(r.tag) === T);
+    if (exact) return { entry: exact, fuller: null };
+    if (T.length >= 3) {
+      // they typed a shorthand of a known plate
+      const known = registry.find((r) => normTag(r.tag).endsWith(T));
+      if (known) return { entry: known, fuller: null };
+    }
+    // they typed a fuller number of a known shorthand: learn the full plate
+    const short = registry.find((r) => normTag(r.tag).length >= 3 && T.endsWith(normTag(r.tag)) && T.length > normTag(r.tag).length);
+    if (short) return { entry: short, fuller: t.trim().toUpperCase() };
+    return null;
+  };
+  // How many single-character edits apart two tags are. Cheap, and enough to catch
+  // the ways a plate actually gets mistyped: one wrong character, one missing, one
+  // extra, or two swapped.
+  const tagDistance = (a, b) => {
+    if (a === b) return 0;
+    if (Math.abs(a.length - b.length) > 1) return 9;
+    const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+    for (let i = 1; i <= a.length; i++)
+      for (let j = 1; j <= b.length; j++)
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return dp[a.length][b.length];
+  };
+  const nearestKnown = (t) => {
+    const T = normTag(t);
+    if (T.length < 4) return null;
+    let best = null;
+    for (const r of registry) {
+      if (r.retired) continue;
+      const d = tagDistance(T, normTag(r.tag));
+      if (d === 1 && (!best || d < best.d)) best = { entry: r, d };
+    }
+    return best ? best.entry : null;
+  };
+
+  // append an event to a plate's own custody history so the trail survives on the record
+  const withEvent = (plate, action, detail) => ({
+    ...plate,
+    history: [...(plate.history || []), { t: new Date().toISOString(), by: userName, action, detail }],
+  });
+
+  const [plateErr, setPlateErr] = useState("");
+  const [masterOpen, setMasterOpen] = useState(false);
+  const [bulk, setBulk] = useState("");
+
+  /* ---- Master plate list ----
+     The registry stops being something the tracker only learns by accident and
+     becomes a list a manager can keep straight: add the drawer of dealer plates in
+     one go, fix a number that was entered wrong, retire one that has gone. */
+  const addBulkPlates = () => {
+    const wanted = bulk.split(/[\n,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (!wanted.length) return;
+    const have = new Set(registry.map((r) => normTag(r.tag)));
+    const fresh = [];
+    for (const t of wanted) {
+      const T = normTag(t);
+      if (!T || have.has(T)) continue;
+      have.add(T);
+      fresh.push({ id: uid(), tag: t, reusable: true, addedAt: new Date().toISOString() });
+    }
+    if (!fresh.length) { setPlateErr("Every one of those is already on the master list."); return; }
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = [...(next.plateRegistry || []), ...fresh];
+    setBulk(""); setPlateErr("");
+    onChange(next, { action: "Added plates to the master list", detail: fresh.map((f) => f.tag).join(", ") });
+  };
+
+  // Renaming has to carry the past with it, or the custody trail splits in two.
+  const renameRegistry = (id, raw) => {
+    const nt = String(raw || "").trim().toUpperCase();
+    const entry = registry.find((r) => r.id === id);
+    if (!entry || !nt || nt === entry.tag) return;
+    if (registry.some((r) => r.id !== id && normTag(r.tag) === normTag(nt))) {
+      setPlateErr(`${nt} is already on the master list.`); return;
+    }
+    const old = entry.tag;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, tag: nt } : r);
+    for (const d of Object.keys(next.plates || {})) {
+      next.plates[d] = next.plates[d].map((p) => p.tag === old
+        ? { ...p, tag: nt, history: [...(p.history || []), { t: new Date().toISOString(), by: userName, action: "Plate renumbered", detail: `${old} is ${nt}; records relinked` }] }
+        : p);
+    }
+    setPlateErr("");
+    onChange(next, { action: "Renumbered plate", detail: `${old} → ${nt}` });
+  };
+
+  const setRegistryFlag = (id, field, value, label) => {
+    const entry = registry.find((r) => r.id === id); if (!entry) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, [field]: value } : r);
+    onChange(next, { action: label, detail: entry.tag });
+  };
+
+  const removeRegistry = (id) => {
+    const entry = registry.find((r) => r.id === id); if (!entry) return;
+    const used = Object.values(data.plates || {}).some((list) => (list || []).some((p) => p.tag === entry.tag));
+    if (used) {
+      if (!window.confirm(`${entry.tag} has been logged out before. Removing it from the master list does NOT delete that history, but it will stop being suggested.\n\nRetiring it instead keeps it on the list, greyed out. Remove it anyway?`)) return;
+    } else if (!window.confirm(`Remove ${entry.tag} from the master plate list?`)) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateRegistry = (next.plateRegistry || []).filter((r) => r.id !== id);
+    onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
+  };
+  const addPlate = () => {
+    let t = tag.trim().toUpperCase(); if (!t) return;
+    setPlateErr("");
+    // Resolve against the registry: shorthand finds the known plate, and a fuller
+    // number than we knew upgrades the registry and relinks all past records.
+    let registryMutate = null;
+    let enteredAs = null;
+    const hit = findRegistryMatch(t);
+    if (hit) {
+      if (hit.fuller) {
+        const oldTag = hit.entry.tag;
+        t = hit.fuller;
+        enteredAs = null;
+        registryMutate = (next) => {
+          next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === hit.entry.id ? { ...r, tag: hit.fuller } : r);
+          // relink history: the shorthand records were always this plate
+          for (const d of Object.keys(next.plates || {})) {
+            next.plates[d] = next.plates[d].map((p) => p.tag === oldTag
+              ? { ...p, tag: hit.fuller, history: [...(p.history || []), { t: new Date().toISOString(), by: userName, action: "Plate number completed", detail: `${oldTag} is ${hit.fuller}; records relinked` }] }
+              : p);
+          }
+        };
+      } else if (normTag(hit.entry.tag) !== normTag(t)) {
+        enteredAs = t;
+        t = hit.entry.tag;      // shorthand: use the canonical number on the record
+      }
+    } else {
+      // Nothing in the master list matches. Before accepting it as a new plate, check
+      // whether it is one character away from a plate that IS on the list, because
+      // that is almost always a typo rather than a plate nobody has logged before.
+      const near = nearestKnown(t);
+      if (near && window.confirm(`${t} is not on the master plate list.\n\nDid you mean ${near.tag}?\n\nOK = yes, use ${near.tag} · Cancel = no, ${t} really is a new plate`)) {
+        enteredAs = t;
+        t = near.tag;
+      } else {
+        const reusable = window.confirm(`${t} will be added to the master plate list.\n\nIs this a plate that will be REUSED (a dealer plate)?\n\nOK = yes, reusable · Cancel = one-time`);
+        registryMutate = (next) => {
+          next.plateRegistry = [...(next.plateRegistry || []), { id: uid(), tag: t, reusable, addedAt: new Date().toISOString() }];
+        };
+      }
+    }
+    // Never came back on an earlier day: hard stop until it's marked returned.
+    if (missingTags.has(t)) {
+      const m = missing.find((x) => x.plate.tag === t);
+      setPlateErr(`${t} has been out since ${m.day} (${m.plate.assignee || "unassigned"}) and was never marked returned. Mark it returned in the banner above before it goes out again.`);
+      return;
+    }
+    const now = new Date().toISOString();
+    const who = assignee.trim();
+    const stillOut = dayPlates.find((p) => p.tag === t && !p.checkedIn);
+    if (stillOut) {
+      // Hard stop: a plate that hasn't been marked back in can't be re-issued. Its
+      // return has to be logged first, which puts the unlogged hand-back on record.
+      setPlateErr(`${t} is still logged out to ${stillOut.assignee || "unassigned"} and hasn't been marked returned. ` +
+        `Mark it returned first. If it's physically back, that means ${stillOut.assignee || "the previous holder"} returned it without letting a manager know.`);
+      return;
+    }
+    // A plate that was properly returned can go out again; each trip is its own record.
+    const plate = {
+      id: uid(), tag: t, assignee: who, checkedOut: true, checkedIn: false, by: userName,
+      takenAt: now,
+      history: [{ t: now, by: userName, action: "Taken out", detail: `${t} → ${who || "unassigned"}` + (enteredAs ? ` (entered as ${enteredAs})` : "") }],
+    };
+    save([...dayPlates, plate], { action: "Assigned plate", detail: `${t} → ${who || "unassigned"} at ${fmtTimeShort(now)}` }, registryMutate);
+    setTag(""); setAssignee("");
+  };
+  const toggleIn = (id) => {
+    setPlateErr("");
+    save(dayPlates.map((p) => {
+      if (p.id !== id) return p;
+      const nowIn = !p.checkedIn;
+      const stamp = nowIn ? new Date().toISOString() : null;
+      const ev = withEvent({ ...p, checkedIn: nowIn, returnedAt: stamp }, nowIn ? "Returned" : "Marked out again", nowIn ? `${p.tag} returned at ${fmtTimeShort(stamp)}` : `${p.tag} re-opened`);
+      return ev;
+    }), { action: "Plate check-in", detail: `${dayPlates.find((p) => p.id === id)?.tag}` });
+  };
+  const setPlateAssignee = (id, name) => {
+    const p0 = dayPlates.find((p) => p.id === id);
+    if (!p0) return;
+    // Hard stop: a still-out plate can't be handed to someone else. It has to be
+    // marked returned first — if it's physically back, the previous holder returned
+    // it without letting a manager know, and logging the return records that.
+    if (!p0.checkedIn && p0.assignee && name && name !== p0.assignee) {
+      setPlateErr(`${p0.tag} is still logged out to ${p0.assignee} and hasn't been marked returned. ` +
+        `Mark it returned before assigning it to ${name}. If it's physically back, that means ${p0.assignee} returned it without letting a manager know.`);
+      return;
+    }
+    save(dayPlates.map((p) => p.id === id
+      ? withEvent({ ...p, assignee: name }, "Reassigned", `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`)
+      : p),
+      { action: "Reassigned plate", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${name || "unassigned"}` });
+  };
+  const setTakenTime = (id, iso) => {
+    if (!iso) return;
+    save(dayPlates.map((p) => {
+      if (p.id !== id) return p;
+      const old = fmtTime(p.takenAt);
+      return withEvent({ ...p, takenAt: iso }, "Time edited", `${p.tag} taken-out time changed from ${old} to ${fmtTime(iso)}`);
+    }), { action: "Edited plate time", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${fmtTime(iso)}` });
+    setEditingTime(null);
+  };
+  const remove = (id) => {
+    const p = dayPlates.find((x) => x.id === id);
+    save(dayPlates.filter((x) => x.id !== id), { action: "Removed plate", detail: `${p?.tag} (was ${p?.assignee || "unassigned"})` });
+  };
+  const carryForward = () => {
+    const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
+    const prior = priorDays.length ? plates[priorDays[0]] : [];
+    if (!prior.length) return;
+    const existing = new Set(dayPlates.map((p) => p.tag));
+    const now = new Date().toISOString();
+    // Only plates that actually came back get re-issued. A plate still out from the
+    // prior day is missing — it sits in the warning banner until it's marked returned.
+    const carried = prior.filter((p) => !existing.has(p.tag) && p.checkedIn && !missingTags.has(p.tag)).map((p) => ({
+      ...p, id: uid(), checkedIn: false, checkedOut: true, by: userName, takenAt: now, returnedAt: null,
+      history: [...(p.history || []), { t: now, by: userName, action: "Carried forward", detail: `${p.tag} from ${priorDays[0]}, held by ${p.assignee || "unassigned"}` }],
+    }));
+    save([...dayPlates, ...carried], { action: "Carried plates forward", detail: `${carried.length} from ${priorDays[0]}` });
+  };
+
+  const plateDays = Object.keys(plates).sort().reverse();
+  const openPlate = historyFor ? dayPlates.find((p) => p.id === historyFor) : null;
+
+  /* A plate that never came back. The most recent record per tag across all days
+     decides its status: if that record is from an earlier day and still not checked
+     in, the plate is missing — it can't go out today until it's marked returned. */
+  const missing = (() => {
+    const latest = {};
+    for (const [d, list] of Object.entries(plates)) {
+      for (const p of list) {
+        const cur = latest[p.tag];
+        if (!cur || d > cur.day || (d === cur.day && (p.takenAt || "") > (cur.plate.takenAt || ""))) {
+          latest[p.tag] = { day: d, plate: p };
+        }
+      }
+    }
+    return Object.values(latest).filter((x) => x.day < day && !x.plate.checkedIn);
+  })();
+  const missingTags = new Set(missing.map((x) => x.plate.tag));
+  // Tags nobody is holding. A plate that is still out cannot go out again, so
+  // offering it would only produce the error message a moment later.
+  const outNow = new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
+  const freeTags = registry.filter((r) => !r.retired).map((r) => r.tag)
+    .filter((t) => !outNow.has(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  // Mark a prior day's plate returned from the missing banner, with the late return on the record.
+  const markReturnedPrior = (d, id) => {
+    setPlateErr("");
+    const now = new Date().toISOString();
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[d] = (next.plates[d] || []).map((p) => p.id === id
+      ? { ...p, checkedIn: true, returnedAt: now,
+          history: [...(p.history || []), { t: now, by: userName, action: "Returned (late)", detail: `${p.tag} was still out from ${d}; marked returned on ${day}` }] }
+      : p);
+    const tag2 = (next.plates[d] || []).find((p) => p.id === id)?.tag;
+    onChange(next, { action: "Plate returned late", detail: `${tag2} (out since ${d})` });
+  };
+
+  return (
+    <div className="plates">
+      {missing.length > 0 && (
+        <div className="plate-missing-banner">
+          <b>⚠ {missing.length === 1 ? "A license plate is missing" : `${missing.length} license plates are missing`}</b>
+          {missing.map((x) => (
+            <div key={x.plate.tag + x.day} className="plate-missing-row">
+              <span><b>{x.plate.tag}</b>: out since {x.day} with {x.plate.assignee || "unassigned"}, never marked returned. It can't go out again until it's checked back in.</span>
+              <button className="btn secondary" onClick={() => markReturnedPrior(x.day, x.plate.id)}>Mark returned now</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {plateErr && <div className="plate-err">{plateErr}</div>}
+      <div className="gm-toolbar">
+        <select value={day} onChange={(e) => setDay(e.target.value)}>
+          <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
+          {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+        </select>
+        <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
+        <button className="btn secondary" onClick={() => setMasterOpen((v) => !v)}>
+          {masterOpen ? "Hide master plate list" : `Master plate list (${registry.filter((r) => !r.retired).length})`}
+        </button>
+        <span className="hint">Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when.</span>
+      </div>
+      {masterOpen && (
+        <div className="card">
+          <h3>Master plate list</h3>
+          <p className="hint">
+            Every plate the store owns. This is what the one-click row suggests from, and what a
+            typed tag is checked against, so a number that is one character off gets questioned
+            rather than quietly becoming a second plate. Retiring keeps the history and stops the
+            suggestions; removing takes it off the list entirely.
+          </p>
+          <div className="inline-form">
+            <textarea className="plate-bulk" value={bulk} onChange={(e) => setBulk(e.target.value)}
+              placeholder={"Paste or type plates, one per line or comma separated\ne.g. DLR-1042, DLR-1043"} rows={2} />
+            <button className="btn" onClick={addBulkPlates}>Add to list</button>
+          </div>
+          {registry.length === 0
+            ? <p className="hint">Nothing on the list yet. Paste the drawer of dealer plates above and they will be ready to one-click from tomorrow.</p>
+            : <table className="roster-table wide">
+                <thead><tr><th>Tag</th><th>Type</th><th>Status</th><th>Right now</th><th /></tr></thead>
+                <tbody>
+                  {[...registry].sort((a, b) => String(a.tag).localeCompare(String(b.tag), undefined, { numeric: true })).map((r) => (
+                    <tr key={r.id} className={r.retired ? "plate-retired" : ""}>
+                      <td>
+                        <input className="plate-assignee-in" defaultValue={r.tag}
+                          onBlur={(e) => renameRegistry(r.id, e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                      </td>
+                      <td>
+                        <button className="btn-quiet" title="A dealer plate goes back in the drawer and out again; a one-time plate does not."
+                          onClick={() => setRegistryFlag(r.id, "reusable", !r.reusable, r.reusable ? "Marked plate one-time" : "Marked plate reusable")}>
+                          {r.reusable ? "Reusable" : "One-time"}
+                        </button>
+                      </td>
+                      <td>
+                        <button className="btn-quiet" onClick={() => setRegistryFlag(r.id, "retired", !r.retired, r.retired ? "Returned plate to service" : "Retired plate")}>
+                          {r.retired ? "Retired" : "In service"}
+                        </button>
+                      </td>
+                      <td>{outNow.has(r.tag) ? <span className="plate-state-out">Out</span> : <span className="plate-state-in">Available</span>}</td>
+                      <td><button className="btn-x danger" onClick={() => removeRegistry(r.id)}>Remove</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>}
+        </div>
+      )}
+      <div className="card">
+        <div className="inline-form">
+          {/* Still free text, so a brand new tag can always be typed. The list just
+              saves the typing when it is one already on the wall. */}
+          <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tag / plate #"
+            list="plate-free-tags" autoComplete="off"
+            onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 150 }} />
+          <datalist id="plate-free-tags">
+            {freeTags.map((t) => <option key={t} value={t} />)}
+          </datalist>
+          <input value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="Assign to"
+            list="plate-assignees" autoComplete="off"
+            onKeyDown={(e) => e.key === "Enter" && addPlate()} style={{ width: 200 }} />
+          <datalist id="plate-assignees">
+            {roster.map((a) => <option key={a.id} value={a.name} />)}
+          </datalist>
+          <button className="btn" onClick={addPlate}>Add plate</button>
+        </div>
+        {freeTags.length > 0 && (
+          <div className="plate-picks">
+            <span className="plate-picks-lbl">Not out right now</span>
+            {freeTags.slice(0, 18).map((t) => (
+              <button key={t} type="button" className={"plate-pick" + (tag === t ? " on" : "")}
+                onClick={() => setTag(t)}>{t}</button>
+            ))}
+            {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
+          </div>
+        )}
+        <p className="hint">The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.</p>
+      </div>
+      <div className="card">
+        {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
+          <table className="roster-table wide">
+            <thead><tr><th>Tag</th><th>Assigned to</th><th>Time taken</th><th>Returned</th><th>Logged by</th><th>History</th><th /></tr></thead>
+            <tbody>
+              {[...dayPlates].sort((x, y) => (y.takenAt || "").localeCompare(x.takenAt || "")).map((p) => (
+                <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
+                  <td><b>{p.tag}</b></td>
+                  <td>
+                    <input className="plate-assignee-in" defaultValue={p.assignee || ""} placeholder="Unassigned"
+                      list="plate-assignees" autoComplete="off"
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v !== (p.assignee || "")) setPlateAssignee(p.id, v); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                  </td>
+                  <td>
+                    {editingTime === p.id ? (
+                      <span className="plate-time-edit">
+                        <input type="datetime-local" defaultValue={isoToLocalInput(p.takenAt)}
+                          onKeyDown={(e) => { if (e.key === "Enter") setTakenTime(p.id, localInputToIso(e.target.value)); if (e.key === "Escape") setEditingTime(null); }}
+                          id={"pt-" + p.id} />
+                        <button className="plate-check in" onClick={() => setTakenTime(p.id, localInputToIso(document.getElementById("pt-" + p.id).value))}>Save</button>
+                        <button className="btn-x" onClick={() => setEditingTime(null)}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button className="plate-time" onClick={() => setEditingTime(p.id)} title="Click to edit the time taken">
+                        {fmtTime(p.takenAt)} <span className="plate-time-pencil">✎</span>
+                      </button>
+                    )}
+                  </td>
+                  <td>{p.checkedIn ? <span className="plate-returned">{fmtTimeShort(p.returnedAt)}</span> : <span className="plate-out-tag">Still out</span>}</td>
+                  <td className="mono">{p.by || "-"}</td>
+                  <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
+                  <td>
+                    <button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? "✓ Returned" : "Mark returned"}</button>
+                    <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {openPlate && (
+        <div className="modal-backdrop" onClick={() => setHistoryFor(null)}>
+          <div className="modal plate-hist-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="plate-hist-head">
+              <div>
+                <h2 className="plate-hist-title">Plate {openPlate.tag}</h2>
+                <p className="plate-hist-sub">Currently {openPlate.checkedIn ? "returned" : "out with " + (openPlate.assignee || "unassigned")}. Full custody trail below.</p>
+              </div>
+              <button className="btn-x" onClick={() => setHistoryFor(null)}>✕</button>
+            </div>
+            <ol className="plate-hist-list">
+              {(openPlate.history || []).slice().reverse().map((h, i) => (
+                <li key={i}>
+                  <div className="ph-when">{fmtTime(h.t)}</div>
+                  <div className="ph-body">
+                    <span className={"ph-action ph-" + h.action.toLowerCase().replace(/\s+/g, "-")}>{h.action}</span>
+                    <span className="ph-detail">{h.detail}</span>
+                    <span className="ph-by">by {h.by || "unknown"}</span>
+                  </div>
+                </li>
+              ))}
+              {(openPlate.history || []).length === 0 && <li><p className="hint">No history recorded for this plate.</p></li>}
+            </ol>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Leaderboard thresholds (per channel) ---------------- */
+function ThresholdGrid({ value, onChange }) {
+  const t = normThresholds(value);
+  const set = (ch, key, v) => {
+    const next = normThresholds(t);
+    next[ch][key] = Math.max(0, Math.min(100, v));
+    onChange(next);
+  };
+  return (
+    <div className="thr-grid">
+      <div className="thr-grid-head">
+        <span />
+        <span><span className="thr-dot g" />Green at or above</span>
+        <span><span className="thr-dot y" />Yellow at or above</span>
+      </div>
+      {CHANNEL_LIST.map((c) => (
+        <div key={c.id} className="thr-grid-row">
+          <span className="thr-ch">{c.label} %</span>
+          <label className="thr-inp">
+            <input type="number" min="0" max="100" value={t[c.id].green}
+              onChange={(e) => set(c.id, "green", parseInt(e.target.value) || 0)} />%
+          </label>
+          <label className="thr-inp">
+            <input type="number" min="0" max="100" value={t[c.id].yellow}
+              onChange={(e) => set(c.id, "yellow", parseInt(e.target.value) || 0)} />%
+          </label>
+        </div>
+      ))}
+      <p className="hint">
+        Each channel is scored on its own scale, because a 25% showroom close and a 25% internet
+        close are not the same achievement. At or above green shows green on The Board, at or above
+        yellow shows yellow, anything below that shows red.
+      </p>
+    </div>
+  );
+}
+
+/* ---------------- Activity Standards Editor ---------------- */
+function StoreStepper({ label, value, onChange, hint }) {
+  return (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => onChange(value - 1)} disabled={value <= 1}>&minus;</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => onChange(value + 1)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+}
+
+function ActivityStandardsEditor({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const std = store.activityStandards || DEFAULT_ACTIVITY_STANDARDS;
+  const set = (field, v) => {
+    const val = Math.max(0, v);
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.activityStandards = { ...(s.activityStandards || DEFAULT_ACTIVITY_STANDARDS), [field]: val };
+    onChange(next, { store: storeId, action: "Changed activity standards", detail: `${store.name}: ${field} ${val}` });
+  };
+  const Stepper = ({ label, field, value, hint }) => (
+    <div className="stepper-block">
+      <div className="stepper-label">{label}</div>
+      <div className="stepper">
+        <button className="stepper-btn" onClick={() => set(field, value - 1)} disabled={value <= 0}>−</button>
+        <div className="stepper-value">{value}</div>
+        <button className="stepper-btn" onClick={() => set(field, value + 1)}>+</button>
+      </div>
+      <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+  return (
+    <div className="standards">
+      <div className="card">
+        <h3>Daily Check Out Minimums <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">An associate "rocks it" for the day when they meet both minimums. These pull from the Daily Activity report's Calls and Personalized Video columns, and apply to this store only.</p>
+        <div className="stepper-row">
+          <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
+          <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
+        </div>
+        <div className="preset-row">
+          <span className="hint">Quick set:</span>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 16); setTimeout(() => set("minVideos", 2), 60); }}>16 calls · 2 videos</button>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 20); setTimeout(() => set("minVideos", 3), 60); }}>20 calls · 3 videos</button>
+          <button className="btn-ghost" onClick={() => { set("minCalls", 25); setTimeout(() => set("minVideos", 5), 60); }}>25 calls · 5 videos</button>
+        </div>
+        <div className="preview-line">
+          To RockEd: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b>
+          {std.minStars > 0 ? <> and <b>{std.minStars} stars</b></> : null} in a day.
+          Missing that on <b>{std.repeatDays ?? 3} days</b> in a month flags someone as a repeat offender automatically.
+          {!std.minStars && " Stars are recorded but not required at 0."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Admin overview ---------------- */
+function AdminOverview({ config, adminData, onOpenStore }) {
+  return (
+    <div className="admin">
+      <h2 className="section-title">Group Overview <span className="section-sub">{monthLabel(ym())}</span></h2>
+      <div className="store-grid">
+        {config.stores.map((s) => {
+          const d = adminData[s.id] || emptyStoreData();
+          const M = d.months?.[ym()];
+          const t = M?.imports?.[today()] || {};
+          const done = ["appointment", "video"].filter((k) => t[k]).length;
+          const inGrace = dayOfMonth() <= (s.graceDays ?? 10);
+          const restrictions = d.restrictions || {};
+          const isRestricted = (a) => { const r = restrictions[a.id]; return r && (!r.until || new Date(r.until) > new Date()); };
+          // Same buckets the manager sees inside the store, counted here so the card
+          // reads the same as their hero tiles — just as icons.
+          const b = { cleared: 0, nearing: 0, room: 0, restrict: 0, grace: 0, off: 0, none: 0 };
+          for (const a of d.roster || []) {
+            if (!a.roleId) continue;
+            const ev = evaluateAssociate(M?.stats?.[norm(a.name)], config.standards?.[s.id]?.[a.roleId]?.tiers);
+            const v = verdictOf(ev, { restricted: isRestricted(a), inGrace });
+            b[v.key] = (b[v.key] || 0) + 1;
+          }
+          // Only surface the buckets that have people in them, in severity order.
+          const order = ["cleared", "grace", "room", "nearing", "restrict", "off"];
+          const chips = order.filter((k) => b[k] > 0).map((k) => ({ ...VERDICT[k], n: b[k] }));
+          return (
+            <button key={s.id} className="store-card" onClick={() => onOpenStore(s.id)}>
+              <div className="store-card-top">
+                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
+                <div className="store-card-name">{s.name}</div>
+              </div>
+              <div className="store-card-row">
+                <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>Imports {done}/2</span>
+              </div>
+              <div className="store-verdicts">
+                {chips.length === 0
+                  ? <span className="stat-dim">No one evaluated yet</span>
+                  : chips.map((c) => (
+                    <span key={c.key} className={"vchip vchip-" + c.cls} title={c.label}>
+                      <span className="vchip-ico">{c.icon}</span>
+                      <span className="vchip-n">{c.n}</span>
+                      <span className="vchip-lbl">{c.short}</span>
+                    </span>
+                  ))}
+                <span className="stat-dim vchip-roster">{(d.roster || []).length} on roster</span>
+              </div>
+              <div className="store-card-open">Open →</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Lead Board ---------------- */
+function AssocSearch({ value, onChange, store }) {
+  return (
+    <div className="search-wrap search-top">
+      <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
+      <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder="Search associates" />
+      {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
+    </div>
+  );
+}
+
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus }) {
+  const M = data.months?.[ym()];
+  const names = M?.names || {};
+  // An associate is only "incomplete" if they're missing one of the three REQUIRED
+  // reports. The optional Board channels (phone/showroom) and the Daily Activity
+  // report also land in `names`, and mapping those through REPORTS returned undefined,
+  // which crashed the whole page the moment anyone was given a role.
+  const requiredTypes = Object.keys(REPORTS).filter((t) => names[t]);
+  const missingReports = (nameKey) =>
+    requiredTypes
+      .filter((t) => !(names[t] || []).includes(nameKey))
+      .map((t) => reportLabel(t));
+  const importedTypes = requiredTypes;
+
+  const graceDays = store.graceDays ?? 10;
+  const inGrace = new Date().getDate() <= graceDays;
+  const restrictions = data.restrictions || {};
+
+  // rankings: passing associates ordered by how far they surpass standard
+  const isRestricted = (a) => {
+    const r = restrictions[a.id];
+    return r && (!r.until || new Date(r.until) > new Date());
+  };
+  // The podium and the coaching shortlist are about the sales floor. Managers,
+  // BDC and service-to-sales are measured elsewhere and would crowd it out.
+  const podiumRoles = config.roles.filter((r) => r.id === "sales");
+  const ranked = [];
+  for (const role of podiumRoles) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    for (const a of (data.roster || []).filter((x) => x.roleId === role.id)) {
+      if (isRestricted(a)) continue;
+      const st = M?.stats?.[norm(a.name)];
+      const ev = evaluateAssociate(st, tiers);
+      const units = unitsOf(st);
+      // Delivering cars is the qualification, not clearing every standard. This is
+      // also what keeps a BDC agent, who books but does not deliver, off the podium.
+      if (units <= 0) continue;
+      ranked.push({ name: a.name, role, units, ...qualityOf(ev) });
+    }
+  }
+  scoreRanked(ranked);
+  const top3 = ranked.slice(0, 3);
+  const rankOf = {}; top3.forEach((r, i) => (rankOf[norm(r.name)] = i + 1));
+  // "wildly surpassing" = 40%+ average over every requirement
+  const stars = new Set(ranked.filter((r) => r.passing && r.surpass >= 0.4).map((r) => norm(r.name)));
+
+  // last-month recap: judged under that month's frozen standards
+  const P = data.months?.[prevYm()];
+  const recap = [];
+  if (inGrace && P) {
+    for (const role of config.roles) {
+      const tiers = P.standardsSnapshot?.[role.id]?.tiers || config.standards?.[store.id]?.[role.id]?.tiers;
+      for (const a of (data.roster || []).filter((x) => x.roleId === role.id)) {
+        const ev = evaluateAssociate(P.stats?.[norm(a.name)], tiers);
+        if (ev.status === "fail") recap.push({ name: a.name, role, focus: ev.failures });
+      }
+    }
+  }
+
+  const q = norm(query);
+  const matches = (a) => !q || norm(a.name).includes(q);
+
+  // Which bucket is a person in? Exactly the rules the hero tiles count with, so the
+  // numbers up there and the cards down here can never disagree.
+  const bucketOf = (a) => {
+    const r = restrictions[a.id];
+    if (r && (!r.until || new Date(r.until) > new Date())) return "off";
+    const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
+    const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
+    if (ev.status === "pass") return "cleared";
+    if (ev.status === "fail") return "attention";
+    return "other";
+  };
+  const inFilter = (a) => !filter || bucketOf(a) === filter;
+
+  // Order each role's people by how many leads they're currently holding (opps),
+  // most to least, so the board reads as a ranking rather than roster order.
+  const oppsOf = (a) => {
+    const ev = evaluateAssociate(M?.stats?.[norm(a.name)], config.standards?.[store.id]?.[a.roleId]?.tiers);
+    return ev.opps ?? 0;
+  };
+  const byLeads = (a, b) => oppsOf(b) - oppsOf(a) || a.order - b.order;
+
+  const sections = config.roles.map((role) => ({
+    role,
+    people: (data.roster || []).filter((a) => a.roleId === role.id && matches(a) && inFilter(a)).sort(byLeads),
+  }));
+  // unassigned people have no standards to be judged by, so a bucket filter hides them
+  const unassigned = filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
+  const totalMatches = sections.reduce((n, s) => n + s.people.length, 0) + unassigned.length;
+
+  if ((data.roster || []).length === 0)
+    return <div className="empty">No associates yet. Drop today's three reports in the Import tab and the roster builds itself.</div>;
+
+  return (
+    <div className="board">
+      {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
+
+      {!query && top3.length > 0 && (
+        <div className="podium">
+          <div className="podium-cap">Top Performers <span>units delivered, standards break the tie</span></div>
+          <div className="podium-row">
+            {top3.map((r, i) => (
+              <button key={r.name} className={"pod pod-" + (i + 1)} onClick={() => onFocus && onFocus(r.name)}>
+                <span className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</span>
+                <span className="pod-who">
+                  <span className="pod-name">{r.name}</span>
+                  <span className="pod-role" style={{ color: r.role.color }}>{r.role.name}</span>
+                </span>
+                <span className="pod-units"><CountUp value={r.units} decimals={1} delay={180 + i * 80} /><em>units</em></span>
+                <span className={"lb-std " + (r.passing ? "ok" : "part")}>
+                  {r.passing ? `+${Math.round(r.surpass * 100)}%` : `${r.met}/${r.total} standards`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!query && inGrace && (
+        <div className="card grace-banner">
+          <span className="badge badge-warn">Grace period</span>
+          <span>Month-to-date numbers swing hard this early, so no restrictions are recommended through day {graceDays}. Anything below standard shows as a focus area instead. You can change the grace window in Standards.</span>
+        </div>
+      )}
+      {!query && recap.length > 0 && (
+        <div className="card recap">
+          <h3 className="role-header">{monthLabel(prevYm())} Wrap-Up: Focus Areas This Month</h3>
+          <p className="hint">These associates finished last month below standard (judged by last month's requirements). Use the first {graceDays} days to coach these before restrictions resume.</p>
+          {recap.map((r, i) => (
+            <div key={i} className="recap-row">
+              <span className="recap-name" style={{ color: r.role.color }}>●</span>
+              <b>{r.name}</b>
+              <span className="recap-chips">
+                {r.focus.map((f, j) => (
+                  <span key={j} className="reason watch">{f.def.short} {f.val == null ? "(no data)" : (f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val))} → {f.def.kind === "pct" ? f.min + "%" : f.min}</span>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {!query && inGrace && P && recap.length === 0 && (
+        <div className="card recap">
+          <h3 className="role-header">{monthLabel(prevYm())} Wrap-Up</h3>
+          <p className="hint">Everyone on the roster finished last month at or above standard. Clean slate.</p>
+        </div>
+      )}
+      {filter && (
+        <div className="filter-bar">
+          <span className="filter-what">
+            Showing only <b>{filter === "cleared" ? "cleared to grab leads" : filter === "attention" ? "needs attention" : "off leads"}</b>
+            {" \u00b7 "}{totalMatches} {totalMatches === 1 ? "person" : "people"}
+          </span>
+          <button className="btn-x" onClick={onClearFilter}>Show everyone</button>
+        </div>
+      )}
+      <div className="card roster-card">
+      {sections.map(({ role, people }) => (
+        <section key={role.id} className="role-group" style={{ "--role": role.color }}>
+          <h3 className="role-header"><span className="role-swatch" />{role.name} <span className="role-count">{people.length}</span></h3>
+          {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : "No associates in this section"}</div>}
+          {people.map((a) => {
+            const stats = M?.stats?.[norm(a.name)];
+            const ev = evaluateAssociate(stats, config.standards?.[store.id]?.[role.id]?.tiers);
+            const missing = importedTypes.length ? missingReports(norm(a.name)) : [];
+            const missingData = missingMetricData(stats, config.standards?.[store.id]?.[role.id]?.tiers);
+            const incomplete = importedTypes.length > 0 && (missing.length > 0 || missingData.length > 0);
+            return (
+              <AssociateRow key={a.id} a={a} stats={stats} ev={ev} missing={missing} incomplete={incomplete}
+                grace={inGrace} rank={rankOf[norm(a.name)]} star={stars.has(norm(a.name))} readOnly={readOnly}
+                restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
+                focused={focusName === a.name} />
+            );
+          })}
+        </section>
+      ))}
+      {unassigned.length > 0 && (
+        <section className="role-group unassigned" style={{ "--role": "#8E8E93" }}>
+          <h3 className="role-header"><span className="role-swatch" />Needs a Position <span className="role-count">{unassigned.length}</span></h3>
+          <p className="hint">These names came in from reports. Give each one a position to start scoring them.</p>
+          {unassigned.map((a) => (
+            <div key={a.id} className="assoc-row unassigned-row">
+              <span className="assoc-name">{a.name}</span>
+              {!readOnly && (
+                <select className="assign-select" value=""
+                  onChange={(e) => { if (e.target.value) onMove(a.name, null, e.target.value); }}>
+                  <option value="">Assign a position…</option>
+                  {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+      </div>
+    </div>
+  );
+}
+
+/* A manager should be able to answer "is this person doing well?" without reading
+   a sentence. Each requirement becomes a small speedometer, echoing the dial in
+   the app's own logo: the coloured sweep is where they are, the dark tick is the
+   target. Short of the tick is a gap, past it is fine. The tick's position and
+   the colour both carry the meaning, so it still reads if colours are hard to
+   tell apart or the screen is glanced at from across a desk. */
+function MetricStrip({ ev, stats }) {
+  const reqs = ev?.tier?.requirements;
+  if (!reqs || !reqs.length) return null;
+
+  // 180-degree dial: centre (38,40), radius 30. The target sits at 70% of the
+  // sweep rather than the end, so beating it still has somewhere to travel.
+  const CX = 38, CY = 40, R = 30, TARGET_T = 0.7;
+  const pt = (t, r) => {
+    const th = Math.PI * (1 - t);
+    return [CX + r * Math.cos(th), CY - r * Math.sin(th)];
+  };
+  const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`;
+  const [tx1, ty1] = pt(TARGET_T, R - 7);
+  const [tx2, ty2] = pt(TARGET_T, R + 7);
+
+  return (
+    <div className="mstrip">
+      {reqs.map((req, i) => {
+        const def = METRICS[req.metric];
+        const v = stats?.[req.metric];
+        const need = def.kind === "pct" ? req.min / 100 : req.min;
+        const ratio = (v == null || need <= 0) ? 0 : v / need;
+        const t = Math.max(0, Math.min(1, ratio * TARGET_T));
+        const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
+        const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
+        const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
+        const lbl = METRIC_TINY[req.metric] || def.short.replace(/\s*%\s*$/, "");
+        // How far off target, in the metric's own units, for the hover card.
+        const shortBy = (v == null || ratio >= 1) ? null
+          : (def.kind === "pct" ? ((need - v) * 100).toFixed(1) + " points" : fmtNum(need - v));
+        const [nx, ny] = pt(t, R);
+        return (
+          <div key={i} className={"mdial mdial-" + state}>
+            <svg viewBox="0 0 76 48" aria-hidden="true">
+              <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
+              <path className="md-fill" d={arc} fill="none" strokeWidth="7" strokeLinecap="round"
+                pathLength="100" strokeDasharray={`${(t * 100).toFixed(1)} 100`} />
+              <line className="md-target" x1={tx1} y1={ty1} x2={tx2} y2={ty2} strokeWidth="2.5" strokeLinecap="round" />
+              {v != null && <circle className="md-dot" cx={nx} cy={ny} r="3.6" />}
+              <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">{shown}</text>
+            </svg>
+            <div className="mdial-label">{lbl} <span className="mdial-need">{targetTxt}</span></div>
+            <div className="mdial-pop">
+              <div className="mp-title">{def.label}</div>
+              <div className="mp-desc">{METRIC_DESC[req.metric] || "Measured month to date."}</div>
+              <div className="mp-req">
+                <b className="mp-now">{shown}</b>
+                <span className="mp-sep">now, against a target of</span>
+                <b className="mp-target">{targetTxt}</b>
+                <span className={"mp-verdict mp-" + state}>
+                  {v == null ? "no data yet" : shortBy ? `${shortBy} short` : "target met"}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused }) {
+  const [open, setOpen] = useState(false);
+  const cardRef = useRef(null);
+  // Picked out of the hero shortlist or the podium: open the card and bring it
+  // into view, so the manager lands on the person rather than hunting for them.
+  useEffect(() => {
+    if (!focused) return;
+    setOpen(true);
+    const el = cardRef.current;
+    if (el && el.scrollIntoView) {
+      try { el.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+    }
+  }, [focused]);
+  const [showRestrict, setShowRestrict] = useState(false);
+  const [days, setDays] = useState(3);
+  const pct = ev.cap ? Math.min(100, (ev.opps / ev.cap) * 100) : 0;
+  const softFail = ev.status === "fail" && grace;
+
+  const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
+  const daysLeft = restriction?.until ? Math.ceil((new Date(restriction.until) - new Date()) / 86400000) : null;
+  // Dials sit on the name's own row, so one associate reads as one line.
+  const showDials = !incomplete && !restrictedNow && ev.status === "fail";
+
+  const confirmRestrict = () => {
+    const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
+    onSetRestriction({ since: new Date().toISOString(), until, reasons: failureText(ev) });
+    setShowRestrict(false);
+  };
+
+  return (
+    <div ref={cardRef}
+      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "")}>
+      <div className="assoc-row" onClick={() => setOpen(!open)}>
+        {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
+        <span className="assoc-name">{a.name}</span>
+        {star && <span className="star-badge" title="Wildly surpassing standard">★ Crushing it</span>}
+        {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+        {showDials && <MetricStrip ev={ev} stats={stats} />}
+        <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
+        {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
+          {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
+          {softFail && <span className="verdict verdict-grace">Early month</span>}
+          {ev.status === "fail" && !grace && (
+            ev.atCap
+              ? <span className="verdict verdict-fail">Restrict leads</span>
+              : (ev.capUse ?? 0) >= 0.8
+                ? <span className="verdict verdict-warn">Nearing the limit</span>
+                : <span className="verdict verdict-watch">Below standard, room left</span>
+          )}
+          {ev.status === "no-standards" && <span className="verdict verdict-dim">No standards</span>}
+        </>)}
+      </div>
+      {ev.cap != null && (
+        <div className="gauge">
+          <div className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")} style={{ width: pct + "%" }} />
+        </div>
+      )}
+      {incomplete && (
+        <div className="reasons gray-note">
+          Not all reports are in yet for this associate. {missing.length > 0 ? `Waiting on: ${missing.join(", ")}.` : "Some required numbers are blank."} The status stays on hold until the file is complete.
+        </div>
+      )}
+      {restrictedNow && (
+        <div className="reasons off-note">
+          Confirmed off leads since {new Date(restriction.since).toLocaleDateString()}.
+          {restriction.until ? ` Set to re-evaluate on ${new Date(restriction.until).toLocaleDateString()}.` : " No re-evaluation date set."}
+          {!readOnly && <button className="btn-x" onClick={() => onSetRestriction(null)}>Put back on leads</button>}
+        </div>
+      )}
+      {softFail && !restrictedNow && (
+        <div className="reasons watch-note">
+          <div className="reason-lead">Working toward standard. No restriction recommended during the grace period.</div>
+        </div>
+      )}
+      {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
+        <div className="reasons">
+          <div className="reason-lead">
+            {ev.atCap
+              ? "At the lead cap and below standard, so leads are restricted."
+              : (ev.capUse ?? 0) >= 0.8
+                ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
+                : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`}
+          </div>
+          {!readOnly && ev.atCap && (!showRestrict ? (
+            <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
+          ) : (
+            <div className="restrict-form">
+              <span>Re-evaluate in</span>
+              <input type="number" min="0" max="90" value={days} onChange={(e) => setDays(Math.max(0, Math.min(90, parseInt(e.target.value) || 0)))} />
+              <span>days</span>
+              <button className="btn" onClick={confirmRestrict}>Confirm</button>
+              <button className="btn-x" onClick={() => setShowRestrict(false)}>Cancel</button>
+              <span className="hint">{days > 0 ? `Comes back up for review on ${new Date(Date.now() + days * 86400000).toLocaleDateString()}. Set 0 for no auto date.` : "No automatic re-evaluation date."}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {ev.status === "pass" && ev.nextCap && !restrictedNow && (
+        <div className="reasons pass-note">
+          {star ? "Blowing past every requirement. " : `Tier ${ev.tierIndex + 1} requirements met. `}Cleared up to {ev.nextCap} leads.
+        </div>
+      )}
+      {open && stats && (
+        <div className="detail">
+          {Object.entries(METRICS).map(([k, def]) => (
+            <div key={k} className={"detail-cell" + (stats[k] == null ? " blank" : "")}><span>{def.short}</span><b>{def.kind === "pct" ? fmtPct(stats[k]) : fmtNum(stats[k])}</b></div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Combined oversight board (read-only) ---------------- */
+function CombinedBoard({ config, stores, adminData, onOpenStore }) {
+  const [query, setQuery] = useState("");
+  const q = norm(query);
+
+  // aggregate every associate across the assigned stores
+  const rows = [];
+  for (const store of stores) {
+    const d = adminData[store.id]; if (!d) continue;
+    const M = d.months?.[ym()];
+    const restrictions = d.restrictions || {};
+    const inGrace = new Date().getDate() <= (store.graceDays ?? 10);
+    for (const role of config.roles) {
+      const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+      for (const a of (d.roster || []).filter((x) => x.roleId === role.id)) {
+        if (q && !norm(a.name).includes(q)) continue;
+        const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
+        const r = restrictions[a.id];
+        const off = r && (!r.until || new Date(r.until) > new Date());
+        const v = verdictOf(ev, { restricted: off, inGrace });
+        rows.push({ store, role, name: a.name, ev, off, v });
+      }
+    }
+  }
+  // most leads held first, within each store
+  rows.sort((a, b) => (b.ev.opps ?? 0) - (a.ev.opps ?? 0));
+  const counts = {
+    cleared: rows.filter((r) => r.v.key === "cleared").length,
+    attention: rows.filter((r) => ["nearing", "room", "restrict", "grace"].includes(r.v.key)).length,
+    off: rows.filter((r) => r.v.key === "off").length,
+  };
+  // group by store for display
+  const byStore = stores.map((s) => ({ store: s, people: rows.filter((r) => r.store.id === s.id) }));
+
+  return (
+    <div className="board">
+      <h2 className="section-title">BDC Oversight <span className="section-sub">{stores.map((s) => s.name).join(" · ")}</span></h2>
+      <div className="combined-summary">
+        <span className="stat-pass">✓ {counts.cleared} cleared</span>
+        <span className="stat-fail">⚠︎ {counts.attention} need attention</span>
+        <span className="stat-dim">● {counts.off} off leads</span>
+      </div>
+      <div className="search-wrap">
+        <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
+        <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search across all my stores" />
+        {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
+      </div>
+      {byStore.map(({ store, people }) => (
+        <section key={store.id} className="card combined-store">
+          <div className="combined-store-head">
+            <div className="combined-store-name">
+              {store.icon ? <img className="store-logo" src={store.icon} alt="" /> : <div className="store-logo placeholder">{store.name[0]}</div>}
+              {store.name}
+            </div>
+            <button className="btn-quiet" onClick={() => onOpenStore(store.id)}>Open store →</button>
+          </div>
+          {people.length === 0 && <p className="hint">{query ? "No matches at this store." : "No associates yet."}</p>}
+          {people.map((r, i) => (
+            <div key={i} className="combined-row">
+              <span className="combined-role-dot" style={{ background: r.role.color }} />
+              <span className="assoc-name">{r.name}</span>
+              <span className="combined-role-label">{r.role.name}</span>
+              <span className="assoc-leads">{r.ev.opps ?? 0}<span className="of-cap"> / {r.ev.cap ?? "-"}</span></span>
+              <span className={"verdict verdict-" + r.v.cls} title={r.v.label}>{r.v.short}</span>
+            </div>
+          ))}
+        </section>
+      ))}
+      <p className="hint">This is a read-only oversight view. To make changes, open a specific store, though your account is set to view-only there as well.</p>
+    </div>
+  );
+}
+
+/* ---------------- First-run welcome (managers) ---------------- */
+function WelcomeCard({ store, onDismiss }) {
+  return (
+    <div className="card welcome">
+      <div className="welcome-head">
+        <h3>Welcome to the Lead Performance Tracker</h3>
+        <button className="btn-x" onClick={onDismiss}>Got it ✕</button>
+      </div>
+      <p className="welcome-lede">
+        This is where {store?.name || "your store"} tracks who has earned the right to take more internet leads.
+        The idea is simple: handle your leads well, and you unlock the next one.
+      </p>
+      <div className="welcome-steps">
+        <div className="welcome-step">
+          <span className="ws-num">1</span>
+          <div>
+            <b>Import each morning</b>
+            <p>Drop the DriveCentric exports on the Import tab. The tool sorts out which report is which.</p>
+          </div>
+        </div>
+        <div className="welcome-step">
+          <span className="ws-num">2</span>
+          <div>
+            <b>Read the board</b>
+            <p>Green means cleared to grab leads. Red means their numbers say to pause them. The reasons are listed on each card.</p>
+          </div>
+        </div>
+        <div className="welcome-step">
+          <span className="ws-num">3</span>
+          <div>
+            <b>Act, then confirm</b>
+            <p>If you take someone off leads, hit "Confirm removed from leads" so the tool knows and can re-check them later.</p>
+          </div>
+        </div>
+      </div>
+      <p className="hint">No one is restricted during the first days of the month while numbers settle, you'll see "Early month" instead. This card won't show again.</p>
+    </div>
+  );
+}
+
+/* ---------------- Backup / restore ---------------- */
+function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [autoList, setAutoList] = useState(null);
+
+  useEffect(() => {
+    loadShared(BACKUP_INDEX_KEY, []).then(setAutoList).catch(() => setAutoList([]));
+  }, []);
+
+  // pull one of the automatic snapshots back out of the database
+  const fetchAuto = async (entry) => await fetchBackup(entry);
+
+  const [orphans, setOrphans] = useState(null);
+
+  // Store data lives under lpc:store:{id}:v2. If a store vanished from config, the
+  // row is still there, just unreferenced. Find those.
+  const scanOrphans = async () => {
+    setBusy(true); setMsg("");
+    const keys = await listStoreKeys();
+    const known = new Set(config.stores.map((s) => s.id));
+    const found = [];
+    for (const k of keys) {
+      const id = k.split(":")[2];
+      if (!id || known.has(id)) continue;
+      const d = await loadShared(k, null);
+      if (!d) continue;
+      const roster = (d.roster || []).length;
+      const months = Object.keys(d.months || {}).length;
+      if (roster === 0 && months === 0) continue;  // nothing worth recovering
+      found.push({ id, key: k, roster, months });
+    }
+    setOrphans(found);
+    setBusy(false);
+    if (found.length === 0) setMsg("");
+  };
+
+  const recoverOrphan = async (o) => {
+    // Look through the automatic backups for the last time this store was properly
+    // configured, so its real name, logo and colours come back too rather than
+    // being reset to a blank default.
+    let found = null;
+    for (const b of (autoList || [])) {
+      const snap = await fetchBackupMeta(b);
+      const s = snap?.config?.stores?.find((x) => x.id === o.id);
+      if (s) { found = { store: s, standards: snap.config.standards?.[o.id], when: b.t }; break; }
+    }
+
+    const suggested = found
+      ? found.store.name
+      : o.id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+    const name = window.prompt(
+      found
+        ? "Restoring this store from the backup taken " + new Date(found.when).toLocaleString() +
+          ". Its logo and colours are coming back too. Name:"
+        : "No backup found for this store, so its logo and colours will start fresh. What should it be called?",
+      suggested
+    );
+    if (!name || !name.trim()) return;
+
+    setBusy(true);
+    const next = JSON.parse(JSON.stringify(config));
+    next.stores.push(found
+      ? { ...found.store, name: name.trim() }
+      : { id: o.id, name: name.trim(), icon: null, brand: { ...DEFAULT_BRAND } });
+
+    if (found?.standards) {
+      next.standards[o.id] = JSON.parse(JSON.stringify(found.standards));
+    } else if (!next.standards[o.id]) {
+      next.standards[o.id] = {};
+      for (const r of next.roles) next.standards[o.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
+    }
+
+    const ok = await saveShared(CONFIG_KEY, next);
+    setBusy(false);
+    if (!ok) { setMsg("Couldn't save. You may not have permission."); return; }
+    await appendAudit({ user: session?.name, action: "Recovered store", detail: `${name.trim()} (${o.id})` });
+    setMsg(`${name.trim()} is back${found ? ", with its logo, colours and standards" : ""}. Reload the page to see it.`);
+    setOrphans((list) => (list || []).filter((x) => x.id !== o.id));
+  };
+
+  const downloadAuto = async (b) => {
+    setBusy(true);
+    const data = await fetchAuto(b);
+    setBusy(false);
+    if (!data) { setMsg("That backup couldn't be read."); return; }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lpc-backup-${b.t.slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMsg("Downloaded.");
+  };
+
+  const restoreAuto = async (b) => {
+    if (!window.confirm(
+      "Restore the automatic backup from " + new Date(b.t).toLocaleString() + "?" +
+      String.fromCharCode(10, 10) +
+      "This OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and settings. It cannot be undone." +
+      String.fromCharCode(10, 10) +
+      "Download a fresh backup first if you're unsure."
+    )) return;
+    setBusy(true);
+    const data = await fetchAuto(b);
+    if (!data) { setBusy(false); setMsg("That backup couldn't be read."); return; }
+    await onRestoreAll(data);
+    setBusy(false);
+    setMsg("Restored. Reload the page to see it everywhere.");
+  };
+
+  const download = async () => {
+    setBusy(true);
+    try {
+      const audit = await loadShared(AUDIT_KEY, []);
+      const payload = {
+        app: "lead-performance-calculator",
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        config,
+        stores: adminData,
+        audit,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `lpc-backup-${today()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setMsg(`Backup downloaded (${config.stores.length} stores).`);
+    } catch (e) {
+      setMsg("Couldn't build the backup. Try again.");
+    }
+    setBusy(false);
+  };
+
+  const restore = (file) => {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = async () => {
+      let data;
+      try { data = JSON.parse(r.result); }
+      catch { setMsg("That file isn't valid JSON."); return; }
+      if (data.app !== "lead-performance-calculator" || !data.config) {
+        setMsg("That doesn't look like a Lead Performance backup file."); return;
+      }
+      const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
+      if (!window.confirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`)) return;
+      setBusy(true);
+      await onRestoreAll(data);
+      setBusy(false);
+      setMsg("Restored. Reload the page to see it everywhere.");
+    };
+    r.readAsText(file);
+  };
+
+  return (
+    <div className="settings">
+      <div className="card">
+        <h3>Backup</h3>
+        <p className="hint">
+          Everything lives in one database with no version history, so a bad import, an accidental delete, or two people saving at once can lose data with no way back.
+          Download a backup regularly, and always before a big change. The file holds every store, roster, import, standard, and user.
+        </p>
+        <div className="inline-form">
+          <button className="btn" onClick={download} disabled={busy}>Download backup</button>
+          <label className="btn-ghost file-btn">
+            Restore from file
+            <input type="file" accept="application/json,.json" style={{ display: "none" }}
+              onChange={(e) => { restore(e.target.files[0]); e.target.value = ""; }} />
+          </label>
+        </div>
+        {msg && <div className="login-ok" style={{ marginTop: 10 }}>{msg}</div>}
+      </div>
+
+      <div className="card recover-card">
+        <h3>Recover missing stores</h3>
+        <p className="hint">
+          If a store disappeared from the tool but you know you created it, its data is very likely
+          still in the database, just no longer listed. This scans for store data that isn't attached
+          to any store and offers to put it back, with its roster, imports, and history intact.
+        </p>
+        <button className="btn" disabled={busy} onClick={scanOrphans}>Scan for missing stores</button>
+        {orphans !== null && (
+          orphans.length === 0
+            ? <p className="hint" style={{ marginTop: 10 }}>Nothing orphaned. Every store with data is showing in the tool.</p>
+            : (
+              <div className="snap-list" style={{ marginLeft: 0, marginTop: 10 }}>
+                {orphans.map((o) => (
+                  <div key={o.id} className="snap-row">
+                    <span className="snap-when">{o.id}</span>
+                    <span className="snap-reason">
+                      {o.roster} on roster, {o.months} month{o.months === 1 ? "" : "s"} of data
+                    </span>
+                    <button className="btn" disabled={busy} onClick={() => recoverOrphan(o)}>Restore this store</button>
+                  </div>
+                ))}
+              </div>
+            )
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Automatic backups</h3>
+        <p className="hint">
+          The tool saves a full snapshot of everything once a day, the first time you open it.
+          Nothing to remember and nothing to schedule. The last {KEEP_BACKUPS} are kept.
+        </p>
+        {autoList === null ? <p className="hint">Loading backups...</p>
+          : autoList.length === 0 ? <p className="hint">No automatic backup yet. One will be written the next time you open the tool.</p>
+          : (
+            <div className="snap-list" style={{ marginLeft: 0 }}>
+              {autoList.map((b) => (
+                <div key={b.id} className="snap-row">
+                  <span className="snap-when">{new Date(b.t).toLocaleString()}</span>
+                  <span className="snap-reason">{b.stores} store{b.stores === 1 ? "" : "s"}</span>
+                  <button className="btn-x" disabled={busy} onClick={() => downloadAuto(b)}>Download</button>
+                  <button className="btn-x" disabled={busy} onClick={() => restoreAuto(b)}>Restore</button>
+                </div>
+              ))}
+            </div>
+          )}
+        <p className="hint">
+          One caveat worth knowing: these live in the same database as your data, so they protect you
+          from a bad import or an accidental delete, but not from losing the Supabase project itself.
+          Download a copy now and then and keep it somewhere else.
+        </p>
+      </div>
+
+      <div className="card">
+        <h3>Restore points</h3>
+        <p className="hint">The tool automatically saves the state of a store right before every import. If an import goes wrong, roll that store back here. The last 8 are kept per store.</p>
+        {config.stores.map((s) => {
+          const snaps = adminData[s.id]?.snapshots || [];
+          return (
+            <div key={s.id} className="snap-store">
+              <div className="snap-store-name">
+                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
+                <b>{s.name}</b>
+                <span className="hint">{snaps.length ? `${snaps.length} restore point${snaps.length === 1 ? "" : "s"}` : "no restore points yet"}</span>
+              </div>
+              {snaps.length > 0 && (
+                <div className="snap-list">
+                  {snaps.map((sn, i) => (
+                    <div key={i} className="snap-row">
+                      <span className="snap-when">{new Date(sn.t).toLocaleString()}</span>
+                      <span className="snap-reason">{sn.reason}{sn.by ? ` · ${sn.by}` : ""}</span>
+                      <button className="btn-x" onClick={() => {
+                        if (!window.confirm(`Roll ${s.name} back to ${new Date(sn.t).toLocaleString()}?\n\nAnything imported or changed at this store since then will be lost.`)) return;
+                        onRestoreStore(s.id, sn);
+                      }}>Restore this</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Channel prompt (no more guessing from filenames) ---------------- */
+function ChannelPrompt({ pending, onCancel, onConfirm }) {
+  // Internet is the report imported every day and the one that feeds the lead
+  // standards, so it is the sensible default. Phone and Showroom are optional extras
+  // for The Board. Still shown for confirmation so nothing is silently misfiled.
+  const [picks, setPicks] = useState(() => pending.ambiguous.map((_, i) => (i === 0 ? "delivery-internet" : "")));
+  const allPicked = picks.every((p) => p);
+  const dupes = picks.filter(Boolean).length !== new Set(picks.filter(Boolean)).size;
+
+  return (
+    <div className="wiz-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="wiz" style={{ maxWidth: 560 }}>
+        <div className="wiz-head">
+          <h3>Which delivery report is this?</h3>
+          <button className="btn-x" onClick={onCancel}>✕</button>
+        </div>
+        <div style={{ padding: "8px 24px 4px" }}>
+          <p className="hint">
+            Every channel comes from the same Delivery Summary, filtered by Source, so the files all look identical
+            and the tool can't tell them apart on its own. Tell it which channel each one is. Tip: export them in a
+            set order (Campaign, Internet, Phone, Showroom) and they'll line up here the same way every time.
+          </p>
+          {pending.ambiguous.map((f, i) => (
+            <div key={i} className="chan-row">
+              <span className="chan-file">{f.fileName}</span>
+              <select value={picks[i]} onChange={(e) => { const n = [...picks]; n[i] = e.target.value; setPicks(n); }}>
+                <option value="">Select a channel</option>
+                <option value="delivery-internet">Internet</option>
+                <option value="delivery-phone">Phone</option>
+                <option value="delivery-showroom">Showroom</option>
+                <option value="delivery-campaign">Campaign (units only)</option>
+              </select>
+            </div>
+          ))}
+          {dupes && <div className="login-err">Two files are set to the same channel. Each channel should only be imported once.</div>}
+        </div>
+        <div className="wiz-foot">
+          <button className="btn-x" onClick={onCancel}>Cancel import</button>
+          <button className="btn" disabled={!allPicked || dupes}
+            onClick={() => onConfirm(pending.ambiguous.map((f, i) => ({ rows: f.rows, type: picks[i], fileName: f.fileName })))}>
+            Import
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Channel prompt end ---------------- */
+
+/* ---------------- Store wizard (create / edit before it goes live) ---------------- */
+function StoreWizard({ config, store, onCancel, onSave }) {
+  const editing = !!store;
+  const [name, setName] = useState(store?.name || "");
+  const [icon, setIcon] = useState(store?.icon || null);
+  const [brand, setBrand] = useState(store?.brand || { ...DEFAULT_BRAND });
+  const [thresholds, setThresholds] = useState(() => normThresholds(store?.thresholds));
+  const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
+  const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
+  const [hours, setHours] = useState(store?.hours || { ...DEFAULT_HOURS });
+  const [cropSrc, setCropSrc] = useState(null);
+  const [err, setErr] = useState("");
+
+  const id = editing ? store.id : name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const idTaken = !editing && id && config.stores.some((s) => s.id === id);
+
+  const pickFile = (file) => {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => setCropSrc(r.result);
+    r.readAsDataURL(file);
+  };
+
+  const applyPreset = (p) => setBrand({ primary: p.primary, deep: p.deep, accent: p.accent });
+
+  const save = () => {
+    if (!name.trim()) { setErr("Give the store a name."); return; }
+    if (!id) { setErr("That name doesn't make a valid store ID. Try adding a letter or number."); return; }
+    if (idTaken) { setErr("A store with that name already exists."); return; }
+    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours });
+  };
+
+  return (
+    <div className="wiz-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="wiz">
+        <div className="wiz-head">
+          <h3>{editing ? `Customize ${store.name}` : "New Store"}</h3>
+          <button className="btn-x" onClick={onCancel}>✕</button>
+        </div>
+
+        <div className="wiz-body">
+          <div className="wiz-form">
+            <label>Store name</label>
+            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="e.g. Audi North Orlando" />
+            {editing && <p className="hint">Rename it freely. Its roster, imports, and history are tied to the store itself, not to what it is called, so nothing is lost.</p>}
+
+            <label>Manufacturer</label>
+            <div className="wiz-presets">
+              {BRAND_PRESETS.map((p) => (
+                <button key={p.id} className={"wiz-preset " + (brand.primary === p.primary && brand.deep === p.deep ? "on" : "")}
+                  onClick={() => applyPreset(p)} title={p.label}>
+                  <span className="wiz-swatch" style={{ background: `linear-gradient(130deg, ${p.primary}, ${p.deep})` }}>
+                    <span className="wiz-swatch-dot" style={{ background: p.accent }} />
+                  </span>
+                  <span className="wiz-preset-label">{p.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <label>Fine-tune colors</label>
+            <div className="wiz-colors">
+              <label className="wiz-color">Primary
+                <input type="color" value={brand.primary} onChange={(e) => setBrand({ ...brand, primary: e.target.value })} />
+              </label>
+              <label className="wiz-color">Deep
+                <input type="color" value={brand.deep} onChange={(e) => setBrand({ ...brand, deep: e.target.value })} />
+              </label>
+              <label className="wiz-color">Accent
+                <input type="color" value={brand.accent} onChange={(e) => setBrand({ ...brand, accent: e.target.value })} />
+              </label>
+            </div>
+
+            <label>Logo</label>
+            <div className="wiz-logo-row">
+              {icon ? <img className="store-logo" src={icon} alt="" /> : <div className="store-logo placeholder">{(name.trim()[0] || "?").toUpperCase()}</div>}
+              <label className="btn-ghost file-btn">
+                {icon ? "Replace" : "Upload"}
+                <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickFile(e.target.files[0]); e.target.value = ""; }} />
+              </label>
+              {icon && <button className="btn-x" onClick={() => setCropSrc(icon)}>Crop</button>}
+              {icon && <button className="btn-x" onClick={() => setIcon(null)}>Remove</button>}
+            </div>
+
+            <label>Leaderboard colors</label>
+            <ThresholdGrid value={thresholds} onChange={setThresholds} />
+
+            <label>Daily check out minimums</label>
+            <div className="wiz-nums">
+              <label className="thr-label">Calls
+                <input type="number" min="0" value={act.minCalls}
+                  onChange={(e) => setAct({ ...act, minCalls: Math.max(0, parseInt(e.target.value) || 0) })} />
+              </label>
+              <label className="thr-label">Videos
+                <input type="number" min="0" value={act.minVideos}
+                  onChange={(e) => setAct({ ...act, minVideos: Math.max(0, parseInt(e.target.value) || 0) })} />
+              </label>
+              <label className="thr-label">Grace days
+                <input type="number" min="0" max="28" value={graceDays}
+                  onChange={(e) => setGraceDays(Math.max(0, Math.min(28, parseInt(e.target.value) || 0)))} />
+              </label>
+            </div>
+
+            <label>Store hours</label>
+            <div className="wiz-nums">
+              <label className="thr-label">Opens
+                <input type="time" value={hours.open} onChange={(e) => setHours({ ...hours, open: e.target.value })} />
+              </label>
+              <label className="thr-label">Closes
+                <input type="time" value={hours.close} onChange={(e) => setHours({ ...hours, close: e.target.value })} />
+              </label>
+            </div>
+            <p className="hint">Bounds the hourly view and sets the window the activity report is expected to arrive in.</p>
+
+            {err && <div className="login-err">{err}</div>}
+            {idTaken && <div className="login-err">A store with that name already exists.</div>}
+          </div>
+
+          {/* live preview of exactly what the manager will see */}
+          <div className="wiz-preview">
+            <div className="wiz-preview-label">Manager's view</div>
+            <div className="wiz-hero" style={{ "--sp": brand.primary, "--sd": brand.deep, "--sa": brand.accent }}>
+              <div className="wiz-hero-band">
+                <div className="wiz-hero-id">
+                  <div className="wiz-hero-logo">
+                    {icon ? <img src={icon} alt="" /> : <Logo size={34} />}
+                  </div>
+                  <div>
+                    <div className="wiz-hero-greet">Good morning</div>
+                    <div className="wiz-hero-name">{name.trim() || "Your Store"}</div>
+                  </div>
+                </div>
+                <div className="wiz-hero-ring">
+                  <svg width="52" height="52" viewBox="0 0 52 52">
+                    <circle cx="26" cy="26" r="19" fill="none" stroke="rgba(255,255,255,.35)" strokeWidth="5" />
+                    <circle cx="26" cy="26" r="19" fill="none" stroke={brand.accent} strokeWidth="5" strokeLinecap="round"
+                      strokeDasharray={`${0.72 * 2 * Math.PI * 19} ${2 * Math.PI * 19}`} transform="rotate(-90 26 26)" />
+                  </svg>
+                  <span className="wiz-hero-pct">72%</span>
+                </div>
+              </div>
+              <div className="wiz-hero-tiles">
+                <div className="wiz-tile" style={{ borderLeftColor: "#30B155" }}><b>8</b><span>Cleared</span></div>
+                <div className="wiz-tile" style={{ borderLeftColor: "#E5473C" }}><b>2</b><span>Attention</span></div>
+                <div className="wiz-tile" style={{ borderLeftColor: brand.primary }}><b>12</b><span>On board</span></div>
+              </div>
+            </div>
+            <p className="hint">This is how the store will look to its manager. Colors carry into their hero, accents, and The Board.</p>
+          </div>
+        </div>
+
+        <div className="wiz-foot">
+          <button className="btn-x" onClick={onCancel}>Cancel</button>
+          <button className="btn" onClick={save} disabled={!name.trim() || idTaken}>{editing ? "Save changes" : "Create store"}</button>
+        </div>
+
+        {cropSrc && (
+          <LogoCropper src={cropSrc} onCancel={() => setCropSrc(null)}
+            onSave={(dataUrl) => { setIcon(dataUrl); setCropSrc(null); }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Baseline import (historical period) ---------------- */
+/* The activity export a manager pulls for a long date range comes stacked: a store
+   block, then one New / Used / All block per person, the person's name in the first
+   cell and their combined totals on the "All" row. It is the same shape the PDF
+   mapper produces, so this converts it to those rows and hands off to the normal
+   activity parser. Used only to seed baselines, never for a single day. */
+function mapStackedActivityCsv(rows) {
+  if (!Array.isArray(rows) || rows.length < 6) return null;
+  const head = (rows[0] || []).map((h) => norm(h));
+  // The seed export labels its columns on the store row. Anchor on the ones we
+  // need so a reordered export still lands in the right place.
+  const col = (label) => head.findIndex((h) => h === norm(label));
+  const src = {
+    net: col("Net Leads"), showroom: col("Showroom"), phone: col("Phone Ups"),
+    ilm: col("ILM leads"), campaign: col("Campaign"),
+    created: col("App Created"), scheduled: col("App Scheduled"),
+    confirmed: col("App Confirmed"), show: col("App Show"),
+    calls: col("Calls Made"), connects: col("Connects"),
+    texts: col("Texts"), emails: col("Emails"), videos: col("Videos"),
+    openTasks: col("Open Tasks"), completedTasks: col("Completed Tasks"),
+    delivered: col("Total Delivered"),
+  };
+  if (src.calls < 0 || src.net < 0) return null;   // not this format
+
+  const target = ["Name","Total","Showroom","Phone","Internet","Campaign",
+    "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+  const out = [["Daily Activity"], target];
+
+  const num = (row, i) => (i < 0 ? 0 : toNum(row[i]) ?? 0);
+  let pendingName = null, seenStore = false;
+
+  for (const row of rows) {
+    if (!row || !row.length) continue;
+    const first = String(row[0] || "").trim();
+    if (!first) continue;
+    const tag = first.toLowerCase();
+    if (tag === "new" || tag === "used") continue;      // vehicle split, ignored
+    if (tag === "all") {
+      if (!pendingName) continue;
+      if (!seenStore) { seenStore = true; pendingName = null; continue; }  // store roll-up
+      const total = num(row, src.net);
+      out.push([
+        pendingName,
+        total,
+        num(row, src.showroom),
+        num(row, src.phone),
+        // "Internet" isn't a column in this export; ILM leads is its stand-in.
+        num(row, src.ilm),
+        num(row, src.campaign),
+        num(row, src.created),
+        num(row, src.scheduled),
+        num(row, src.confirmed),
+        num(row, src.show),
+        num(row, src.calls),
+        num(row, src.connects),
+        num(row, src.texts),
+        num(row, src.emails),
+        num(row, src.videos),
+        num(row, src.openTasks),
+        num(row, src.completedTasks),
+        num(row, src.delivered),
+      ]);
+      pendingName = null;
+      continue;
+    }
+    // any other leading text is a person's (or the store's) name header
+    pendingName = first;
+  }
+  return out.length > 2 ? { storeName: out[2] ? null : null, rows: out } : null;
+}
+
+function BaselineImport({ data, onChange }) {
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [days, setDays] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  const seeded = Object.keys(data.baselines || {}).length;
+
+  // count working days between two dates, Sundays excluded
+  const workingDaysBetween = (a, b) => {
+    if (!a || !b) return 0;
+    const s = new Date(a + "T12:00"), e = new Date(b + "T12:00");
+    if (e < s) return 0;
+    let n = 0;
+    for (const d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() !== 0) n++;   // skip Sundays
+    }
+    return n;
+  };
+
+  const onDates = (a, b) => {
+    setStart(a); setEnd(b);
+    const wd = workingDaysBetween(a, b);
+    if (wd) setDays(String(wd));
+  };
+
+  const read = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    const isPdf = /\.pdf$/i.test(file.name);
+    let rows;
+    if (isPdf) {
+      try {
+        const lines = await extractPdfLinesInBrowser(file);
+        const da = mapDailyActivityGrid(lines);
+        rows = da ? da.rows : null;
+      } catch { rows = null; }
+    } else {
+      const text = await file.text();
+      const raw = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+      // Either the normal one-row-per-person export, or the stacked totals export.
+      const stacked = mapStackedActivityCsv(raw);
+      rows = stacked ? stacked.rows : (detectReportType(raw, file.name) === "activity" ? raw : null);
+    }
+    setBusy(false);
+    if (!rows) {
+      setPreview({ error: "That is not a Daily Activity report. Pull the activity report for your date range \u2014 CSV or PDF \u2014 and drop it here." });
+      return;
+    }
+    const parsed = parseReport(rows, "activity");
+    const excluded = new Set([...(data.excluded || []).map(norm), ...departedNames(data)]);
+    const aliases = data.aliases || {};
+    const people = [];
+    for (const [k, rec] of Object.entries(parsed)) {
+      const key = aliases[k] || k;
+      if (excluded.has(key)) continue;
+      const a = (data.roster || []).find((x) => norm(x.name) === key);
+      if (!a) continue;   // only people already on the roster
+      people.push({ a, rec });
+    }
+    setPreview({ people, fileName: file.name });
+  };
+
+  const commit = () => {
+    const d = parseInt(days) || 0;
+    if (!preview?.people?.length || d <= 0) return;
+    if (seeded && !window.confirm(
+      "This overwrites the existing baseline for everyone in the file." +
+      String.fromCharCode(10, 10) +
+      "Their history is what every coaching target is built from, so only do this if the old seed was wrong."
+    )) return;
+
+    const next = JSON.parse(JSON.stringify(data));
+    next.baselines = next.baselines || {};
+    for (const { a, rec } of preview.people) {
+      next.baselines[a.id] = {
+        daysWorked: d,
+        oppShowroom: rec.actOppShowroom ?? 0,
+        oppInternet: rec.actOppInternet ?? 0,
+        oppPhone: rec.actOppPhone ?? 0,
+        oppCampaign: rec.actOppCampaign ?? 0,
+        // The activity report gives total units, not units per channel. Split them the
+        // way this person's own opportunities split, which is the best honest estimate
+        // available. Overwrite by hand on their card if you know better.
+        ...(function () {
+          const units = rec.actUnits ?? 0;
+          const o = {
+            showroom: rec.actOppShowroom ?? 0, internet: rec.actOppInternet ?? 0,
+            phone: rec.actOppPhone ?? 0, campaign: rec.actOppCampaign ?? 0,
+          };
+          const total = o.showroom + o.internet + o.phone + o.campaign;
+          const share = (v) => (total > 0 ? (units * v) / total : 0);
+          return {
+            unitsShowroom: Math.round(share(o.showroom) * 10) / 10,
+            unitsInternet: Math.round(share(o.internet) * 10) / 10,
+            unitsPhone: Math.round(share(o.phone) * 10) / 10,
+            unitsCampaign: Math.round(share(o.campaign) * 10) / 10,
+          };
+        })(),
+        apptCreated: rec.actApptCreated ?? 0,
+        apptConfirmed: rec.actApptConfirmed ?? 0,
+        apptShowed: rec.actApptShow ?? 0,
+        calls: rec.actCalls ?? 0,
+        contacted: rec.actCallContacted ?? 0,
+        text: rec.actText ?? 0,
+        email: rec.actEmail ?? 0,
+        video: rec.actVideo ?? 0,
+        tasks: rec.actCompletedTasks ?? 0,
+        tasksPosted: rec.actOpenTasks ?? 0,
+        // completion rate when we know how many were open; null keeps it out of the math
+        taskPct: (rec.actOpenTasks && rec.actOpenTasks > 0) ? (rec.actCompletedTasks ?? 0) / rec.actOpenTasks : null,
+        units: rec.actUnits ?? 0,
+        period: { start, end, days: d },
+      };
+    }
+    onChange(next, {
+      action: "Seeded baselines from history",
+      detail: `${preview.people.length} associates${start && end ? `, ${start} to ${end}` : ""}, ${d} working days`,
+    });
+    setPreview(null);
+  };
+
+  return (
+    <div className="card baseline-card">
+      <h3>Seed baselines from history {seeded > 0 && <span className="badge badge-ok">{seeded} seeded</span>}</h3>
+      <p className="hint">
+        Every coaching target is built from a person's own conversion history, and the tool has none until it has
+        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric —
+        a whole year works — drop it here, and it seeds everyone at once. CSV or PDF, and either the normal
+        export or the stacked totals export. It sets per-day averages only; it does not touch this month's numbers.
+        Set the working days below so the per-day math is right, then from here the tool builds its own history.
+      </p>
+
+      <div className="bl-dates">
+        <label className="bl-field">
+          <span>Period start</span>
+          <input type="date" value={start} onChange={(e) => onDates(e.target.value, end)} />
+        </label>
+        <label className="bl-field">
+          <span>Period end</span>
+          <input type="date" value={end} onChange={(e) => onDates(start, e.target.value)} />
+        </label>
+        <label className="bl-field">
+          <span>Working days</span>
+          <input type="number" min="1" value={days} onChange={(e) => setDays(e.target.value)} />
+        </label>
+        <span className="hint">Sundays are excluded automatically. Change it if your store works differently.</span>
+      </div>
+
+      <div className="inline-form">
+        <label className="btn-ghost file-btn">
+          {busy ? "Reading..." : "Choose activity report"}
+          <input ref={fileRef} type="file" accept=".csv,.pdf" style={{ display: "none" }}
+            onChange={(e) => { read(e.target.files[0]); e.target.value = ""; }} />
+        </label>
+      </div>
+
+      {preview?.error && <div className="login-err">{preview.error}</div>}
+
+      {preview?.people && (
+        <div className="bl-preview">
+          <div className="check-group-label">
+            {preview.people.length} matched from {preview.fileName}
+          </div>
+          {preview.people.length === 0 ? (
+            <p className="hint">Nobody in that file matches your roster. Check the names, or import the report normally first so the roster builds itself.</p>
+          ) : (
+            <>
+              <table className="roster-table">
+                <thead><tr><th>Name</th><th>Units</th><th>Calls</th><th>Videos</th><th>Opportunities</th></tr></thead>
+                <tbody>
+                  {preview.people.slice(0, 8).map(({ a, rec }) => (
+                    <tr key={a.id}>
+                      <td><b>{a.name}</b></td>
+                      <td>{rec.actUnits ?? 0}</td>
+                      <td>{rec.actCalls ?? 0}</td>
+                      <td>{rec.actVideo ?? 0}</td>
+                      <td>{(rec.actOppShowroom ?? 0) + (rec.actOppInternet ?? 0) + (rec.actOppPhone ?? 0) + (rec.actOppCampaign ?? 0)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {preview.people.length > 8 && <p className="hint">and {preview.people.length - 8} more.</p>}
+              <div className="inline-form">
+                <button className="btn" disabled={!days || !start || !end} onClick={commit}>
+                  Seed baseline for {preview.people.length} {preview.people.length === 1 ? "person" : "people"}
+                </button>
+                <button className="btn-x" onClick={() => setPreview(null)}>Cancel</button>
+              </div>
+              {(!start || !end || !days) && <p className="hint">Set the period the report covers first.</p>}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Upload history ---------------- */
+function UploadHistory({ data, onChange }) {
+  const log = data.importLog || [];
+  const [busy, setBusy] = useState(false);
+  if (log.length === 0) return null;
+
+  // Two genuinely different situations, and pretending they're the same would lose data.
+  //
+  // ACTIVITY is stored per day, so removing one is surgical: delete that day and
+  // nothing else is touched.
+  //
+  // DELIVERY / APPOINTMENT / VIDEO overwrite the month's running totals. There is no
+  // way to subtract one upload back out of them, because the previous value is gone.
+  // The only honest undo is to restore the snapshot taken immediately before it, which
+  // also rewinds anything imported afterwards. So we say that out loud.
+
+  const laterThan = (entry) => log.filter((u) => new Date(u.t) > new Date(entry.t)).length;
+
+  const deleteActivityDay = (u) => {
+    if (!window.confirm(
+      "Delete the activity for " + new Date(u.day + "T12:00").toLocaleDateString() + "?" +
+      String.fromCharCode(10, 10) +
+      "Only that day is removed. Every other day and every other report stays exactly as it is." +
+      String.fromCharCode(10, 10) +
+      "Stars you typed in for that day are kept, in case you re-import it."
+    )) return;
+    setBusy(true);
+    const next = JSON.parse(JSON.stringify(data));
+    if (next.activity) delete next.activity[u.day];
+    // clear the tick for that day so the checklist is honest again
+    for (const mk of Object.keys(next.months || {})) {
+      if (next.months[mk]?.imports?.[u.day]) delete next.months[mk].imports[u.day].activity;
+    }
+    next.importLog = (next.importLog || []).filter((x) => x.id !== u.id);
+    onChange(next, { action: "Deleted activity day", detail: u.day });
+    setBusy(false);
+  };
+
+  const undoUpload = (u) => {
+    const snap = (data.snapshots || []).find((s) => s.t === u.snapT);
+    const after = laterThan(u);
+    if (!snap) {
+      alert(
+        "The restore point for this upload has aged out, so it can no longer be undone cleanly." +
+        String.fromCharCode(10, 10) +
+        "Re-import the correct file instead: it overwrites these numbers. Or restore a backup from the Backup tab."
+      );
+      return;
+    }
+    if (!window.confirm(
+      "Undo " + u.label + " from " + new Date(u.t).toLocaleString() + "?" +
+      String.fromCharCode(10, 10) +
+      "This report overwrote the month's running totals, so the only way back is to restore the state from just before it." +
+      (after > 0
+        ? String.fromCharCode(10, 10) + "WARNING: " + after + " later upload" + (after === 1 ? "" : "s") +
+          " will also be undone. You will need to re-import " + (after === 1 ? "it" : "them") + "."
+        : "")
+    )) return;
+
+    setBusy(true);
+    const current = JSON.parse(JSON.stringify(data));
+    const restored = {
+      ...current,
+      ...snap.data,
+      snapshots: [
+        { t: new Date().toISOString(), by: "-", reason: "Before undo", data: JSON.parse(JSON.stringify({
+          roster: current.roster, months: current.months, activity: current.activity,
+          plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+          stars: current.stars, goals: current.goals, baselines: current.baselines,
+          repeatFlags: current.repeatFlags, excluded: current.excluded,
+        })) },
+        ...(current.snapshots || []),
+      ].slice(0, 12),
+      // the undo itself is undoable
+      importLog: (current.importLog || []).filter((x) => new Date(x.t) < new Date(u.t)),
+      // these are yours, not the report's: never rewind them
+      goals: current.goals,
+      baselines: current.baselines,
+      stars: current.stars,
+      repeatFlags: current.repeatFlags,
+      excluded: current.excluded,
+    };
+    onChange(restored, { action: "Undid upload", detail: `${u.label} (${u.file})` });
+    setBusy(false);
+  };
+
+  return (
+    <div className="card">
+      <h3>Upload history</h3>
+      <p className="hint">
+        Every upload, with the time it landed. Activity days can be deleted on their own.
+        The other reports overwrite the month's totals, so undoing one means rewinding to just before it.
+      </p>
+      <div className="up-list">
+        {log.slice(0, 25).map((u, i) => {
+          const canSurgical = u.type === "activity" && u.day;
+          const after = laterThan(u);
+          return (
+            <div key={u.id || i} className="up-row">
+              <span className="up-when">{new Date(u.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+              <span className="up-type">{u.label}</span>
+              <span className="up-file">{u.file}</span>
+              <span className="up-count">{u.count} rows{u.skipped ? `, ${u.skipped} ignored` : ""}</span>
+              <span className="up-by">{u.by}</span>
+              {canSurgical ? (
+                <button className="btn-x danger" disabled={busy} onClick={() => deleteActivityDay(u)}>Delete</button>
+              ) : u.snapT ? (
+                <button className="btn-x danger" disabled={busy} onClick={() => undoUpload(u)}
+                  title={after > 0 ? `Also undoes ${after} later upload${after === 1 ? "" : "s"}` : "Rewinds to just before this upload"}>
+                  Undo{after > 0 ? ` (+${after})` : ""}
+                </button>
+              ) : (
+                <span className="hint">-</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ================= OWN YOUR OUTCOME =================
+   Coaching only. It never gates leads. The Lead Board's tier system remains the
+   single source of truth for who can take another lead, so the two can't contradict
+   each other.
+
+   The whole point: coach against a person's OWN conversion history rather than a
+   number somebody invented. "You need 25 calls per car, you're 8 cars short with 10
+   days left, so that's 20 calls a day and you're doing 12" beats "make more calls".
+   ==================================================== */
+
+const OYO_CHANNELS = [
+  { id: "showroom", label: "Showroom" },
+  { id: "internet", label: "Internet" },
+  { id: "phone", label: "Phone" },
+  { id: "campaign", label: "Campaign" },
+];
+/* How a month's sales typically split by channel: internet drives about half the cars,
+   with showroom and phone splitting the other half. Used to translate the remaining
+   gap to goal into a concrete lead count per channel at the person's own closing %. */
+const OYO_CHANNEL_MIX = { internet: 0.5, showroom: 0.25, phone: 0.25 };
+
+/* Prefer the person's own sales mix, from their delivered units by channel this month.
+   With very little data a mix is noise (one car = 100% of one channel), so under
+   OYO_MIX_MIN_CARS delivered across the three channels it stays on the typical split
+   and switches to the personal mix automatically once there's enough to read. */
+const OYO_MIX_MIN_CARS = 5;
+function channelMixFor(stats) {
+  const u = {
+    internet: stats?.internetUnits ?? 0,
+    showroom: stats?.showroomUnits ?? 0,
+    phone: stats?.phoneUnits ?? 0,
+  };
+  const total = u.internet + u.showroom + u.phone;
+  if (total < OYO_MIX_MIN_CARS) return { mix: OYO_CHANNEL_MIX, personal: false, total };
+  return {
+    mix: { internet: u.internet / total, showroom: u.showroom / total, phone: u.phone / total },
+    personal: true, total,
+  };
+}
+
+// The outreach the workbook tracks, and the field each one lives in.
+const OYO_OUTREACH = [
+  { id: "calls", label: "Calls made" },
+  { id: "contacted", label: "Calls contacted" },
+  { id: "text", label: "Texts sent" },
+  { id: "email", label: "Emails sent" },
+  { id: "video", label: "Personalized videos" },
+  { id: "tasks", label: "Completed tasks" },
+];
+
+const emptyBaseline = () => ({
+  daysWorked: 0,
+  oppShowroom: 0, oppInternet: 0, oppPhone: 0, oppCampaign: 0,
+  unitsShowroom: 0, unitsInternet: 0, unitsPhone: 0, unitsCampaign: 0,
+  apptCreated: 0, apptConfirmed: 0, apptShowed: 0,
+  calls: 0, contacted: 0, text: 0, email: 0, video: 0, tasks: 0,
+  units: 0,
+});
+
+// Everything this person has done this month, summed straight out of the imports.
+// This is the MTD sheet, built from the Daily Activity report instead of typed in.
+function oyoMTD(data, nameKey, monthStats, monthKey) {
+  const days = Object.keys(data.activity || {}).filter((d) => d.startsWith(monthKey || ym()));
+  const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
+  const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
+
+  const s = monthStats || {};
+  // If a whole-month Daily Activity report was imported for this month, that single
+  // cumulative pull is the authority. Summing per-day auto-import rows does not
+  // reconstruct a month cleanly, so prefer the stamped total wherever we have one.
+  const a = s.activityMTD || null;
+  const pick = (f) => (a && a[f] != null) ? a[f] : sum(f);
+  return {
+    daysElapsed: (a && a.days) || rows.length,   // days we actually have data for, not a guess
+    oppShowroom: pick("oppShowroom"),
+    oppInternet: pick("oppInternet"),
+    oppPhone: pick("oppPhone"),
+    oppCampaign: pick("oppCampaign"),
+    // units per channel come from the Delivery Summaries, which are the authority on units
+    unitsShowroom: s.showroomUnits ?? 0,
+    unitsInternet: s.internetUnits ?? 0,
+    unitsPhone: s.phoneUnits ?? 0,
+    unitsCampaign: s.campaignUnits ?? 0,
+    // The delivered % straight off the Delivery Summary — the SAME number The Board
+    // shows. Coaching used to recompute units/opportunities against activity-report
+    // opportunities, which gave a different figure than the board. Use the report's
+    // own percentage so the two views always agree.
+    pctShowroom: s.showroomPct ?? null,
+    pctInternet: s.internetPct ?? null,
+    pctPhone: s.phonePct ?? null,
+    pctCampaign: s.campaignPct ?? null,
+    apptCreated: pick("apptCreated"),
+    apptScheduled: pick("apptScheduled"),
+    apptConfirmed: pick("apptConfirmed"),
+    apptShowed: pick("apptShow"),
+    calls: pick("calls"),
+    contacted: pick("contacted"),
+    text: pick("text"),
+    email: pick("email"),
+    video: pick("video"),
+    tasks: pick("tasks"),
+  };
+}
+
+// Working days gone by in this month, on the calendar. Sundays excluded.
+// Pacing has to use this, not the number of reports imported: if you have only
+// uploaded twice, elapsed is not 2, it is however many working days have actually
+// passed. That mistake is what produced "24 days left" halfway through the month.
+// Working days in a given month (Sundays excluded). For the month in progress this
+// counts only the days gone by, so a per-day average is not diluted by days that
+// have not happened yet.
+function workingDaysInMonth(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const t = today();
+  const cap = (monthKey === t.slice(0, 7)) ? Number(t.slice(8, 10)) : lastDay;
+  let n = 0;
+  for (let d = 1; d <= cap; d++) if (new Date(y, m - 1, d).getDay() !== 0) n++;
+  return n;
+}
+
+function workingDaysElapsed() {
+  const t = today();                 // dealership time
+  const [y, m, d] = t.split("-").map(Number);
+  let n = 0;
+  for (let day = 1; day <= d; day++) {
+    const dt = new Date(y, m - 1, day);
+    if (dt.getDay() !== 0) n++;      // skip Sundays
+  }
+  return n;
+}
+
+const oyoUnits = (m) =>
+  (m.unitsShowroom ?? 0) + (m.unitsInternet ?? 0) + (m.unitsPhone ?? 0) + (m.unitsCampaign ?? 0);
+
+// A person's own conversion history. Seeded by hand until the tool has enough of its
+// own, then blended with what it has actually seen.
+function oyoBaseline(data, nameKey, aId) {
+  const seed = data.baselines?.[aId];
+  // A seed counts if the manager entered ANY meaningful number, not only Days worked.
+  // Previously a seed with units/opportunities but a blank "Days worked" was ignored,
+  // which made "What it takes" claim there was no history.
+  const seedTotal = seed ? ["daysWorked", "units", "oppInternet", "oppPhone", "oppShowroom", "oppCampaign", "calls", "video"]
+    .reduce((n, k) => n + (seed[k] ?? 0), 0) : 0;
+  const seeded = seedTotal > 0;
+
+  // everything the tool has observed itself, across every month on file
+  const allDays = Object.keys(data.activity || {});
+  const rows = allDays.map((d) => data.activity[d][nameKey]).filter(Boolean);
+  const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
+
+  const observedUnits = Object.keys(data.months || {}).reduce((n, mk) => {
+    const st = data.months[mk]?.stats?.[nameKey] || {};
+    return n + (st.showroomUnits ?? 0) + (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.campaignUnits ?? 0);
+  }, 0);
+
+  const observed = {
+    daysWorked: rows.length,
+    oppShowroom: sum("oppShowroom"), oppInternet: sum("oppInternet"),
+    oppPhone: sum("oppPhone"), oppCampaign: sum("oppCampaign"),
+    apptCreated: sum("apptCreated"), apptConfirmed: sum("apptConfirmed"), apptShowed: sum("apptShow"),
+    calls: sum("calls"), contacted: sum("contacted"), text: sum("text"),
+    email: sum("email"), video: sum("video"), tasks: sum("tasks"),
+    units: observedUnits,
+    unitsShowroom: 0, unitsInternet: 0, unitsPhone: 0, unitsCampaign: 0,
+  };
+  for (const mk of Object.keys(data.months || {})) {
+    const st = data.months[mk]?.stats?.[nameKey] || {};
+    observed.unitsShowroom += st.showroomUnits ?? 0;
+    observed.unitsInternet += st.internetUnits ?? 0;
+    observed.unitsPhone += st.phoneUnits ?? 0;
+    observed.unitsCampaign += st.campaignUnits ?? 0;
+  }
+
+  if (!seeded) return { ...observed, source: observed.daysWorked > 0 ? "observed" : "none" };
+
+  // Seed plus what we have seen since. The seed stops mattering as real history
+  // accumulates, which is exactly what you want.
+  const merged = { ...emptyBaseline(), source: "seed+observed" };
+  for (const k of Object.keys(emptyBaseline())) {
+    merged[k] = (seed[k] ?? 0) + (observed[k] ?? 0);
+  }
+  return merged;
+}
+
+// Per-vehicle ratios: the heart of the whole thing.
+function oyoRatios(b) {
+  const u = b.units || 0;
+  if (u <= 0) return null;
+  const r = {};
+  for (const o of OYO_OUTREACH) r[o.id] = (b[o.id] ?? 0) / u;
+  r.apptCreated = (b.apptCreated ?? 0) / u;
+  r.apptShowed = (b.apptShowed ?? 0) / u;
+  for (const c of OYO_CHANNELS) {
+    const opp = b["opp" + c.id.charAt(0).toUpperCase() + c.id.slice(1)] ?? 0;
+    const un = b["units" + c.id.charAt(0).toUpperCase() + c.id.slice(1)] ?? 0;
+    r["close_" + c.id] = opp > 0 ? un / opp : null;     // closing rate on that channel
+    r["leadsPerCar_" + c.id] = un > 0 ? opp / un : null;
+  }
+  return r;
+}
+
+/* ---------------- Coaching: associate cards ---------------- */
+
+// Average a person's daily activity across every day we have on file.
+/* The show rate lives in the Standard Appointment report (its own Total Show %), not
+   Daily Activity, so it's layered on from the monthly stats when that report has been
+   imported. Appointments-set comes from the daily Scheduled column instead. */
+function withApptStats(act, st) {
+  if (!act) return act;
+  const out = { ...act };
+  if (!st) return out;
+  if (st.apptShowPct != null) out.showRate = st.apptShowPct;
+  // If daily data never carried Scheduled (older imports), the monthly report's
+  // Total Scheduled spread across the days is still better than Created.
+  if ((out.apptCreated == null || out.apptCreated === 0) && st.apptTotalScheduled != null && act.days > 0) {
+    out.apptCreated = st.apptTotalScheduled / act.days;
+  }
+  return out;
+}
+
+/* Working days in the WHOLE month for one person: every non-Sunday on the calendar
+   minus their uploaded days off. Replaces the old store-wide "working days" standard,
+   since people work different amounts — the schedule is the source of truth. */
+function personWorkingDaysInMonth(data, a) {
+  const t = today(); const [y, m] = t.split("-").map(Number);
+  const dim = new Date(y, m, 0).getDate();
+  let n = 0;
+  for (let day = 1; day <= dim; day++) {
+    const dt = new Date(y, m - 1, day);
+    if (dt.getDay() === 0) continue;
+    const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isHoliday(ds)) continue;
+    if (isOff(data, a.id, ds)) continue;
+    n++;
+  }
+  return Math.max(1, n);
+}
+
+function activityAverages(data, nameKey, aId) {
+  // A person's days off are excluded from their per-day averages. The report still
+  // lists them (with zeros) on days they weren't in, and counting those days would
+  // quietly drag every habit average down. Because this is computed fresh each time,
+  // a schedule uploaded days into the month backfills automatically: the moment the
+  // off-days are on file, past zeros stop counting against anyone.
+  const days = Object.keys(data.activity || {}).filter((d) => !aId || !isOff(data, aId, d));
+  const rows = days.map((d) => data.activity[d][nameKey]).filter(Boolean);
+  if (rows.length === 0) return null;
+  const sum = (f) => rows.reduce((n, r) => n + (r[f] ?? 0), 0);
+  const n = rows.length;
+  return {
+    days: n,
+    calls: sum("calls") / n,
+    contacted: sum("contacted") / n,
+    video: sum("video") / n,
+    text: sum("text") / n,
+    email: sum("email") / n,
+    // Appointments set per day = the Daily Activity "Scheduled" column (Appointments
+    // group), averaged per day. "Created" is not used: it counts records touched, which
+    // ran 10x high for some people. Falls back to Created only for old imports made
+    // before Scheduled was stored.
+    apptCreated: sum("apptScheduled") > 0 ? sum("apptScheduled") / n : sum("apptCreated") / n,
+    apptShow: sum("apptShow") / n,
+    // Tasks is now a completion RATE: total completed / total posted across the month.
+    // If no report ever carried a posted count, leave it null so it drops out cleanly.
+    // Completed / Open across the month. Clearing backlog can push a single day over
+    // 100%, so cap the rate at 1.0 — "task completion rate" reads oddly above 100%.
+    tasks: sum("tasksPosted") > 0 ? Math.min(1, sum("tasks") / sum("tasksPosted")) : null,
+    // contact rate is the one that usually separates people: calls are effort,
+    // contacts are effectiveness
+    contactRate: sum("calls") > 0 ? sum("contacted") / sum("calls") : null,
+    // showRate and appointments-set are NOT in the Daily Activity export. They come from
+    // the Standard Appointment report and are layered on in withApptStats() below.
+    showRate: null,
+  };
+}
+
+/* `impact` orders these by how directly the habit moves the closing ratio, following the
+   funnel from the sale backwards: an appointment that shows is one step from a delivery,
+   setting the appointment is the step before that, and so on down to raw outreach volume.
+   The coaching print lists them in this order so the top of the page is where the
+   biggest gain is, not just the first metric that happened to be collected. */
+const BEHAVIOURS = [
+  { id: "showRate", label: "Appointment show rate", kind: "pct", impact: 1 },
+  { id: "apptCreated", label: "Appointments set per day", kind: "num", impact: 2 },
+  { id: "contactRate", label: "Contact rate", kind: "pct", impact: 3 },
+  { id: "video", label: "Personalized videos per day", kind: "num", impact: 4 },
+  { id: "contacted", label: "Contacts per day", kind: "num", impact: 5 },
+  { id: "calls", label: "Calls per day", kind: "num", impact: 6 },
+  { id: "tasks", label: "Task completion rate", kind: "pct", impact: 7 },
+  { id: "text", label: "Texts per day", kind: "num", impact: 8 },
+  { id: "email", label: "Emails per day", kind: "num", impact: 9 },
+];
+
+function CoachingPanel({ config, store, data, onChange, userName }) {
+  const [openId, setOpenId] = useState(null);
+  const M = data.months?.[ym()];
+
+  // Coaching is built entirely on cars sold: per-car outreach ratios, closing rates,
+  // pace to a unit goal. A BDC agent does not deliver units, so every one of those
+  // numbers is meaningless for them, and including them dragged the benchmark down.
+  const coachRoles = new Set(config.roles.filter((r) => r.coaching !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && coachRoles.has(a.roleId));
+  const excludedRoles = config.roles.filter((r) => r.coaching === false).map((r) => r.name);
+
+  // Rank everyone by units delivered this month, then treat the top third as the
+  // benchmark. What separates them is the whole point of this view.
+  const scored = roster.map((a) => {
+    const s = M?.stats?.[norm(a.name)] || {};
+    const units = (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0) + (s.campaignUnits ?? 0);
+    // the same verdict the Lead Board reaches, so the one-pager can explain a pause
+    // in exactly the terms the person already sees.
+    const tiers = config.standards?.[store.id]?.[a.roleId]?.tiers;
+    const ev = evaluateAssociate(s, tiers);
+    return { a, units, stats: s, ev, act: withApptStats(activityAverages(data, norm(a.name), a.id), s) };
+  }).sort((x, y) => y.units - x.units);
+
+  const withData = scored.filter((r) => r.act);
+  // Some associates skew the store benchmark — e.g. a top seller who lives on repeat
+  // business and makes no calls. Flagging them keeps their own card intact but removes
+  // their activity from the "top performers" averages everyone else is measured against.
+  const statsExcluded = new Set((data.statsExcluded || []).map(norm));
+  const benchPool = withData.filter((r) => !statsExcluded.has(norm(r.a.name)));
+  const topCount = Math.max(1, Math.round(benchPool.length / 3));
+  const top = benchPool.slice(0, topCount);
+
+  const topAvg = {};
+  for (const b of BEHAVIOURS) {
+    const vals = top.map((r) => r.act[b.id]).filter((v) => v != null);
+    topAvg[b.id] = vals.length ? vals.reduce((n, v) => n + v, 0) / vals.length : null;
+  }
+
+  if (roster.length === 0) {
+    return <div className="empty">No associates with a position yet. Assign roles on the Roster tab and this will fill in.</div>;
+  }
+  // No early exit for missing activity. The benchmark needs it, but a card does not:
+  // you can still set a goal, seed a baseline, and print the one-pager. Bailing out
+  // here is why the cards would not open at all.
+
+  const openRow = scored.find((r) => r.a.id === openId);
+
+  return (
+    <div className="coaching">
+      {new Date().getDate() <= 10 && (
+        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <h3 style={{ margin: 0 }}>Month-end recaps</h3>
+            <p className="hint" style={{ margin: "2px 0 0" }}>Print last month's review for every associate with data, one page each.</p>
+          </div>
+          <button className="btn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>Print all Month-End recaps</button>
+        </div>
+      )}
+      {withData.length === 0 ? (
+        <div className="card">
+          <h3>What the strongest people do differently</h3>
+          <p className="hint">
+            Needs Daily Activity imported before it can tell you anything. You can still open anyone's card
+            below to set a goal, seed their baseline, and print their one-pager.
+          </p>
+        </div>
+      ) : (
+      <div className="card">
+        <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
+        <p className="hint">
+          Top third by units delivered this month ({top.length} of {withData.length} with activity on file), averaged
+          across every day imported. This is the bar, drawn from your own floor rather than a number someone made up.
+        </p>
+        <div className="bench-grid">
+          {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
+            <div key={b.id} className="bench-tile">
+              <div className="bench-num">{b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}</div>
+              <div className="bench-lbl">{b.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      )}
+
+      <div className={"coach-split " + (openRow ? "has-open" : "")}>
+        <div className="card coach-list-card">
+          <h3>Associates</h3>
+          <p className="hint">
+            Open anyone to see their card, how they compare, and what to coach.
+            {excludedRoles.length > 0 && ` ${excludedRoles.join(" and ")} are not shown here: coaching is built on cars sold, which does not apply to them. You can change that under Stores.`}
+          </p>
+          <div className="coach-list">
+            {scored.map((r) => (
+              <button key={r.a.id} className={"coach-row " + (openId === r.a.id ? "on" : "")}
+                onClick={() => setOpenId(openId === r.a.id ? null : r.a.id)}>
+                <span className="coach-name">{r.a.name}<StreakIcon data={data} a={r.a} std={{ ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) }} />{(data.statsExcluded || []).map(norm).includes(norm(r.a.name)) && <span className="coach-excl" title="Excluded from store benchmark averages">out of stats</span>}</span>
+                <span className="coach-role">{config.roles.find((x) => x.id === r.a.roleId)?.name}</span>
+                <span className="coach-units">{r.units} <em>units</em></span>
+                {r.act ? <span className="coach-days">{r.act.days} day{r.act.days === 1 ? "" : "s"} of activity</span>
+                       : <span className="coach-days dim">no activity yet</span>}
+                <span className="coach-open">{openId === r.a.id ? "Close" : "Open card"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {openRow
+          ? <div className="coach-detail coach-detail-open" key={openRow.a.id}>
+              <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} data={data} onChange={onChange} userName={userName} />
+            </div>
+          : <div className="coach-detail coach-empty">
+              <div className="coach-empty-inner">
+                <div className="coach-empty-ico">◧</div>
+                <p>Open an associate to see their card side by side.</p>
+              </div>
+            </div>}
+      </div>
+    </div>
+  );
+}
+
+// The one-pager. It exists to answer two questions in a room, on paper:
+//   "Why am I not getting leads?"  and  "What do I have to do to be successful?"
+// Everything on it is derived from this person's own numbers, so it is not an opinion.
+function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base, ratios, workingDays, returnHtml }) {
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const pct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
+  const now = new Date();
+  const lastMonthName = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  const reqMin = {}; ((ev && ev.tier && ev.tier.requirements) ? ev.tier.requirements : []).forEach((r) => { reqMin[r.metric] = r.min; });
+  const stdOf = (m) => (reqMin[m] != null ? reqMin[m] : null);
+  const closeOf = (opp, un) => (opp > 0 ? (un || 0) / opp : null);
+  const rcTile = (label, val, std, closed, opps, showCounts) => {
+    const below = std != null && val != null && val < std / 100;
+    const tone = std == null ? "flat" : (below ? "bad" : "good");
+    return '<div class="rc-tile ' + tone + '"><div class="rc-t">' + esc(label) + '</div>' +
+      '<div class="rc-v">' + pct(val) + '</div>' +
+      (std != null ? '<div class="rc-s">standard ' + std + '%</div>' : '<div class="rc-s">reference</div>') +
+      (showCounts ? '<div class="rc-c">' + (opps > 0 ? closed + ' closed / ' + opps + ' opportunities' : 'no Delivery Summary on file for this month') + '</div>' : '') +
+      '</div>';
+  };
+  const thr = normThresholds(store.thresholds);
+  const chStd = (ch) => (thr && thr[ch] && thr[ch].green != null ? thr[ch].green : null);
+  // Opportunities come off the Delivery Summary. If a store did not import one for
+  // this month, fall back to the opportunity counts the Daily Activity report carries
+  // for the same channel, so the sold-versus-opportunities line still says something
+  // instead of going blank.
+  const oppsOf = (ch, actOpp) => {
+    const fromSummary = stats[ch + "Leads"];
+    if (fromSummary != null && fromSummary > 0) return fromSummary;
+    return (mtd && actOpp != null) ? actOpp : 0;
+  };
+  const resultHtml =
+    rcTile("Internet Delivery %", stats.internetPct, chStd("internet"), (stats.internetUnits || 0), oppsOf("internet", mtd && mtd.oppInternet), true) +
+    rcTile("Phone Closing %", stats.phonePct, chStd("phone"), (stats.phoneUnits || 0), oppsOf("phone", mtd && mtd.oppPhone), true) +
+    rcTile("Showroom Closing %", stats.showroomPct, chStd("showroom"), (stats.showroomUnits || 0), oppsOf("showroom", mtd && mtd.oppShowroom), true);
+  const driverKeys = ["apptVideoDayPct", "engagedVideoPct"].filter((m) => stdOf(m) != null || stats[m] != null);
+  const bDaysW = (base && base.daysWorked) || 0;
+  const apptShownBase = bDaysW > 0 ? Math.round(((base.apptShowed || 0) / bDaysW) * (workingDays || bDaysW)) : Math.round((base && base.apptShowed) || 0);
+  const apptShownCount = (stats.apptShowedMTD != null) ? stats.apptShowedMTD : ((mtd.apptShowed > 0) ? mtd.apptShowed : apptShownBase);
+  const apptTile = '<div class="rc-tile flat"><div class="rc-t">Appointments Shown</div><div class="rc-v">' + apptShownCount + '</div><div class="rc-s">per month</div></div>';
+  const driverHtml = driverKeys.map((m) => rcTile(METRICS[m].short, stats[m], stdOf(m), 0, 0, false)).join("") + apptTile;
+  const causal = '<div class="why flat"><b>What is actually moving your closing.</b> ' +
+    'Your delivery and closing track the video. Appt video is ' + pct(stats.apptVideoDayPct) + (stdOf("apptVideoDayPct") != null ? ' against a ' + stdOf("apptVideoDayPct") + '% standard' : '') +
+    ', engaged video ' + pct(stats.engagedVideoPct) + (stdOf("engagedVideoPct") != null ? ' against ' + stdOf("engagedVideoPct") + '%' : '') + '. ' +
+    'Video is how you drive the experience and build excitement before the visit. Raise those two and the closing follows, it is the video that gets them in the door, not the visit.</div>';
+  const playOrder = ["engagedVideoPct", "apptVideoDayPct", "bhVideoPct", "deliveredPct"];
+  const belowPlays = playOrder.filter((m) => { const s = stdOf(m); const v = stats[m]; return s != null && (v == null || v < s / 100) && METRIC_FIX[m]; });
+  const playsHtml = belowPlays.length
+    ? belowPlays.map((m, i) => { const fx = METRIC_FIX[m]; return '<div class="play"><div class="play-h"><span class="play-n">' + (i + 1) + '</span>' + esc(fx.play) + '<span class="play-tgt">' + esc(METRICS[m].short) + ' &rarr; ' + stdOf(m) + '%</span></div><ul>' + fx.steps.map((s) => '<li>' + esc(s) + '</li>').join("") + '</ul></div>'; }).join("")
+    : '<div class="why good"><b>Every driver is at standard.</b> Hold the video habits and the closing holds with them.</div>';
+  const CSS =
+    'body{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1B2A3B;margin:0;background:#fff;}' +
+    '.sheet{max-width:760px;margin:0 auto;padding:16px 26px;font-size:12px;}' +
+    '.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1B2A3B;padding-bottom:10px;margin-bottom:4px;}' +
+    '.badge{display:inline-block;background:#1B2A3B;color:#fff;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:5px;}' +
+    '.nm{font-size:20px;font-weight:800;margin-top:3px;}.sub{font-size:11px;color:#5E6B82;}' +
+    'h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:#1B2A3B;margin:9px 0 3px;border-bottom:1px solid #E4E8EE;padding-bottom:2px;}' +
+    '.note{font-size:9.5px;color:#5E6B82;margin:0 0 4px;}' +
+    '.why{border-radius:7px;padding:6px 10px;font-size:11px;margin:5px 0;}' +
+    '.why.flat{background:#F1F5F9;}.why.good{background:#E7F7F0;}.why b{display:block;margin-bottom:2px;}' +
+    '.line{border-bottom:1px solid #9AA5B1;height:15px;margin-bottom:3px;}' +
+    '.rc-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:7px 0 3px;}' +
+    '.rc-grid{display:flex;gap:6px;margin-bottom:2px;}' +
+    '.rc-tile{flex:1;border:1.2px solid #E4E8EE;border-radius:8px;padding:6px 8px;}' +
+    '.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +
+    '.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +
+    '.rc-v{font-size:18px;font-weight:800;color:#1B2A3B;line-height:1.05;margin-top:1px;}' +
+    '.rc-s{font-size:9px;color:#7A8699;}.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +
+    '.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:6px;padding:5px 9px;margin-bottom:4px;}' +
+    '.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +
+    '.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +
+    '.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +
+    '.play ul{margin:2px 0 0 22px;padding:0;}.play li{font-size:9.5px;color:#33445E;margin:0;}' +
+    'table{width:100%;border-collapse:collapse;margin:2px 0 6px;font-size:11px;}' +
+    'th{text-align:left;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;border-bottom:1px solid #E4E8EE;padding:4px 6px;font-weight:700;}' +
+    'td{padding:3px 6px;border-bottom:1px solid #F0F2F5;}' +
+    '.r{text-align:right;}.g{color:#0B8F66;font-weight:700;}.b{color:#E5473C;font-weight:700;}' +
+    '.hd-stats{display:flex;gap:16px;flex:0 0 auto;}' +
+    '.goalbox{text-align:right;flex:0 0 auto;}.goalbox b{font-size:19px;font-weight:800;display:block;color:#1B2A3B;line-height:1;}.goalbox span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
+    '.csi{display:flex;align-items:center;gap:8px;margin:5px 0 2px;}.csi-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#5E6B82;}.csi-fill{flex:1;border-bottom:1px solid #9AA5B1;height:15px;}' +
+    '.signs{display:flex;gap:26px;margin-top:16px;}.sig{flex:1;}.sig-line{border-bottom:1px solid #1B2A3B;height:26px;}.sig span{font-size:9px;color:#5E6B82;text-transform:uppercase;letter-spacing:.04em;}' +
+    '@media print{.sheet{padding:0;}}';
+  const OUT = [["calls", "Phone calls"], ["video", "Personalized videos"], ["text", "Texts"], ["apptScheduled", "Appointments set"]];
+  const rnd = (n) => Math.round(n);
+  // Built from the same 90-day conversion history the coaching page reads (seeded baseline
+  // plus observed), so the recap and the board never disagree. per-car effort x goal / days.
+  const bUnits = (base && base.units) || 0;
+  const bDays = (base && base.daysWorked) || 0;
+  const limitedHistory = !base || (base.daysWorked || 0) < 55;
+  const lastUnits = (stats.internetUnits || 0) + (stats.phoneUnits || 0) + (stats.showroomUnits || 0) + (stats.campaignUnits || 0);
+  // Appointments set live in last month's daily activity, not the seeded baseline, so pull
+  // that one from the month itself (mtd) when it's on file; everything else stays on the
+  // 90-day history so it agrees with the coaching page.
+  const apptSched = (stats.apptScheduledMTD != null) ? stats.apptScheduledMTD : (mtd.apptScheduled || 0);
+  const perCarOf = (id) => (id === "apptScheduled")
+    ? (lastUnits > 0 ? apptSched / lastUnits : null)
+    : (bUnits > 0 ? (base[id] || 0) / bUnits : null);
+  const dailyAvgOf = (id) => (id === "apptScheduled")
+    ? (workingDays > 0 ? apptSched / workingDays : null)
+    : (bDays > 0 ? (base[id] || 0) / bDays : null);
+  const shortRows = (goalLast > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
+    const per = perCarOf(id); if (per == null) return "";
+    const need = rnd((per * goalLast) / workingDays); const did = rnd(dailyAvgOf(id) || 0); const gap = need - did; const ok = gap <= 0;
+    return '<tr><td>' + label + '</td><td class="r">' + need + '</td><td class="r">' + did + '</td><td class="r ' + (ok ? "g" : "b") + '">' + (ok ? "on target" : "short by " + gap) + '</td></tr>';
+  }).filter(Boolean).join("") : "";
+  const paceRows = (goalThis > 0 && bUnits > 0 && workingDays > 0) ? OUT.map(([id, label]) => {
+    const per = perCarOf(id); if (per == null) return "";
+    const perDay = (per * goalThis) / workingDays;
+    return '<tr><td>' + label + '</td><td class="r"><b>' + (Math.round(perDay * 10) / 10) + '</b> / day</td></tr>';
+  }).filter(Boolean).join("") : "";
+  const effortHtml =
+    '<h2>Effort to hit last month\'s goal</h2>' +
+    (goalLast > 0 && shortRows
+      ? '<p class="note">At your 90-day effort per unit (the same history the board uses), this is the daily outreach it takes to reach ' + goalLast + '. Where your average falls short is where the cars slip.</p><table><thead><tr><th>Activity</th><th class="r">Needed Daily</th><th class="r">Daily Average</th><th class="r">Result</th></tr></thead><tbody>' + shortRows + '</tbody></table>'
+      : '<div class="why flat"><b>Not enough conversion history on file.</b> Seed this rep\'s 90-day baseline and set the goal, and this fills in.</div>') +
+    '<h2>Your pace this month</h2>' +
+    (goalThis > 0 && paceRows
+      ? '<p class="note">Built from your 90-day effort per unit: to hit ' + goalThis + ' this month, this is the daily pace to run.</p><table><thead><tr><th>Activity</th><th class="r">Daily Effort</th></tr></thead><tbody>' + paceRows + '</tbody></table>'
+      : '<div class="why flat"><b>Set this month\'s goal to see your pace.</b> The daily targets come from your 90-day conversion history.</div>');
+  const sheet =
+    '<div class="sheet">' +
+    '<div class="hd"><div><div class="badge">' + esc(lastMonthName) + ' month-end review</div>' +
+    '<div class="nm">' + esc(a.name) + '</div>' +
+    '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
+    '<div class="hd-stats"><div class="goalbox"><b>' + (Math.round(lastUnits * 10) / 10) + '</b><span>Units delivered</span></div>' +
+    '<div class="goalbox"><b>' + (goalThis > 0 ? goalThis : "-") + '</b><span>Goal this month</span></div></div></div>' +
+    '<h2>You vs the store standard</h2>' +
+    '<p class="note">Measured against your tier on The Board, not against anyone else. Change a standard there and this moves with it.</p>' +
+    (limitedHistory ? '<div class="why flat"><b>New associate.</b> Less than a full quarter of history is on file, so the averages and targets below are provisional and sharpen as more days build up.</div>' : '') +
+    '<div class="rc-lbl">The result</div><div class="rc-grid">' + resultHtml + '</div>' +
+    '<div class="rc-lbl">What drives it</div><div class="rc-grid">' + driverHtml + '</div>' +
+    causal +
+    '<h2>The effort, in order</h2>' +
+    '<p class="note">Closing is the result; activity is the input. Put the effort here first, in this order.</p>' +
+    playsHtml +
+    effortHtml +
+    '<h2>Notes</h2><div class="line"></div><div class="line"></div>' +
+    '<div class="csi"><span class="csi-l">CSI</span><span class="csi-fill"></span></div>' +
+    '<div class="signs"><div class="sig"><div class="sig-line"></div><span>Salesperson signature</span></div><div class="sig"><div class="sig-line"></div><span>Manager signature</span></div></div>' +
+    '</div>';
+  if (returnHtml) return { css: CSS, sheet };
+  const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
+  if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body>' + sheet + '</body></html>');
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
+}
+
+function printAllMonthEndRecaps({ store, config, data }) {
+  const w = window.open("", "lpc_recap_all", "width=850,height=1050");
+  if (!w) { alert("Allow pop-ups to print the recaps."); return; }
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
+  const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
+  const coachRoles = new Set((config.roles || []).filter((r) => r.coaching !== false).map((r) => r.id));
+  const lmStatsAll = data.months?.[lmKey]?.stats || {};
+  const people = (data.roster || []).filter((a) => a.roleId && coachRoles.has(a.roleId) && lmStatsAll[norm(a.name)]);
+  let css = "";
+  const sheets = people.map((a) => {
+    const lmStats = lmStatsAll[norm(a.name)] || {};
+    const lmEv = evaluateAssociate(lmStats, config.standards?.[store.id]?.[a.roleId]?.tiers);
+    const gRec = data.goals?.[a.id] || {};
+    const goalThis = (gRec.byMonth && gRec.byMonth[ym()] != null) ? gRec.byMonth[ym()] : (gRec.monthly ?? 0);
+    const goalLast = (gRec.byMonth && gRec.byMonth[lmKey] != null) ? gRec.byMonth[lmKey] : (gRec.monthly ?? 0);
+    const base = oyoBaseline(data, norm(a.name), a.id);
+    const out = printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey), goalLast, goalThis, base, ratios: oyoRatios(base), workingDays: personWorkingDaysInMonth(data, a), returnHtml: true });
+    css = out.css;
+    return out.sheet;
+  }).filter(Boolean);
+  if (!sheets.length) { w.close(); alert("No associates with last month's data to print yet."); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Month-end recaps &middot; ' + esc(store.name) + '</title><style>' + css + '.sheet + .sheet{page-break-before:always;}</style></head><body>' + sheets.join("") + '</body></html>');
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 450);
+}
+
+function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act }) {
+  const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
+  if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
+
+  const delivered = oyoUnits(mtd);
+  const calElapsed = Math.min(workingDays, Math.max(1, elapsedDays ?? workingDaysElapsed()));
+  const dataDays = Math.max(1, mtd.daysElapsed);
+  const remaining = Math.max(0, workingDays - calElapsed);
+  const stillNeeded = Math.max(0, goal - delivered);
+  const perDay = remaining > 0 ? stillNeeded / remaining : 0;
+  const pace = (delivered / calElapsed) * workingDays;
+
+  // Month-end mode: in the first few days of a new month this reads as a wrap-up of the
+  // month just finished rather than a mid-month plan.
+  const now = new Date();
+  const dom = now.getDate();
+  const MONTH_END_WINDOW = 5;                 // first 5 days of the month
+  const monthEnd = dom <= MONTH_END_WINDOW;
+  const lastMonthName = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString("en-US", { month: "long" });
+  const thisMonthName = now.toLocaleDateString("en-US", { month: "long" });
+
+  const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
+  const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const pct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
+  const num = (v) => (v == null ? "-" : (Math.round(v * 10) / 10).toString());
+
+  // ---- STANDING (coaching language, not "why am I not getting leads") ----
+  let headTitle, headBody, headClass;
+  if (restrictedNow) {
+    headTitle = "Leads are paused while we build the habits back up.";
+    headBody = "Off leads since " + new Date(restriction.since).toLocaleDateString() +
+      (restriction.until ? ". We'll review together on " + new Date(restriction.until).toLocaleDateString() + "." : ".") +
+      " This isn't a penalty. It's where we focus the coaching.";
+    headClass = "bad";
+  } else if (ev && ev.status === "fail") {
+    headTitle = "A couple of things to tighten up, then leads keep flowing.";
+    headBody = "You're close. The items below are what stands between you and full lead flow, and each one is a habit, not a talent.";
+    headClass = "bad";
+  } else if (ev && ev.status === "pass") {
+    headTitle = "You're doing the work. Let's build on it.";
+    headBody = "You're meeting every standard at your tier. This page is about squeezing more out of the same effort.";
+    headClass = "good";
+  } else {
+    headTitle = "Let's set your targets together.";
+    headBody = "No standards are set for your position yet. Your manager will walk you through your tier.";
+    headClass = "flat";
+  }
+
+  const failRows = (ev && ev.failures ? ev.failures : []).map((f) =>
+    '<tr><td>' + esc(f.def.short) + '</td>' +
+    '<td class="r">' + (f.val == null ? "no data" : (f.def.kind === "pct" ? pct(f.val) : num(f.val))) + '</td>' +
+    '<td class="r">' + (f.def.kind === "pct" ? f.min + "%" : f.min) + '</td>' +
+    '<td class="r bad"><span class="mk">&#9660;</span>to work on</td></tr>'
+  ).join("");
+
+  // ---- WHAT IT TAKES (outreach per car) ----
+  const outreachRows = ratios ? OYO_OUTREACH.map((o) => {
+    const per = ratios[o.id];
+    const target = remaining > 0 ? (per * stillNeeded) / remaining : 0;
+    const doing = (mtd[o.id] || 0) / dataDays;
+    const ok = stillNeeded === 0 || remaining === 0 || doing >= target;
+    return '<tr><td>' + esc(o.label) + '</td>' +
+      '<td class="r">' + num(per) + '</td>' +
+      '<td class="r"><b>' + num(target) + '</b></td>' +
+      '<td class="r">' + num(doing) + '</td>' +
+      '<td class="r ' + (ok ? "good" : "bad") + '"><span class="mk">' + (ok ? "&#9650;" : "&#9660;") + '</span>' + (ok ? "on pace" : "behind") + '</td></tr>';
+  }).join("") : "";
+
+  // ---- LEADS PER CAR BY CHANNEL ----
+  // The closing rate shown here is the SAME delivered % that appears at the top of the
+  // page and on The Board (from the Delivery Summary), so the two never disagree. Leads
+  // per car is derived from that same rate, so a channel you convert well needs fewer.
+  const chanPct = { showroom: stats.showroomPct, internet: stats.internetPct, phone: stats.phonePct, campaign: stats.campaignPct };
+  // The remaining gap to goal, split by this person's own sales mix when there's
+  // enough delivered to read one (typical split until then), then turned into leads
+  // at their own closing %.
+  const mixInfo = channelMixFor(stats);
+  let leadTotal = 0;
+  const leadRows = (goal > 0 && stillNeeded > 0) ? OYO_CHANNELS.map((c) => {
+    const cr = chanPct[c.id];
+    const share = mixInfo.mix[c.id] ?? 0;
+    const cars = stillNeeded * share;
+    if (cr == null || cr <= 0) {
+      return '<tr class="co-nodata"><td>' + esc(c.label) + '</td><td class="r">-</td>' +
+        '<td class="r">' + (Math.round(cars * 10) / 10) + '</td><td class="r">-</td></tr>';
+    }
+    const leads = Math.ceil(cars / cr);
+    leadTotal += leads;
+    return '<tr><td>' + esc(c.label) + '</td>' +
+      '<td class="r">' + pct(cr) + '</td>' +
+      '<td class="r">' + (Math.round(cars * 10) / 10) + '</td>' +
+      '<td class="r"><b>' + leads + '</b></td></tr>';
+  }).join("") : "";
+
+  // ---- BEHAVIOUR VS TOP 6 ----
+  const behaviourRows = (act && topAvg) ? BEHAVIOURS
+    .filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null)
+    .slice()
+    .sort((x, y) => (x.impact || 99) - (y.impact || 99))   // biggest lever on closing first
+    .map((b, i) => {
+      const f = b.kind === "pct" ? pct : num;
+      const ratio = act[b.id] / topAvg[b.id];
+      const state = ratio < 0.85 ? "bad" : ratio > 1.1 ? "good" : "par";
+      // Never lean on colour alone: a mark and a word carry the meaning in grayscale.
+      const mark = state === "bad" ? "&#9660;" : state === "good" ? "&#9650;" : "&#9679;";
+      const word = state === "bad" ? "focus here" : state === "good" ? "strength" : "on par";
+      const barPct = Math.max(3, Math.min(100, ratio * 70));   // 70% of track = parity, same as the card
+      return '<tr class="' + state + '-row"><td class="rk">' + (i + 1) + '</td>' +
+        '<td>' + esc(b.label) + '</td>' +
+        '<td><div class="mini"><div class="mini-bench"></div><div class="mini-bar ' + state + '" style="width:' + barPct + '%"></div></div></td>' +
+        '<td class="r"><b>' + f(act[b.id]) + '</b> <span class="vs">vs ' + f(topAvg[b.id]) + '</span></td>' +
+        '<td class="r ' + state + '"><span class="mk">' + mark + '</span>' + word + '</td></tr>';
+    }).join("") : "";
+
+  // ---- speedometer gauges for the print-off ----
+  const clamp01 = (x) => Math.max(0, Math.min(1, x || 0));
+  const gTone = (p) => (p >= 0.9 ? "#1E8E5A" : p >= 0.6 ? "#C77F16" : "#C0392B");
+  const speedo = (pctRaw, color) => {
+    const R = 28, cx = 34, cy = 34, len = Math.PI * R, p = clamp01(pctRaw);
+    const ang = Math.PI - p * Math.PI;
+    const nx = (cx + Math.cos(ang) * (R - 4)).toFixed(1), ny = (cy - Math.sin(ang) * (R - 4)).toFixed(1);
+    const arc = "M " + (cx - R) + " " + cy + " A " + R + " " + R + " 0 0 1 " + (cx + R) + " " + cy;
+    return '<svg width="68" height="40" viewBox="0 0 68 40">' +
+      '<path d="' + arc + '" fill="none" stroke="#E4E8ED" stroke-width="6" stroke-linecap="round"/>' +
+      '<path d="' + arc + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + (p * len).toFixed(1) + " " + len.toFixed(1) + '"/>' +
+      '<line x1="' + cx + '" y1="' + cy + '" x2="' + nx + '" y2="' + ny + '" stroke="#12212F" stroke-width="2" stroke-linecap="round"/>' +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="2.6" fill="#12212F"/></svg>';
+  };
+  const gauCell = (pctRaw, valStr, label, color) =>
+    '<div class="gau"><div class="gau-dial">' + speedo(pctRaw, color) + "</div><b>" + valStr + "</b><span>" + label + "</span></div>";
+  const closeVals = ratios ? [ratios.close_phone, ratios.close_showroom, ratios.close_internet].filter((v) => v != null) : [];
+  const closeRate = closeVals.length ? closeVals.reduce((a, b) => a + b, 0) / closeVals.length : null;
+  const pacePct = goal > 0 ? pace / goal : 0;
+  const delivPct = goal > 0 ? delivered / goal : 0;
+  const gaugesHtml = goal > 0
+    ? ('<div class="gauges">' +
+        gauCell(pacePct, Math.round(pacePct * 100) + "%", monthEnd ? "Final pace" : "Pace to goal", gTone(clamp01(pacePct))) +
+        gauCell(delivPct, Math.round(delivPct * 100) + "%", "Delivered", gTone(clamp01(delivPct))) +
+        (closeRate != null ? gauCell(closeRate, (closeRate * 100).toFixed(0) + "%", "Close rate", "#2B3844") : "") +
+      "</div>")
+    : "";
+
+  const html =
+'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
+'@page { size: letter portrait; margin: 12mm; }' +
+'* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
+'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
+'.sheet { max-width:186mm; }' +
+'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #1A2430; padding-bottom:6px; margin-bottom:9px; }' +
+'.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
+'.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
+'.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#1A2430; color:#fff; margin-bottom:4px; }' +
+'.goalbox { text-align:right; }' +
+'.goalbox b { font-size:26px; font-weight:800; color:#12212F; display:block; line-height:1; }' +
+'.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
+'.gauges { display:flex; gap:8px; margin:8px 0 2px; }' +
+'.gau { flex:1; text-align:center; border:1px solid #DDE3E9; border-radius:8px; padding:6px 4px 5px; }' +
+'.gau-dial { display:flex; justify-content:center; }' +
+'.gau b { display:block; font-size:15px; font-weight:800; letter-spacing:-.02em; margin-top:1px; }' +
+'.gau span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
+'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
+'.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
+'.why.bad { border-left-color:#1A2430; border-left-width:6px; background:#E9ECEF; }' +
+'.why.good { border-left-color:#9AA5B1; background:#F7F9FA; }' +
+'.why b { font-size:13px; display:block; margin-bottom:2px; }' +
+'.stats { display:flex; gap:0; border:1px solid #DDE3E9; border-radius:7px; overflow:hidden; margin-top:4px; }' +
+'.stat { flex:1; padding:6px 10px; border-right:1px solid #DDE3E9; }' +
+'.stat:last-child { border-right:none; }' +
+'.stat b { display:block; font-size:17px; font-weight:800; letter-spacing:-.02em; }' +
+'.stat span { font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
+'table { width:100%; border-collapse:collapse; }' +
+'th { text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:3px 7px; border-bottom:1px solid #DDE3E9; }' +
+'td { padding:2.5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'td.r, th.r { text-align:right; }' +
+'.good { color:#5B6874; font-weight:700; } .bad { color:#12212F; font-weight:800; } .par { color:#7A8590; font-weight:700; }' +'.mk { display:inline-block; margin-right:4px; font-size:9px; }' +'.rk { width:14px; color:#8B95A1; font-weight:800; text-align:center; }' +'.bad-row td { background:#F2F4F6; }' +
+'.mini { position:relative; height:11px; background:#EEF1F4; border-radius:6px; overflow:hidden; min-width:220px; }' +
+'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#9AA5B1; border-radius:6px; }' +
+'.mini-bar.good { background:#2B3844; } .mini-bar.par { background:#9AA5B1; } .mini-bar.bad { background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
+'.mini-bench { position:absolute; top:-2px; bottom:-2px; left:70%; width:2px; background:#12212F; z-index:3; }' +
+'.vs { color:#8B95A1; font-weight:600; }' +
+'.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:7px 11px; margin-top:6px; font-size:11.5px; }' +
+'.big b { color:#12212F; }' +
+'.pbar-wrap { margin-top:6px; }' +
+'.pbar { position:relative; height:16px; background:#EEF1F4; border-radius:8px; overflow:hidden; }' +
+'.pbar-fill { position:absolute; top:0; left:0; height:100%; border-radius:8px; background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
+'.pbar-fill.good { background:#2B3844; background-image:none; border:none; }' +
+'.pbar-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#12212F; z-index:3; }' +
+'.pbar-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; margin-top:3px; font-weight:600; }' +
+'.cols { display:flex; gap:14px; }' +
+'.cols > div { flex:1; }' +
+'.note { font-size:8.5px; color:#5B6874; margin:2px 0 0; }' +
+'.sign { margin-top:8px; padding-top:7px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
+'.sign div { flex:1; }' +
+'.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
+'.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
+'.rc-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:7px 0 3px;}' +'.rc-grid{display:flex;gap:6px;margin-bottom:2px;}' +'.rc-tile{flex:1;border:1.2px solid #E4E8EE;border-radius:8px;padding:6px 8px;}' +'.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}' +'.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}' +'.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +'.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +'.rc-v{font-size:18px;font-weight:800;color:#1B2A3B;line-height:1.05;margin-top:1px;}' +'.rc-s{font-size:9px;color:#7A8699;}' +'.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +'.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:6px;padding:5px 9px;margin-bottom:4px;}' +'.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +'.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +'.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +'.play ul{margin:4px 0 0 23px;padding:0;}' +'.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +'</style></head><body><div class="sheet">' +
+
+'<div class="hd">' +
+  '<div>' + (monthEnd ? '<div class="badge">' + esc(lastMonthName) + ' month-end review</div>' : '<div class="badge">Coaching plan &middot; ' + esc(thisMonthName) + '</div>') +
+  '<div class="nm">' + esc(a.name) + '</div>' +
+  '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
+  (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>' + (monthEnd ? "Final units" : "Units this month") + '</span></div>' : '') +
+'</div>' +
+gaugesHtml +
+
+'<h2>' + (monthEnd ? "How the month finished" : "Where you stand today") + '</h2>' +
+'<div class="why ' + headClass + '"><b>' + headTitle + '</b>' + esc(headBody) + '</div>' +
+(failRows ?
+  '<table style="margin-top:6px"><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Focus</th></tr></thead><tbody>' +
+  failRows + '</tbody></table>' : '') +
+
+'<h2>Results this month</h2>' +
+'<div class="stats">' +
+  '<div class="stat"><b>' + delivered + '</b><span>Units delivered</span></div>' +
+  '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet delivered</span></div>' +
+  '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone delivered</span></div>' +
+  '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom delivered</span></div>' +
+'</div>' +
+
+(behaviourRows ?
+'<h2>Behavior vs the Top ' + (topCount || 6) + ' Sales Associates in Your Store</h2>' +
+'<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
+'<tbody>' + behaviourRows + '</tbody></table>' +
+'<p class="note">Ordered by leverage on your closing ratio, strongest first. The upright line is what the top ' + (topCount || 6) + ' sales associates here do: solid bar past it is a strength, striped bar short of it is the next gain.</p>'
+: '') +
+
+(goal > 0 ?
+'<h2>' + (monthEnd ? "Where the month landed" : "Pace to your goal") + '</h2>' +
+'<div class="stats">' +
+  '<div class="stat"><b>' + num(delivered) + '</b><span>Delivered</span></div>' +
+  '<div class="stat"><b>' + num(stillNeeded) + '</b><span>' + (monthEnd ? "Short of goal" : "Still needed") + '</span></div>' +
+  '<div class="stat"><b>' + remaining + '</b><span>Days left</span></div>' +
+  '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>' + (monthEnd ? "Final pace" : "Projected") + '</span></div>' +
+'</div>' +
+(!monthEnd && stillNeeded > 0 && remaining > 0 ?
+  '<div class="big">To hit <b>' + goal + '</b>, aim for <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> over the ' + remaining + ' working days left.</div>'
+ : stillNeeded === 0 ? '<div class="big">Goal met. <b>' + num(delivered) + '</b> delivered against <b>' + goal + '</b>. Strong month.</div>' : '') +
+// pace progress bar: delivered vs goal, with a marker for where they "should" be by now
+'<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
+  (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
+  '<div class="pbar-legend"><span>' + delivered + ' delivered' + (pace >= goal ? ' (solid = on pace)' : ' (striped = behind pace)') + '</span>' + (!monthEnd ? '<span>| marks today</span>' : '') + '<span>' + goal + ' goal</span></div></div>'
+: '') +
+
+(ratios ?
+'<h2>' + (monthEnd ? "What got you there, per car" : "What it takes, per car") + '</h2>' +
+'<div class="cols">' +
+  '<div><table><thead><tr><th>Every day</th><th class="r">90 Day Average</th><th class="r">Target Effort to Reach Goal</th><th class="r">Current Month Pace</th><th class="r"></th></tr></thead>' +
+  '<tbody>' + outreachRows + '</tbody></table></div>' +
+'</div>' +
+(leadRows ?
+  '<h2>How many leads does it take to reach your goal?</h2>' +
+  '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
+  '<tbody>' + leadRows + '</tbody></table>' +
+  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' split by ' + (mixInfo.personal ? 'your own sales mix so far this month (' + mixInfo.total + ' cars)' : 'the typical mix (internet about half, showroom and phone the rest; switches to your own mix at ' + OYO_MIX_MIN_CARS + ' delivered)') + ', at your own closing rates: about <b>' + leadTotal + ' leads</b> gets you to your goal. Raise a closing rate and that number drops.</p>' : '')
+: '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
+
+'<div class="sign">' +
+  '<div><div class="line"></div>Associate</div>' +
+  '<div><div class="line"></div>Manager</div>' +
+  '<div><div class="line"></div>Date</div>' +
+'</div>' +
+'<div class="foot">Every number here comes from this associate\'s own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
+'</div></body></html>';
+
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  setTimeout(function () { w.focus(); w.print(); }, 400);
+}
+
+function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
+  const [editBase, setEditBase] = useState(false);
+  const key = norm(a.name);
+
+  const goal = data.goals?.[a.id]?.monthly ?? 0;
+  const workingDays = personWorkingDaysInMonth(data, a);
+
+  const mtd = oyoMTD(data, key, monthStats);
+  const base = oyoBaseline(data, key, a.id);
+  const ratios = oyoRatios(base);
+
+  const delivered = oyoUnits(mtd);
+
+  // Two different denominators, and using the wrong one is what broke this.
+  //  calElapsed  = working days actually gone by. Pace and days-left run off this.
+  //  dataDays    = days we have activity for. Per-day activity averages run off this,
+  //                because that is the only stretch we actually measured.
+  //  calElapsed  = working days this person has actually worked (calendar working days
+  //                minus their days off). Pace and days-left run off this, so someone
+  //                who took vacation is not judged as if they were here.
+  //  dataDays    = days we have activity for. Per-day activity averages run off this,
+  //                because that is the only stretch we actually measured.
+  const worked = Math.max(1, daysWorkedThisMonth(data, a));
+  const calElapsed = Math.min(workingDays, worked);
+  const dataDays = Math.max(1, mtd.daysElapsed);
+  const missingDays = Math.max(0, calElapsed - mtd.daysElapsed);
+
+  const remaining = Math.max(0, workingDays - calElapsed);
+  const stillNeeded = Math.max(0, goal - delivered);
+  const perDayNeeded = remaining > 0 ? stillNeeded / remaining : 0;
+  const pace = (delivered / calElapsed) * workingDays;      // where the month lands at today's rate
+  const onTrack = goal > 0 && pace >= goal;
+
+  const setGoal = (v) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.goals = next.goals || {};
+    const g = Math.max(0, parseInt(v) || 0);
+    const prevG = next.goals[a.id] || {};
+    // Remember the goal for the current month so a past-month recap can be measured
+    // against the goal that was actually in force then, not whatever the goal is now.
+    next.goals[a.id] = { ...prevG, monthly: g, byMonth: { ...(prevG.byMonth || {}), [ym()]: g } };
+    onChange(next, { action: "Set monthly goal", detail: `${a.name}: ${v}` });
+  };
+
+  const saveBase = (b) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.baselines = next.baselines || {};
+    next.baselines[a.id] = b;
+    onChange(next, { action: "Set 90-day baseline", detail: a.name });
+    setEditBase(false);
+  };
+
+  return (
+    <>
+      {/* ---- goal + pace ---- */}
+      <h3 className="ac-h3">Own your outcome</h3>
+      <div className="oyo-goal">
+        <div className="oyo-goalset">
+          <label>Monthly goal</label>
+          <input type="number" min="0" value={goal || ""} placeholder="0"
+            onChange={(e) => setGoal(e.target.value)} />
+          <span className="hint">units. Set per person.</span>
+        </div>
+
+        {goal > 0 && (
+          <div className="oyo-pace">
+            <div className="oyo-track">
+              <div className={"oyo-fill " + (onTrack ? "good" : "behind")}
+                style={{ width: Math.min(100, (delivered / goal) * 100) + "%" }} />
+              <div className="oyo-pacemark" style={{ left: Math.min(100, (calElapsed / workingDays) * 100) + "%" }}
+                title="Where you should be by today" />
+            </div>
+            <div className="oyo-stats">
+              <span><b>{delivered}</b> delivered</span>
+              <span><b>{stillNeeded}</b> still needed</span>
+              <span><b>{remaining}</b> days left</span>
+              <span className={onTrack ? "good" : "behind"}>
+                <b>{fmtNum(pace)}</b> projected
+              </span>
+            </div>
+            {stillNeeded > 0 && remaining > 0 && (
+              <p className="oyo-lede">
+                That is <b>{fmtNum(perDayNeeded)} car{perDayNeeded === 1 ? "" : "s"} a day</b> for the rest of the month.
+              </p>
+            )}
+            {stillNeeded === 0 && <p className="oyo-lede good">Goal met. {delivered} of {goal}.</p>}
+            {remaining === 0 && stillNeeded > 0 && <p className="oyo-lede behind">Month is out of days.</p>}
+          </div>
+        )}
+      </div>
+
+      {/* ---- closing rate by channel ---- */}
+      <h3 className="ac-h3">Closing rate this month</h3>
+      <div className="oyo-chan">
+        {OYO_CHANNELS.map((c) => {
+          const cap = c.id.charAt(0).toUpperCase() + c.id.slice(1);
+          const opp = mtd["opp" + cap] ?? 0;
+          const un = mtd["units" + cap] ?? 0;
+          // Prefer the Delivery Summary's own delivered % — the exact number The Board
+          // shows — so coaching and the board never disagree. It is stored as a fraction
+          // (e.g. 0.20 for 20%), the same scale fmtPct and the board use. Fall back to a
+          // computed rate only if the report didn't carry a percentage.
+          const storedPct = mtd["pct" + cap];
+          const rate = storedPct != null ? storedPct : (opp > 0 ? un / opp : null);
+          const hist = ratios ? ratios["close_" + c.id] : null;
+          const better = rate != null && hist != null && rate >= hist;
+          return (
+            <div key={c.id} className="oyo-chan-tile">
+              <div className="oyo-chan-name">{c.label}</div>
+              <div className="oyo-chan-rate">{rate == null ? "-" : fmtPct(rate)}</div>
+              <div className="oyo-chan-sub">{un} of {opp} leads</div>
+              {hist != null && (
+                <div className={"oyo-chan-hist " + (better ? "good" : "behind")}>
+                  {better ? "\u25b2" : "\u25bc"} your usual {fmtPct(hist)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ---- the blueprint ---- */}
+      {!ratios ? (
+        <p className="hint">
+          No conversion history yet, so there is nothing to build a plan from. Seed this person's 90-day numbers
+          below, or wait for a few weeks of imports to accumulate.
+        </p>
+      ) : (
+        <>
+          <h3 className="ac-h3">
+            What it takes {goal > 0 && stillNeeded > 0 ? <span className="section-sub">to find {stillNeeded} more car{stillNeeded === 1 ? "" : "s"}</span> : null}
+          </h3>
+          {missingDays > 0 && (
+            <p className="hint" style={{ color: "#95600A" }}>
+              Heads up: {calElapsed} working days have passed but activity is only on file for {mtd.daysElapsed}.
+              The daily activity figures below are averaged over the {mtd.daysElapsed} day{mtd.daysElapsed === 1 ? "" : "s"} we
+              actually have, so they are honest. Import the missing days and the picture sharpens.
+            </p>
+          )}
+          <p className="hint">
+            Built from this person's own conversion history, not a number anybody made up.
+            Historically they deliver <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"} across <b>{base.daysWorked}</b> working days.
+          </p>
+
+          <table className="oyo-table">
+            <thead>
+              <tr>
+                <th>Activity</th>
+                <th>90 Day Average</th>
+                <th>Needed</th>
+                <th>Target Effort to Reach Goal</th>
+                <th>Current Month Pace</th>
+                <th>On pace?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {OYO_OUTREACH.map((o) => {
+                const per = ratios[o.id];
+                const need = per * stillNeeded;
+                const target = remaining > 0 ? need / remaining : 0;
+                const doing = (mtd[o.id] ?? 0) / dataDays;
+                const ok = remaining === 0 || stillNeeded === 0 || doing >= target;
+                return (
+                  <tr key={o.id} className={ok ? "" : "oyo-behind"}>
+                    <td><b>{o.label}</b></td>
+                    <td>{fmtNum(per)}</td>
+                    <td>{goal > 0 ? Math.ceil(need) : "-"}</td>
+                    <td>{goal > 0 && remaining > 0 ? fmtNum(target) : "-"}</td>
+                    <td>{fmtNum(doing)}</td>
+                    <td>
+                      {goal === 0 ? <span className="co-badge dim">no goal</span>
+                        : stillNeeded === 0 ? <span className="co-badge yes">done</span>
+                        : remaining === 0 ? <span className="co-badge dim">month over</span>
+                        : ok ? <span className="co-badge yes">✓ on pace</span>
+                        : <span className="co-badge no">✗ behind</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <h3 className="ac-h3">How many leads does it take to reach your goal?</h3>
+          {goal === 0 ? (
+            <p className="hint">Set a monthly goal above and this turns the gap into a concrete lead count per channel.</p>
+          ) : stillNeeded === 0 ? (
+            <p className="hint">Goal met. Nothing left to split; anything from here is gravy.</p>
+          ) : (() => {
+            // The remaining gap, split by this person's own sales mix once they have
+            // enough delivered to read one (typical split until then), turned into leads
+            // at their own closing rates. Edit the goal and these move with it.
+            const mixInfo = channelMixFor(monthStats);
+            const rows = OYO_CHANNELS.map((c) => {
+              const cr = monthStats ? monthStats[c.id + "Pct"] : null;
+              const share = mixInfo.mix[c.id] ?? 0;
+              const cars = stillNeeded * share;
+              const leads = cr && cr > 0 ? Math.ceil(cars / cr) : null;
+              return { c, cr, cars, leads };
+            });
+            const total = rows.reduce((t, r) => t + (r.leads ?? 0), 0);
+            const missing = rows.some((r) => r.leads == null);
+            return (
+              <>
+                <table className="oyo-table">
+                  <thead>
+                    <tr><th>Channel</th><th>You deliver</th><th>Cars of the gap</th><th>Leads needed</th></tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(({ c, cr, cars, leads }) => (
+                      <tr key={c.id} className={leads == null ? "co-nodata" : ""}>
+                        <td><b>{c.label}</b></td>
+                        <td>{cr && cr > 0 ? fmtPct(cr) : "-"}</td>
+                        <td>{Math.round(cars * 10) / 10}</td>
+                        <td>{leads == null ? "-" : <b>{leads}</b>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="hint">
+                  Your remaining <b>{stillNeeded}</b> car{stillNeeded === 1 ? "" : "s"}, split by{" "}
+                  {mixInfo.personal
+                    ? <>your own sales mix so far this month ({mixInfo.total} cars)</>
+                    : <>the typical mix, internet about half and showroom and phone the rest (switches to your own mix at {OYO_MIX_MIN_CARS} delivered)</>}, at
+                  your own closing rates: about <b>{total} leads</b> gets you to your goal.{missing ? " Channels without a delivered % yet are left out of that count." : ""} Raise
+                  a closing rate and that number drops.
+                </p>
+              </>
+            );
+          })()}
+        </>
+      )}
+
+      {/* ---- baseline ---- */}
+      <div className="oyo-base">
+        <div className="oyo-base-head">
+          <div>
+            <b>90-day baseline</b>
+            <span className="hint">
+              {base.source === "seed+observed"
+                ? ` Seeded, plus everything imported since. ${base.daysWorked} days on file.`
+                : base.source === "observed"
+                ? ` Built from ${base.daysWorked} imported day${base.daysWorked === 1 ? "" : "s"}. Seed their real 90-day numbers to make this meaningful sooner.`
+                : " Nothing yet. Paste in their current 90-day numbers to start."}
+            </span>
+          </div>
+          <button className="btn-ghost" onClick={() => setEditBase(!editBase)}>
+            {editBase ? "Cancel" : base.source === "none" ? "Seed baseline" : "Edit seed"}
+          </button>
+        </div>
+        {editBase && <BaselineEditor seed={data.baselines?.[a.id] || emptyBaseline()} onSave={saveBase} />}
+      </div>
+    </>
+  );
+}
+
+function BaselineEditor({ seed, onSave }) {
+  const [b, setB] = useState({ ...emptyBaseline(), ...seed });
+  const f = (k, label) => (
+    <label key={k} className="bl-field">
+      <span>{label}</span>
+      <input type="number" min="0" step="any" value={b[k] ?? 0}
+        onChange={(e) => setB({ ...b, [k]: parseFloat(e.target.value) || 0 })} />
+    </label>
+  );
+  return (
+    <div className="bl-editor">
+      <p className="hint">
+        Type in what this person actually did over their last 90 days, straight from the workbook.
+        The tool blends it with everything it imports from here on, so the seed matters less and less over time.
+      </p>
+      <div className="bl-grid">
+        {f("daysWorked", "Days worked")}
+        {f("units", "Vehicles delivered")}
+      </div>
+      <div className="check-group-label">Opportunities</div>
+      <div className="bl-grid">
+        {f("oppShowroom", "Showroom")}{f("oppInternet", "Internet")}
+        {f("oppPhone", "Phone")}{f("oppCampaign", "Campaign")}
+      </div>
+      <div className="check-group-label">Units delivered by channel</div>
+      <div className="bl-grid">
+        {f("unitsShowroom", "Showroom")}{f("unitsInternet", "Internet")}
+        {f("unitsPhone", "Phone")}{f("unitsCampaign", "Campaign")}
+      </div>
+      <div className="check-group-label">Appointments</div>
+      <div className="bl-grid">
+        {f("apptCreated", "Set")}{f("apptConfirmed", "Confirmed")}{f("apptShowed", "Showed")}
+      </div>
+      <div className="check-group-label">Outreach</div>
+      <div className="bl-grid">
+        {f("calls", "Calls")}{f("contacted", "Contacted")}{f("text", "Texts")}
+        {f("email", "Emails")}{f("video", "Videos")}{f("tasks", "Tasks")}
+      </div>
+      <div className="inline-form">
+        <button className="btn" onClick={() => onSave(b)}>Save baseline</button>
+      </div>
+    </div>
+  );
+}
+
+/* Contact rate by hour, per person. Held back until there is a fortnight of
+   hourly data, because two days of it would have a manager coaching noise. */
+const HOURLY_MIN_DAYS = 14;
+function hourlyForPerson(data, key, store) {
+  const byHour = {};
+  const days = new Set();
+  for (const [day, snaps] of Object.entries(data.activitySnaps || {})) {
+    if (!Array.isArray(snaps) || snaps.length < 2) continue;
+    const list = [...snaps].sort((a, b) => (a.t < b.t ? -1 : 1));
+    let touched = false;
+    for (let i = 1; i < list.length; i++) {
+      const hr = new Date(list[i].t).getHours();
+      const before = list[i - 1].rows?.[key] || {};
+      const after = list[i].rows?.[key] || {};
+      const dc = (after.calls ?? 0) - (before.calls ?? 0);
+      const dk = (after.contacted ?? 0) - (before.contacted ?? 0);
+      if (dc <= 0 && dk <= 0) continue;
+      const b = byHour[hr] || (byHour[hr] = { calls: 0, contacted: 0 });
+      if (dc > 0) b.calls += dc;
+      if (dk > 0) b.contacted += dk;
+      touched = true;
+    }
+    if (touched) days.add(day);
+  }
+  const openH = Math.floor(hourOf((store?.hours || DEFAULT_HOURS).open));
+  const closeH = Math.ceil(hourOf((store?.hours || DEFAULT_HOURS).close));
+  const hours = [];
+  for (let h = openH; h <= closeH; h++) {
+    const b = byHour[h] || { calls: 0, contacted: 0 };
+    hours.push({ h, calls: b.calls, contacted: b.contacted, rate: b.calls > 0 ? b.contacted / b.calls : null });
+  }
+  return { hours, days: days.size };
+}
+
+function HourlyBlock({ data, name, store }) {
+  const { hours, days } = hourlyForPerson(data, norm(name), store);
+  const ready = days >= HOURLY_MIN_DAYS;
+  const withCalls = hours.filter((x) => x.calls > 0);
+  const maxCalls = Math.max(1, ...hours.map((x) => x.calls));
+  const best = [...withCalls].sort((a, b) => (b.rate ?? 0) - (a.rate ?? 0))[0];
+  const worst = [...withCalls].sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1))[0];
+
+  const W = 620, H = 120, PB = 22, PT = 8;
+  const bw = hours.length ? (W / hours.length) : 1;
+  const y = (r) => PT + (H - PT - PB) * (1 - (r ?? 0));
+
+  return (
+    <div className={"hourly" + (ready ? "" : " hourly-locked")}>
+      <h3 className="ac-h3">When you actually connect</h3>
+      {!ready && (
+        <div className="hourly-veil">
+          <b>Not enough data yet</b>
+          <span>{days} of {HOURLY_MIN_DAYS} days collected. This needs the activity report arriving hourly, and a fortnight of it before the pattern means anything.</span>
+        </div>
+      )}
+      <svg className="hourly-chart" viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+        {hours.map((x, i) => (
+          <rect key={x.h} className="hr-bar" x={i * bw + bw * 0.18} width={bw * 0.64}
+            y={H - PB - ((H - PT - PB) * x.calls) / maxCalls} height={((H - PT - PB) * x.calls) / maxCalls} rx="3" />
+        ))}
+        <path className="hr-line" fill="none"
+          d={(() => {
+            // The first hour often has no rate yet, and dropping it used to leave the
+            // path starting with an L, which is not a valid path start. Whichever hour
+            // is the first one with a number has to be the moveto.
+            let started = false;
+            return hours.map((x, i) => {
+              if (x.rate == null) return null;
+              const seg = (started ? "L" : "M") + " " + (i * bw + bw / 2).toFixed(1) + " " + y(x.rate).toFixed(1);
+              started = true;
+              return seg;
+            }).filter(Boolean).join(" ");
+          })()} />
+        {hours.map((x, i) => (x.rate == null ? null : (
+          <circle key={x.h} className="hr-dot" cx={i * bw + bw / 2} cy={y(x.rate)} r="3.4" />
+        )))}
+        {hours.map((x, i) => (
+          <text key={"t" + x.h} className="hr-tick" x={i * bw + bw / 2} y={H - 6} textAnchor="middle">{HOUR_LABEL(x.h)}</text>
+        ))}
+      </svg>
+      {ready && best && worst && best.h !== worst.h && (
+        <p className="hourly-read">
+          You connect best around <b>{HOUR_LABEL(best.h)}</b> at {fmtPct(best.rate)}, and worst around{" "}
+          <b>{HOUR_LABEL(worst.h)}</b> at {fmtPct(worst.rate)}. Same calls, different hour.
+        </p>
+      )}
+      {ready && <p className="hint">Bars are calls made in that hour; the line is the share that reached someone. Across {days} days.</p>}
+    </div>
+  );
+}
+
+function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, userName }) {
+  const { a, stats, act, units } = row;
+  const goal = data.goals?.[a.id]?.monthly ?? 0;
+  const role = config.roles.find((x) => x.id === a.roleId);
+  const isStatsExcluded = (data.statsExcluded || []).map(norm).includes(norm(a.name));
+  const toggleStatsExcluded = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    const set = new Set((next.statsExcluded || []));
+    // store by display name so it survives id changes
+    const has = [...set].some((n) => norm(n) === norm(a.name));
+    if (has) next.statsExcluded = [...set].filter((n) => norm(n) !== norm(a.name));
+    else next.statsExcluded = [...set, a.name];
+    onChange(next, { action: has ? "Included in store stats" : "Excluded from store stats", detail: a.name });
+  };
+  const thr = normThresholds(store.thresholds);
+
+  const gaps = BEHAVIOURS
+    .filter((b) => act && act[b.id] != null && topAvg[b.id] != null && topAvg[b.id] > 0)
+    .map((b) => ({ ...b, mine: act[b.id], theirs: topAvg[b.id], ratio: act[b.id] / topAvg[b.id] }))
+    .sort((x, y) => x.ratio - y.ratio);
+
+  const behind = gaps.filter((g) => g.ratio < 0.85);
+  const ahead = gaps.filter((g) => g.ratio > 1.1);
+
+  const summaryText = () => {
+    const L = [];
+    L.push(`${a.name} · ${store.name} · ${new Date().toLocaleDateString()}`);
+    L.push("");
+    L.push(`Units delivered this month: ${units}`);
+    if (stats.internetPct != null) L.push(`Internet delivered: ${fmtPct(stats.internetPct)}`);
+    if (stats.phonePct != null) L.push(`Phone delivered: ${fmtPct(stats.phonePct)}`);
+    if (stats.showroomPct != null) L.push(`Showroom delivered: ${fmtPct(stats.showroomPct)}`);
+    L.push("");
+    L.push(`Compared with the top ${topCount} performer${topCount === 1 ? "" : "s"} at this store:`);
+    if (behind.length === 0) L.push("  You are at or above the benchmark on every behavior.");
+    for (const g of behind) {
+      const f = g.kind === "pct" ? fmtPct : fmtNum;
+      L.push(`  ${g.label}: ${f(g.mine)} vs ${f(g.theirs)}`);
+    }
+    if (ahead.length) {
+      L.push("");
+      L.push("Strengths:");
+      for (const g of ahead) {
+        const f = g.kind === "pct" ? fmtPct : fmtNum;
+        L.push(`  ${g.label}: ${f(g.mine)} vs ${f(g.theirs)}`);
+      }
+    }
+    const qs = queueCoachingStats(data, a.id);
+    if (qs.hasData) {
+      L.push("");
+      L.push("Phone line:");
+      L.push(`  In line on ${qs.signedDays} of ${qs.scheduledDays} scheduled days`);
+      L.push(`  Phone opps taken: ${qs.taken}  ·  declined: ${qs.declined}${qs.acceptRate == null ? "" : `  ·  accept ${fmtPct(qs.acceptRate)}`}`);
+      if (qs.missedScheduled > 0) L.push(`  Missed the line on ${qs.missedScheduled} scheduled day(s)`);
+    }
+    return L.join(String.fromCharCode(10));
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(summaryText()); alert("Card copied. Paste it into an email or a text."); }
+    catch (e) { alert("Couldn't copy automatically. Use Print instead."); }
+  };
+
+  const recordPrint = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.coachingPrints = next.coachingPrints || {};
+    const list = next.coachingPrints[a.id] || [];
+    list.unshift({ by: userName || "Someone", at: new Date().toISOString() });
+    next.coachingPrints[a.id] = list.slice(0, 12);
+    onChange(next, { action: "Printed coaching one-pager", detail: a.name });
+  };
+  const prints = (data.coachingPrints || {})[a.id] || [];
+  const fmtPrint = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " at " + new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div className="card assoc-card-full print-area">
+      <div className="ac-head">
+        <div>
+          <h2 className="ac-name">{a.name}<span className="no-print"><StreakIcon data={data} a={a} std={{ ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) }} /></span></h2>
+          <div className="ac-sub">{role?.name} · {store.name} · {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}</div>
+        </div>
+        <div className="ac-actions no-print">
+          <button className={"btn-ghost " + (isStatsExcluded ? "on" : "")} onClick={toggleStatsExcluded}
+            title={isStatsExcluded ? "This person is excluded from the store benchmark. Their card still works. Click to include them." : "Exclude this person's activity from the store benchmark averages (their own card is unaffected)."}>
+            {isStatsExcluded ? "✓ Out of store stats" : "Exclude from store stats"}
+          </button>
+          <button className="btn-ghost" onClick={copy}>Copy summary</button>
+          <button className="btn-ghost danger" onClick={() => {
+            if (!window.confirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`)) return;
+            onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
+          }}>No longer here</button>
+          <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
+            onClick={() => { recordPrint(); printOnePager({
+              store, config, a, stats, ev: row.ev,
+              restriction: (data.restrictions || {})[a.id],
+              mtd: oyoMTD(data, norm(a.name), stats),
+              base: oyoBaseline(data, norm(a.name), a.id),
+              ratios: oyoRatios(oyoBaseline(data, norm(a.name), a.id)),
+              goal: data.goals?.[a.id]?.monthly ?? 0,
+              workingDays: personWorkingDaysInMonth(data, a),
+              elapsedDays: Math.max(1, daysWorkedThisMonth(data, a)),
+              topAvg, topCount, act,
+            }); }}>
+            Print one-pager
+          </button>
+          {new Date().getDate() <= 10 && (
+            <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
+              onClick={() => {
+                recordPrint();
+                const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
+                const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
+                const lmStats = data.months?.[lmKey]?.stats?.[norm(a.name)] || {};
+                const lmEv = evaluateAssociate(lmStats, config.standards?.[store.id]?.[a.roleId]?.tiers);
+                const gRec = data.goals?.[a.id] || {};
+                const goalThis = (gRec.byMonth && gRec.byMonth[ym()] != null) ? gRec.byMonth[ym()] : (gRec.monthly ?? 0);
+                const goalLast = (gRec.byMonth && gRec.byMonth[lmKey] != null) ? gRec.byMonth[lmKey] : (gRec.monthly ?? 0);
+                const base = oyoBaseline(data, norm(a.name), a.id);
+                printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, norm(a.name), lmStats, lmKey), goalLast, goalThis, base, ratios: oyoRatios(base), workingDays: personWorkingDaysInMonth(data, a) });
+              }}>
+              Month-end recap
+            </button>
+          )}
+        </div>
+        {!goal && <p className="hint no-print">Set a monthly goal below and the one-pager unlocks.</p>}
+        {prints.length > 0 && (
+          <div className="ac-prints no-print">
+            <span>Last printed by <b>{prints[0].by}</b> · {fmtPrint(prints[0].at)}</span>
+            {prints.length > 1 && (
+              <details><summary>Print history ({prints.length})</summary>
+                <ul>{prints.map((p, i) => <li key={i}>{p.by} · {fmtPrint(p.at)}</li>)}</ul>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
+
+      <OwnYourOutcome store={store} data={data} a={a} monthStats={stats} onChange={onChange} />
+
+      {(() => {
+        const qs = queueCoachingStats(data, a.id);
+        if (!qs.hasData) return null;
+        return (
+          <div className="ac-queue">
+            <h3 className="ac-h3">Phone line</h3>
+            <div className="ac-results">
+              <div className="ac-stat"><b>{qs.signedDays}/{qs.scheduledDays}</b><span>Scheduled days in line</span></div>
+              <div className="ac-stat"><b>{qs.taken}</b><span>Phone opps taken</span></div>
+              <div className="ac-stat"><b>{qs.declined}</b><span>Declined</span></div>
+              <div className="ac-stat"><b>{qs.acceptRate == null ? "—" : fmtPct(qs.acceptRate)}</b><span>Accept rate</span></div>
+            </div>
+            <p className="hint">
+              {qs.missedScheduled > 0
+                ? `Not in the line on ${qs.missedScheduled} scheduled day${qs.missedScheduled === 1 ? "" : "s"}. `
+                : "In the line every scheduled day on record. "}
+              {qs.unavailMin > 0 ? `About ${qs.unavailMin} min marked unavailable (lunch/away/with a customer) while holding a spot.` : ""}
+            </p>
+          </div>
+        );
+      })()}
+
+      <HourlyBlock data={data} name={a.name} store={store} />
+
+      <h3 className="ac-h3">Results this month</h3>
+      <div className="ac-results">
+        <div className="ac-stat"><b>{units}</b><span>Units delivered</span></div>
+        <div className="ac-stat"><b>{fmtPct(stats.internetPct)}</b><span>Internet %</span></div>
+        <div className="ac-stat"><b>{fmtPct(stats.phonePct)}</b><span>Phone %</span></div>
+        <div className="ac-stat"><b>{fmtPct(stats.showroomPct)}</b><span>Showroom %</span></div>
+      </div>
+
+      {!act ? (
+        <p className="hint">No Daily Activity on file for this person yet, so there is nothing to compare their behavior against.</p>
+      ) : (
+        <>
+          <h3 className="ac-h3">Behavior vs the Top {topCount} Sales Associates in Your Store</h3>
+          <div className="ac-bars">
+            {gaps.map((g) => {
+              const f = g.kind === "pct" ? fmtPct : fmtNum;
+              // benchmark sits at 70% of the track, so a bar that reaches the line is at parity
+              const pct = Math.max(3, Math.min(100, g.ratio * 70));
+              const state = g.ratio < 0.85 ? "behind" : g.ratio > 1.1 ? "ahead" : "even";
+              return (
+                <div key={g.id} className="ac-bar-row">
+                  <span className="ac-bar-lbl">{g.label}</span>
+                  <div className="ac-bar-track">
+                    <div className="ac-bench" title="Top performers" />
+                    <div className={"ac-bar " + state} style={{ width: pct + "%" }} />
+                  </div>
+                  <span className="ac-bar-val">{f(g.mine)}<em> vs {f(g.theirs)}</em></span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="ac-coach">
+            {behind.length > 0 ? (
+              <>
+                <h3 className="ac-h3">What to coach</h3>
+                <ul className="ac-list">
+                  {behind.slice(0, 3).map((g) => {
+                    const f = g.kind === "pct" ? fmtPct : fmtNum;
+                    return (
+                      <li key={g.id}>
+                        <b>{g.label}</b> is at {f(g.mine)}, against {f(g.theirs)} for the strongest people here.
+                        {g.id === "contactRate" && " Effort is not the issue if calls are fine; this is about when they are calling and what they open with."}
+                        {g.id === "video" && " Personalized video is the single easiest habit to add, and it shows up in delivery rate."}
+                        {g.id === "showRate" && " Appointments are being set but not landing. Look at confirmation habits the day before."}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : (
+              <p className="hint">This person is at or above the benchmark on every behavior we track. Worth asking what they do that is not in the report.</p>
+            )}
+            {ahead.length > 0 && (
+              <p className="hint">Strengths worth naming out loud: {ahead.slice(0, 3).map((g) => g.label.toLowerCase()).join(", ")}.</p>
+            )}
+          </div>
+
+          <p className="hint">Based on {act.days} day{act.days === 1 ? "" : "s"} of activity on file. The more days imported, the more the pattern means.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Tool switcher ---------------- */
+function ToolSwitcher({ value, onChange }) {
+  const tools = [
+    ["perf", "Performance"],
+    ["activity", "Daily Activity"],
+    ["board", "The Board"],
+  ];
+  const queues = [
+    ["floor", "Live Floor", "#10B981", "door"],
+    ["line", "The Line", "#5566F0", "phone"],
+    ["online", "Online", "#8B5CF6", "globe"],
+  ];
+  // Same sliding thumb as the tab bar, so switching tools and switching tabs
+  // feel like the same gesture rather than two different controls.
+  const wrapRef = useRef(null);
+  const btnRefs = useRef({});
+  const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
+  const measure = useCallback(() => {
+    const btn = btnRefs.current[value];
+    if (!btn || !wrapRef.current || !tools.some(([id]) => id === value)) { setThumb((t) => ({ ...t, ready: false })); return; }
+    setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true });
+  }, [value]);
+  useEffect(() => {
+    measure();
+    const t = setTimeout(measure, 150);          // once the web fonts settle
+    window.addEventListener("resize", measure);
+    return () => { clearTimeout(t); window.removeEventListener("resize", measure); };
+  }, [measure]);
+
+  return (
+    <div className="tool-row">
+      <div className="tool-switch" role="group" aria-label="Switch tool" ref={wrapRef}>
+        <div className={"tool-thumb" + (thumb.ready ? " ready" : "")}
+          style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width, opacity: thumb.ready ? 1 : 0 }} />
+        {tools.map(([id, label]) => (
+          <button key={id} ref={(el) => (btnRefs.current[id] = el)}
+            className={"tool-btn " + (value === id ? "on" : "")}
+            onClick={() => onChange(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="qsel" role="group" aria-label="Sign-in queue">
+        {queues.map(([id, label, color, glyph], i) => (
+          <button key={id} type="button" aria-selected={value === id}
+            className={"qsel-pill" + (value === id ? " on" : "")}
+            style={{ background: color, borderColor: color, "--qd": (i * 0.42) + "s" }}
+            onClick={() => onChange(id)}>
+            <PixIcon glyph={glyph} size={13} className="qsel-ico" />
+            <span className="qsel-lbl">{label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Mobile slide-out drawer ----------------
+   On phones the topbar collapses to a hamburger + logo; all navigation moves here.
+   Slides in from the right like the Claude mobile app. Tapping a tab or the backdrop
+   closes it. Rendered on every screen size but only visible under 720px via CSS. */
+/* Native-style bottom bar. Up to four primary destinations plus tool-switch live
+   inline; anything past that folds into a More sheet. Same nav model the drawer
+   used, so nothing about the desktop paths changes. */
+function BottomNav({ items, value, onChange, appModule, onToolChange, storeData, onMore }) {
+  if (!items || !items.length) return null;
+  const primary = items.slice(0, 4);
+  const overflow = items.slice(4);
+  const activeInOverflow = overflow.some(([id]) => id === value);
+  return (
+    <nav className="botnav no-print" aria-label="Sections">
+      {primary.map(([id, label]) => (
+        <button key={id} className={"botnav-btn" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
+          <span className="botnav-ico">{NAV_ICON[id] || "•"}</span>
+          <span className="botnav-lbl">{NAV_SHORT[id] || label}</span>
+          {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+        </button>
+      ))}
+      <button className={"botnav-btn" + (activeInOverflow ? " on" : "")} onClick={onMore}>
+        <span className="botnav-ico">⋯</span>
+        <span className="botnav-lbl">More</span>
+      </button>
+    </nav>
+  );
+}
+
+const NAV_ICON = {
+  board: "◎", dashboard: "◎", import: "⇪", gm: "▤", history: "↺", standards: "◈",
+  roster: "☰", checkout: "✓", queue: "☎", coaching: "◇", plates: "▦", actstd: "◈",
+  overview: "▦", access: "◐", audit: "❑", settings: "⚙", backup: "⇩",
+};
+const NAV_SHORT = {
+  board: "Board", dashboard: "Board", import: "Import", gm: "Summary", history: "History",
+  standards: "Rules", roster: "Roster", checkout: "Check Out", queue: "Line", coaching: "Coaching",
+  plates: "Plates", actstd: "Rules", overview: "Home", access: "Access", audit: "Audit",
+  settings: "Stores", backup: "Backup",
+};
+
+function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
+  // Lock body scroll while the drawer is open so the page behind doesn't move.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [open, onClose]);
+
+  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "The Board"], ["floor", "Live Floor"], ["line", "The Line"], ["online", "Online"]];
+  const pick = (id) => { onChange && onChange(id); onClose(); };
+
+  return (
+    <div className={"drawer-root no-print " + (open ? "open" : "")} aria-hidden={!open}>
+      <div className="drawer-scrim" onClick={onClose} />
+      <aside className="drawer" role="dialog" aria-label="Menu">
+        <div className="drawer-head">
+          {storeName ? <div className="drawer-store">{storeName}</div> : <div className="drawer-store">Menu</div>}
+          <button className="drawer-x" onClick={onClose} aria-label="Close menu">✕</button>
+        </div>
+
+        <div className="drawer-scroll">
+          <div className="drawer-section-label">Go to</div>
+          <nav className="drawer-nav">
+            {items.map(([id, label]) => (
+              <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
+                <span>{label}</span>
+                {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+                {value === id && <span className="drawer-tick">✓</span>}
+              </button>
+            ))}
+          </nav>
+
+          <div className="drawer-section-label">Switch tool</div>
+          <nav className="drawer-nav">
+            {tools.map(([id, label]) => (
+              <button key={id} className={"drawer-item " + (appModule === id ? "on" : "")} onClick={() => onToolChange(id)}>
+                <span>{label}</span>
+                {appModule === id && <span className="drawer-tick">✓</span>}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+/* ---------------- Loading screen ---------------- */
+/* Shown when someone is signed in and approved but no store resolves for them.
+   "No access" has several very different causes, and the old message assumed only one.
+   This shows the account it actually loaded and the store ids on it, so an admin can
+   tell in seconds whether it's a second duplicate account, a stale store id, or a
+   grant that simply hasn't been made yet. */
+function NoAccessPanel({ session, config, onRecheck }) {
+  const [checking, setChecking] = useState(false);
+  const mine = session?.stores || [];
+  const existing = (config?.stores || []).map((s) => s.id);
+  const stale = mine.filter((id) => !existing.includes(id));
+  const recheck = async () => {
+    setChecking(true);
+    try { await onRecheck(); } finally { setChecking(false); }
+  };
+  return (
+    <div className="noaccess">
+      <h2 className="noaccess-title">No store is showing for this account yet</h2>
+      {stale.length > 0 ? (
+        <p className="noaccess-lead">
+          This account has store access saved, but for {stale.length === 1 ? "a store" : "stores"} that no longer exist.
+          An admin needs to re-grant access to a current store.
+        </p>
+      ) : mine.length === 0 ? (
+        <p className="noaccess-lead">
+          Your account is active, but no store has been assigned to it. Your group admin grants access in the Access panel.
+        </p>
+      ) : (
+        <p className="noaccess-lead">
+          Access is saved on this account but didn't match a store. Try Check again, then send the details below to your admin.
+        </p>
+      )}
+
+      <div className="noaccess-box">
+        <div className="noaccess-row"><span>Signed in as</span><b>{session?.email || "unknown"}</b></div>
+        <div className="noaccess-row"><span>Name on account</span><b>{session?.name || "-"}</b></div>
+        <div className="noaccess-row"><span>Account ID</span><b className="mono">{session?.id || "-"}</b></div>
+        <div className="noaccess-row"><span>Role</span><b>{session?.role || "-"}</b></div>
+        <div className="noaccess-row"><span>Stores on this account</span><b className="mono">{mine.length ? mine.join(", ") : "none"}</b></div>
+        <div className="noaccess-row"><span>Stores that exist</span><b className="mono">{existing.length ? existing.join(", ") : "none"}</b></div>
+      </div>
+
+      <p className="hint noaccess-hint">
+        Admin tip: compare the Account ID above with the person's row in the Access panel. If they don't match,
+        there are two accounts for this person and the access was granted to the other one.
+      </p>
+
+      <button className="btn" onClick={recheck} disabled={checking}>{checking ? "Checking…" : "Check again"}</button>
+    </div>
+  );
+}
+
+function LoadingScreen({ label = "Loading" }) {
+  return (
+    <div className="loadscreen">
+      <div className="loadscreen-inner">
+        <div className="loadscreen-logo"><Logo size={72} loading /></div>
+        {label ? <div className="loadscreen-label">{label}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/* Animates a number up from zero. Honours the OS reduce-motion setting by
+   jumping straight to the final value. */
+function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !target) { setV(target || 0); return; }
+    let raf, startT = null;
+    const tick = (t) => {
+      if (startT === null) startT = t;
+      const elapsed = t - startT - delay;
+      if (elapsed < 0) { raf = requestAnimationFrame(tick); return; }
+      const p = Math.min(1, elapsed / ms);
+      const eased = 1 - Math.pow(1 - p, 3); // ease-out cubic: quick then settles
+      const f = Math.pow(10, decimals);
+      setV(Math.round(target * eased * f) / f);
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms, delay, decimals]);
+  return v;
+}
+
+/* Numbers roll up rather than snapping into place, and roll again whenever the
+   underlying figure changes, so a fresh import visibly lands on the page. */
+function CountUp({ value, decimals = 0, ms = 900, delay = 120 }) {
+  return <>{fmtNum(useCountUp(value || 0, ms, delay, decimals))}</>;
+}
+
+/* A slow drift on the hero as the page scrolls: the band stays put while its
+   contents lag and fade. Fine pointers only. Touch scrolling on this app has a
+   history of jitter whenever anything is driven off the scroll position, and a
+   flourish is not worth reintroducing that. */
+function useParallax(ref) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !window.matchMedia) return;
+    const fine = window.matchMedia("(hover:hover) and (pointer:fine)").matches;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!fine || reduce) return;
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      const y = window.scrollY || 0;
+      // Capped so the drift stays within the band's own padding. Nothing clips it
+      // any more, because the health card has to be able to escape the band.
+      el.style.setProperty("--px", Math.min(22, y * 0.17).toFixed(1) + "px");
+      el.style.setProperty("--pf", String(Math.max(0.35, 1 - y / 420)));
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply); };
+    apply();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [ref]);
+}
+
+/* ---------------- Store hero (manager landing) ---------------- */
+function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
+  const M = data.months?.[ym()];
+  const restrictions = data.restrictions || {};
+  const graceDays = store.graceDays ?? 10;
+  const inGrace = new Date().getDate() <= graceDays;
+
+  const isRestricted = (a) => {
+    const r = restrictions[a.id];
+    return r && (!r.until || new Date(r.until) > new Date());
+  };
+
+  // same evaluation the Board uses, so the tiles can never disagree with the cards
+  let cleared = 0, attention = 0, offLeads = 0, oppsUsed = 0, capTotal = 0;
+  const ranked = [];
+  const roster = (data.roster || []).filter((a) => a.roleId);
+  for (const role of config.roles) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    for (const a of roster.filter((x) => x.roleId === role.id)) {
+      const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
+      if (ev.opps != null) oppsUsed += ev.opps;
+      if (ev.cap != null) capTotal += ev.cap;
+      if (isRestricted(a)) { offLeads++; continue; }
+      if (ev.status === "pass") cleared++;
+      const units = unitsOf(M?.stats?.[norm(a.name)]);
+      if (units > 0) ranked.push({ name: a.name, role, units, ...qualityOf(ev) });
+      else if (ev.status === "fail") attention++;
+    }
+  }
+  scoreRanked(ranked);
+  const leader = ranked[0];
+
+  const evaluated = cleared + attention + offLeads;
+
+  // Store health is how close the floor is to its standards, not how many have
+  // fully cleared them. A pass rate reads 7% on the third of the month and tells
+  // a manager nothing; this moves smoothly and shows ground being gained.
+  // Each metric is capped at its target so one runaway number can't hide a gap.
+  const metricRoll = {};
+  let attSum = 0, attN = 0;
+  for (const role of config.roles) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    if (!tiers || !tiers.length) continue;
+    for (const a of roster.filter((x) => x.roleId === role.id)) {
+      const st = M?.stats?.[norm(a.name)];
+      const ev = evaluateAssociate(st, tiers);
+      // Score against every standard the role has anywhere in its tiers, not only
+      // the ones this person's current tier happens to require. Otherwise someone
+      // on a low tier is graded on an easier yardstick and store health drifts.
+      // A metric their tier doesn't name yet is judged at the gentlest bar set for it.
+      const own = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
+      const all = new Map();
+      for (const t of tiers) {
+        for (const r of t.requirements || []) {
+          all.set(r.metric, Math.min(all.has(r.metric) ? all.get(r.metric) : Infinity, r.min));
+        }
+      }
+      const reqs = [...all.keys()].map((m) => ({ metric: m, min: own.has(m) ? own.get(m) : all.get(m) }));
+      let sum = 0, n = 0;
+      for (const req of reqs) {
+        const def = METRICS[req.metric];
+        const need = def.kind === "pct" ? req.min / 100 : req.min;
+        if (need <= 0) continue;
+        const got = Math.min(1, (st?.[req.metric] ?? 0) / need);
+        sum += got; n++;
+        const roll = metricRoll[req.metric] || (metricRoll[req.metric] = { below: 0, total: 0, sum: 0 });
+        roll.total++; roll.sum += got;
+        if (got < 1) roll.below++;
+      }
+      if (n) { attSum += sum / n; attN++; }
+    }
+  }
+  const pct = attN ? Math.round((attSum / attN) * 100) : 0;
+  const healthWord = attN === 0 ? "No standards set yet"
+    : pct >= 90 ? "The floor is in good shape"
+    : pct >= 75 ? "Close to standard across the floor"
+    : pct >= 55 ? "Slipping, worth a floor meeting"
+    : "Well below standard";
+  const weakest = Object.entries(metricRoll)
+    .map(([metric, r]) => ({ metric, ...r, mean: r.sum / r.total }))
+    .sort((a, b) => a.mean - b.mean)[0] || null;
+
+  // Who to talk to first: below standard, ordered by how close they are to the
+  // cap, because that is when being below standard actually costs them leads.
+  const urgent = [];
+  for (const role of config.roles.filter((r) => r.id === "sales")) {
+    const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
+    for (const a of roster.filter((x) => x.roleId === role.id)) {
+      if (isRestricted(a)) continue;
+      const st = M?.stats?.[norm(a.name)];
+      const ev = evaluateAssociate(st, tiers);
+      if (ev.status !== "fail" || !ev.failures || !ev.failures.length) continue;
+      const worst = ev.failures
+        .map((f) => {
+          const need = f.def.kind === "pct" ? f.min / 100 : f.min;
+          return { ...f, ratio: need > 0 ? (f.val ?? 0) / need : 1 };
+        })
+        .sort((x, y) => x.ratio - y.ratio)[0];
+      urgent.push({ name: a.name, capUse: ev.capUse ?? 0, atCap: ev.atCap, worst, opps: ev.opps, cap: ev.cap });
+    }
+  }
+  urgent.sort((a, b) => b.capUse - a.capUse);
+
+  // today's import status
+  const t = M?.imports?.[today()] || {};
+  const need = ["delivery", "appointment", "video"];
+  const done = need.filter((k) => t[k]);
+  const missing = need.filter((k) => !t[k]).map((k) => reportLabel(k));
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = (session.name || "").split(" ")[0];
+
+  // Progress ring. Bigger than it was: at r=34 the inner space was only ~60px across,
+  // which pushed the word "cleared" hard up against the stroke. r=45 leaves ~80px.
+  const SIZE = 122, CX = SIZE / 2, R = 45, SW = 9;
+  const C = 2 * Math.PI * R;
+  const dash = (pct / 100) * C;
+
+  // numbers roll up rather than just appearing
+  const nPct = useCountUp(pct, 1100, 300);
+  const nCleared = useCountUp(cleared, 800, 250);
+  const nAttention = useCountUp(attention, 800, 320);
+  const nOff = useCountUp(offLeads, 800, 390);
+  const nRoster = useCountUp(roster.length, 800, 460);
+  const nOpps = useCountUp(oppsUsed, 900, 530);
+
+  // Store closing rate per channel. Units are stored per person, but lead counts
+  // only for internet, so phone and showroom leads are recovered from a person's
+  // own units divided by their own rate. Anyone without a rate on file simply
+  // drops out of that channel's denominator rather than skewing it.
+  // The board only shows roles flagged onBoard (Sales), so the store's closing
+  // rate has to be summed over exactly those people. Summing the whole roster
+  // pulled in BDC, Service-to-Sales and managers, who also carry delivery stats,
+  // which is why the popup read roughly double the Delivery Summary's own totals.
+  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+  const closingRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
+  const chanRate = (field) => {
+    let units = 0, leads = 0, seen = false;
+    for (const a of closingRoster) {
+      const st = M?.stats?.[norm(a.name)];
+      const u = st?.[field + "Units"];
+      const pc = st?.[field + "Pct"];
+      if (u == null) continue;
+      seen = true; units += u;
+      const real = st?.[field + "Leads"] ?? (field === "internet" ? st?.opps : null);
+      if (real != null) leads += real;
+      else if (pc != null && pc > 0) leads += u / pc;   // older rows, before leads were stored
+    }
+    return { units, leads, pct: leads > 0 ? units / leads : null, seen };
+  };
+  const closing = [
+    { id: "internet", label: "Internet", ...chanRate("internet") },
+    { id: "phone", label: "Phone", ...chanRate("phone") },
+    { id: "showroom", label: "Showroom", ...chanRate("showroom") },
+  ];
+  const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
+  const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  const thr = normThresholds(store.thresholds);
+  const chanTone = (id, v) => v == null ? "dim"
+    : v * 100 >= thr[id].green ? "g" : v * 100 >= thr[id].yellow ? "y" : "r";
+
+  const b = store.brand || DEFAULT_BRAND;
+  const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
+  const bandRef = useRef(null);
+  // Parallax removed: nothing else in the app drifts on scroll, so the hero stays put.
+
+  return (
+    <div className="hero" style={brandVars}>
+      <div className="hero-band" ref={bandRef}>
+        <div className="hero-id">
+          <div className="hero-logo">
+            {store.icon ? <img src={store.icon} alt="" /> : <Logo size={54} animated />}
+          </div>
+          <div className="hero-text">
+            <div className="hero-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
+            <h1 className="hero-store">{store.name}</h1>
+            <div className="hero-date">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+          </div>
+        </div>
+
+        <div className="hero-health">
+          <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
+            <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
+              <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
+              <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
+                strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
+                style={{ "--c": dash }} />
+            </svg>
+            <div className="hero-ring-label">
+              <div className="hero-ring-pct">{nPct}<span>%</span></div>
+              <div className="hero-ring-cap">Health</div>
+            </div>
+          </div>
+          <div className="hh-facts">
+            <div className="hh-verdict">{healthWord}</div>
+            <div className="hh-sub">How close the floor sits to its standards, month to date.</div>
+            <div className="hh-rows">
+              <button className={"hh-row ok" + (filter === "cleared" ? " on" : "")}
+                onClick={() => onFilter(filter === "cleared" ? null : "cleared")}>
+                <b>{nCleared}</b> cleared
+              </button>
+              <button className={"hh-row bad" + (filter === "attention" ? " on" : "")}
+                onClick={() => onFilter(filter === "attention" ? null : "attention")}>
+                <b>{nAttention}</b> {inGrace ? "working toward" : "need attention"}
+              </button>
+              {offLeads > 0 && (
+                <button className={"hh-row dim" + (filter === "off" ? " on" : "")}
+                  onClick={() => onFilter(filter === "off" ? null : "off")}>
+                  <b>{nOff}</b> off leads
+                </button>
+              )}
+            </div>
+            <div className="hh-meta">
+              {nRoster} on the board · <b>{nOpps}</b><span>/{capTotal || "-"}</span> leads held
+            </div>
+          </div>
+
+          <div className="health-pop">
+            <div className="mp-title">Store closing rates</div>
+            <div className="mp-desc">Units delivered against the leads worked, month to date.</div>
+            <div className="hp-rows">
+              {closing.map((c) => (
+                <div key={c.id} className="hp-row">
+                  <span className="hp-ch">{c.label}</span>
+                  <span className={"hp-pct hp-" + chanTone(c.id, c.pct)}>
+                    {c.pct == null ? "\u2014" : fmtPct(c.pct)}
+                  </span>
+                  <span className="hp-sub">
+                    {fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : "\u2014"} leads
+                  </span>
+                </div>
+              ))}
+              {campaignUnits > 0 && (
+                <div className="hp-row">
+                  <span className="hp-ch">Campaign</span>
+                  <span className="hp-pct hp-dim">units only</span>
+                  <span className="hp-sub">{fmtNum(campaignUnits)} delivered</span>
+                </div>
+              )}
+            </div>
+            <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
+          </div>
+        </div>
+      </div>
+
+      {(weakest || urgent.length > 0) && (
+        <div className="hero-focus">
+          {weakest && (
+            <div className="hf-block hf-fix">
+              <div className="hf-cap">Weakest standard</div>
+              <div className="hf-metric">{METRICS[weakest.metric].label}</div>
+              <div className="hf-bar"><div className="hf-fill" style={{ width: Math.round(weakest.mean * 100) + "%" }} /></div>
+              <div className="hf-sub">{weakest.below} of {weakest.total} below target</div>
+              <div className="hf-pop">
+                <div className="mp-title">{METRIC_FIX[weakest.metric]?.play || METRICS[weakest.metric].label}</div>
+                <div className="mp-desc">{METRIC_DESC[weakest.metric] || "Measured month to date."}</div>
+                <div className="mp-req">
+                  <b className="mp-now">{Math.round(weakest.mean * 100)}%</b>
+                  <span className="mp-sep">of target on average ·</span>
+                  <b className="mp-target">{weakest.below} of {weakest.total}</b>
+                  <span className="mp-verdict mp-under">below target</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {urgent.length > 0 && (
+            <div className="hf-block hf-wide">
+              <div className="hf-cap">Talk to these first</div>
+              <div className="hf-list">
+                {urgent.slice(0, 3).map((u) => (
+                  <button key={u.name} className="hf-person" onClick={() => onFocus && onFocus(u.name)}>
+                    <span className="hf-name">{u.name}</span>
+                    <span className="hf-why">
+                      {u.worst.def.short} {u.worst.val == null ? "no data"
+                        : (u.worst.def.kind === "pct" ? fmtPct(u.worst.val) : fmtNum(u.worst.val))}
+                      {" vs "}{u.worst.def.kind === "pct" ? u.worst.min + "%" : u.worst.min}
+                    </span>
+                    <span className={"hf-tag " + (u.atCap ? "now" : "soon")}>
+                      {u.atCap ? "at cap" : `${u.opps} / ${u.cap}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="hero-strip">
+        {missing.length > 0 && (
+          <button className="strip-chip chip-warn" onClick={() => onGoTab("import")}>
+            <span className="chip-dot" />
+            Waiting on {missing.join(" and ")}. Import now.
+          </button>
+        )}
+        {inGrace && <span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Import ---------------- */
+function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
+  const M = data.months?.[ym()];
+  const t = M?.imports?.[today()] || {};
+  const FlagBanner = () => flags.length > 0 ? (
+    <div className="flag-banner">
+      <div className="flag-banner-head"><span className="flag-ico">⚠︎</span>Double-check this upload</div>
+      {flags.map((f, i) => <div key={i} className="flag-line">{f.msg}</div>)}
+      <div className="flag-banner-foot">Numbers were still imported. If something's off, use the Upload history below to undo.</div>
+    </div>
+  ) : null;
+  if (activity) {
+    // Which day this import lands on. Reports are often pulled the next morning, so
+    // "Yesterday" lets a manager backfill without renaming the file.
+    const yday = dayIn(new Date(Date.now() - 86400000));
+    const aDay = activityDay || today();
+    const dayLabel = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+    // The most recent time an activity file landed on the selected day. Prefer the
+    // upload log (exact upload time); fall back to the per-record uploadedAt stamp.
+    const dayUploads = (data.importLog || []).filter((u) => u.type === "activity" && u.day === aDay);
+    const recs = Object.values(data.activity?.[aDay] || {});
+    const lastStamp = dayUploads[0]?.t
+      || recs.map((r) => r.uploadedAt).filter(Boolean).sort().slice(-1)[0]
+      || null;
+    const already = !!(data.activity?.[aDay] && Object.keys(data.activity[aDay]).length);
+    // Whole-month mode: one cumulative pull stands in for the month, so what matters
+    // is whether that month already carries a stamped total, not a per-day tick.
+    const monthMode = activityScope === "month";
+    const aMonth = aDay.slice(0, 7);
+    const mStats = Object.values(data.months?.[aMonth]?.stats || {});
+    const monthHasTotal = mStats.some((s) => s && s.activityMTD);
+    const monthStamp = mStats.map((s) => s && s.activityMTD && s.activityMTD.uploadedAt).filter(Boolean).sort().slice(-1)[0] || null;
+    const fmtStamp = (s) => new Date(s).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+    return (
+      <div className="import">
+        <div className="import-grid">
+          <div className="card checklist">
+            <div className="checklist-title">Daily Activity Import <span className="section-sub">{monthMode ? monthLabel(aMonth) : dayLabel(aDay)}</span></div>
+            <div className="act-day-pick">
+              <span className="act-day-label">Import for</span>
+              <div className="seg-small">
+                <button className={"seg-opt " + (!monthMode && aDay === today() ? "on" : "")} onClick={() => { setActivityScope && setActivityScope("day"); setActivityDay(today()); }}>Today</button>
+                <button className={"seg-opt " + (!monthMode && aDay === yday ? "on" : "")} onClick={() => { setActivityScope && setActivityScope("day"); setActivityDay(yday); }}>Yesterday</button>
+                <button className={"seg-opt " + (monthMode ? "on" : "")} onClick={() => { setActivityScope && setActivityScope("month"); }}>Whole month</button>
+              </div>
+              {monthMode
+                ? <input type="month" className="act-day-date" value={aMonth} max={ym()}
+                    onChange={(e) => { const v = e.target.value; if (v && v <= ym()) setActivityDay(v + "-01"); }} />
+                : <input type="date" className="act-day-date" value={aDay} max={today()}
+                    onChange={(e) => { if (e.target.value && e.target.value <= today()) setActivityDay(e.target.value); }} />}
+            </div>
+            {monthMode ? (
+              <p className="hint act-backfill">Pull the report in DriveCentric for the <strong>whole of {monthLabel(aMonth)}</strong>, first day to last. It is filed as that month's totals and does not touch day-by-day history.</p>
+            ) : (aDay !== today() && aDay !== yday) ? (
+              <p className="hint act-backfill">Backfilling <strong>{dayLabel(aDay)}</strong>. The report will land on that date.</p>
+            ) : null}
+            <div className={"check " + ((monthMode ? monthHasTotal : already) ? "done" : "")}>
+              <span className="check-box">{(monthMode ? monthHasTotal : already) ? "✓" : ""}</span>Standard Daily Activity report
+            </div>
+            {monthMode
+              ? (monthHasTotal
+                  ? <p className="hint act-last">Month total on file for <strong>{monthLabel(aMonth)}</strong>{monthStamp ? <> · imported {fmtStamp(monthStamp)}</> : null}. Re-importing replaces it.</p>
+                  : <p className="hint">No month total for {monthLabel(aMonth)} yet. Drop the full-month export to backfill it.</p>)
+              : lastStamp
+                ? <p className="hint act-last">Last upload for {aDay === today() ? "today" : "this day"}: <strong>{fmtStamp(lastStamp)}</strong>. Re-importing replaces it.</p>
+                : <p className="hint">No Daily Activity imported for {dayLabel(aDay)} yet. Drop the export to build the Check Out sheet.</p>}
+          </div>
+          <div className={"dropzone " + (dropActive ? "active" : "")}
+            onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+            onDragLeave={() => setDropActive(false)}
+            onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
+            onClick={() => fileRef.current?.click()}>
+            <div className="dz-icon"><span>⇩</span></div>
+            <div className="dz-title"><span className="dz-drop">Drop</span><span className="dz-tap">Choose</span> the Daily Activity report for {monthMode ? monthLabel(aMonth) : (aDay === today() ? "today" : dayLabel(aDay))}</div>
+            <div className="dz-sub">{monthMode
+              ? "The Standard Daily Activity report pulled across the whole month. It becomes that month's totals, which is what the month-end recap reads."
+              : "The Standard Daily Activity report, CSV or PDF. Calls and Personalized Video feed the Check Out sheet." + (aDay !== today() ? " This file will be filed under " + dayLabel(aDay) + "." : "")}</div>
+            <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
+              onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+          </div>
+        </div>
+        <FlagBanner />
+        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
+        <BaselineImport data={data} onChange={onChange} />
+        <UploadHistory data={data} onChange={onChange} />
+        <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
+      </div>
+    );
+  }
+  const seedDay = (activityDay && activityDay <= today()) ? activityDay : today();
+  const seedMonth = seedDay.slice(0, 7);
+  const curMonth = today().slice(0, 7);
+  const seeding = seedMonth !== curMonth;
+  const seedMonthLabel = new Date(seedDay + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const seedT = seeding ? Object.assign({}, ...Object.values(data.months?.[seedMonth]?.imports || {})) : t;
+  return (
+    <div className="import">
+      <div className="import-grid">
+        <div className="card checklist">
+          <div className="checklist-title">
+            {seeding ? "Imports for " + seedMonthLabel : "Today's Imports"} <span className="section-sub">{seeding ? "seeding a past month" : new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span>
+            {setActivityDay && (
+              <input type="month" className="seed-month" value={seedMonth} max={curMonth} title="Choose the month these reports import into"
+                onChange={(e) => { const v = e.target.value; if (v && v <= curMonth) setActivityDay(v + "-01"); }} />
+            )}
+            <button className="help-btn" onClick={onHelp} title="How to pull the Appointment and Video reports">? Help</button>
+          </div>
+          <div className="check-group-label">Upload these</div>
+          {(activityDay || today()).slice(0, 7) !== today().slice(0, 7) && (
+            <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
+          )}
+          <div className={"check " + (seedT.appointment ? "done" : "")}>
+            <span className="check-box">{seedT.appointment ? "✓" : ""}</span>Appointment report
+          </div>
+          <div className={"check " + (seedT.video ? "done" : "")}>
+            <span className="check-box">{seedT.video ? "✓" : ""}</span>Video report
+          </div>
+
+          <div className="check-group-label">Arriving automatically</div>
+          <div className={"check readonly " + (seedT.delivery ? "done" : "")}>
+            <span className="check-box">{seedT.delivery ? "✓" : "·"}</span>
+            Delivery Summary
+            <span className="check-note">
+              {seedT.delivery
+                ? (seeding ? "on file for " + seedMonthLabel : "landed today, all channels")
+                : "emailed in on schedule — nothing to upload"}
+            </span>
+          </div>
+          {!seedT.delivery && (
+            <p className="hint">
+              If this hasn't ticked by mid-morning, the email pipeline may be stuck. You can still
+              pull the Delivery Summary by hand and drop it below — hit <strong>Help</strong> for the steps.
+            </p>
+          )}
+          <div className={"check " + (seedT["delivery-campaign"] ? "done" : "")}>
+            <span className="check-box">{seedT["delivery-campaign"] ? "✓" : ""}</span>Campaign Delivery Summary
+            <span className="check-note">units only, no percentage</span>
+          </div>
+          {!(seedT.delivery && seedT.appointment && seedT.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
+        </div>
+        <div className={"dropzone " + (dropActive ? "active" : "")}
+          onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+          onDragLeave={() => setDropActive(false)}
+          onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
+          onClick={() => fileRef.current?.click()}>
+          <div className="dz-icon"><span>⇩</span></div>
+          <div className="dz-title"><span className="dz-drop">{seeding ? "Drop " + seedMonthLabel + " reports here" : "Drop today's reports here"}</span><span className="dz-tap">{seeding ? "Choose " + seedMonthLabel + " reports" : "Choose today's reports"}</span></div>
+          <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically; to backfill a missed day or carry on while the automation is down, drop the PDF straight in and it is read here the same way.</div>
+          <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
+            onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+        </div>
+      </div>
+      <FlagBanner />
+      {log.length > 0 && (
+        <div className="import-log">
+          {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}
+        </div>
+      )}
+      <UploadHistory data={data} onChange={onChange} />
+      <p className="hint">Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the previous numbers for that report. Imports are recorded in the audit log.</p>
+    </div>
+  );
+}
+
+/* ---------------- GM Summary ---------------- */
+/* Hourly activity is the difference between two imports on the same day. The
+   Daily Activity report is a running total, so a 10am pull minus a 9am pull is
+   the 9 o'clock hour. Nothing shows until the report is scheduled more than once
+   a day, which is the whole point: one pull a day can only ever be a daily total. */
+const HOUR_LABEL = (h) => {
+  const ampm = h < 12 ? "am" : "pm";
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return hh + ampm;
+};
+
+/* ---------------- Trends ----------------
+   Daily imports leave a trail, so this reads it back: activity counts come from
+   the per-day activity records, delivered percentages from the running history
+   each month keeps per channel. Everyone is one line; individuals can be laid
+   over the top to see who is carrying or dragging the average. */
+const TREND_METRICS = [
+  { id: "units",    label: "Units delivered",    kind: "num", src: "act", field: "units" },
+  { id: "calls",    label: "Calls",              kind: "num", src: "act", field: "calls" },
+  { id: "contacted",label: "Contacts",           kind: "num", src: "act", field: "contacted" },
+  { id: "video",    label: "Personalized videos",kind: "num", src: "act", field: "video" },
+  { id: "apptSet",  label: "Appointments set",   kind: "num", src: "act", field: "apptScheduled" },
+  { id: "apptShow", label: "Appointments shown", kind: "num", src: "act", field: "apptShow" },
+  { id: "internet", label: "Internet delivered %", kind: "pct", src: "pct", field: "internet" },
+  { id: "phone",    label: "Phone delivered %",    kind: "pct", src: "pct", field: "phone" },
+  { id: "showroom", label: "Showroom delivered %", kind: "pct", src: "pct", field: "showroom" },
+];
+const TREND_COLORS = ["#2A5E9B", "#E59200", "#00A896", "#BF5AF2", "#E5473C", "#5E8C31"];
+
+const addDays = (d, n) => {
+  const x = new Date(d + "T12:00"); x.setDate(x.getDate() + n);
+  return x.toISOString().slice(0, 10);
+};
+const RANGES = [
+  { id: "mtd", label: "This month",  from: () => today().slice(0, 8) + "01" },
+  { id: "2mo", label: "2 months",    from: () => addDays(today(), -60) },
+  { id: "90d", label: "90 days",     from: () => addDays(today(), -89) },
+  { id: "ytd", label: "Year to date",from: () => today().slice(0, 4) + "-01-01" },
+];
+
+function TrendsPanel({ config, stores, data }) {
+  const [metricId, setMetricId] = useState("units");
+  const [rangeId, setRangeId] = useState("mtd");
+  const [from, setFrom] = useState(RANGES[0].from());
+  const [to, setTo] = useState(today());
+  const [picked, setPicked] = useState([]);
+  const [hover, setHover] = useState(null);
+  const [byHour, setByHour] = useState(false);
+
+  const metric = TREND_METRICS.find((m) => m.id === metricId) || TREND_METRICS[0];
+  const setRange = (id) => {
+    setRangeId(id);
+    const r = RANGES.find((x) => x.id === id);
+    if (r) { setFrom(r.from()); setTo(today()); }
+  };
+
+  // everyone on a tracked position, across whichever stores are in scope
+  const people = [];
+  for (const st of stores) {
+    const d = data[st.id]; if (!d) continue;
+    for (const a of d.roster || []) {
+      if (!a.roleId) continue;
+      const role = config.roles.find((r) => r.id === a.roleId);
+      if (role?.tracked === false) continue;
+      people.push({ key: norm(a.name), name: a.name, storeId: st.id });
+    }
+  }
+
+  // ---- assemble the days and the values ----
+  const dayset = new Set();
+  const grab = {};   // "day|personKey" -> number
+  for (const st of stores) {
+    const d = data[st.id]; if (!d) continue;
+    if (metric.src === "act") {
+      for (const [day, rec] of Object.entries(d.activity || {})) {
+        if (day < from || day > to) continue;
+        dayset.add(day);
+        for (const [k, row] of Object.entries(rec)) {
+          const v = row?.[metric.field];
+          if (v == null) continue;
+          grab[day + "|" + k] = (grab[day + "|" + k] || 0) + v;
+        }
+      }
+    } else {
+      for (const M of Object.values(d.months || {})) {
+        for (const [k, stt] of Object.entries(M.stats || {})) {
+          for (const pt of (stt.pctHistory?.[metric.field] || [])) {
+            if (pt.d < from || pt.d > to || pt.v == null) continue;
+            dayset.add(pt.d);
+            grab[pt.d + "|" + k] = pt.v;
+          }
+        }
+      }
+    }
+  }
+  let days = [...dayset].sort();
+
+  // In hourly mode the x axis stops being dates and becomes the working day.
+  const hourField = { units: "units", calls: "calls", contacted: "contacted", video: "video",
+    apptSet: "apptScheduled", apptShow: "apptShow" }[metric.id];
+  const hourAll = {};                                   // hour -> person -> total
+  if (byHour && hourField) {
+    for (const st of stores) {
+      const d = data[st.id]; if (!d) continue;
+      for (const [day, snaps] of Object.entries(d.activitySnaps || {})) {
+        if (day < from || day > to || !Array.isArray(snaps) || snaps.length < 2) continue;
+        const list = [...snaps].sort((a, b) => (a.t < b.t ? -1 : 1));
+        for (let i = 1; i < list.length; i++) {
+          const hr = new Date(list[i].t).getHours();
+          const bucket = hourAll[hr] || (hourAll[hr] = {});
+          for (const k of Object.keys(list[i].rows || {})) {
+            const before = list[i - 1].rows?.[k] || {};
+            const after = list[i].rows?.[k] || {};
+            // A fall means the report was re-pulled or reset, so only count gains.
+            const dv = (after[hourField] ?? 0) - (before[hourField] ?? 0);
+            if (dv > 0) bucket[k] = (bucket[k] || 0) + dv;
+          }
+        }
+      }
+    }
+  }
+  const hours = Object.keys(hourAll).map(Number).sort((a, b) => a - b);
+  const isHour = !!(byHour && hourField && hours.length);
+
+  const seriesFor = (keys, name, color) => ({
+    name, color,
+    points: days.map((day) => {
+      const vals = keys.map((k) => grab[day + "|" + k]).filter((v) => v != null);
+      if (!vals.length) return null;
+      // Counts add up across the floor; percentages only make sense averaged.
+      return metric.kind === "pct" ? vals.reduce((a, b) => a + b, 0) / vals.length
+                                   : vals.reduce((a, b) => a + b, 0);
+    }),
+  });
+
+  const series = [seriesFor(people.map((p) => p.key), metric.kind === "pct" ? "Floor average" : "Everyone", "#12212F")];
+  picked.forEach((k, i) => {
+    const p = people.find((x) => x.key === k);
+    if (p) series.push(seriesFor([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
+  });
+
+  if (isHour) {
+    days = hours.map(HOUR_LABEL);
+    const hourSeries = (keys, name, color) => ({
+      name, color,
+      points: hours.map((h) => keys.reduce((n, k) => n + (hourAll[h]?.[k] ?? 0), 0)),
+    });
+    series.length = 0;
+    series.push(hourSeries(people.map((p) => p.key), "Everyone", "#12212F"));
+    picked.forEach((k, i) => {
+      const p = people.find((x) => x.key === k);
+      if (p) series.push(hourSeries([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
+    });
+  }
+
+  const W = 920, H = 300, PL = 52, PR = 16, PT = 16, PB = 34;
+  const all = series.flatMap((s) => s.points).filter((v) => v != null);
+  const hi = all.length ? Math.max(...all) : 1;
+  const lo = 0;
+  const top = hi <= 0 ? 1 : hi * 1.12;
+  const x = (i) => PL + (days.length <= 1 ? 0 : (i * (W - PL - PR)) / (days.length - 1));
+  const y = (v) => PT + (H - PT - PB) * (1 - (v - lo) / (top - lo));
+  const fmt = (v) => (v == null ? "—" : metric.kind === "pct" ? fmtPct(v) : fmtNum(v));
+
+  const path = (pts) => {
+    let d = "", pen = false;
+    pts.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += (pen ? " L " : " M ") + x(i).toFixed(1) + " " + y(v).toFixed(1);
+      pen = true;
+    });
+    return d.trim();
+  };
+
+  const onMove = (e) => {
+    if (!days.length) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const px = ((e.clientX - r.left) / r.width) * W;
+    const i = Math.round(((px - PL) / Math.max(1, W - PL - PR)) * (days.length - 1));
+    setHover(Math.max(0, Math.min(days.length - 1, i)));
+  };
+
+  const ticks = 4;
+  const labelEvery = isHour ? 1 : Math.max(1, Math.ceil(days.length / 7));
+
+  return (
+    <div className="card gm-card trends">
+      <h3 className="gm-section">Trends</h3>
+      <p className="hint">
+        {byHour
+          ? "Each hour is the difference between two imports on the same day, so this fills in once the activity report is scheduled to arrive more than once a day."
+          : "Built from the daily imports, so the trail starts the day this store began importing."}
+      </p>
+
+      <div className="tr-controls no-print">
+        <select value={metricId} onChange={(e) => setMetricId(e.target.value)}>
+          {TREND_METRICS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <div className="tr-ranges">
+          <button className={"tr-range" + (!byHour ? " on" : "")} onClick={() => setByHour(false)}>By day</button>
+          <button className={"tr-range" + (byHour ? " on" : "")} onClick={() => setByHour(true)}
+            disabled={!hourField} title={hourField ? "" : "Hourly only applies to activity counts"}>By hour</button>
+        </div>
+        <div className="tr-ranges">
+          {RANGES.map((r) => (
+            <button key={r.id} className={"tr-range" + (rangeId === r.id ? " on" : "")}
+              onClick={() => setRange(r.id)}>{r.label}</button>
+          ))}
+          <button className={"tr-range" + (rangeId === "custom" ? " on" : "")}
+            onClick={() => setRangeId("custom")}>Custom</button>
+        </div>
+        {rangeId === "custom" && (
+          <div className="tr-dates">
+            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
+            <span>to</span>
+            <input type="date" value={to} min={from} max={today()} onChange={(e) => setTo(e.target.value)} />
+          </div>
+        )}
+      </div>
+
+      {days.length === 0 ? (
+        <p className="hint">
+          {byHour
+            ? "No hourly picture yet. It needs at least two imports on the same day, which means scheduling the Daily Activity report hourly rather than once each morning."
+            : "Nothing imported in this window yet."}
+        </p>
+      ) : (
+        <>
+          <div className="tr-chart">
+            <svg viewBox={`0 0 ${W} ${H}`} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+              {Array.from({ length: ticks + 1 }, (_, t) => {
+                const v = lo + ((top - lo) * t) / ticks;
+                return (
+                  <g key={t}>
+                    <line className="tr-grid" x1={PL} y1={y(v)} x2={W - PR} y2={y(v)} />
+                    <text className="tr-ytick" x={PL - 9} y={y(v) + 4} textAnchor="end">{fmt(v)}</text>
+                  </g>
+                );
+              })}
+              {days.map((d, i) => (i % labelEvery === 0 ? (
+                <text key={d} className="tr-xtick" x={x(i)} y={H - 12} textAnchor="middle">
+                  {isHour ? d : new Date(d + "T12:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
+                </text>
+              ) : null))}
+              {series.map((sr, si) => (
+                <path key={si} className={"tr-line" + (si === 0 ? " tr-floor" : "")}
+                  d={path(sr.points)} stroke={sr.color} fill="none" />
+              ))}
+              {hover != null && (
+                <>
+                  <line className="tr-cross" x1={x(hover)} y1={PT} x2={x(hover)} y2={H - PB} />
+                  {series.map((sr, si) => (sr.points[hover] == null ? null : (
+                    <circle key={si} cx={x(hover)} cy={y(sr.points[hover])} r="4.5" fill={sr.color} stroke="#fff" strokeWidth="2" />
+                  )))}
+                </>
+              )}
+            </svg>
+            {hover != null && (
+              <div className="tr-tip" style={{ left: `${(x(hover) / W) * 100}%` }}>
+                <div className="tr-tip-day">
+                  {isHour
+                    ? days[hover] + " to " + HOUR_LABEL((hours[hover] + 1) % 24)
+                    : new Date(days[hover] + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                </div>
+                {series.map((sr, si) => (
+                  <div key={si} className="tr-tip-row">
+                    <span className="tr-dot" style={{ background: sr.color }} />
+                    <span className="tr-tip-name">{sr.name}</span>
+                    <b>{fmt(sr.points[hover])}</b>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="tr-people no-print">
+            <span className="tr-people-cap">Lay someone over the top</span>
+            {people.slice(0, 40).map((p) => (
+              <button key={p.key}
+                className={"tr-chip" + (picked.includes(p.key) ? " on" : "")}
+                style={picked.includes(p.key)
+                  ? { background: TREND_COLORS[picked.indexOf(p.key) % TREND_COLORS.length], borderColor: "transparent", color: "#fff" }
+                  : undefined}
+                onClick={() => setPicked((cur) =>
+                  cur.includes(p.key) ? cur.filter((k) => k !== p.key) : cur.length >= 6 ? cur : [...cur, p.key])}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function GMSummary({ config, data, stores }) {
+  const [month, setMonth] = useState(ym());
+  const monthOptions = Array.from(new Set(
+    stores.flatMap((s) => Object.keys(data[s.id]?.months || {}))
+  )).sort().reverse();
+  useEffect(() => {
+    if (!monthOptions.includes(month) && monthOptions.length) setMonth(monthOptions[0]);
+  }, [monthOptions.join(","), month]); // eslint-disable-line
+
+  const buildRows = () => {
+    const rows = [];
+    const dayNow = new Date().getDate();
+    for (const s of stores) {
+      const d = data[s.id]; if (!d) continue;
+      const M = d.months?.[month]; if (!M) continue;
+      const inGrace = month === ym() && dayNow <= (s.graceDays ?? 10);
+      for (const role of config.roles) {
+        const frozen = month !== ym() ? M.standardsSnapshot?.[role.id]?.tiers : null;
+        const tiers = frozen || config.standards?.[s.id]?.[role.id]?.tiers;
+        for (const a of (d.roster || []).filter((x) => x.roleId === role.id).sort((x, y) => x.order - y.order)) {
+          const stats = M.stats?.[norm(a.name)];
+          const ev = evaluateAssociate(stats, tiers);
+          rows.push({ store: s.name, role: role.name, name: a.name, ev, stats, grace: inGrace && ev.status === "fail" });
+        }
+      }
+    }
+    return rows;
+  };
+  const rows = buildRows();
+  const restricted = rows.filter((r) => r.ev.status === "fail" && !r.grace);
+  const trending = rows.filter((r) => r.grace);
+  const cleared = rows.filter((r) => r.ev.status === "pass");
+  const paused = rows.filter((r) => r.ev.status === "fail" && !r.grace && r.ev.atCap);
+  // Rolled up by the standard being missed, because "six people are short on
+  // Engaged Video" is a floor meeting, whereas six separate rows is a to-do list.
+  const stdMap = {};
+  for (const r of rows) {
+    if (r.ev.status !== "fail") continue;
+    for (const f of r.ev.failures || []) {
+      (stdMap[f.metric] = stdMap[f.metric] || []).push({
+        name: r.name, store: r.store, grace: r.grace, atCap: r.ev.atCap,
+        shown: f.val == null ? "no data" : (f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val)),
+        need: f.def.kind === "pct" ? f.min + "%" : f.min,
+      });
+    }
+  }
+  const byStandard = Object.entries(stdMap)
+    .map(([metric, ppl]) => ({ metric, people: ppl }))
+    .sort((a, b) => b.people.length - a.people.length);
+
+  const exportCSV = () => {
+    const out = [["Store", "Position", "Associate", "Leads MTD", "Tier Cap", "Verdict", "Restriction Reasons", "Delivery %", "Sold %", "Units", "Appt Video %", "BH Video %", "Engaged Video %"]];
+    for (const r of rows) {
+      out.push([
+        r.store, r.role, r.name, r.ev.opps ?? "", r.ev.cap ?? "",
+        r.ev.status === "pass" ? "Cleared to grab leads" : r.grace ? "Grace period, trending below standard" : r.ev.status === "fail" ? (r.ev.atCap ? "Restrict leads" : (r.ev.capUse ?? 0) >= 0.8 ? "Nearing the limit" : "Below standard, room left") : "No standards",
+        r.ev.status === "fail" ? failureText(r.ev) : "",
+        fmtPct(r.stats?.deliveredPct), fmtPct(r.stats?.soldPct), fmtNum(r.stats?.unitsDelivered),
+        fmtPct(r.stats?.apptVideoDayPct), fmtPct(r.stats?.bhVideoPct), fmtPct(r.stats?.engagedVideoPct),
+      ]);
+    }
+    downloadCSV(`Lead-Performance-Summary_${month}.csv`, out);
+  };
+
+  return (
+    <div className="gm print-area">
+      <div className="gm-toolbar no-print">
+        <select value={month} onChange={(e) => setMonth(e.target.value)}>
+          {(monthOptions.length ? monthOptions : [ym()]).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        <button className="btn" onClick={() => window.print()}>Print</button>
+        <button className="btn secondary" onClick={exportCSV}>Export CSV</button>
+      </div>
+      <div className="gm-head">
+        <h2>Lead Performance Summary <span className="section-sub">{monthLabel(month)}</span></h2>
+        <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()} · {restricted.length} restricted · {trending.length > 0 ? `${trending.length} in grace period · ` : ""}{cleared.length} cleared to grab leads</p>
+      </div>
+      {rows.length === 0 && <div className="empty">No data for this month yet.</div>}
+
+      <TrendsPanel config={config} stores={stores} data={data} />
+
+      {byStandard.length > 0 && (
+        <div className="card gm-card">
+          <h3 className="gm-section fail">Where the floor is losing standard</h3>
+          <p className="hint">Grouped by the standard rather than by the person, so a pattern across the floor is obvious and one conversation can fix several people at once.</p>
+          {byStandard.map((g) => (
+            <div key={g.metric} className="std-group">
+              <div className="std-group-head">
+                <span className="std-group-name">{METRICS[g.metric].label}</span>
+                <span className="std-group-count">{g.people.length} below</span>
+              </div>
+              <div className="std-people">
+                {g.people.map((r, i) => (
+                  <div key={i} className="std-person">
+                    <b>{r.name}</b>
+                    {stores.length > 1 && <span className="std-store">{r.store}</span>}
+                    <span className="std-val">{r.shown} <em>vs {r.need}</em></span>
+                    {r.grace && <span className="std-tag">grace</span>}
+                    {r.atCap && <span className="std-tag hot">at cap</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {paused.length > 0 && (
+        <div className="card gm-card">
+          <h3 className="gm-section fail">Leads paused right now ({paused.length})</h3>
+          <p className="hint">At their cap and below standard, so the tool is holding their next lead.</p>
+          <table className="gm-table">
+            <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Because of</th></tr></thead>
+            <tbody>
+              {paused.map((r, i) => (
+                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td><td>{r.role}</td><td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {cleared.length > 0 && (
+        <div className="card gm-card">
+          <h3 className="gm-section pass">Holding standard ({cleared.length})</h3>
+          <div className="std-people">
+            {cleared.map((r, i) => (
+              <div key={i} className="std-person ok">
+                <b>{r.name}</b>
+                <span className="std-val">{r.ev.opps} / {r.ev.cap} <em>leads</em></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- History ---------------- */
+function HistoryPanel({ config, store, data }) {
+  const months = Object.keys(data.months || {}).sort().reverse();
+  const [month, setMonth] = useState(months[0] || ym());
+  if (months.length === 0) return <div className="empty">History builds itself month by month. Nothing here yet.</div>;
+  const M = data.months[month];
+  return (
+    <div className="history">
+      <div className="gm-toolbar">
+        <select value={month} onChange={(e) => setMonth(e.target.value)}>
+          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+        {month !== ym() && <span className="hint">{M.standardsSnapshot ? "Verdicts shown under the standards that were in effect that month." : "This month predates standards snapshots, so verdicts are recalculated with today's standards."}</span>}
+      </div>
+      {config.roles.map((role) => {
+        const frozen = month !== ym() ? M.standardsSnapshot?.[role.id]?.tiers : null;
+        const tiers = frozen || config.standards?.[store.id]?.[role.id]?.tiers;
+        const people = (data.roster || []).filter((a) => a.roleId === role.id).sort((a, b) => a.order - b.order);
+        if (!people.length) return null;
+        return (
+          <div key={role.id} className="card role-section" style={{ "--role": role.color }}>
+            <h3 className="role-header"><span className="role-swatch" />{role.name}</h3>
+            <table className="gm-table">
+              <thead><tr><th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th><th>Engaged %</th><th>BH %</th><th>Verdict</th></tr></thead>
+              <tbody>
+                {people.map((a) => {
+                  const s = M.stats?.[norm(a.name)];
+                  const ev = evaluateAssociate(s, tiers);
+                  return (
+                    <tr key={a.id}>
+                      <td><b>{a.name}</b></td>
+                      <td>{ev.opps ?? 0} / {ev.cap ?? "-"}</td>
+                      <td>{fmtPct(s?.deliveredPct)}</td><td>{fmtPct(s?.apptVideoDayPct)}</td>
+                      <td>{fmtPct(s?.engagedVideoPct)}</td><td>{fmtPct(s?.bhVideoPct)}</td>
+                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span> : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span> : "-"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------- Standards editor ---------------- */
+function StandardsEditor({ config, storeId, onChange }) {
+  const [roleId, setRoleId] = useState(config.roles[0]?.id);
+  const std = config.standards?.[storeId]?.[roleId] || { tiers: [] };
+  const roleName = config.roles.find((r) => r.id === roleId)?.name;
+  const storeName = config.stores.find((s) => s.id === storeId)?.name;
+
+  const update = (fn, detail) => {
+    const next = JSON.parse(JSON.stringify(config));
+    if (!next.standards[storeId]) next.standards[storeId] = {};
+    if (!next.standards[storeId][roleId]) next.standards[storeId][roleId] = { tiers: [] };
+    fn(next.standards[storeId][roleId]);
+    next.standards[storeId][roleId].tiers.sort((a, b) => a.cap - b.cap);
+    onChange(next, { store: storeId, action: "Edited standards", detail: `${roleName} @ ${storeName}: ${detail}` });
+  };
+
+  return (
+    <div className="standards">
+      <div className="card grace-setting">
+        <label className="grace-label">Grace period
+          <input type="number" min="0" max="28" defaultValue={config.stores.find((s) => s.id === storeId)?.graceDays ?? 10}
+            onBlur={(e) => {
+              const v = Math.max(0, Math.min(28, toNum(e.target.value) ?? 10));
+              const cur = config.stores.find((s) => s.id === storeId)?.graceDays ?? 10;
+              if (v === cur) return;
+              const next = JSON.parse(JSON.stringify(config));
+              next.stores.find((s) => s.id === storeId).graceDays = v;
+              onChange(next, { store: storeId, action: "Changed grace period", detail: `${storeName}: ${cur} → ${v} days` });
+            }} />
+          days
+        </label>
+        <span className="hint">No restrictions are recommended during the first days of the month while numbers settle. Anyone below standard shows as working toward the target instead. Set to 0 to turn this off.</span>
+      </div>
+      <div className="card">
+        <h3>Leaderboard colors <span className="section-sub">{storeName}</span></h3>
+        <ThresholdGrid
+          value={config.stores.find((s) => s.id === storeId)?.thresholds}
+          onChange={(next) => {
+            const cfg = JSON.parse(JSON.stringify(config));
+            const s = cfg.stores.find((x) => x.id === storeId);
+            s.thresholds = next;
+            onChange(cfg, { store: storeId, action: "Changed leaderboard thresholds", detail: storeName });
+          }} />
+      </div>
+      <div className="std-head">
+        <h3>Standards for</h3>
+        <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+          {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+        <span className="hint">These apply to every {roleName} at this store only. Changes are recorded in the audit log.</span>
+      </div>
+      {std.tiers.map((tier, ti) => (
+        <div key={ti} className="card tier">
+          <div className="tier-head">
+            <span className="tier-label">Tier {ti + 1}</span>
+            <label>Lead cap <input type="number" defaultValue={tier.cap}
+              onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== tier.cap) update((s) => { s.tiers[ti].cap = v; }, `Tier ${ti + 1} cap ${tier.cap} → ${v}`); }} /></label>
+            <span className="hint">{ti === 0 ? `Everyone starts here. Meet the requirements below to grab past ${tier.cap}.` : `Applies from ${(std.tiers[ti - 1]?.cap ?? 0) + 1} to ${tier.cap} leads.`}</span>
+            <button className="btn-x" onClick={() => update((s) => s.tiers.splice(ti, 1), `Removed tier ${ti + 1} (cap ${tier.cap})`)}>Remove tier</button>
+          </div>
+          {tier.requirements.map((req, ri) => (
+            <div key={ri} className="req-row">
+              <select value={req.metric} onChange={(e) => update((s) => { s.tiers[ti].requirements[ri].metric = e.target.value; }, `Tier ${ti + 1}: metric → ${METRICS[e.target.value].label}`)}>
+                {Object.entries(METRICS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+              </select>
+              <span>must be at least</span>
+              <input type="number" defaultValue={req.min}
+                onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== req.min) update((s) => { s.tiers[ti].requirements[ri].min = v; }, `Tier ${ti + 1}: ${METRICS[req.metric].short} ${req.min} → ${v}`); }} />
+              <span>{METRICS[req.metric].kind === "pct" ? "%" : "units"}</span>
+              <button className="btn-x" onClick={() => update((s) => s.tiers[ti].requirements.splice(ri, 1), `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)}>✕</button>
+            </div>
+          ))}
+          <button className="btn-ghost" onClick={() => update((s) => s.tiers[ti].requirements.push({ metric: "apptVideoDayPct", min: 50 }), `Tier ${ti + 1}: added requirement`)}>+ Add requirement</button>
+        </div>
+      ))}
+      <button className="btn" onClick={() => update((s) => s.tiers.push({ cap: (std.tiers[std.tiers.length - 1]?.cap ?? 40) + 20, requirements: [{ metric: "apptVideoDayPct", min: 50 }] }), "Added tier")}>+ Add Tier</button>
+    </div>
+  );
+}
+
+/* ---------------- Roster editor ---------------- */
+function RosterEditor({ config, data, onChange, userName }) {
+  const [name, setName] = useState("");
+  const [roleId, setRoleId] = useState(config.roles[0]?.id);
+  const [mergeFrom, setMergeFrom] = useState("");
+  const [mergeInto, setMergeInto] = useState("");
+  const [excl, setExcl] = useState("");
+
+  // names that are not people. Skipped on every future import, and removed from the
+  // roster now if they already slipped in.
+  const addExcluded = () => {
+    const n = excl.trim();
+    if (!n) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.excluded = [...(next.excluded || [])];
+    if (!next.excluded.some((x) => norm(x) === norm(n))) next.excluded.push(n);
+    next.roster = (next.roster || []).filter((a) => norm(a.name) !== norm(n));
+    setExcl("");
+    onChange(next, { action: "Excluded name from imports", detail: n });
+  };
+  const removeExcluded = (n) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.excluded = (next.excluded || []).filter((x) => x !== n);
+    onChange(next, { action: "Stopped excluding name", detail: n });
+  };
+
+  // Fold a duplicate/renamed person into the person they really are.
+  const merge = () => {
+    const from = data.roster.find((a) => a.id === mergeFrom);
+    const into = data.roster.find((a) => a.id === mergeInto);
+    if (!from || !into || from.id === into.id) return;
+    const fk = norm(from.name), ik = norm(into.name);
+    if (!window.confirm(`Merge "${from.name}" into "${into.name}"?\n\nTheir history moves to ${into.name}, "${from.name}" is removed from the roster, and any future report that still says "${from.name}" will automatically count toward ${into.name}.`)) return;
+
+    const next = JSON.parse(JSON.stringify(data));
+    // move monthly stats where the canonical person has none
+    for (const mKey of Object.keys(next.months || {})) {
+      const M = next.months[mKey];
+      if (M.stats?.[fk]) {
+        M.stats[ik] = { ...(M.stats[fk]), ...(M.stats[ik] || {}) };
+        delete M.stats[fk];
+      }
+      if (M.names) {
+        for (const t of Object.keys(M.names)) {
+          M.names[t] = (M.names[t] || []).map((k) => (k === fk ? ik : k));
+        }
+      }
+    }
+    // move daily activity
+    for (const d of Object.keys(next.activity || {})) {
+      if (next.activity[d]?.[fk]) {
+        next.activity[d][ik] = { ...(next.activity[d][fk]), ...(next.activity[d][ik] || {}) };
+        delete next.activity[d][fk];
+      }
+    }
+    // repoint plate assignments
+    for (const d of Object.keys(next.plates || {})) {
+      next.plates[d] = (next.plates[d] || []).map((p) => (norm(p.assignee || "") === fk ? { ...p, assignee: into.name } : p));
+    }
+    // carry any active restriction across, then drop the duplicate
+    if (next.restrictions?.[from.id] && !next.restrictions?.[into.id]) {
+      next.restrictions[into.id] = next.restrictions[from.id];
+    }
+    delete next.restrictions?.[from.id];
+    next.roster = next.roster.filter((a) => a.id !== from.id);
+    // remember the alias so future imports fold automatically
+    next.aliases = { ...(next.aliases || {}), [fk]: ik };
+
+    setMergeFrom(""); setMergeInto("");
+    onChange(next, { action: "Merged associates", detail: `${from.name} → ${into.name}` });
+  };
+
+  const unmerge = (aliasKey) => {
+    const next = JSON.parse(JSON.stringify(data));
+    delete next.aliases[aliasKey];
+    onChange(next, { action: "Removed name link", detail: aliasKey });
+  };
+
+  const add = () => {
+    const n = name.trim(); if (!n) return;
+    const next = JSON.parse(JSON.stringify(data));
+    if (next.roster.some((a) => norm(a.name) === norm(n))) return;
+    next.roster.push({ id: uid(), name: n, roleId, order: next.roster.length });
+    setName("");
+    onChange(next, { action: "Added associate", detail: `${n} (${config.roles.find((r) => r.id === roleId)?.name})` });
+  };
+  const setRole = (id, rid) => {
+    const next = JSON.parse(JSON.stringify(data));
+    const a = next.roster.find((x) => x.id === id); if (!a) return;
+    a.roleId = rid || null;
+    onChange(next, { action: "Changed position", detail: `${a.name} → ${config.roles.find((r) => r.id === rid)?.name || "Needs a position"}` });
+  };
+  // Taking someone off used to be undone by the very next import, which is how a
+  // person who had left kept reappearing. This records the departure instead.
+  const remove = (id) => {
+    const a = (data.roster || []).find((x) => x.id === id);
+    if (!a) return;
+    if (!window.confirm(`${a.name} has left the store?\n\nThey come off every current list right away and future reports will not add them back. Their history stays on file, and you can bring them back from the Former associates list below.`)) return;
+    onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
+  };
+  const bringBack = (name) => {
+    onChange(undoDeparted(data, name), { action: "Brought associate back", detail: name });
+  };
+  const former = [...((data.departed) || [])].sort((x, y) => String(y.at).localeCompare(String(x.at)));
+  return (
+    <div className="roster">
+      <div className="card">
+        <div className="inline-form">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First Last, exactly as it appears in DriveCentric" style={{ minWidth: 260 }} />
+          <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
+            {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <button className="btn" onClick={add}>Add Associate</button>
+        </div>
+        <p className="hint">Names must match DriveCentric exports exactly (not case-sensitive). Anyone who shows up in a report but isn't listed here gets added automatically under "Needs a Position." Roster changes are recorded in the audit log.</p>
+      </div>
+
+      <div className="card">
+        <h3>Former associates</h3>
+        <p className="hint">
+          Anyone who has left the store. They are off the roster, the check out sheet, the line and the board,
+          and no report will add them back. Everything they did is still on file, so past months read correctly.
+          Bring someone back and they pick up right where they were.
+        </p>
+        {former.length === 0
+          ? <p className="hint">Nobody yet. Use <b>No longer here</b> on a person's card, or Remove on the roster below.</p>
+          : <div className="domain-list">
+              {former.map((f) => (
+                <span key={f.name} className="domain-chip">
+                  {f.name}<span className="hint" style={{ marginLeft: 6 }}>
+                    left {f.at ? new Date(f.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "-"}
+                  </span>
+                  <button className="btn-x" title="Put them back on the roster" onClick={() => bringBack(f.name)}>Bring back</button>
+                </span>
+              ))}
+            </div>}
+      </div>
+
+      <div className="card">
+        <h3>Ignore these names</h3>
+        <p className="hint">
+          DriveCentric exports contain roll-up rows that are not people, like "Team A" or a house account.
+          Left alone they get added to the roster and drag every average around. Anything listed here is
+          skipped on import and will never appear again.
+        </p>
+        <div className="inline-form">
+          <input value={excl} onChange={(e) => setExcl(e.target.value)} placeholder="e.g. Team A"
+            onKeyDown={(e) => e.key === "Enter" && addExcluded()} />
+          <button className="btn" onClick={addExcluded}>Ignore this name</button>
+        </div>
+        {(data.excluded || []).length > 0 && (
+          <div className="domain-list">
+            {(data.excluded || []).map((n) => (
+              <span key={n} className="domain-chip">{n}
+                <button className="btn-x" onClick={() => removeExcluded(n)}>✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+        {(data.roster || []).filter((a) => !a.roleId).length > 0 && (
+          <p className="hint">
+            Tip: anyone sitting in "Needs a Position" who is not a real person is probably one of these.
+          </p>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Merge duplicate names</h3>
+        <p className="hint">If DriveCentric ever spells someone differently (a nickname, a married name, a typo), they'll show up here as a second person and their history splits. Merge them and the history joins back up, plus future reports using the old spelling will automatically count toward the right person.</p>
+        <div className="inline-form">
+          <select value={mergeFrom} onChange={(e) => setMergeFrom(e.target.value)}>
+            <option value="">Select the duplicate</option>
+            {(data.roster || []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <span className="merge-arrow">→</span>
+          <select value={mergeInto} onChange={(e) => setMergeInto(e.target.value)}>
+            <option value="">Select the real person</option>
+            {(data.roster || []).filter((a) => a.id !== mergeFrom).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button className="btn" onClick={merge} disabled={!mergeFrom || !mergeInto}>Merge</button>
+        </div>
+        {Object.keys(data.aliases || {}).length > 0 && (
+          <div className="alias-list">
+            <div className="check-group-label">Linked names</div>
+            {Object.entries(data.aliases).map(([from, to]) => (
+              <div key={from} className="alias-row">
+                <span className="mono">{from}</span> <span className="merge-arrow">→</span> <span className="mono">{to}</span>
+                <button className="btn-x" onClick={() => unmerge(from)}>Unlink</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="card">
+        <table className="roster-table">
+          <thead><tr><th>Name</th><th>Position</th><th /></tr></thead>
+          <tbody>
+            {(data.roster || []).sort((a, b) => a.order - b.order).map((a) => (
+              <tr key={a.id}>
+                <td>{a.name}</td>
+                <td>
+                  <select value={a.roleId || ""} onChange={(e) => setRole(a.id, e.target.value)}>
+                    <option value="">needs a position</option>
+                    {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </td>
+                <td><button className="btn-x" onClick={() => remove(a.id)}>Remove</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Access panel ---------------- */
+function AccessPanel({ config, session, onChange }) {
+  const [people, setPeople] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [domain, setDomain] = useState("");
+
+  const reload = useCallback(async () => {
+    setPeople(await listProfiles());
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
+
+  const patch = async (id, fields, auditNote) => {
+    setBusy(true);
+    const ok = await updateProfile(id, fields);
+    setBusy(false);
+    if (!ok) { setMsg("That change didn't save. You may not have permission."); return; }
+    if (auditNote) await appendAudit({ user: session.name, action: auditNote.action, detail: auditNote.detail });
+    setMsg("");
+    reload();
+  };
+
+  const approve = (u, storeIds) =>
+    patch(u.id, { pending: false, stores: storeIds }, { action: "Approved account", detail: u.email });
+
+  const toggleStore = (u, sid, on) => {
+    const next = on ? [...(u.stores || []), sid] : (u.stores || []).filter((x) => x !== sid);
+    patch(u.id, { stores: next }, { action: "Changed store access", detail: u.email + ": " + next.join(", ") });
+  };
+
+  const setRole = (u, role) =>
+    patch(u.id, { role }, { action: "Changed role", detail: u.email + " -> " + role });
+
+  const promote = (u) => {
+    if (!window.confirm("Make " + (u.name || u.email) + " a Group Admin?" + String.fromCharCode(10, 10) +
+      "Admins see and change everything across every store, manage accounts, and edit standards. Only do this for someone you fully trust.")) return;
+    patch(u.id, { role: "admin", pending: false }, { action: "Promoted to admin", detail: u.email });
+  };
+
+  const demote = (u) => {
+    const others = (people || []).filter((x) => x.role === "admin" && x.id !== u.id && x.active);
+    if (others.length === 0) { alert("You can't remove the last admin. Promote someone else first."); return; }
+    if (!window.confirm("Remove admin rights from " + (u.name || u.email) + "? They become a store manager with no store access until you assign one.")) return;
+    patch(u.id, { role: "manager", stores: [] }, { action: "Removed admin rights", detail: u.email });
+  };
+
+  const toggleActive = (u) =>
+    patch(u.id, { active: !u.active }, { action: u.active ? "Deactivated account" : "Reactivated account", detail: u.email });
+
+  const remove = async (u) => {
+    if (!window.confirm("Delete " + (u.name || u.email) + " permanently?" + String.fromCharCode(10, 10) +
+      "This removes their profile. It does not delete any store data they imported.")) return;
+    setBusy(true);
+    const ok = await deleteProfile(u.id);
+    setBusy(false);
+    if (!ok) { setMsg("Couldn't delete that profile."); return; }
+    await appendAudit({ user: session.name, action: "Deleted account", detail: u.email });
+    reload();
+  };
+
+  const addDomain = () => {
+    const d = domain.trim().toLowerCase().replace(/^@/, "");
+    if (!d || !d.includes(".")) return;
+    if ((config.approvedDomains || []).includes(d)) return;
+    const next = JSON.parse(JSON.stringify(config));
+    next.approvedDomains = [...(next.approvedDomains || []), d];
+    setDomain("");
+    onChange(next, { action: "Added approved domain", detail: d });
+  };
+  const removeDomain = (d) => {
+    const next = JSON.parse(JSON.stringify(config));
+    next.approvedDomains = (next.approvedDomains || []).filter((x) => x !== d);
+    onChange(next, { action: "Removed approved domain", detail: d });
+  };
+
+  if (!AUTH_ENABLED) {
+    return <div className="empty">Accounts are managed on the hosted site, where real sign-in is available. This preview has no account system.</div>;
+  }
+  if (!people) return <LoadingScreen label="Loading accounts" />;
+
+  const pending = people.filter((u) => u.pending && u.role !== "admin");
+  const active = people.filter((u) => !u.pending || u.role === "admin");
+  // Emails that appear on more than one account. Granting access to one of them leaves
+  // the person locked out if they sign in with the other.
+  const dupeEmails = (() => {
+    const seen = new Map();
+    for (const u of people) { const k = norm(u.email); seen.set(k, (seen.get(k) || 0) + 1); }
+    return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([k]) => k));
+  })();
+
+  return (
+    <div className="access">
+      {msg && <div className="login-err">{msg}</div>}
+
+      {pending.length > 0 && (
+        <div className="card">
+          <h3>Waiting for approval <span className="badge badge-warn">{pending.length}</span></h3>
+          <p className="hint">These people created an account and are waiting on you. Tick the stores they should see, then approve.</p>
+          {pending.map((u) => (
+            <PendingRow key={u.id} u={u} stores={config.stores} busy={busy}
+              onApprove={(ids) => approve(u, ids)} onReject={() => remove(u)} />
+          ))}
+        </div>
+      )}
+
+      <div className="card">
+        <h3>Accounts</h3>
+        <p className="hint">
+          Passwords are handled by Supabase and stored hashed. No one, including you, can read them.
+          If someone forgets theirs they use "Forgot password?" on the sign-in screen.
+        </p>
+        <table className="roster-table wide">
+          <thead>
+            <tr><th>Name</th><th>Email</th><th>Role</th><th>Stores</th><th>Status</th><th /></tr>
+          </thead>
+          <tbody>
+            {active.map((u) => (
+              <tr key={u.id}>
+                <td><b>{u.name || "-"}</b>
+                  {/* Two accounts for one person is the usual reason access "doesn't
+                      stick": the grant lands on one of them and they sign in as the other. */}
+                  {dupeEmails.has(norm(u.email)) && <span className="dupe-tag" title="Another account uses this same email. Access granted here won't apply to the other one.">duplicate</span>}
+                </td>
+                <td className="mono">{u.email}<span className="acct-id" title="Account ID. Compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span></td>
+                <td>
+                  {u.role === "admin" ? "Group Admin" : (
+                    <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
+                      <option value="manager">Store Manager</option>
+                      <option value="overseer">Centralized BDC</option>
+                    </select>
+                  )}
+                </td>
+                <td>
+                  {u.role === "admin" ? <span className="hint">All stores</span> : (
+                    <div className="store-checks tight">
+                      {config.stores.map((s) => (
+                        <label key={s.id} className="check-inline">
+                          <input type="checkbox" disabled={busy}
+                            checked={(u.stores || []).includes(s.id)}
+                            onChange={(e) => toggleStore(u, s.id, e.target.checked)} />
+                          {s.name}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td>{u.active ? <span className="badge badge-ok">Active</span> : <span className="badge badge-off">Inactive</span>}</td>
+                <td className="row-actions">
+                  {u.id !== session.id && (
+                    <>
+                      <button className="btn-x" onClick={() => toggleActive(u)} disabled={busy}>{u.active ? "Deactivate" : "Reactivate"}</button>
+                      {u.role !== "admin"
+                        ? <button className="btn-x" onClick={() => promote(u)} disabled={busy}>Make admin</button>
+                        : <button className="btn-x" onClick={() => demote(u)} disabled={busy}>Remove admin</button>}
+                      <button className="btn-x" onClick={() => remove(u)} disabled={busy}>Delete</button>
+                    </>
+                  )}
+                  {u.id === session.id && <span className="hint">This is you</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <h3>Approved email domains</h3>
+        <p className="hint">Only these domains may create an account. Leave this empty and nobody new can register.</p>
+        <div className="inline-form">
+          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourcompany.com"
+            onKeyDown={(e) => e.key === "Enter" && addDomain()} />
+          <button className="btn" onClick={addDomain}>Add domain</button>
+        </div>
+        <div className="domain-list">
+          {(config.approvedDomains || []).length === 0
+            ? <p className="hint">No domains yet, so account creation is closed.</p>
+            : (config.approvedDomains || []).map((d) => (
+              <span key={d} className="domain-chip">@{d}<button className="btn-x" onClick={() => removeDomain(d)}>✕</button></span>
+            ))}
+        </div>
+        <label className="toggle-row">
+          <input type="checkbox" checked={!!config.registrationOpen}
+            onChange={(e) => {
+              const next = JSON.parse(JSON.stringify(config));
+              next.registrationOpen = e.target.checked;
+              onChange(next, { action: e.target.checked ? "Opened registration" : "Closed registration" });
+            }} />
+          Allow new people to create accounts
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function PendingRow({ u, stores, busy, onApprove, onReject }) {
+  const [ids, setIds] = useState([]);
+  return (
+    <div className="pending-row">
+      <div className="pending-who">
+        <b>{u.name || "-"}</b>
+        <span className="mono">{u.email}</span>
+      </div>
+      <div className="store-checks tight">
+        {stores.map((s) => (
+          <label key={s.id} className="check-inline">
+            <input type="checkbox" checked={ids.includes(s.id)}
+              onChange={(e) => setIds(e.target.checked ? [...ids, s.id] : ids.filter((x) => x !== s.id))} />
+            {s.name}
+          </label>
+        ))}
+      </div>
+      <div className="row-actions">
+        <button className="btn" disabled={busy || ids.length === 0} onClick={() => onApprove(ids)}>Approve</button>
+        <button className="btn-x" disabled={busy} onClick={onReject}>Reject</button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Audit log ---------------- */
+function AuditLog() {
+  const [log, setLog] = useState(null);
+  const [filter, setFilter] = useState("");
+  useEffect(() => { loadShared(AUDIT_KEY, []).then(setLog); }, []);
+  if (!log) return <div className="loading">Loading audit log…</div>;
+  const shown = log.filter((e) => !filter || JSON.stringify(e).toLowerCase().includes(filter.toLowerCase()));
+  return (
+    <div className="audit">
+      <div className="inline-form">
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by name, store, action…" style={{ minWidth: 280 }} />
+        <button className="btn secondary" onClick={() => downloadCSV(`Audit-Log_${today()}.csv`, [["When", "User", "Store", "Action", "Detail"], ...log.map((e) => [e.t, e.user, e.store || "", e.action, e.detail || ""])])}>Export CSV</button>
+      </div>
+      <p className="hint">Last {log.length} events (capped at 400). Imports, standards edits, roster changes, and user access changes all land here automatically.</p>
+      <div className="card">
+        <table className="roster-table wide">
+          <thead><tr><th>When</th><th>User</th><th>Store</th><th>Action</th><th>Detail</th></tr></thead>
+          <tbody>
+            {shown.map((e, i) => (
+              <tr key={i}>
+                <td className="mono">{new Date(e.t).toLocaleString()}</td>
+                <td>{e.user}</td>
+                <td>{e.store || "-"}</td>
+                <td><b>{e.action}</b></td>
+                <td>{e.detail || ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Settings ---------------- */
+function HolidayPanel({ config, onChange }) {
+  const [date, setDate] = useState("");
+  const [name, setName] = useState("");
+  const list = [...(config.holidays || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const year = new Date().getFullYear();
+
+  const save = (next, detail) => {
+    const cfg = JSON.parse(JSON.stringify(config));
+    cfg.holidays = [...next].sort((a, b) => (a.date < b.date ? -1 : 1));
+    onChange(cfg, { action: "Changed holidays", detail });
+  };
+  const add = () => {
+    if (!date || list.some((h) => h.date === date)) return;
+    save([...list, { date, name: name.trim() }], `Added ${date}${name ? " (" + name.trim() + ")" : ""}`);
+    setDate(""); setName("");
+  };
+  const addTypical = () => {
+    const have = new Set(list.map((h) => h.date));
+    const add = typicalClosures(year).filter((h) => !have.has(h.date));
+    if (!add.length) return;
+    save([...list, ...add], `Added ${add.length} typical closures for ${year}`);
+  };
+
+  const upcoming = list.filter((h) => h.date >= today()).length;
+  return (
+    <div className="card holiday-card">
+      <h3>Holidays <span className="section-sub">group-wide</span></h3>
+      <p className="hint">
+        Set once and applied to every store. A holiday comes out of every associate's working days for
+        that month, so pacing, per-day averages, the coaching targets and the Check Out day counts never
+        judge anyone against a day the doors were shut. It does not remove any numbers that were imported.
+      </p>
+      <div className="hol-add">
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Thanksgiving"
+          onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="btn" disabled={!date} onClick={add}>Add</button>
+        <button className="btn-ghost" onClick={addTypical}>Add typical closures for {year}</button>
+      </div>
+      {list.length === 0 ? (
+        <p className="hint" style={{ marginTop: 12 }}>None set. Every non-Sunday counts as a working day.</p>
+      ) : (
+        <>
+          <div className="hol-list">
+            {list.map((h) => (
+              <span key={h.date} className={"hol-chip" + (h.date < today() ? " past" : "")}>
+                {new Date(h.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {h.name && <em>{h.name}</em>}
+                <button title="Remove"
+                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)}>✕</button>
+              </span>
+            ))}
+          </div>
+          <p className="hint" style={{ marginTop: 10 }}>
+            {list.length} on file, {upcoming} still ahead. Past dates are dimmed but still count, because
+            they affect the month they fell in.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SettingsPanel({ config, onChange }) {
+  const [newRole, setNewRole] = useState("");
+  const [cropping, setCropping] = useState(null); // { storeId, src }
+  const [wizard, setWizard] = useState(null); // { store } for edit, {} for new
+
+  const saveStore = (draft) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const existing = next.stores.find((s) => s.id === draft.id);
+    if (existing) {
+      Object.assign(existing, draft);
+      onChange(next, { action: "Customized store", detail: draft.name });
+    } else {
+      next.stores.push(draft);
+      next.standards[draft.id] = {};
+      for (const r of next.roles) next.standards[draft.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
+      onChange(next, { action: "Added store", detail: draft.name });
+    }
+    setWizard(null);
+  };
+  const moveStore = (idx, dir) => {
+    const to = idx + dir;
+    if (to < 0 || to >= config.stores.length) return;
+    const next = JSON.parse(JSON.stringify(config));
+    const [item] = next.stores.splice(idx, 1);
+    next.stores.splice(to, 0, item);
+    onChange(next, { action: "Reordered stores", detail: `${item.name} moved ${dir < 0 ? "up" : "down"}` });
+  };
+  const deleteStore = async (s) => {
+    const ok = window.confirm(`Delete ${s.name}? Its roster, imports, and history stay saved in storage, but the store disappears from every view and its standards are removed. Anyone whose only access was this store will have nothing to see.`);
+    if (!ok) return;
+    const next = JSON.parse(JSON.stringify(config));
+    next.stores = next.stores.filter((x) => x.id !== s.id);
+    delete next.standards[s.id];
+    onChange(next, { action: "Deleted store", detail: s.name });
+    // strip the store from everyone's access list
+    try {
+      const people = await listProfiles();
+      for (const u of people) {
+        if ((u.stores || []).includes(s.id)) {
+          await updateProfile(u.id, { stores: (u.stores || []).filter((id) => id !== s.id) });
+        }
+      }
+    } catch (e) { /* profiles aren't available in preview */ }
+  };
+  const addRole = () => {
+    const name = newRole.trim(); if (!name) return;
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    if (config.roles.some((r) => r.id === id)) return;
+    const next = JSON.parse(JSON.stringify(config));
+    next.roles.push({ id, name, color: ROLE_COLORS[next.roles.length % ROLE_COLORS.length] });
+    for (const s of next.stores) {
+      next.standards[s.id] = next.standards[s.id] || {};
+      next.standards[s.id][id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
+    }
+    setNewRole("");
+    onChange(next, { action: "Added position", detail: name });
+  };
+  const setIcon = (storeId, file) => {
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) { alert("That image is too large. Please use one under 4 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = () => setCropping({ storeId, src: reader.result });
+    reader.readAsDataURL(file);
+  };
+  const saveCroppedIcon = (dataUrl) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === cropping.storeId);
+    s.icon = dataUrl;
+    setCropping(null);
+    onChange(next, { action: "Updated store logo", detail: s.name });
+  };
+  const clearIcon = (storeId) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.icon = null;
+    onChange(next, { action: "Removed store logo", detail: s.name });
+  };
+
+  return (
+    <div className="settings">
+      <div className="card">
+        <h3>Stores &amp; Manufacturer Logos</h3>
+        <div className="store-list">
+          {config.stores.map((s, idx) => (
+            <div key={s.id} className="store-item">
+              <div className="store-item-main">
+                <div className="store-item-order">
+                  <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up">↑</button>
+                  <button className="btn-arrow" disabled={idx === config.stores.length - 1} onClick={() => moveStore(idx, 1)} title="Move down">↓</button>
+                </div>
+                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
+                <div className="store-item-name">
+                  <b>{s.name}</b>
+                  <span className="brand-swatch" title="Store colors"
+                    style={{ background: `linear-gradient(130deg, ${(s.brand || DEFAULT_BRAND).primary}, ${(s.brand || DEFAULT_BRAND).deep})` }} />
+                </div>
+              </div>
+              <div className="store-item-actions">
+                <button className="btn-ghost" onClick={() => setWizard({ store: s })}>Customize</button>
+                <label className="btn-ghost file-btn">
+                  {s.icon ? "Replace logo" : "Upload logo"}
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { setIcon(s.id, e.target.files[0]); e.target.value = ""; }} />
+                </label>
+                {s.icon && <button className="btn-x" onClick={() => setCropping({ storeId: s.id, src: s.icon })}>Crop</button>}
+                {s.icon && <button className="btn-x" onClick={() => clearIcon(s.id)}>Remove logo</button>}
+                <button className="btn-x danger" onClick={() => deleteStore(s)}>Delete store</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="inline-form">
+          <button className="btn" onClick={() => setWizard({})}>+ New Store</button>
+        </div>
+        <p className="hint">"New Store" opens a setup tool where you pick the manufacturer colors, logo, standards, and thresholds, with a live preview of the manager's view, before the store is created. "Customize" reopens that tool for an existing store. The order here is the order everywhere.</p>
+      </div>
+      {wizard && (
+        <StoreWizard config={config} store={wizard.store} onCancel={() => setWizard(null)} onSave={saveStore} />
+      )}
+      <HolidayPanel config={config} onChange={onChange} />
+      <div className="card">
+        <h3>Positions</h3>
+        <p className="hint">
+          Both The Board and Coaching are built on cars sold. A position that does not deliver units
+          has no meaningful closing rate or per-car ratio, so it is switched off for both by default.
+        </p>
+        <table className="roster-table">
+          <thead>
+            <tr><th>Position</th><th>Show on The Board</th><th>Include in Coaching</th></tr>
+          </thead>
+          <tbody>
+            {config.roles.map((r) => (
+              <tr key={r.id}>
+                <td><span className="role-chip" style={{ background: r.color }}>{r.name}</span></td>
+                <td>
+                  <label className="check-inline">
+                    <input type="checkbox" checked={r.onBoard !== false}
+                      onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(config));
+                        next.roles.find((x) => x.id === r.id).onBoard = e.target.checked;
+                        onChange(next, { action: "Changed position visibility", detail: `${r.name} on The Board: ${e.target.checked}` });
+                      }} />
+                    Delivers units
+                  </label>
+                </td>
+                <td>
+                  <label className="check-inline">
+                    <input type="checkbox" checked={r.coaching !== false}
+                      onChange={(e) => {
+                        const next = JSON.parse(JSON.stringify(config));
+                        next.roles.find((x) => x.id === r.id).coaching = e.target.checked;
+                        onChange(next, { action: "Changed position visibility", detail: `${r.name} in Coaching: ${e.target.checked}` });
+                      }} />
+                    Coach on cars
+                  </label>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="inline-form">
+          <input value={newRole} onChange={(e) => setNewRole(e.target.value)} placeholder="e.g. Internet Sales" />
+          <button className="btn" onClick={addRole}>Add Position</button>
+        </div>
+        <p className="hint">Every store gets its own editable standards for each position.</p>
+      </div>
+      {cropping && <LogoCropper src={cropping.src} onCancel={() => setCropping(null)} onSave={saveCroppedIcon} />}
+    </div>
+  );
+}
+
+/* ---------------- Logo cropper ---------------- */
+function LogoCropper({ src, onCancel, onSave }) {
+  const SIZE = 280; // on-screen crop square
+  const OUT = 256;  // saved logo resolution
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [minZoom, setMinZoom] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 }); // image top-left offset in crop space
+  const drag = useRef(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      imgRef.current = img;
+      const mz = SIZE / Math.min(img.width, img.height); // cover the square at minimum
+      setMinZoom(mz); setZoom(mz);
+      setPos({ x: (SIZE - img.width * mz) / 2, y: (SIZE - img.height * mz) / 2 });
+      setReady(true);
+    };
+    img.src = src;
+  }, [src]);
+
+  const clamp = useCallback((p, z) => {
+    const img = imgRef.current; if (!img) return p;
+    const w = img.width * z, h = img.height * z;
+    return {
+      x: Math.min(0, Math.max(SIZE - w, p.x)),
+      y: Math.min(0, Math.max(SIZE - h, p.y)),
+    };
+  }, []);
+
+  // redraw preview
+  useEffect(() => {
+    const c = canvasRef.current, img = imgRef.current;
+    if (!c || !img || !ready) return;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, SIZE, SIZE);
+    ctx.drawImage(img, pos.x, pos.y, img.width * zoom, img.height * zoom);
+  }, [pos, zoom, ready]);
+
+  const onPointerDown = (e) => {
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e) => {
+    if (!drag.current) return;
+    setPos(clamp({ x: drag.current.ox + (e.clientX - drag.current.sx), y: drag.current.oy + (e.clientY - drag.current.sy) }, zoom));
+  };
+  const onPointerUp = () => { drag.current = null; };
+
+  const onZoom = (z) => {
+    // zoom around the center of the crop square
+    const img = imgRef.current; if (!img) return;
+    const cx = (SIZE / 2 - pos.x) / zoom, cy = (SIZE / 2 - pos.y) / zoom;
+    const nz = Math.max(minZoom, Math.min(minZoom * 5, z));
+    setZoom(nz);
+    setPos(clamp({ x: SIZE / 2 - cx * nz, y: SIZE / 2 - cy * nz }, nz));
+  };
+
+  const save = () => {
+    const img = imgRef.current; if (!img) return;
+    const out = document.createElement("canvas");
+    out.width = OUT; out.height = OUT;
+    const ctx = out.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    const scale = OUT / SIZE;
+    ctx.drawImage(img, pos.x * scale, pos.y * scale, img.width * zoom * scale, img.height * zoom * scale);
+    onSave(out.toDataURL("image/png"));
+  };
+
+  return (
+    <div className="crop-overlay" onClick={onCancel}>
+      <div className="card crop-card" onClick={(e) => e.stopPropagation()}>
+        <h3>Crop Logo</h3>
+        <p className="hint">Drag to position, use the slider to zoom. The square is exactly what everyone will see.</p>
+        <div className="crop-stage">
+          <canvas ref={canvasRef} width={SIZE} height={SIZE} className="crop-canvas"
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} />
+        </div>
+        <input className="crop-zoom" type="range" min={minZoom} max={minZoom * 5} step={minZoom / 50} value={zoom}
+          onChange={(e) => onZoom(parseFloat(e.target.value))} />
+        <div className="crop-actions">
+          <button className="btn secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn" onClick={save} disabled={!ready}>Save Logo</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Shell + styles ---------------- */
+function Shell({ children, entering }) {
+  return <div className={"lpc" + (entering ? " is-entering" : "")}>
+      <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
+      {children}
+      <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
+}
+
+function Style() {
+  return (
+    <style>{`
+      :root {
+        --bg: #F5F5F7; --card: #FFFFFF; --ink: #1D1D1F; --ink-2: #6E6E73; --ink-3: #AEAEB2;
+        --line: rgba(0,0,0,.08); --blue: #2A5E9B; --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
+        --radius: 18px; --spring: cubic-bezier(.32,.72,.33,1);
+        --shadow-1: 0 1px 2px rgba(0,0,0,.04), 0 2px 12px rgba(0,0,0,.05);
+        --shadow-2: 0 4px 10px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10);
+        --shadow-3: 0 2px 6px rgba(16,32,52,.06), 0 22px 54px rgba(16,32,52,.14);
+        /* One long, decelerating curve used everywhere so motion feels like it
+           comes from the same hand. --spring stays for the snappier UI bits. */
+        --ease: cubic-bezier(.22,1,.36,1);
+        --ease-bloop: cubic-bezier(.34,1.56,.64,1);
+        --font-ui: 'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      html { scroll-behavior: smooth; }
+
+      /* Display face on anything that carries hierarchy or a number worth reading
+         across a room. Everything else stays on Inter, which holds up better in
+         the dense tables. */
+      .brand-title, .section-title, .hero-store, .hero-ring-pct, .tile-num, .lb-title,
+      .lb-name, .lb-units, .ac-name, .login-title, .plate-hist-title, .guide-title,
+      .stop-title, .noaccess-title, .gm-head h2, .card h3, .role-header, .checklist-title,
+      .bench-num, .assoc-leads, .mp-title, .md-val, .lseq-word h1, .lseq-btitle h1,
+      .oyo-chan-rate, .ac-stat b, .stepper-value, .dr-tally b, .orr-points, .goalbox b,
+      .drawer-store, .bl-title, .off-title, .verdict, .mdial-label, .badge {
+        font-family: var(--font-display); }
+      .lb-title, .card h3, .role-header, .checklist-title, .off-title { letter-spacing:-.015em; }
+
+      /* One focus ring for the whole app, only when keyboarding. */
+      .lpc :focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:8px; }
+      .lpc :focus:not(:focus-visible) { outline:none; }
+      /* The browser's default body margin was leaving a strip down both sides, so
+         the top bar stopped short of the corners. */
+      html, body { margin:0; padding:0; }
+      .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
+        font-family: var(--font-ui);
+        font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
+        overflow-x:clip;
+        /* Scroll anchoring is what shifts the store logo when you reverse scroll
+           direction. It was only turned off for touch; the desktop kept it, and the
+           extra compositor layers (promoted top bar, fixed version stamp) made it
+           show up there too. Off everywhere now. */
+        overflow-anchor: none; }
+      .lpc * { overflow-anchor: none; }
+      /* base wash */
+      .lpc::before { content:""; position:fixed; inset:-10%; z-index:-2; pointer-events:none;
+        background:
+          radial-gradient(38% 34% at 15% 8%, rgba(136,198,234,.38), transparent 70%),
+          radial-gradient(34% 32% at 85% 14%, rgba(193,215,48,.24), transparent 70%),
+          var(--bg);
+        animation: driftA 34s ease-in-out infinite alternate; will-change: transform; }
+      /* second drifting layer, slower and offset, for parallax life */
+      .lpc::after { content:""; position:fixed; inset:-15%; z-index:-2; pointer-events:none;
+        background:
+          radial-gradient(30% 30% at 70% 85%, rgba(42,94,155,.18), transparent 72%),
+          radial-gradient(26% 26% at 25% 92%, rgba(0,168,150,.13), transparent 72%),
+          radial-gradient(24% 24% at 92% 42%, rgba(122,79,155,.10), transparent 74%);
+        animation: driftB 46s ease-in-out infinite alternate; will-change: transform; }
+      @keyframes driftA {
+        0%   { transform: translate3d(0,0,0) scale(1); }
+        50%  { transform: translate3d(2.5%, 2%, 0) scale(1.06); }
+        100% { transform: translate3d(-2%, 3%, 0) scale(1.03); }
+      }
+      @keyframes driftB {
+        0%   { transform: translate3d(0,0,0) scale(1.05); }
+        50%  { transform: translate3d(-3%, -2.5%, 0) scale(1); }
+        100% { transform: translate3d(2%, -3%, 0) scale(1.08); }
+      }
+
+      /* ---- living logo: needle sweeps left→right, lime arc draws in behind it ---- */
+      .logo-anim { animation: logoFloat 7s ease-in-out 1.8s infinite; will-change: transform; }
+      .logo-anim .logo-arc {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation: arcDraw 1.5s var(--spring) .25s forwards;
+      }
+      .logo-anim .logo-needle {
+        transform: rotate(-140.2deg);
+        animation: needleSweep 1.5s var(--spring) .25s forwards;
+      }
+      @keyframes arcDraw { to { stroke-dashoffset: 0; } }
+      /* needle sweeps from the arc's start (180°) to its resting angle (320.2°).
+         No overshoot: backing off even a few degrees exposed the lime arc behind the tip. */
+      @keyframes needleSweep {
+        from { transform: rotate(-140.2deg); }
+        to   { transform: rotate(0deg); }
+      }
+      @keyframes logoFloat {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50%      { transform: translateY(-3px) scale(1.015); }
+      }
+
+      .lpc * { box-sizing: border-box; }
+      ::selection { background: rgba(42,94,155,.2); }
+
+      /* ---- store hero (manager landing) ---- */
+      .hero { position:relative; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
+        padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
+        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
+        box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
+        animation: heroIn .6s var(--spring) both; }
+      .hero-band::after { content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+        background: radial-gradient(40% 70% at 78% 10%, color-mix(in srgb, var(--sa) 26%, transparent), transparent 70%),
+                    radial-gradient(45% 80% at 8% 100%, rgba(255,255,255,.16), transparent 70%);
+        animation: heroSheen 18s ease-in-out infinite alternate; }
+      .hero-id { display:flex; align-items:center; gap:20px; position:relative; z-index:1;
+        transform: translate3d(0, var(--px), 0); opacity: var(--pf); }
+      .hero-text { display:flex; flex-direction:column; gap:6px; }
+      .hero-logo { width:64px; height:64px; border-radius:16px; background:rgba(255,255,255,.95);
+        display:flex; align-items:center; justify-content:center;
+        overflow:hidden; box-shadow: 0 4px 14px rgba(0,0,0,.18); flex:0 0 auto; }
+      .hero-logo img { width:100%; height:100%; object-fit:contain; }
+      /* small caps get real tracking. They were set tight and read as a smudge. */
+      .hero-greet { color:rgba(255,255,255,.75); font-size:11.5px; font-weight:700;
+        letter-spacing:.12em; text-transform:uppercase; }
+      .hero-store { color:#fff; font-size:31px; font-weight:700; letter-spacing:-.015em; line-height:1.12; margin:0; }
+      .hero-date { color:rgba(255,255,255,.62); font-size:13px; letter-spacing:.015em; }
+
+      .hero-ring-wrap { position:relative; flex:0 0 auto; z-index:1;
+        transform: translate3d(0, calc(var(--px) * .6), 0); opacity: var(--pf); }
+      .hero-ring { display:block; }
+      .hero-ring-fill { animation: ringIn 1.5s var(--spring) .3s both; }
+      @keyframes ringIn { from { stroke-dashoffset: var(--c); } to { stroke-dashoffset: 0; } }
+      /* inset pulls the label off the stroke. "Cleared" was touching the ring. */
+      .hero-ring-label { position:absolute; inset:20px; display:flex; flex-direction:column;
+        align-items:center; justify-content:center; gap:6px; }
+      .hero-ring-pct { color:#fff; font-size:31px; font-weight:700; letter-spacing:-.03em; line-height:1;
+        font-variant-numeric:tabular-nums; }
+      .hero-ring-pct span { font-size:16px; font-weight:600; opacity:.68; margin-left:2px; }
+      .hero-ring-cap { color:rgba(255,255,255,.72); font-size:9.5px; text-transform:uppercase;
+        letter-spacing:.16em; font-weight:700; line-height:1; }
+      @media (max-width: 860px) {
+        .hero-focus { grid-template-columns: 1fr; }
+        .hero-health { flex-direction:column; align-items:flex-start; gap:14px; }
+        .hh-facts { max-width:none; }
+      }
+
+      /* ---- health block in the hero ---- */
+      .hero-health { display:flex; align-items:center; gap:22px; position:relative; z-index:2;
+        transform: translate3d(0, calc(var(--px) * .6), 0); opacity: var(--pf); }
+      .hh-facts { max-width:280px; }
+      .hh-verdict { color:#fff; font-size:17px; font-weight:700; letter-spacing:-.02em; line-height:1.25;
+        font-family: var(--font-display); }
+      .hh-sub { color:rgba(255,255,255,.66); font-size:11.5px; margin-top:4px; line-height:1.45; }
+      .hh-rows { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+      .hh-row { font-size:11.5px; font-weight:600; color:rgba(255,255,255,.9);
+        background:rgba(255,255,255,.14); border-radius:99px; padding:4px 11px; }
+      .hh-row b { font-family:var(--font-display); font-size:13px; margin-right:3px; }
+      .hh-row { border:1px solid transparent; cursor:pointer; font-family:inherit;
+        transition: background .25s var(--ease), border-color .25s var(--ease), transform .25s var(--ease-bloop); }
+      .hh-row:hover { transform:translateY(-1px); }
+      .hh-row.on { border-color:rgba(255,255,255,.75); box-shadow:0 3px 10px rgba(0,0,0,.14); }
+      .hh-meta { color:rgba(255,255,255,.62); font-size:11.5px; margin-top:9px; font-variant-numeric:tabular-nums; }
+      .hh-meta b { color:#fff; font-family:var(--font-display); font-size:13px; }
+      .hh-meta span { color:rgba(255,255,255,.5); }
+      /* Closing rates on hover, same bloop as the dials. */
+      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:60;
+        opacity:0; pointer-events:none; text-align:left;
+        transform: translateY(-6px) scale(.9); transform-origin: top right;
+        transition: opacity .16s ease, transform .38s var(--ease-bloop);
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
+        padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3); }
+      .hero-health:hover .health-pop { opacity:1; transform: translateY(0) scale(1); }
+      .health-pop::after { content:""; position:absolute; right:42px; bottom:100%; width:12px; height:12px;
+        margin-bottom:-6px; transform:rotate(45deg); background:#fff;
+        border-left:1px solid rgba(0,0,0,.07); border-top:1px solid rgba(0,0,0,.07); border-radius:3px 0 0 0; }
+      .hp-rows { margin-top:10px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
+      .hp-row { display:grid; grid-template-columns: 1fr auto; gap:2px 10px; padding:6px 0; align-items:baseline; }
+      .hp-row + .hp-row { border-top:1px solid rgba(0,0,0,.05); }
+      .hp-ch { font-size:12.5px; font-weight:700; }
+      .hp-pct { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em;
+        text-align:right; font-variant-numeric:tabular-nums; }
+      .hp-sub { grid-column:1 / -1; font-size:10.5px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+      .hp-g { color:#1E7A3C; } .hp-y { color:#95600A; } .hp-r { color:#C13529; }
+      .hp-dim { color:var(--ink-3); font-size:11px; font-weight:600; }
+      .hp-total { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07);
+        font-size:11.5px; color:var(--ink-2); }
+      .hp-total b { font-family:var(--font-display); font-size:15px; color:var(--ink);
+        letter-spacing:-.02em; margin-right:4px; }
+      .hh-row.ok { background:rgba(120,220,150,.22); }
+      .hh-row.bad { background:rgba(255,150,140,.22); }
+      .hh-row.dim { background:rgba(255,255,255,.12); }
+
+      /* ---- the "why, and who" row ---- */
+      .hero-focus { position:relative; z-index:6; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
+        animation: tileIn .5s var(--spring) .32s both; }
+      .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+        padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07); }
+      .hf-cap { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.11em; color:var(--ink-3); }
+      .hf-metric { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em; margin-top:6px; }
+      .hf-bar { height:7px; border-radius:4px; background:rgba(0,0,0,.07); margin-top:9px; overflow:hidden; }
+      .hf-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#F5847A,#E59200);
+        transition: width .9s var(--ease); }
+      .hf-sub { font-size:11px; color:var(--ink-2); margin-top:7px; }
+      /* Weakest standard: reversed to a mostly-orange tile with white text so it stands out. */
+      .hf-fix { background: linear-gradient(135deg, #F7973A, #E5661A); border-color: rgba(255,255,255,.3);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.38), 0 10px 26px -10px rgba(197,86,20,.55); }
+      .hf-fix .hf-cap { color: rgba(255,255,255,.85); }
+      .hf-fix .hf-metric { color: #fff; }
+      .hf-fix .hf-sub { color: rgba(255,255,255,.92); }
+      .hf-fix .hf-bar { background: rgba(255,255,255,.3); }
+      .hf-fix .hf-fill { background: #fff; }
+      .hf-list { display:flex; flex-direction:column; gap:5px; margin-top:11px; }
+      .hf-person { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
+        border:none; background:transparent; font:inherit; padding:7px 9px; border-radius:10px;
+        transition: background .22s var(--ease), transform .22s var(--ease); }
+      .hf-person:hover { background:rgba(42,94,155,.07); transform:translateX(2px); }
+      .hf-name { font-weight:700; font-size:13.5px; flex:0 0 auto; }
+      .hf-why { font-size:11.5px; color:var(--ink-2); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .hf-tag { font-size:10px; font-weight:800; padding:3px 9px; border-radius:99px; flex:0 0 auto;
+        font-variant-numeric:tabular-nums; }
+      .hf-tag.now { background:rgba(229,71,60,.14); color:#C13529; }
+      .hf-tag.soon { background:rgba(255,159,10,.16); color:#95600A; }
+      .hf-fix { position:relative; }
+      .hf-pop { position:absolute; left:0; top:calc(100% + 12px); width:300px; z-index:45;
+        opacity:0; pointer-events:none; text-align:left;
+        transform: translateY(-6px) scale(.9); transform-origin: top left;
+        transition: opacity .16s ease, transform .38s var(--ease-bloop);
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
+        padding:14px 16px 13px; box-shadow: 0 16px 42px rgba(31,54,86,.26); }
+      .hf-fix:hover .hf-pop { opacity:1; transform: translateY(0) scale(1); }
+
+      /* the card the manager was sent to, briefly haloed so they land on it */
+      .assoc-card.is-focused { animation: focusPing 2.4s var(--ease) both; border-radius:12px; }
+      @keyframes focusPing {
+        0%   { box-shadow: 0 0 0 0 rgba(42,94,155,.34); background:rgba(42,94,155,.07); }
+        55%  { box-shadow: 0 0 0 7px rgba(42,94,155,0); background:rgba(42,94,155,.05); }
+        100% { box-shadow: 0 0 0 0 rgba(42,94,155,0); background:transparent; }
+      }
+      .pod { cursor:pointer; text-align:left; font:inherit; color:inherit; }
+
+      /* ---- Top Performers as a strip rather than three big cards ---- */
+      .podium { margin-bottom:22px; }
+      .podium-cap { font-family:var(--font-display); font-size:13px; font-weight:700; letter-spacing:-.01em;
+        margin-bottom:9px; }
+      .podium-cap span { font-weight:500; color:var(--ink-3); font-size:11.5px; margin-left:8px; letter-spacing:0; }
+      .podium-row { display:flex; flex-wrap:wrap; gap:10px; }
+      .pod { flex:1 1 240px; display:flex; align-items:center; gap:11px; padding:11px 14px; border-radius:14px;
+        background:rgba(255,255,255,.7); border:1px solid rgba(16,40,68,.06);
+        transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
+      .pod:hover { transform:translateY(-2px); }
+      .pod-1 { box-shadow: 0 0 0 1px rgba(224,161,0,.28), 0 8px 22px rgba(224,161,0,.15); }
+      .pod-2 { box-shadow: 0 0 0 1px rgba(140,158,176,.26), 0 8px 22px rgba(90,110,130,.11); }
+      .pod-3 { box-shadow: 0 0 0 1px rgba(192,118,74,.26), 0 8px 22px rgba(160,96,58,.13); }
+      .pod .lb-medal { width:30px; height:30px; font-size:13px; margin:0; flex:0 0 auto; }
+      .pod-who { display:flex; flex-direction:column; min-width:0; flex:1; }
+      .pod-name { font-family:var(--font-display); font-weight:700; font-size:14.5px; letter-spacing:-.015em;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .pod-role { font-size:10.5px; font-weight:600; }
+      .pod-units { font-family:var(--font-display); font-size:20px; font-weight:700; letter-spacing:-.03em;
+        font-variant-numeric:tabular-nums; flex:0 0 auto; }
+      .pod-units em { font-style:normal; font-size:10px; font-weight:600; color:var(--ink-3); margin-left:4px; letter-spacing:0; }
+      .pod .lb-std { margin-top:0; flex:0 0 auto; }
+
+      /* ---- one roster card, roles divided inside it ---- */
+      .roster-card { --tint: rgba(42,94,155,.07); padding:6px 24px 20px; }
+      .role-group { position:relative; isolation:isolate; padding-top:26px;
+        --tint: color-mix(in srgb, var(--role) 14%, transparent); }
+      /* A soft band of the role's own colour behind its header, so Sales, BDC,
+         Managers and Service to Sales read as distinct territories inside the one
+         card rather than an undifferentiated list. */
+      .role-group::before { content:""; position:absolute; left:-12px; right:-12px; top:8px; height:104px;
+        z-index:-1; border-radius:16px; pointer-events:none;
+        background: linear-gradient(180deg, color-mix(in srgb, var(--role) 16%, transparent), transparent 82%); }
+      .role-group .role-header { font-size:17px; }
+      .role-group + .role-group { border-top:1px solid rgba(16,40,68,.07); margin-top:6px; }
+
+      /* ---- the living backdrop ---- */
+      .bg-live { position:fixed; inset:-25%; z-index:-2; pointer-events:none;
+        transform: translate3d(0, var(--bgy, 0px), 0); }
+      .bg-live-inner { position:absolute; inset:0;
+        background:
+          radial-gradient(26% 28% at 24% 22%, rgba(122,79,155,.26), transparent 70%),
+          radial-gradient(24% 26% at 78% 56%, rgba(0,168,150,.26), transparent 70%),
+          radial-gradient(22% 24% at 48% 92%, rgba(255,159,10,.20), transparent 72%),
+          radial-gradient(20% 22% at 88% 16%, rgba(42,94,155,.22), transparent 72%),
+          radial-gradient(18% 20% at 8% 70%, rgba(193,215,48,.18), transparent 74%);
+        opacity:.5; animation: bgMorph 26s ease-in-out infinite alternate;
+        transition: opacity 1.4s var(--ease); }
+      /* Sitting on one view lets the colours travel much further and faster;
+         scrolling already supplies plenty of motion on its own. */
+      .bg-idle .bg-live-inner { animation-duration: 7s; opacity:.95; }
+      @keyframes bgMorph {
+        0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); filter:hue-rotate(0deg) saturate(1); }
+        50%  { transform: translate3d(-2%,3%,0) scale(1.14) rotate(-6deg); filter:hue-rotate(120deg) saturate(1.25); }
+        100% { transform: translate3d(4%,-5%,0) scale(1.28) rotate(11deg); filter:hue-rotate(255deg) saturate(1.1); }
+      }
+
+      .hero-tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(134px, 1fr)); gap:14px; margin-top:16px; }
+      .tile { position:relative; overflow:hidden;
+        background: rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+        padding:17px 19px 17px 22px;
+        backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07);
+        transition: transform .3s var(--spring), box-shadow .3s var(--spring);
+        animation: tileIn .5s var(--spring) both;
+        --accent: rgba(0,0,0,.12); }
+      /* full-height accent. A border-left would be curved away by the border-radius
+         and blend into the pale top/bottom borders, which made the colour stop short. */
+      .tile::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+        background: var(--accent); }
+      .tile:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 12px 26px rgba(31,54,86,.12); }
+      .hero-tiles .tile:nth-child(1) { animation-delay:.10s; }
+      .hero-tiles .tile:nth-child(2) { animation-delay:.17s; }
+      .hero-tiles .tile:nth-child(3) { animation-delay:.24s; }
+      .hero-tiles .tile:nth-child(4) { animation-delay:.31s; }
+      .hero-tiles .tile:nth-child(5) { animation-delay:.38s; }
+      @keyframes tileIn { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform:none; } }
+      .tile-num { font-size:31px; font-weight:700; letter-spacing:-.03em; line-height:1.05;
+        font-variant-numeric:tabular-nums; }
+      .tile-of { font-size:15px; font-weight:600; color:var(--ink-3); margin-left:2px; letter-spacing:0; }
+      .tile-label { font-size:10px; color:var(--ink-2); font-weight:700; margin-top:8px;
+        letter-spacing:.09em; text-transform:uppercase; }
+      .tile-good { --accent:#30B155; } .tile-good .tile-num { color:#1E7A3C; }
+      .tile-bad  { --accent:#E5473C; } .tile-bad .tile-num { color:#C13529; }
+      .tile-warn { --accent:#FF9F0A; } .tile-warn .tile-num { color:#B8730A; }
+      .tile-info { --accent: var(--sp); } .tile-info .tile-num { color: var(--sd); }
+      .tile-flat { --accent:rgba(0,0,0,.12); } .tile-flat .tile-num { color:var(--ink-3); }
+      /* the tiles are buttons: click one to see only those people on the board below */
+      button.tile { cursor:pointer; text-align:left; font:inherit; width:100%; display:block; }
+      .tile.picked { outline:2px solid var(--accent); outline-offset:1px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(31,54,86,.14); }
+      .tile-static { cursor:default; }
+      .filter-bar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+        background:rgba(42,94,155,.08); border:1px solid rgba(42,94,155,.18); border-radius:12px;
+        padding:10px 15px; margin-bottom:14px; font-size:13px; }
+      .filter-what b { font-weight:700; }
+
+      .hero-strip { position:relative; z-index:1; display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:14px;
+        animation: tileIn .5s var(--spring) .40s both; }
+      .strip-chip { display:inline-flex; align-items:center; gap:8px; border:none; cursor:pointer;
+        padding:9px 15px; border-radius:20px; font-size:12.5px; font-weight:600; transition: all .2s var(--spring); }
+      .strip-chip:hover { transform: translateY(-1px); box-shadow: var(--shadow-1); }
+      .chip-ok { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .chip-warn { background:rgba(255,159,10,.16); color:#95600A; }
+      .chip-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+      .chip-warn .chip-dot { animation: chipPulse 1.8s ease-in-out infinite; }
+      @keyframes chipPulse { 0%,100% { opacity:.45; transform:scale(1); } 50% { opacity:1; transform:scale(1.25); } }
+      .strip-note { font-size:12px; color:var(--ink-2); background:rgba(255,255,255,.55); padding:8px 14px; border-radius:20px;
+        border:1px solid rgba(255,255,255,.7); }
+      .strip-leader { display:inline-flex; align-items:center; gap:8px; margin-left:auto;
+        padding:8px 15px; border-radius:20px; font-size:12.5px;
+        background: linear-gradient(100deg, rgba(193,215,48,.22), rgba(136,198,234,.18));
+        border:1px solid rgba(193,215,48,.35); }
+      .leader-crown { color:#7E9410; font-size:13px; animation: starGlow 3.2s ease-in-out infinite; }
+      .leader-name { font-weight:700; }
+      .leader-tag { color:var(--ink-2); }
+      .leader-pct { font-weight:700; color:#1E7A3C; }
+      @media (max-width: 700px) {
+        .hero-band { padding:18px; }
+        .hero-store { font-size:22px; }
+        .strip-leader { margin-left:0; }
+      }
+
+      /* ---- store wizard ---- */
+      .wiz-overlay { position:fixed; inset:0; z-index:60; background:rgba(18,33,47,.42);
+        backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+        display:flex; align-items:center; justify-content:center; padding:20px; animation: fadeIn .25s ease; }
+      @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+      .wiz { width:100%; max-width:920px; max-height:90vh; overflow:auto; border-radius:24px;
+        background:rgba(255,255,255,.86); backdrop-filter:blur(30px) saturate(180%); -webkit-backdrop-filter:blur(30px) saturate(180%);
+        border:1px solid rgba(255,255,255,.8); box-shadow: 0 30px 70px rgba(18,33,47,.32);
+        animation: heroIn .4s var(--spring) both; position:relative; }
+      .wiz-head { display:flex; align-items:center; justify-content:space-between; padding:20px 24px 0; }
+      .wiz-head h3 { font-size:20px; font-weight:700; letter-spacing:-.02em; }
+      .wiz-body { display:grid; grid-template-columns: 1.15fr .85fr; gap:24px; padding:16px 24px; }
+      .wiz-form label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--ink-3); font-weight:700; margin:14px 0 6px; }
+      .wiz-form > input[type=text], .wiz-form > input { width:100%; }
+      .wiz-presets { display:grid; grid-template-columns: repeat(auto-fill, minmax(88px,1fr)); gap:8px; }
+      .wiz-preset { display:flex; flex-direction:column; align-items:center; gap:5px; padding:8px 4px; cursor:pointer;
+        border-radius:12px; border:2px solid transparent; background:rgba(255,255,255,.5); transition: all .2s var(--spring); }
+      .wiz-preset:hover { background:#fff; transform:translateY(-1px); }
+      .wiz-preset.on { border-color:var(--blue); background:#fff; box-shadow: var(--shadow-1); }
+      .wiz-swatch { width:36px; height:36px; border-radius:10px; position:relative; box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+      .wiz-swatch-dot { position:absolute; right:-2px; bottom:-2px; width:12px; height:12px; border-radius:50%; border:2px solid #fff; }
+      .wiz-preset-label { font-size:10.5px; font-weight:600; color:var(--ink-2); }
+      .wiz-colors { display:flex; gap:14px; flex-wrap:wrap; }
+      .wiz-color { display:flex !important; align-items:center; gap:7px; text-transform:none !important; letter-spacing:0 !important;
+        font-size:12px !important; color:var(--ink) !important; margin:0 !important; }
+      .wiz-color input[type=color] { width:38px; height:30px; border:1px solid var(--line); border-radius:8px; padding:0; cursor:pointer; background:none; }
+      .wiz-logo-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+      .wiz-nums { display:flex; gap:16px; flex-wrap:wrap; }
+      .hol-add { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+      .hol-add input[type=date] { flex:0 0 auto; }
+      .hol-add input:not([type=date]) { flex:1 1 140px; min-width:120px; }
+      .hol-add .btn-ghost { margin-top:0; }
+      .hol-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+      .hol-chip { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
+        background:rgba(42,94,155,.09); border:1px solid rgba(42,94,155,.16); color:var(--ink);
+        padding:5px 8px 5px 11px; border-radius:99px; }
+      .hol-chip em { font-style:normal; color:var(--ink-3); font-weight:500; }
+      .hol-chip button { border:none; background:none; cursor:pointer; color:var(--ink-3); font-size:11px; padding:0 2px; }
+      .hol-chip button:hover { color:var(--red); }
+      .hol-chip.past { background:rgba(0,0,0,.04); border-color:rgba(0,0,0,.07); color:var(--ink-3); }
+      .holiday-card { --tint: rgba(191,90,242,.10); }
+
+      /* ---- hourly contact pattern on the coaching card ---- */
+      .hourly { position:relative; margin-top:22px; }
+      .hourly-chart { width:100%; height:auto; display:block; margin-top:4px; }
+      .hr-bar { fill:rgba(42,94,155,.16); }
+      .hr-line { stroke:#E59200; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
+      .hr-dot { fill:#E59200; stroke:#fff; stroke-width:1.5; }
+      .hr-tick { font-size:9px; fill:var(--ink-3); font-weight:600; }
+      .hourly-read { font-size:13px; margin-top:8px; }
+      .hourly-read b { font-family:var(--font-display); letter-spacing:-.01em; }
+      /* Locked until there is a fortnight of it: the shape is shown so the manager
+         knows what is coming, but blurred so nobody coaches off two days of noise. */
+      .hourly-locked .hourly-chart { filter: blur(5px) grayscale(.7); opacity:.45; pointer-events:none; }
+      .hourly-veil { position:absolute; left:50%; top:56%; transform:translate(-50%,-50%); z-index:2;
+        width:min(420px, 92%); text-align:center; background:rgba(255,255,255,.94);
+        border:1px solid rgba(0,0,0,.07); border-radius:14px; padding:13px 16px;
+        box-shadow:0 10px 30px rgba(31,54,86,.14); }
+      .hourly-veil b { display:block; font-family:var(--font-display); font-size:14px; letter-spacing:-.02em; }
+      .hourly-veil span { display:block; font-size:11.5px; color:var(--ink-2); margin-top:5px; line-height:1.45; }
+      .wiz-nums .thr-label { text-transform:none; letter-spacing:0; font-size:12.5px; color:var(--ink); margin:0; }
+      .wiz-foot { display:flex; justify-content:flex-end; gap:10px; padding:12px 24px 22px; border-top:1px solid var(--line); margin-top:4px; }
+      .wiz-foot .btn:disabled { opacity:.45; cursor:default; }
+
+      .wiz-preview-label { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin-bottom:8px; }
+      .wiz-hero { --sp:#2A5E9B; --sd:#1D4674; --sa:#C1D730; }
+      .wiz-hero-band { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:14px 16px; border-radius:16px;
+        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
+        box-shadow: 0 8px 20px rgba(31,54,86,.22); }
+      .wiz-hero-id { display:flex; align-items:center; gap:10px; }
+      .wiz-hero-logo { width:38px; height:38px; border-radius:10px; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; flex:0 0 auto; }
+      .wiz-hero-logo img { width:100%; height:100%; object-fit:contain; }
+      .wiz-hero-greet { color:rgba(255,255,255,.7); font-size:10px; font-weight:600; }
+      .wiz-hero-name { color:#fff; font-size:16px; font-weight:700; letter-spacing:-.02em; }
+      .wiz-hero-ring { position:relative; width:52px; height:52px; flex:0 0 auto; }
+      .wiz-hero-pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:700; }
+      .wiz-hero-tiles { display:flex; gap:7px; margin-top:8px; }
+      .wiz-tile { flex:1; background:rgba(255,255,255,.7); border:1px solid rgba(255,255,255,.8); border-left-width:3px;
+        border-radius:10px; padding:8px 9px; }
+      .wiz-tile b { display:block; font-size:16px; font-weight:700; letter-spacing:-.02em; }
+      .wiz-tile span { font-size:9.5px; color:var(--ink-2); font-weight:600; }
+      .brand-swatch { display:inline-block; width:22px; height:12px; border-radius:4px; margin-left:8px; vertical-align:middle;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+      @media (max-width: 780px) { .wiz-body { grid-template-columns: 1fr; } }
+
+      /* ---- loading screen ---- */
+      /* ============ cinematic loading sequence ============ */
+      .lseq { position:fixed; inset:0; z-index:500; overflow:hidden; background:#0E2033;
+        font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; font-variant-numeric:tabular-nums; }
+      .lseq-bg { position:absolute; inset:0; opacity:0; animation:lseqBgIn .8s ease .1s forwards; background:
+        radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
+        radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
+        radial-gradient(50% 60% at 50% 100%, rgba(42,94,155,.35), transparent 72%),
+        linear-gradient(160deg,#0B1B30 0%,#0F2541 55%,#0B1B30 100%); }
+      @keyframes lseqBgIn { to { opacity:1; } }
+      .lseq-aurora { position:absolute; inset:-20%; filter:blur(20px); animation:lseqAurora 16s ease-in-out infinite alternate; background:
+        radial-gradient(600px 300px at 30% 40%, rgba(136,198,234,.10), transparent 70%),
+        radial-gradient(500px 260px at 80% 60%, rgba(193,215,48,.08), transparent 70%); }
+      @keyframes lseqAurora { from { transform:translate(-3%,-2%) scale(1); } to { transform:translate(3%,2%) scale(1.08); } }
+
+      .lseq-board { position:absolute; inset:0; display:flex; flex-direction:column; padding:5vh 6vw;
+        filter:blur(9px) brightness(.55); transform:scale(1.06); opacity:0;
+        animation:lseqFill 1.0s cubic-bezier(.16,1,.3,1) 1.2s forwards; }
+      @keyframes lseqFill { to { opacity:.85; } }
+      .lseq-btitle { display:flex; align-items:center; gap:14px; color:#fff; margin-bottom:2.5vh; }
+      .lseq-dot { width:12px; height:12px; border-radius:50%; background:var(--red); box-shadow:0 0 12px var(--red); animation:lseqLive 1.4s ease-in-out infinite; }
+      @keyframes lseqLive { 0%,100%{opacity:.5;} 50%{opacity:1;} }
+      .lseq-btitle h1 { font-size:2.4vw; font-weight:800; letter-spacing:-.02em; margin:0; }
+      .lseq-sub { font-size:1.1vw; color:var(--lblue); font-weight:600; }
+      .lseq-head, .lseq-row { display:grid; grid-template-columns:2.4fr 1fr 1fr 1fr 1fr; gap:1.4vw; align-items:center; }
+      .lseq-head { color:var(--lblue); font-size:1vw; font-weight:700; text-transform:uppercase; letter-spacing:.05em; padding:0 1.6vw 1.4vh; }
+      .lseq-row { padding:1.35vh 1.6vw; border-radius:12px; margin-bottom:.7vh; background:rgba(255,255,255,.04);
+        border:1px solid rgba(255,255,255,.06); opacity:0; transform:translateY(14px); animation:lseqRowIn .55s var(--spring) forwards; }
+      @keyframes lseqRowIn { to { opacity:1; transform:none; } }
+      .lseq-rank { color:var(--lblue); font-weight:800; font-size:1.3vw; margin-right:.6vw; }
+      .lseq-name { color:#fff; font-weight:700; font-size:1.5vw; display:flex; align-items:center; }
+      .lseq-medal { margin-right:.5vw; font-size:1.4vw; }
+      .lseq-pill { display:inline-flex; align-items:center; gap:.4vw; justify-content:center; padding:.5vh 1vw; border-radius:10px;
+        font-weight:800; font-size:1.25vw; font-variant-numeric:tabular-nums; min-width:5vw; }
+      .lseq-pill.g { background:rgba(46,158,79,.18); color:#7BE8A0; }
+      .lseq-pill.y { background:rgba(224,161,0,.18); color:#FFD65A; }
+      .lseq-pill.r { background:rgba(213,67,58,.18); color:#FF9E96; }
+      .lseq-mk { font-size:1vw; }
+      .lseq-units { color:#fff; font-weight:800; font-size:1.5vw; font-variant-numeric:tabular-nums; text-align:center; }
+      .lseq-spark { position:relative; height:2.2vh; width:100%; }
+      .lseq-spark svg { width:100%; height:100%; overflow:visible; }
+      .lseq-spark path { fill:none; stroke:var(--lblue); stroke-width:1.5; opacity:.5; }
+      .lseq-spark path.up { stroke:#5FE08A; } .lseq-spark path.down { stroke:#FF8A80; }
+
+      .lseq-logowrap { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:5; pointer-events:none; }
+      .lseq-badge { opacity:0; transform:translateY(14vh) scale(.08); filter:drop-shadow(0 24px 60px rgba(0,0,0,.5));
+        animation:lseqWhoosh 1.3s cubic-bezier(.16,1,.3,1) .15s forwards, lseqHandoff 1.5s var(--spring) 2.6s forwards; }
+      @keyframes lseqWhoosh {
+        0% { opacity:0; transform:translateY(14vh) scale(.08); }
+        35% { opacity:1; }
+        60% { transform:translateY(-1vh) scale(1.25); }
+        100% { transform:translateY(0) scale(1); }
+      }
+      @keyframes lseqHandoff { to { opacity:0; transform:scale(.55) translateY(-4vh); } }
+      .lseq-badge svg { width:24vh; height:24vh; }
+      .lseq-streak { position:absolute; left:50%; top:50%; width:3px; height:44vh; transform:translate(-50%,-50%);
+        background:linear-gradient(to top,transparent,rgba(136,198,234,.5),transparent); opacity:0; animation:lseqStreak .7s ease .25s forwards; }
+      @keyframes lseqStreak { 0%{opacity:0;transform:translate(-50%,30vh) scaleY(.3);} 45%{opacity:.9;} 100%{opacity:0;transform:translate(-50%,-6vh) scaleY(1.2);} }
+      .lseq-arc { stroke-dasharray:100; stroke-dashoffset:100; animation:lseqArc .9s var(--spring) 1.0s forwards; }
+      @keyframes lseqArc { to { stroke-dashoffset:0; } }
+      .lseq-needle { transform-origin:32px 32px; transform:rotate(-140.2deg); animation:lseqNeedle .9s var(--spring) 1.0s forwards; }
+      @keyframes lseqNeedle { to { transform:rotate(0deg); } }
+      .lseq-word { margin-top:3vh; text-align:center; opacity:0; transform:translateY(16px); animation:lseqWordIn .6s ease 1.3s forwards, lseqWordOut .6s ease 2.7s forwards; }
+      @keyframes lseqWordIn { to { opacity:1; transform:none; } }
+      @keyframes lseqWordOut { to { opacity:0; transform:translateY(-10px); } }
+      .lseq-word h1 { color:#fff; font-size:4.5vh; font-weight:800; letter-spacing:-.03em; margin:0; }
+      .lseq-tag { color:var(--lblue); font-size:2vh; font-weight:600; margin-top:.6vh; letter-spacing:.02em; }
+
+      .lseq-loadbar { position:absolute; bottom:6vh; left:50%; transform:translateX(-50%); width:min(360px,60vw); height:4px;
+        background:rgba(255,255,255,.12); border-radius:99px; overflow:hidden; z-index:6; opacity:0; animation:lseqBarShow .4s ease 1.0s forwards, lseqBarHide .4s ease 4.4s forwards; }
+      .lseq-fill { height:100%; width:0; background:linear-gradient(90deg,var(--lblue),var(--lime)); border-radius:99px; animation:lseqFillBar 3.5s linear 1.0s forwards; }
+      @keyframes lseqFillBar { to { width:100%; } }
+      @keyframes lseqBarShow { to { opacity:1; } } @keyframes lseqBarHide { to { opacity:0; } }
+      .lseq-loadword { position:absolute; bottom:9vh; left:50%; transform:translateX(-50%); color:var(--ink-3); font-size:1.6vh; font-weight:600; letter-spacing:.04em; z-index:6; opacity:0; animation:lseqBarShow .4s ease 1.1s forwards, lseqBarHide .4s ease 4.4s forwards; }
+      /* The curtain lifts: the overlay blurs and pulls away, revealing the app that
+         is already sitting underneath. Duration must match EXIT_MS in the component. */
+      .lseq.is-exiting { pointer-events:none; animation: lseqOut .64s cubic-bezier(.32,.72,.33,1) forwards; }
+      @keyframes lseqOut {
+        0%   { opacity:1; transform:scale(1);    filter:blur(0px); }
+        100% { opacity:0; transform:scale(1.09); filter:blur(12px); }
+      }
+      .lseq-skip { position:absolute; bottom:5vh; right:5vw; z-index:8; background:rgba(255,255,255,.14); color:#fff; border:1px solid rgba(255,255,255,.25);
+        padding:8px 16px; border-radius:99px; font:inherit; font-size:14px; font-weight:600; cursor:pointer; backdrop-filter:blur(6px); animation:lseqBarShow .5s ease .5s both; }
+      .lseq-skip:hover { background:rgba(255,255,255,.24); }
+      @media (max-width:720px){ .lseq-btitle h1{font-size:6vw;} .lseq-name{font-size:3.6vw;} .lseq-pill{font-size:3vw;min-width:14vw;} .lseq-units{font-size:3.6vw;} .lseq-sub,.lseq-head{font-size:2.6vw;} }
+
+
+      /* Loading state centered on screen — same vertical spot as the login logo, so a
+         handoff from login reads as the form dissolving and leaving the speedometer. */
+      .loadscreen { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+        padding:24px; z-index:60; }
+      .loadscreen-inner { text-align:center; animation: loadFadeIn .45s var(--spring) both; }
+      .loadscreen-logo { display:flex; justify-content:center; margin-bottom:20px;
+        filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
+      @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
+      /* the speedometer needle + its gradient trail spin together */
+      .logo-loading .logo-spin { animation: needleSpin 1s linear infinite; }
+      .logo-loading .logo-trail { animation: needleSpin 1s linear infinite; opacity:.9; }
+      @keyframes needleSpin { to { transform: rotate(360deg); } }
+      .loadscreen-label { margin-top:2px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
+
+      /* ---- board launcher ---- */
+      .board-launch { max-width:760px; margin:0 auto; }
+      .board-launch-card { text-align:center; padding:34px 28px; }
+      .bl-logo { display:flex; justify-content:center; margin-bottom:14px; }
+      .bl-logo img { width:64px; height:64px; object-fit:contain; border-radius:14px; }
+      .bl-title { font-size:24px; font-weight:700; letter-spacing:-.02em; margin-bottom:6px; }
+      .board-launch-card .btn { margin-top:14px; }
+      .bl-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:14px; margin:16px 0; }
+      .bl-tile { --sp:#2A5E9B; --sd:#1D4674; display:flex; flex-direction:column; align-items:flex-start; gap:8px;
+        padding:18px; border-radius:18px; cursor:pointer; border:none; text-align:left; color:#fff;
+        background: linear-gradient(130deg, var(--sp), var(--sd));
+        box-shadow: 0 8px 22px rgba(31,54,86,.18); transition: transform .25s var(--spring), box-shadow .25s var(--spring);
+        animation: tileIn .5s var(--spring) both; }
+      .bl-tile:hover { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(31,54,86,.26); }
+      .bl-tile-logo { width:42px; height:42px; border-radius:11px; background:rgba(255,255,255,.95);
+        display:flex; align-items:center; justify-content:center; overflow:hidden; }
+      .bl-tile-logo img { width:100%; height:100%; object-fit:contain; }
+      .bl-tile-ph { font-weight:700; color:var(--ink-2); font-size:17px; }
+      .bl-tile-name { font-weight:700; font-size:16px; letter-spacing:-.01em; }
+      .bl-tile-go { font-size:12px; opacity:.75; font-weight:600; }
+
+      /* ---- welcome / backup / merge / channel prompt ---- */
+      .welcome { --tint: rgba(193,215,48,.20); }
+      .welcome-head { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+      .welcome-lede { font-size:14px; color:var(--ink-2); margin:6px 0 14px; max-width:70ch; }
+      .welcome-steps { display:grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap:14px; margin-bottom:12px; }
+      .welcome-step { display:flex; gap:10px; align-items:flex-start; }
+      .ws-num { flex:0 0 auto; width:24px; height:24px; border-radius:50%; background:var(--blue); color:#fff;
+        display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+      .welcome-step b { font-size:13.5px; }
+      .welcome-step p { font-size:12.5px; color:var(--ink-2); margin-top:2px; }
+
+      .recover-card { --tint: rgba(255,159,10,.15); }
+      .snap-store { padding:12px 0; border-bottom:1px solid rgba(0,0,0,.06); }
+      .snap-store:last-child { border-bottom:none; }
+      .snap-store-name { display:flex; align-items:center; gap:10px; }
+      .snap-list { margin:8px 0 0 42px; }
+      .snap-row { display:flex; align-items:center; gap:12px; padding:5px 0; font-size:12.5px; flex-wrap:wrap; }
+      .snap-when { font-weight:600; font-variant-numeric:tabular-nums; }
+      .snap-reason { color:var(--ink-2); flex:1; }
+
+      .merge-arrow { color:var(--ink-3); font-weight:700; }
+      .alias-list { margin-top:12px; }
+      .alias-row { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:12.5px; }
+
+      .chan-row { display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid rgba(0,0,0,.06); }
+      .chan-row:last-child { border-bottom:none; }
+      .chan-file { flex:1; font-size:13px; font-weight:600; word-break:break-all; }
+
+      /* colour-blind safety: never rely on colour alone */
+      .cell-mark { font-weight:700; margin-right:5px; }
+      .co-badge.yes, .co-badge.no { letter-spacing:.01em; }
+
+      /* ---- touch devices: stability over glass ----
+         Three things were compounding to make the store logo jump and the header
+         jitter on iOS:
+           1. overflow-x:clip on the tall root container. Clipping overflow on a long
+              scrolling element makes Safari's scroll anchoring misfire, so reversing
+              scroll direction shifts the content. This was the jump.
+           2. will-change:transform on the drifting background. Even with the animation
+              switched off, will-change permanently promotes a compositor layer that
+              repaints on every scroll frame. This was the jitter.
+           3. Infinite animations (background drift, hero sheen, logo float) repainting
+              behind blurred surfaces.
+         On touch we drop all of it: no clip, no anchoring, no promoted layers, no
+         blur, no looping animation. The desktop keeps the full treatment. */
+      @media (hover: none) and (pointer: coarse) {
+        .lpc {
+          overflow-x: visible;          /* the clip was the jump */
+          overflow-anchor: none;        /* stop Safari re-anchoring mid-scroll */
+          isolation: auto;
+          background: linear-gradient(180deg, #F7F8FA 0%, #EDF2F8 100%);
+        }
+        .lpc::before, .lpc::after { display: none !important; }
+
+        /* no promoted layers anywhere. This is what was jittering. */
+        .lpc, .lpc * { will-change: auto !important; }
+
+        /* nothing loops forever behind a scrolling surface */
+        .logo-anim, .hero-band::after, .qsel-pill::before, .dz-icon, .star-badge,
+        .chip-warn .chip-dot, .leader-crown, .logo-loading .logo-spin, .logo-loading .logo-trail {
+          animation: none !important;
+        }
+        /* leave the logo in its finished state rather than mid-sweep */
+        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
+        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
+
+        /* the sticky blurred header was the other half of the jump */
+        .topbar {
+          position: static;
+          backdrop-filter: none; -webkit-backdrop-filter: none;
+          background: #FFFFFF;
+          transform: none;
+        }
+        .topbar::after { display: none; }
+        .version-stamp { backdrop-filter:none; -webkit-backdrop-filter:none; background:rgba(255,255,255,.85); }
+        .card, .tile, .store-item, .wiz, .wiz-overlay, .splash-store, .bl-tile {
+          backdrop-filter: none; -webkit-backdrop-filter: none;
+        }
+        .card, .tile, .store-item, .wiz { background: #FFFFFF; }
+
+        /* hover lifts only ever stick on a touchscreen */
+        .card:hover, .tile:hover, .store-item:hover, .bl-tile:hover,
+        .splash-store:hover, .strip-chip:hover { transform: none; }
+      }
+
+      /* ---- small screens (layout only) ---- */
+      @media (max-width: 720px) {
+        /* Navigation lives in the drawer now. */
+        .hamburger { display:flex; order:1; margin-left:auto; }
+        .seg-wrap { display:none !important; }
+        /* The tool switcher moved into the drawer; account controls stay but tuck under the logo. */
+        .topbar .tool-row { display:none; }
+        .topbar { flex-wrap:wrap; gap:10px; }
+        .brand { order:0; }
+        .topbar-right { width:100%; order:2; gap:8px 12px; justify-content:flex-start; flex-wrap:wrap; }
+        .topbar-right .view-select { flex:1 1 140px; min-width:0; }
+        .topbar-right .whoami { order:5; }
+      }
+
+      /* ---- small screens (layout only) ---- */
+      @media (max-width: 640px) {
+        .lpc { font-size:13.5px; padding-bottom:48px; }
+        .topbar { padding:10px 14px; }
+        .page, .print-area { padding-left:14px; padding-right:14px; }
+        /* .board-page sits inside .page, so don't stack their side padding */
+        .board-page { padding:18px 0 0; }
+        .hero-band { flex-direction:column; align-items:flex-start; padding:18px; }
+        .hero-ring-wrap { align-self:flex-end; margin-top:-46px; }
+        .hero-tiles { grid-template-columns: repeat(2, 1fr); }
+        .hero-strip { flex-direction:column; align-items:stretch; }
+        .strip-leader { margin-left:0; }
+
+        /* only cards that actually hold a wide table become scroll containers */
+        .card:has(table) { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+        .checkout-table, .roster-table, .gm-table { min-width:520px; }
+
+        /* store rows stack; every action stays on screen, no sideways swipe */
+        .store-item { flex-direction:column; align-items:stretch; }
+        .store-item-actions { justify-content:flex-start; }
+        .store-item-actions .btn-ghost, .store-item-actions .btn-x { flex:1 1 auto; text-align:center; }
+
+        .assoc-row { flex-wrap:wrap; gap:6px; }
+        .assoc-leads { margin-left:auto; }
+        .wiz-body { grid-template-columns:1fr; }
+        .wiz { max-height:94vh; border-radius:18px; }
+        .inline-form { flex-direction:column; align-items:stretch; }
+        .inline-form > * { width:100%; }
+        .row-actions { flex-wrap:wrap; }
+        .pending-row .row-actions { margin-left:0; }
+        .splash-actions { max-width:100%; }
+        .stepper-row { justify-content:space-between; }
+      }
+
+      /* ---- store list (reflows instead of a cramped table) ---- */
+      .store-list { display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+      .store-item { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+        padding:12px 14px; border-radius:14px; background:rgba(255,255,255,.5); border:1px solid rgba(255,255,255,.7); }
+      .store-item-main { display:flex; align-items:center; gap:12px; min-width:0; }
+      .store-item-order { display:flex; flex-direction:column; gap:2px; }
+      .store-item-name { display:flex; align-items:center; gap:8px; min-width:0; }
+      .store-item-name b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .store-item-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .btn-ghost.danger { color:var(--red); }
+      .btn-ghost.danger:hover { background:rgba(229,71,60,.08); border-color:rgba(229,71,60,.35); }
+      .btn-x.danger { color:var(--red); }
+      .btn-x.danger:hover { background:rgba(229,71,60,.1); }
+
+      /* ---- upload history ---- */
+      .up-list { display:flex; flex-direction:column; }
+      .up-row { display:grid; grid-template-columns: 140px 140px 1fr 120px 90px auto; gap:10px; align-items:center;
+        padding:7px 0; border-top:1px solid rgba(0,0,0,.05); font-size:12.5px; }
+      .up-row:first-child { border-top:none; }
+      .up-when { font-weight:700; font-variant-numeric:tabular-nums; }
+      .up-type { color:var(--blue); font-weight:600; }
+      .up-file { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .up-count, .up-by { color:var(--ink-3); }
+
+      /* ---- coaching ---- */
+      .bench-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-top:14px; }
+      .bench-tile { background:rgba(193,215,48,.12); border:1px solid rgba(193,215,48,.35); border-radius:14px; padding:14px 16px; }
+      .bench-num { font-size:24px; font-weight:700; letter-spacing:-.02em; color:#5E7A0C; font-variant-numeric:tabular-nums; }
+      .bench-lbl { font-size:11px; color:var(--ink-2); font-weight:600; margin-top:4px; }
+
+      .coach-list { display:flex; flex-direction:column; gap:6px; }
+      .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; gap:12px; align-items:center;
+        text-align:left; padding:11px 14px; border-radius:12px; cursor:pointer; border:1px solid transparent;
+        background:rgba(255,255,255,.5); font-size:13px; transition: all .2s var(--spring); }
+      .coach-row:hover { background:#fff; }
+      .coach-row.on { border-color:var(--blue); background:#fff; box-shadow:var(--shadow-1); }
+      .coach-name { font-weight:700; font-size:14px; }
+      .coach-role { color:var(--ink-2); }
+      .coach-units { font-weight:700; } .coach-units em { font-style:normal; font-weight:500; color:var(--ink-3); font-size:11.5px; }
+      .coach-days { color:var(--ink-3); font-size:12px; } .coach-days.dim { opacity:.6; }
+      .coach-open { color:var(--blue); font-weight:600; font-size:12px; }
+
+      /* ---- coaching side-by-side ---- */
+      .coach-split { display:grid; grid-template-columns: 1fr; gap:16px; align-items:start; margin-top:16px; }
+      .coach-split.has-open { grid-template-columns: minmax(300px, 380px) 1fr; }
+      .coach-list-card { position:sticky; top:12px; }
+      .coach-split.has-open .coach-row { grid-template-columns: 1fr auto; grid-auto-rows:auto; row-gap:3px; }
+      .coach-split.has-open .coach-name { grid-column:1; }
+      .coach-split.has-open .coach-open { grid-column:2; grid-row:1; text-align:right; }
+      .coach-split.has-open .coach-role { grid-column:1; font-size:12px; }
+      .coach-split.has-open .coach-units { grid-column:1; grid-row:3; }
+      .coach-split.has-open .coach-days { grid-column:2; grid-row:3; text-align:right; }
+      .coach-detail { min-width:0; }
+      .coach-detail-open { animation: cardOpen .42s cubic-bezier(.22,.61,.36,1) both; }
+      @keyframes cardOpen {
+        from { opacity:0; transform: translateY(10px) scale(.985); }
+        to { opacity:1; transform: none; }
+      }
+      .assoc-card-full .ac-bar { transition: width .6s cubic-bezier(.22,.61,.36,1); }
+      @media (prefers-reduced-motion: reduce) { .coach-detail-open { animation:none; } }
+      .coach-empty { border:1.5px dashed var(--line); border-radius:16px; min-height:340px;
+        display:flex; align-items:center; justify-content:center; color:var(--ink-3); background:rgba(0,0,0,.015); }
+      .coach-empty-inner { text-align:center; }
+      .coach-empty-ico { font-size:40px; opacity:.4; margin-bottom:8px; }
+      @media (max-width: 900px) {
+        .coach-split.has-open { grid-template-columns: 1fr; }
+        .coach-list-card { position:static; }
+        .coach-split.has-open .coach-row { grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; }
+        .coach-empty { display:none; }
+      }
+
+      /* ---- import: side-by-side checklist + dropzone ---- */
+      .import { display:flex; flex-direction:column; gap:32px; }
+      .import > .card { margin-bottom:0; padding:22px 22px 24px; }
+      .import-grid { display:grid; grid-template-columns: minmax(300px, 400px) 1fr; gap:24px; align-items:stretch; }
+      .import-grid .checklist { max-width:none; margin:0; padding:22px 22px 24px; }
+      .import-grid .dropzone { margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:240px; padding:40px 24px; }
+      .import > .import-log, .import > .hint { margin-top:0; }
+      /* roomier checklist rows so the required/optional lists don't feel cramped */
+      .import .check { padding:9px 0; }
+      .import .check-group-label { margin:18px 0 6px; }
+      .import .check-group-label:first-of-type { margin-top:6px; }
+      .import .checklist-title { margin-bottom:14px; }
+      @media (max-width: 820px) { .import-grid { grid-template-columns: 1fr; } }
+
+      .help-btn { float:right; margin-top:-2px; border:1px solid var(--line); background:#fff; color:var(--blue);
+        font:inherit; font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px; cursor:pointer; transition:all .15s ease; }
+      .help-btn:hover { background:var(--blue); color:#fff; border-color:var(--blue); }
+
+      /* ---- discrepancy flag banner ---- */
+      .flag-banner { border:1px solid rgba(217,119,6,.4); background:rgba(245,158,11,.09); border-radius:14px;
+        padding:14px 16px; margin:14px 0; }
+      .flag-banner-head { font-weight:800; color:#B45309; display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:14px; }
+      .flag-ico { font-size:16px; }
+      .flag-line { font-size:13px; color:#7C4A03; padding:5px 0; border-top:1px solid rgba(217,119,6,.18); }
+      .flag-line:first-of-type { border-top:none; }
+      .flag-banner-foot { font-size:12px; color:var(--ink-3); margin-top:8px; }
+
+      /* ---- delivery guide + wrong-report stop screen ---- */
+      .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(3px);
+        display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:200; overflow-y:auto; }
+      .modal { background:#fff; border-radius:20px; box-shadow:0 30px 80px rgba(0,0,0,.35);
+        border:1px solid rgba(255,255,255,.7); color:var(--ink); }
+      .guide-modal { background:var(--card,#fff); border-radius:20px; max-width:640px; width:100%;
+        box-shadow:0 30px 80px rgba(0,0,0,.35); padding:26px 28px; }
+      .guide-modal-head { display:flex; justify-content:space-between; align-items:center; }
+      .guide-title { font-size:22px; font-weight:800; letter-spacing:-.02em; }
+      .guide-intro { color:var(--ink-2); font-size:13.5px; margin:6px 0 4px; }
+      .guide-modal.stop { border-top:6px solid #E5473C; }
+      .stop-head { display:flex; gap:16px; align-items:flex-start; margin-bottom:6px; }
+      .stop-badge { flex:0 0 auto; width:44px; height:44px; border-radius:50%; background:#E5473C; color:#fff;
+        display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; }
+      .stop-title { font-size:21px; font-weight:800; letter-spacing:-.02em; }
+      .stop-sub { color:var(--ink-2); font-size:13.5px; margin-top:4px; }
+      .stop-file { font-family:var(--font-mono); background:rgba(0,0,0,.06); padding:1px 7px; border-radius:6px; font-size:12.5px; }
+      .guide-steps { list-style:none; margin:18px 0 0; padding:0; display:flex; flex-direction:column; gap:20px; }
+      .guide-steps > li { border:1px solid var(--line); border-radius:16px; padding:16px 18px; background:rgba(0,0,0,.012); }
+      .guide-step-head { display:flex; align-items:center; gap:11px; margin-bottom:6px; }
+      .guide-num { flex:0 0 auto; width:26px; height:26px; border-radius:50%; background:var(--blue); color:#fff;
+        display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; }
+      .guide-step-title { font-size:15px; font-weight:700; }
+      .guide-step-body { color:var(--ink-2); font-size:13px; line-height:1.5; margin:0 0 12px; }
+      .guide-img { display:block; width:100%; height:auto; border-radius:10px; border:1px solid var(--line); box-shadow:0 2px 8px rgba(0,0,0,.08); }
+      .guide-ba { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+      .guide-ba figure { margin:0; }
+      .guide-ba figcaption { font-size:11.5px; font-weight:700; color:var(--ink-3); text-align:center; margin-top:6px; text-transform:uppercase; letter-spacing:.03em; }
+      .guide-foot { margin-top:22px; }
+      @media (max-width: 520px) { .guide-ba { grid-template-columns:1fr; } }
+
+      .assoc-card-full { border-top:4px solid var(--blue); }
+      .ac-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; }
+      .ac-name { font-size:26px; font-weight:700; letter-spacing:-.02em; }
+      .ac-sub { color:var(--ink-2); font-size:13px; margin-top:3px; }
+      .ac-actions { display:flex; gap:8px; }
+      .ac-results { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap:12px; margin:18px 0 6px; }
+      .ac-stat { background:rgba(42,94,155,.07); border-radius:12px; padding:12px 14px; }
+      .ac-stat b { display:block; font-size:22px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+      .ac-stat span { font-size:11px; color:var(--ink-2); font-weight:600; }
+      .ac-h3 { font-size:15px; font-weight:700; margin:20px 0 10px; }
+      .ac-bars { display:flex; flex-direction:column; gap:9px; }
+      .ac-bar-row { display:grid; grid-template-columns: 210px 1fr 170px; gap:12px; align-items:center; font-size:12.5px; }
+      .ac-bar-lbl { font-weight:600; }
+      .ac-bar-track { position:relative; height:14px; background:rgba(0,0,0,.06); border-radius:7px; overflow:hidden; }
+      .ac-bar { height:100%; border-radius:7px; transition:width .6s var(--spring); }
+      .ac-bar.behind { background:#E5473C; }
+      .ac-bar.even { background:var(--blue); }
+      .ac-bar.ahead { background:#30B155; }
+      /* the benchmark line: where the top performers sit */
+      /* where the top performers sit. A bar reaching this line means parity with them. */
+      .ac-bench { position:absolute; left:70%; top:-3px; bottom:-3px; width:2px; background:rgba(0,0,0,.5); z-index:2; }
+      .ac-bar-val { text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+      .ac-bar-val em { font-style:normal; font-weight:500; color:var(--ink-3); }
+      .ac-list { margin:0 0 0 18px; display:flex; flex-direction:column; gap:8px; font-size:13px; }
+      .ac-coach { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+
+      /* ---- own your outcome ---- */
+      .oyo-goal { display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:start;
+        background:rgba(42,94,155,.05); border-radius:14px; padding:16px; margin-bottom:6px; }
+      .oyo-goalset label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--ink-3); font-weight:700; margin-bottom:6px; }
+      .oyo-goalset input { width:100%; font-size:22px; font-weight:700; text-align:center; padding:8px; }
+      .oyo-track { position:relative; height:22px; background:rgba(0,0,0,.07); border-radius:11px; overflow:hidden; }
+      .oyo-fill { height:100%; border-radius:11px; transition:width .8s var(--spring); }
+      .oyo-fill.good { background:linear-gradient(90deg,#30B155,#5FCB7E); }
+      .oyo-fill.behind { background:linear-gradient(90deg,#E5473C,#F0796F); }
+      /* where they SHOULD be by today: the gap between bar and mark is the whole story */
+      .oyo-pacemark { position:absolute; top:-3px; bottom:-3px; width:3px; background:var(--ink); z-index:2; }
+      .oyo-stats { display:flex; gap:18px; flex-wrap:wrap; margin-top:10px; font-size:12.5px; color:var(--ink-2); }
+      .oyo-stats b { font-size:16px; color:var(--ink); font-weight:700; }
+      .oyo-stats .good b { color:#1E7A3C; } .oyo-stats .behind b { color:#C13529; }
+      .oyo-lede { margin-top:10px; font-size:14px; }
+      .oyo-lede.good { color:#1E7A3C; font-weight:600; }
+      .oyo-lede.behind { color:#C13529; font-weight:600; }
+
+      .oyo-chan { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:12px; }
+      .oyo-chan-tile { background:rgba(255,255,255,.6); border:1px solid var(--line); border-radius:14px; padding:13px 15px; }
+      .oyo-chan-name { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; }
+      .oyo-chan-rate { font-size:26px; font-weight:700; letter-spacing:-.02em; margin-top:4px; font-variant-numeric:tabular-nums; }
+      .oyo-chan-sub { font-size:11.5px; color:var(--ink-3); }
+      .oyo-chan-hist { font-size:11.5px; font-weight:700; margin-top:5px; }
+      .oyo-chan-hist.good { color:#1E7A3C; } .oyo-chan-hist.behind { color:#C13529; }
+
+      .oyo-table { width:100%; border-collapse:collapse; margin-bottom:6px; }
+      .oyo-table th { text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.07em;
+        color:var(--ink-3); font-weight:700; padding:8px 10px; }
+      .oyo-table td { padding:9px 10px; border-top:1px solid rgba(0,0,0,.06); font-size:13px;
+        font-variant-numeric:tabular-nums; }
+      .oyo-table tr.oyo-behind { background:rgba(229,71,60,.05); }
+
+      .oyo-base { margin-top:20px; padding-top:14px; border-top:1px solid var(--line); }
+      .oyo-base-head { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; flex-wrap:wrap; }
+      .bl-editor { margin-top:12px; background:rgba(0,0,0,.02); border-radius:12px; padding:14px; }
+      .baseline-card { --tint: rgba(193,215,48,.18); }
+      .bl-dates { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin:12px 0; }
+      .bl-dates .bl-field input { padding:7px 9px; }
+      .bl-preview { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+      .bl-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap:10px; margin-bottom:6px; }
+      .bl-field { display:flex; flex-direction:column; gap:3px; }
+      .bl-field span { font-size:11px; color:var(--ink-2); font-weight:600; }
+      @media (max-width: 760px) { .oyo-goal { grid-template-columns:1fr; } }
+
+      /* ---- pending approvals ---- */
+      .pending-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:12px 0;
+        border-bottom:1px solid rgba(0,0,0,.06); }
+      .pending-row:last-child { border-bottom:none; }
+      .pending-who { display:flex; flex-direction:column; min-width:180px; }
+      .pending-who .mono { font-size:12px; color:var(--ink-2); }
+      .pending-row .row-actions { margin-left:auto; }
+
+      /* ---- frosted top bar ---- */
+      /* Sticky frosted header. What makes it read as smooth rather than "clicking":
+         - translateZ(0) + will-change put it on its own GPU layer, so the blur is
+           composited rather than re-rasterised coarsely on every scroll frame.
+         - A SMALL blur radius. Cost scales with radius: a 28px blur samples a big
+           region each frame and the browser drops to a cheaper, steppier redraw.
+           16px stays cheap enough to resolve continuously.
+         - A fairly opaque fill, so colour underneath reads as a soft tint instead of
+           punching through and making every step obvious.
+         - A gradient fade below the bar (::after) so elements ease out from under it
+           instead of popping across a hard edge. */
+      .topbar { position: sticky; top: 0; z-index: 30; display:flex; align-items:center; justify-content:space-between;
+        padding:12px 24px; background: rgba(255,255,255,.9); backdrop-filter: saturate(170%) blur(16px);
+        -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(16,32,52,.07);
+        box-shadow: 0 1px 0 rgba(16,32,52,.02), 0 8px 24px -18px rgba(16,32,52,.16);
+        flex-wrap:wrap; gap:10px;
+        transform: translateZ(0); will-change: backdrop-filter; backface-visibility: hidden; }
+      .topbar::after { content:""; position:absolute; left:0; right:0; top:100%; height:16px; pointer-events:none;
+        background: linear-gradient(180deg, rgba(244,246,249,.85), rgba(244,246,249,0)); }
+      .brand { display:flex; gap:12px; align-items:center; }
+      .brand-title { font-weight:700; font-size:17px; letter-spacing:-.02em; }
+      .brand-sub { font-size:11px; color:var(--ink-2); letter-spacing:.02em; }
+      .topbar-right { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+      .save-dot { font-size:12px; color:var(--ink-3); animation: pulse 1.2s ease infinite; }
+      .load-warn { background:#FDECEA; border:1px solid #F5B7B1; color:#B3372E; padding:12px 16px; border-radius:12px; margin-bottom:16px; font-weight:600; font-size:14px; }
+      .pix { display:inline-block; vertical-align:middle; flex:0 0 auto; }
+      .ac-prints { font-size:12px; color:var(--ink-2); margin-top:8px; }
+      .ac-prints b { color:var(--ink); font-weight:700; }
+      .ac-prints details { margin-top:4px; }
+      .ac-prints summary { cursor:pointer; color:var(--blue); font-weight:600; }
+      .ac-prints ul { margin:5px 0 0 18px; }
+      .ac-prints li { list-style:disc; margin:1px 0; }
+      @keyframes pulse { 50% { opacity:.4; } }
+      .whoami { font-size:13px; color:var(--ink-2); }
+      /* ---------- the page assembling itself ----------
+         Every measurement here is taken from the real dashboard: .topbar is 12px/24px
+         padding, .board-page is max-width 1440 with 32px gutters, .hero-band is 30px/34px
+         with a 24px radius and the same gradient tokens. The point is that the last
+         frame of this and the first frame of the app are the same picture. */
+      .ldx { position:fixed; inset:0; z-index:120; overflow:hidden;
+        background:var(--bg); animation: ldxIn .45s var(--ease) both; }
+      .ldx.is-exiting { animation: ldxOut .6s var(--ease) forwards; }
+      @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
+      @keyframes ldxOut { to { opacity:0; filter:blur(6px); } }
+
+      /* The glow the mark throws as it opens: the page's own aurora, brought
+         forward rather than invented for the occasion. */
+      .ldx-bloom { position:absolute; left:50%; top:42%; width:120vmax; height:120vmax;
+        margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
+        background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
+          color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
+        animation: ldxBloom 2.6s var(--ease) both; }
+      .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
+          color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
+        animation-delay:.18s; animation-duration:2.9s; }
+      @keyframes ldxBloom {
+        0%   { transform:scale(.02); opacity:0; }
+        18%  { opacity:1; }
+        70%  { opacity:.5; }
+        100% { transform:scale(1); opacity:.24; }
+      }
+
+      /* The mark travels to the exact spot it occupies in the header: 24px in from
+         the left, centred in a 60px bar, at 36px against the 72px it starts at.
+         Transform only, so it moves smoothly. */
+      .ldx-mark { position:fixed; left:0; top:0; z-index:4; width:72px; height:72px; transform-origin:0 0;
+        filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--sp) 42%, transparent));
+        animation: ldxMark 2.9s var(--ease) both; }
+      /* With the origin at the top left, the centre hold needs the half-size offset
+         written in, and the landing is simply the header's own coordinates: 30px in
+         from the left, 12px down, at half of 72 to make 36. */
+      @keyframes ldxMark {
+        0%   { transform:translate(calc(50vw - 18px), calc(42vh - 18px)) scale(.5); opacity:0; }
+        13%  { transform:translate(calc(50vw - 40px), calc(42vh - 40px)) scale(1.12); opacity:1; }
+        30%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
+        62%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
+        100% { transform:translate(30px, 12px) scale(.5); opacity:1;
+               filter:drop-shadow(0 0 0 transparent); }
+      }
+      .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 58px); z-index:4; text-align:center;
+        font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.015em;
+        color:var(--ink); animation: ldxWord 2.6s var(--ease) both; }
+      @keyframes ldxWord {
+        0%,8%  { opacity:0; transform:translateY(12px) scale(.98); }
+        24%    { opacity:1; transform:none; }
+        66%    { opacity:1; }
+        100%   { opacity:0; transform:translateY(-14px) scale(.97); }
+      }
+
+      /* ---- the dashboard's own shapes ---- */
+      .ldx-page { position:absolute; inset:0; z-index:2; }
+      .ldx-bar { position:absolute; top:0; left:0; right:0; height:60px;
+        background:rgba(255,255,255,.9); border-bottom:1px solid rgba(16,32,52,.06);
+        display:flex; align-items:center; gap:12px; padding:12px 24px; box-sizing:border-box;
+        animation: ldxBar .6s var(--ease) both; animation-delay:.5s; }
+      .ldx-mark-slot { width:36px; height:36px; border-radius:11px; background:transparent; flex:0 0 auto; }
+      .ldx-pills, .ldx-queues { display:flex; gap:8px; align-items:center; }
+      .ldx-pills { margin-left:auto; background:rgba(16,32,52,.05); border-radius:12px; padding:3px; }
+      .ldx-bar > :last-child { margin-right:0; }
+      .ldx-pills i { width:92px; height:28px; border-radius:9px; background:rgba(16,32,52,.08); }
+      .ldx-pills i:first-child { background:#fff; }
+      .ldx-queues i { width:96px; height:30px; border-radius:999px; }
+      .ldx-queues i:nth-child(1) { background:#10B981; }
+      .ldx-queues i:nth-child(2) { background:#5566F0; }
+      .ldx-queues i:nth-child(3) { background:#8B5CF6; }
+      .ldx-store { width:340px; height:38px; border-radius:11px; border:1px solid rgba(16,32,52,.14);
+        background:#fff; margin-left:14px; flex:0 0 auto; }
+      @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
+
+      .ldx-board { position:absolute; top:60px; left:0; right:0;
+        padding:26px clamp(24px, 4.75vw, 96px) 0; box-sizing:border-box; }
+
+      /* the sub-nav row, which the hero sits below */
+      .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:26px; }
+      .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
+      .ldx-tabs { display:flex; align-items:center; gap:6px; padding:6px;
+        background:rgba(16,32,52,.05); border-radius:16px; }
+      .ldx-tabs i { height:34px; border-radius:11px; background:transparent; width:86px; }
+      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:104px; }
+      .ldx-tabs i:nth-child(2) { width:118px; }
+      .ldx-tabs i:nth-child(3) { width:96px; }
+      .ldx-tabs i:nth-child(4) { width:80px; }
+      .ldx-tabs i:nth-child(5) { width:92px; }
+      .ldx-tabs i:nth-child(6) { width:76px; }
+      .ldx-search { width:378px; height:44px; border-radius:14px; background:rgba(16,32,52,.06); flex:0 0 auto; }
+
+      .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
+        gap:32px; padding:30px 34px; border-radius:24px; min-height:152px; box-sizing:border-box;
+        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
+        box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
+        animation: ldxHero .75s var(--spring) both; animation-delay:.74s; }
+      .ldx-hero-id { display:flex; align-items:center; gap:20px; }
+      .ldx-hero-logo { width:74px; height:74px; border-radius:20px; background:rgba(255,255,255,.92); flex:0 0 auto; }
+      .ldx-hero-text { display:flex; flex-direction:column; gap:11px; }
+      .ldx-hero-text span { display:block; border-radius:7px; background:rgba(255,255,255,.34); }
+      .ldx-hero-text .w1 { width:170px; height:11px; }
+      .ldx-hero-text .w2 { width:340px; height:30px; background:rgba(255,255,255,.86); }
+      .ldx-hero-text .w3 { width:150px; height:11px; }
+      .ldx-hero-right { display:flex; align-items:center; gap:26px; }
+      .ldx-ring { width:110px; height:110px; flex:0 0 auto; }
+      .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+      .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:9; }
+      .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:9; stroke-linecap:round;
+        stroke-dasharray:264; stroke-dashoffset:264;
+        animation: ldxRing 1.4s var(--ease) both; animation-delay:.9s; }
+      @keyframes ldxRing { to { stroke-dashoffset:78; } }
+      .ldx-hero-side { display:flex; flex-direction:column; gap:10px; }
+      .ldx-hero-side span { display:block; border-radius:7px; background:rgba(255,255,255,.3); }
+      .ldx-hero-side .s1 { width:300px; height:18px; background:rgba(255,255,255,.8); }
+      .ldx-hero-side .s2 { width:330px; height:11px; }
+      .ldx-hero-side .s3 { width:240px; height:11px; }
+      @keyframes ldxHero {
+        from { transform:translateY(24px) scale(.975); opacity:0; filter:blur(5px); }
+        to   { transform:none; opacity:1; filter:blur(0); }
+      }
+
+      .ldx-cards { display:flex; gap:24px; margin-top:26px; }
+      .ldx-card { border-radius:20px; animation: ldxRise .6s var(--ease) both; }
+      .ldx-card.tall { width:412px; height:212px; flex:0 0 auto;
+        background:linear-gradient(150deg,#F09A3E,#E2622B);
+        box-shadow:0 18px 40px -26px rgba(226,98,43,.6); animation-delay:.84s; }
+      .ldx-card.wide { flex:1; height:212px; padding:30px 32px; box-sizing:border-box;
+        display:flex; flex-direction:column; justify-content:center; gap:26px;
+        background:rgba(255,255,255,.72); box-shadow:0 18px 40px -30px rgba(16,32,52,.45);
+        animation-delay:.94s; }
+      .ldx-card.wide i { display:block; height:15px; border-radius:8px; background:rgba(16,32,52,.08); }
+      .ldx-card.wide i:nth-child(1) { width:58%; }
+      .ldx-card.wide i:nth-child(2) { width:48%; }
+      .ldx-card.wide i:nth-child(3) { width:53%; }
+      @keyframes ldxRise { from { transform:translateY(20px); opacity:0; } to { transform:none; opacity:1; } }
+
+      .ldx-skip { position:absolute; right:20px; bottom:18px; z-index:5; font-family:inherit; font-size:12.5px;
+        font-weight:700; padding:7px 14px; border-radius:999px; border:0; cursor:pointer;
+        background:rgba(16,32,52,.08); color:var(--ink-2); }
+      @media (max-width: 900px) {
+        .ldx-store, .ldx-pills { display:none; }
+        .ldx-hero { flex-wrap:wrap; }
+        .ldx-hero-side { display:none; }
+        .ldx-cards { flex-direction:column; }
+        .ldx-card.tall, .ldx-card.wide { width:auto; height:120px; }
+        .ldx-search { display:none; }
+      }
+      @media (prefers-reduced-motion: reduce) { .ldx, .ldx * { animation:none !important; } }
+
+      /* ---------- sign-in handover ----------
+         One continuous move in three overlapping beats. Nothing waits its turn
+         politely: the card comes apart while the wash is already blooming, and the
+         app is already building before the wash has finished leaving. That overlap
+         is the difference between fluid and clunky. */
+      .login.is-leaving { pointer-events:none; }
+      .login.is-leaving .login-card {
+        animation: lgCard .62s var(--ease) forwards; }
+      @keyframes lgCard {
+        0%   { transform:none; opacity:1; }
+        100% { transform:scale(1.06); opacity:0; filter:blur(6px); }
+      }
+      /* Each part leaves on its own vector and its own clock, so the card reads as
+         coming apart rather than fading out in one piece. */
+      .login.is-leaving .login-card > * { animation:lgPart .5s var(--ease) both; }
+      .login.is-leaving .login-card > *:nth-child(1) { animation:lgMark .74s var(--ease) both; }
+      .login.is-leaving .login-card > *:nth-child(2) { animation-delay:.02s; --lgx:-26px; --lgy:-10px; }
+      .login.is-leaving .login-card > *:nth-child(3) { animation-delay:.05s; --lgx:24px;  --lgy:-6px; }
+      .login.is-leaving .login-card > *:nth-child(4) { animation-delay:.08s; --lgx:-30px; --lgy:8px; }
+      .login.is-leaving .login-card > *:nth-child(5) { animation-delay:.11s; --lgx:28px;  --lgy:12px; }
+      .login.is-leaving .login-card > *:nth-child(6) { animation-delay:.14s; --lgx:-22px; --lgy:16px; }
+      .login.is-leaving .login-card > *:nth-child(n+7) { animation-delay:.17s; --lgx:0px; --lgy:22px; }
+      @keyframes lgPart {
+        0%   { transform:none; opacity:1; filter:blur(0); }
+        100% { transform:translate3d(var(--lgx,0), var(--lgy,14px), 0) scale(.94); opacity:0; filter:blur(3px); }
+      }
+      /* The mark is the one thing that does not scatter. It lifts and holds while
+         everything else clears, which is what makes the two screens feel like one. */
+      @keyframes lgMark {
+        0%   { transform:none; opacity:1; }
+        40%  { transform:translate3d(0,-14px,0) scale(1.1); opacity:1; }
+        100% { transform:translate3d(0,-34px,0) scale(.72); opacity:0; }
+      }
+      .login-wash { position:fixed; inset:0; z-index:5; pointer-events:none;
+        background:radial-gradient(120% 90% at 50% 46%, var(--blue) 0%, rgba(42,94,155,.86) 42%, rgba(16,32,52,.0) 78%);
+        animation: lgWash .78s var(--ease) forwards; }
+      @keyframes lgWash {
+        0%   { opacity:0; transform:scale(.28); }
+        38%  { opacity:1; transform:scale(1.04); }
+        100% { opacity:0; transform:scale(1.5); }
+      }
+
+      /* ---------- the app assembling ----------
+         Regions arrive in reading order rather than all at once, so the screen
+         resolves the way the eye already scans it. */
+      .lpc.is-entering .topbar   { animation: appBar .52s var(--ease) both; }
+      .lpc.is-entering .seg-wrap { animation: appRise .54s var(--ease) both; animation-delay:.06s; }
+      .lpc.is-entering .hero     { animation: appHero .66s var(--ease-bloop) both; animation-delay:.10s; }
+      .lpc.is-entering .card,
+      .lpc.is-entering .checkout-split > *,
+      .lpc.is-entering .dash-split > * { animation: appRise .58s var(--ease) both; animation-delay:.20s; }
+      .lpc.is-entering .card:nth-of-type(2) { animation-delay:.26s; }
+      .lpc.is-entering .card:nth-of-type(3) { animation-delay:.32s; }
+      .lpc.is-entering .card:nth-of-type(n+4) { animation-delay:.38s; }
+      @keyframes appBar {
+        0%   { transform:translate3d(0,-100%,0); opacity:0; }
+        100% { transform:none; opacity:1; }
+      }
+      @keyframes appRise {
+        0%   { transform:translate3d(0,18px,0) scale(.985); opacity:0; }
+        100% { transform:none; opacity:1; }
+      }
+      @keyframes appHero {
+        0%   { transform:translate3d(0,26px,0) scale(.97); opacity:0; filter:blur(4px); }
+        100% { transform:none; opacity:1; filter:blur(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .login.is-leaving .login-card,
+        .login.is-leaving .login-card > *,
+        .login-wash,
+        .lpc.is-entering .topbar, .lpc.is-entering .seg-wrap, .lpc.is-entering .hero,
+        .lpc.is-entering .card, .lpc.is-entering .checkout-split > *, .lpc.is-entering .dash-split > * {
+          animation:none !important; }
+      }
+
+      .brand { position:relative; }
+      .brand-btn { background:none; border:0; padding:0; cursor:pointer; border-radius:12px; line-height:0;
+        transition:transform .14s ease, box-shadow .18s ease; }
+      .brand-btn:hover { transform:translateY(-1px); }
+      .brand-btn.on { box-shadow:0 0 0 3px rgba(42,94,155,.28); }
+      .brand-menu { position:absolute; top:calc(100% + 10px); left:0; z-index:60; min-width:230px;
+        background:#fff; border:1px solid rgba(16,32,52,.10); border-radius:16px; padding:8px;
+        box-shadow:0 22px 48px -20px rgba(16,32,52,.42); }
+      .bm-head { display:flex; align-items:center; gap:11px; padding:10px 10px 12px; }
+      .bm-avatar { width:38px; height:38px; border-radius:999px; flex:0 0 auto; display:flex; align-items:center;
+        justify-content:center; font-weight:800; font-size:14px; letter-spacing:.02em; color:#fff;
+        background:linear-gradient(135deg,#2A5E9B,#5566F0); }
+      .bm-who { display:flex; flex-direction:column; gap:2px; min-width:0; }
+      .bm-who b { font-size:14px; }
+      .bm-role { font-size:11.5px; color:var(--ink-3); }
+      .bm-app { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3);
+        padding:8px 10px; border-top:1px solid rgba(16,32,52,.08); }
+      .bm-item { display:block; width:100%; text-align:left; font-family:inherit; font-size:13.5px; font-weight:600;
+        padding:9px 10px; border:0; border-radius:10px; background:none; color:var(--ink); cursor:pointer; }
+      .bm-item:hover { background:rgba(42,94,155,.09); }
+      .tool-row { display:inline-flex; align-items:stretch; gap:12px; flex-wrap:wrap; }
+      .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
+        border-radius:10px; padding:2px; }
+      .tool-thumb { position:absolute; top:2px; bottom:2px; left:0; background:#fff; border-radius:8px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 1px 4px rgba(31,54,86,.18); opacity:0; pointer-events:none;
+        transition: transform .4s var(--spring), width .4s var(--spring); will-change: transform, width; }
+      .tool-thumb.ready { opacity:1; }
+      .tool-btn { border:none; background:none; padding:6px 12px; border-radius:8px; cursor:pointer;
+        font-size:12.5px; font-weight:600; color:var(--ink-2); white-space:nowrap;
+        transition: background .2s var(--spring), color .2s var(--spring); }
+      .tool-btn:hover { color:var(--ink); }
+      .tool-btn { position:relative; z-index:1; }
+      .tool-btn.on { color:var(--blue); }
+
+      /* ---- segmented control (sliding) ---- */
+      .seg-wrap { display:flex; padding:16px 24px 0; }
+      .seg { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.14); border-radius:12px; padding:3px;
+        backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+        border:1px solid rgba(255,255,255,.5); max-width:100%; overflow-x:auto; scrollbar-width:none; -ms-overflow-style:none; }
+      .seg::-webkit-scrollbar { display:none; }
+      .seg-thumb { position:absolute; top:3px; bottom:3px; left:0; background:rgba(255,255,255,.92); border-radius:9px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 1px 5px rgba(31,54,86,.18); opacity:0; pointer-events:none;
+        transition: transform .4s var(--spring), width .4s var(--spring); will-change: transform, width; }
+      .seg-thumb.ready { opacity:1; }
+      .seg-btn { position:relative; z-index:1; border:none; background:transparent; padding:8px 16px; border-radius:9px;
+        font-size:13px; font-weight:600; color:var(--ink-2); cursor:pointer; display:flex; gap:7px; align-items:center;
+        white-space:nowrap; flex:0 0 auto;
+        transition: color .3s var(--spring), transform .15s var(--spring); }
+      .seg-btn:active { transform: scale(.96); }
+      .seg-btn.active { color:var(--ink); }
+      /* A wave off the Import tab while the day's uploads are still outstanding.
+         It stops the moment they land, and stops if you are already on the tab. */
+      .seg-wave::after { content:""; position:absolute; inset:0; border-radius:9px; pointer-events:none;
+        animation: segWave 2.4s var(--ease) infinite; }
+      @keyframes segWave {
+        0%   { box-shadow: 0 0 0 0 rgba(42,94,155,.40); }
+        70%  { box-shadow: 0 0 0 11px rgba(42,94,155,0); }
+        100% { box-shadow: 0 0 0 0 rgba(42,94,155,0); }
+      }
+
+      /* ---- page transition ---- */
+      .page { animation: pageIn .38s var(--spring); }
+      /* the hero + welcome card live directly in .page, which carries no padding of
+         its own (the padding sits on .board). Without this they butt straight up
+         against the tab bar and the window edge. */
+      .board-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
+      .board-page > .board { padding:0; max-width:none; }
+      .board-page > .welcome { margin-bottom:18px; }
+      .seg-wrap { padding-bottom:4px; }
+      @keyframes pageIn { from { opacity:0; transform: translateY(10px) scale(.995); } to { opacity:1; transform:none; } }
+
+      /* ---- layout & cards ---- */
+      /* Wider, and centred rather than pinned to the left. 1440px keeps line lengths
+         readable while letting a big monitor actually breathe. */
+      .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit, .settings {
+        padding:30px 32px 56px; max-width:1440px; margin:0 auto; }
+
+      /* No backdrop-filter here. A fixed, blurred element is a permanently compositing
+         layer, which is a lot to pay for a version badge, and it fed the scroll shift. */
+      .version-stamp { position:fixed; right:14px; bottom:12px; z-index:20; pointer-events:none;
+        font-size:10.5px; font-weight:600; letter-spacing:.06em; color:var(--ink-3);
+        background:#F0F2F5; border:1px solid rgba(0,0,0,.06);
+        padding:4px 9px; border-radius:20px;
+        font-variant-numeric:tabular-nums; opacity:.7; }
+      .loading, .empty { padding:64px 24px; color:var(--ink-2); }
+      .noaccess { max-width:560px; margin:48px auto; padding:0 20px; }
+      .noaccess-title { font-size:20px; font-weight:800; letter-spacing:-.01em; margin-bottom:6px; }
+      .noaccess-lead { color:var(--ink-2); font-size:14px; margin-bottom:16px; }
+      .noaccess-box { border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+      .noaccess-row { display:flex; justify-content:space-between; gap:16px; padding:9px 14px; border-bottom:1px solid var(--line); font-size:13px; }
+      .noaccess-row:last-child { border-bottom:none; }
+      .noaccess-row span { color:var(--ink-3); }
+      .noaccess-row b { text-align:right; word-break:break-all; }
+      .noaccess-row b.mono { font-family:var(--font-mono); font-size:12px; }
+      .noaccess-hint { margin:14px 0 16px; }
+      .acct-id { display:inline-block; margin-left:8px; font-size:10.5px; color:var(--ink-3);
+        background:rgba(0,0,0,.05); padding:1px 6px; border-radius:99px; font-family:var(--font-mono); }
+      .dupe-tag { display:inline-block; margin-left:8px; font-size:10px; font-weight:800; text-transform:uppercase;
+        letter-spacing:.04em; background:rgba(229,71,60,.13); color:#C13529; padding:1px 7px; border-radius:99px; }
+      .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
+        padding:22px 24px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
+        margin-bottom:20px;
+        transition: opacity .8s var(--ease), transform .8s var(--ease), box-shadow .4s var(--ease); }
+      /* Sections rise into place as they enter the viewport. Hover only deepens
+         the shadow; lifting the card would fight the reveal's own transform. */
+      /* Colour arrives as a soft bloom out of the top-left corner rather than a
+         bar down the edge. Same information, far less repetition down the page. */
+      .card { isolation:isolate; }
+      .card::after { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+        border-radius:inherit;
+        background: radial-gradient(108% 82% at 0% 0%, var(--tint, transparent), transparent 62%); }
+      .js-anim .card:not(.is-in) { opacity:0; transform: translateY(20px); }
+      .card.is-in { opacity:1; transform:none; }
+      .card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.92), var(--shadow-3); }
+      .section-title { font-size:28px; font-weight:700; letter-spacing:-.035em; margin:4px 0 22px; }
+      .section-sub { font-size:14px; font-weight:500; color:var(--ink-2); margin-left:8px; letter-spacing:0; }
+
+      /* ---- login ---- */
+      .login { display:flex; justify-content:center; padding:80px 20px; }
+      .login-card { background:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.75); border-radius:24px; padding:36px 32px; width:360px;
+        text-align:center; backdrop-filter: blur(30px) saturate(170%); -webkit-backdrop-filter: blur(30px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), var(--shadow-2); animation: loginIn .5s var(--spring); }
+      @keyframes loginIn { from { opacity:0; transform: translateY(16px) scale(.97); } to { opacity:1; transform:none; } }
+      /* Signing in: the form and the card chrome gracefully fade out, leaving just the
+         spinning speedometer and title — so the jump to the full loading screen is seamless. */
+      .login-card.login-busy { background:transparent; border-color:transparent; box-shadow:none;
+        backdrop-filter:none; -webkit-backdrop-filter:none; transition: background .5s ease, box-shadow .5s ease, border-color .5s ease; }
+      .login-card.login-busy > *:not(.login-logo):not(.login-title):not(.login-sub) {
+        opacity:0; pointer-events:none; transition: opacity .4s ease; max-height:0; overflow:hidden; }
+      .login-card.login-busy .login-logo { animation: loginLogoRise .5s var(--spring) both; }
+      @keyframes loginLogoRise { from { transform: translateY(0); } to { transform: translateY(-4px) scale(1.05); } }
+      .login-logo { display:flex; justify-content:center; margin-bottom:12px; }
+      .login-card h2 { font-size:22px; font-weight:700; letter-spacing:-.02em; margin:0 0 2px; }
+      .login-card label { display:block; text-align:left; font-size:12px; font-weight:600; margin:16px 0 6px; color:var(--ink-2); }
+      .login-card select, .login-card input { width:100%; }
+      .login-err { color:var(--red); font-size:12.5px; margin-top:10px; }
+      .hint.center { text-align:center; }
+
+      /* ---- board ---- */
+      /* overflow stays visible so a dial's hover card can escape the card edge */
+      .role-section { border-left:none; position:relative; overflow:visible; margin-bottom:26px;
+        --tint: color-mix(in srgb, var(--role) 14%, transparent); }
+      .role-header { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
+      .role-swatch { width:10px; height:10px; border-radius:50%; background:var(--role);
+        box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--role) 16%, transparent); }
+      .role-count { font-size:12px; font-weight:700; border-radius:10px; padding:2px 9px;
+        background: color-mix(in srgb, var(--role) 13%, transparent);
+        color: color-mix(in srgb, var(--role) 72%, #12212F); }
+      .role-empty { padding:16px; border:1.5px dashed var(--line); border-radius:12px; color:var(--ink-3); text-align:center; }
+      .assoc-card { border-bottom:1px solid rgba(0,0,0,.05); padding:10px 0 12px; transition: background .2s; border-radius:10px; }
+      .assoc-card:last-child { border-bottom:none; }
+      .assoc-row { display:flex; align-items:center; gap:10px; cursor:grab; flex-wrap:wrap; }
+      .assoc-row:active { cursor:grabbing; }
+      .grip { color:var(--ink-3); font-size:13px; }
+      .assoc-name { font-weight:650; font-size:15.5px; flex:0 0 212px; letter-spacing:-.015em; }
+      .flag { font-size:11px; color:var(--amber); background:rgba(255,159,10,.14); padding:3px 9px; border-radius:20px; font-weight:600; }
+      .assoc-leads { margin-left:auto; font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+      .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; }
+      .verdict { font-size:12px; font-weight:700; padding:5px 12px; border-radius:20px; min-width:118px; text-align:center;
+        transition: transform .2s var(--spring); }
+      .verdict.sm { min-width:0; font-size:11px; padding:3px 9px; }
+      .verdict-pass { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .verdict-fail { background:rgba(229,71,60,.13); color:#C13529; }
+      /* amber: below standard and closing on the cap */
+      .verdict-warn { background:rgba(255,159,10,.16); color:#95600A; }
+      /* blue: below standard but plenty of headroom, so nothing is paused yet */
+      .verdict-watch { background:rgba(42,94,155,.12); color:#1D4674; }
+      .verdict-dim { background:#F2F2F4; color:var(--ink-2); }
+      .gauge { position:relative; height:8px; background:#E9E9EB; border-radius:5px; margin:9px 0 0 23px; max-width:520px; }
+      .gauge-fill { height:100%; border-radius:5px; background:linear-gradient(90deg, #2A5E9B, #C1D730);
+        transition: width .6s var(--spring); }
+      .gauge-red { background:linear-gradient(90deg, #FF6B5E, #E5473C); }
+      .reasons { margin:9px 0 0 23px; font-size:12.5px; color:#C13529; animation: pageIn .3s var(--spring); }
+      .reason { display:inline-block; background:rgba(229,71,60,.10); border-radius:14px; padding:3px 10px; margin:2px 5px 0 0; font-weight:500; }
+      .pass-note { color:#1E7A3C; }
+
+      /* ---- scorecard dials: the 5-second read on every associate ---- */
+      .reason-lead { font-size:12.5px; color:var(--ink-2); margin-bottom:10px; }
+      .mstrip { display:flex; flex-wrap:wrap; gap:10px 14px; }
+      /* On the associate row the dials ride to the right of the name and stay
+         together as one unit; the row itself wraps them if the screen is narrow. */
+      .assoc-row .mstrip { margin-left:auto; flex-wrap:nowrap; gap:10px; }
+      .mstrip + .assoc-leads { margin-left:14px; }
+      .mdial { width:88px; text-align:center; position:relative; }
+      .mdial svg { display:block; width:88px; height:50px; overflow:visible;
+        transition: transform .36s cubic-bezier(.34,1.56,.64,1); }
+      .mdial:hover { z-index:41; }
+      .mdial:hover svg { transform: scale(1.16); }
+      .md-track { stroke:rgba(0,0,0,.08); }
+      .md-target { stroke:rgba(0,0,0,.5); }
+      .md-val { font-size:13px; font-weight:800; letter-spacing:-.03em; fill:var(--ink);
+        font-variant-numeric:tabular-nums; }
+      .mdial-label { font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--ink-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .mdial-need { font-size:8px; color:var(--ink-3); font-weight:700; font-variant-numeric:tabular-nums; }
+
+      /* Hover card. The overshoot in the timing function is the "bloop". */
+      .mdial-pop { position:absolute; left:50%; bottom:calc(100% + 12px); width:262px; z-index:40;
+        opacity:0; pointer-events:none; text-align:left;
+        transform: translateX(-50%) scale(.88); transform-origin: bottom center;
+        transition: opacity .16s ease, transform .36s cubic-bezier(.34,1.56,.64,1);
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:14px;
+        padding:12px 14px 11px; box-shadow: 0 14px 38px rgba(31,54,86,.24); }
+      .mdial-pop::after { content:""; position:absolute; left:50%; top:100%; width:12px; height:12px;
+        margin-left:-6px; margin-top:-6px; transform:rotate(45deg);
+        background:#fff; border-right:1px solid rgba(0,0,0,.07); border-bottom:1px solid rgba(0,0,0,.07);
+        border-radius:0 0 3px 0; }
+      .mdial:hover .mdial-pop { opacity:1; transform: translateX(-50%) scale(1); }
+      .mp-title { font-size:13px; font-weight:800; letter-spacing:-.02em; margin-bottom:5px; }
+      .mp-desc { font-size:11.5px; line-height:1.45; color:var(--ink-2); }
+      .mp-req { margin-top:9px; padding-top:8px; border-top:1px solid rgba(0,0,0,.07);
+        font-size:11.5px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .mp-now { font-size:14px; letter-spacing:-.02em; }
+      .mp-sep { margin:0 5px; }
+      .mp-target { color:var(--ink); }
+      .mp-verdict { display:block; margin-top:4px; font-weight:700; }
+      .mp-verdict.mp-ok { color:#1E7A3C; }
+      .mp-verdict.mp-near { color:#95600A; }
+      .mp-verdict.mp-under { color:#C13529; }
+      .mp-verdict.mp-nodata { color:var(--ink-3); }
+      .mdial-ok .mp-now { color:#1E7A3C; } .mdial-near .mp-now { color:#95600A; }
+      .mdial-under .mp-now { color:#C13529; } .mdial-nodata .mp-now { color:var(--ink-3); }
+      .md-fill { transition: stroke-dasharray .7s var(--spring); }
+      .mdial-ok     .md-fill { stroke:#30B155; } .mdial-ok     .md-dot { fill:#30B155; } .mdial-ok     .md-val { fill:#1E7A3C; }
+      .mdial-near   .md-fill { stroke:#E59200; } .mdial-near   .md-dot { fill:#E59200; } .mdial-near   .md-val { fill:#95600A; }
+      .mdial-under  .md-fill { stroke:#E5473C; } .mdial-under  .md-dot { fill:#E5473C; } .mdial-under  .md-val { fill:#C13529; }
+      .mdial-nodata .md-fill { stroke:rgba(0,0,0,.14); } .mdial-nodata .md-val { fill:var(--ink-3); }
+
+      /* ---- grace period & recap ---- */
+      .verdict-grace { background:rgba(136,198,234,.28); color:#1D4674; }
+      .watch-note { color:#7A5A00; }
+      .reason.watch { background:rgba(255,159,10,.12); color:#8A5A00; }
+      .grace-banner { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+        --tint: rgba(136,198,234,.24); font-size:13px; color:var(--ink-2); }
+      .recap { --tint: rgba(193,215,48,.16); }
+      .recap-row { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .recap-row:last-child { border-bottom:none; }
+      .recap-name { font-size:11px; }
+      .recap-chips { display:flex; gap:5px; flex-wrap:wrap; }
+      .gm-section.watch::before { background:#88C6EA; }
+      .stat-grace { color:#1D4674; font-weight:600; }
+      .grace-setting { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+      .grace-label { display:flex; gap:9px; align-items:center; font-weight:600; }
+      .grace-setting input[type=number] { width:64px; }
+
+      /* ---- search ---- */
+      .search-wrap { position:relative; margin-bottom:14px; max-width:420px; }
+      .search-top { margin:0 0 0 auto; max-width:300px; flex:1 1 220px; min-width:160px; }
+      .search-top .search-input { padding:9px 38px; border-radius:12px;
+        background:rgba(118,118,128,.10); border:1px solid transparent;
+        transition: background .3s var(--ease), border-color .3s var(--ease), box-shadow .3s var(--ease); }
+      .search-top .search-input:focus { background:#fff; border-color:rgba(42,94,155,.35);
+        box-shadow: 0 0 0 4px rgba(42,94,155,.14); }
+      .seg-wrap { align-items:center; gap:16px; }
+      .search-icon { position:absolute; left:14px; top:0; bottom:0; color:var(--ink-2);
+        display:flex; align-items:center; justify-content:center; line-height:0;
+        pointer-events:none; opacity:.9; z-index:1; }
+      .search-icon .pix { display:block; }
+      /* Centred wording, with the padding kept equal on both sides so the text sits
+         on the true centre of the box rather than off the magnifier. */
+      .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
+      .co-callout { background:#FFF8E8; border:1px solid #F2DFAE; border-radius:14px; padding:12px 16px; margin-bottom:12px; }
+      .co-callout-head { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
+      .co-callout-list { display:flex; flex-wrap:wrap; gap:7px; }
+      .co-callout-btn { font-family:inherit; font-size:12.5px; font-weight:700; padding:6px 12px; border-radius:999px;
+        border:1px solid #E3C983; background:#fff; color:#8A6314; cursor:pointer; transition:background .15s, transform .12s; }
+      .co-callout-btn:hover { background:#FBEFD4; transform:translateY(-1px); }
+      .plate-bulk { flex:1 1 320px; min-width:220px; padding:9px 11px; border-radius:10px; font-family:inherit; font-size:13px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); resize:vertical; }
+      .plate-retired { opacity:.55; }
+      .plate-state-out { color:var(--red); font-weight:700; font-size:12.5px; }
+      .plate-state-in { color:var(--ink-3); font-size:12.5px; }
+      .plate-picks { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+      .plate-picks-lbl { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+        color:var(--ink-3); margin-right:2px; }
+      .plate-pick { font-family:inherit; font-size:12.5px; font-weight:700; padding:5px 11px; border-radius:999px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(118,118,128,.08); color:var(--ink); cursor:pointer;
+        transition:background .15s, border-color .15s, transform .12s; }
+      .plate-pick:hover { background:rgba(42,94,155,.10); border-color:rgba(42,94,155,.3); transform:translateY(-1px); }
+      .plate-pick.on { background:var(--blue); border-color:var(--blue); color:#fff; }
+      .plate-assignee-in { width:100%; min-width:120px; padding:7px 10px; border-radius:9px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); font-family:inherit; font-size:13px; }
+      .search-input { text-align:center; }
+      .search-input::placeholder { text-align:center; }
+      .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
+        border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+      .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
+        color:var(--ink-2); width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:11px; }
+      .search-count { margin:-8px 0 12px 4px; }
+
+      /* ---- leaderboard ---- */
+      .leaderboard { --tint: rgba(193,215,48,.18); }
+      .lb-title { font-size:16px; font-weight:700; margin:0 0 12px; }
+      .lb-row { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
+      .lb-item { padding:18px 14px 16px; border-radius:16px; text-align:center;
+        background:rgba(255,255,255,.72); border:1px solid rgba(16,40,68,.06);
+        transition: transform .4s var(--ease), box-shadow .4s var(--ease); }
+      .lb-item:hover { transform: translateY(-3px); }
+      .lb-1 { background:radial-gradient(120% 88% at 50% 0%, rgba(255,213,90,.24), rgba(255,255,255,.78) 64%);
+        box-shadow: 0 0 0 1px rgba(224,161,0,.30), 0 10px 30px rgba(224,161,0,.18); }
+      .lb-2 { background:radial-gradient(120% 88% at 50% 0%, rgba(176,190,205,.26), rgba(255,255,255,.78) 64%);
+        box-shadow: 0 0 0 1px rgba(140,158,176,.28), 0 10px 30px rgba(90,110,130,.13); }
+      .lb-3 { background:radial-gradient(120% 88% at 50% 0%, rgba(214,150,102,.24), rgba(255,255,255,.78) 64%);
+        box-shadow: 0 0 0 1px rgba(192,118,74,.28), 0 10px 30px rgba(160,96,58,.15); }
+      .lb-medal { width:40px; height:40px; margin:0 auto; border-radius:50%; display:flex;
+        align-items:center; justify-content:center; font-size:17px; font-weight:800; letter-spacing:-.02em;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 3px 10px rgba(31,54,86,.16); }
+      .lb-medal-1 { background:linear-gradient(150deg,#FFE595,#E0A100); color:#4A3200;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 0 0 3px rgba(224,161,0,.15), 0 5px 14px rgba(224,161,0,.34); }
+      .lb-medal-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
+      .lb-medal-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
+      .lb-name { font-weight:700; font-size:15.5px; margin-top:8px; letter-spacing:-.015em; }
+      .lb-meta { font-size:11.5px; font-weight:600; margin-top:2px; }
+      .lb-units { font-size:26px; font-weight:700; letter-spacing:-.03em; margin-top:8px; line-height:1;
+        font-variant-numeric:tabular-nums; }
+      .lb-units span { font-size:12px; font-weight:600; color:var(--ink-3); letter-spacing:0; }
+      .lb-std { font-size:11px; font-weight:700; margin-top:6px; display:inline-block;
+        padding:3px 10px; border-radius:99px; }
+      .lb-std.ok { color:#1E7A3C; background:rgba(48,177,85,.13); }
+      .lb-std.part { color:#95600A; background:rgba(255,159,10,.15); }
+      .unassigned-row { gap:14px; }
+      .assign-select { margin-left:auto; }
+      @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
+
+      /* ---- rank + star + incomplete + off leads ---- */
+      .rank-badge { width:21px; height:21px; flex:0 0 auto; border-radius:50%; display:inline-flex;
+        align-items:center; justify-content:center; font-size:11px; font-weight:800; letter-spacing:-.02em;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.6); }
+      .rank-1 { background:linear-gradient(150deg,#FFE595,#E0A100); color:#4A3200; }
+      .rank-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
+      .rank-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
+      .star-badge { font-size:11px; font-weight:700; color:#1E7A3C; background:rgba(48,177,85,.14); padding:3px 9px; border-radius:20px;
+        animation: starGlow 3.2s ease-in-out infinite; }
+      @keyframes starGlow {
+        0%,100% { box-shadow: 0 0 0 0 rgba(48,177,85,0); }
+        50%     { box-shadow: 0 0 0 3px rgba(48,177,85,.10); }
+      }
+      .assoc-card.incomplete { opacity:.55; filter:grayscale(.75); }
+      .assoc-card.incomplete .verdict { visibility:hidden; }
+      .flag-gray { color:var(--ink-2); background:rgba(118,118,128,.16); }
+      .gray-note { color:var(--ink-2); }
+      .detail-cell.blank { opacity:.45; }
+      .assoc-card.is-restricted { opacity:1; filter:none; }
+      .verdict-off { background:rgba(118,118,128,.2); color:var(--ink); }
+      .off-note { color:var(--ink-2); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+      .btn-confirm { margin-top:8px; background:rgba(229,71,60,.12); color:#C13529; border:1px solid rgba(229,71,60,.3);
+        border-radius:10px; padding:7px 14px; font-weight:600; font-size:12.5px; cursor:pointer; transition: all .2s var(--spring); }
+      .btn-confirm:hover { background:rgba(229,71,60,.18); }
+      .restrict-form { display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+      .restrict-form input[type=number] { width:64px; }
+
+      /* ---- auth extras ---- */
+      .btn-link { background:none; border:none; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer; margin-top:12px; }
+      .btn-outline { background:rgba(255,255,255,.5); color:var(--blue); border:1px solid var(--blue); border-radius:12px;
+        padding:11px; font-weight:600; font-size:14px; cursor:pointer; transition: all .2s var(--spring); }
+      .btn-outline:hover { background:rgba(42,94,155,.08); }
+      .btn-outline.wide { width:100%; }
+      .login-divider { display:flex; align-items:center; text-align:center; margin:14px 0 12px; color:var(--ink-3); font-size:12px; }
+      .login-divider::before, .login-divider::after { content:""; flex:1; height:1px; background:rgba(0,0,0,.1); }
+      .login-divider span { padding:0 12px; }
+
+      /* ---- splash ---- */
+      .splash { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px 20px;
+        background:radial-gradient(70% 90% at 50% 0%, rgba(136,198,234,.25), transparent 60%); }
+      .splash-inner { text-align:center; max-width:440px; width:100%; animation: loginIn .6s var(--spring); }
+      .splash-logo { display:flex; justify-content:center; margin-bottom:18px; filter: drop-shadow(0 8px 24px rgba(42,94,155,.25)); }
+      .splash-title { font-size:34px; font-weight:700; letter-spacing:-.03em; margin-bottom:4px; }
+      .splash-sub { color:var(--ink-2); font-size:14px; margin-bottom:28px; }
+      .splash-actions { display:flex; flex-direction:column; gap:12px; max-width:320px; margin:0 auto; align-items:center; }
+      .splash-btn-primary { padding:18px; font-size:17px; font-weight:700; width:100%; border-radius:15px;
+        box-shadow: 0 6px 20px rgba(42,94,155,.32); }
+      .splash-btn-secondary { padding:11px; font-size:13.5px; width:78%; border-radius:12px; }
+      .splash-btn-activity { background:#00A896; }
+      .splash-btn-activity:hover { box-shadow:0 3px 10px rgba(0,168,150,.35); }
+
+      /* ---- check out tracker ---- */
+      /* Check Out, Coaching and Plates were flush to the window edge; the rest of
+         the app has always been inset. */
+      .checkout, .coaching, .plates { padding:30px 32px 56px; max-width:1440px; margin:0 auto; }
+      .checkout-card { --tint: rgba(42,94,155,.08); }
+      .coach-list-card { --tint: rgba(0,168,150,.10); }
+      .plates .card { --tint: rgba(122,79,155,.09); }
+      .import .checklist { --tint: rgba(136,198,234,.16); }
+      .assoc-card-full { --tint: rgba(42,94,155,.09); }
+      .checkout-split { gap:22px; }
+      .checkout-table td, .checkout-table th { padding:10px 12px; }
+      .checkout-table tbody tr { transition: background .25s var(--ease); }
+      .checkout-table tbody tr:hover { background:rgba(42,94,155,.045); }
+      .checkout-summary { display:flex; gap:16px; margin-bottom:14px; font-size:13px; font-weight:600; }
+      .checkout-table { width:100%; border-collapse:collapse; }
+      .checkout-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); padding:8px; font-weight:600; }
+      .checkout-table th:not(:first-child) { text-align:center; }
+      .checkout-table td { padding:8px; border-top:1px solid rgba(0,0,0,.05); text-align:center; }
+      .checkout-table td:first-child { text-align:left; }
+      .cell-g { color:#1E7A3C; font-weight:700; } .cell-r { color:#C13529; font-weight:700; }
+      .cell-need { color:var(--ink-3); font-weight:500; font-size:11px; }
+      /* The dot marks are boxes, not glyphs, so they need centring against the
+         digits rather than resting on the baseline like the characters did. */
+      .checkout-table td { vertical-align:middle; }
+      .cell-mark { display:inline-flex; align-items:center; vertical-align:middle; margin-right:5px; line-height:0; }
+      .streak { display:inline-flex; align-items:center; gap:2px; vertical-align:middle; }
+      .sched-ask { margin-top:14px; padding:12px 14px; border-radius:14px; background:#FFF8E8; border:1px solid #F2DFAE; }
+      .sched-ask-head { display:flex; flex-direction:column; gap:3px; margin-bottom:10px; }
+      .sched-ask-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+        padding:7px 0; border-top:1px solid rgba(16,32,52,.07); }
+      .sched-ask-row:first-of-type { border-top:0; }
+      .sched-ask-name { display:flex; flex-direction:column; gap:1px; }
+      .sched-ask-row select { max-width:340px; }
+      .stat-pass, .co-qual, .co-offbtn { display:inline-flex; align-items:center; gap:5px; }
+      .bl-cast { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:14px 0 4px; }
+      .cast-link { font-size:13px; }
+      .cast-wrap { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
+      .cast-err { color:var(--red); font-size:12px; max-width:520px; }
+      .co-tasks { white-space:nowrap; }
+      .co-nodata { opacity:.5; }
+      .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
+      .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .co-badge.no { background:rgba(229,71,60,.13); color:#C13529; }
+      .co-badge.dim { background:#F2F2F4; color:var(--ink-2); }
+      /* point system badges */
+      .pt-badge { font-size:11.5px; font-weight:800; padding:4px 11px; border-radius:20px; font-variant-numeric:tabular-nums; }
+      .pt-badge.pt-0 { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .pt-badge.pt-1 { background:rgba(255,159,10,.16); color:#95600A; }
+      .pt-badge.pt-2 { background:rgba(229,120,20,.16); color:#B4530A; }
+      .pt-badge.pt-3 { background:rgba(229,71,60,.15); color:#C13529; }
+      .pt-badge.dim { background:#F2F2F4; color:var(--ink-2); font-weight:600; }
+      .pt-badge.off { background:transparent; color:var(--ink-3); }
+      .co-off td { opacity:.5; }
+      .co-off-tag { margin-left:8px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+        color:var(--ink-3); background:rgba(0,0,0,.05); padding:1px 7px; border-radius:99px; }
+      .qual-toggle { border:1px solid var(--line); background:#fff; color:var(--ink-2); font:inherit; font-size:11.5px; font-weight:700;
+        padding:4px 11px; border-radius:99px; cursor:pointer; white-space:nowrap; }
+      .qual-toggle:hover:not(:disabled) { border-color:var(--blue); color:var(--blue); }
+      .qual-toggle:disabled { opacity:.4; cursor:default; }
+      .qual-toggle.yes { background:rgba(48,177,85,.14); color:#1E7A3C; border-color:transparent; }
+      .qual-toggle.no { background:rgba(229,71,60,.13); color:#C13529; border-color:transparent; }
+      .streak { display:inline-flex; align-items:center; gap:1px; margin-left:6px; font-size:12px; vertical-align:middle; }
+      .streak-n { font-size:10px; font-weight:800; color:var(--ink-2); }
+      .streak-up .streak-n { color:#B4530A; }
+      .streak-down .streak-n { color:#2E6FB0; }
+      .off-toggle { border:1px solid var(--line); background:#fff; color:var(--ink-2); font:inherit; font-size:11.5px; font-weight:700;
+        padding:4px 11px; border-radius:99px; cursor:pointer; }
+      .off-toggle:hover { border-color:var(--blue); color:var(--blue); }
+      .off-toggle.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+      /* top offenders ranking */
+      .offender-rank { list-style:none; margin:8px 0 0; padding:0; }
+      .offender-rank-row { display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto; gap:2px 10px;
+        align-items:center; padding:10px 0; border-bottom:1px solid var(--line); }
+      .offender-rank-row:last-child { border-bottom:none; }
+      .orr-rank { grid-row:1 / span 2; width:26px; height:26px; border-radius:50%; background:rgba(42,94,155,.1); color:var(--blue);
+        display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; }
+      .orr-name { grid-column:2; font-size:14px; }
+      .orr-worked { grid-column:2; grid-row:2; font-size:12px; color:var(--ink-3); }
+      .orr-points { grid-column:3; grid-row:1 / span 2; font-size:22px; font-weight:800; font-variant-numeric:tabular-nums; }
+      .orr-points.pt-1 { color:#95600A; } .orr-points.pt-2 { color:#B4530A; } .orr-points.pt-3 { color:#C13529; }
+      /* schedule upload modal */
+      .sched-modal { max-width:540px; width:100%; padding:24px 26px; }
+      .dayreport-modal { max-width:720px; width:100%; padding:24px 26px; }
+      .dr-head-actions { display:flex; align-items:center; gap:10px; }
+      .dr-cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:12px; }
+      .dr-col-alt { background:rgba(0,0,0,.02); border-radius:14px; padding:14px 16px; margin:-4px; }
+      .dr-col-title { font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-2); margin-bottom:10px; }
+      .dr-tallies { display:flex; gap:8px; margin-bottom:14px; }
+      .dr-tally { flex:1; text-align:center; padding:8px 6px; border-radius:11px; }
+      .dr-tally b { display:block; font-size:22px; font-weight:800; line-height:1; }
+      .dr-tally span { font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-weight:700; }
+      .dr-tally.g { background:rgba(48,177,85,.12); } .dr-tally.g b { color:#1E7A3C; } .dr-tally.g span { color:#1E7A3C; }
+      .dr-tally.r { background:rgba(229,71,60,.1); } .dr-tally.r b { color:#C13529; } .dr-tally.r span { color:#C13529; }
+      .dr-tally.d { background:rgba(0,0,0,.04); } .dr-tally.d b { color:var(--ink-2); } .dr-tally.d span { color:var(--ink-3); }
+      .dr-block { margin-bottom:14px; }
+      .dr-block-label { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-3); margin-bottom:6px; }
+      .dr-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid var(--line); }
+      .dr-row:last-child { border-bottom:none; }
+      .dr-name { font-weight:600; font-size:13.5px; flex:0 0 auto; }
+      .dr-miss { flex:1; font-size:12px; color:var(--ink-3); text-transform:capitalize; }
+      .dr-chips { display:flex; flex-wrap:wrap; gap:5px; }
+      .dr-chip { font-size:12px; font-weight:600; padding:3px 9px; border-radius:99px; }
+      .dr-chip.g { background:rgba(48,177,85,.12); color:#1E7A3C; }
+      .dr-chip.d { background:rgba(0,0,0,.05); color:var(--ink-2); }
+      .dr-rank { list-style:none; margin:0; padding:0; }
+      .dr-rank-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:10px; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); }
+      .dr-rank-row:last-child { border-bottom:none; }
+      .dr-rank-n { width:24px; height:24px; border-radius:50%; background:rgba(42,94,155,.1); color:var(--blue); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; }
+      .dr-rank-name { font-size:14px; }
+      .dr-rank-worked { font-size:11.5px; color:var(--ink-3); }
+      .dr-rank-pts { font-size:18px; font-weight:800; font-variant-numeric:tabular-nums; }
+      .dr-rank-pts.pt-1 { color:#95600A; } .dr-rank-pts.pt-2 { color:#B4530A; } .dr-rank-pts.pt-3 { color:#C13529; }
+      @media (max-width:620px) { .dr-cols { grid-template-columns:1fr; } }
+      .sched-drop { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+        border:1.5px dashed rgba(42,94,155,.35); border-radius:16px; padding:32px 20px; cursor:pointer; margin-bottom:14px; }
+      .sched-drop:hover { border-color:var(--blue); background:rgba(42,94,155,.03); }
+      .sched-err { color:#C13529; font-size:13px; font-weight:600; margin:8px 0; }
+      .sched-help { background:rgba(0,0,0,.02); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+      .sched-help-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-3); margin-bottom:8px; }
+      .sched-help code { display:block; font-size:12px; line-height:1.6; color:var(--ink); background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+      .sched-or { text-align:center; font-size:12px; color:var(--ink-3); font-weight:700; margin:8px 0; }
+      .sched-preview { max-height:300px; overflow-y:auto; margin:6px 0 14px; }
+      .sched-detected { background:rgba(48,177,85,.1); border:1px solid rgba(48,177,85,.3); border-radius:10px;
+        padding:10px 12px; font-size:12.5px; color:#1E7A3C; margin-bottom:10px; }
+      .sched-detected-tag { display:inline-block; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
+        font-size:10.5px; background:#1E7A3C; color:#fff; padding:2px 8px; border-radius:99px; margin-right:8px; }
+      .sched-sheet-list { display:flex; flex-direction:column; gap:6px; margin:12px 0; max-height:320px; overflow-y:auto; }
+      .sched-sheet-btn { text-align:left; border:1px solid var(--line); background:#fff; font:inherit; font-size:14px; font-weight:600;
+        color:var(--ink); padding:12px 14px; border-radius:10px; cursor:pointer; }
+      .sched-sheet-btn:hover { border-color:var(--blue); background:rgba(42,94,155,.05); color:var(--blue); }
+      .sched-prow { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+      .sched-dates { color:var(--ink-2); text-align:right; }
+      .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
+      .checkout-split { display:grid; grid-template-columns: minmax(0, 1.9fr) minmax(280px, 1fr); gap:16px; align-items:start; }
+      .checkout-side { position:sticky; top:80px; }
+      .offender-card { --tint: rgba(229,71,60,.12); }
+      .repeat-card { --tint: rgba(255,159,10,.14); margin-bottom:12px; }
+      .repeat-row { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; padding:6px 0;
+        border-bottom:1px solid rgba(0,0,0,.05); font-size:13px; }
+      .repeat-row:last-child { border-bottom:none; }
+      .repeat-count { color:var(--red); font-weight:700; font-size:12px; }
+      .repeat-tag { font-size:10.5px; color:var(--ink-3); background:#F2F2F4; padding:2px 7px; border-radius:10px; }
+      .star-inp { width:54px; text-align:center; padding:4px 6px; font-size:13px; }
+      .flag-btn { border:none; background:#F2F2F4; color:var(--ink-3); font-size:11.5px; font-weight:700;
+        padding:4px 9px; border-radius:10px; cursor:pointer; transition: all .2s var(--spring); white-space:nowrap; }
+      .flag-btn:hover { background:#E6E6EA; }
+      .flag-btn.auto { background:rgba(255,159,10,.16); color:#95600A; }
+      .flag-btn.on { background:rgba(229,71,60,.14); color:#C13529; }
+      .offender-card.offender-clear { --tint: rgba(48,177,85,.14); }
+      .off-title { font-size:15px; font-weight:700; margin-bottom:6px; display:flex; flex-wrap:wrap; gap:8px; align-items:baseline; }
+      @media (max-width: 1000px) {
+        .checkout-split { grid-template-columns: 1fr; }
+        .checkout-side { position:static; }
+      }
+      .offender-row { display:flex; gap:12px; align-items:baseline; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .offender-row:last-child { border-bottom:none; }
+      .offender-detail { display:flex; gap:6px; flex-wrap:wrap; }
+
+      /* ---- plate tracker ---- */
+      .plate-out td { }
+      .plate-check { border:none; border-radius:8px; padding:5px 12px; font-weight:600; font-size:12px; cursor:pointer; }
+      .plate-check.out { background:rgba(255,159,10,.16); color:var(--amber); }
+      .plate-check.in { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .plate-time { border:none; background:transparent; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; padding:4px 8px; border-radius:7px; display:inline-flex; align-items:center; gap:6px; }
+      .plate-time:hover { background:rgba(42,94,155,.08); }
+      .plate-time-pencil { color:var(--ink-3); font-size:11px; }
+      .plate-time-edit { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .plate-time-edit input { font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--line); border-radius:7px; }
+      .plate-returned { color:#1E7A3C; font-weight:600; font-size:13px; }
+      .plate-out-tag { color:var(--amber); font-weight:600; font-size:13px; }
+      .plate-missing-banner { background:rgba(229,71,60,.09); border:1px solid rgba(229,71,60,.35);
+        border-radius:14px; padding:12px 16px; margin-bottom:14px; }
+      .plate-missing-banner > b { display:block; color:#C13529; font-size:14px; margin-bottom:6px; }
+      .plate-missing-row { display:flex; align-items:center; justify-content:space-between; gap:12px;
+        padding:6px 0; font-size:13px; color:var(--ink-2); border-top:1px solid rgba(229,71,60,.15); }
+      .plate-missing-row:first-of-type { border-top:none; }
+      .plate-missing-row .btn { flex:0 0 auto; }
+      .plate-err { background:rgba(229,71,60,.09); color:#C13529; font-size:13px; font-weight:600;
+        border-radius:11px; padding:9px 13px; margin-bottom:12px; }
+      .plate-hist-btn { border:1px solid var(--line); background:#fff; color:var(--blue); font:inherit; font-size:12px; font-weight:600; padding:4px 10px; border-radius:99px; cursor:pointer; }
+      .plate-hist-btn:hover { background:var(--blue); color:#fff; }
+      .plate-hist-modal { max-width:560px; width:100%; padding:24px 26px; }
+      .plate-hist-head { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14px; }
+      .plate-hist-title { font-size:22px; font-weight:800; letter-spacing:-.02em; margin:0; }
+      .plate-hist-sub { color:var(--ink-2); font-size:13px; margin:4px 0 0; }
+      .plate-hist-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px; }
+      .plate-hist-list > li { padding:12px 14px; border-radius:12px; }
+      .plate-hist-list > li:nth-child(odd) { background:rgba(0,0,0,.025); }
+      .ph-when { font-size:12px; font-weight:700; color:var(--ink-2); font-variant-numeric:tabular-nums; margin-bottom:4px; }
+      .ph-body { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+      .ph-action { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:99px; background:rgba(42,94,155,.12); color:var(--blue); }
+      .ph-action.ph-taken-out, .ph-action.ph-carried-forward { background:rgba(255,159,10,.16); color:#95600A; }
+      .ph-action.ph-returned { background:rgba(48,177,85,.16); color:#1E7A3C; }
+      .ph-action.ph-time-edited { background:rgba(136,198,234,.22); color:#1D4674; }
+      .ph-detail { font-size:13px; color:var(--ink); }
+      .ph-by { font-size:12px; color:var(--ink-3); margin-left:auto; }
+
+      /* ---- activity standards stepper ---- */
+      .stepper-row { display:flex; gap:20px; margin:16px 0; flex-wrap:wrap; }
+      .stepper-block { text-align:center; }
+      .stepper-label { font-weight:700; font-size:14px; margin-bottom:8px; }
+      .stepper { display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
+      .stepper-btn { border:none; background:rgba(255,255,255,.6); width:46px; height:46px; font-size:22px; font-weight:600; color:var(--blue); cursor:pointer; transition: background .15s; }
+      .stepper-btn:hover:not(:disabled) { background:rgba(42,94,155,.1); }
+      .stepper-btn:disabled { opacity:.3; cursor:default; }
+      .stepper-value { min-width:60px; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; }
+      .stepper-hint { font-size:11px; color:var(--ink-3); margin-top:5px; }
+      .preset-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+      .preview-line { font-size:13px; color:var(--ink-2); margin-top:8px; padding-top:12px; border-top:1px solid var(--line); }
+      .splash-foot { margin-top:28px; font-size:12px; color:var(--ink-3); letter-spacing:.06em; text-transform:uppercase; }
+
+      /* ---- thresholds + check groups ---- */
+      .thr-label { display:flex; gap:8px; align-items:center; font-weight:600; }
+      .thr-grid { display:flex; flex-direction:column; gap:8px; }
+      .thr-grid-head, .thr-grid-row { display:grid; grid-template-columns: 1.1fr 1fr 1fr; gap:12px; align-items:center; }
+      .thr-grid-head span { font-size:11px; font-weight:700; color:var(--ink-3); text-transform:uppercase;
+        letter-spacing:.06em; display:flex; align-items:center; gap:6px; }
+      .thr-ch { font-weight:700; font-size:13.5px; }
+      .thr-inp { display:flex; align-items:center; gap:5px; font-size:13px; color:var(--ink-2); }
+      .thr-inp input { width:70px; }
+      .thr-label input[type=number] { width:64px; }
+      .thr-dot { width:11px; height:11px; border-radius:50%; }
+      .thr-dot.g { background:var(--green); } .thr-dot.y { background:#E0A100; }
+      .check-group-label { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin:10px 0 4px; }
+      .check-group-label:first-of-type { margin-top:0; }
+      .check-note { font-size:11px; color:var(--ink-3); margin-left:8px; font-style:italic; }
+      .setup-note { font-size:13px; color:var(--ink-2); margin:8px 0 6px; }
+      .login-ok { color:#1E7A3C; font-size:12.5px; margin-top:10px; background:rgba(48,177,85,.12); padding:8px 10px; border-radius:8px; }
+      .pending-card { --tint: rgba(255,159,10,.14); }
+      .pending-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .pending-row:last-child { border-bottom:none; }
+      .pending-email { color:var(--ink-2); font-size:12px; margin-left:10px; }
+      .pending-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+      .chip-list { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+      .domain-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(42,94,155,.1); color:var(--blue);
+        font-weight:600; font-size:12.5px; padding:4px 10px; border-radius:16px; }
+      .domain-chip button { border:none; background:none; color:var(--blue); cursor:pointer; font-size:11px; padding:0; }
+      .toggle-row { display:flex; gap:9px; align-items:center; margin-top:12px; font-weight:600; }
+      .toggle-row input[type=checkbox] { accent-color:var(--blue); width:16px; height:16px; }
+
+      /* ---- centralized BDC oversight ---- */
+      .role-tag { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; background:rgba(0,168,150,.16);
+        color:#00776a; padding:2px 7px; border-radius:10px; margin-left:8px; }
+      .combined-summary { display:flex; gap:16px; margin-bottom:14px; font-size:13px; font-weight:600; }
+      .combined-store { padding:14px 18px; }
+      .combined-store-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+      .combined-store-name { display:flex; align-items:center; gap:10px; font-weight:700; font-size:16px; letter-spacing:-.01em; }
+      .combined-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid rgba(0,0,0,.05); }
+      .combined-row:last-child { border-bottom:none; }
+      .combined-role-dot { width:9px; height:9px; border-radius:50%; flex:0 0 auto; }
+      .combined-role-label { font-size:11.5px; color:var(--ink-2); }
+      .combined-row .assoc-name { flex:0 0 auto; }
+      .combined-row .verdict { min-width:0; padding:3px 10px; }
+
+      /* ---- store reorder + logo cropper ---- */
+      .btn-arrow { background:rgba(255,255,255,.7); border:1px solid rgba(255,255,255,.8); border-radius:8px; width:28px; height:28px;
+        cursor:pointer; color:var(--ink-2); font-size:13px; margin-right:4px; transition: all .2s var(--spring); }
+      .btn-arrow:hover:not(:disabled) { color:var(--blue); transform: translateY(-1px); }
+      .btn-arrow:disabled { opacity:.3; cursor:default; }
+      .crop-overlay { position:fixed; inset:0; z-index:60; background:rgba(29,29,31,.35);
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        display:flex; align-items:center; justify-content:center; animation: fadeIn .25s var(--spring); }
+      @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+      .crop-card { width:340px; text-align:center; animation: loginIn .35s var(--spring); }
+      .crop-stage { display:flex; justify-content:center; margin:14px 0 10px; }
+      .crop-canvas { width:280px; height:280px; border-radius:18px; background:
+        repeating-conic-gradient(#ECECEE 0% 25%, #F8F8FA 0% 50%) 50% / 20px 20px;
+        cursor:grab; touch-action:none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+      .crop-canvas:active { cursor:grabbing; }
+      .crop-zoom { width:88%; accent-color:var(--blue); margin:4px 0 12px; }
+      .crop-actions { display:flex; gap:10px; justify-content:center; }
+      .detail { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 0 23px; animation: pageIn .3s var(--spring); }
+      .detail-cell { background:rgba(255,255,255,.55); border:1px solid rgba(255,255,255,.6); border-radius:12px; padding:6px 12px; font-size:12px; display:flex; gap:8px; }
+      .detail-cell span { color:var(--ink-2); }
+
+      /* ---- badges ---- */
+      .badge { font-size:11px; padding:3px 9px; border-radius:20px; font-weight:700; }
+      .badge-ok { background:rgba(48,177,85,.14); color:#1E7A3C; }
+      .badge-warn { background:rgba(255,159,10,.16); color:var(--amber); }
+      .badge-off { background:#F2F2F4; color:var(--ink-2); }
+
+      /* ---- import ---- */
+      .checklist { max-width:440px; }
+      .checklist-title { font-size:16px; font-weight:700; letter-spacing:-.01em; margin-bottom:12px; }
+      .act-day-pick { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+      .act-day-label { font-size:12px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.04em; }
+      .act-day-date { font:inherit; font-size:13px; padding:5px 9px; border:1px solid var(--line); border-radius:9px;
+        background:#fff; color:var(--ink); cursor:pointer; }
+      .act-day-date:hover { border-color:var(--blue); }
+      .seed-month { font:inherit; font-size:13px; padding:4px 8px; border:1px solid var(--line); border-radius:8px; margin-left:auto; cursor:pointer; }
+      .seed-month:hover { border-color:var(--blue); }
+      .act-backfill { color:var(--blue); }
+      .seg-small { display:inline-flex; background:var(--ink-e, rgba(0,0,0,.05)); border-radius:9px; padding:2px; gap:2px; }
+      .seg-opt { border:none; background:transparent; font:inherit; font-size:13px; font-weight:700; color:var(--ink-2);
+        padding:5px 14px; border-radius:7px; cursor:pointer; transition:all .15s ease; }
+      .seg-opt.on { background:var(--surface, #fff); color:var(--ink-1); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+      .act-last strong { font-variant-numeric:tabular-nums; color:var(--ink-1); }
+      .check { display:flex; gap:11px; align-items:center; padding:6px 0; color:var(--ink-2); transition: color .3s; }
+      .check.done { color:#1E7A3C; font-weight:600; }
+      .check-box { width:22px; height:22px; border:1.5px solid var(--ink-3); border-radius:50%; display:flex; align-items:center;
+        justify-content:center; font-size:12px; transition: all .3s var(--spring); }
+      .check.readonly { opacity:.85; }
+      .check.readonly .check-box { border-style:dashed; }
+      .check.readonly.done .check-box { border-style:solid; }
+      .check.done .check-box { background:var(--green); border-color:var(--green); color:#fff; transform: scale(1.05); }
+      .dropzone { border:1.5px dashed rgba(42,94,155,.35); border-radius:var(--radius); padding:48px 20px; text-align:center; cursor:pointer;
+        background:rgba(255,255,255,.45); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
+        transition: all .25s var(--spring); max-width:640px; }
+      .dropzone:hover { border-color: var(--blue); transform: translateY(-1px); box-shadow: var(--shadow-1); }
+      .dropzone.active { border-color:var(--blue); background:rgba(10,132,255,.05); transform: scale(1.01); box-shadow: var(--shadow-2); }
+      .dz-icon { font-size:28px; color:var(--blue); animation: dzBob 2.6s ease-in-out infinite; }
+      .dz-tap { display:none; }
+      .is-touch .dz-drop { display:none; }
+      .is-touch .dz-tap { display:inline; }
+      /* On touch the dropzone is really a big button, so make it read like one. */
+      .is-touch .dz-icon::before { content:"＋"; }
+      .is-touch .dz-icon { font-size:26px; animation:none; }
+      .is-touch .dz-icon > * { display:none; }
+      @keyframes dzBob { 0%,100% { transform: translateY(0); opacity:.85; } 50% { transform: translateY(4px); opacity:1; } }
+      .dropzone.active .dz-icon { animation-duration: 1s; }
+      .dz-title { font-size:17px; font-weight:700; letter-spacing:-.01em; margin-top:8px; }
+      .dz-sub { color:var(--ink-2); font-size:12.5px; margin-top:5px; }
+      .import-log { margin-top:14px; max-width:640px; }
+      .log-ok { color:#1E7A3C; padding:3px 0; animation: pageIn .3s var(--spring); }
+      .log-err { color:var(--red); padding:3px 0; animation: pageIn .3s var(--spring); }
+
+      /* ---- forms & buttons ---- */
+      .inline-form { display:flex; gap:9px; margin:10px 0; flex-wrap:wrap; align-items:center; }
+      input, select { border:1px solid rgba(16,40,68,.12); border-radius:11px; padding:9px 12px; font-size:13px; font-family:inherit;
+        background:rgba(255,255,255,.82); color:var(--ink);
+        box-shadow: inset 0 1px 2px rgba(16,40,68,.04);
+        transition: border-color .25s var(--ease), box-shadow .25s var(--ease), background .25s var(--ease); outline:none; }
+      input:hover, select:hover { background:rgba(255,255,255,.92); }
+      input:focus, select:focus { border-color:var(--blue); background:#fff; box-shadow: 0 0 0 3.5px rgba(42,94,155,.18); }
+      input[type=number] { width:84px; }
+      .btn { background:linear-gradient(180deg, #3B72B0 0%, var(--blue) 100%); color:#fff; border:none;
+        border-radius:12px; padding:10px 20px; font-weight:600; font-size:13px; letter-spacing:.005em;
+        cursor:pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,40,68,.22), 0 6px 18px rgba(42,94,155,.24);
+        transition: transform .28s var(--ease-bloop), box-shadow .28s var(--ease), filter .2s; }
+      .btn:hover { filter:brightness(1.05); transform: translateY(-1.5px);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 2px 4px rgba(16,40,68,.2), 0 12px 26px rgba(42,94,155,.34); }
+      .btn:active { transform: translateY(0) scale(.975); transition-duration:.09s; }
+      .btn:disabled { filter:grayscale(.35); opacity:.5; box-shadow:none; transform:none; cursor:default; }
+      .btn.wide { width:100%; margin-top:18px; padding:12px; border-radius:12px; font-size:14px; }
+      .btn.secondary { background:rgba(255,255,255,.72); color:var(--ink); border:1px solid rgba(16,40,68,.10);
+        backdrop-filter: blur(14px) saturate(160%); -webkit-backdrop-filter: blur(14px) saturate(160%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 1px 2px rgba(16,40,68,.06); }
+      .btn.secondary:hover { background:#fff; box-shadow: inset 0 1px 0 #fff, 0 8px 20px rgba(16,40,68,.12); }
+      /* ---- mobile slide-out drawer (hidden on desktop, shown under 720px) ---- */
+      .hamburger { display:none; flex-direction:column; justify-content:center; gap:4px; width:38px; height:38px;
+        border:1px solid var(--line); border-radius:11px; background:#fff; cursor:pointer; padding:0 9px; }
+      .hamburger span { display:block; height:2px; border-radius:2px; background:var(--ink); transition:.2s; }
+      .drawer-root { display:none; position:fixed; inset:0; z-index:120; }
+      .drawer-root.open { display:block; }
+      .drawer-scrim { position:absolute; inset:0; background:rgba(15,23,42,.42); backdrop-filter:blur(2px);
+        opacity:0; animation:scrimIn .25s ease forwards; }
+      @keyframes scrimIn { to { opacity:1; } }
+      .drawer { position:absolute; top:0; right:0; height:100%; width:min(84vw, 340px);
+        background:var(--card,#fff); box-shadow:-16px 0 48px rgba(0,0,0,.28); display:flex; flex-direction:column;
+        transform:translateX(100%); animation:drawerIn .28s var(--spring) forwards; }
+      @keyframes drawerIn { to { transform:translateX(0); } }
+      .drawer-head { display:flex; align-items:center; justify-content:space-between; padding:18px 18px 12px;
+        border-bottom:1px solid var(--line); }
+      .drawer-store { font-size:17px; font-weight:800; letter-spacing:-.02em; }
+      .drawer-x { border:none; background:rgba(0,0,0,.05); width:32px; height:32px; border-radius:50%; font-size:15px;
+        cursor:pointer; color:var(--ink-2); }
+      .drawer-scroll { flex:1; overflow-y:auto; padding:12px 12px 28px; }
+      .drawer-section-label { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--ink-3); padding:14px 10px 6px; }
+      .drawer-nav { display:flex; flex-direction:column; gap:2px; }
+      .drawer-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:none; background:transparent;
+        font:inherit; font-size:16px; font-weight:600; color:var(--ink); padding:13px 12px; border-radius:12px; cursor:pointer; }
+      .drawer-item:active { background:rgba(0,0,0,.05); }
+      .drawer-item.on { background:rgba(42,94,155,.1); color:var(--blue); }
+      .drawer-item > span:first-child { flex:1; }
+      .drawer-tick { color:var(--blue); font-weight:800; }
+
+      .btn-quiet { background:transparent; border:none; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer;
+        padding:7px 10px; border-radius:9px; transition: background .2s; }
+      .btn-quiet:hover { background:rgba(10,132,255,.08); }
+      .btn-ghost { background:transparent; border:1px solid var(--line); border-radius:11px; padding:8px 15px; color:var(--ink-2);
+        cursor:pointer; margin-top:6px; display:inline-block; font-weight:600; font-size:12.5px;
+        transition: border-color .25s var(--ease), color .25s var(--ease), background .25s var(--ease), transform .25s var(--ease-bloop); }
+      .btn-ghost:hover { border-color:rgba(42,94,155,.45); color:var(--blue); background:rgba(42,94,155,.06); transform:translateY(-1px); }
+      .btn-ghost:active { transform:none; }
+      .btn-ghost.on { background:rgba(224,161,0,.14); border-color:transparent; color:#95600A; }
+      .coach-excl { margin-left:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+        background:rgba(224,161,0,.15); color:#95600A; padding:1px 7px; border-radius:99px; vertical-align:middle; }
+      .file-btn { cursor:pointer; margin:0; }
+      .btn-x { background:transparent; border:none; color:var(--red); cursor:pointer; font-size:12px; font-weight:600;
+        padding:4px 8px; border-radius:8px; transition: background .2s; }
+      .btn-x:hover { background:rgba(229,71,60,.08); }
+      .hint { font-size:12px; color:var(--ink-2); line-height:1.45; }
+
+      /* ---- standards ---- */
+      .std-head { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+      .std-head h3 { margin:0; font-size:16px; font-weight:700; letter-spacing:-.01em; }
+      .tier-head { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+      .tier-label { font-weight:700; font-size:13px; background:var(--ink); color:#fff; padding:5px 13px; border-radius:20px; }
+      .tier-head label { display:flex; gap:8px; align-items:center; font-weight:600; }
+      .req-row { display:flex; gap:9px; align-items:center; padding:5px 0; flex-wrap:wrap; }
+
+      /* ---- tables ---- */
+      .roster-table { width:100%; max-width:760px; border-collapse:collapse; }
+      .roster-table.wide { max-width:1060px; }
+      .roster-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3);
+        padding:7px 10px; font-weight:600; }
+      .roster-table td { padding:8px 10px; border-top:1px solid rgba(0,0,0,.05); vertical-align:top; }
+      .row-inactive { opacity:.45; }
+      .row-actions { white-space:nowrap; }
+      .mono { font-size:12px; color:var(--ink-2); white-space:nowrap; font-variant-numeric: tabular-nums; }
+
+      /* ---- GM summary ---- */
+      .gm-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
+      .gm-head h2 { font-size:24px; font-weight:700; letter-spacing:-.03em; margin:0 0 4px; }
+      .gm-sub { color:var(--ink-2); font-size:13px; margin:0 0 20px; }
+      .gm-card { padding-top:14px; }
+      .gm-section { font-size:16px; font-weight:700; letter-spacing:-.01em; margin:4px 0 10px; display:flex; align-items:center; gap:9px; }
+      .gm-section::before { content:""; width:10px; height:10px; border-radius:50%; }
+      .gm-section.fail::before { background:var(--red); } .gm-section.pass::before { background:var(--green); }
+      .gm-section::before { background:var(--blue); }
+      .gm-section.fail::before { background:var(--red); }
+      .gm-section.pass::before { background:var(--green); }
+      @media (max-width: 700px) {
+        .tr-controls { flex-direction:column; align-items:stretch; }
+        .tr-ranges { overflow-x:auto; }
+      }
+      /* ---- trends ---- */
+      .trends { --tint: rgba(0,168,150,.09); }
+      .tr-controls { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin:14px 0 6px; }
+      .tr-ranges { display:inline-flex; background:rgba(118,118,128,.12); border-radius:11px; padding:3px; gap:2px; }
+      .tr-range { border:none; background:transparent; font:inherit; font-size:12.5px; font-weight:600;
+        color:var(--ink-2); padding:7px 13px; border-radius:8px; cursor:pointer;
+        transition: background .28s var(--ease), color .28s var(--ease); }
+      .tr-range:hover { color:var(--ink); }
+      .tr-range.on { background:#fff; color:var(--blue); box-shadow:0 1px 4px rgba(31,54,86,.16); }
+      .tr-range:disabled { opacity:.4; cursor:default; }
+      .tr-range:disabled:hover { color:var(--ink-2); }
+      .tr-dates { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-2); }
+      .tr-chart { position:relative; margin-top:12px; }
+      .tr-chart svg { width:100%; height:auto; display:block; overflow:visible; }
+      .tr-grid { stroke:rgba(16,40,68,.07); stroke-width:1; }
+      .tr-ytick, .tr-xtick { font-size:10px; fill:var(--ink-3); font-weight:600; font-variant-numeric:tabular-nums; }
+      .tr-line { stroke-width:2.25; stroke-linejoin:round; stroke-linecap:round;
+        transition: stroke-width .25s var(--ease); }
+      .tr-floor { stroke-width:3; }
+      .tr-cross { stroke:rgba(16,40,68,.3); stroke-width:1.5; stroke-dasharray:3 4; }
+      .tr-tip { position:absolute; top:6px; transform:translateX(-50%); pointer-events:none; z-index:5;
+        background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:12px;
+        padding:9px 12px; box-shadow:0 12px 30px rgba(31,54,86,.2); min-width:150px;
+        animation: tipIn .22s var(--ease-bloop) both; }
+      @keyframes tipIn { from { opacity:0; transform:translateX(-50%) scale(.92); } to { opacity:1; } }
+      .tr-tip-day { font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+        color:var(--ink-3); margin-bottom:6px; }
+      .tr-tip-row { display:flex; align-items:center; gap:7px; font-size:12px; padding:2px 0; }
+      .tr-tip-name { flex:1; color:var(--ink-2); white-space:nowrap; }
+      .tr-tip-row b { font-variant-numeric:tabular-nums; }
+      .tr-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+      .tr-people { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:16px;
+        padding-top:14px; border-top:1px solid rgba(16,40,68,.07); }
+      .tr-people-cap { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.09em;
+        color:var(--ink-3); margin-right:6px; }
+      .tr-chip { border:1px solid var(--line); background:rgba(255,255,255,.7); color:var(--ink-2);
+        font:inherit; font-size:12px; font-weight:600; padding:5px 12px; border-radius:99px; cursor:pointer;
+        transition: transform .25s var(--ease-bloop), border-color .25s var(--ease), color .25s var(--ease); }
+      .tr-chip:hover { border-color:rgba(42,94,155,.4); color:var(--blue); transform:translateY(-1px); }
+
+      /* ---- summary grouped by standard ---- */
+      .std-group { margin-top:16px; }
+      .std-group + .std-group { padding-top:16px; border-top:1px solid rgba(16,40,68,.07); }
+      .std-group-head { display:flex; align-items:baseline; gap:10px; margin-bottom:9px; }
+      .std-group-name { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em; }
+      .std-group-count { font-size:11px; font-weight:700; color:#C13529; background:rgba(229,71,60,.12);
+        padding:2px 9px; border-radius:99px; }
+      .std-people { display:flex; flex-wrap:wrap; gap:7px; }
+      .std-person { display:inline-flex; align-items:center; gap:8px; font-size:12.5px;
+        background:rgba(255,255,255,.72); border:1px solid rgba(16,40,68,.07); border-radius:11px;
+        padding:7px 12px; }
+      .std-person.ok { background:rgba(48,177,85,.09); border-color:rgba(48,177,85,.2); }
+      .std-store { color:var(--ink-3); font-size:11px; }
+      .std-val { color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .std-val em { font-style:normal; color:var(--ink-3); }
+      .std-tag { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em;
+        background:rgba(0,0,0,.06); color:var(--ink-2); padding:2px 7px; border-radius:99px; }
+      .std-tag.hot { background:rgba(229,71,60,.13); color:#C13529; }
+
+      .gm-table { width:100%; border-collapse:collapse; }
+      .gm-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3);
+        padding:8px; border-bottom:1px solid var(--line); font-weight:600; }
+      .gm-table td { padding:9px 8px; border-bottom:1px solid rgba(0,0,0,.05); }
+      .gm-table tr:last-child td { border-bottom:none; }
+
+      /* ---- admin ---- */
+      .store-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; margin-bottom:28px; }
+      .store-card { text-align:left; background:rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
+        padding:18px; cursor:pointer; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), var(--shadow-1); transition: box-shadow .3s var(--spring), transform .3s var(--spring); }
+      .store-card:hover { box-shadow:var(--shadow-2); transform: translateY(-3px); }
+      .store-card:active { transform: translateY(-1px) scale(.99); }
+      .store-card-top { display:flex; gap:11px; align-items:center; margin-bottom:10px; }
+      .store-logo { width:38px; height:38px; flex:0 0 38px; object-fit:contain; border-radius:10px; background:#fff;
+        border:1px solid var(--line); display:block; }
+      .store-logo.placeholder { display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-3);
+        background:#F5F5F7; font-size:16px; }
+      .store-card-name { font-weight:700; font-size:17px; letter-spacing:-.02em; }
+      .store-card-row { margin-bottom:9px; }
+      .store-card-stats { display:flex; gap:12px; font-size:12.5px; flex-wrap:wrap; }
+      .stat-pass { color:#1E7A3C; font-weight:600; } .stat-fail { color:var(--red); font-weight:600; } .stat-dim { color:var(--ink-3); }
+      .store-card-open { margin-top:12px; font-size:13px; color:var(--blue); font-weight:600; }
+      /* traffic-light verdict chips on the store overview cards */
+      .store-verdicts { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+      .vchip { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:9px; font-size:12px; font-weight:700;
+        line-height:1; border:1px solid transparent; }
+      .vchip-ico { font-size:12px; }
+      .vchip-n { font-variant-numeric:tabular-nums; }
+      .vchip-lbl { font-weight:600; opacity:.85; }
+      .vchip-pass  { background:rgba(48,177,85,.13);  color:#1E7A3C; border-color:rgba(48,177,85,.28); }
+      .vchip-grace { background:rgba(136,198,234,.18); color:#1D4674; border-color:rgba(136,198,234,.4); }
+      .vchip-watch { background:rgba(42,94,155,.12);   color:#1D4674; border-color:rgba(42,94,155,.25); }
+      .vchip-warn  { background:rgba(255,159,10,.16);  color:#95600A; border-color:rgba(255,159,10,.3); }
+      .vchip-fail  { background:rgba(229,71,60,.13);   color:#C13529; border-color:rgba(229,71,60,.28); }
+      .vchip-off   { background:rgba(0,0,0,.06);       color:var(--ink-2); border-color:rgba(0,0,0,.1); }
+      .vchip-roster { margin-left:auto; }
+      .role-chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+      .role-chip { color:#fff; font-size:12px; font-weight:600; padding:5px 12px; border-radius:20px; }
+      .store-checks { display:flex; gap:12px; flex-wrap:wrap; margin:10px 0; }
+      .store-checks.tight { gap:8px; }
+      .check-inline { display:flex; gap:6px; align-items:center; font-size:12.5px; }
+      .check-inline input[type=checkbox] { accent-color: var(--blue); width:15px; height:15px; }
+      .card h3 { margin:0 0 10px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
+
+      @media (max-width: 700px) { .assoc-name { flex:1 1 auto; } }
+
+      /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
+      @media (prefers-reduced-motion: reduce) {
+        .lpc *, .lpc *::before, .lpc *::after {
+          animation-duration: .001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: .001ms !important;
+          scroll-behavior: auto !important;
+        }
+        .lpc::before, .lpc::after { animation: none !important; transform: none !important; }
+        /* leave the logo in its finished state rather than mid-sweep */
+        .logo-anim { animation: none !important; transform: none !important; }
+        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; animation: none !important; }
+        .logo-anim .logo-needle { transform: rotate(0deg) !important; animation: none !important; }
+        .dz-icon, .star-badge { animation: none !important; }
+        /* hero holds its finished state instead of animating in */
+        .hero-band, .hero-band::after, .tile, .hero-strip { animation: none !important; transform: none !important; }
+        .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
+        .chip-warn .chip-dot, .leader-crown { animation: none !important; }
+        .logo-loading .logo-spin, .logo-loading .logo-trail, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
+      }
+
+      @media print {
+        .no-print, .topbar, .seg-wrap { display:none !important; }
+        .lpc { background:#fff; padding:0; }
+        .print-area { padding:0; max-width:none; }
+        .card { box-shadow:none; border:none; padding:0; margin-bottom:20px; }
+        .gm-table td, .gm-table th { font-size:11px; }
+        .lpc::before, .lpc::after { display:none !important; }
+        .version-stamp { display:none; }
+        .logo-anim, .dz-icon, .star-badge { animation:none !important; }
+        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
+        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
+      }
+
+      /* =====================================================================
+         MOBILE  —  one coherent pass at <=760px, replacing the scattered
+         per-widget breakpoints. Phones get a native-style bottom bar, the hero
+         reflows to a single column, tables stack, and popups tap open.
+         ===================================================================== */
+      .botnav { display:none; }
+      @media (max-width: 760px) {
+        /* --- chrome --- */
+        .topbar { position:sticky; top:0; z-index:40; padding:10px 14px; gap:10px;
+          background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
+          -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
+        .topbar-right { gap:8px; }
+        .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
+        .hamburger { display:none !important; }                       /* replaced by the bottom bar */
+        .brand-title { font-size:16px; }
+        .view-select { max-width:46vw; font-size:13px; }
+        .btn-quiet { padding:7px 10px; }
+        .seg-wrap { display:none; }                                   /* the desktop tab strip */
+
+        /* --- page gets out of the way of the bar --- */
+        .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
+        .settings, .checkout, .coaching, .plates {
+          padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
+
+        /* --- bottom bar --- */
+        .botnav { position:fixed; left:0; right:0; bottom:0; z-index:50; display:flex;
+          padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+          background:rgba(255,255,255,.9); backdrop-filter:blur(20px) saturate(180%);
+          -webkit-backdrop-filter:blur(20px) saturate(180%);
+          box-shadow:0 -1px 0 rgba(16,40,68,.10), 0 -8px 24px rgba(16,40,68,.06); }
+        .botnav-btn { flex:1; position:relative; display:flex; flex-direction:column; align-items:center; gap:3px;
+          border:none; background:none; font:inherit; cursor:pointer; padding:5px 2px; border-radius:12px;
+          color:var(--ink-3); transition:color .2s var(--ease), transform .2s var(--ease-bloop); }
+        .botnav-btn.on { color:var(--blue); }
+        .botnav-btn:active { transform:scale(.9); }
+        .botnav-ico { font-size:19px; line-height:1; }
+        .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
+        .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
+        .botnav-btn .badge { position:absolute; top:0; right:22%; transform:scale(.72); }
+
+        /* --- hero reflows to one column --- */
+        .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
+        .hero-id { flex-direction:row; gap:14px; transform:none !important; opacity:1 !important; }
+        .hero-store { font-size:23px; }
+        .hero-health { flex-direction:column; align-items:stretch; gap:16px; transform:none !important; opacity:1 !important; }
+        .hero-ring-wrap { margin:0 auto; transform:none !important; opacity:1 !important; }
+        .hh-facts { max-width:none; text-align:center; }
+        .hh-rows { justify-content:center; }
+        .hero-focus { grid-template-columns:1fr; gap:12px; margin-top:14px; }
+        .hf-wide { grid-column:auto; }
+        /* the closing-rate card can't hang off the right on a phone; centre it */
+        .health-pop { right:50%; left:auto; transform:translateX(50%) translateY(-6px) scale(.9);
+          transform-origin:top center; width:min(300px, 86vw); }
+        .hero-health.popped .health-pop, .health-pop { }
+        .hero-health.popped .health-pop { opacity:1; transform:translateX(50%) translateY(0) scale(1); }
+        .health-pop::after { right:calc(50% - 6px); }
+
+        /* --- dials: bigger tap targets, popup opens upward centred --- */
+        .mstrip { gap:14px 12px; }
+        .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
+        .mdial { width:calc(33.333% - 8px); }
+        .mdial-pop { left:50%; transform:translateX(-50%) translateY(-6px) scale(.9); transform-origin:bottom center;
+          width:min(262px, 84vw); }
+        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0) scale(1); }
+        .hf-fix.popped .hf-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
+        .hf-pop { width:min(300px, 86vw); }
+
+        /* --- associate rows stack instead of spanning a wide line --- */
+        .assoc-row { flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
+        .assoc-name { flex:1 1 60%; font-size:15px; }
+        .assoc-leads { margin-left:auto; }
+        .mstrip + .assoc-leads { margin-left:auto; }
+        .verdict, .restrict-btn, .grab-btn { flex:0 0 auto; }
+
+        /* --- podium stacks --- */
+        .podium-row { flex-direction:column; }
+        .pod { flex:1 1 auto; }
+
+        /* --- tables scroll rather than crush --- */
+        .gm-table, .checkout-table, .history-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
+          white-space:nowrap; }
+        .std-people { gap:6px; }
+
+        /* --- trends: chart stays readable, controls stack --- */
+        .tr-controls { flex-direction:column; align-items:stretch; gap:10px; }
+        .tr-ranges { overflow-x:auto; }
+        .tr-chart svg { min-width:0; }
+        .tr-people { max-height:132px; overflow-y:auto; }
+
+        /* --- roster role bands a touch tighter --- */
+        .roster-card { padding:4px 14px 16px; }
+        .role-group::before { left:-8px; right:-8px; }
+
+        /* motion is costly on phones and the parallax has nothing to grip here */
+        .bg-live { opacity:.7; }
+      }
+
+      @media (max-width: 400px) {
+        .botnav-lbl { font-size:9px; }
+        .mdial { width:calc(50% - 7px); }
+        .hero-store { font-size:20px; }
+      }
+/* ================= Phone line — salesperson page ================= */
+.q-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;
+  background:radial-gradient(1200px 600px at 50% -10%, rgba(76,139,245,.18), transparent 60%), var(--bg,#0b1220);}
+.q-card{width:100%;max-width:460px;background:var(--card,#121a2b);border:1px solid rgba(255,255,255,.08);
+  border-radius:24px;padding:26px;box-shadow:0 30px 80px rgba(0,0,0,.5);}
+.q-center{text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.q-head{margin-bottom:16px;}
+.q-head h2{margin:2px 0 6px;font-size:28px;font-weight:900;letter-spacing:-.02em;}
+.q-kicker{text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:800;color:#6ea0ff;margin:0;}
+.q-muted{color:var(--muted,#8aa);font-size:14px;margin:0;}
+.q-err{color:#ff9a9a;font-size:14px;margin:10px 0 0;font-weight:600;}
+.q-x{font-size:44px;}
+.q-fade{animation:qfade .4s ease both;}
+.q-pop{animation:qpop .42s cubic-bezier(.2,.9,.3,1.2) both;}
+@keyframes qfade{from{opacity:0;}to{opacity:1;}}
+@keyframes qpop{from{opacity:0;transform:translateY(14px) scale(.98);}to{opacity:1;transform:none;}}
+
+.q-name-in,.q-pin-in{width:100%;padding:16px 18px;border-radius:16px;border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.05);color:inherit;font-size:20px;font-weight:600;margin-top:6px;}
+.q-pin-in{text-align:center;letter-spacing:.5em;font-size:26px;}
+.q-name-in:focus,.q-pin-in:focus{outline:none;border-color:#4c8bf5;box-shadow:0 0 0 3px rgba(76,139,245,.25);}
+.q-roster{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}
+.q-name{position:relative;padding:15px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.04);color:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:transform .1s,border-color .15s;}
+.q-name:hover{border-color:#4c8bf5;transform:translateY(-1px);}
+.q-name:disabled{opacity:.45;cursor:default;}
+.q-name .q-role{display:block;font-size:11px;font-weight:600;color:var(--muted,#8aa);margin-top:3px;}
+.q-name .q-in{display:block;font-size:11px;font-weight:600;color:#6ea0ff;margin-top:3px;}
+.q-big-q{font-size:22px;font-weight:800;text-align:center;margin:8px 0 16px;}
+.q-role{color:var(--muted,#8aa);font-weight:600;}
+.q-suggest{margin-top:16px;}
+
+.q-btn{flex:1;min-width:110px;padding:15px;border-radius:14px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);color:inherit;font-weight:700;font-size:15px;cursor:pointer;transition:transform .1s,filter .15s;}
+.q-btn:hover{filter:brightness(1.1);}
+.q-btn:active{transform:scale(.97);}
+.q-btn.q-primary,.q-btn.q-back{background:linear-gradient(180deg,#5a97ff,#3b72e0);border-color:transparent;color:#fff;}
+.q-btn.q-back{background:linear-gradient(180deg,#37c17e,#2e9d63);}
+.q-wide{width:100%;margin-top:16px;}
+.q-flags{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+.q-leave{width:100%;margin-top:14px;padding:12px;border:none;background:none;color:var(--muted,#8aa);
+  text-decoration:underline;cursor:pointer;font-size:13px;}
+
+/* live "you're in line" */
+.q-live{text-align:center;}
+.q-pos{display:flex;flex-direction:column;align-items:center;gap:8px;margin:18px 0;padding:22px;border-radius:20px;
+  background:rgba(90,140,255,.12);transition:background .3s;}
+.q-pos-ring{width:130px;height:130px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:conic-gradient(#4c8bf5 0turn,#4c8bf5 1turn);position:relative;}
+.q-pos-ring::after{content:"";position:absolute;inset:8px;border-radius:50%;background:var(--card,#121a2b);}
+.q-pos-n{position:relative;z-index:1;font-size:46px;font-weight:900;letter-spacing:-.03em;animation:qpop .5s ease both;}
+.q-pos-sub{font-size:16px;font-weight:600;}
+.q-wait{color:var(--muted,#8aa);font-size:13px;font-weight:500;margin-top:6px;}
+.q-uptag{display:inline-block;background:linear-gradient(180deg,#37c17e,#2e9d63);color:#fff;font-weight:800;
+  padding:4px 14px;border-radius:999px;font-size:15px;}
+.q-pos-next .q-pos-ring{animation:qpulse 1.6s ease-in-out infinite;}
+.q-pos-next{background:rgba(55,193,126,.16);}
+.q-pos-off{background:rgba(255,180,60,.12);}
+.q-pos-off .q-pos-ring::after{background:var(--card,#121a2b);}
+@keyframes qpulse{0%,100%{box-shadow:0 0 0 0 rgba(55,193,126,.5);}50%{box-shadow:0 0 0 16px rgba(55,193,126,0);}}
+.spin-logo{width:36px;height:36px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#4c8bf5;animation:qspin .8s linear infinite;}
+@keyframes qspin{to{transform:rotate(360deg);}}
+
+/* ================= Phone line — manager board ================= */
+.q-board{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap;margin-bottom:18px;padding:16px 18px;
+  border-radius:18px;background:linear-gradient(135deg,rgba(76,139,245,.12),rgba(76,139,245,.03));
+  border:1px solid rgba(76,139,245,.2);}
+.q-board-cell{min-width:96px;}
+.q-board-n{font-size:34px;font-weight:900;line-height:1;letter-spacing:-.02em;}
+.q-board-l{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted,#8aa);margin-top:4px;font-weight:700;}
+.q-board-avail .q-board-n{color:#37c17e;}
+.q-board-miss .q-board-n{color:#ffb454;}
+.q-board-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.q-assign-btn{font-weight:800;}
+
+.q-qr-panel{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:16px;border:1px dashed rgba(255,255,255,.18);border-radius:14px;margin-bottom:16px;}
+.q-qr-box{width:180px;background:#fff;padding:10px;border-radius:12px;}
+.q-qr svg{display:block;}
+.q-qr-info{flex:1;min-width:220px;font-size:14px;}
+.q-qr-btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+
+.q-line{display:flex;flex-direction:column;gap:8px;}
+.q-empty{padding:20px;text-align:center;}
+.q-row{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.03);animation:qfade .3s ease both;}
+.q-row.q-off{opacity:.55;}
+.q-row.q-next{border-color:#37c17e;box-shadow:0 0 0 1px #37c17e inset,0 6px 18px rgba(55,193,126,.15);}
+.q-rank{width:28px;text-align:center;font-weight:900;color:var(--muted,#8aa);font-size:16px;}
+.q-who{flex:1;}
+.q-nm{font-weight:700;}
+.q-next-tag{font-size:10px;font-weight:900;color:#37c17e;margin-left:6px;letter-spacing:.6px;}
+.q-meta{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted,#8aa);margin-top:2px;}
+.q-chip{padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.08);font-weight:600;}
+.q-chip.q-lunch{background:rgba(255,180,60,.18);color:#ffcf7a;}
+.q-chip.q-customer{background:rgba(120,120,255,.18);color:#b9b9ff;}
+.q-chip.q-away{background:rgba(255,110,110,.18);color:#ffb0b0;}
+.q-row-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.q-reason{display:flex;gap:6px;align-items:center;font-size:12px;flex-wrap:wrap;}
+.q-flag-sel{padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.06);color:inherit;border:1px solid rgba(255,255,255,.12);}
+.q-rm{color:#ffb0b0;}
+
+.q-missing{margin-top:16px;padding:14px 16px;border-radius:14px;background:rgba(255,180,60,.07);border:1px solid rgba(255,180,60,.22);}
+.q-missing-head{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#ffb454;margin-bottom:10px;}
+.q-missing-list{display:flex;gap:8px;flex-wrap:wrap;}
+.q-missing-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;
+  border:1px solid rgba(255,180,60,.35);background:rgba(255,180,60,.08);color:inherit;font-weight:600;cursor:pointer;transition:filter .15s;}
+.q-missing-chip:hover{filter:brightness(1.15);}
+.q-missing-add{font-size:11px;font-weight:800;color:#ffb454;}
+.q-add{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap;}
+.q-clear{margin-left:auto;color:#ffb0b0;}
+
+/* coaching card — phone line block */
+.ac-queue{margin-top:8px;}
+
+/* v3 additions */
+.q-phone-banner{display:inline-flex;align-items:center;gap:8px;background:linear-gradient(180deg,#5a97ff,#3b72e0);
+  color:#fff;font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:13px;padding:8px 18px;
+  border-radius:999px;margin-bottom:14px;box-shadow:0 8px 20px rgba(76,139,245,.3);}
+.q-phone-pill{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;background:rgba(76,139,245,.16);
+  color:#8fb8ff;font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:11px;padding:6px 12px;border-radius:999px;margin-bottom:12px;}
+.q-live,.q-card{display:flex;flex-direction:column;}
+.q-fico{width:20px;height:20px;}
+.q-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;}
+
+/* PIN fields: label above, and stop the placeholder from being letter-spaced */
+.q-pin-field{margin-top:12px;text-align:left;}
+.q-pin-lbl{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted,#8aa);margin:0 0 4px 4px;}
+.q-pin-in{margin-top:0;}
+.q-pin-in::placeholder{letter-spacing:.35em;opacity:.5;}
+.q-name-in::placeholder{letter-spacing:normal;opacity:.5;}
+
+/* manager reorder arrows */
+.q-ord{display:flex;flex-direction:column;gap:2px;margin-right:2px;}
+.q-ord-b{width:24px;height:20px;line-height:1;border-radius:6px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.05);color:inherit;font-size:10px;cursor:pointer;padding:0;}
+.q-ord-b:disabled{opacity:.3;cursor:default;}
+.q-ord-b:hover:not(:disabled){border-color:#4c8bf5;}
+
+/* manager PIN panel */
+.q-pins-panel{margin-bottom:16px;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);}
+.q-pins-head{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:var(--muted,#8aa);margin-bottom:10px;}
+.q-pin-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);}
+.q-pin-row:first-of-type{border-top:none;}
+.q-pin-name{font-weight:600;}
+.q-pin-reset{color:#ffb0b0;}
+
+/* v4: curtain wipe + custom line icons */
+.q-stage{position:relative;z-index:1;width:100%;display:flex;justify-content:center;}
+.q-ring-ico{width:46px;height:46px;}
+.q-chip-ico{width:13px;height:13px;vertical-align:-2px;margin-right:4px;}
+.q-pill-ico{width:14px;height:14px;}
+.q-banner-ico{width:15px;height:15px;}
+.q-x-ico{width:46px;height:46px;color:#8fb8ff;}
+.q-curtain{position:fixed;inset:0;z-index:60;background:linear-gradient(120deg,#3b72e0 0%,#5a97ff 55%,#6ea0ff 100%);
+  transform:translateX(-100%);pointer-events:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 60px rgba(0,0,0,.25);}
+.q-curtain.q-wipe{animation:qcurtain .62s cubic-bezier(.76,0,.24,1) both;}
+@keyframes qcurtain{0%{transform:translateX(-100%);}46%{transform:translateX(0);}54%{transform:translateX(0);}100%{transform:translateX(101%);}}
+.q-curtain-mark{width:60px;height:60px;color:rgba(255,255,255,.92);opacity:0;}
+.q-curtain.q-wipe .q-curtain-mark{animation:qmark .62s ease both;}
+@keyframes qmark{0%,100%{opacity:0;transform:scale(.7);}42%,58%{opacity:1;transform:scale(1);}}
+
+/* v5: center the status icon inside the position ring */
+.q-pos-n{display:flex;align-items:center;justify-content:center;line-height:1;}
+.q-ring-ico{display:block;}
+
+/* ===================== FLUID KIT (SmartFloor) ===================== */
+.q-queue-sel{font-weight:700;}
+.qsel{ display:inline-flex; gap:6px; align-items:stretch; }
+.qsel-pill{ font-family:inherit; font-weight:600; font-size:12.5px; line-height:1; padding:0 13px; border-radius:999px;
+  border:0; cursor:pointer; white-space:nowrap; color:#fff; position:relative; overflow:hidden;
+  display:inline-flex; align-items:center; gap:6px;
+  box-shadow:0 2px 8px -3px rgba(16,32,52,.45);
+  transition:transform .12s ease, filter .12s ease, box-shadow .2s ease; }
+.qsel-ico{ position:relative; z-index:1; opacity:.95; }
+.qsel-lbl{ position:relative; z-index:1; }
+/* A light runs across each pill, left to right, one after the other, the way a
+   sequential indicator sweeps. The icon end lights first because that is where
+   the eye lands. */
+.qsel-pill::before{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.26) 50%, transparent 74%);
+  transform:translateX(-120%); animation:qsweep 5.4s ease-in-out infinite; animation-delay:var(--qd,0s); }
+@keyframes qsweep{ 0%{ transform:translateX(-120%); } 34%,100%{ transform:translateX(120%); } }
+.qsel-pill:hover{ transform:translateY(-1px); filter:brightness(1.06); }
+.qsel-pill:active{ transform:translateY(0); }
+.qsel-pill.on{ box-shadow:0 3px 12px -2px rgba(16,32,52,.5), 0 0 0 3px rgba(255,255,255,.75); }
+
+/* breathing radial aura */
+.living-aura{position:absolute;inset:-18%;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 50% 46%, var(--aura) 0%, transparent 58%);
+  background:radial-gradient(circle at 50% 46%, var(--aura) 0%, color-mix(in srgb, var(--aura) 55%, transparent) 26%, transparent 60%);
+  filter:blur(10px);opacity:.5;animation:auraBreathe 4.6s ease-in-out infinite;}
+.aura-hot{opacity:.82;animation-duration:2.4s;}
+@keyframes auraBreathe{0%,100%{transform:scale(.9);opacity:.42;}50%{transform:scale(1.08);opacity:.72;}}
+
+/* dot-matrix LED numerals */
+.led-num{align-items:center;justify-content:center;}
+.led-dot{border-radius:50%;display:block;transition:background .25s ease,box-shadow .25s ease;}
+
+/* position display on the salesperson "done" screen */
+.q-pos-stage{position:relative;width:200px;height:200px;margin:2px auto 4px;display:flex;align-items:center;justify-content:center;}
+.q-pos-stage .q-pos-ring{position:relative;z-index:1;width:150px;height:150px;}
+.q-pos-stage .q-pos-ring::after{inset:10px;}
+.q-pos-stage .q-pos-n{min-height:44px;display:flex;align-items:center;justify-content:center;}
+
+/* opportunities leaderboard — color-fill cards */
+.q-opps{margin:0 0 14px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);}
+.q-opps-head{font-weight:800;font-size:13px;letter-spacing:.02em;display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--ink-2,#c8d2e0);}
+.q-opps-total{font-weight:800;font-size:12px;padding:1px 10px;border-radius:999px;color:#fff;}
+.q-opps-empty{margin:0;font-size:13px;}
+.lb-list{display:flex;flex-direction:column;gap:8px;}
+.lb-card{position:relative;overflow:hidden;border-radius:13px;background:rgba(255,255,255,.05);height:46px;display:flex;align-items:center;
+  transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease;}
+.lb-card:hover{transform:translateY(-1px);}
+.lb-fill{position:absolute;left:0;top:0;bottom:0;border-radius:13px;transition:width .6s cubic-bezier(.2,.8,.2,1),opacity .3s ease;}
+.lb-body{position:relative;z-index:1;display:flex;align-items:center;gap:10px;width:100%;padding:0 14px;}
+.lb-rank{font-weight:900;font-size:12px;opacity:.7;min-width:16px;}
+.lb-nm{font-weight:800;font-size:15px;letter-spacing:-.01em;text-shadow:0 1px 6px rgba(0,0,0,.35);}
+.lb-crown{margin-left:2px;font-size:10px;opacity:.9;}
+.lb-n{margin-left:auto;font-weight:900;font-size:22px;letter-spacing:-.02em;text-shadow:0 1px 8px rgba(0,0,0,.4);}
+.lb-lead{box-shadow:0 6px 22px rgba(0,0,0,.28);}
+.lb-lead .lb-nm,.lb-lead .lb-n{color:#fff;}
+
+/* manager "next up" hero + avatar stack */
+.qh{display:flex;gap:14px;align-items:stretch;margin:0 0 14px;flex-wrap:wrap;}
+.qh-stage{position:relative;flex:1;min-width:220px;min-height:120px;border-radius:18px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);display:flex;align-items:center;}
+.qh-inner{position:relative;z-index:1;padding:22px 26px;}
+/* The hand-off action, sitting on the same card as the name it hands over. Large
+   target, right-hand side, out of the way of the text at every width. */
+.qh-assign{position:relative;z-index:2;margin:0 26px 0 auto;flex:0 0 auto;cursor:pointer;
+  display:inline-flex;align-items:center;gap:10px;padding:15px 22px;border:0;border-radius:999px;
+  font-family:inherit;font-size:15px;font-weight:700;letter-spacing:-.01em;color:#fff;
+  background:linear-gradient(100deg,var(--a1,#4c8bf5),var(--a2,#7b5cf0));
+  box-shadow:0 14px 30px -14px var(--glow,rgba(76,139,245,.7)),inset 0 1px 0 rgba(255,255,255,.28);
+  overflow:hidden;transition:transform .18s cubic-bezier(.2,.8,.2,1),box-shadow .25s,filter .2s;}
+.qh-assign::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);
+  transform:translateX(-130%);transition:transform .6s cubic-bezier(.2,.8,.2,1);}
+.qh-assign:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.05);
+  box-shadow:0 20px 38px -14px var(--glow,rgba(76,139,245,.75)),inset 0 1px 0 rgba(255,255,255,.3);}
+.qh-assign:hover:not(:disabled)::after{transform:translateX(130%);}
+.qh-assign:active:not(:disabled){transform:translateY(0) scale(.985);}
+.qh-assign-ico{transition:transform .25s cubic-bezier(.2,.8,.2,1);}
+.qh-assign:hover:not(:disabled) .qh-assign-ico{transform:translateX(4px);}
+.qh-assign:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;filter:saturate(.5);}
+.qh-assign-lbl{position:relative;z-index:1;}
+.qh-kicker{font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;opacity:.75;margin-bottom:2px;}
+.qh-name{font-size:40px;font-weight:900;letter-spacing:-.02em;line-height:1.04;text-shadow:0 2px 12px rgba(0,0,0,.4);}
+.qh-empty{font-size:20px;opacity:.6;font-weight:700;}
+.qh-side{display:flex;flex-direction:column;justify-content:center;gap:8px;padding:0 4px;}
+/* what each opportunity actually was, under the person who took it */
+.lb-refs{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 9px 34px;}
+.lb-ref{font-size:11px;font-weight:600;letter-spacing:.01em;padding:2px 8px;border-radius:999px;
+  background:rgba(16,32,52,.07);color:var(--ink-2);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis;}
+@media (max-width: 640px){
+  .qh-stage{flex-wrap:wrap;}
+  .qh-inner{padding-bottom:8px;}
+  .qh-assign{margin:0 22px 20px 22px;width:calc(100% - 44px);justify-content:center;}
+}
+.qh-side-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;opacity:.7;text-transform:uppercase;}
+.av-stack{display:flex;}
+.av-chip{width:38px;height:38px;border-radius:50%;margin-left:-10px;border:2px solid var(--card,#121a2b);
+  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,.3);
+  transition:transform .25s cubic-bezier(.2,.8,.2,1);}
+.av-chip:first-child{margin-left:0;}
+.av-stack:hover .av-chip{transform:translateY(-2px);}
+.av-more{background:rgba(255,255,255,.16)!important;}
+
+/* fluid line rows — smooth settle on reorder */
+.q-row{transition:transform .32s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;}
+.q-row:hover{transform:translateY(-1px);}
+
+/* ============================================================
+   MANAGER BOARDS — light, airy, colorful dashboard (The Line + Live Floor)
+   Scoped under .mf. Sits on the app's light page (no dark surface); the
+   elements themselves carry a wider palette and gentle motion for life.
+   ============================================================ */
+.mf{
+  --a1:#10B981; --a2:#06C1B6; --glow:rgba(16,185,129,.35);
+  --mfink:#17202E; --mfink2:#5E6B82; --mfink3:#98A2B3;
+  --mfline:rgba(16,32,52,.08);
+  --mffont:var(--font-ui);
+  --mfmono:var(--font-mono);
+  --c-blue:#3B6FD4; --c-blue-bg:#EEF3FF; --c-violet:#7C5CFF; --c-violet-bg:#F2EEFF;
+  --c-amber:#B7791F; --c-amber-bg:#FFF6E6; --c-rose:#E5473C; --c-rose-bg:#FFEEF0;
+  font-family:var(--mffont); color:var(--mfink);
+}
+.mf.mf-line{ --a1:#4C6FFF; --a2:#28B7F0; --glow:rgba(76,111,255,.3); }
+.mf.mf-online{ --a1:#8B5CF6; --a2:#C05CF0; --glow:rgba(139,92,246,.32); }
+
+/* soft one-time entrance */
+.mf > *{ animation:mfRise .5s cubic-bezier(.2,.8,.2,1) both; }
+.mf > *:nth-child(2){ animation-delay:.04s; } .mf > *:nth-child(3){ animation-delay:.08s; }
+.mf > *:nth-child(4){ animation-delay:.12s; } .mf > *:nth-child(5){ animation-delay:.16s; }
+@keyframes mfRise{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
+
+/* banner */
+.mf .q-phone-banner, .mf .q-phone-banner.f-banner{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; border-radius:12px; font-family:var(--mffont); font-weight:600; box-shadow:0 10px 24px -12px var(--glow); }
+
+/* stat strip -> white / softly tinted cards, big colored numbers */
+.mf .q-board{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; background:transparent; border:none; padding:0; margin-bottom:18px; }
+.mf .q-board-cell{ position:relative; overflow:hidden; background:#fff; border:1px solid var(--mfline); border-radius:20px; padding:18px 20px;
+  box-shadow:0 1px 2px rgba(16,32,52,.04), 0 10px 26px -18px rgba(16,32,52,.2); transition:transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s; }
+.mf .q-board-cell:hover{ transform:translateY(-2px); box-shadow:0 8px 18px rgba(16,32,52,.08), 0 20px 44px -22px rgba(16,32,52,.28); }
+.mf .q-board-n{ font-family:var(--mffont); font-weight:600; letter-spacing:-.03em; font-size:clamp(32px,4.4vw,46px); line-height:1; color:var(--mfink); }
+.mf .q-board-l{ font-family:var(--mfmono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mfink2); margin-top:9px; }
+.mf .q-board-cell:not(.q-board-avail):not(.f-board-cust):not(.q-board-miss){ background:linear-gradient(160deg,var(--c-blue-bg),#fff 70%); }
+.mf .q-board-cell:not(.q-board-avail):not(.f-board-cust):not(.q-board-miss) .q-board-n{ color:var(--c-blue); }
+.mf .f-board-cust{ background:linear-gradient(160deg,var(--c-violet-bg),#fff 70%); }
+.mf .f-board-cust .q-board-n{ color:var(--c-violet); }
+.mf .q-board-miss{ background:linear-gradient(160deg,var(--c-amber-bg),#fff 70%); }
+.mf .q-board-miss .q-board-n{ color:var(--c-amber); }
+.mf .q-board-avail{ border-color:transparent; background:linear-gradient(150deg,var(--a1),var(--a2)); box-shadow:0 14px 30px -12px var(--glow); animation:mfRise .5s both, mfGlow 3.6s ease-in-out 1s infinite; }
+.mf .q-board-avail .q-board-n{ color:#fff; }
+.mf .q-board-avail .q-board-l{ color:rgba(255,255,255,.86); }
+@keyframes mfGlow{ 0%,100%{ box-shadow:0 14px 30px -12px var(--glow); } 50%{ box-shadow:0 18px 42px -8px var(--glow); } }
+.mf .q-board-actions{ grid-column:1/-1; margin-left:0; display:flex; gap:8px; flex-wrap:wrap; }
+
+/* buttons -> light pills */
+.mf .btn{ background:#fff; border:1px solid var(--mfline); color:var(--mfink); border-radius:12px; font-family:var(--mffont); font-weight:500; box-shadow:0 1px 2px rgba(16,32,52,.05); transition:.15s; }
+.mf .btn:hover{ transform:translateY(-1px); box-shadow:0 5px 14px rgba(16,32,52,.10); }
+.mf .btn.btn-primary, .mf .q-assign-btn{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; border-color:transparent; font-weight:600; box-shadow:0 12px 24px -12px var(--glow); }
+.mf .btn.btn-primary:disabled, .mf .q-assign-btn:disabled{ box-shadow:none; }
+.mf .btn-sm{ border-radius:10px; font-size:12px; }
+
+/* opportunities leaderboard */
+.mf .q-opps{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 10px 26px -20px rgba(16,32,52,.2); }
+.mf .q-opps-head{ color:var(--mfink2); }
+.mf .q-opps-total{ color:#fff; }
+.mf .q-opps-empty{ color:var(--mfink3); }
+.mf .lb-card{ background:#F6F7FB; border:1px solid var(--mfline); }
+.mf .lb-fill{ opacity:.1 !important; }
+.mf .lb-lead .lb-fill{ opacity:0 !important; }
+.mf .lb-rank{ color:var(--mfink3); }
+.mf .lb-nm{ color:var(--mfink); text-shadow:none; font-weight:700; }
+.mf .lb-n{ color:var(--mfink); text-shadow:none; }
+.mf .lb-crown{ color:var(--a1); opacity:1; }
+.mf .lb-lead{ border-color:transparent; background:linear-gradient(120deg, color-mix(in srgb,var(--a1) 12%, #fff), #fff 70%); box-shadow:0 0 0 1.5px color-mix(in srgb,var(--a1) 55%, transparent), 0 14px 30px -16px var(--glow); }
+
+/* next-up hero */
+.mf .qh-stage{ background:#fff; border:1px solid var(--mfline); box-shadow:0 1px 2px rgba(16,32,52,.04),0 14px 34px -22px rgba(16,32,52,.24); }
+.mf .qh-name{ color:var(--mfink); text-shadow:none; }
+.mf .qh-empty{ color:var(--mfink3); }
+.mf .qh-kicker, .mf .qh-side-lbl{ color:var(--mfink2); }
+.mf .av-chip{ border-color:#fff; }
+
+/* line rows -> white cards; next highlighted; off muted */
+.mf .q-line{ display:flex; flex-direction:column; gap:9px; }
+.mf .q-row{ background:#fff; border:1px solid var(--mfline); border-radius:16px; padding:11px 14px; align-items:center;
+  box-shadow:0 1px 2px rgba(16,32,52,.05); transition:transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s, background .3s, border-color .3s; }
+.mf .q-row:hover{ transform:translateY(-1px); box-shadow:0 8px 20px -8px rgba(16,32,52,.16); }
+.mf .q-row.q-off{ opacity:.7; background:#FAFBFC; }
+.mf .q-row.q-next{ border-color:transparent;
+  background:linear-gradient(120deg, color-mix(in srgb,var(--a1) 12%, #fff), #fff 70%);
+  box-shadow:0 0 0 1.5px color-mix(in srgb,var(--a1) 55%, transparent), 0 14px 30px -16px var(--glow); }
+.mf .q-ord-b{ background:transparent; border:none; color:var(--mfink3); cursor:pointer; }
+.mf .q-ord-b:hover:not(:disabled){ color:var(--mfink); }
+.mf .q-ord-b:disabled{ opacity:.3; }
+.mf .q-rank{ font-family:var(--mfmono); color:var(--mfink3); font-size:13px; min-width:18px; text-align:center; }
+.mf .mf-av{ width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:#fff; font-family:var(--mffont); font-weight:600; font-size:13px; margin:0 6px 0 2px; box-shadow:0 3px 10px rgba(16,32,52,.22); flex:0 0 auto; }
+.mf .q-nm{ font-family:var(--mffont); font-weight:600; color:var(--mfink); font-size:15px; display:flex; align-items:center; }
+.mf .q-next-tag{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; font-family:var(--mfmono); font-size:10px; font-weight:600; letter-spacing:.06em; padding:2px 8px; border-radius:999px; margin-left:8px; }
+.mf .q-meta{ margin-top:5px; display:flex; align-items:center; gap:8px; }
+.mf .q-w{ font-family:var(--mfmono); font-size:12px; color:var(--mfink3); }
+.mf .q-chip{ font-family:var(--mfmono); font-size:11px; border-radius:999px; padding:3px 10px; border:none; }
+.mf .q-chip.q-waiting,.mf .q-chip.f-waiting{ background:var(--c-blue-bg); color:var(--c-blue); }
+.mf .q-chip.q-customer,.mf .q-chip.f-customer{ background:var(--c-violet-bg); color:var(--c-violet); }
+.mf .q-chip.q-lunch,.mf .q-chip.f-lunch{ background:var(--c-amber-bg); color:var(--c-amber); }
+.mf .q-chip.q-away,.mf .q-chip.f-away{ background:var(--c-rose-bg); color:var(--c-rose); }
+.mf .f-tag{ font-family:var(--mfmono); }
+.mf .f-tag-appt{ background:var(--c-blue-bg); color:var(--c-blue); }
+.mf .f-tag-prop{ background:var(--c-amber-bg); color:var(--c-amber); }
+.mf .f-auto{ font-family:var(--mfmono); background:color-mix(in srgb,var(--a1) 14%, transparent); color:var(--a1); }
+.mf .q-flag-sel{ background:#fff; border:1px solid var(--mfline); color:var(--mfink); border-radius:10px; font-family:var(--mffont); font-size:12px; padding:6px 8px; }
+.mf .q-rm{ color:var(--c-rose); }
+
+/* panels */
+.mf .q-pins-panel, .mf .q-qr-panel, .mf .q-missing, .mf .f-unmatched, .mf .q-add{ background:#fff; border:1px solid var(--mfline); border-radius:16px; box-shadow:0 1px 2px rgba(16,32,52,.04); }
+.mf .q-add{ padding:12px 16px; }
+.mf .q-pins-head, .mf .q-missing-head, .mf .f-unmatched-head{ font-family:var(--mffont); font-weight:600; color:var(--mfink); }
+.mf .q-pin-name{ color:var(--mfink); }
+.mf .q-qr-box{ background:#fff; }
+.mf .q-qr-info, .mf .q-qr-info p{ color:var(--mfink2); }
+.mf .q-qr-info strong{ color:var(--mfink); }
+.mf .q-missing-chip{ background:#fff; border:1px solid var(--mfline); border-radius:999px; color:var(--mfink2); }
+.mf .q-missing-chip:hover{ border-color:var(--a1); color:var(--mfink); }
+.mf .q-empty, .mf .muted{ color:var(--mfink3); }
+.mf .f-warn{ background:var(--c-amber-bg); border:1px solid #F2D9A8; color:#7A5A12; }
+.mf .f-warn strong{ color:#5E4610; }
+@media (prefers-reduced-motion:reduce){ .mf > *, .mf .q-board-avail{ animation:none; } }
+
+/* use more of the screen + two-column lower region */
+.checkout.mf{ max-width:min(1820px, 97vw); }
+.mf-lower{ display:grid; grid-template-columns:1fr; gap:16px; }
+.mf-main{ min-width:0; }
+.mf-side{ min-width:0; }
+@media (min-width:1080px){ .mf-lower{ grid-template-columns:minmax(0,1fr) 370px; align-items:start; } }
+
+/* Smart assign panel */
+.sa{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:16px; position:sticky; top:16px; }
+.sa-head{ font-family:var(--mffont); font-weight:600; font-size:16px; color:var(--mfink); letter-spacing:-.01em; }
+.sa-sub{ color:var(--mfink2); font-size:12.5px; margin:5px 0 12px; line-height:1.45; }
+.sa-input{ width:100%; background:#F6F7FB; border:1px solid var(--mfline); border-radius:12px; padding:10px 12px; font-family:var(--mffont); font-size:14px; color:var(--mfink); outline:none; transition:border-color .18s, box-shadow .18s; }
+.sa-input:focus{ border-color:var(--a1); box-shadow:0 0 0 3px color-mix(in srgb,var(--a1) 18%, transparent); }
+.sa-input::placeholder{ color:var(--mfink3); }
+.sa-chips{ display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+.sa-chip{ background:#F1F3F8; border:1px solid var(--mfline); border-radius:999px; padding:5px 11px; font-size:12px; color:var(--mfink2); cursor:pointer; font-family:var(--mffont); transition:.15s; }
+.sa-chip:hover{ color:var(--mfink); border-color:var(--a1); }
+.sa-chip-on{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; border-color:transparent; }
+.sa-list{ display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+.sa-empty{ color:var(--mfink3); font-size:13px; padding:8px 2px; line-height:1.5; }
+.sa-row{ border:1px solid var(--mfline); border-radius:14px; padding:10px; background:#fff; transition:border-color .18s, box-shadow .18s; }
+.sa-row.sa-open{ border-color:var(--a1); box-shadow:0 0 0 2px color-mix(in srgb,var(--a1) 22%, transparent); }
+.sa-row-top{ display:flex; align-items:center; gap:10px; }
+.sa .sa-av{ width:34px; height:34px; margin:0; }
+.sa-who{ flex:1; min-width:0; }
+.sa-nm{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); }
+.sa-tags{ display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.sa-tag{ background:#EEF3FF; color:var(--c-blue); border-radius:7px; padding:1px 7px; font-size:11px; font-family:var(--mfmono); }
+.sa-tag-hit{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; }
+.sa-notag{ color:var(--mfink3); font-size:11px; font-style:italic; }
+.sa-close{ background:color-mix(in srgb,var(--a1) 15%, transparent); color:var(--a1); border-radius:7px; padding:1px 8px; font-size:11px; font-family:var(--mfmono); font-weight:500; }
+.sa-best{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; font-family:var(--mfmono); font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; padding:1px 7px; border-radius:999px; margin-left:7px; vertical-align:middle; }
+.sa-reason{ margin-top:10px; border-top:1px solid var(--mfline); padding-top:10px; }
+.sa-reason-lbl{ font-size:12px; color:var(--mfink2); margin-bottom:8px; font-weight:600; }
+.sa-confirm{ width:100%; margin-top:8px; }
+.sa-manage-toggle{ margin-top:12px; width:100%; background:transparent; border:1px dashed var(--mfline); border-radius:12px; padding:9px; color:var(--mfink2); font-family:var(--mfmono); font-size:12px; cursor:pointer; transition:.15s; }
+.sa-manage-toggle:hover{ color:var(--mfink); border-color:var(--a1); }
+.sa-manage{ margin-top:10px; display:flex; flex-direction:column; gap:10px; }
+.sa-mrow{ border:1px solid var(--mfline); border-radius:12px; padding:10px; }
+.sa-tag-edit{ display:inline-flex; align-items:center; gap:4px; }
+.sa-tag-x{ border:none; background:transparent; color:inherit; cursor:pointer; font-size:13px; line-height:1; padding:0 0 0 2px; }
+.sa-add{ margin-top:8px; }
+.sa-add-in{ margin-bottom:6px; }
+
+/* instrument cluster (Floor Health + gauges) */
+.mf{ --mf-track:#EBEEF3; }
+.ic{ display:grid; grid-template-columns:minmax(300px,360px) 1fr; gap:14px; align-items:stretch; margin-bottom:16px; }
+.ic-actions{ grid-column:1/-1; display:flex; gap:8px; flex-wrap:wrap; }
+@media (max-width:900px){ .ic{ grid-template-columns:1fr; } }
+.ic-health{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:18px 20px; }
+.ic-health-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; gap:10px; }
+.ic-health-body{ display:flex; align-items:center; gap:18px; margin-top:12px; }
+.q-topline{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+.q-topline-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.icg{ position:relative; display:inline-grid; place-items:center; flex:0 0 auto; background:transparent; }
+.icg svg{ display:block; }
+.icg-fg{ transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1); }
+.icg-green{ stroke:#10B981; } .icg-amber{ stroke:#E0A100; } .icg-red{ stroke:#E5473C; } .icg-blue{ stroke:#3B6FD4; }
+.icg-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
+.icg-sub{ display:block; font-family:var(--mfmono); font-size:8px; font-weight:600; letter-spacing:.08em; color:var(--mfink2); margin-top:3px; }
+.ic-health-n{ font-size:42px; font-weight:700; letter-spacing:-.03em; }
+.ic-sup{ flex:1; display:flex; flex-direction:column; gap:9px; min-width:0; }
+.ic-sup-row{ display:flex; align-items:center; gap:8px; font-size:13px; }
+.ic-sup-l{ color:var(--mfink2); }
+.ic-sup-v{ margin-left:auto; font-weight:700; color:var(--mfink); font-family:var(--mffont); }
+.ic-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+.ic-dot.ic-green{ background:#10B981; } .ic-dot.ic-amber{ background:#E0A100; } .ic-dot.ic-red{ background:#E5473C; }
+.ic-pill{ font-family:var(--mfmono); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border-radius:999px; }
+.ic-pill.ic-green{ background:#E9F8F1; color:#0A7F5A; } .ic-pill.ic-amber{ background:#FDF3DD; color:#8A6410; } .ic-pill.ic-red{ background:#FDECEA; color:#B3372E; }
+.ic-gauges{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+@media (min-width:1300px){ .ic-gauges{ grid-template-columns:repeat(4,1fr); } }
+.ic-card{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04); padding:14px 16px; display:flex; align-items:center; gap:12px; transition:transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s; }
+.ic-card:hover{ transform:translateY(-2px); box-shadow:0 10px 26px -16px rgba(16,32,52,.28); }
+.ic-card-n{ font-size:15px; font-weight:700; }
+.ic-card-meta{ min-width:0; }
+.ic-card-l{ font-family:var(--mfmono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mfink2); }
+.ic-card-v{ font-family:var(--mffont); font-weight:700; font-size:19px; color:var(--mfink); margin-top:2px; }
+
+/* activity timeline */
+.tl{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 10px 26px -20px rgba(16,32,52,.2); padding:16px; margin-top:14px; }
+.tl-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; justify-content:space-between; color:var(--mfink); }
+.tl-live{ font-family:var(--mfmono); font-size:10px; font-weight:700; letter-spacing:.08em; color:#0A7F5A; background:#E9F8F1; padding:3px 9px; border-radius:999px; }
+.tl-empty{ color:var(--mfink3); font-size:13px; margin-top:8px; }
+.tl-list{ margin-top:12px; }
+.tl-item{ display:flex; gap:12px; padding-bottom:16px; position:relative; }
+.tl-item:not(:last-child)::before{ content:""; position:absolute; left:5px; top:14px; bottom:0; width:2px; background:var(--mfline); }
+.tl-dot{ width:12px; height:12px; border-radius:50%; flex:0 0 auto; margin-top:2px; box-shadow:0 0 0 3px #fff; position:relative; z-index:1; }
+.tl-green{ background:#10B981; } .tl-amber{ background:#E0A100; } .tl-red{ background:#E5473C; } .tl-blue{ background:#3B6FD4; } .tl-violet{ background:#7C5CFF; } .tl-gray{ background:#98A2B3; }
+.tl-body{ min-width:0; }
+.tl-txt{ font-size:13.5px; color:var(--mfink); }
+.tl-txt strong{ font-weight:700; }
+.tl-t{ font-family:var(--mfmono); font-size:11px; color:var(--mfink3); margin-top:2px; }
+.tl-ref{ font-family:var(--mfmono); font-weight:600; color:var(--mfink2); }
+.tl-h .tl-list{ display:flex; flex-direction:row; gap:0; overflow-x:auto; margin-top:14px; padding-bottom:8px; }
+.tl-h .tl-item{ flex:0 0 auto; flex-direction:column; align-items:flex-start; gap:9px; min-width:152px; max-width:210px; padding:0 22px 0 0; }
+.tl-h .tl-item:not(:last-child)::before{ left:14px; right:6px; top:5px; bottom:auto; width:auto; height:2px; }
+.tl-h .tl-dot{ margin-top:0; }
+.tl-h .tl-txt{ white-space:normal; }
+
+/* Settings tab, brought into the light board theme */
+.mf-settings{ max-width:940px; }
+.mf-settings-banner{ display:inline-flex; align-items:center; gap:8px; background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; font-family:var(--mffont); font-weight:600; font-size:13px; letter-spacing:.01em; padding:9px 17px; border-radius:999px; box-shadow:0 10px 24px -12px var(--glow); margin-bottom:16px; }
+.mf-settings .card{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -22px rgba(16,32,52,.2); padding:20px; margin-bottom:14px; }
+.mf-settings h3{ font-family:var(--mffont); font-weight:600; letter-spacing:-.01em; color:var(--mfink); font-size:17px; }
+.mf-settings .section-sub{ color:var(--mfink3); font-weight:500; font-size:13px; }
+.mf-settings .hint{ color:var(--mfink2); font-size:13px; line-height:1.5; }
+.mf-settings .f-toggle{ color:var(--mfink); }
+.mf-settings .f-input{ background:#F6F7FB; border:1px solid var(--mfline); border-radius:12px; color:var(--mfink); font-family:var(--mffont); padding:10px 12px; }
+.mf-settings .f-input:focus{ border-color:var(--a1); box-shadow:0 0 0 3px color-mix(in srgb,var(--a1) 18%, transparent); outline:none; }
+.mf-settings .f-dealer-chip{ background:color-mix(in srgb,var(--a1) 12%, #fff); color:var(--a1); border-radius:999px; font-family:var(--mfmono); }
+.mf-settings .f-chip-x{ background:rgba(0,0,0,.06); }
+.mf-settings .stepper{ background:#F6F7FB; border:1px solid var(--mfline); border-radius:12px; }
+.mf-settings .stepper-btn{ color:var(--a1); font-weight:700; }
+.mf-settings .stepper-value{ font-family:var(--mfmono); color:var(--mfink); font-weight:600; }
+.mf-settings .stepper-label{ font-family:var(--mfmono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mfink2); }
+.mf-settings .stepper-hint{ color:var(--mfink3); font-size:12px; }
+.mf-settings .f-map-row{ border-top:1px solid var(--mfline); }
+.mf-settings .f-map-ev{ color:var(--mfink); font-weight:500; }
+.mf-settings .f-map-custom{ color:var(--a1); }
+
+/* ============================================================
+   SALESPERSON VIEW — dark, fluid, responsive (The Line + Live Floor)
+   Scoped under .q-page.sf so the manager app is untouched.
+   ============================================================ */
+.q-page.sf{
+  --a1:#0FB37E; --a2:#0BC5C5; --led:#7CF0D0; --glow:rgba(15,179,126,.5); --ld-off:rgba(124,240,208,.14);
+  --sfink:#EEF2F9; --sfink2:#9BA8BF; --sfink3:#5A6478; --sfcard:rgba(255,255,255,.045); --sfstroke:rgba(255,255,255,.09);
+  --sffont:var(--font-ui);
+  --sfmono:var(--font-mono);
+  font-family:var(--sffont); color:var(--sfink); letter-spacing:-.005em; padding:0;
+  background:radial-gradient(1000px 680px at 15% -10%, rgba(11,197,197,.05), transparent 60%), #06090F;
+  position:fixed; inset:0; width:100%; height:100dvh; min-height:100dvh; overflow-y:auto; border-radius:0; z-index:100;
+}
+.q-page.sf.sf-line{ --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --glow:rgba(85,102,240,.5); --ld-off:rgba(157,195,255,.14); }
+.q-page.sf.sf-online{ --a1:#8B5CF6; --a2:#C05CF0; --led:#D8B4FE; --glow:rgba(139,92,246,.5); --ld-off:rgba(216,180,254,.16); }
+
+/* restyle the shared sign-in surfaces (name / pin / pick / confirm) */
+.sf .q-card{ background:transparent; border:none; box-shadow:none; color:var(--sfink); width:100%; max-width:440px; padding:clamp(20px,6vw,30px); }
+.sf .q-head h2{ font-family:var(--sffont); font-weight:600; letter-spacing:-.03em; font-size:clamp(24px,7vw,30px); color:var(--sfink); }
+.sf .q-kicker{ font-family:var(--sfmono); font-size:11px; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--sfink3); }
+.sf .q-muted{ color:var(--sfink2); font-size:15px; }
+.sf .q-big-q{ color:var(--sfink); font-weight:600; font-size:clamp(20px,6vw,26px); letter-spacing:-.02em; }
+.sf .q-name-in, .sf .q-pin-in{ background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:16px; color:var(--sfink);
+  font-family:var(--sffont); font-size:18px; font-weight:500; padding:16px 18px; width:100%; outline:none; transition:border-color .2s, box-shadow .2s; }
+.sf .q-name-in:focus, .sf .q-pin-in:focus{ border-color:var(--a2); box-shadow:0 0 0 4px color-mix(in srgb, var(--a2) 20%, transparent); }
+.sf .q-name-in::placeholder, .sf .q-pin-in::placeholder{ color:var(--sfink3); }
+.sf .q-pin-lbl{ color:var(--sfink2); font-family:var(--sfmono); font-size:12px; }
+.sf .q-btn{ font-family:var(--sffont); font-weight:600; border-radius:16px; border:none; }
+.sf .q-btn.q-primary, .sf .q-btn.q-back{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#03130d; box-shadow:0 14px 30px -12px var(--glow); }
+.sf .q-btn:not(.q-primary):not(.q-back){ background:var(--sfcard); color:var(--sfink); border:1px solid var(--sfstroke); }
+.sf .q-leave{ color:var(--sfink3); font-family:var(--sfmono); font-size:13px; }
+.sf .q-leave:hover{ color:var(--sfink2); }
+.sf .q-name{ background:var(--sfcard); border:1px solid var(--sfstroke); color:var(--sfink); border-radius:14px; }
+.sf .q-role{ color:var(--sfink3); }
+.sf .q-err{ color:#ff9a9a; }
+.sf .q-phone-pill, .sf .f-pill{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#03130d; }
+.sf .q-stage-pin .q-card{ animation:none; }
+
+/* dot-matrix primitives */
+.sf .dm{ display:flex; gap:calc(var(--cell,12px)*.72); align-items:center; justify-content:center; perspective:600px; }
+.sf .dm-digit{ display:grid; grid-template-columns:repeat(3,var(--cell,12px)); gap:calc(var(--cell,12px)*.44); transform-style:preserve-3d;
+  animation:sfflip .5s cubic-bezier(.3,.7,.25,1) both; }
+.sf .dm-digit:nth-child(2){ animation-delay:.05s; }
+.sf .dm-digit:nth-child(3){ animation-delay:.1s; }
+@keyframes sfflip{ 0%{ transform:rotateX(90deg); opacity:.25; filter:brightness(2.2); } 55%{ transform:rotateX(-9deg); } 100%{ transform:rotateX(0); opacity:1; filter:none; } }
+.sf .ld{ width:var(--cell,12px); height:var(--cell,12px); border-radius:50%; background:transparent; }
+.sf .ld.on{ background:var(--led); box-shadow:0 0 calc(var(--cell,12px)*.85) var(--led); }
+.sf .dm-ico{ display:inline-grid; }
+.sf .dm-ico .ld.on{ box-shadow:0 0 3px var(--led); }
+
+/* the hero "you're on the floor / in line" screen */
+.sf-live{ width:100%; max-width:460px; display:flex; flex-direction:column; min-height:100dvh; padding:clamp(52px,8vh,70px) clamp(20px,6vw,26px) clamp(24px,5vh,34px); }
+.sf-top{ display:flex; align-items:center; justify-content:space-between; }
+.sf-tag{ display:inline-flex; align-items:center; gap:8px; background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:12px;
+  padding:8px 13px; font-family:var(--sfmono); font-size:12px; color:var(--sfink2); }
+.sf-live-dot{ width:7px; height:7px; border-radius:50%; background:var(--a1); box-shadow:0 0 8px var(--glow); }
+.sf-poswrap{ position:relative; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.sf-aura{ position:absolute; width:min(82vw,340px); height:min(82vw,340px); border-radius:50%;
+  background:radial-gradient(circle at 50% 45%, var(--glow), transparent 62%); opacity:.5; animation:sfbreathe 4.8s ease-in-out infinite; }
+@keyframes sfbreathe{ 0%,100%{ transform:scale(.9); opacity:.4; } 50%{ transform:scale(1.08); opacity:.66; } }
+.sf-ring{ position:relative; width:min(56vw,214px); height:min(56vw,214px); border-radius:50%; display:grid; place-items:center;
+  background:linear-gradient(150deg,var(--a1),var(--a2)); z-index:1; }
+.sf-ring::after{ content:""; position:absolute; inset:8px; border-radius:50%; background:#070b12; }
+.sf-ringface{ position:relative; z-index:1; --cell:clamp(9px,3.3vw,14px); display:grid; place-items:center; }
+.sf-off .sf-ring{ filter:saturate(.35) brightness(.72); }
+.sf-off .sf-aura{ opacity:.14; animation:none; }
+.sf-meta{ margin-top:clamp(20px,4vh,30px); text-align:center; z-index:1; }
+.sf-line-1{ font-size:clamp(20px,6vw,23px); font-weight:600; letter-spacing:-.02em; }
+.sf-line-2{ font-size:clamp(13px,4vw,15px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
+.sf-wait{ font-family:var(--sfmono); font-size:12px; color:var(--sfink3); margin-top:13px; }
+.sf-dot{ color:var(--sfink3); padding:0 .35em; }
+.sf-actions{ display:flex; flex-direction:column; gap:10px; }
+.sf-status-row{ display:flex; gap:8px; }
+.sf-sbtn{ flex:1; appearance:none; cursor:pointer; font-family:var(--sffont); font-weight:500; font-size:clamp(12px,3.4vw,13px); color:var(--sfink2);
+  background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:14px; padding:12px 6px 10px; display:flex; flex-direction:column; align-items:center; gap:7px; transition:.16s; }
+.sf-sbtn:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
+.sf-sbtn:disabled{ opacity:.55; }
+.sf-sbtn.active{ color:#03130d; background:linear-gradient(90deg,var(--a1),var(--a2)); border-color:transparent; }
+.sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
+.sf-leave:hover{ color:var(--sfink2); }
+
+/* full-screen "you're up" takeover */
+.sf-uptake{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  padding:40px; background:linear-gradient(160deg,var(--a1),var(--a2)); animation:sfUpIn .5s cubic-bezier(.2,.85,.25,1) both; }
+@keyframes sfUpIn{ from{ opacity:0; transform:scale(1.04); } to{ opacity:1; transform:none; } }
+.sf-shock{ position:absolute; width:min(52vw,200px); height:min(52vw,200px); border-radius:50%; border:2px solid rgba(255,255,255,.5); animation:sfShock 2s ease-out infinite; }
+@keyframes sfShock{ 0%{ transform:scale(.5); opacity:.7; } 100%{ transform:scale(2.4); opacity:0; } }
+.sf-uptake .dm{ --cell:clamp(12px,4.4vw,17px); --led:#fff; --ld-off:rgba(255,255,255,.3); position:relative; z-index:1; margin-bottom:24px; animation:sfThrob 1.3s ease-in-out infinite; }
+.sf-uptake .dm .ld.on{ box-shadow:0 0 10px rgba(255,255,255,.6); }
+@keyframes sfThrob{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
+.sf-uptake h2{ font-size:clamp(40px,13vw,54px); font-weight:700; letter-spacing:-.04em; color:#04140f; line-height:.95; }
+.sf-uptake p{ margin-top:12px; font-size:clamp(15px,4.4vw,17px); font-weight:500; color:rgba(4,20,15,.78); max-width:340px; }
+.sf-go{ margin-top:32px; background:#04140f; color:#fff; border:none; border-radius:16px; padding:15px 32px; font-family:var(--sffont); font-weight:600; font-size:16px; cursor:pointer; }
+.sf-go:active{ transform:translateY(1px); }
+
+/* PIN screen — its own "something else fun" entrance (a spring pop, no curtain) */
+.q-stage-pin{animation:qpinpop .58s cubic-bezier(.2,.9,.25,1.35) both;transform-origin:center 40%;}
+@keyframes qpinpop{
+  0%{opacity:0;transform:scale(.72) translateY(14px) rotate(-1.2deg);}
+  55%{opacity:1;transform:scale(1.04) translateY(0) rotate(.4deg);}
+  100%{opacity:1;transform:scale(1) translateY(0) rotate(0);}
+}
+.q-stage-pin .q-pin-in{animation:qpinglow 1.1s ease .2s both;}
+@keyframes qpinglow{
+  0%{box-shadow:0 0 0 0 rgba(120,150,255,0);}
+  40%{box-shadow:0 0 0 6px rgba(120,150,255,.18);}
+  100%{box-shadow:0 0 0 0 rgba(120,150,255,0);}
+}
+
+/* ===== SmartFloor / Live Floor — greens where the phone line runs blue ===== */
+.f-banner{background:linear-gradient(180deg,#19c58f,#0f9d76);}
+.f-pill{background:linear-gradient(180deg,#19c58f,#0f9d76);}
+.f-page .q-curtain,.f-curtain{background:linear-gradient(120deg,#0f9d76 0%,#19c58f 55%,#37d3a3 100%);}
+.f-board-cust .q-board-n{color:#7db6ff;}
+.q-chip.f-waiting{background:rgba(255,255,255,.08);}
+.q-chip.f-customer{background:rgba(120,150,255,.20);color:#b9c9ff;}
+.q-chip.f-lunch{background:rgba(255,180,60,.18);color:#ffcf7a;}
+.q-chip.f-away{background:rgba(255,110,110,.18);color:#ffb0b0;}
+.f-row-cust{border-color:rgba(120,150,255,.35);box-shadow:0 0 0 1px rgba(120,150,255,.20) inset;}
+.f-auto{font-size:9px;font-weight:800;letter-spacing:.6px;color:#9fe7cd;background:rgba(15,157,118,.18);padding:1px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
+.f-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:1px 7px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
+.f-tag-ico{width:11px;height:11px;}
+.f-tag-appt{background:rgba(120,150,255,.20);color:#b9c9ff;}
+.f-tag-prop{background:rgba(255,200,90,.18);color:#ffd98a;}
+.f-undo,.f-undo-b{border-color:rgba(255,180,60,.5)!important;}
+.f-warn{margin:0 0 12px;padding:12px 14px;border-radius:12px;background:rgba(255,180,60,.10);border:1px solid rgba(255,180,60,.35);color:#ffd98a;font-size:13px;line-height:1.5;}
+.f-warn strong{color:#ffe9bf;}
+.f-unmatched{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(255,110,110,.08);border:1px solid rgba(255,110,110,.28);}
+.f-unmatched-head{font-weight:800;color:#ffbdbd;margin-bottom:2px;}
+.f-unmatched-sub{font-size:12px;margin:0 0 8px;}
+.f-unmatched-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);}
+.f-um-name{font-weight:700;}
+.f-um-ev{font-size:12px;color:var(--ink-3,#9aa);}
+.f-um-when{font-size:12px;color:var(--ink-3,#9aa);margin-left:auto;}
+.f-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:70;background:#0f9d76;color:#fff;font-weight:700;
+  padding:10px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(15,157,118,.4);animation:ftoast .3s ease both;}
+@keyframes ftoast{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
+/* settings */
+.f-settings .f-toggle{display:flex;align-items:center;gap:10px;font-weight:600;margin-top:8px;cursor:pointer;}
+.f-settings .f-toggle input{width:18px;height:18px;}
+.f-dealer-add,.f-map-add{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.f-input{flex:1;min-width:220px;padding:9px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.15);font:inherit;background:#fff;}
+.f-dealer-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+.f-dealer-chip{display:inline-flex;align-items:center;gap:8px;padding:5px 6px 5px 12px;border-radius:999px;background:rgba(15,157,118,.12);color:#0f7d5e;font-weight:600;}
+.f-chip-x{border:none;background:rgba(0,0,0,.08);border-radius:999px;width:20px;height:20px;line-height:1;cursor:pointer;}
+.f-map{margin-top:6px;}
+.f-map-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-top:1px solid rgba(0,0,0,.06);}
+.f-map-ev{flex:1;font-weight:600;}
+.f-map-custom{color:#0f9d76;font-weight:700;font-size:11px;}
+
+    `}</style>
+  );
+}
+      "It only counts if it lands before the appointment starts, so send it early.",
+      "Then be ready for them: arrive early, have the vehicle pulled up and the paperwork started before they walk in.",
+    ],
+  },
+  deliveredPct: {
+    play: "Work the appointments that already showed",
+    steps: [
+      "Chase the shown-but-unsold before touching a single new lead.",
+      "Confirm the day before. A confirmed appointment closes far better than a hoped-for one.",
+      "Find in mining your leads that haven't been touched in more than 3 days and clear out all of your first row daily.",
+    ],
+  },
+  engagedVideoPct: {
+    play: "Video on the reply, not on a schedule",
+    steps: [
+      "The moment a lead engages, the video goes out that same day.",
+      "Under forty-five seconds, answering the exact question they asked.",
+      "Set the task at the moment of engagement so it doesn't wait for the next work plan.",
+    ],
+  },
+  bhVideoPct: {
+    play: "Same day or it scores nothing",
+    steps: [
+      "Build the video into the first response, not a follow-up step.",
+      "Watch the leads that land after 4pm. Those are the ones that slip to tomorrow.",
+      "A video sent the next morning counts as a miss, however good it is.",
+    ],
+  },
+};
+
+const CHANNELS = { internet: "Internet", phone: "Phone", showroom: "Showroom" };
+
+const REPORTS = {
+  delivery: { label: "Delivery Summary" },
+  appointment: { label: "Appointment" },
+  video: { label: "Video" },
+};
+
+// One safe place to turn any report key into a human label. Indexing REPORTS
+// directly blew up on the leaderboard channels and the activity report, which
+// are not in it.
+const reportLabel = (t) =>
+  (t === "delivery-summary" ? "Delivery Summary" : null) ||
+  REPORTS[t]?.label ||
+  LEADERBOARD_REPORTS[t]?.label ||
+  (t === "activity" ? "Daily Activity" : t);
+
+// leaderboard needs three channel delivery reports
+const LEADERBOARD_REPORTS = {
+  "delivery-internet": { label: "Internet Delivery" },
+  "delivery-phone": { label: "Phone Delivery" },
+  "delivery-showroom": { label: "Showroom Delivery" },
+  // Campaign covers service-to-sales and finance applications. Those leads genuinely
+  // sell cars, so the units must count, but grading them on close rate would punish
+  // people for working a completely different kind of lead. Units only.
+  "delivery-campaign": { label: "Campaign Delivery" },
+};
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+// Every unit a person delivered this month, across all four channels.
+const unitsOf = (s) =>
+  (s?.internetUnits ?? 0) + (s?.phoneUnits ?? 0) + (s?.showroomUnits ?? 0) + (s?.campaignUnits ?? 0);
+
+// How well someone is holding their standards, whether or not they clear all of
+// them: the share of requirements met, plus a bonus for how far past they are.
+function qualityOf(ev) {
+  const total = ev?.tier?.requirements?.length || 0;
+  const met = total - (ev?.failures?.length || 0);
+  const surpass = Math.max(0, ev?.surpass || 0);
+  return {
+    passing: ev?.status === "pass",
+    met, total, surpass,
+    quality: total ? met / total + surpass * 0.5 : 0,
+  };
+}
+
+// Cars sold is the point, so units carry the overwhelming share of the score and
+// standards act as a tiebreaker between people with similar volume. Each side is
+// measured against the best on the floor so neither runs away with it.
+function scoreRanked(list) {
+  const maxU = Math.max(1, ...list.map((r) => r.units));
+  const maxQ = Math.max(0.0001, ...list.map((r) => r.quality));
+  for (const r of list) r.score = 0.85 * (r.units / maxU) + 0.15 * (r.quality / maxQ);
+  list.sort((a, b) => b.score - a.score);
+  return list;
+}
+const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+
+// All day/month boundaries run on dealership time, not the browser's clock and not UTC.
+// (toISOString() is UTC, so an 8pm Eastern import would have counted as tomorrow.)
+const STORE_TZ = "America/New_York";
+const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
+const today = () => dayIn();
+
+// The cinematic loading sequence plays only on the first sign-in of each calendar
+// day, per person. After that, sign-ins during the same day skip straight into the
+// app so it never becomes tedious. Keyed by dealership day + user so it resets at
+// midnight and is independent per account on a shared machine.
+const INTRO_KEY = "lpc:intro-played";
+function introPlayedToday(userId) {
+  try { return localStorage.getItem(INTRO_KEY) === `${today()}:${userId || "anon"}`; }
+  catch (e) { return false; }
+}
+function markIntroPlayed(userId) {
+  try { localStorage.setItem(INTRO_KEY, `${today()}:${userId || "anon"}`); } catch (e) {}
+}
+// How many times someone has seen the intro overall — used to reveal a "Skip" affordance
+// only after the novelty has worn off (first few plays stay unskippable for the wow).
+const INTRO_COUNT_KEY = "lpc:intro-count";
+function introSeenCount() {
+  try { return parseInt(localStorage.getItem(INTRO_COUNT_KEY) || "0", 10) || 0; } catch (e) { return 0; }
+}
+function bumpIntroCount() {
+  try { const n = introSeenCount() + 1; localStorage.setItem(INTRO_COUNT_KEY, String(n)); return n; } catch (e) { return 0; }
+}
+const ym = () => today().slice(0, 7);
+const prevYm = () => {
+  const [y, m] = today().split("-").map(Number);
+  const pm = m === 1 ? 12 : m - 1;
+  const py = m === 1 ? y - 1 : y;
+  return `${py}-${String(pm).padStart(2, "0")}`;
+};
+const dayOfMonth = () => Number(today().slice(8, 10));
+const fmtPct = (v) => (v == null ? "-" : (v * 100).toFixed(1) + "%");
+const fmtNum = (v) => (v == null ? "-" : Math.round(v * 10) / 10);
+const monthLabel = (m) => new Date(m + "-02").toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+const DEFAULT_TIERS = [
+  { cap: 60, requirements: [
+    { metric: "apptVideoDayPct", min: 50 },
+    { metric: "deliveredPct", min: 10 },
+    { metric: "engagedVideoPct", min: 40 },
+  ]},
+  { cap: 80, requirements: [
+    { metric: "apptVideoDayPct", min: 55 },
+    { metric: "deliveredPct", min: 12 },
+    { metric: "engagedVideoPct", min: 45 },
+  ]},
+  { cap: 100, requirements: [
+    { metric: "apptVideoDayPct", min: 60 },
+    { metric: "deliveredPct", min: 14 },
+    { metric: "engagedVideoPct", min: 50 },
+    { metric: "bhVideoPct", min: 40 },
+  ]},
+];
+
+const ROLE_COLORS = ["#2A5E9B", "#00A896", "#BF5AF2", "#FF9F0A", "#5E8C31", "#FF375F"];
+
+// Leaderboard delivered-% thresholds, per channel. At or above green is green, at or
+// above yellow is yellow, anything lower is red. Internet, phone and showroom sit in
+// very different ranges, so each gets its own pair.
+const CHANNEL_LIST = [
+  { id: "internet", label: "Internet" },
+  { id: "phone", label: "Phone" },
+  { id: "showroom", label: "Showroom" },
+];
+const DEFAULT_THRESHOLDS = {
+  internet: { green: 20, yellow: 10 },
+  phone:    { green: 25, yellow: 12 },
+  showroom: { green: 30, yellow: 15 },
+};
+
+// Older stores saved a single flat { green, yellow }. Spread it across all three
+// channels so nothing breaks and the numbers carry over.
+function normThresholds(t) {
+  if (!t) return JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
+  if (t.green !== undefined || t.yellow !== undefined) {
+    const flat = { green: t.green ?? 20, yellow: t.yellow ?? 10 };
+    return { internet: { ...flat }, phone: { ...flat }, showroom: { ...flat } };
+  }
+  const out = {};
+  for (const c of CHANNEL_LIST) {
+    out[c.id] = { ...DEFAULT_THRESHOLDS[c.id], ...(t[c.id] || {}) };
+  }
+  return out;
+}
+
+// Daily Activity checkout minimums (per store, editable)
+// minStars is optional: leave it at 0 and stars are recorded but not required.
+// rockEdStars is the RockEd bar used by the point system (the third point). Default 40.
+// repeatDays is how many days below standard in a month before someone is flagged
+// automatically as a repeat offender.
+const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40, repeatDays: 3 };
+
+// ---- Days off + the Check Out point system ----
+// Off-days live in data.daysOff, keyed by association id, as a set of YYYY-MM-DD.
+// A day off is excluded entirely: no points, and it does not count toward days worked.
+function offDaysFor(data, aId) {
+  const set = data.daysOff?.[aId];
+  return set ? new Set(set) : new Set();
+}
+// Someone can only be counted absent while there is no sign of them. A person who
+// was scheduled off but is making calls, sending videos or standing in the line was
+// clearly here, and the schedule is simply out of date. Evidence wins over the plan,
+// and nothing is rewritten to make it so: the schedule stays as uploaded.
+function workedAnyway(data, aId, d) {
+  const a = (data.roster || []).find((x) => x.id === aId);
+  if (!a) return false;
+  // Calls and videos only. Texts and emails fire from automated follow-up whether or
+  // not the person is in the building, and completed tasks can close the same way, so
+  // counting those would flag almost everybody as present on their day off.
+  const rec = data.activity?.[d]?.[norm(a.name)];
+  if (rec && ((rec.calls || 0) > 0 || (rec.video || 0) > 0)) return true;
+  // signing into the line or the floor is the same evidence, just earlier in the day
+  for (const key of ["queue", "queueOnline", "floor"]) {
+    const row = data[key]?.[d];
+    if (row && (row.line || []).some((p) => p.id === aId)) return true;
+  }
+  return false;
+}
+/* Is there a schedule on file covering this person and this month? Without one
+   there is nothing to be absent from, and guessing would mark a new hire off on
+   their first week. */
+function isScheduled(data, aId, d) {
+  const list = data.daysOff?.[aId];
+  if (!Array.isArray(list) || !list.length) return false;
+  const mo = String(d).slice(0, 7);
+  return list.some((x) => String(x).slice(0, 7) === mo);
+}
+
+/* Did the activity report actually run for this day? If nothing landed at all,
+   silence proves nothing about any individual: it means the import is missing.
+   Every automatic decision below hangs on this. */
+function activityLandedOn(data, d) {
+  const rows = data.activity?.[d];
+  if (!rows) return false;
+  return Object.values(rows).some((r) => r && ((r.calls || 0) > 0 || (r.video || 0) > 0));
+}
+
+/* Scheduled to work, the report ran, and still no sign of them. */
+function looksAbsent(data, aId, d) {
+  if (!isScheduled(data, aId, d)) return false;
+  if (data.daysOff?.[aId]?.includes(d)) return false;   // already off
+  if (!activityLandedOn(data, d)) return false;
+  return !workedAnyway(data, aId, d);
+}
+
+function isOff(data, aId, d) {
+  if (!(data.daysOff?.[aId] && data.daysOff[aId].includes(d))) return false;
+  return !workedAnyway(data, aId, d);
+}
+// Points for one person on one day: one point per missed required item
+// (calls, videos, RockEd), each judged independently. 0-3. Days off and days with
+// no data at all score no points. RockEd is a simple "qualified" mark now: the manager
+// ticks whether the person qualified in the RockEd training tool that day, rather than
+// typing a star count. Legacy star counts (>= the old bar) still read as qualified.
+function isQualified(data, aName, d, std) {
+  const q = data.qualified?.[d]?.[norm(aName)];
+  if (q === true) return true;
+  if (q === false) return false;
+  const stars = data.stars?.[d]?.[norm(aName)]; // legacy
+  if (stars == null) return null;               // no RockEd mark at all
+  return stars >= (std.rockEdStars ?? 40);
+}
+function dayPoints(data, a, d, std) {
+  if (isOff(data, a.id, d)) return { off: true, points: 0, missed: [] };
+  const rec = (data.activity?.[d] || {})[norm(a.name)] || {};
+  const qual = isQualified(data, a.name, d, std);
+  const hasData = rec.calls != null || rec.video != null || qual != null;
+  if (!hasData) return { off: false, points: 0, missed: [], noData: true };
+  const missed = [];
+  if (!(rec.calls != null && rec.calls >= std.minCalls)) missed.push("calls");
+  if (!(rec.video != null && rec.video >= std.minVideos)) missed.push("videos");
+  if (qual !== true) missed.push("rocked");
+  return { off: false, points: missed.length, missed, noData: false };
+}
+// A person's current streak, read from their recent working days that have data.
+// Positive: consecutive days meeting ALL three (0 points). Negative: consecutive days
+// missing ALL three (3 points). Days off and no-data days are skipped, not broken on.
+// Returns { dir: "up"|"down"|null, len }.
+function currentStreak(data, a, std) {
+  const days = Object.keys(data.activity || {}).sort().reverse(); // most recent first
+  let dir = null, len = 0;
+  for (const d of days) {
+    if (isOff(data, a.id, d)) continue;
+    const dp = dayPoints(data, a, d, std);
+    if (dp.noData) continue;
+    const perfect = dp.points === 0;
+    const zero = dp.points === 3;
+    if (!perfect && !zero) break;           // a mixed day ends any streak
+    const thisDir = perfect ? "up" : "down";
+    if (dir === null) { dir = thisDir; len = 1; }
+    else if (dir === thisDir) len++;
+    else break;
+  }
+  return { dir, len };
+}
+/* ============================================================================
+   Dot-matrix icon system. Every icon is a 9x9 grid of dots (lit only), drawn
+   with currentColor so it inherits text color and scales via CSS. This is the
+   salesperson dot-matrix language carried across the whole app.
+   ========================================================================= */
+const PIX = {
+  chart:    ["000000000","000000110","000000110","000110110","000110110","110110110","110110110","110110110","000000000"],
+  calendar: ["010000010","111111111","100000001","101101101","100000001","101101101","100000001","111111111","000000000"],
+  clipboard:["000111000","011111110","010000010","010111010","010000010","010111010","010000010","011111110","000000000"],
+  gear:     ["001010100","011111110","111000111","010000010","110000011","010000010","111000111","011111110","001010100"],
+  user:     ["000111000","001111100","001111100","000111000","000000000","011111110","111111111","111111111","000000000"],
+  users:    ["010001000","111011100","111011100","010001000","000000000","110111011","111111111","111111111","000000000"],
+  check:    ["000000000","000000011","000000110","000001100","010011000","011110000","001100000","000000000","000000000"],
+  close:    ["000000000","011000110","011000110","001101100","000111000","001101100","011000110","011000110","000000000"],
+  arrow:    ["000000000","000010000","000011000","111111100","111111110","111111100","000011000","000010000","000000000"],
+  arrowup:  ["000010000","000111000","001111100","011111110","111111111","000111000","000111000","000111000","000000000"],
+  arrowdown:[["000111000","000111000","000111000","111111111","011111110","001111100","000111000","000010000","000000000"]][0],
+  triup:    ["000000000","000010000","000111000","001111100","011111110","111111111","000000000","000000000","000000000"],
+  tridown:  ["000000000","000000000","000000000","111111111","011111110","001111100","000111000","000010000","000000000"],
+  clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
+  phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
+  globe:    ["001111100","011000110","110101011","101010101","111111111","101010101","110101011","011000110","001111100"],
+  search:   ["0011111000000","0111111100000","1110001110000","1100000110000","1100000110000","1100000110000","1110001110000","0111111100000","0011111011000","0000000111000","0000000011100","0000000001110","0000000000110"],
+  plus:     ["000000000","000010000","000010000","000010000","011111110","000010000","000010000","000010000","000000000"],
+  trophy:   ["011111110","011111110","110111011","110111011","011111110","000111000","000111000","001111100","011111110"],
+  flame:    ["000010000","000110000","001110000","001111000","011011100","110001110","110000110","011001100","001111000"],
+  lunch:    ["000101000","001010000","000101000","111111100","100000100","100000110","100000100","111111000","000000000"],
+  away:     ["011111100","010000100","010000100","010011100","010011110","010011100","010000100","010000100","011111100"],
+  door:     ["011111100","010000110","010000010","010001010","010000010","010000010","010000010","010000010","011111110"],
+  handshake:["000000000","000011000","011011110","111111111","011111110","111111111","011011110","000011000","000000000"],
+  doc:      ["011111000","010000100","010000110","010111110","010000010","010111010","010000010","011111110","000000000"],
+  star:     ["000010000","000111000","000111000","111111111","011111110","001111100","011111110","010001000","100000001"],
+  bolt:     ["000011100","000111000","001110000","011111100","000011100","000111000","001110000","011100000","000000000"],
+  dot:      ["000000000","000000000","000111000","001111100","001111100","001111100","000111000","000000000","000000000"],
+  warn:     ["000010000","000111000","001101100","011101110","011101110","111111111","111101111","111111111","000000000"],
+  car:      ["000000000","000000000","000111100","001111110","011111111","111111111","111111111","011000110","000000000"],
+};
+/* The same marks on a coarse grid. A 9x9 check at the size it renders beside a
+   percentage puts every dot under a pixel or two on a TV, which reads as fuzz. Five
+   fat dots hold their shape at any distance. Cars stay on the 9x9 grid: they are
+   drawn large enough for the detail to survive. */
+const PIX5 = {
+  check:    ["00000","00001","00010","10100","01000"],
+  close:    ["10001","01010","00100","01010","10001"],
+  warn:     ["00100","00100","01110","01110","11111"],
+  triup:    ["00100","01110","11111","00000","00000"],
+  tridown:  ["00000","00000","11111","01110","00100"],
+  dot:      ["00000","00000","00100","00000","00000"],
+};
+
+function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
+  // The marks that appear at text size come off the coarse grid, the same as The
+  // Board, so a tick beside a number is fat dots that hold their shape rather than
+  // twenty dots the size of a pixel. Pass fine to force the detailed grid.
+  const rows = (!fine && PIX5[glyph]) || PIX[glyph] || PIX.dot;
+  const n = rows.length;
+  const cell = size / n;
+  // Finer grids need proportionally fatter dots or the shape dissolves into grey.
+  const r = +(cell * (n <= 5 ? 0.46 : n >= 13 ? 0.46 : 0.40)).toFixed(2);
+  const dots = [];
+  for (let y = 0; y < n; y++) {
+    const row = rows[y];
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] === "1") dots.push(<circle key={y * n + x} cx={+((x + 0.5) * cell).toFixed(2)} cy={+((y + 0.5) * cell).toFixed(2)} r={r} />);
+    }
+  }
+  return (
+    <svg className={"pix" + (className ? " " + className : "")} style={style} width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="currentColor" aria-hidden={title ? undefined : "true"} role={title ? "img" : undefined}>
+      {title ? <title>{title}</title> : null}{dots}
+    </svg>
+  );
+}
+function pixSvgString(glyph, size = 18, color = "currentColor") {
+  const rows = PIX[glyph] || PIX.dot;
+  const n = rows.length, cell = size / n, r = (cell * 0.40).toFixed(2);
+  let dots = "";
+  for (let y = 0; y < n; y++) for (let x = 0; x < rows[y].length; x++)
+    if (rows[y][x] === "1") dots += `<circle cx="${((x + 0.5) * cell).toFixed(1)}" cy="${((y + 0.5) * cell).toFixed(1)}" r="${r}"/>`;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" fill="${color}">${dots}</svg>`;
+}
+function StreakIcon({ data, a, std, min = 3 }) {
+  const { dir, len } = currentStreak(data, a, std);
+  if (!dir || len < min) return null;
+  const up = dir === "up";
+  return (
+    <span className={"streak " + (up ? "streak-up" : "streak-down")}
+      title={up ? `On a ${len}-day streak: calls, videos, and RockEd every day.` : `${len} days straight missing all three. Needs a conversation.`}>
+      {up ? <PixIcon glyph="triup" size={13} /> : <PixIcon glyph="tridown" size={13} />}<span className="streak-n">{len}</span>
+    </span>
+  );
+}
+function daysWorkedThisMonth(data, a) {
+  const t = today(); const [y, m, dd] = t.split("-").map(Number);
+  let n = 0;
+  for (let day = 1; day <= dd; day++) {
+    const dt = new Date(y, m - 1, day);
+    if (dt.getDay() === 0) continue;               // skip Sundays
+    const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isHoliday(ds)) continue;                   // the group was closed
+    if (isOff(data, a.id, ds)) continue;           // skip their days off
+    n++;
+  }
+  return n;
+}
+
+// Per-store brand colors. `primary` drives the hero band + accents on the manager's view.
+const DEFAULT_BRAND = { primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" };
+
+// Store hours bound the hourly view, and holidays come out of everyone's working
+// days so nobody is judged against a day the doors never opened.
+const DEFAULT_HOURS = { open: "09:00", close: "23:30" };
+const hourOf = (hhmm) => { const [h, m] = String(hhmm || "0:0").split(":").map(Number); return h + (m || 0) / 60; };
+
+/* Holidays are set once for the whole group. They live at module scope so the
+   working-day helpers can see them without every call site carrying the config
+   down through four layers of props. Kept in step with the saved config below. */
+let GROUP_HOLIDAYS = new Set();
+function setGroupHolidays(list) {
+  GROUP_HOLIDAYS = new Set((list || []).map((h) => (typeof h === "string" ? h : h.date)));
+}
+const isHoliday = (d) => GROUP_HOLIDAYS.has(d);
+
+const isoDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const nthWeekday = (y, m, weekday, n) => {
+  const first = new Date(y, m - 1, 1);
+  return new Date(y, m - 1, 1 + ((weekday - first.getDay() + 7) % 7) + (n - 1) * 7);
+};
+const lastWeekday = (y, m, weekday) => {
+  const last = new Date(y, m, 0);
+  return new Date(y, m, 0 - ((last.getDay() - weekday + 7) % 7));
+};
+// The days a dealership actually shuts, not the full federal list, which includes
+// several that showrooms trade straight through.
+const typicalClosures = (y) => [
+  { date: `${y}-01-01`, name: "New Year's Day" },
+  { date: isoDate(lastWeekday(y, 5, 1)), name: "Memorial Day" },
+  { date: `${y}-07-04`, name: "Independence Day" },
+  { date: isoDate(nthWeekday(y, 9, 1, 1)), name: "Labor Day" },
+  { date: isoDate(nthWeekday(y, 11, 4, 4)), name: "Thanksgiving" },
+  { date: `${y}-12-25`, name: "Christmas Day" },
+];
+
+// Manufacturer palettes so a store instantly reads as its franchise.
+const BRAND_PRESETS = [
+  { id: "honda",    label: "Honda",        primary: "#CC0000", deep: "#8E0000", accent: "#F2F2F2" },
+  { id: "ford",     label: "Ford",         primary: "#1F5FA9", deep: "#00095B", accent: "#8FC5E8" },
+  { id: "hyundai",  label: "Hyundai",      primary: "#00559A", deep: "#002C5F", accent: "#A4C8E1" },
+  { id: "mazda",    label: "Mazda",        primary: "#3D4B54", deep: "#101820", accent: "#C8102E" },
+  { id: "audi",     label: "Audi",         primary: "#3C4247", deep: "#1A1D20", accent: "#BB0A30" },
+  { id: "toyota",   label: "Toyota",       primary: "#C8102E", deep: "#8A0B20", accent: "#E8E8E8" },
+  { id: "kia",      label: "Kia",          primary: "#05141F", deep: "#000000", accent: "#BB162B" },
+  { id: "chevy",    label: "Chevrolet",    primary: "#1B4E8C", deep: "#0D2240", accent: "#FCC10F" },
+  { id: "nissan",   label: "Nissan",       primary: "#C3002F", deep: "#8A0021", accent: "#E5E5E5" },
+  { id: "driversmart", label: "Driver's Mart", primary: "#00A896", deep: "#00776A", accent: "#C1D730" },
+  { id: "hc",       label: "Classic Blue", primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" },
+];
+
+const DEFAULT_CONFIG = {
+  stores: [
+    { id: "holler-honda", name: "Holler Honda", icon: null },
+    { id: "classic-honda", name: "Classic Honda", icon: null },
+    { id: "holler-hyundai", name: "Holler Hyundai", icon: null },
+  ],
+  roles: [
+    { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
+    { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
+    { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
+    { id: "manager", name: "Manager", color: "#5B6874", onBoard: false, coaching: false, tracked: false },
+  ],
+  standards: {},
+  approvedDomains: [],
+  registrationOpen: true,
+  holidays: [],
+};
+
+/* ---------------- Logo + favicon ---------------- */
+
+function Logo({ size = 40, animated = false, loading = false }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={(animated ? "logo-anim " : "") + (loading ? "logo-loading" : "")}>
+      <defs>
+        <linearGradient id="lpcg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#2A5E9B" />
+          <stop offset="100%" stopColor="#1D4674" />
+        </linearGradient>
+        {/* the "whoosh" gradient — blue → lime, the same one the loading bar used */}
+        <linearGradient id="lpc-trail" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#88C6EA" />
+          <stop offset="55%" stopColor="#2A5E9B" />
+          <stop offset="100%" stopColor="#C1D730" />
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lpcg)" />
+      {/* full ring track (light blue) */}
+      <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
+      {loading ? (
+        <>
+          {/* a gradient arc that spins as the needle's trail */}
+          <g className="logo-trail" style={{ transformOrigin: "32px 32px" }}>
+            <path d="M 32 15 A 17 17 0 0 1 47.7 25.2" fill="none" stroke="url(#lpc-trail)" strokeWidth="5" strokeLinecap="round" pathLength="100" />
+          </g>
+          {/* the needle, spinning with the trail */}
+          <g className="logo-spin" style={{ transformOrigin: "32px 32px" }}>
+            <line x1="32" y1="32" x2="32" y2="15" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
+          </g>
+          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
+        </>
+      ) : (
+        <>
+          {/* soft rounded start for the lime (a butt-capped path would cut flat here) */}
+          <circle className="logo-arc-start" cx="15" cy="32" r="2.5" fill="#C1D730" />
+          {/* Lime sweeps 180° → 320.2°: the SAME angular span as the needle, so the two tips
+              travel together. A butt cap ends it flat on the needle's centerline, whereas a round cap
+              would bulge sideways past the needle. The white needle is drawn on top of the seam. */}
+          <path className="logo-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
+          {/* needle: width 5 so its round tip reaches the arc's outer edge (r=19.5) and covers the seam */}
+          <g className="logo-needle" style={{ transformOrigin: "32px 32px" }}>
+            <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
+          </g>
+          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#2A5E9B'/><stop offset='100%' stop-color='#1D4674'/></linearGradient></defs><rect x='2' y='2' width='60' height='60' rx='15' fill='url(#g)'/><circle cx='32' cy='32' r='17' fill='none' stroke='rgba(136,198,234,.5)' stroke-width='5'/><circle cx='15' cy='32' r='2.5' fill='#C1D730'/><path d='M 15 32 A 17 17 0 0 1 45.06 21.12' fill='none' stroke='#C1D730' stroke-width='5' stroke-linecap='butt'/><line x1='32' y1='32' x2='45.06' y2='21.12' stroke='#FFF' stroke-width='5' stroke-linecap='round'/><circle cx='32' cy='32' r='4.5' fill='#FFF'/></svg>`;
+
+// Set at module scope, before anything paints. Reveal-on-scroll hides elements
+// until they are observed, so it must only ever engage when this bundle is live.
+// If the script never runs, nothing is hidden and the app renders plainly.
+if (typeof document !== "undefined") document.documentElement.classList.add("js-anim");
+// Touch has no hover, so the dial/health/weakest popups would never open. On a
+// touch device a tap toggles the "popped" class the CSS opens on; a tap anywhere
+// else closes whatever is open. One document-level listener covers every popup.
+if (typeof document !== "undefined" && typeof window !== "undefined") {
+  const isTouch = window.matchMedia && window.matchMedia("(hover: none)").matches;
+  if (isTouch) {
+    document.documentElement.classList.add("is-touch");
+    document.addEventListener("click", (e) => {
+      const host = e.target.closest(".mdial, .hf-fix, .hero-health, .pod");
+      const open = document.querySelector(".popped");
+      if (open && open !== host) open.classList.remove("popped");
+      if (host && host.querySelector(".mdial-pop, .hf-pop, .health-pop")) {
+        e.preventDefault();
+        host.classList.toggle("popped");
+      }
+    }, true);
+  }
+}
+
+/* Fades sections in as they come into view. One-shot per element: once it has
+   arrived it is left alone, so scrolling back up never re-triggers anything. */
+function useReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)");
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || typeof IntersectionObserver === "undefined") {
+      els.forEach((el) => el.classList.add("is-in"));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add("is-in");
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.04 });
+    const watch = (root) => root.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => io.observe(el));
+    watch(document);
+    // A card opened by a child component's own state never re-runs this effect,
+    // so it would sit at opacity 0 forever. Coaching cards did exactly that.
+    // Watching the tree means anything that appears later still gets revealed.
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1) continue;
+          if (n.matches && n.matches(".card, .reveal")) io.observe(n);
+          if (n.querySelectorAll) watch(n);
+        }
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => { io.disconnect(); mo.disconnect(); };
+  });
+}
+
+/* The backdrop drifts against the page: scrolling drags it along at a fraction of
+   the speed and it coasts to a stop rather than tracking the finger, and once the
+   manager settles on a view the colours morph noticeably faster. Vars go on the
+   root element so this survives the app swapping its own shell around. */
+function useLivingBackground() {
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!window.matchMedia) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { root.classList.add("bg-idle"); return; }
+    let cur = 0, target = 0, raf = 0, idleT = 0;
+    const settle = () => { idleT = setTimeout(() => root.classList.add("bg-idle"), 700); };
+    const tick = () => {
+      cur += (target - cur) * 0.07;                 // the lag that reads as inertia
+      root.style.setProperty("--bgy", cur.toFixed(1) + "px");
+      if (Math.abs(target - cur) > 0.4) raf = requestAnimationFrame(tick);
+      else { cur = target; root.style.setProperty("--bgy", cur.toFixed(1) + "px"); raf = 0; }
+    };
+    const onScroll = () => {
+      target = -(window.scrollY || 0) * 0.15;
+      root.classList.remove("bg-idle");
+      clearTimeout(idleT); settle();
+      if (!raf) raf = requestAnimationFrame(tick);
+    };
+    settle();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(idleT);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+}
+
+function useFavicon() {
+  useEffect(() => {
+    try {
+      const href = "data:image/svg+xml," + encodeURIComponent(LOGO_SVG);
+      let link = document.querySelector("link[rel~='icon']");
+      if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+      link.href = href;
+      document.title = "Lead Performance Calculator";
+      // Type system, loaded as a stylesheet link rather than an @import so it never
+      // blocks first paint. Space Grotesk is the same face The Board uses on the TV.
+      if (!document.getElementById("lpc-fonts")) {
+        const pre = document.createElement("link");
+        pre.rel = "preconnect"; pre.href = "https://fonts.gstatic.com"; pre.crossOrigin = "anonymous";
+        document.head.appendChild(pre);
+        const f = document.createElement("link");
+        f.id = "lpc-fonts"; f.rel = "stylesheet";
+        f.href = "https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap";
+        document.head.appendChild(f);
+      }
+    } catch {}
+  }, []);
+}
+
+/* ---------------- CSV parsing ---------------- */
+
+function detectReportType(rows, filename = "") {
+  const h2 = (rows[1] || []).join("|").toLowerCase();
+  const h1 = (rows[0] || []).join("|").toLowerCase();
+  const fn = filename.toLowerCase();
+  // ACTIVITY MUST BE CHECKED FIRST. The Daily Activity export also carries a
+  // "Units Delivered" column, so testing for that first swallowed it as a delivery
+  // summary and quietly wrote activity numbers into the wrong place. Only the
+  // activity report has Call Contacted AND Personalized Video together, so this
+  // signature is unambiguous.
+  if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
+
+  if (h2.includes("units delivered")) {
+    // Every channel (Internet, Phone, Showroom, Campaign) comes from the SAME
+    // "Delivery Summary" report, filtered by Source inside DriveCentric. So the file
+    // is always titled "Delivery Summary" and never by channel. If a manager instead
+    // pulled a per-channel report (a file titled "Phone", "Internet", etc.), that is
+    // the WRONG export and must be caught, not silently accepted.
+    const namesChannel = /\b(internet|phone|showroom|show-room|floor|campaign|web)\b/.test(fn);
+    const namesDelivery = fn.includes("delivery");
+    if (namesChannel && !namesDelivery) return "wrong-channel-report";
+    // Correct report. We don't trust the filename to say which channel it is, so the
+    // channel is always confirmed by the manager (the ambiguous-channel picker).
+    return "delivery";
+  }
+  if (h2.includes("video day of appt")) return "appointment";
+  if (h1.includes("bh lead") && h1.includes("engaged")) return "video";
+  return null;
+}
+
+const toNum = (v) => {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (s === "" || s === "-") return null;
+  const n = parseFloat(s.replace(/[$,%]/g, ""));
+  return isNaN(n) ? null : n;
+};
+
+function parseReport(rows, type) {
+  const header = rows[1] || [];
+  const idx = (label) => header.findIndex((h) => norm(h) === norm(label));
+  const out = {};
+  const channel = type.startsWith("delivery-") ? type.split("-")[1] : null;
+  for (let r = 2; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[0] || !String(row[0]).trim()) continue;
+    const name = String(row[0]).trim();
+    const key = norm(name);
+    const rec = { displayName: name };
+    if (type === "delivery" || channel) {
+      const units = toNum(row[idx("Units Delivered")]);
+      const dpct = toNum(row[idx("Delivered %")]);
+      if (type === "delivery") {
+        // legacy: also fills the standards fields + internet channel
+        rec.opps = toNum(row[idx("Opportunities")]);
+        rec.sold = toNum(row[idx("Sold")]);
+        rec.soldPct = toNum(row[idx("Sold %")]);
+        rec.unitsDelivered = units;
+        rec.deliveredPct = dpct;
+        rec.internetUnits = units;
+        rec.internetPct = dpct;
+        rec.internetLeads = rec.opps;
+      } else if (channel === "campaign") {
+        // units only, on purpose. No pct is stored, so nothing can accidentally grade it.
+        rec.campaignUnits = units;
+        rec.campaignLeads = toNum(row[idx("Opportunities")]);
+      } else {
+        rec[channel + "Units"] = units;
+        rec[channel + "Pct"] = dpct;
+        rec[channel + "Leads"] = toNum(row[idx("Opportunities")]);
+        if (channel === "internet") {
+          // internet delivery still drives the lead-standards fields
+          rec.opps = toNum(row[idx("Opportunities")]);
+          rec.sold = toNum(row[idx("Sold")]);
+          rec.soldPct = toNum(row[idx("Sold %")]);
+          rec.unitsDelivered = units;
+          rec.deliveredPct = dpct;
+        }
+      }
+    } else if (type === "appointment") {
+      rec.apptVideoDayPct = toNum(row[idx("Video Day of Appt %")]);
+      // Appointments set and the show rate live on THIS report, not Daily Activity.
+      // "Total Created" counts appointments made in the period; "Total Scheduled" is the
+      // ones actually on the books, which is what "appointments set" should mean.
+      rec.apptTotalCreated = toNum(row[idx("Total Created")]);
+      rec.apptTotalScheduled = toNum(row[idx("Total Scheduled")]);
+      rec.apptTotalShow = toNum(row[idx("Total Show")]);
+      // Percentages here export as fractions (0.857) but accept a whole number too.
+      rec.apptShowPct = (() => {
+        const raw = toNum(row[idx("Total Show %")]);
+        if (raw == null) return null;
+        return raw > 1 ? raw / 100 : raw;
+      })();
+    } else if (type === "video") {
+      const pctCols = header
+        .map((h, i) => (norm(h) === norm("Personalized Video %") ? i : -1))
+        .filter((i) => i >= 0);
+      rec.bhVideoPct = toNum(row[pctCols[0]]);
+      rec.engagedVideoPct = toNum(row[pctCols[1]]);
+    } else if (type === "activity") {
+      rec.actCalls = toNum(row[idx("Calls")]);
+      rec.actCallContacted = toNum(row[idx("Call Contacted")]);
+      rec.actVideo = toNum(row[idx("Personalized Video")]);
+      rec.actText = toNum(row[idx("Text")]);
+      rec.actEmail = toNum(row[idx("Email")]);
+      rec.actApptCreated = toNum(row[idx("Created")]);
+      rec.actApptShow = toNum(row[idx("Show")]) ?? toNum(row[idx("Total Show")]) ?? toNum(row[idx("Appt Show")]) ?? toNum(row[idx("Shown")]);
+      rec.actOppsTotal = toNum(row[idx("Total")]);
+      rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
+      // "Open Tasks" is the posted/outstanding task count on the Workplan; the completion
+      // rate is Completed / Open. Fall back to other header names other exports have used.
+      rec.actOpenTasks = toNum(row[idx("Open Tasks")]) ?? toNum(row[idx("Total Tasks")]) ??
+        toNum(row[idx("Tasks Due")]) ?? toNum(row[idx("Assigned Tasks")]);
+      rec.actSold = toNum(row[idx("Sold")]);
+      rec.actUnits = toNum(row[idx("Units Delivered")]);
+      // Opportunities by source. These are what make closing rates per channel possible.
+      rec.actOppShowroom = toNum(row[idx("Showroom")]);
+      rec.actOppPhone    = toNum(row[idx("Phone")]);
+      rec.actOppInternet = toNum(row[idx("Internet")]);
+      rec.actOppCampaign = toNum(row[idx("Campaign")]);
+      // The appointment funnel, end to end.
+      rec.actApptScheduled = toNum(row[idx("Scheduled")]);
+      rec.actApptConfirmed = toNum(row[idx("Confirmed")]);
+      rec.actApptNoShow    = toNum(row[idx("No Show")]);
+    }
+    out[key] = rec;
+  }
+  return out;
+}
+
+/* ---------------- Reading the PDF reports in the browser ----------------
+   The scheduled reports arrive as PDFs, and the email pipeline reads them on the
+   server. This is the same reading code running in the app, so a manager can drop
+   a PDF straight in: to backfill a day that was missed, or to keep working when
+   the email pipeline is down. The mappers below are the server's, unchanged, so
+   the two paths can never drift apart. */
+async function extractPdfLinesInBrowser(file) {
+  const pdfjs = await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+  const items = [];
+  for (let pn = 1; pn <= doc.numPages; pn++) {
+    const page = await doc.getPage(pn);
+    const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent();
+    for (const it of tc.items) {
+      if (!it.str.trim()) continue;
+      items.push({ str: it.str.trim(), x: it.transform[4], y: vp.height - it.transform[5], pg: pn });
+    }
+  }
+  items.sort((a, b) => a.pg - b.pg || a.y - b.y || a.x - b.x);
+  const lines = [];
+  for (const it of items) {
+    const L = lines[lines.length - 1];
+    if (L && L.pg === it.pg && Math.abs(L.y - it.y) < 4) L.parts.push(it);
+    else lines.push({ pg: it.pg, y: it.y, parts: [it] });
+  }
+  return lines;
+}
+
+const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+function stripVocabWith(vocab, tokens) {
+  const kept = [];
+  let i = 0;
+  while (i < tokens.length) {
+    let consumed = 0;
+    for (let len = 4; len >= 1; len--) {
+      if (i + len > tokens.length) continue;
+      const glued = squashT(tokens.slice(i, i + len).join(""));
+      if (glued && vocab.has(glued)) { consumed = len; break; }
+    }
+    if (consumed) { i += consumed; continue; }
+    const t = tokens[i];
+    if (squashT(t)) kept.push(t);
+    i++;
+  }
+  return kept;
+}
+
+function vocabCountWith(vocab, tokens) {
+  let n = 0, i = 0;
+  while (i < tokens.length) {
+    let consumed = 0;
+    for (let len = 4; len >= 1; len--) {
+      if (i + len > tokens.length) continue;
+      const glued = squashT(tokens.slice(i, i + len).join(""));
+      if (glued && vocab.has(glued)) { consumed = len; break; }
+    }
+    if (consumed) { n++; i += consumed; } else i++;
+  }
+  return n;
+}
+
+/* =========================================================================
+   PDF #1: Daily Activity grid.
+   ========================================================================= */
+const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone","ups",
+  "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
+  "created","scheduled","confirmed","show","callsmade","calls","made","connects","texts",
+  "text","emails","email","videos","video","opentasks","open","tasks","completedtasks",
+  "completed","totaldelivered","totalclosing","total","delivered","closing"]);
+
+function mapDailyActivityGrid(lines) {
+  // Same decimal fix as the Delivery Summary: Units Delivered carries half
+  // credit on split deals, and one dropped token knocks the whole row out.
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
+  const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
+
+  let storeName = null, sawHeaderSig = false;
+  let nameParts = [];
+  // Some exports print the first person's name in the same block as the store
+  // heading. Those fragments get carried to the next data row instead of being
+  // swallowed, which is what used to drop that person from the whole report.
+  let storeParts = null, pendingName = null;
+  const people = {};
+
+  for (const L of lines) {
+    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+    if (!texts.length) continue;
+    if (squashT(texts.join("")).includes("netleads")) sawHeaderSig = true;
+    const rowTag = texts[0];
+
+    if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
+      if (rowTag !== "All") continue;
+      const nums = texts.slice(1).filter(isNum);
+      if (nums.length < 19) continue;
+      const parts = nameParts.slice();
+      let nm = parts.join(" ").replace(/\s+/g, " ").trim();
+      nameParts = [];
+      const v = nums.slice(0, 19).map(val);
+      if (!storeName) {
+        if (!nm) continue;
+        storeName = nm;
+        storeParts = parts;
+        // anything past the first fragment may belong to a person, not the store
+        if (parts.length > 1) pendingName = parts.slice(1).join(" ").replace(/\s+/g, " ").trim();
+        continue;
+      }
+      // A data row with no name of its own is the tell: its name was absorbed into
+      // the store heading above. Give it back, and trim the store name to match.
+      if (!nm && pendingName) {
+        nm = pendingName;
+        storeName = (storeParts && storeParts[0]) ? storeParts[0].trim() : storeName;
+      }
+      pendingName = null;
+      if (!nm) continue;
+      people[norm(nm)] = { displayName: nm, cols: v };
+      continue;
+    }
+
+    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
+    if (vocabCountWith(DA_VOCAB, nonNum) >= 3) {
+      const frag = stripVocabWith(DA_VOCAB, nonNum);
+      if (frag.length) nameParts.push(frag.join(" "));
+    }
+  }
+  if (!sawHeaderSig || Object.keys(people).length < 3) return null;
+
+  const header = ["Name","Total","Showroom","Phone","Internet","Campaign",
+    "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+  const rows = [["Daily Activity"], header];
+  for (const p of Object.values(people)) {
+    const c = p.cols;
+    rows.push([p.displayName, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
+      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17]]);
+  }
+  return { storeName, rows };
+}
+
+/* =========================================================================
+   PDF #2: Delivery Summary grid.
+   Confirmed layout from live debug output:
+     - THREE header lines per person, the name split across lines 1 and 3
+       ("Drivers Mart Winter" / "Be Backs" / "Park | Leads | ...").
+     - The name comes BEFORE its data rows.
+     - A page break REPEATS the header, splitting one person's eight rows
+       across the boundary; the repeat merges rather than creating a second.
+     - Lines before the FIRST header block (report title, date range) carry no
+       column vocabulary and must be skipped, or they glue onto the store name.
+     - Eight rows per person: New/Used/Other/Total (vehicle type, ignored)
+       and Showroom/Phone/Internet/Campaign (source, used).
+     - Six values + a percentage per row:
+       Total Leads | Total Ups | Unsold In Showroom | Be Backs |
+       Total Delivered/F&I | Closing %
+       Total Ups / Unsold / Be Backs are SHOWROOM-ONLY and only read there.
+   Verified: Jason Campion Internet 110 leads / 5 delivered / 4.5% matches the
+   old Delivery Summary CSV (110 net opportunities, 5 deals, 4.5% delivered).
+   ========================================================================= */
+const DS_VOCAB = new Set(["total","leads","totalleads","ups","totalups","showroom",
+  "unsold","in","unsoldin","unsoldinshowroom","be","backs","bebacks","delivered",
+  "f","i","fi","f&i","delivered/f&i","totaldelivered","closing","closing%","%"]);
+
+const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
+const DS_VEHICLE = ["New", "Used", "Other", "Total"];
+
+function mapDeliverySummaryGrid(lines) {
+  // Split deals are credited in halves, so the Delivered column legitimately
+  // reads 3.5 or 13.5. The old pattern had no decimal point, so those tokens
+  // failed isNum, got filtered out of the row, and the row then fell one value
+  // short of six and was dropped whole. That is why people with split deals
+  // came back with null internet numbers while their all-integer channels
+  // survived. Anyone who splits a deal must not vanish from the board.
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || /^\d+(?:\.\d+)?%$/.test(t);
+  // A "%" token is a percentage no matter its size. Deciding by magnitude
+  // (v > 1) would silently turn a real 0.9% into 90%.
+  const val = (t) => {
+    if (t === "-" || t == null) return null;
+    if (/%$/.test(String(t))) {
+      const n = parseFloat(String(t));
+      return Number.isFinite(n) ? n / 100 : null;
+    }
+    return toNum(t);
+  };
+
+  let sawHeaderSig = false;
+  let storeName = null;
+  let curName = null;
+  let pendingFrags = [];
+  const people = {};       // norm(name) -> { displayName, sources }
+  const order = [];
+  const pairings = [];
+
+  const commitName = () => {
+    if (!pendingFrags.length) return;
+    const nm = pendingFrags.join(" ").replace(/\s+/g, " ").trim();
+    pendingFrags = [];
+    if (!nm) return;
+    if (!storeName) { storeName = nm; curName = null; return; }
+    curName = nm;
+    const k = norm(nm);
+    if (!people[k]) { people[k] = { displayName: nm, sources: {} }; order.push(k); }
+  };
+
+  for (const L of lines) {
+    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
+    if (!texts.length) continue;
+    const joined = squashT(texts.join(""));
+    if (joined.includes("unsoldin") || joined.includes("bebacks")) sawHeaderSig = true;
+    const rowTag = texts[0];
+
+    // A data row ends the header block, so commit whatever name accumulated.
+    if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
+      commitName();
+      if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
+      const nums = texts.slice(1).filter(isNum);
+      if (nums.length < 6) continue;
+      if (!curName) continue;                             // store block: not a person
+      const k = norm(curName);
+      if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
+      people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
+      continue;
+    }
+
+    // Header line: strip the column vocabulary, whatever survives is a name
+    // fragment. The name spans up to three lines, so fragments accumulate.
+    // Lines BEFORE the first header block (report title, date range) carry no
+    // column vocabulary at all — skip them, or they glue onto the store name.
+    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
+    if (!nonNum.length) continue;
+    const hasVocab = vocabCountWith(DS_VOCAB, nonNum) >= 1;
+    if (!hasVocab && !sawHeaderSig) continue;             // pre-header preamble
+    const frag = stripVocabWith(DS_VOCAB, nonNum);
+    if (frag.length) pendingFrags.push(frag.join(" "));
+  }
+  commitName();
+
+  if (!sawHeaderSig || order.length < 3) return null;
+
+  const header = ["Name","Opportunities","Units Delivered","Delivered %",
+    "internetUnits","internetPct","phoneUnits","phonePct",
+    "showroomUnits","showroomPct","campaignUnits",
+    "internetLeads","phoneLeads","showroomLeads",
+    "showroomUps","showroomUnsold","showroomBeBacks"];
+  const rows = [["Delivery Summary"], header];
+
+  for (const k of order) {
+    const p = people[k];
+    const s = p.sources;
+    const pick = (src, i) => (s[src] ? s[src][i] : null);
+    // val() already returns percentages as a fraction, matching what the old
+    // CSV stored with Round % switched off.
+    const pctOf = (src) => pick(src, 5);
+    const internetLeads = pick("internet", 0);
+    const internetDel   = pick("internet", 4);
+    rows.push([
+      p.displayName,
+      internetLeads,                   // Opportunities (drives lead standards)
+      internetDel,                     // Units Delivered
+      pctOf("internet"),               // Delivered %
+      internetDel,  pctOf("internet"),
+      pick("phone", 4),    pctOf("phone"),
+      pick("showroom", 4), pctOf("showroom"),
+      pick("campaign", 4),             // campaign: units only, never graded
+      internetLeads,                   // internetLeads  (Net Opportunities per channel)
+      pick("phone", 0),                // phoneLeads
+      pick("showroom", 0),             // showroomLeads
+      pick("showroom", 1),             // Total Ups          (showroom-only)
+      pick("showroom", 2),             // Unsold In Showroom (showroom-only)
+      pick("showroom", 3),             // Be Backs           (showroom-only)
+    ]);
+    pairings.push({
+      name: p.displayName,
+      internet: s.internet
+        ? `${pick("internet",0)} leads / ${internetDel} delivered / ${
+            pctOf("internet") == null ? "-" : (pctOf("internet") * 100).toFixed(1) + "%"}`
+        : "-",
+      showroom: s.showroom
+        ? `${pick("showroom",0)} leads / ${pick("showroom",4)} delivered`
+        : "-",
+    });
+  }
+  return { storeName, rows, pairings };
+}
+
+/* Delivery Summary rows are pre-shaped, so they bypass parseReport(). */
+function parseDeliverySummaryRows(rows) {
+  const header = rows[1] || [];
+  const idx = (label) => header.indexOf(label);
+  const out = {};
+  for (let r = 2; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[0]) continue;
+    const name = String(row[0]).trim();
+    out[norm(name)] = {
+      displayName: name,
+      opps: row[idx("Opportunities")],
+      unitsDelivered: row[idx("Units Delivered")],
+      deliveredPct: row[idx("Delivered %")],
+      internetUnits: row[idx("internetUnits")],
+      internetPct: row[idx("internetPct")],
+      internetLeads: row[idx("internetLeads")],
+      phoneUnits: row[idx("phoneUnits")],
+      phonePct: row[idx("phonePct")],
+      phoneLeads: row[idx("phoneLeads")],
+      showroomUnits: row[idx("showroomUnits")],
+      showroomPct: row[idx("showroomPct")],
+      showroomLeads: row[idx("showroomLeads")],
+      campaignUnits: row[idx("campaignUnits")],
+      showroomUps: row[idx("showroomUps")],
+      showroomUnsold: row[idx("showroomUnsold")],
+      showroomBeBacks: row[idx("showroomBeBacks")],
+    };
+  }
+  return out;
+}
+
+/* ---------------- End of the ported reader ---------------- */
+
+/* ---------------- Import sanity checks ----------------
+   The tool knows the shape a normal day should have, so it can catch a bad upload
+   even after a manager clicks through every prompt. Two things get checked:
+     1) A big swing from the numbers already on file (a re-pull that lands far from
+        where the month was) — usually a wrong file in the wrong slot.
+     2) The channel pecking order. Across a rooftop there are almost always more
+        Internet deliveries than Phone, more Phone than Showroom, and more Showroom
+        than Campaign. When that order is inverted it is very likely a mis-filed
+        Delivery Summary (e.g. the Phone export dropped into the Internet slot).
+   These are FLAGS, not blocks: the numbers still import, but the admin gets told. */
+function channelTotals(stats) {
+  const t = { internet: 0, phone: 0, showroom: 0, campaign: 0, has: {} };
+  for (const s of Object.values(stats || {})) {
+    for (const ch of ["internet", "phone", "showroom", "campaign"]) {
+      const u = s?.[ch + "Units"];
+      if (u != null) { t[ch] += u; t.has[ch] = true; }
+    }
+  }
+  return t;
+}
+
+// Expected volume order, most to least. Used to sanity-check the channel pecking order.
+const CHANNEL_ORDER = ["internet", "phone", "showroom", "campaign"];
+const CHANNEL_LABEL = { internet: "Internet", phone: "Phone", showroom: "Showroom", campaign: "Campaign" };
+
+function analyzeImport(prior, after, importedChannels) {
+  const flags = [];
+  // 1) Big swing on a channel that already had numbers on file.
+  for (const ch of CHANNEL_ORDER) {
+    if (!importedChannels.has(ch)) continue;
+    if (!prior.has[ch]) continue;                 // nothing to compare against yet
+    const was = prior[ch], now = after[ch];
+    if (was < 5 && now < 5) continue;             // too small to be meaningful
+    const drop = was > 0 && now <= was * 0.5;     // lost half or more
+    const spike = was > 0 && now >= was * 2 && (now - was) >= 10; // doubled, and a real jump
+    if (drop) flags.push({ level: "warn", msg: `${CHANNEL_LABEL[ch]} units fell from ${was} to ${now} versus what was already on file. If this file wasn't meant to replace it, undo this import.` });
+    else if (spike) flags.push({ level: "warn", msg: `${CHANNEL_LABEL[ch]} units jumped from ${was} to ${now}. Double-check the right Source was selected before exporting.` });
+  }
+  // 2) Pecking order. Only judge channels that actually have numbers on file now.
+  const present = CHANNEL_ORDER.filter((ch) => after.has[ch] && after[ch] > 0);
+  for (let i = 0; i < present.length - 1; i++) {
+    const hi = present[i], lo = present[i + 1];
+    if (after[lo] > after[hi] && (after[lo] - after[hi]) >= 5) {
+      flags.push({ level: "warn", msg: `${CHANNEL_LABEL[lo]} (${after[lo]}) is higher than ${CHANNEL_LABEL[hi]} (${after[hi]}). Normally ${CHANNEL_LABEL[hi]} runs higher, so this can mean two Delivery Summaries were filed under the wrong channels.` });
+    }
+  }
+  return flags;
+}
+
+/* ---------------- Evaluation ---------------- */
+
+function evaluateAssociate(stats, tiers) {
+  if (!tiers || tiers.length === 0) return { status: "no-standards" };
+  const opps = stats?.opps;
+  const sorted = [...tiers].sort((a, b) => a.cap - b.cap);
+  let tierIndex = sorted.findIndex((t) => (opps ?? 0) <= t.cap);
+  if (tierIndex === -1) tierIndex = sorted.length - 1;
+  const tier = sorted[tierIndex];
+  const failures = [];
+  let marginSum = 0, marginCount = 0;
+  for (const req of tier.requirements) {
+    const def = METRICS[req.metric];
+    const val = stats?.[req.metric];
+    const needed = def.kind === "pct" ? req.min / 100 : req.min;
+    if (val == null || val < needed) failures.push({ metric: req.metric, val: val ?? null, min: req.min, def });
+    else if (needed > 0) { marginSum += (val - needed) / needed; marginCount++; }
+  }
+  // surpass = average % above each requirement (only meaningful when passing)
+  const surpass = marginCount ? marginSum / marginCount : 0;
+  return {
+    status: failures.length === 0 ? "pass" : "fail",
+    failures, tier, tierIndex, cap: tier.cap, opps: opps ?? 0,
+    atCap: (opps ?? 0) >= tier.cap,
+    // How close to the ceiling. Being below standard only actually costs someone
+    // leads once they reach their cap, so the warning should escalate rather than
+    // shouting "restricted" at somebody who still has plenty of room.
+    capUse: tier.cap > 0 ? (opps ?? 0) / tier.cap : 0,
+    nextCap: sorted[tierIndex + 1]?.cap ?? null,
+    surpass,
+  };
+}
+
+// which required metrics is this associate missing report data for?
+function missingMetricData(stats, tiers) {
+  if (!tiers || !tiers.length) return [];
+  const sorted = [...tiers].sort((a, b) => a.cap - b.cap);
+  const opps = stats?.opps;
+  let ti = sorted.findIndex((t) => (opps ?? 0) <= t.cap);
+  if (ti === -1) ti = sorted.length - 1;
+  const miss = [];
+  for (const req of sorted[ti].requirements) {
+    if (stats?.[req.metric] == null) miss.push(METRICS[req.metric].short);
+  }
+  return miss;
+}
+
+const failureText = (ev) =>
+  ev.failures.map((f) =>
+    `${f.def.short} ${f.val == null ? "no data" : f.def.kind === "pct" ? fmtPct(f.val) : fmtNum(f.val)} (needs ${f.def.kind === "pct" ? f.min + "%" : f.min})`
+  ).join("; ");
+
+// One place that turns an evaluation into the traffic-light verdict, so the manager's
+// board, the store cards, and the summary can never word the same person differently.
+// isRestricted / inGrace are passed in because they live on the store, not the eval.
+const VERDICT = {
+  off:      { key: "off",      label: "Off leads",              short: "Off",      icon: "\u25CF", cls: "off" },
+  cleared:  { key: "cleared",  label: "Cleared to grab leads",  short: "Cleared",  icon: "\u2713", cls: "pass" },
+  restrict: { key: "restrict", label: "Restrict leads",         short: "Restrict", icon: "\u2717", cls: "fail" },
+  nearing:  { key: "nearing",  label: "Nearing the limit",      short: "Nearing",  icon: "\u26A0\uFE0E", cls: "warn" },
+  room:     { key: "room",     label: "Below standard, room left", short: "Room left", icon: "\u25CB", cls: "watch" },
+  grace:    { key: "grace",    label: "Working toward standard", short: "Working",  icon: "\u25D0", cls: "grace" },
+  none:     { key: "none",     label: "No standards",           short: "—",        icon: "\u00B7", cls: "dim" },
+};
+function verdictOf(ev, { restricted = false, inGrace = false } = {}) {
+  if (restricted) return VERDICT.off;
+  if (!ev || ev.status === "no-standards") return VERDICT.none;
+  if (ev.status === "pass") return VERDICT.cleared;
+  // status === "fail"
+  if (inGrace) return VERDICT.grace;
+  if (ev.atCap) return VERDICT.restrict;
+  if ((ev.capUse ?? 0) >= 0.8) return VERDICT.nearing;
+  return VERDICT.room;
+}
+
+/* ===== BACKEND BLOCK: Supabase (storage + real auth) ===== */
+// Set in Vercel: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        // Keep people signed in across reloads and across days. The cinematic
+        // loading sequence is gated separately (once per calendar day); the login
+        // itself persists so The Board and their session survive between visits.
+        persistSession: true,
+        autoRefreshToken: true,
+        storageKey: "lpc-auth",
+      },
+    })
+  : null;
+
+const AUTH_ENABLED = true;
+
+async function loadShared(key, fallback, throwOnError) {
+  if (!supabase) return fallback;
+  try {
+    const { data, error } = await supabase.from("app_data").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    return data ? data.value : fallback;
+  } catch (e) { console.error("load failed", key, e); if (throwOnError) throw e; return fallback; }
+}
+// The plate log is worked by several managers at once, so it has to be re-read
+// often. Pulling the whole store blob on a timer would be brutal, so this asks the
+// database for the two plate fields and nothing else.
+// When the row was last written, without pulling the row itself down. The store blob
+// is far too big to poll, but one timestamp is nothing.
+async function loadStoreStamp(key) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("app_data").select("updated_at").eq("key", key).maybeSingle();
+  if (error) throw error;
+  return data ? data.updated_at : null;
+}
+async function loadPlatesOnly(key) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("app_data")
+    .select("p:value->plates, r:value->plateRegistry").eq("key", key).maybeSingle();
+  if (error) throw error;
+  return data ? { plates: data.p || {}, registry: data.r || [] } : null;
+}
+let lastSaveError = null;
+async function saveShared(key, value) {
+  if (!supabase) { lastSaveError = "No database client"; return false; }
+  try {
+    const { error } = await supabase.from("app_data").upsert({ key, value }, { onConflict: "key" });
+    if (error) throw error;
+    lastSaveError = null;
+    return true;
+  } catch (e) {
+    console.error("save failed", key, e);
+    lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+    return false;
+  }
+}
+
+// ---- auth ----
+// Passwords live in Supabase Auth (hashed). This app never sees them.
+// The `profiles` row carries role + store access, and only an admin can change it.
+async function authGetProfile() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  const { data, error } = await supabase
+    .from("profiles").select("*").eq("id", session.user.id).maybeSingle();
+  if (error || !data) return null;
+  return data;
+}
+async function authSignIn(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  return { error: error ? error.message : null };
+}
+async function authSignUp(email, password, name) {
+  const { error } = await supabase.auth.signUp({
+    email, password, options: { data: { name } },
+  });
+  return { error: error ? error.message : null };
+}
+async function authSignOut() {
+  if (supabase) await supabase.auth.signOut();
+}
+async function authResetPassword(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin,
+  });
+  return { error: error ? error.message : null };
+}
+async function listProfiles() {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("profiles").select("*").order("created_at");
+  if (error) { console.error("listProfiles", error); return []; }
+  return data || [];
+}
+async function updateProfile(id, patch) {
+  if (!supabase) return false;
+  const { error } = await supabase.from("profiles").update(patch).eq("id", id);
+  if (error) { console.error("updateProfile", error); return false; }
+  return true;
+}
+async function deleteProfile(id) {
+  if (!supabase) return false;
+  const { error } = await supabase.from("profiles").delete().eq("id", id);
+  if (error) { console.error("deleteProfile", error); return false; }
+  return true;
+}
+// Deliberately narrow: this is the only thing a non-admin may change about themselves.
+async function markOnboarded() {
+  if (!supabase) return;
+  await supabase.rpc("mark_onboarded");
+}
+function onAuthChange(cb) {
+  if (!supabase) return () => {};
+  const { data } = supabase.auth.onAuthStateChange(() => cb());
+  return () => { try { data.subscription.unsubscribe(); } catch (e) {} };
+}
+async function getTokens() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  return {
+    url: SUPABASE_URL,
+    anonKey: SUPABASE_ANON_KEY,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  };
+}
+
+// A read that FAILED and a key that simply does not exist are completely different
+// things. Treating them the same is how a transient error (a network blip, an auth
+// token that was not ready yet, an RLS denial) got mistaken for "first run" and
+// overwrote real data with defaults. These say which actually happened.
+async function loadStrict(key) {
+  if (!supabase) return { ok: false, missing: false, value: null };
+  try {
+    const { data, error } = await supabase
+      .from("app_data").select("value").eq("key", key).maybeSingle();
+    if (error) throw error;
+    return { ok: true, missing: !data, value: data ? data.value : null };
+  } catch (e) {
+    console.error("load failed", key, e);
+    return { ok: false, missing: false, value: null, error: e };
+  }
+}
+
+// Every store's data row, whether or not the store is still listed in the config.
+// This is what lets the recovery tool find data that was orphaned.
+async function listStoreKeys() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("app_data").select("key").like("key", "lpc:store:%");
+    if (error) throw error;
+    return (data || []).map((r) => r.key);
+  } catch (e) {
+    console.error("listStoreKeys", e);
+    return [];
+  }
+}
+/* ===== END BACKEND BLOCK ===== */
+
+// Stamped automatically at build time by vite.config.js, so every deploy
+// carries its own version without anyone remembering to bump a number.
+const APP_VERSION = (typeof __APP_VERSION__ !== "undefined") ? __APP_VERSION__ : "preview";
+
+/* ---- Backup keys ----
+   A backup used to be one row holding every store at once, which meant no rule
+   could ever be written for it: there is no single store to check access against.
+   That is why every write was refused. It is now split. Each store's copy lives
+   under its own id, so it is gated by exactly the same store-access rule as the
+   live data, and the config and audit log ride along in a config row, which every
+   signed-in user may already read. */
+const BACKUP_INDEX_KEY = "lpc:config:backups-index:v1";
+const backupStoreKey = (storeId, id) => `lpc:backup:${storeId}:${id}:v1`;
+const backupMetaKey = (id) => `lpc:config:backup:${id}:v1`;
+
+// Just the header of a backup: config, audit and which stores it holds. Enough to
+// answer questions about a backup without dragging every store blob back down.
+async function fetchBackupMeta(entry) {
+  if (!entry) return null;
+  return await loadShared(backupMetaKey(entry.id), null);
+}
+
+// Reassemble a split backup into the single object the restore screen expects.
+async function fetchBackup(entry) {
+  if (!entry) return null;
+  const meta = await loadShared(backupMetaKey(entry.id), null);
+  if (!meta) return null;
+  const stores = {};
+  for (const sid of (entry.storeIds || meta.storeIds || [])) {
+    const d = await loadShared(backupStoreKey(sid, entry.id), null);
+    if (d) stores[sid] = d;
+  }
+  return { ...meta, stores };
+}
+const AUTO_BACKUP_EVERY_HOURS = 20;   // once a working day
+const KEEP_BACKUPS = 14;
+
+// Writes a full snapshot to the database, at most once a day, whenever an admin
+// opens the tool. No server or cron needed: the admin's own visit is the trigger.
+// Snapshots are stripped out of the copy so backups can't nest inside each other.
+async function runAutoBackup(config, adminData, byName) {
+  const index = await loadShared(BACKUP_INDEX_KEY, []);
+  const newest = index[0] ? new Date(index[0].t).getTime() : 0;
+  if (Date.now() - newest < AUTO_BACKUP_EVERY_HOURS * 3600 * 1000) return index;
+
+  const stores = {};
+  for (const [sid, d] of Object.entries(adminData || {})) {
+    if (!d) continue;
+    const copy = { ...d };
+    delete copy.snapshots;
+    stores[sid] = copy;
+  }
+  if (Object.keys(stores).length === 0) return index;
+
+  const id = new Date().toISOString().replace(/[:.]/g, "-");
+  const storeIds = Object.keys(stores);
+  const exportedAt = new Date().toISOString();
+
+  // Each store first. If any one of them cannot be written the backup is incomplete,
+  // and an incomplete backup that looks complete is worse than none at all.
+  for (const sid of storeIds) {
+    const ok = await saveShared(backupStoreKey(sid, id), stores[sid]);
+    if (!ok) {
+      console.error("backup failed for store", sid, lastSaveError);
+      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null);
+      return index;
+    }
+  }
+  const meta = {
+    app: "lead-performance-calculator",
+    version: 2,
+    exportedAt,
+    auto: true,
+    by: byName || "auto",
+    config,
+    storeIds,
+    audit: await loadShared(AUDIT_KEY, []),
+  };
+  const okMeta = await saveShared(backupMetaKey(id), meta);
+  if (!okMeta) {
+    console.error("backup meta failed", lastSaveError);
+    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null);
+    return index;
+  }
+
+  const next = [{ id, t: exportedAt, stores: storeIds.length, storeIds, auto: true }, ...index];
+  const keep = next.slice(0, KEEP_BACKUPS);
+  // free the space used by anything that fell off the end
+  for (const old of next.slice(KEEP_BACKUPS)) {
+    for (const sid of (old.storeIds || [])) await saveShared(backupStoreKey(sid, old.id), null);
+    await saveShared(backupMetaKey(old.id), null);
+  }
+  await saveShared(BACKUP_INDEX_KEY, keep);
+  return keep;
+}
+
+const emptyStoreData = () => ({ roster: [], months: {} });
+
+/* ---- People who have left ----
+   Taking someone off the roster was never enough on its own: the next report still
+   carried their name and the import put them straight back. Someone who has left is
+   recorded here instead, which lifts them off every current list AND tells the
+   importer to leave them alone. Their history stays exactly where it is, and the
+   whole thing is reversible if they come back or it was done by mistake. */
+const departedNames = (d) => new Set((((d && d.departed) || [])).map((x) => norm(x.name)));
+
+// Take someone off the floor. Returns a mutated copy; the caller saves it.
+function markDeparted(data, assoc, by) {
+  const next = JSON.parse(JSON.stringify(data));
+  next.roster = (next.roster || []).filter((x) => x.id !== assoc.id);
+  next.departed = [...(next.departed || []).filter((x) => norm(x.name) !== norm(assoc.name)),
+    { id: assoc.id, name: assoc.name, roleId: assoc.roleId || null, at: new Date().toISOString(), by: by || "-" }];
+  return next;
+}
+
+// Put someone back, exactly as they were.
+function undoDeparted(data, name) {
+  const next = JSON.parse(JSON.stringify(data));
+  const rec = (next.departed || []).find((x) => norm(x.name) === norm(name));
+  next.departed = (next.departed || []).filter((x) => norm(x.name) !== norm(name));
+  if (rec && !(next.roster || []).some((x) => norm(x.name) === norm(name))) {
+    next.roster = [...(next.roster || []), { id: rec.id || uid(), name: rec.name, roleId: rec.roleId || null, order: (next.roster || []).length }];
+  }
+  return next;
+}
+
+async function appendAudit(entry) {
+  const log = await loadShared(AUDIT_KEY, []);
+  log.unshift({ t: new Date().toISOString(), ...entry });
+  await saveShared(AUDIT_KEY, log.slice(0, 400));
+}
+
+function downloadCSV(filename, rows) {
+  const csv = rows.map((r) => r.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ============================================================ */
+
+export default function LeadPerformanceCalculator() {
+  useFavicon();
+  useReveal();
+  useLivingBackground();
+  const [config, setConfig] = useState(null);
+  // Set during render rather than in an effect: children read the holiday set as
+  // they render, and an effect would land a beat too late on the first pass.
+  setGroupHolidays(config?.holidays);
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const [introPlaying, setIntroPlaying] = useState(false);
+  // True for the length of the build-in only. Set the moment a session appears, so
+  // the regions animate in while the sign-in wash is still clearing over the top.
+  const [entering, setEntering] = useState(false);
+  // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
+  // means the next sign-in plays it as well, which is what makes it possible to
+  // review the whole handover end to end.
+  const replayIntro = () => {
+    try { localStorage.removeItem(INTRO_KEY); } catch (e) {}
+    setIntroDone(false);
+    setIntroPlaying(true);
+  };
+  const sawSession = useRef(false);
+  useEffect(() => {
+    if (!session || sawSession.current) return;
+    sawSession.current = true;
+    setEntering(true);
+    const t = setTimeout(() => setEntering(false), 1100);
+    return () => clearTimeout(t);
+  }, [session]);
+  // The cinematic intro plays once per calendar day per user. null = not decided yet.
+  const [introDone, setIntroDone] = useState(false);
+  const [appModule, setAppModule] = useState("perf");
+  const [view, setView] = useState("admin");
+  const [storeData, setStoreData] = useState(null);
+  // What the server row said when this browser last read it. The email ingest writes
+  // straight to the database, so without this an open tab keeps showing the tool as
+  // it was when the store was opened and the auto-imports look like they never ran.
+  const storeStampRef = useRef(null);
+  const savingRef = useRef(false);
+  const [storeLoadFailed, setStoreLoadFailed] = useState(false);
+  const [adminData, setAdminData] = useState({});
+  const [tab, setTab] = useState("board");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [adminTab, setAdminTab] = useState("overview");
+  const [dropActive, setDropActive] = useState(false);
+  const [importLog, setImportLog] = useState([]);
+  const [pendingChannels, setPendingChannels] = useState(null); // { ambiguous:[{rows,fileName}], ready:[] }
+  const [wrongReport, setWrongReport] = useState(null); // { fileName } — wrong export pulled; show stop screen
+  const [showHelp, setShowHelp] = useState(false); // Delivery Summary walkthrough, opened from the Help button
+  const [importFlags, setImportFlags] = useState([]); // [{level,msg}] discrepancy warnings from the last import
+  // The landing view is decided once when you sign in. Re-deciding it every time the
+  // config saved was throwing you out of the store you were working in: editing a
+  // standard at Driver's Mart wrote the config, the effect re-ran, reset the view to
+  // "All Stores", and the activity guard then bounced you to the first store.
+  const viewPicked = useRef(false);
+  // which slice of the board is showing. Driven by the hero tiles.
+  const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
+  const [assocQuery, setAssocQuery] = useState("");
+  const [focusAssoc, setFocusAssoc] = useState(null);
+  // Which day a Daily Activity import should land on. Reports are often pulled the
+  // next morning, so the manager can aim an import at yesterday without renaming files.
+  const [activityDay, setActivityDay] = useState(today());
+  // Whether the dropped Daily Activity file is one day's numbers or a whole month's
+  // cumulative pull. A month file is not a day and must never be filed as one.
+  const [activityScope, setActivityScope] = useState("day");
+  const [saving, setSaving] = useState(false);
+  const [loadErr, setLoadErr] = useState(false);
+  const fileRef = useRef(null);
+
+  // Who is signed in? Preview returns a stand-in admin; the hosted site
+  // reads the real Supabase session and its matching profile row.
+  const refreshProfile = useCallback(async () => {
+    const p = await authGetProfile();
+    setSession(p);
+    setAuthReady(true);
+  }, []);
+
+  // Sign-in drops straight into the Performance dashboard. On the first sign-in of
+  // a calendar day the cinematic intro plays as an OVERLAY on top of the already
+  // loaded app and then dissolves away, rather than the app replacing it outright.
+  // Swapping one full screen for another was the hard cut; a curtain lifting is not.
+  useEffect(() => {
+    if (!session || !session.active || entered) return;
+    // Wait for the sign-in handover to clear before this begins. Overlapping the
+    // two reads as one animation interrupting another rather than a sequence.
+    if (!introPlayedToday(session.userId || session.id)) setTimeout(() => setIntroPlaying(true), 240);
+    setAppModule("perf");
+    setEntered(true);
+  }, [session, entered]);
+
+  useEffect(() => {
+    refreshProfile();
+    const unsub = onAuthChange(() => refreshProfile());
+    return () => { try { unsub && unsub(); } catch (e) {} };
+  }, [refreshProfile]);
+
+  // Daily Activity is recorded per store, so the all-stores view has nothing to show.
+  // If an admin ends up there, drop them into their first store instead of a blank page.
+  useEffect(() => {
+    if (!config || !session) return;
+    if (appModule !== "activity" || view !== "admin") return;
+    const list = session.role === "admin"
+      ? config.stores
+      : config.stores.filter((s) => (session.stores || []).includes(s.id));
+    if (list[0]) setView(list[0].id);
+  }, [appModule, view, config, session]);
+
+  useEffect(() => {
+    (async () => {
+      // Strict read. If this FAILS we must not proceed: a failed read used to look
+      // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
+      // straight over the real one, wiping every store. Bail out and say so instead.
+      const res = await loadStrict(CONFIG_KEY);
+      if (!res.ok) { setLoadErr(true); return; }
+
+      let cfg = res.value;
+
+      if (cfg) {
+        let dirty = false;
+        for (const r of cfg.roles || []) {
+          if (r.color === "#0A84FF") { r.color = "#2A5E9B"; dirty = true; }
+        }
+        if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
+        if (cfg.holidays === undefined) { cfg.holidays = []; dirty = true; }
+        // which roles appear on The Board. BDC agents don't sell units, so they're off.
+        for (const r of cfg.roles || []) {
+          if (r.onBoard === undefined) { r.onBoard = r.id !== "bdc"; dirty = true; }
+          // coaching is built on cars sold, so it does not apply to BDC by default
+          if (r.coaching === undefined) { r.coaching = r.id !== "bdc"; dirty = true; }
+        }
+        if (cfg.registrationOpen === undefined) { cfg.registrationOpen = true; dirty = true; }
+        // Service to Sales was added later. Existing stores won't have it, so insert it
+        // (right after Sales Associate) if it's missing. It behaves like Sales: on The
+        // Board, coached, and lead-gated.
+        if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "service")) {
+          const svc = { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true };
+          const salesIdx = cfg.roles.findIndex((r) => r.id === "sales");
+          if (salesIdx >= 0) cfg.roles.splice(salesIdx + 1, 0, svc);
+          else cfg.roles.unshift(svc);
+          dirty = true;
+        }
+        // Manager role added later too — for organizing people who aren't scored or tracked.
+        if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "manager")) {
+          cfg.roles.push({ id: "manager", name: "Manager", color: "#5B6874", onBoard: false, coaching: false, tracked: false });
+          dirty = true;
+        }
+        if (cfg.users) { delete cfg.users; dirty = true; }
+        if (dirty) await saveShared(CONFIG_KEY, cfg);
+        setConfig(cfg);
+        return;
+      }
+
+      // Genuinely absent, not merely unreadable. Check the v1 key before assuming
+      // this is a brand new install.
+      const old = await loadStrict("lpc:config:v1");
+      if (!old.ok) { setLoadErr(true); return; }
+
+      cfg = old.value
+        ? { ...DEFAULT_CONFIG, ...old.value }
+        : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      delete cfg.users;
+
+      if (!old.value) {
+        cfg.standards = {};
+        for (const s of cfg.stores) {
+          cfg.standards[s.id] = {};
+          for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
+        }
+      }
+      await saveShared(CONFIG_KEY, cfg);
+      setConfig(cfg);
+    })().catch(() => setLoadErr(true));
+  }, []);
+
+  useEffect(() => {
+    if (!config || !session) return;
+    (async () => {
+      const accessible = session.role === "admin" ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
+      if (!viewPicked.current) {
+        // First load: pull every accessible store, cache it, pick a starting view.
+        const all = {};
+        for (const s of accessible) {
+          const r = await loadStrict(storeKey(s.id));
+          if (!r.ok) { setLoadErr(true); return; }   // never let a failed read look like an empty store
+          let d = r.value;
+          if (!d) {
+            const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
+            if (!legacy.ok) { setLoadErr(true); return; }
+            d = legacy.value || emptyStoreData();
+          }
+          all[s.id] = d;
+        }
+        setAdminData(all);
+        // an admin opening the tool is what triggers the daily backup
+        if (session.role === "admin") runAutoBackup(config, all, session.name).catch(() => {});
+        viewPicked.current = true;
+        if (session.role === "admin") {
+          setView("admin");
+        } else if (session.role === "overseer" && accessible.length > 1) {
+          setView("combined");
+        } else {
+          const first = accessible[0]?.id;
+          if (first) { setView(first); setStoreData(all[first]); }
+        }
+        return;
+      }
+      // Later runs happen when the config or (more often) the auth session reference
+      // changes -- e.g. a token refresh or tab focus. These must NOT reload or overwrite
+      // the store being worked in: doing so was reverting fresh edits mid-save and then
+      // the next save wrote the reverted copy back, wiping plates. Only fetch stores we
+      // don't already have cached; never touch storeData.
+      const missing = accessible.filter((s) => !adminData[s.id]);
+      if (!missing.length) return;
+      const add = {};
+      for (const s of missing) {
+        const r = await loadStrict(storeKey(s.id));
+        if (!r.ok) continue;
+        let d = r.value;
+        if (!d) { const legacy = await loadStrict(`lpc:store:${s.id}:v1`); d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        add[s.id] = d;
+      }
+      if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
+    })();
+  }, [config, session]);
+
+  useEffect(() => { setBoardFilter(null); setAssocQuery(""); setFocusAssoc(null); }, [view, tab, appModule]);
+
+  // The Board opens in its own window and is tuned at the TV, not here. It calls
+  // back into this window to save what the person standing at the screen chose.
+  useEffect(() => {
+    window.__lpcSaveBoardDisplay = async (storeId, display) => {
+      const current = adminData[storeId] || (view === storeId ? storeData : null);
+      if (!current) return false;
+      const next = JSON.parse(JSON.stringify(current));
+      next.boardDisplay = display;
+      await persistStore(storeId, next, { action: "Changed board display", detail: JSON.stringify(display) });
+      return true;
+    };
+    return () => { delete window.__lpcSaveBoardDisplay; };
+  }, [adminData, storeData, view]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!config || view === "admin" || view === "combined" || !session) return;
+    (async () => {
+      if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
+      try {
+        const d = await loadShared(storeKey(view), emptyStoreData(), true); // throw on a real load error
+        try { storeStampRef.current = await loadStoreStamp(storeKey(view)); } catch (e) { storeStampRef.current = null; }
+        setStoreData(d); setStoreLoadFailed(false);
+      } catch (e) {
+        // A failed load must NOT masquerade as an empty store, or the next save wipes it.
+        setStoreData(emptyStoreData()); setStoreLoadFailed(true);
+      }
+      setTab("board");
+    })();
+  }, [view]); // eslint-disable-line
+
+  /* ---- Close out unanswered absences ----
+     A day that has ended with a scheduled person showing no calls, no videos and no
+     sign-in is an absence nobody got round to recording. Once the day is finished
+     there is nothing left to wait for, so it is applied. Three conditions keep this
+     honest: the day must be over, the schedule must have had them in, and the
+     activity report must have run that day, because a missing import would
+     otherwise mark the entire floor absent. Every one is written to the audit log
+     under Auto close-out, and any of them can be undone by hand. */
+  useEffect(() => {
+    if (!config || !session || !storeData || view === "admin" || view === "combined") return;
+    const t = today();
+    const days = Object.keys(storeData.activity || {})
+      .filter((d) => d < t && d.slice(0, 7) === ym())
+      .sort();
+    if (!days.length) return;
+    const roster = (storeData.roster || []).filter((a) => a.roleId);
+    const found = [];
+    for (const d of days) {
+      for (const a of roster) if (looksAbsent(storeData, a.id, d)) found.push({ id: a.id, name: a.name, d });
+    }
+    if (!found.length) return;
+    const next = JSON.parse(JSON.stringify(storeData));
+    next.daysOff = next.daysOff || {};
+    next.daysOffAt = next.daysOffAt || {};
+    const stamp = new Date().toISOString();
+    for (const f of found) {
+      const set = new Set(next.daysOff[f.id] || []);
+      set.add(f.d);
+      next.daysOff[f.id] = [...set].sort();
+      next.daysOffAt[f.id] = stamp;
+    }
+    const detail = found.length <= 6
+      ? found.map((f) => `${f.name} ${f.d}`).join(", ")
+      : `${found.length} days across ${new Set(found.map((f) => f.id)).size} people`;
+    persistStore(view, next, { action: "Auto close-out: marked day off, no activity", detail });
+  }, [storeData, view, config, session]); // eslint-disable-line
+
+  /* ---- Keep up with the email ingest ----
+     The worker imports on its own schedule and writes to the database directly. A tab
+     that has been open since this morning would otherwise show neither the numbers nor
+     the upload history from any of it. Poll the row's timestamp, and only when it has
+     actually moved pull the row down. */
+  useEffect(() => {
+    if (!config || !session || view === "admin" || view === "combined") return;
+    let dead = false;
+    const pull = async () => {
+      if (dead || savingRef.current || document.hidden) return;
+      try {
+        const stamp = await loadStoreStamp(storeKey(view));
+        if (!stamp || dead || stamp === storeStampRef.current) return;
+        const fresh = await loadShared(storeKey(view), null, true);
+        if (!fresh || dead || savingRef.current) return;
+        storeStampRef.current = stamp;
+        setStoreData(fresh);
+        setAdminData((p) => (p[view] ? { ...p, [view]: fresh } : p));
+      } catch (e) { /* a blip: the next tick tries again */ }
+    };
+    const t = setInterval(pull, 60000);
+    const onShow = () => { if (!document.hidden) pull(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [view, config, session]); // eslint-disable-line
+
+  const persistConfig = async (next, audit) => {
+    setConfig(next); setSaving(true);
+    await saveShared(CONFIG_KEY, next);
+    if (audit) await appendAudit({ user: session?.name, ...audit });
+    setSaving(false);
+  };
+  const persistStore = async (storeId, next, audit) => {
+    if (storeLoadFailed) {
+      alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page, make sure everything is showing, then try again.");
+      return;
+    }
+    const looksEmpty = (o) => !o || (!(o.roster || []).length && !Object.keys(o.months || {}).length && !Object.keys(o.activity || {}).length && !(o.plateRegistry || []).length);
+    const prior = adminData[storeId] || storeData;
+    if (prior && !looksEmpty(prior) && looksEmpty(next)) {
+      alert("That change was blocked because it would have wiped this store's records. Please reload the page and try again.");
+      return;
+    }
+    // Keep the saved blob small. Snapshots are by far the biggest bloat (each is
+    // roughly a full copy of the store), and every save ships the whole blob, so a
+    // pile of them is what pushed writes past the database statement timeout. Cap
+    // them hard on EVERY save, so the first save after this permanently shrinks it.
+    // Snapshots are full copies of the store and the single biggest bloat in the saved
+    // blob; keep only the most recent one so writes stay well under the DB timeout.
+    if (next && Array.isArray(next.snapshots) && next.snapshots.length > 1) {
+      next.snapshots = next.snapshots.slice(0, 1);
+    }
+    // A server-side auto-import (email ingest) may have written this store's months or
+    // activity while this browser sat open with an older copy. Re-read the server's
+    // current blob and adopt its month/activity entries for any key WE did not touch,
+    // so a client save can only preserve a fresh auto-import, never erase it. Our own
+    // edits still win, and we never drop a key we already have.
+    try {
+      const serverCopy = await loadShared(storeKey(storeId), null, true);
+      if (serverCopy && typeof serverCopy === "object") {
+        const mergeField = (field) => {
+          const out = { ...(next[field] || {}) };
+          const srv = serverCopy[field] || {};
+          for (const k of Object.keys(srv)) if (!(k in out)) out[k] = srv[k];
+          return out;
+        };
+        next.months = mergeField("months");
+        next.activity = mergeField("activity");
+        // Same protection for the plate log: a day another manager started while this
+        // browser sat open is kept rather than dropped on save.
+        next.plates = mergeField("plates");
+        // The schedule was the worst case of this. A browser that had been open since
+        // before an upload carried an empty daysOff, and saving anything at all wiped
+        // the month for everybody. Each person now carries the time their off-days
+        // were last written, and whichever side wrote last is the one kept.
+        {
+          const mine = { ...(next.daysOff || {}) };
+          const mineAt = { ...(next.daysOffAt || {}) };
+          const srv = serverCopy.daysOff || {};
+          const srvAt = serverCopy.daysOffAt || {};
+          for (const id of Object.keys(srv)) {
+            const theirs = srvAt[id] || "";
+            const ours = mineAt[id] || "";
+            if (!(id in mine) || theirs > ours) { mine[id] = srv[id]; mineAt[id] = theirs || ours; }
+          }
+          next.daysOff = mine;
+          next.daysOffAt = mineAt;
+        }
+      }
+    } catch (e) { /* if the re-read fails, just save what we have */ }
+    setStoreData(next); setSaving(true); savingRef.current = true;
+    setAdminData((p) => ({ ...p, [storeId]: next }));
+    const ok = await saveShared(storeKey(storeId), next);
+    setSaving(false); savingRef.current = false;
+    if (!ok) {
+      alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a database write-permission (RLS) problem or a dropped connection.\n\nExact error from the database:\n" + (lastSaveError || "unknown") + "\n\nPlease send this exact message to your admin.");
+      return;
+    }
+    // Refresh the TV row so every casted screen picks this up on its next poll.
+    // Failing this must never fail the save, so it is deliberately swallowed.
+    if (config) publishBoard(config, storeId, next);
+    try { storeStampRef.current = await loadStoreStamp(storeKey(storeId)); } catch (e) {}
+    if (audit) await appendAudit({ user: session?.name, store: storeId, ...audit });
+  };
+
+  // Someone else logged a plate out, or marked one back in. Take their plate fields
+  // into this browser's copy without writing anything back, so the screen keeps up
+  // with the log instead of showing a stale one until somebody refreshes.
+  const adoptRemotePlates = useCallback((storeId, plates, plateRegistry) => {
+    const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
+    setStoreData((prev) => {
+      if (!prev || (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry))) return prev;
+      return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
+    });
+    setAdminData((p) => {
+      const cur = p[storeId];
+      if (!cur || (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry))) return p;
+      return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
+    });
+  }, []);
+
+  // Keep a rolling set of restore points so a bad import is never fatal.
+  const snapshotStore = (data, reason) => {
+    const copy = JSON.parse(JSON.stringify({
+      roster: data.roster, months: data.months, activity: data.activity,
+      plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
+      stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
+      repeatFlags: data.repeatFlags, excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
+    }));
+    const t = new Date().toISOString();
+    const snaps = data.snapshots || [];
+    snaps.unshift({ t, by: session?.name || "-", reason, data: copy });
+    data.snapshots = snaps.slice(0, 1);
+    return t;   // so an upload can point back at the exact state before it
+  };
+
+  // Apply already-typed report entries. Ambiguous delivery files are resolved before we get here.
+  const applyEntries = async (entries) => {
+    // The picked date drives BOTH the activity day AND the month that everything else
+    // (Delivery Summary and the other month-to-date reports) lands in, so a report can
+    // be seeded into a past month, not only the current one.
+    const monthScope = activityScope === "month";
+    const pickDay = (activityDay && activityDay <= today()) ? activityDay : today();
+    // A whole-month import is anchored to the first of that month for record-keeping,
+    // but nothing is written into the per-day activity history.
+    const actDay = monthScope ? pickDay.slice(0, 7) + "-01" : pickDay;
+    const month = actDay.slice(0, 7); const day = actDay;
+    try { console.log("[LPC import] activityDay=" + activityDay + " actDay=" + actDay + " month=" + month + " today=" + today() + " types=" + JSON.stringify((entries || []).map((e) => e && e.type))); } catch (e) {}
+    let next = JSON.parse(JSON.stringify(storeData));
+    const snapT = snapshotStore(next, "Before import");
+    if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
+    const M = next.months[month];
+    if (!M.imports[day]) M.imports[day] = {};
+    const log = []; const importedFiles = [];
+
+    // Capture the channel unit totals BEFORE this import so we can flag a suspicious
+    // swing afterward (e.g. a Phone file dropped into the Internet slot, or yesterday's
+    // file re-pulled with almost nothing in it).
+    const priorTotals = channelTotals(M.stats);
+    const importedChannels = new Set();
+
+    const aliases = next.aliases || {};
+    const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
+
+    for (const { rows, type, fileName } of entries) {
+      // The PDF Delivery Summary is one grid holding all four channels, so it has
+      // its own reader. Everything else is the familiar column-per-metric export.
+      const raw = type === "delivery-summary" ? parseDeliverySummaryRows(rows) : parseReport(rows, type);
+      // fold every incoming name through the alias map, and drop anything on the
+      // exclusion list. Reports contain roll-up rows like "Team A" that are not
+      // people, and letting them through skews every average on the board.
+      // Roll-up rows that are not people, plus anyone who has left the store. Both
+      // have to be kept out or the import quietly puts them back on the roster.
+      const excluded = new Set([...(next.excluded || []).map(norm), ...departedNames(next)]);
+      const parsed = {};
+      let skipped = 0;
+      for (const [k, v] of Object.entries(raw)) {
+        if (excluded.has(k)) { skipped++; continue; }
+        const c = canon(k);
+        parsed[c] = { ...(parsed[c] || {}), ...v };
+      }
+      M.names[type] = Object.keys(parsed);
+      if (type === "delivery-summary") ["internet", "phone", "showroom", "campaign"].forEach((c) => importedChannels.add(c));
+      else if (type.startsWith("delivery-")) importedChannels.add(type.split("-")[1]);
+      else if (type === "delivery") importedChannels.add("internet");
+      const label = type === "delivery-summary" ? "Delivery Summary (all channels)"
+        : REPORTS[type]?.label || LEADERBOARD_REPORTS[type]?.label || (type === "activity" ? "Daily Activity" : type);
+      let count = 0;
+
+      if (type === "activity" && monthScope) {
+        // A cumulative month pull. Writing it into next.activity would make one file
+        // look like a single day and wreck every per-day average, so it is stamped as
+        // the month's own totals and the recap reads those instead of summing days.
+        next.months[month] = next.months[month] || { stats: {}, imports: {} };
+        next.months[month].stats = next.months[month].stats || {};
+        const mWork = workingDaysInMonth(month);
+        for (const [key, rec] of Object.entries(parsed)) {
+          next.months[month].stats[key] = {
+            ...(next.months[month].stats[key] || {}),
+            apptShowedMTD: rec.actApptShow,
+            apptScheduledMTD: rec.actApptScheduled,
+            activityMTD: {
+              days: mWork,
+              calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
+              text: rec.actText, email: rec.actEmail,
+              apptCreated: rec.actApptCreated, apptScheduled: rec.actApptScheduled,
+              apptConfirmed: rec.actApptConfirmed, apptShow: rec.actApptShow,
+              oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
+              oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
+              tasks: rec.actCompletedTasks,
+              uploadedAt: new Date().toISOString(),
+            },
+          };
+          count++;
+        }
+        log.push({ ok: true, msg: `Filed as the month total for ${monthLabel(month)} · ${count} people. Per-day history for that month was not touched.` });
+      } else if (type === "activity") {
+        if (!next.activity) next.activity = {};
+        // "Open Tasks" is a live backlog snapshot, so a report pulled for a past date
+        // often comes back without it. Keep whatever was already recorded for that day
+        // rather than blanking it, or backfilling would destroy a good task rate.
+        const priorDay = next.activity[actDay] || {};
+        let missingOpenTasks = 0;
+        next.activity[actDay] = {};
+        for (const [key, rec] of Object.entries(parsed)) {
+          const priorPosted = priorDay[key]?.tasksPosted;
+          const posted = rec.actOpenTasks != null ? rec.actOpenTasks : (priorPosted ?? null);
+          if (rec.actOpenTasks == null) missingOpenTasks++;
+          next.activity[actDay][key] = {
+            displayName: rec.displayName,
+            calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
+            text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
+            apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
+            tasksPosted: posted,
+            sold: rec.actSold, units: rec.actUnits,
+            oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
+            oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
+            apptScheduled: rec.actApptScheduled, apptConfirmed: rec.actApptConfirmed,
+            apptNoShow: rec.actApptNoShow,
+            uploadedAt: new Date().toISOString(),
+          };
+          // Deliberately NOT stamped onto the month totals. A day file only holds one
+          // day, and the hourly auto-import runs on today, so stamping here would
+          // overwrite a good month total with a single day's number.
+          count++;
+        }
+        // Say so plainly rather than letting the task rate quietly go blank.
+        if (missingOpenTasks > 0 && count > 0) {
+          log.push({
+            ok: true,
+            msg: `Heads up: this report has no "Open Tasks" column, so task completion rate can't be worked out for ${actDay}. ` +
+                 `DriveCentric only reports open tasks as they stand right now, so a report pulled for an earlier date leaves it out. ` +
+                 `Everything else imported normally, and any task count already saved for that day was kept.`,
+          });
+        }
+      }
+
+      for (const [key, rec] of Object.entries(parsed)) {
+        const prevStat = M.stats[key] || {};
+        // Day-over-day trend: only move the baseline when this import is a NEW day.
+        // Re-importing twice in one day must not compare a number against itself.
+        const trend = { ...(prevStat.prevPct || {}) };
+        const prevUnits = { ...(prevStat.prevUnits || {}) };
+        const pctDay = { ...(prevStat.pctDay || {}) };
+        const hist = JSON.parse(JSON.stringify(prevStat.pctHistory || {}));
+        for (const ch of ["internet", "phone", "showroom", "campaign"]) {
+          // Units trend is day-aware the same way the percentage trend is: a
+          // re-import on the same day must not reset the baseline to itself.
+          if (rec[ch + "Units"] == null) continue;
+          const storedU = prevStat[ch + "Units"];
+          const storedUDay = pctDay["u_" + ch];
+          if (storedU != null && storedUDay && storedUDay !== day) prevUnits[ch] = storedU;
+          pctDay["u_" + ch] = day;
+        }
+        for (const ch of ["internet", "phone", "showroom"]) {   // campaign has no pct by design
+          if (rec[ch + "Pct"] == null) continue;
+          const storedVal = prevStat[ch + "Pct"];
+          const storedDay = pctDay[ch];
+          if (storedVal != null && storedDay && storedDay !== day) {
+            trend[ch] = storedVal; // yesterday's figure becomes the comparison baseline
+          }
+          pctDay[ch] = day;
+          // running history, one point per day, so a real trend can be drawn
+          hist[ch] = (hist[ch] || []).filter((p) => p.d !== day);
+          hist[ch].push({ d: day, v: rec[ch + "Pct"] });
+          hist[ch] = hist[ch].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-30);
+        }
+        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, prevUnits, pctDay, pctHistory: hist, [`${type}Updated`]: day };
+        if (type !== "activity") count++;
+      }
+
+      M.imports[day][type] = true;
+      // a full log of every upload, not just a tick for the day
+      next.importLog = [
+        { id: uid(), t: new Date().toISOString(), type, label, file: fileName, count, skipped,
+          by: session?.name || "-", snapT, day: type === "activity" ? actDay : null },
+        ...(next.importLog || []),
+      ].slice(0, 200);
+      // The Internet Delivery Summary is the same DriveCentric export that drives the
+      // lead standards. Uploading it once should satisfy both checklists, not leave the
+      // other one stuck as "waiting".
+      if (type === "delivery-summary") {
+        // One file satisfies every delivery checklist item.
+        for (const k of ["delivery", "delivery-internet", "delivery-phone", "delivery-showroom", "delivery-campaign"]) {
+          M.imports[day][k] = true;
+        }
+      }
+      if (type === "delivery-internet") M.imports[day]["delivery"] = true;
+      if (type === "delivery") M.imports[day]["delivery-internet"] = true;
+      importedFiles.push(`${label} (${count})`);
+      log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated${skipped ? `, ${skipped} excluded row${skipped === 1 ? "" : "s"} skipped` : ""}.` });
+
+      const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
+      for (const [key, rec] of Object.entries(parsed)) {
+        if (excluded.has(key)) continue;
+        if (!rosterKeys.has(key)) {
+          next.roster.push({ id: uid(), name: rec.displayName, roleId: null, order: next.roster.length });
+          rosterKeys.add(key);
+        }
+      }
+    }
+
+    setImportLog(log);
+    // Sanity-check the shape of what just landed and warn (never block) on anything odd.
+    const afterTotals = channelTotals(M.stats);
+    const flags = analyzeImport(priorTotals, afterTotals, importedChannels);
+    setImportFlags(flags);
+    if (flags.length) {
+      next.importLog = [
+        { id: uid(), t: new Date().toISOString(), type: "flag", label: "Possible bad upload",
+          file: flags.map((f) => f.msg).join(" · "), count: flags.length, skipped: 0,
+          by: session?.name || "-", snapT: null, day: null },
+        ...(next.importLog || []),
+      ].slice(0, 200);
+    }
+    if (importedFiles.length) {
+      // freeze the standards in force this month so past months stay judged under their own rules
+      M.standardsSnapshot = JSON.parse(JSON.stringify(config.standards?.[view] || {}));
+    }
+    await persistStore(view, next, {
+      action: "Imported reports",
+      detail: importedFiles.join(", ") || "nothing usable",
+    });
+  };
+
+  const handleFiles = useCallback(async (fileList) => {
+    if (!storeData || view === "admin") return;
+    setImportFlags([]);
+    const ready = []; const ambiguous = []; const log = [];
+
+    for (const file of Array.from(fileList)) {
+      // PDFs are read with the same mappers the email pipeline uses, so a manager
+      // can backfill a missed day, or carry on when the automation is down.
+      if (/\.pdf$/i.test(file.name)) {
+        try {
+          const lines = await extractPdfLinesInBrowser(file);
+          const da = mapDailyActivityGrid(lines);
+          if (da) { ready.push({ rows: da.rows, type: "activity", fileName: file.name }); continue; }
+          const ds = mapDeliverySummaryGrid(lines);
+          if (ds) { ready.push({ rows: ds.rows, type: "delivery-summary", fileName: file.name }); continue; }
+          log.push({ ok: false, msg: `${file.name} is a PDF, but its layout isn't a Daily Activity or Delivery Summary report, so it was skipped.` });
+        } catch (e) {
+          log.push({ ok: false, msg: `${file.name} couldn't be read. If it's a scan or a photo rather than a report exported from DriveCentric, there is no text in it to read.` });
+        }
+        continue;
+      }
+      const text = await file.text();
+      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+      const type = detectReportType(rows, file.name);
+      if (type === "wrong-channel-report") {
+        // A per-channel delivery report was pulled instead of the Delivery Summary.
+        // Stop everything and show the manager exactly how to pull the right one.
+        setWrongReport({ fileName: file.name });
+        return;
+      }
+      if (!type) {
+        log.push({ ok: false, msg: `${file.name} isn't a Delivery, Appointment, Video, or Daily Activity report, so it was skipped.` });
+        continue;
+      }
+      // "delivery" means we saw a delivery report but couldn't tell which channel from the filename.
+      // Rather than guess (and silently mis-file it), ask.
+      if (type === "delivery") ambiguous.push({ rows, fileName: file.name });
+      else ready.push({ rows, type, fileName: file.name });
+    }
+
+    if (log.length) setImportLog(log);
+    if (ambiguous.length) setPendingChannels({ ambiguous, ready });
+    else if (ready.length) await applyEntries(ready);
+  }, [storeData, view, session, activityDay]); // eslint-disable-line
+
+
+  const moveAssociate = async (name, targetName, roleId) => {
+    if (!storeData) return;
+    const next = JSON.parse(JSON.stringify(storeData));
+    const list = next.roster;
+    const from = list.findIndex((a) => a.name === name);
+    if (from === -1) return;
+    const roleChanged = list[from].roleId !== roleId;
+    const [item] = list.splice(from, 1);
+    item.roleId = roleId;
+    const to = targetName ? list.findIndex((a) => a.name === targetName) : list.length;
+    list.splice(to === -1 ? list.length : to, 0, item);
+    list.forEach((a, i) => (a.order = i));
+    await persistStore(view, next, roleChanged ? {
+      action: "Changed position",
+      detail: `${name} → ${config.roles.find((r) => r.id === roleId)?.name || "Needs a position"}`,
+    } : null);
+  };
+
+  const setRestriction = async (assoc, restriction) => {
+    if (!storeData) return;
+    const next = JSON.parse(JSON.stringify(storeData));
+    next.restrictions = next.restrictions || {};
+    if (restriction) next.restrictions[assoc.id] = restriction;
+    else delete next.restrictions[assoc.id];
+    await persistStore(view, next, {
+      action: restriction ? "Confirmed off leads" : "Put back on leads",
+      detail: restriction
+        ? `${assoc.name}${restriction.until ? `, re-evaluate ${new Date(restriction.until).toLocaleDateString()}` : ", no re-eval date"}`
+        : assoc.name,
+    });
+  };
+  // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
+  const queueParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const d = p.get("d"), t = p.get("t");
+      const q = p.get("q"), o = p.get("o");
+      if (q && d && t) return { store: q, date: d, token: t, variant: LEAD_VARIANTS.line };
+      if (o && d && t) return { store: o, date: d, token: t, variant: LEAD_VARIANTS.online };
+      return null;
+    } catch { return null; }
+  })();
+  if (queueParams) {
+    return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} variant={queueParams.variant} /><Style /></Shell>;
+  }
+  // --- casted board: a TV pointed at this URL, no sign-in, read-only ---
+  const boardParams = (() => {
+    try {
+      const b = new URLSearchParams(window.location.search).get("board");
+      return b ? { store: b } : null;
+    } catch { return null; }
+  })();
+  if (boardParams) return <BoardScreen storeId={boardParams.store} />;
+  // --- live floor: public sign-in intercept (before any auth) ---
+  const floorParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const f = p.get("f"), d = p.get("d"), t = p.get("t");
+      return f && d && t ? { store: f, date: d, token: t } : null;
+    } catch { return null; }
+  })();
+  if (floorParams) {
+    return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} /><Style /></Shell>;
+  }
+  if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
+  if (!config || !authReady) return <Shell><LoadingScreen /><Style /></Shell>;
+
+  const signOut = async () => {
+    await authSignOut();
+    viewPicked.current = false;
+    setSession(null); setEntered(false); setAppModule("perf");
+  };
+
+  // Signed out: splash first, then the sign-in card.
+  if (!session) {
+    return <Shell><Login config={config}
+      onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
+  }
+
+  // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
+  if (!session.active) {
+    return <Shell><div className="login"><div className="login-card">
+      <div className="login-logo"><Logo size={64} animated /></div>
+      <h1 className="login-title">Account paused</h1>
+      <p className="setup-note">This account has been deactivated. Contact your group admin.</p>
+      <button className="btn wide" onClick={signOut}>Sign out</button>
+    </div></div><Style /></Shell>;
+  }
+  if (session.role !== "admin" && session.pending) {
+    return <Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>;
+  }
+
+  // The Tools chooser is gone. Signing in drops the person straight into the
+  // Performance dashboard; the cinematic intro (below) covers the transition on the
+  // first sign-in of the day. chooseModule stays for the in-app "Tools" button.
+  const chooseModule = (mod) => {
+    setAppModule(mod || "perf");
+    if (mod === "activity" && view === "admin") {
+      const first = (isAdmin ? config.stores : accessibleStores)[0];
+      if (first) setView(first.id);
+    }
+    setEntered(true);
+  };
+
+  const isAdmin = session.role === "admin";
+  const isOverseer = session.role === "overseer";
+  const hasOverview = isAdmin || (isOverseer && (session.stores || []).length > 1);
+  const accessibleStores = isAdmin ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
+  const currentStore = view !== "admin" ? config.stores.find((s) => s.id === view) : null;
+  const overviewStores = isAdmin ? config.stores : accessibleStores;
+
+  // "The Board" chosen from the splash: scope it to who's signed in.
+  if (appModule === "board") {
+    return (
+      <Shell entering={entering}>
+        <header className="topbar no-print">
+          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} />
+          <div className="topbar-right">
+            <ToolSwitcher value="board" onChange={(mod) => {
+              if (mod === "board") return;
+              if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
+              if (mod === "activity" && view === "admin") {
+                const first = (isAdmin ? config.stores : accessibleStores)[0];
+                if (first) setView(first.id);
+              }
+              setAppModule(mod);
+              setTab(mod === "activity" ? "checkout" : "board");
+            }} />
+          </div>
+        </header>
+        <div className="page">
+          <BoardLauncher config={config} session={session}
+            onLaunch={(storeId) => openLeaderboard(config, storeId)}
+            onBack={signOut} />
+        </div>
+        <Style />
+      </Shell>
+    );
+  }
+
+  // ---- Live Floor: its own self-contained module (walk-in / showroom queue) ----
+  if (appModule === "floor" || appModule === "line" || appModule === "online") {
+    return (
+      <FloorModule
+        queue={appModule}
+        config={config}
+        session={session}
+        accessibleStores={accessibleStores}
+        currentStoreId={view !== "admin" && view !== "combined" ? view : null}
+        isAdmin={isAdmin}
+        onSaveConfig={persistConfig}
+        onSignOut={signOut}
+        onToolChange={(mod) => {
+          if (mod === appModule) return;
+          if (mod === "board") { setAppModule("board"); return; }
+          if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
+          if (mod === "activity" && view === "admin") {
+            const first = (isAdmin ? config.stores : accessibleStores)[0];
+            if (first) setView(first.id);
+          }
+          setAppModule(mod);
+          setTab(mod === "activity" ? "checkout" : "board");
+        }} />
+    );
+  }
+
+  // The Import tab pulses until the day's uploads have landed, which replaces the
+  // "all reports are in" chip that had nothing to say the rest of the day.
+  const todayImports = storeData?.months?.[ym()]?.imports?.[today()] || {};
+  const reportsDue = !!storeData && !(todayImports.appointment && todayImports.video);
+  const activityDue = !!storeData && !todayImports.activity;
+
+  // One description of the current tab set, shared by the desktop segmented control
+  // and the mobile slide-out drawer so they can never drift apart. Which set applies
+  // depends on the same context checks the render below uses.
+  let navItems = null, navValue = null, navOnChange = null;
+  if (view === "admin" && isAdmin) {
+    navItems = [["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]];
+    navValue = adminTab; navOnChange = setAdminTab;
+  } else if (view === "combined" && isOverseer) {
+    navItems = [["board", "Combined Board"], ["gm", "Summary"]];
+    navValue = tab === "board" || tab === "gm" ? tab : "board"; navOnChange = setTab;
+  } else if (currentStore && storeData && isOverseer) {
+    navItems = [["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]];
+    navValue = ["board", "gm", "history"].includes(tab) ? tab : "board"; navOnChange = setTab;
+  } else if (currentStore && storeData) {
+    if (appModule === "activity") {
+      navItems = isAdmin
+        ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+        : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]];
+      navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
+    } else {
+      navItems = isAdmin
+        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
+        : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]];
+      navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
+    }
+    navOnChange = setTab;
+  }
+
+  return (
+    <Shell entering={entering}>
+      <header className="topbar no-print">
+        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} />
+        <div className="topbar-right">
+          {saving && <span className="save-dot">Saving…</span>}
+
+          <ToolSwitcher value={appModule} onChange={(mod) => {
+            if (mod === appModule) return;
+            if (mod === "board") { setAppModule("board"); return; }
+            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
+            if (mod === "activity" && view === "admin") {
+              const first = (isAdmin ? config.stores : accessibleStores)[0];
+              if (first) setView(first.id);
+            }
+            setAppModule(mod);
+            setTab(mod === "activity" ? "checkout" : "board");
+          }} />
+
+          {/* A picker with one entry is furniture. It only appears once there is
+              actually somewhere else to go. */}
+          {(() => {
+            const showAll = isAdmin && appModule !== "activity";
+            const showCombined = isOverseer && appModule !== "activity" && (session.stores || []).length > 1;
+            const choices = accessibleStores.length + (showAll ? 1 : 0) + (showCombined ? 1 : 0);
+            if (choices < 2) return null;
+            return (
+              <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
+                {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
+                {showAll && <option value="admin">All Stores</option>}
+                {showCombined && <option value="combined">Combined (my stores)</option>}
+                {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            );
+          })()}
+
+        </div>
+        {navItems && (
+          <button className="hamburger no-print" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
+            <span></span><span></span><span></span>
+          </button>
+        )}
+      </header>
+
+      {navItems && (
+        <BottomNav
+          items={navItems} value={navValue} onChange={navOnChange}
+          appModule={appModule} storeData={storeData}
+          onToolChange={(mod) => {
+            if (mod === appModule) return;
+            if (mod === "board") { setAppModule("board"); return; }
+            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
+            if (mod === "activity" && view === "admin") {
+              const first = (isAdmin ? config.stores : accessibleStores)[0];
+              if (first) setView(first.id);
+            }
+            setAppModule(mod);
+            setTab(mod === "activity" ? "checkout" : "board");
+          }}
+          onMore={() => setDrawerOpen(true)} />
+      )}
+      {navItems && (
+        <MobileDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          items={navItems}
+          value={navValue}
+          onChange={navOnChange}
+          appModule={appModule}
+          storeData={storeData}
+          storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
+          onToolChange={(mod) => {
+            if (mod === appModule) { setDrawerOpen(false); return; }
+            if (mod === "board") { setAppModule("board"); setDrawerOpen(false); return; }
+            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); setDrawerOpen(false); return; }
+            if (mod === "activity" && view === "admin") {
+              const first = (isAdmin ? config.stores : accessibleStores)[0];
+              if (first) setView(first.id);
+            }
+            setAppModule(mod);
+            setTab(mod === "activity" ? "checkout" : "board");
+            setDrawerOpen(false);
+          }} />
+      )}
+
+      {view === "admin" && isAdmin ? (
+        <>
+          <nav className="seg-wrap no-print">
+            <SegControl
+              items={[["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]]}
+              value={adminTab} onChange={setAdminTab} />
+          </nav>
+          <div key={adminTab} className="page">
+            {adminTab === "overview" && <AdminOverview config={config} adminData={adminData} onOpenStore={setView} />}
+            {adminTab === "gm" && <GMSummary config={config} data={adminData} stores={config.stores} />}
+            {adminTab === "access" && <AccessPanel config={config} session={session} onChange={persistConfig} />}
+            {adminTab === "audit" && <AuditLog />}
+            {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
+            {adminTab === "backup" && (
+              <BackupPanel config={config} adminData={adminData} session={session}
+                onRestoreAll={async (backup) => {
+                  await saveShared(CONFIG_KEY, backup.config);
+                  for (const [sid, sdata] of Object.entries(backup.stores || {})) {
+                    await saveShared(storeKey(sid), sdata);
+                  }
+                  if (backup.audit) await saveShared(AUDIT_KEY, backup.audit);
+                  setConfig(backup.config);
+                  setAdminData(backup.stores || {});
+                  await appendAudit({ user: session.name, action: "Restored from backup", detail: backup.exportedAt || "" });
+                }}
+                onRestoreStore={async (storeId, snap) => {
+                  const current = adminData[storeId] || emptyStoreData();
+                  const restored = {
+                    ...current,
+                    ...snap.data,
+                    // keep the existing restore points, and add one for the state we're leaving
+                    snapshots: [
+                      { t: new Date().toISOString(), by: session.name, reason: "Before rollback", data: JSON.parse(JSON.stringify({
+                        roster: current.roster, months: current.months, activity: current.activity,
+                        plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
+                      })) },
+                      ...(current.snapshots || []),
+                    ].slice(0, 8),
+                  };
+                  await persistStore(storeId, restored, { action: "Rolled back store", detail: `${config.stores.find((s) => s.id === storeId)?.name} → ${new Date(snap.t).toLocaleString()}` });
+                }} />
+            )}
+          </div>
+        </>
+      ) : view === "combined" && isOverseer ? (
+        <>
+          <nav className="seg-wrap no-print">
+            <SegControl
+              items={[["board", "Combined Board"], ["gm", "Summary"]]}
+              value={tab === "board" || tab === "gm" ? tab : "board"} onChange={setTab} />
+          </nav>
+          <div key={"combined" + tab} className="page">
+            {tab === "gm"
+              ? <GMSummary config={config} data={adminData} stores={accessibleStores} />
+              : <CombinedBoard config={config} stores={accessibleStores} adminData={adminData} onOpenStore={setView} />}
+          </div>
+        </>
+      ) : accessibleStores.length === 0 ? (
+        <NoAccessPanel session={session} config={config} onRecheck={refreshProfile} />
+      ) : !storeData ? (
+        <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} />
+      ) : isOverseer ? (
+        <>
+          <nav className="seg-wrap no-print">
+            <SegControl
+              items={[["board", "Dashboard"], ["gm", "Summary"], ["history", "History"]]}
+              value={["board", "gm", "history"].includes(tab) ? tab : "board"} onChange={setTab} />
+            {(tab === "board" || !["gm", "history"].includes(tab)) &&
+              <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
+          </nav>
+          <div key={view + tab} className="page">
+            {(tab === "board" || !["gm", "history"].includes(tab)) && <Board config={config} store={currentStore} data={storeData} onMove={moveAssociate} onSetRestriction={setRestriction} readOnly
+              query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc} />}
+            {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
+            {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
+          </div>
+        </>
+      ) : (
+        <>
+          <nav className="seg-wrap no-print">
+            {appModule === "activity" ? (
+              <SegControl
+                items={isAdmin
+                  ? [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"], ["actstd", "Standards"]]
+                  : [["checkout", "Check Out"], ["coaching", "Coaching"], ["plates", "License Plates"], ["import", "Import"]]}
+                value={(isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout"}
+                onChange={setTab}
+                attentionId={activityDue ? "import" : null}
+                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} activity /> : null)} />
+            ) : (
+              <SegControl
+                items={isAdmin
+                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
+                  : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]]}
+                value={(isAdmin
+                  ? ["board", "import", "gm", "history", "standards", "roster"]
+                  : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
+                onChange={setTab}
+                attentionId={reportsDue ? "import" : null}
+                renderExtra={(id) => (id === "import" ? <ImportBadge storeData={storeData} /> : null)} />
+            )}
+            {appModule !== "activity" && tab === "board" &&
+              <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
+            {appModule === "activity" && (tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) &&
+              <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
+          </nav>
+          <div key={view + tab + appModule} className="page">
+            {storeLoadFailed && <div className="load-warn">This store's data didn't load fully, so changes are paused to protect your records. Reload the page, confirm everything is showing, then continue.</div>}
+            {appModule === "activity" ? (
+              <>
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} />}
+                {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
+                {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+              </>
+            ) : (
+              <>
+                {tab === "board" && (
+                  <div className="board-page">
+                    {session.role === "manager" && !session.onboarded && (
+                      <WelcomeCard store={currentStore} onDismiss={async () => {
+                        await markOnboarded();
+                        setSession((s) => ({ ...s, onboarded: true }));
+                      }} />
+                    )}
+                    <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
+                      filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc} />
+                    <Board config={config} store={currentStore} data={storeData}
+                      onMove={moveAssociate} onSetRestriction={setRestriction}
+                      filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
+                      query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc} />
+                  </div>
+                )}
+                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
+                {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
+                {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+                {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
+              </>
+            )}
+          </div>
+        </>
+      )}
+      {pendingChannels && (
+        <ChannelPrompt
+          pending={pendingChannels}
+          onCancel={() => { setPendingChannels(null); setImportLog([{ ok: false, msg: "Import cancelled, nothing was changed." }]); }}
+          onConfirm={async (resolved) => {
+            const all = [...pendingChannels.ready, ...resolved];
+            setPendingChannels(null);
+            await applyEntries(all);
+          }} />
+      )}
+      {wrongReport && (
+        <WrongReportStop fileName={wrongReport.fileName} onClose={() => setWrongReport(null)} />
+      )}
+      {showHelp && (
+        <DeliveryGuideModal onClose={() => setShowHelp(false)} />
+      )}
+      {introPlaying && (
+        <LoadingSequence
+          storeName={currentStore?.name || (isAdmin ? "your stores" : "your board")}
+          brand={currentStore?.brand}
+          onComplete={() => {
+            markIntroPlayed(session.userId || session.id);
+            setIntroDone(true);
+            setIntroPlaying(false);
+          }} />
+      )}
+      <Style />
+    </Shell>
+  );
+}
+
+/* ---------------- Delivery Summary walkthrough ----------------
+   One source of truth for the step-by-step, reused by the Help button and by the
+   stop screen that fires when the wrong report is uploaded. The four screenshots are
+   inlined as base64 so this works on a locked-down work computer with no downloads. */
+function DeliveryGuideSteps() {
+  return (
+    <ol className="guide-steps">
+      <li>
+        <div className="guide-step-head"><span className="guide-num">1</span><span className="guide-step-title">Pull the <strong>Delivery Summary</strong> report</span></div>
+        <p className="guide-step-body">In DriveCentric, open the report titled exactly <strong>Delivery Summary</strong>. This one report covers all four channels: you filter it by Source, you do not pull a separate report per channel.</p>
+        <img className="guide-img" src={GUIDE_IMG_REPORT} alt="Delivery Summary report title" />
+      </li>
+      <li>
+        <div className="guide-step-head"><span className="guide-num">2</span><span className="guide-step-title">Set the view to <strong>User</strong> and turn <strong>Round %</strong> OFF</span></div>
+        <p className="guide-step-body">Select the <strong>User</strong> tab so numbers are per associate. Then open the three-dot menu and switch <strong>Round %</strong> off, since rounded percentages throw off the delivery math.</p>
+        <div className="guide-ba">
+          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_ON} alt="Round % toggled on" /><figcaption>Before: Round % ON</figcaption></figure>
+          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_OFF} alt="Round % toggled off" /><figcaption>After: Round % OFF</figcaption></figure>
+        </div>
+      </li>
+      <li>
+        <div className="guide-step-head"><span className="guide-num">3</span><span className="guide-step-title">Export one file per <strong>Source</strong>, in order</span></div>
+        <p className="guide-step-body">Open the <strong>Source</strong> filter and select <strong>one</strong> source at a time, then Save and export. Do all four so you end up with four files. The files won't be named by channel, so export them in this order and upload them in the same order: <strong>Campaign → Internet → Phone → Showroom</strong>. The tool will ask you to confirm which channel each file is.</p>
+        <img className="guide-img" src={GUIDE_IMG_SOURCE} alt="Source filter with Campaign, Internet, Phone, Showroom" />
+      </li>
+    </ol>
+  );
+}
+
+/* ---------------- Appointment + Video walkthrough ----------------
+   These two are the reports managers actually upload now: the Delivery Summaries
+   arrive by email on their own. DeliveryGuideSteps above is left alone because the
+   wrong-report stop screen still needs to explain the Delivery Summary. */
+function AppointmentVideoGuideSteps() {
+  return (
+    <ol className="guide-steps">
+      <li>
+        <div className="guide-step-head"><span className="guide-num">1</span><span className="guide-step-title">Open the <strong>Appointment</strong> report</span></div>
+        <p className="guide-step-body">In DriveCentric's report list, pick the one named exactly <strong>Appointment</strong>.</p>
+        <img className="guide-img" src={GUIDE_IMG_APPT_REPORT} alt="The Appointment report in the DriveCentric report list" />
+      </li>
+      <li>
+        <div className="guide-step-head"><span className="guide-num">2</span><span className="guide-step-title">Set the view to <strong>User</strong> and turn <strong>Round %</strong> OFF</span></div>
+        <p className="guide-step-body">Select the <strong>User</strong> tab so numbers are per associate. Then open the three-dot menu and switch <strong>Round %</strong> off. Rounded percentages throw the show rate off. Export the file.</p>
+        <div className="guide-ba">
+          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_ON} alt="Round % toggled on" /><figcaption>Before: Round % ON</figcaption></figure>
+          <figure><img className="guide-img" src={GUIDE_IMG_ROUND_OFF} alt="Round % toggled off" /><figcaption>After: Round % OFF</figcaption></figure>
+        </div>
+      </li>
+      <li>
+        <div className="guide-step-head"><span className="guide-num">3</span><span className="guide-step-title">Now do the same for the <strong>Video</strong> report</span></div>
+        <p className="guide-step-body">Back to the report list, pick the one named exactly <strong>Video</strong>, set it to <strong>User</strong>, turn <strong>Round %</strong> off there too, and export.</p>
+        <img className="guide-img" src={GUIDE_IMG_VIDEO_REPORT} alt="The Video report in the DriveCentric report list" />
+      </li>
+      <li>
+        <div className="guide-step-head"><span className="guide-num">4</span><span className="guide-step-title">Upload both files together</span></div>
+        <p className="guide-step-body">Drop the Appointment file and the Video file in at the same time. The tool works out which is which on its own, so the order does not matter.</p>
+      </li>
+    </ol>
+  );
+}
+
+function WrongReportStop({ fileName, onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal guide-modal stop" onClick={(e) => e.stopPropagation()}>
+        <div className="stop-head">
+          <div className="stop-badge">✕</div>
+          <div>
+            <h2 className="stop-title">That's not the right report</h2>
+            <p className="stop-sub"><span className="stop-file">{fileName}</span> looks like a single-channel report. The tool only takes the <strong>Delivery Summary</strong>, filtered by Source. Here's exactly how to pull it.</p>
+          </div>
+        </div>
+        <DeliveryGuideSteps />
+        <div className="guide-foot">
+          <button className="btn wide" onClick={onClose}>Got it, I'll pull the Delivery Summary</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeliveryGuideModal({ onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal guide-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="guide-modal-head">
+          <h2 className="guide-title">How to pull the Appointment and Video reports</h2>
+          <button className="btn-x" onClick={onClose}>✕</button>
+        </div>
+        <p className="guide-intro">Follow these steps every time. Two reports, uploaded together.</p>
+        <AppointmentVideoGuideSteps />
+        <div className="guide-foot">
+          <button className="btn wide" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Sliding segmented control ---------------- */
+function SegControl({ items, value, onChange, renderExtra, attentionId }) {
+  const wrapRef = useRef(null);
+  const btnRefs = useRef({});
+  const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
+
+  const measure = useCallback(() => {
+    const btn = btnRefs.current[value];
+    const wrap = wrapRef.current;
+    if (!btn || !wrap) return;
+    setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true });
+  }, [value]);
+
+  useEffect(() => {
+    measure();
+    // smoothly bring the active segment into view when the control overflows
+    const btn = btnRefs.current[value];
+    if (btn?.scrollIntoView) {
+      try { btn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {}
+    }
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [value, measure]);
+
+  // re-measure once fonts settle
+  useEffect(() => { const t = setTimeout(measure, 150); return () => clearTimeout(t); }, [measure]);
+
+  return (
+    <div className="seg" ref={wrapRef}>
+      <div className={"seg-thumb" + (thumb.ready ? " ready" : "")} style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />
+      {items.map(([id, label]) => (
+        <button key={id} ref={(el) => (btnRefs.current[id] = el)}
+          className={"seg-btn" + (value === id ? " active" : "") + (attentionId === id && value !== id ? " seg-wave" : "")}
+          onClick={() => onChange(id)}>
+          {label}
+          {renderExtra && renderExtra(id)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Standalone TV leaderboard (HTML string) ---------------- */
+function LEADERBOARD_HTML(p) {
+  return `<!doctype html><html><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>${p.storeName} · Leaderboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
+    --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
+  html,body { height:100%; }
+  body { font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
+    font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
+    background:#0E2033; overflow:hidden; }
+  /* Store colors mode: the whole backdrop derives from the store's brand palette,
+     darkened for contrast so the rows and pills still read from across a floor. */
+  body.bg-store { background: color-mix(in srgb, var(--bd, #1D4674), black 62%); }
+  body.bg-store::before {
+    background:
+      radial-gradient(42% 55% at 18% 8%, color-mix(in srgb, var(--bp, #2A5E9B), transparent 20%), transparent 70%),
+      radial-gradient(38% 50% at 82% 12%, color-mix(in srgb, var(--ba, #C1D730), transparent 84%), transparent 70%),
+      radial-gradient(50% 60% at 50% 100%, color-mix(in srgb, var(--bp, #2A5E9B), transparent 60%), transparent 72%);
+  }
+  /* slow aurora. Long cycles on purpose: this hangs on a wall all day and must never
+     become the thing people look at instead of the numbers. */
+  body::before { content:''; position:fixed; inset:-15%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
+      radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
+      radial-gradient(50% 60% at 50% 100%, rgba(42,94,155,.35), transparent 72%);
+    animation: aurora 40s ease-in-out infinite alternate; }
+  @keyframes aurora {
+    0% { transform: translate3d(0,0,0) scale(1); }
+    100% { transform: translate3d(-2.5%, 2%, 0) scale(1.08); }
+  }
+  /* The wall screen is always "idle", so it gets the faster colour travel the app
+     only reaches once a manager stops scrolling. */
+  body::after { content:''; position:fixed; inset:-22%; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(24% 26% at 28% 26%, rgba(122,79,155,.26), transparent 70%),
+      radial-gradient(22% 24% at 74% 60%, rgba(0,168,150,.26), transparent 70%),
+      radial-gradient(20% 22% at 52% 92%, rgba(193,215,48,.16), transparent 72%);
+    animation: tvMorph 15s ease-in-out infinite alternate; }
+  @keyframes tvMorph {
+    0%   { transform: scale(1) rotate(0deg); filter: hue-rotate(0deg) saturate(1); }
+    50%  { transform: scale(1.16) rotate(-7deg); filter: hue-rotate(130deg) saturate(1.3); }
+    100% { transform: scale(1.3) rotate(12deg); filter: hue-rotate(265deg) saturate(1.1); }
+  }
+  /* Display tuning, set at the TV itself.
+     --tscale   : overall text size
+     --squeeze  : horizontal pre-compression. If the TV stretches the picture sideways
+                  (casting 4:3 into 16:9, or a stretched picture mode), squeezing the
+                  content here means it comes out the right shape on the wall.
+     --pad      : edge inset, for TVs that overscan and crop the borders. */
+  .wrap { position:relative; z-index:1;
+    --tscale: 1; --squeeze: 1; --pad: 0vw;
+    padding-left: calc(2vw + var(--pad)); padding-right: calc(2vw + var(--pad));
+    transform: scaleX(var(--squeeze));
+    transform-origin: center center; }
+  .wrap { height:100vh; display:flex; flex-direction:column; padding:2.2vh 2vw; }
+  .head { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.6vh; }
+  .head-l { display:flex; align-items:center; gap:1.2vw; }
+  .head-r { display:flex; align-items:center; gap:2.4vw; }
+  .head-logo { width:calc(6.6vh * var(--tscale)); height:calc(6.6vh * var(--tscale)); border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  .head-logo img { width:100%; height:100%; object-fit:contain; }
+  .head-title { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.4vh * var(--tscale)); letter-spacing:.5px; line-height:1; }
+  .head-sub { font-size:calc(1.7vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
+  .total { text-align:right; }
+  .total-num { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
+  .total-cap { font-size:calc(1.5vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
+  .clock { text-align:right; font-family:'Space Grotesk',sans-serif; }
+  .clock-time { font-size:calc(3.2vh * var(--tscale)); font-weight:700; }
+  .clock-date { font-size:1.5vh; color:#9FC2E4; display:flex; align-items:center; gap:.4vw; justify-content:flex-end; }
+  .live { width:.8vh; height:.8vh; border-radius:50%; background:#69E08A; flex:0 0 auto;
+    box-shadow:0 0 0 0 rgba(105,224,138,.7); animation: livePulse 2.4s ease-out infinite; }
+  @keyframes livePulse {
+    0% { box-shadow:0 0 0 0 rgba(105,224,138,.55); }
+    70% { box-shadow:0 0 0 1.1vh rgba(105,224,138,0); }
+    100% { box-shadow:0 0 0 0 rgba(105,224,138,0); }
+  }
+
+  /* one panel, one table, everybody visible without scrolling */
+  .panel { flex:1; position:relative; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+    border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden; }
+  .scroller { height:100%; overflow:hidden; }
+  /* soft fade at the bottom edge so a row cut mid-scroll reads as intentional */
+  .panel::after { content:''; position:absolute; left:0; right:0; bottom:0; height:5vh; pointer-events:none;
+    background:linear-gradient(180deg, transparent, rgba(14,32,51,.75)); border-radius:0 0 1.4vh 1.4vh; }
+  /* The table is capped and centred. Stretched across a 65in screen the columns drifted
+     so far apart the eye lost the row on the way across. */
+  .lb { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
+  .lb th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
+    font-weight:700; padding:0 .5vw 1.2vh; text-align:center; }
+  .lb th.nm { text-align:left; padding-left:1vw; }
+  .lb td { padding:var(--rowpad) .5vw; font-size:var(--rowfs); text-align:center; }
+
+  /* zebra striping instead of hairlines: from across the room a solid band is far
+     easier to track than a 1px line */
+  .lb tbody tr:nth-child(odd) { background:rgba(255,255,255,.045); }
+  .lb tbody tr td:first-child { border-radius:1vh 0 0 1vh; }
+  .lb tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
+
+  .lb .rank { width:6%; }
+  /* podium badges. Gold, silver, bronze read instantly from across a floor. */
+  .badge { display:inline-flex; align-items:center; justify-content:center;
+    width:calc(var(--rowfs) * 1.7); height:calc(var(--rowfs) * 1.7); border-radius:50%;
+    font-family:'Space Grotesk',sans-serif;  font-size:calc(var(--rowfs) * .82);
+    background:rgba(255,255,255,.08); color:#8FB3D6; }
+  .badge.m1 { background:linear-gradient(145deg,#FFD75E,#E0A100); color:#3A2B00;
+    box-shadow:0 0 calc(var(--rowfs)*.8) rgba(255,200,60,.55); }
+  .badge.m2 { background:linear-gradient(145deg,#E6ECF2,#AFBECB); color:#2A3540; }
+  .badge.m3 { background:linear-gradient(145deg,#E8A87C,#C0764A); color:#3A1E0B; }
+
+  .lb .nm { width:30%; text-align:left; padding-left:1vw; font-weight:700;
+    font-size:calc(var(--rowfs) * 1.12); letter-spacing:-.01em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Delivered doubles as a bar chart: volume is instantly comparable down the column */
+  .lb .sold { width:14%; position:relative; }
+  /* --barw is a percentage of the cell, and the leader gets 100%. Starting at 6% meant
+     the leader's bar ran to 106% and spilled into the Internet column. Scale it into
+     the space that actually exists. */
+  .lb .sold .bar { position:absolute; left:5%; top:14%; bottom:14%;
+    width:calc(var(--barw) * 0.86);
+    background:linear-gradient(90deg, rgba(193,215,48,.32), rgba(193,215,48,.08));
+    border-radius:.5vh; z-index:0; transition:width .8s cubic-bezier(.22,1,.36,1); }
+  .lb .sold .soldnum { position:relative; z-index:1;
+    font-family:'Space Grotesk',sans-serif;  color:var(--lime);
+    font-size:calc(var(--rowfs) * 1.45); }
+  .lb .pcell { width:16.6%; white-space:nowrap; }
+
+  /* rows arrive in sequence rather than all at once */
+  .lb tbody tr.row { animation: rowIn .5s cubic-bezier(.22,1,.36,1) both;
+    animation-delay: calc(var(--i) * 45ms); }
+  @keyframes rowIn { from { opacity:0; transform: translateY(1.2vh); } to { opacity:1; transform:none; } }
+
+  /* the leader gets a lit band and a slow shine that travels across it */
+  .lb tbody tr.leader { position:relative; }
+  .lb tbody tr.leader td { background:linear-gradient(90deg, rgba(193,215,48,.16), rgba(193,215,48,.03) 60%, transparent); }
+  .lb tbody tr.leader .nm { color:#F2F7DC; }
+  .lb tbody tr.leader .nm::after { content:''; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(105deg, transparent 35%, rgba(255,255,255,.16) 50%, transparent 65%);
+    background-size:220% 100%; animation: shine 5.5s ease-in-out infinite; }
+  @keyframes shine { 0% { background-position:180% 0; } 55%,100% { background-position:-60% 0; } }
+
+  .pill { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(var(--rowfs) * 1.05);
+    padding:.3vh 0; border-radius:.9vh; display:inline-flex; align-items:center; justify-content:center;
+    width:7vw; text-align:center; box-sizing:border-box; font-variant-numeric:tabular-nums; }
+  .pill.g { background:var(--greenbg); color:var(--green); }
+  .pill.y { background:var(--yellowbg); color:var(--yellow); }
+  .pill.r { background:var(--redbg); color:var(--red); }
+  .pill.dim { background:rgba(255,255,255,.07); color:#6E93BC; }
+  .pill-mark { display:inline-flex; align-items:center; line-height:0; margin-right:.35vw; opacity:1;
+    font-size:calc(var(--rowfs) * 1.05); }
+  /* Every dot glyph is one em square and inherits the colour of the text around it,
+     so a mark, an arrow and a car all scale with the row rather than fighting it. */
+  .pix9 { width:1em; height:1em; display:block; fill:currentColor; }
+  .pix-flat { opacity:.5; }
+  /* The trend slot is a fixed width. It used to size itself to its contents, so a
+     row carrying a delta pushed its pill sideways and the column stopped lining up. */
+  .move { display:inline-flex; align-items:center; gap:.25vw; justify-content:flex-start;
+    position:absolute; left:100%; top:50%; transform:translateY(-50%); margin-left:.5vw;
+    width:3.6vw; min-width:3.6vw; }
+  .lb .pcell { text-align:center; }
+  .pcell-in { position:relative; }
+  .lb .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
+  .trend { font-size:calc(var(--rowfs) * 1.0); display:inline-flex; align-items:center; }
+  .delta { font-size:calc(var(--rowfs) * .72); font-weight:700; font-variant-numeric:tabular-nums; }
+  .up { color:#69E08A; } .down { color:#FF8A80; } .flat { color:#5C7F9F; }
+
+  .flag { color:#FFCF6B; }
+  .foot { text-align:center; font-size:1.4vh; color:#7FA8D4; margin-top:1.1vh; letter-spacing:.04em; }
+  .empty { color:#7FA8D4; font-size:2vh; padding:4vh; text-align:center; }
+  .fade { animation:fade .5s ease; } @keyframes fade { from{opacity:0;transform:translateY(6px);} to{opacity:1;} }
+
+  /* tuning controls: nearly invisible until someone goes looking for them */
+  .gear { position:fixed; right:1.2vw; bottom:1.2vh; z-index:40; width:4.4vh; height:4.4vh; border-radius:50%;
+    border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.07); color:#9FC2E4;
+    font-size:2.2vh; cursor:pointer; opacity:.16; transition:opacity .25s, background .25s; }
+  .gear:hover { opacity:1; background:rgba(255,255,255,.14); }
+  /* ---- Bars style (Digital-Dealership-System look): one huge striped bar per person ---- */
+  .lb2 { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
+  .lb2 th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.04em; color:#A8CBEA;
+    padding:.6vh .4vw; border-bottom:1px solid rgba(255,255,255,.14); text-align:left;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb2 td { padding:var(--rowpad) .5vw; font-size:var(--rowfs); }
+  .lb2 tbody tr:nth-child(odd) { background:rgba(255,255,255,.045); }
+  .lb2 tbody tr td:first-child { border-radius:1vh 0 0 1vh; }
+  .lb2 tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
+  .lb2 .rank { width:5%; text-align:center; }
+  .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lb2 .sold2 { width:10%; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+    font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
+  /* Each % column is a fixed width and its contents are centred, so every pill is
+     the same size across the whole board. The pill has a fixed width too (all
+     percentages read identically), and the arrow lives in a reserved lane to the
+     right so a row with movement doesn't shove the pill off-centre from one without. */
+  .lb2 .pcell2 { width:15%; text-align:center; white-space:nowrap; }
+  .lb2 .pcell-in { display:inline-flex; align-items:center; justify-content:center; }
+  /* pill + arrow are sized in em so they grow with the row's own font, not the
+     screen width — on a wide TV the row gets taller and the pills grow with it,
+     and horizontal scroll (already built) covers any overflow. */
+  .lb2 .pcell2 .pill { width:5.6em; min-width:0; padding:.28em 0; text-align:center;
+    font-size:calc(var(--rowfs) * .96); }
+  .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.4em; justify-content:flex-start; }
+  .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .66); }
+  .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .95); }
+  .lb2 .sold2 { width:10%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
+  .lb2 .sold2 .soldnum { display:inline-block; }
+  .lb2 .carcell { width:26%; padding-left:.6vw; }
+  /* soft "holding the last board" banner when a refresh is distrusted */
+  .stale-note { position:fixed; left:50%; top:1.4vh; transform:translate(-50%,-140%); z-index:60;
+    background:rgba(20,40,66,.92); color:#DCEBFA; font-weight:600; font-size:1.8vh;
+    padding:1vh 2vw; border-radius:1vh; border:1px solid rgba(136,198,234,.3);
+    box-shadow:0 1vh 3vh rgba(0,0,0,.35); backdrop-filter:blur(8px);
+    transition:transform .6s cubic-bezier(.22,1,.36,1); pointer-events:none; }
+  .stale-note.on { transform:translate(-50%, 0); }
+
+  /* congratulations sweep: a card per new sale, entering from the right with a
+     confetti burst, holding, then sliding off. Staggered so a double gets its own. */
+  .congrats { position:fixed; right:2.5vw; top:12vh; z-index:70; display:flex; flex-direction:column;
+    gap:1.4vh; pointer-events:none; transition:opacity .7s ease; }
+  .congrats.out { opacity:0; }
+  .cg-card { position:relative; display:flex; align-items:center; gap:1.2vw; overflow:visible;
+    background:linear-gradient(120deg, rgba(193,215,48,.96), rgba(120,180,60,.96));
+    color:#132; padding:1.6vh 2vw 1.6vh 1.6vw; border-radius:1.4vh; min-width:22vw;
+    box-shadow:0 1.4vh 4vh rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.5);
+    transform:translateX(120%); opacity:0;
+    animation: cgIn .7s cubic-bezier(.22,1,.36,1) var(--d) forwards,
+               cgOut .6s ease calc(var(--d) + 4.4s) forwards; }
+  @keyframes cgIn  { from { transform:translateX(120%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+  @keyframes cgOut { from { transform:translateX(0); opacity:1; } to { transform:translateX(120%); opacity:0; } }
+  .cg-ico { font-size:4vh; line-height:1; animation: cgPop .5s ease var(--d) both; }
+  @keyframes cgPop { 0%{ transform:scale(0) rotate(-20deg);} 60%{ transform:scale(1.25) rotate(8deg);} 100%{ transform:scale(1) rotate(0);} }
+  .cg-txt b { font-family:'Space Grotesk',sans-serif; font-size:2.7vh; display:block; letter-spacing:-.01em; }
+  .cg-txt span { font-size:1.9vh; font-weight:600; opacity:.85; }
+  /* confetti burst behind the icon */
+  .cg-burst { position:absolute; left:2.6vw; top:50%; width:0; height:0; }
+  .cg-burst::before, .cg-burst::after { content:''; position:absolute; left:0; top:0; width:.9vh; height:.9vh;
+    border-radius:2px; animation: cgConfetti 1s ease var(--d) both; }
+  .cg-burst::before { background:#2A5E9B; }
+  .cg-burst::after  { background:#fff; animation-delay: calc(var(--d) + .08s); }
+  @keyframes cgConfetti {
+    0% { transform:translate(0,0) scale(1); opacity:1; }
+    100% { transform:translate(3vw,-4vh) scale(0); opacity:0; }
+  }
+  .car-more { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:calc(var(--rowfs) * .9);
+    color:#C7DDF2; margin-left:.4vw; align-self:center; }
+  .cars { display:flex; align-items:center; flex-wrap:nowrap; gap:0 .12vw; overflow:hidden;
+    animation: carsIn .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
+  @keyframes carsIn { from { opacity:0; transform:translateX(-1vw); } to { opacity:1; transform:none; } }
+  .cars-inner { display:flex; align-items:center; flex-wrap:nowrap; gap:0 .1vw; width:100%; }
+  .car { width:calc(var(--rowfs) * var(--csz, 1)); height:calc(var(--rowfs) * var(--csz, 1)); flex:0 0 auto;
+    fill:var(--carfill); }
+  .cars.g { --carfill:#3ECf6E; } .cars.y { --carfill:#EFD75A; } .cars.r { --carfill:#EF6A72; }
+  /* the delivered number sits right of the % pills now, with its trend beside it */
+  .lb2 .sold2 .move { min-width:0; margin-left:.3vw; }
+  .lb2 .sold2 { line-height:1.05; }
+  .lb2 tbody tr.leader .nm { color:var(--lime); }
+
+  /* bottom ticker, bars style only: streaks and callouts drift by like a news crawl */
+  .ticker { position:relative; overflow:hidden; margin-top:1vh; border-radius:1vh;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10);
+    font-size:calc(2.1vh * var(--tscale)); font-weight:700; padding:.8vh 0; }
+  .ticker-track { display:inline-block; white-space:nowrap; padding-left:100%;
+    animation: tickerMove var(--tickdur, 40s) linear infinite; }
+  @keyframes tickerMove { to { transform: translateX(-100%); } }
+  .ticker-item { display:inline-block; margin-right:3.5vw; }
+  .ticker-item .tk-cap { color:#A8CBEA; font-weight:600; margin-right:.4vw; }
+
+  .tuner-seg { display:flex; gap:.5vw; margin-bottom:1vh; }
+  .tuner-seg button { flex:1; padding:.8vh .5vw; border-radius:.9vh; border:1px solid rgba(255,255,255,.18);
+    background:transparent; color:#BFD9F0; cursor:pointer; font:inherit; font-size:1.6vh; }
+  .tuner-seg button.on { background:#C1D730; border-color:#C1D730; color:#0E2033; font-weight:800; }
+
+  .tuner { position:fixed; right:1.2vw; bottom:7vh; z-index:41; width:min(340px, 32vw);
+    background:rgba(10,24,40,.96); border:1px solid rgba(255,255,255,.14); border-radius:1.4vh;
+    padding:1.6vh 1.4vw; display:none; box-shadow:0 1.5vh 4vh rgba(0,0,0,.55); font-size:1.6vh; }
+  .tuner.on { display:block; }
+  .tuner-head { display:flex; justify-content:space-between; align-items:center;
+    font-weight:800; font-size:1.9vh; margin-bottom:1.2vh; }
+  .tuner-x { background:none; border:none; color:#9FC2E4; font-size:2.4vh; cursor:pointer; line-height:1; }
+  .tuner-row { display:block; margin-bottom:1vh; }
+  .tuner-row span { display:flex; justify-content:space-between; color:#BFD9F0; margin-bottom:.5vh; }
+  .tuner-row b { color:#fff; }
+  .tuner-row input[type=range] { width:100%; accent-color:#C1D730; }
+  .tuner-hint { color:#7FA8D4; font-size:1.35vh; margin:-.3vh 0 1.2vh; line-height:1.45; }
+  .tuner-foot { display:flex; gap:.6vw; margin-top:1.4vh; }
+  .tuner-btn { flex:1; padding:.9vh .6vw; border-radius:.9vh; border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.06); color:#EAF1F8; font-size:1.5vh; font-weight:700; cursor:pointer; }
+  .tuner-btn.primary { background:#C1D730; color:#1F2A00; border-color:#C1D730; }
+  .tuner-msg { color:#69E08A; font-size:1.35vh; margin-top:.8vh; min-height:1.6vh; }
+</style></head>
+<body>
+<div class="stale-note" id="stale-note">Holding the last board — the newest report looked incomplete. Updating on the next cycle.</div>
+<div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
+
+<!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
+<button class="gear" id="gear" title="Display settings">&#9881;</button>
+<div class="tuner" id="tuner">
+  <div class="tuner-head">Display <button class="tuner-x" id="tclose">&times;</button></div>
+
+  <label class="tuner-row"><span>Board style</span></label>
+  <div class="tuner-seg">
+    <button id="sty-classic">Classic</button>
+    <button id="sty-bars">Bars</button>
+  </div>
+
+  <label class="tuner-row"><span>Background</span></label>
+  <div class="tuner-seg">
+    <button id="bg-navy">Navy</button>
+    <button id="bg-store">Store colors</button>
+  </div>
+
+  <label class="tuner-row">
+    <span>Text size <b id="v-t">100%</b></span>
+    <input id="s-t" type="range" min="60" max="160" step="5" value="100">
+  </label>
+
+  <label class="tuner-row">
+    <span>Horizontal squeeze <b id="v-s">100%</b></span>
+    <input id="s-s" type="range" min="70" max="100" step="1" value="100">
+  </label>
+  <p class="tuner-hint">If the TV stretches the picture sideways, pull this down until the letters look the right shape on the wall.</p>
+
+  <label class="tuner-row">
+    <span>Edge inset <b id="v-p">0%</b></span>
+    <input id="s-p" type="range" min="0" max="8" step="0.5" value="0">
+  </label>
+  <p class="tuner-hint">For screens that crop the edges.</p>
+
+  <div class="tuner-foot">
+    <button class="tuner-btn" id="treset">Reset</button>
+    <button class="tuner-btn primary" id="tsave">Save for this store</button>
+  </div>
+  <div class="tuner-msg" id="tmsg"></div>
+</div>
+<script>
+  var CFG = ${JSON.stringify(p)};
+  // Same dot-matrix language as the rest of the tool. Drawn on a 9x9 grid at 1em so
+  // every mark scales with the row text instead of being pinned to a pixel size.
+  var PIXG = ${JSON.stringify({ car: PIX.car, dot: PIX.dot })};
+  // The small marks use the coarse grid so they stay crisp beside the numbers.
+  var PIX5 = ${JSON.stringify(PIX5)};
+  function pix(g, cls, frac){
+    var rows = PIX5[g] || PIXG[g] || PIX5.dot, out = '';
+    var n = rows.length;
+    // Fatter dots on the coarse grid: fewer of them, so each one can carry more.
+    var r = n <= 5 ? 0.46 : 0.38;
+    for (var y = 0; y < n; y++) {
+      var row = rows[y];
+      for (var x = 0; x < row.length; x++) {
+        if (row[x] !== '1') continue;
+        // frac fills the glyph left to right, which is how a half unit is drawn
+        var lit = (frac == null) || (((x + 0.5) / row.length) <= frac);
+        out += '<circle cx="' + (x + 0.5) + '" cy="' + (y + 0.5) + '" r="' + r + '"'
+          + (lit ? '' : ' fill="rgba(255,255,255,.13)"') + '/>';
+      }
+    }
+    return '<svg class="pix9' + (cls ? ' ' + cls : '') + '" viewBox="0 0 ' + n + ' ' + n + '"'
+      + ' shape-rendering="geometricPrecision">' + out + '</svg>';
+  }
+  function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
+  // No external library and no CDN. A TV on a dealership network may not be able to
+  // reach an external CDN at all, and an import that never resolves left it stuck on
+  // "Loading" forever. Plain fetch against the REST API, with the token refreshed by
+  // hand so the screen can sit there unattended for days.
+  var TOK = CFG.tokens ? {
+    access: CFG.tokens.access_token,
+    refresh: CFG.tokens.refresh_token
+  } : null;
+  // The board row is readable with the anon key alone, which is what lets a TV with
+  // nobody signed in sit there for weeks. A signed-in session is used when one was
+  // handed over, but nothing here depends on it.
+  var DB = CFG.db || (CFG.tokens ? { url: CFG.tokens.url, anonKey: CFG.tokens.anonKey } : null);
+
+  function withTimeout(promise, ms){
+    return Promise.race([
+      promise,
+      new Promise(function(_, rej){ setTimeout(function(){ rej(new Error('timeout')); }, ms); })
+    ]);
+  }
+
+  async function refreshToken(){
+    if (!TOK || !TOK.refresh) return false;
+    try {
+      var r = await withTimeout(fetch(CFG.tokens.url + '/auth/v1/token?grant_type=refresh_token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: CFG.tokens.anonKey },
+        body: JSON.stringify({ refresh_token: TOK.refresh })
+      }), 12000);
+      if (!r.ok) return false;
+      var d = await r.json();
+      if (!d.access_token) return false;
+      TOK.access = d.access_token;
+      if (d.refresh_token) TOK.refresh = d.refresh_token;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  async function getStore(){
+    if (!DB) return { __err: 'This board has no database details. Open it again from the tool.' };
+    var url = DB.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(CFG.storeKey) + '&select=value';
+    function headers(){
+      return { apikey: DB.anonKey, Authorization: 'Bearer ' + (TOK ? TOK.access : DB.anonKey) };
+    }
+    try {
+      var res = await withTimeout(fetch(url, { headers: headers() }), 12000);
+      if (res.status === 401 || res.status === 403) {
+        var ok = await refreshToken();
+        if (!ok) return { __err: 'This screen cannot read the board row. Check the database read rule for lpc:board keys.' };
+        res = await withTimeout(fetch(url, { headers: headers() }), 12000);
+      }
+      if (!res.ok) return { __err: 'Could not reach the database (' + res.status + '). Retrying...' };
+      var rows = await res.json();
+      return (rows && rows[0]) ? rows[0].value : null;
+    } catch (e) {
+      return { __err: 'No connection to the database. Retrying...' };
+    }
+  }
+
+  // keep the session alive well before it lapses, so an all-day board never drops out
+  setInterval(function(){ refreshToken(); }, 40 * 60 * 1000);
+  // each channel is judged on its own scale: a 25% showroom close and a 25% internet
+  // close are nowhere near the same achievement
+  // A row of little cars: one filled car per whole unit, a half-filled car for a
+  // half (splits credit .5). Scaled against the leader and capped so a monster
+  // month can't run off a TV.
+  // One car per whole unit, a half-filled car for a .5 split, always matching the
+  // number exactly. If the leader is over CAP whole cars we DON'T rescale the
+  // count (that broke the 1-car-per-unit promise and rounded 5.5 up to 6); we draw
+  // the honest cars up to CAP and append a "+N" so the row still fits a TV.
+  var CAR_ROW = 0;
+  function cars(sold, maxSold){
+    // Cars shrink to fit: the row-leader's count sets the size for everyone, so the
+    // whole column shares one scale and the biggest month still fits on one line.
+    // Past HARDCAP even that is illegible, so those overflow into a "+N".
+    var HARDCAP = 34;
+    CAR_ROW++;
+    var whole = Math.floor(sold + 1e-6);
+    var half = (sold - whole) >= 0.5 - 1e-6 ? 1 : 0;
+    var CAP = HARDCAP;
+    // A dot car. A half unit lights the left half of the grid, so the split still
+    // reads honestly from across the floor without any clip paths to collide.
+    function car(frac){ return pix('car', 'car', frac <= 0 ? 0 : frac); }
+    var drawWhole = Math.min(whole, CAP);
+    // The most anyone sold decides the shared car size: more cars => smaller cars,
+    // clamped so a light day's cars don't balloon. Set once per render on the row.
+    var peak = Math.min(Math.max(maxSold, 1), CAP + (half ? 0.5 : 0));
+    var sizeEm = Math.max(0.62, Math.min(1.15, 22 / peak));
+    var out = '<span class="cars-inner" style="--csz:' + sizeEm.toFixed(3) + '">';
+    for (var i=0;i<drawWhole;i++) out += car(1);
+    if (whole <= CAP && half) out += car(0.5);
+    if (whole > CAP) out += '<span class="car-more">+'+(whole - CAP + (half ? 0.5 : 0))+'</span>';
+    if (!whole && !half) out += car(0);
+    out += '</span>';
+    return out;
+  }
+
+  function soldArrow(cur, prev){
+    if (prev == null || cur == null) return ['','',''];
+    var d = cur - prev;
+    if (d > 0.001)  return ['up','▲','+'+(Math.round(d*10)/10)];
+    if (d < -0.001) return ['down','▼',(Math.round(d*10)/10).toString()];
+    return ['flat','',''];
+  }
+  function soldMove(cur, prev){
+    var ar = soldArrow(cur, prev);
+    if (!ar[0] || ar[0]==='flat') return '';
+    var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
+    return '<span class="move"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>';
+  }
+
+  function tone(pct, ch){
+    if (pct==null) return 'r';
+    var t = (CFG.thresholds && CFG.thresholds[ch]) || { green: 20, yellow: 10 };
+    var v = pct*100;
+    if (v>=t.green) return 'g';
+    if (v>=t.yellow) return 'y';
+    return 'r';
+  }
+  // symbol as well as colour, so the board reads for colour-blind viewers too
+  function toneMark(t){ return pix(t === 'g' ? 'check' : t === 'y' ? 'warn' : 'close'); }
+  // direction AND distance moved since the previous report, in percentage points
+  function arrow(cur, prev){
+    if (cur==null||prev==null) return ['flat', pix('dot','pix-flat'), ''];
+    var d = (cur - prev) * 100;
+    if (d > 0.05)  return ['up', pix('triup'), '+'+d.toFixed(1)];
+    if (d < -0.05) return ['down', pix('tridown'), d.toFixed(1)];
+    return ['flat', pix('dot','pix-flat'), ''];
+  }
+  function fmtPct(v){ return v==null?'-':(v*100).toFixed(1)+'%'; }
+  function num(v){ return v==null?0:v; }
+  function render(store){
+    CAR_ROW = 0;
+    var root = document.getElementById('root');
+    // an error is not the same as an empty store: say which, never just hang
+    if (store && store.__err){
+      root.innerHTML = '<div class="empty">' + store.__err + '</div>';
+      return;
+    }
+    if (!store){ root.innerHTML = '<div class="empty">No data yet for this store. Import the delivery reports in the tool and this board will fill in.</div>'; return; }
+    var M = (store.months||{})[CFG.ym] || {stats:{}};
+
+    // CFG.roles already excludes any role turned off for The Board (BDC by default),
+    // so only the people who actually deliver units show up here.
+    var boardRoles = {};
+    (CFG.roles||[]).forEach(function(r){ boardRoles[r.id] = true; });
+
+    var gone = {};
+    (CFG.departed || store.departed || []).forEach(function(n){ gone[norm(n)] = true; });
+    var people = (store.roster||[])
+      .filter(function(a){ return a.roleId && boardRoles[a.roleId] && !gone[norm(a.name)]; })
+      .map(function(a){
+        var s = M.stats[norm(a.name)] || {};
+        var iU=num(s.internetUnits), pU=num(s.phoneUnits), rU=num(s.showroomUnits);
+        var cU=num(s.campaignUnits);   // service-to-sales and finance apps: units count, close rate is not graded
+        var haveAll = (s.internetUnits!=null) && (s.phoneUnits!=null) && (s.showroomUnits!=null);
+        return {
+          name:a.name,
+          internetPct:s.internetPct, phonePct:s.phonePct, showroomPct:s.showroomPct,
+          prev:(s.prevPct||{}),
+          camp: cU,
+          sold: iU+pU+rU+cU,
+          prevSold: (function(pu){
+            if(!pu) return null;
+            var any = ['internet','phone','showroom','campaign'].some(function(c){ return pu[c]!=null; });
+            if(!any) return null;
+            return num(pu.internet)+num(pu.phone)+num(pu.showroom)+num(pu.campaign);
+          })(s.prevUnits),
+          haveAll:haveAll
+        };
+      })
+      .sort(function(a,b){ return b.sold - a.sold; });
+
+    // Short display names: first name + last initial ("Sterling B.") to buy the bars
+    // room. If two people collide (Juan R. twice), the last-name prefix grows just
+    // enough to tell them apart (Juan Ra. / Juan Ro.) instead of showing the same tag.
+    (function(){
+      function parts(n){ var t = String(n||'').trim().split(/\\s+/); return { first: t[0]||'', rest: t.slice(1).join(' ') }; }
+      people.forEach(function(x){
+        var pr = parts(x.name);
+        x.disp = pr.rest ? pr.first + ' ' + pr.rest[0] + '.' : pr.first;
+      });
+      var need = true, len = 1;
+      while (need && len < 8) {
+        need = false;
+        var seen = {};
+        people.forEach(function(x){ seen[x.disp] = (seen[x.disp]||0) + 1; });
+        people.forEach(function(x){
+          if (seen[x.disp] > 1) {
+            var pr = parts(x.name);
+            if (pr.rest && pr.rest.length > len) { x.disp = pr.first + ' ' + pr.rest.slice(0, len+1) + '.'; need = true; }
+          }
+        });
+        len++;
+      }
+    })();
+
+    var totalSold = people.reduce(function(n,x){ return n + x.sold; }, 0);
+    var grandFlag = Math.abs(totalSold - Math.round(totalSold)) > 0.01;
+
+    // Everyone has to fit on one screen with no scrolling, so the rows scale to the
+    // size of the team rather than being a fixed height.
+    // Size from the space that is actually available rather than a fixed lookup.
+    // This is on a TV across a showroom floor, so fill the screen: a small team should
+    // read enormous, and a big team should still be as large as it possibly can be.
+    var n = Math.max(people.length, 1);
+    var AVAIL = 80;                                   // vh the table body gets
+    var rowH  = Math.min(8.5, AVAIL / (n + 1));
+    // Never shrink below what is readable from across a floor. If the team does not
+    // fit at that size, the board scrolls instead of squinting.
+    var rowFs = Math.max(2.2, Math.min(5.6, rowH * 0.62)) * DISP.tscale;   // vh — higher ceiling so a short list on a wide TV fills the height
+    var rowPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;                // vh
+
+    function cell(pct, prevVal, ch){
+      if (pct == null) return '<td class="pcell"><span class="pcell-in"><span class="pill dim">-</span><span class="move"></span></span></td>';
+      var tn = tone(pct, ch);
+      var ar = arrow(pct, prevVal);
+      var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
+      return '<td class="pcell"><span class="pcell-in">' +
+        '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span>' +
+        '<span class="move"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>' +
+      '</span></td>';
+    }
+
+    var maxSold = people.reduce(function(m,x){ return Math.max(m, x.sold); }, 0) || 1;
+
+    var rows = people.map(function(x,i){
+      var medal = i < 3 ? ' m' + (i+1) : '';
+      var barw = Math.round((x.sold / maxSold) * 100);
+      return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
+        '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
+        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
+          soldMove(x.sold, x.prevSold) +
+        '</td>' +
+        cell(x.internetPct, x.prev.internet, 'internet') +
+        cell(x.phonePct,    x.prev.phone,    'phone') +
+        cell(x.showroomPct, x.prev.showroom, 'showroom') +
+      '</tr>';
+    }).join('');
+
+    if (!rows) rows = '<tr><td colspan="6" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
+
+    // ---- Bars style: rank, name, units, one huge striped bar sized against the leader ----
+    var bars = DISP.style === 'bars';
+    // bars view now carries the same +/- movement as the classic board; the pill
+    // is narrower to leave room for the arrow beside it.
+    function cell2(pct, ch, prevVal){
+      if (pct == null) return '<td class="pcell2"><span class="pcell-in"><span class="pill dim">-</span><span class="move move2"></span></span></td>';
+      var tn = tone(pct, ch);
+      var ar = arrow(pct, prevVal);
+      var delta = ar[2] ? '<span class="delta '+ar[0]+'">'+ar[2]+'</span>' : '';
+      return '<td class="pcell2"><span class="pcell-in">' +
+        '<span class="pill '+tn+'"><span class="pill-mark">'+toneMark(tn)+'</span>'+fmtPct(pct)+'</span>' +
+        '<span class="move move2"><span class="trend '+ar[0]+'">'+ar[1]+'</span>'+delta+'</span>' +
+      '</span></td>';
+    }
+    var rows2 = people.map(function(x,i){
+      var medal = i < 3 ? ' m' + (i+1) : '';
+      var ratio = x.sold / maxSold;
+      // The podium is always green — top three have earned it no matter the spread.
+      var t2 = i < 3 ? 'g' : ratio >= 0.75 ? 'g' : ratio >= 0.4 ? 'y' : 'r';
+      var barw = Math.max(2, Math.round(ratio * 100));
+      return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
+        '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
+        '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
+        cell2(x.internetPct, 'internet', x.prev.internet) +
+        cell2(x.phonePct, 'phone', x.prev.phone) +
+        cell2(x.showroomPct, 'showroom', x.prev.showroom) +
+        '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span>' + soldMove(x.sold, x.prevSold) + '</td>' +
+        '<td class="carcell"><div class="cars ' + t2 + '">' + cars(x.sold, maxSold) + '</div></td>' +
+      '</tr>';
+    }).join('');
+    if (!rows2) rows2 = '<tr><td colspan="7" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
+
+    // ticker items: leader + best of each channel, plus the streaks passed from the tool
+    var tickerItems = [];
+    if (people.length && people[0].sold > 0) tickerItems.push('&#128081; ' + people[0].name + ' leads with ' + people[0].sold + ' units');
+    ['internetPct','phonePct','showroomPct'].forEach(function(k){
+      var best = null;
+      people.forEach(function(x){ if (x[k] != null && (!best || x[k] > best[k])) best = x; });
+      if (best && best[k] > 0) {
+        var lbl = k === 'internetPct' ? 'Top Internet' : k === 'phonePct' ? 'Top Phone' : 'Top Showroom';
+        tickerItems.push('<span class="tk-cap">' + lbl + ':</span>' + best.name + ' ' + fmtPct(best[k]));
+      }
+    });
+    (CFG.ticker || []).forEach(function(t){ tickerItems.push(t); });
+    var tickerHtml = tickerItems.map(function(t){ return '<span class="ticker-item">' + t + '</span>'; }).join('');
+    var tickDur = Math.max(25, tickerItems.length * 7);
+
+    root.innerHTML =
+      '<div class="head"><div class="head-l"><div class="head-logo">'+(CFG.icon?'<img src="'+CFG.icon+'"/>':'')+'</div>'+
+      '<div><div class="head-title">'+CFG.storeName+'</div><div class="head-sub">Delivery Leaderboard</div></div></div>'+
+      '<div class="head-r">'+
+        '<div class="total"><div class="total-num"><span class="totnum" data-to="'+totalSold+'">0</span>'+(grandFlag?' <span class="flag">&#9873;</span>':'')+'</div><div class="total-cap">Units Delivered</div></div>'+
+        '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
+      '</div></div>'+
+      '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
+        '<div class="scroller" id="scroller">'+
+        (bars
+          ? '<table class="lb2">'+
+              '<thead><tr>'+
+                '<th class="rank">#</th>'+
+                '<th class="nm">Associate</th>'+
+                '<th class="pcell2" style="text-align:center">Internet %</th>'+
+                '<th class="pcell2" style="text-align:center">Phone %</th>'+
+                '<th class="pcell2" style="text-align:center">Showroom %</th>'+
+                '<th class="sold2" style="text-align:center">Delivered</th>'+
+                '<th class="carcell" style="text-align:left; padding-left:.6vw">units</th>'+
+              '</tr></thead>'+
+              '<tbody>'+rows2+'</tbody>'+
+            '</table>'
+          : '<table class="lb">'+
+              '<thead><tr>'+
+                '<th class="rank">#</th>'+
+                '<th class="nm">Associate</th>'+
+                '<th class="sold">Delivered</th>'+
+                '<th class="pcell">Internet %</th>'+
+                '<th class="pcell">Phone %</th>'+
+                '<th class="pcell">Showroom %</th>'+
+              '</tr></thead>'+
+              '<tbody>'+rows+'</tbody>'+
+            '</table>')+
+        '</div>'+
+      '</div>'+
+      (bars
+        ? '<div class="ticker"><div class="ticker-track" style="--tickdur:'+tickDur+'s">'+tickerHtml+'</div></div>'
+        : '<div class="foot">' +
+            'Green at: Internet ' + CFG.thresholds.internet.green + '%+ &middot; ' +
+            'Phone ' + CFG.thresholds.phone.green + '%+ &middot; ' +
+            'Showroom ' + CFG.thresholds.showroom.green + '%+' +
+            ' &middot; arrows show the change since the previous report &middot; data refreshes every 15 minutes' +
+          '</div>');
+    tick();
+    countUp();
+    startScroll();
+  }
+
+  // If the whole team cannot fit at a readable size, the board walks slowly down the
+  // list, holds at the bottom, then springs back to the top with a bounce. Nobody at
+  // the bottom of the board should be invisible all day.
+  var scrollRAF = null;
+  var idleRefill = null;   // refill timer for boards small enough not to scroll
+  function startScroll(){
+    if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
+    var el = document.getElementById('scroller');
+    if (!el) return;
+
+    // let layout settle before measuring
+    setTimeout(function(){
+      var over = el.scrollHeight - el.clientHeight;
+      if (over <= 4) {
+        // Everyone fits, so there's no scroll cycle to trigger the bar refill.
+        // Give a non-scrolling board the same flourish on a gentle idle timer.
+        if (idleRefill) clearInterval(idleRefill);
+        idleRefill = setInterval(replayBars, 2 * 60 * 1000);
+        return;
+      }
+      if (idleRefill) { clearInterval(idleRefill); idleRefill = null; }
+
+      var HOLD_TOP = 4000;                   // pause so the leaders get their moment
+      var HOLD_BOTTOM = 2500;
+      var SPEED = 13;                        // px per second: a slow, readable crawl
+      var BLOOP = 950;                       // the spring back to the top
+
+      var phase = 'holdTop', t0 = null, from = 0;
+
+      function bloopEase(p){
+        // overshoot slightly then settle: the "bloop"
+        var c = 1.70158 * 1.2;
+        return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2);
+      }
+
+      function frame(ts){
+        if (t0 === null) t0 = ts;
+        var dt = ts - t0;
+
+        if (phase === 'holdTop') {
+          el.scrollTop = 0;
+          if (dt > HOLD_TOP) { phase = 'down'; t0 = ts; }
+        } else if (phase === 'down') {
+          var y = (dt / 1000) * SPEED;
+          if (y >= over) { el.scrollTop = over; phase = 'holdBottom'; t0 = ts; }
+          else el.scrollTop = y;
+        } else if (phase === 'holdBottom') {
+          if (dt > HOLD_BOTTOM) { phase = 'bloop'; t0 = ts; from = el.scrollTop; }
+        } else if (phase === 'bloop') {
+          var p = Math.min(1, dt / BLOOP);
+          el.scrollTop = Math.max(0, from * (1 - bloopEase(p)));
+          if (p >= 1) { el.scrollTop = 0; phase = 'holdTop'; t0 = ts; replayBars(); }
+        }
+        scrollRAF = requestAnimationFrame(frame);
+      }
+      scrollRAF = requestAnimationFrame(frame);
+    }, 400);
+  }
+
+  // When the board springs back to the top, the bars refill from zero as a little
+  // reward moment. Only the bars: the numbers alongside them stay put, so the
+  // figures on screen never look like they changed when they didn't.
+  function replayBars(){
+    var fills = document.querySelectorAll('.fill2');
+    for (var k = 0; k < fills.length; k++) {
+      (function(f){
+        f.style.animation = 'none';
+        void f.offsetWidth;                 // reflow so the animation actually restarts
+        f.style.animation = '';
+      })(fills[k]);
+    }
+  }
+
+  // numbers roll up rather than snapping into place. Runs on every refresh, so a
+  // new unit landing on the board actually announces itself.
+  function countUp(){
+    var els = document.querySelectorAll('[data-to]');
+    for (var k = 0; k < els.length; k++) {
+      (function(el){
+        var to = parseFloat(el.getAttribute('data-to')) || 0;
+        var dur = 900, t0 = null;
+        function step(ts){
+          if (!t0) t0 = ts;
+          var p = Math.min(1, (ts - t0) / dur);
+          var eased = 1 - Math.pow(1 - p, 3);
+          var v = to * eased;
+          el.textContent = (to % 1 === 0) ? Math.round(v) : v.toFixed(1);
+          if (p < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      })(els[k]);
+    }
+  }
+  function tick(){ var n=new Date();
+    var c=document.getElementById('clk'); var d=document.getElementById('dat');
+    if(c) c.textContent = n.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    var dt = document.getElementById('datt');
+    if(dt) dt.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'});
+    else if(d) d.textContent = n.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric'}); }
+  // A refresh that swings wildly from the last one is almost always a bad import
+  // or a half-written file, not real. Hold the current board and try again next
+  // cycle rather than flashing garbage onto a showroom TV. "Wildly" = the total
+  // units moved by more than half, on a board that had real numbers to begin with.
+  function tooDifferent(prev, next){
+    try {
+      if (!prev || !prev.store || !next || !next.store) return false;
+      function totalUnits(st){
+        var t = 0, r = (st.roster||[]);
+        for (var i=0;i<r.length;i++){
+          var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
+          var k = norm(r[i].name), o = v[k]; if (!o) continue;
+          t += (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0);
+        }
+        return t;
+      }
+      var a = totalUnits(prev), b = totalUnits(next);
+      if (a < 5) return false;                       // nothing meaningful to protect yet
+      var drop = (a - b) / a;
+      return drop > 0.5;                             // lost more than half: distrust it
+    } catch(e){ return false; }
+  }
+
+  // Who sold since the last good refresh — drives the congratulations sweep.
+  function newlySold(prev, next){
+    var out = [];
+    try {
+      if (!prev || !next) return out;
+      function unitsOf(st, name){
+        var v = (st.months && st.months[next.ym] && st.months[next.ym].stats) || {};
+        var o = v[norm(name)]; if (!o) return 0;
+        return (+o.internetUnits||0)+(+o.phoneUnits||0)+(+o.showroomUnits||0)+(+o.campaignUnits||0);
+      }
+      var roster = (next.roster||[]);
+      for (var i=0;i<roster.length;i++){
+        var nm = roster[i].name;
+        var before = unitsOf(prev, nm), after = unitsOf(next, nm);
+        if (after > before + 1e-6) out.push({ name: nm, gained: after - before });
+      }
+    } catch(e){}
+    return out;
+  }
+
+  function congratulate(list){
+    if (!list.length) return;
+    var host = document.createElement('div');
+    host.className = 'congrats';
+    // one banner per seller, staggered, so a double sale gets its own moment
+    host.innerHTML = list.slice(0, 6).map(function(w, i){
+      var u = w.gained % 1 ? w.gained.toFixed(1) : w.gained;
+      return '<div class="cg-card" style="--d:'+(i*1.5)+'s">'
+        + '<div class="cg-burst"></div>'
+        + '<div class="cg-ico">&#127881;</div>'
+        + '<div class="cg-txt"><b>'+w.name+'</b><span>just delivered '+u+(w.gained==1?' unit':' units')+'</span></div>'
+        + '</div>';
+    }).join('');
+    document.body.appendChild(host);
+    // total life = last card's delay + its own 5s, then fade
+    var life = (Math.min(list.length,6) * 1.5 + 5) * 1000;
+    setTimeout(function(){ host.classList.add('out'); setTimeout(function(){ host.remove(); }, 700); }, life);
+  }
+
+  async function loop(){
+    var s = await getStore();
+    // Failsafe: a good previous board plus a suspicious new one = keep the old one.
+    if (LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
+      var warn = document.getElementById('stale-note');
+      if (warn) warn.classList.add('on');
+      return;                                        // skip this render entirely
+    }
+    var wsold = (LAST && !LAST.__err && s && !s.__err) ? newlySold(LAST, s) : [];
+    if (!LAST) {
+      // First load only, so a live adjustment is never stamped over on refresh.
+      // The store's published setting is the starting point; anything set on this
+      // particular screen wins over it, because somebody stood in front of this
+      // television and decided the text was the wrong size for this room.
+      var d = (s && !s.__err && s.boardDisplay) ? s.boardDisplay : {};
+      var mine = {};
+      try { mine = JSON.parse(localStorage.getItem(DKEY) || '{}') || {}; } catch (e) {}
+      var pick = function(k, dflt){
+        if (mine[k] != null) return mine[k];
+        if (d[k] != null) return d[k];
+        return dflt;
+      };
+      DISP.tscale  = pick('tscale', 1);
+      DISP.style   = pick('style', DISP.style);
+      DISP.bg      = pick('bg', DISP.bg);
+      DISP.squeeze = pick('squeeze', 1);
+      DISP.pad     = pick('pad', 0);
+    }
+    if (s && !s.__err) LAST = s;
+    applyDisp();
+    render(s);
+    wireTuner();
+    applyDisp();
+    var warn = document.getElementById('stale-note');
+    if (warn) warn.classList.remove('on');
+    if (wsold.length) congratulate(wsold);
+  }
+  /* ---------- display tuning ---------- */
+  // Read whatever was saved for this store, and let the person at the TV change it.
+  var DISP = { tscale: 1, squeeze: 1, pad: 0, style: 'classic', bg: 'navy' };
+  var DKEY = 'lpc:disp:' + (CFG.storeId || 'board');
+
+  function applyDisp(){
+    var b = CFG.brand || {};
+    document.body.style.setProperty('--bp', b.primary || '#2A5E9B');
+    document.body.style.setProperty('--bd', b.deep || '#1D4674');
+    document.body.style.setProperty('--ba', b.accent || '#C1D730');
+    document.body.className = DISP.bg === 'store' ? 'bg-store' : '';
+    var w = document.getElementById('root');
+    if (!w) return;
+    w.style.setProperty('--tscale', DISP.tscale);
+    w.style.setProperty('--squeeze', DISP.squeeze);
+    w.style.setProperty('--pad', DISP.pad + 'vw');
+    var t = document.getElementById('v-t'), s = document.getElementById('v-s'), pd = document.getElementById('v-p');
+    if (t) t.textContent = Math.round(DISP.tscale * 100) + '%';
+    if (s) s.textContent = Math.round(DISP.squeeze * 100) + '%';
+    if (pd) pd.textContent = DISP.pad + '%';
+  }
+
+  function wireTuner(){
+    var gear = document.getElementById('gear');
+    var tun = document.getElementById('tuner');
+    var st = document.getElementById('s-t'), ss = document.getElementById('s-s'), sp = document.getElementById('s-p');
+    if (!gear || !tun) return;
+
+    gear.onclick = function(){ tun.classList.toggle('on'); };
+    function paintStyleSeg(){
+      var bc = document.getElementById('sty-classic'), bb = document.getElementById('sty-bars');
+      if (!bc) return;
+      bc.className = DISP.style === 'bars' ? '' : 'on';
+      bb.className = DISP.style === 'bars' ? 'on' : '';
+    }
+    paintStyleSeg();
+    document.getElementById('sty-classic').onclick = function(){ DISP.style='classic'; paintStyleSeg(); if (LAST) render(LAST); };
+    document.getElementById('sty-bars').onclick = function(){ DISP.style='bars'; paintStyleSeg(); if (LAST) render(LAST); };
+    function paintBgSeg(){
+      var bn = document.getElementById('bg-navy'), bs = document.getElementById('bg-store');
+      if (!bn) return;
+      bn.className = DISP.bg === 'store' ? '' : 'on';
+      bs.className = DISP.bg === 'store' ? 'on' : '';
+    }
+    paintBgSeg();
+    document.getElementById('bg-navy').onclick = function(){ DISP.bg='navy'; paintBgSeg(); applyDisp(); };
+    document.getElementById('bg-store').onclick = function(){ DISP.bg='store'; paintBgSeg(); applyDisp(); };
+    document.getElementById('tclose').onclick = function(){ tun.classList.remove('on'); };
+
+    st.value = Math.round(DISP.tscale * 100);
+    ss.value = Math.round(DISP.squeeze * 100);
+    sp.value = DISP.pad;
+
+    // text size changes the row maths, so re-render; the others are pure CSS
+    st.oninput = function(){ DISP.tscale = st.value / 100; applyDisp(); if (LAST) render(LAST); };
+    ss.oninput = function(){ DISP.squeeze = ss.value / 100; applyDisp(); };
+    sp.oninput = function(){ DISP.pad = parseFloat(sp.value); applyDisp(); };
+
+    document.getElementById('treset').onclick = function(){
+      DISP = { tscale: 1, squeeze: 1, pad: 0, style: DISP.style, bg: DISP.bg };
+      st.value = 100; ss.value = 100; sp.value = 0;
+      applyDisp(); if (LAST) render(LAST);
+    };
+
+    document.getElementById('tsave').onclick = async function(){
+      var msg = document.getElementById('tmsg');
+      try {
+        // Always keep it on the screen itself first, so a reboot, a nightly
+        // reload or a new build cannot undo what someone set by hand.
+        var kept = false;
+        try { localStorage.setItem(DKEY, JSON.stringify(DISP)); kept = true; } catch (e) {}
+        var op = window.opener || (window.parent !== window ? window.parent : null);
+        if (op && op.__lpcSaveBoardDisplay) {
+          var ok = await op.__lpcSaveBoardDisplay(CFG.storeId, DISP);
+          msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
+        } else {
+          msg.textContent = kept ? 'Saved on this screen. Save from the tool to set it everywhere.' : 'Could not save.';
+        }
+      } catch (e) { msg.textContent = 'Could not save.'; }
+      setTimeout(function(){ msg.textContent = ''; }, 4000);
+    };
+  }
+
+  var LAST = null;   // last store payload, so a text-size change can re-render
+
+  // Data is pulled every 15 minutes. Hitting the database every 30 seconds all day
+  // was pointless: the reports only change when a manager uploads one.
+  // The clock is separate and ticks every 10 seconds, so the minute on screen is
+  // always right regardless of when the data last refreshed.
+  loop();
+  setInterval(loop, 15 * 60 * 1000);
+  setInterval(tick, 10000);
+</script></body></html>`;
+}
+
+/* ---------------- Cinematic loading sequence ----------------
+   Plays on the first sign-in of each calendar day. The Lead Performance logo whooshes
+   in, fills the back, and morphs into a decorative version of The Board (no real data),
+   then hands off into the Performance page. ~10 seconds, then onComplete fires. A Skip
+   affordance appears only after someone has seen it a few times. */
+/* ---------------- Sign-in handover, part two ----------------
+   The mark left the login card growing. This picks it up at exactly that size,
+   blooms it into the page, and assembles the shape of the manager's own dashboard
+   underneath it, so the last frame of the animation IS the first frame of the app.
+   No stand-in table of invented names, no full-screen blue: the aurora and the card
+   shapes are the ones already on the page. */
+/* Each manufacturer has a house typeface. These are the closest widely available
+   matches, loaded on demand rather than shipped with the page, so a store's name
+   is set in something that looks like its own brand rather than ours. */
+const BRAND_FONTS = [
+  [/honda/i,               "Roboto",         "wght@700"],
+  [/acura/i,               "Roboto",         "wght@700"],
+  [/mazda/i,               "Jost",           "wght@600"],
+  [/audi/i,                "Barlow",         "wght@700"],
+  [/hyundai|genesis/i,     "Titillium+Web",  "wght@700"],
+  [/ford|lincoln/i,        "Archivo",        "wght@700"],
+  [/mitsubishi/i,          "Inter",          "wght@700"],
+  [/vinfast/i,             "Poppins",        "wght@600"],
+  [/kia/i,                 "Rubik",          "wght@700"],
+  [/toyota|lexus/i,        "Nunito+Sans",    "wght@700"],
+  [/chevrolet|gmc|buick/i, "Overpass",       "wght@700"],
+];
+function brandFontFor(name) {
+  const hit = BRAND_FONTS.find(([re]) => re.test(String(name || "")));
+  return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
+}
+
+function LoadingSequence({ storeName, brand, onComplete }) {
+  const [seen] = useState(() => introSeenCount());
+  const [exiting, setExiting] = useState(false);
+  const doneRef = useRef(false);
+  const onDone = useRef(onComplete);
+  onDone.current = onComplete;
+
+  const finish = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    setExiting(true);
+    setTimeout(() => onDone.current(), 620);
+  }, []);
+
+  useEffect(() => {
+    bumpIntroCount();
+    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq && mq.matches) { doneRef.current = true; onDone.current(); return; }
+    const t = setTimeout(finish, 3200);
+    return () => clearTimeout(t);
+  }, [finish]);
+
+  // Same tokens the real hero uses, so the gradient is identical rather than similar.
+  const vars = {
+    "--sp": (brand && brand.primary) || "#2A5E9B",
+    "--sd": (brand && brand.deep) || "#1D4674",
+    "--sa": (brand && brand.accent) || "#C1D730",
+  };
+
+  const bf = brandFontFor(storeName);
+  useEffect(() => {
+    if (!bf) return;
+    const id = "brandfont-" + bf.spec;
+    if (document.getElementById(id)) return;
+    const l = document.createElement("link");
+    l.id = id; l.rel = "stylesheet";
+    l.href = `https://fonts.googleapis.com/css2?family=${bf.spec}:${bf.axis}&display=swap`;
+    document.head.appendChild(l);
+  }, [bf && bf.spec]); // eslint-disable-line
+
+  return (
+    <div className={"ldx" + (exiting ? " is-exiting" : "")} style={vars}>
+      {/* the glow the mark throws as it opens up */}
+      <div className="ldx-bloom" />
+      <div className="ldx-bloom two" />
+
+      {/* the page assembling itself, in the page's own shapes */}
+      <div className="ldx-page">
+        <div className="ldx-bar">
+          <span className="ldx-mark-slot" />
+          <span className="ldx-pills"><i /><i /><i /></span>
+          <span className="ldx-queues"><i /><i /><i /></span>
+          <span className="ldx-store" />
+        </div>
         {/* Same container the dashboard uses: 1440 max, 32px gutters, centred. The
             skeleton has to land on the real layout, not near it. */}
         <div className="ldx-board">
