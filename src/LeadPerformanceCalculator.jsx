@@ -14288,7 +14288,7 @@ function Style() {
       ::selection { background: rgba(42,94,155,.2); }
 
       /* ---- store hero (manager landing) ---- */
-      .hero { position:relative; z-index:180; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
+      .hero { position:relative; z-index:220; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
       .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
         padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
@@ -14357,7 +14357,7 @@ function Style() {
         padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3); }
       .hero-health:hover .health-pop { opacity:1; transform: translateY(0) scale(1); }
       .health-pop::after { content:""; position:absolute; right:42px; bottom:100%; width:12px; height:12px;
-        margin-bottom:-6px; transform:rotate(45deg); background:#fff;
+        margin-bottom:-6px; transform:rotate(45deg); background:#FFFFFF; z-index:1;
         border-left:1px solid rgba(0,0,0,.07); border-top:1px solid rgba(0,0,0,.07); border-radius:3px 0 0 0; }
       .hp-rows { margin-top:10px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
       .hp-row { display:grid; grid-template-columns: 1fr auto; gap:2px 10px; padding:6px 0; align-items:baseline; }
@@ -14563,7 +14563,7 @@ function Style() {
       }
 
       /* ---- store wizard ---- */
-      .wiz-overlay { position:fixed; inset:0; z-index:60; background:rgba(18,33,47,.42);
+      .wiz-overlay { position:fixed; inset:0; z-index:360; background:rgba(18,33,47,.42);
         backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
         display:flex; align-items:center; justify-content:center; padding:20px; animation: fadeIn .25s ease; }
       @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
@@ -15002,7 +15002,7 @@ function Style() {
       .flag-banner-foot { font-size:12px; color:var(--ink-3); margin-top:8px; }
 
       /* ---- delivery guide + wrong-report stop screen ---- */
-      .modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(3px);
+      .modal-backdrop { position:fixed; inset:0; z-index:360; background:rgba(15,23,42,.55); backdrop-filter:blur(3px);
         display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:200; overflow-y:auto; }
       .modal { background:#fff; border-radius:20px; box-shadow:0 30px 80px rgba(0,0,0,.35);
         border:1px solid rgba(255,255,255,.7); color:var(--ink); }
@@ -15123,7 +15123,7 @@ function Style() {
            punching through and making every step obvious.
          - A gradient fade below the bar (::after) so elements ease out from under it
            instead of popping across a hard edge. */
-      .topbar { position: sticky; top: 0; z-index: 30; display:flex; align-items:center; justify-content:space-between;
+      .topbar { position: sticky; top: 0; z-index: 300; display:flex; align-items:center; justify-content:space-between;
         padding:12px 24px; background: rgba(255,255,255,.9); backdrop-filter: saturate(170%) blur(16px);
         -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(16,32,52,.07);
         box-shadow: 0 1px 0 rgba(16,32,52,.02), 0 8px 24px -18px rgba(16,32,52,.16);
@@ -15151,7 +15151,7 @@ function Style() {
          padding, .board-page is max-width 1440 with 32px gutters, .hero-band is 30px/34px
          with a 24px radius and the same gradient tokens. The point is that the last
          frame of this and the first frame of the app are the same picture. */
-      .ldx { position:fixed; inset:0; z-index:120; overflow:hidden; contain:paint;
+      .ldx { position:fixed; inset:0; z-index:400; overflow:hidden; contain:paint;
         background:var(--bg); animation: ldxIn .45s var(--ease) both; transform:translateZ(0); }
       .ldx.is-exiting { animation: ldxOut .62s cubic-bezier(.34,1.3,.64,1) forwards;
         will-change:opacity, transform; }
@@ -16064,7 +16064,7 @@ function Style() {
         cursor:pointer; color:var(--ink-2); font-size:13px; margin-right:4px; transition: all .2s var(--spring); }
       .btn-arrow:hover:not(:disabled) { color:var(--blue); transform: translateY(-1px); }
       .btn-arrow:disabled { opacity:.3; cursor:default; }
-      .crop-overlay { position:fixed; inset:0; z-index:60; background:rgba(29,29,31,.35);
+      .crop-overlay { position:fixed; inset:0; z-index:360; background:rgba(29,29,31,.35);
         backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
         display:flex; align-items:center; justify-content:center; animation: fadeIn .25s var(--spring); }
       @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
@@ -16157,7 +16157,7 @@ function Style() {
       .hamburger { display:none; flex-direction:column; justify-content:center; gap:4px; width:38px; height:38px;
         border:1px solid var(--line); border-radius:11px; background:#fff; cursor:pointer; padding:0 9px; }
       .hamburger span { display:block; height:2px; border-radius:2px; background:var(--ink); transition:.2s; }
-      .drawer-root { display:none; position:fixed; inset:0; z-index:120; }
+      .drawer-root { display:none; position:fixed; inset:0; z-index:380; }
       .drawer-root.open { display:block; }
       .drawer-scrim { position:absolute; inset:0; background:rgba(15,23,42,.42); backdrop-filter:blur(2px);
         opacity:0; animation:scrimIn .25s ease forwards; }
@@ -16397,7 +16397,7 @@ function Style() {
           padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
 
         /* --- bottom bar --- */
-        .botnav { position:fixed; left:0; right:0; bottom:0; z-index:50; display:flex;
+        .botnav { position:fixed; left:0; right:0; bottom:0; z-index:340; display:flex;
           padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
           background:rgba(255,255,255,.9); backdrop-filter:blur(20px) saturate(180%);
           -webkit-backdrop-filter:blur(20px) saturate(180%);
