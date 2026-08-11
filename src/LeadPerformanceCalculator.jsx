@@ -3920,7 +3920,7 @@ function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
     if (doneRef.current) return;
     doneRef.current = true;
     setExiting(true);
-    setTimeout(() => onDone.current(), 720);   // must match the ldxOut duration
+    setTimeout(() => onDone.current(), 620);   // must match the ldxOut duration
   }, []);
 
   useEffect(() => {
@@ -14377,7 +14377,7 @@ function Style() {
       .hh-row.dim { background:rgba(255,255,255,.12); }
 
       /* ---- the "why, and who" row ---- */
-      .hero-focus { position:relative; z-index:6; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
+      .hero-focus { position:relative; z-index:26; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
         animation: tileIn .5s var(--spring) .32s both; }
       .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
         padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
@@ -14414,6 +14414,8 @@ function Style() {
         transition: opacity .16s ease, transform .38s var(--ease-bloop);
         background:rgba(255,255,255,.99); border:1px solid rgba(0,0,0,.07); border-radius:16px;
         padding:14px 16px 13px; box-shadow: 0 16px 42px rgba(31,54,86,.26); }
+      .hf-fix { position:relative; }
+      .hf-fix:hover, .hf-fix.popped { z-index:70; }
       .hf-fix:hover .hf-pop { opacity:1; transform: translateY(0) scale(1); }
 
       /* the card the manager was sent to, briefly haloed so they land on it */
@@ -14435,9 +14437,21 @@ function Style() {
         background:rgba(255,255,255,.7); border:1px solid rgba(16,40,68,.06);
         transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
       .pod:hover { transform:translateY(-2px); }
-      .pod-1 { box-shadow: 0 0 0 1px rgba(224,161,0,.28), 0 8px 22px rgba(224,161,0,.15); }
-      .pod-2 { box-shadow: 0 0 0 1px rgba(140,158,176,.26), 0 8px 22px rgba(90,110,130,.11); }
-      .pod-3 { box-shadow: 0 0 0 1px rgba(192,118,74,.26), 0 8px 22px rgba(160,96,58,.13); }
+      .pod-1 { background:linear-gradient(148deg, rgba(255,246,225,.95) 0%, rgba(255,255,255,.82) 58%);
+        box-shadow: 0 0 0 1px rgba(224,161,0,.3), 0 10px 24px -6px rgba(224,161,0,.2),
+          inset 0 1px 0 rgba(255,255,255,.9); }
+      .pod-2 { background:linear-gradient(148deg, rgba(246,249,252,.95) 0%, rgba(255,255,255,.84) 58%);
+        box-shadow: 0 0 0 1px rgba(140,158,176,.28), 0 10px 24px -6px rgba(90,110,130,.16),
+          inset 0 1px 0 rgba(255,255,255,.9); }
+      .pod-3 { background:linear-gradient(148deg, rgba(255,243,234,.95) 0%, rgba(255,255,255,.84) 58%);
+        box-shadow: 0 0 0 1px rgba(192,118,74,.28), 0 10px 24px -6px rgba(160,96,58,.18),
+          inset 0 1px 0 rgba(255,255,255,.9); }
+      .pod-1:hover { box-shadow: 0 0 0 1px rgba(224,161,0,.38), 0 16px 32px -8px rgba(224,161,0,.28),
+          inset 0 1px 0 rgba(255,255,255,.95); }
+      .pod-2:hover { box-shadow: 0 0 0 1px rgba(140,158,176,.36), 0 16px 32px -8px rgba(90,110,130,.22),
+          inset 0 1px 0 rgba(255,255,255,.95); }
+      .pod-3:hover { box-shadow: 0 0 0 1px rgba(192,118,74,.36), 0 16px 32px -8px rgba(160,96,58,.26),
+          inset 0 1px 0 rgba(255,255,255,.95); }
       .pod .lb-medal { width:30px; height:30px; font-size:13px; margin:0; flex:0 0 auto; }
       .pod-who { display:flex; flex-direction:column; min-width:0; flex:1; }
       .pod-name { font-family:var(--font-display); font-weight:700; font-size:14.5px; letter-spacing:-.015em;
@@ -15139,13 +15153,17 @@ function Style() {
          frame of this and the first frame of the app are the same picture. */
       .ldx { position:fixed; inset:0; z-index:120; overflow:hidden; contain:paint;
         background:var(--bg); animation: ldxIn .45s var(--ease) both; transform:translateZ(0); }
-      .ldx.is-exiting { animation: ldxOut .72s cubic-bezier(.4,0,.2,1) forwards;
-        will-change:opacity; }
+      .ldx.is-exiting { animation: ldxOut .62s cubic-bezier(.34,1.3,.64,1) forwards;
+        will-change:opacity, transform; }
       /* Everything inside holds its position and fades together. Nothing moves on
          the way out, so there is nothing to catch the eye except the layer thinning. */
       .ldx.is-exiting * { animation-play-state:paused !important; }
       @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
-      @keyframes ldxOut { from { opacity:1; } to { opacity:0; } }
+      @keyframes ldxOut {
+        0%   { opacity:1; transform:scale(1); }
+        40%  { opacity:.62; transform:scale(1.008); }
+        100% { opacity:0; transform:scale(1.022); }
+      }
 
       /* The glow the mark throws as it opens: the page's own aurora, brought
          forward rather than invented for the occasion. */
@@ -15153,16 +15171,18 @@ function Style() {
         margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
         background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
           color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
-        animation: ldxBloom 3.2s var(--ease) both; }
+        animation: ldxBloom 3.2s cubic-bezier(.34,1.4,.64,1) both; }
       .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
           color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
         animation-delay:.18s; animation-duration:3.5s; }
       @keyframes ldxBloom {
         0%   { transform:scale(.02); opacity:0; }
-        14%  { opacity:1; }
-        62%  { opacity:.92; }
-        84%  { opacity:.68; }
-        100% { transform:scale(1); opacity:.4; }
+        12%  { opacity:1; }
+        66%  { transform:scale(.98); opacity:.95; }
+        /* swell, then pull in with the pill rather than fading out on its own */
+        76%  { transform:scale(1.06); opacity:1; }
+        90%  { transform:scale(.34); opacity:.55; }
+        100% { transform:scale(.12); opacity:0; }
       }
 
       /* The mark travels to the exact spot it occupies in the header: 24px in from
