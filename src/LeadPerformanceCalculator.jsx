@@ -1667,7 +1667,9 @@ export default function LeadPerformanceCalculator() {
   // Swapping one full screen for another was the hard cut; a curtain lifting is not.
   useEffect(() => {
     if (!session || !session.active || entered) return;
-    if (!introPlayedToday(session.userId || session.id)) setIntroPlaying(true);
+    // Wait for the sign-in handover to clear before this begins. Overlapping the
+    // two reads as one animation interrupting another rather than a sequence.
+    if (!introPlayedToday(session.userId || session.id)) setTimeout(() => setIntroPlaying(true), 240);
     setAppModule("perf");
     setEntered(true);
   }, [session, entered]);
@@ -3875,6 +3877,27 @@ function LEADERBOARD_HTML(p) {
    underneath it, so the last frame of the animation IS the first frame of the app.
    No stand-in table of invented names, no full-screen blue: the aurora and the card
    shapes are the ones already on the page. */
+/* Each manufacturer has a house typeface. These are the closest widely available
+   matches, loaded on demand rather than shipped with the page, so a store's name
+   is set in something that looks like its own brand rather than ours. */
+const BRAND_FONTS = [
+  [/honda/i,               "Roboto",         "wght@700"],
+  [/acura/i,               "Roboto",         "wght@700"],
+  [/mazda/i,               "Jost",           "wght@600"],
+  [/audi/i,                "Barlow",         "wght@700"],
+  [/hyundai|genesis/i,     "Titillium+Web",  "wght@700"],
+  [/ford|lincoln/i,        "Archivo",        "wght@700"],
+  [/mitsubishi/i,          "Inter",          "wght@700"],
+  [/vinfast/i,             "Poppins",        "wght@600"],
+  [/kia/i,                 "Rubik",          "wght@700"],
+  [/toyota|lexus/i,        "Nunito+Sans",    "wght@700"],
+  [/chevrolet|gmc|buick/i, "Overpass",       "wght@700"],
+];
+function brandFontFor(name) {
+  const hit = BRAND_FONTS.find(([re]) => re.test(String(name || "")));
+  return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
+}
+
 function LoadingSequence({ storeName, brand, onComplete }) {
   const [seen] = useState(() => introSeenCount());
   const [exiting, setExiting] = useState(false);
@@ -3897,11 +3920,23 @@ function LoadingSequence({ storeName, brand, onComplete }) {
     return () => clearTimeout(t);
   }, [finish]);
 
+  // Same tokens the real hero uses, so the gradient is identical rather than similar.
   const vars = {
-    "--ld-p": (brand && brand.primary) || "#2A5E9B",
-    "--ld-d": (brand && brand.dark) || "#1D4674",
-    "--ld-a": (brand && brand.accent) || "#C1D730",
+    "--sp": (brand && brand.primary) || "#2A5E9B",
+    "--sd": (brand && brand.deep) || "#1D4674",
+    "--sa": (brand && brand.accent) || "#C1D730",
   };
+
+  const bf = brandFontFor(storeName);
+  useEffect(() => {
+    if (!bf) return;
+    const id = "brandfont-" + bf.spec;
+    if (document.getElementById(id)) return;
+    const l = document.createElement("link");
+    l.id = id; l.rel = "stylesheet";
+    l.href = `https://fonts.googleapis.com/css2?family=${bf.spec}:${bf.axis}&display=swap`;
+    document.head.appendChild(l);
+  }, [bf && bf.spec]); // eslint-disable-line
 
   return (
     <div className={"ldx" + (exiting ? " is-exiting" : "")} style={vars}>
@@ -3915,22 +3950,35 @@ function LoadingSequence({ storeName, brand, onComplete }) {
           <span className="ldx-mark-slot" />
           <span className="ldx-pills"><i /><i /><i /></span>
           <span className="ldx-queues"><i /><i /><i /></span>
+          <span className="ldx-store" />
         </div>
-        <div className="ldx-tabs"><i /><i /><i /><i /></div>
-        <div className="ldx-hero">
-          <div className="ldx-hero-logo" />
-          <div className="ldx-hero-text"><span className="w1" /><span className="w2" /><span className="w3" /></div>
-          <div className="ldx-ring"><svg viewBox="0 0 100 100"><circle className="ldx-ring-bg" cx="50" cy="50" r="42" /><circle className="ldx-ring-fg" cx="50" cy="50" r="42" /></svg></div>
-        </div>
-        <div className="ldx-cards">
-          <div className="ldx-card tall" />
-          <div className="ldx-card wide"><i /><i /><i /></div>
+        {/* Same container the dashboard uses: 1440 max, 32px gutters, centred. The
+            skeleton has to land on the real layout, not near it. */}
+        <div className="ldx-board">
+          <div className="ldx-hero">
+            <div className="ldx-hero-id">
+              <div className="ldx-hero-logo" />
+              <div className="ldx-hero-text"><span className="w1" /><span className="w2" /><span className="w3" /></div>
+            </div>
+            <div className="ldx-hero-right">
+              <div className="ldx-ring"><svg viewBox="0 0 100 100"><circle className="ldx-ring-bg" cx="50" cy="50" r="42" /><circle className="ldx-ring-fg" cx="50" cy="50" r="42" /></svg></div>
+              <div className="ldx-hero-side"><span className="s1" /><span className="s2" /><span className="s3" /></div>
+            </div>
+          </div>
+          <div className="ldx-cards">
+            <div className="ldx-card tall" />
+            <div className="ldx-card wide"><i /><i /><i /></div>
+          </div>
         </div>
       </div>
 
       {/* the mark itself: the one thing carried over from the login card */}
+      {/* The mark does not fade. It travels to where it will live in the header,
+          which is what stitches this screen to the one it becomes. */}
       <div className="ldx-mark"><Logo size={72} /></div>
-      <div className="ldx-word">{storeName ? storeName : "your board"}</div>
+      <div className="ldx-word" style={bf ? { fontFamily: `'${bf.family}', var(--font-display)` } : undefined}>
+        {storeName || "your board"}
+      </div>
 
       {seen >= 3 && <button className="ldx-skip" onClick={finish}>Skip</button>}
     </div>
@@ -15056,117 +15104,135 @@ function Style() {
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
       /* ---------- the page assembling itself ----------
-         Sits on the app's own light background rather than a colour of its own, so
-         the last frame of this and the first frame of the dashboard are the same
-         picture. Timings overlap deliberately: the bloom is still opening while the
-         bar is already sliding in. */
+         Every measurement here is taken from the real dashboard: .topbar is 12px/24px
+         padding, .board-page is max-width 1440 with 32px gutters, .hero-band is 30px/34px
+         with a 24px radius and the same gradient tokens. The point is that the last
+         frame of this and the first frame of the app are the same picture. */
       .ldx { position:fixed; inset:0; z-index:120; overflow:hidden;
-        background:var(--bg); animation: ldxIn .5s var(--ease) both; }
+        background:var(--bg); animation: ldxIn .45s var(--ease) both; }
       .ldx.is-exiting { animation: ldxOut .6s var(--ease) forwards; }
       @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
-      @keyframes ldxOut { to { opacity:0; transform:scale(1.03); filter:blur(7px); } }
+      @keyframes ldxOut { to { opacity:0; filter:blur(6px); } }
 
-      /* The glow the mark throws as it opens. This is the aurora already on the
-         page, brought forward rather than invented for the occasion. */
-      .ldx-bloom { position:absolute; left:50%; top:44%; width:120vmax; height:120vmax;
+      /* The glow the mark throws as it opens: the page's own aurora, brought
+         forward rather than invented for the occasion. */
+      .ldx-bloom { position:absolute; left:50%; top:42%; width:120vmax; height:120vmax;
         margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
-        background:radial-gradient(circle, color-mix(in srgb, var(--ld-p) 42%, transparent) 0%,
-          color-mix(in srgb, var(--ld-p) 16%, transparent) 34%, transparent 62%);
+        background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
+          color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
         animation: ldxBloom 2.6s var(--ease) both; }
-      .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--ld-a) 34%, transparent) 0%,
-          color-mix(in srgb, var(--ld-a) 12%, transparent) 30%, transparent 58%);
+      .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
+          color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
         animation-delay:.18s; animation-duration:2.9s; }
       @keyframes ldxBloom {
         0%   { transform:scale(.02); opacity:0; }
         18%  { opacity:1; }
-        70%  { opacity:.55; }
-        100% { transform:scale(1); opacity:.28; }
+        70%  { opacity:.5; }
+        100% { transform:scale(1); opacity:.24; }
       }
 
-      /* the mark, arriving at the size it left the login card and settling */
-      .ldx-mark { position:absolute; left:50%; top:44%; translate:-50% -50%; z-index:3;
-        filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--ld-p) 45%, transparent));
-        animation: ldxMark 2.4s var(--ease) both; }
+      /* The mark travels to the exact spot it occupies in the header: 24px in from
+         the left, centred in a 60px bar, at 36px against the 72px it starts at.
+         Transform only, so it moves smoothly. */
+      .ldx-mark { position:fixed; left:0; top:0; z-index:4; width:72px; height:72px;
+        filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--sp) 42%, transparent));
+        animation: ldxMark 2.9s var(--ease) both; }
       @keyframes ldxMark {
-        0%   { transform:scale(.5); opacity:0; }
-        14%  { transform:scale(1.14); opacity:1; }
-        34%  { transform:scale(1); opacity:1; }
-        76%  { transform:scale(1) translateY(0); opacity:1; }
-        100% { transform:scale(.42) translateY(-34vh); opacity:0; }
+        0%   { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(.5); opacity:0; }
+        13%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1.12); opacity:1; }
+        30%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
+        62%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
+        100% { transform:translate(24px, 12px) scale(.5); opacity:1;
+               filter:drop-shadow(0 0 0 transparent); }
       }
-      .ldx-word { position:absolute; left:0; right:0; top:calc(44% + 74px); z-index:3; text-align:center;
-        font-family:var(--font-display); font-weight:700; font-size:22px; letter-spacing:-.01em;
-        color:var(--ink); animation: ldxWord 2.4s var(--ease) both; }
+      .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 58px); z-index:4; text-align:center;
+        font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.015em;
+        color:var(--ink); animation: ldxWord 2.6s var(--ease) both; }
       @keyframes ldxWord {
-        0%,10% { opacity:0; transform:translateY(10px); }
-        26%    { opacity:1; transform:none; }
-        72%    { opacity:1; }
-        100%   { opacity:0; transform:translateY(-16px); }
+        0%,8%  { opacity:0; transform:translateY(12px) scale(.98); }
+        24%    { opacity:1; transform:none; }
+        66%    { opacity:1; }
+        100%   { opacity:0; transform:translateY(-14px) scale(.97); }
       }
 
-      /* the dashboard's own shapes, arriving in reading order */
-      .ldx-page { position:absolute; inset:0; z-index:2; padding:0; opacity:.92; }
-      .ldx-bar { position:absolute; top:0; left:0; right:0; height:58px; background:rgba(255,255,255,.86);
-        border-bottom:1px solid rgba(16,32,52,.07); display:flex; align-items:center; gap:18px; padding:0 24px;
-        animation: ldxBar .6s var(--ease) both; animation-delay:.55s; }
-      .ldx-mark-slot { width:36px; height:36px; border-radius:11px; background:rgba(16,32,52,.10); }
-      .ldx-pills, .ldx-queues { display:flex; gap:8px; }
-      .ldx-pills { margin-left:auto; }
-      .ldx-pills i { width:78px; height:26px; border-radius:9px; background:rgba(16,32,52,.09); }
-      .ldx-queues i { width:74px; height:26px; border-radius:999px; }
-      .ldx-queues i:nth-child(1) { background:rgba(16,185,129,.75); }
-      .ldx-queues i:nth-child(2) { background:rgba(85,102,240,.75); }
-      .ldx-queues i:nth-child(3) { background:rgba(139,92,246,.75); margin-right:auto; }
+      /* ---- the dashboard's own shapes ---- */
+      .ldx-page { position:absolute; inset:0; z-index:2; }
+      .ldx-bar { position:absolute; top:0; left:0; right:0; height:60px;
+        background:rgba(255,255,255,.9); border-bottom:1px solid rgba(16,32,52,.06);
+        display:flex; align-items:center; gap:12px; padding:12px 24px; box-sizing:border-box;
+        animation: ldxBar .6s var(--ease) both; animation-delay:.5s; }
+      .ldx-mark-slot { width:36px; height:36px; border-radius:11px; background:transparent; flex:0 0 auto; }
+      .ldx-pills, .ldx-queues { display:flex; gap:8px; align-items:center; }
+      .ldx-pills { margin-left:auto; background:rgba(16,32,52,.05); border-radius:12px; padding:3px; }
+      .ldx-pills i { width:92px; height:28px; border-radius:9px; background:rgba(16,32,52,.08); }
+      .ldx-pills i:first-child { background:#fff; }
+      .ldx-queues i { width:96px; height:30px; border-radius:999px; }
+      .ldx-queues i:nth-child(1) { background:#10B981; }
+      .ldx-queues i:nth-child(2) { background:#5566F0; }
+      .ldx-queues i:nth-child(3) { background:#8B5CF6; }
+      .ldx-store { width:250px; height:34px; border-radius:11px; border:1px solid rgba(16,32,52,.12);
+        background:#fff; margin-right:auto; }
       @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
 
-      .ldx-tabs { position:absolute; top:76px; left:24px; display:flex; gap:10px;
-        animation: ldxRise .55s var(--ease) both; animation-delay:.72s; }
-      .ldx-tabs i { width:88px; height:34px; border-radius:12px; background:rgba(255,255,255,.75); }
-      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.5); }
+      .ldx-board { position:absolute; top:60px; left:0; right:0;
+        max-width:1440px; margin:0 auto; padding:28px 32px 0; box-sizing:border-box; }
 
-      .ldx-hero { position:absolute; top:128px; left:24px; right:24px; height:172px; border-radius:24px;
-        display:flex; align-items:center; gap:22px; padding:0 30px; overflow:hidden;
-        background:linear-gradient(100deg, var(--ld-p), var(--ld-d));
-        animation: ldxHero .8s var(--ease-bloop) both; animation-delay:.86s; }
-      .ldx-hero-logo { width:64px; height:64px; border-radius:18px; background:rgba(255,255,255,.9); flex:0 0 auto; }
-      .ldx-hero-text { display:flex; flex-direction:column; gap:10px; }
+      .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
+        gap:32px; padding:30px 34px; border-radius:24px; min-height:152px; box-sizing:border-box;
+        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
+        box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
+        animation: ldxHero .75s var(--spring) both; animation-delay:.66s; }
+      .ldx-hero-id { display:flex; align-items:center; gap:20px; }
+      .ldx-hero-logo { width:74px; height:74px; border-radius:20px; background:rgba(255,255,255,.92); flex:0 0 auto; }
+      .ldx-hero-text { display:flex; flex-direction:column; gap:11px; }
       .ldx-hero-text span { display:block; border-radius:7px; background:rgba(255,255,255,.34); }
-      .ldx-hero-text .w1 { width:150px; height:11px; }
-      .ldx-hero-text .w2 { width:300px; height:26px; background:rgba(255,255,255,.85); }
-      .ldx-hero-text .w3 { width:180px; height:11px; }
-      .ldx-ring { margin-left:auto; width:96px; height:96px; }
+      .ldx-hero-text .w1 { width:170px; height:11px; }
+      .ldx-hero-text .w2 { width:340px; height:30px; background:rgba(255,255,255,.86); }
+      .ldx-hero-text .w3 { width:150px; height:11px; }
+      .ldx-hero-right { display:flex; align-items:center; gap:26px; }
+      .ldx-ring { width:110px; height:110px; flex:0 0 auto; }
       .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
       .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:9; }
-      .ldx-ring-fg { fill:none; stroke:var(--ld-a); stroke-width:9; stroke-linecap:round;
+      .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:9; stroke-linecap:round;
         stroke-dasharray:264; stroke-dashoffset:264;
-        animation: ldxRing 1.5s var(--ease) both; animation-delay:1.05s; }
-      @keyframes ldxRing { to { stroke-dashoffset:80; } }
+        animation: ldxRing 1.4s var(--ease) both; animation-delay:.9s; }
+      @keyframes ldxRing { to { stroke-dashoffset:78; } }
+      .ldx-hero-side { display:flex; flex-direction:column; gap:10px; }
+      .ldx-hero-side span { display:block; border-radius:7px; background:rgba(255,255,255,.3); }
+      .ldx-hero-side .s1 { width:300px; height:18px; background:rgba(255,255,255,.8); }
+      .ldx-hero-side .s2 { width:330px; height:11px; }
+      .ldx-hero-side .s3 { width:240px; height:11px; }
       @keyframes ldxHero {
-        from { transform:translateY(26px) scale(.97); opacity:0; filter:blur(5px); }
+        from { transform:translateY(24px) scale(.975); opacity:0; filter:blur(5px); }
         to   { transform:none; opacity:1; filter:blur(0); }
       }
 
-      .ldx-cards { position:absolute; top:322px; left:24px; right:24px; display:flex; gap:20px; }
-      .ldx-card { border-radius:20px; background:rgba(255,255,255,.82); box-shadow:0 18px 40px -28px rgba(16,32,52,.5);
-        animation: ldxRise .6s var(--ease) both; }
-      .ldx-card.tall { width:300px; height:196px; background:linear-gradient(150deg,#F19A3E,#E4632A); animation-delay:1.02s; }
-      .ldx-card.wide { flex:1; height:196px; padding:26px 28px; display:flex; flex-direction:column; gap:18px; animation-delay:1.14s; }
-      .ldx-card.wide i { display:block; height:16px; border-radius:8px; background:rgba(16,32,52,.09); }
-      .ldx-card.wide i:nth-child(1) { width:64%; }
-      .ldx-card.wide i:nth-child(2) { width:52%; }
-      .ldx-card.wide i:nth-child(3) { width:58%; }
-      @keyframes ldxRise { from { transform:translateY(22px); opacity:0; } to { transform:none; opacity:1; } }
+      .ldx-cards { display:flex; gap:24px; margin-top:26px; }
+      .ldx-card { border-radius:20px; animation: ldxRise .6s var(--ease) both; }
+      .ldx-card.tall { width:406px; height:212px; flex:0 0 auto;
+        background:linear-gradient(150deg,#F09A3E,#E2622B);
+        box-shadow:0 18px 40px -26px rgba(226,98,43,.6); animation-delay:.84s; }
+      .ldx-card.wide { flex:1; height:212px; padding:30px 32px; box-sizing:border-box;
+        display:flex; flex-direction:column; justify-content:center; gap:26px;
+        background:rgba(255,255,255,.72); box-shadow:0 18px 40px -30px rgba(16,32,52,.45);
+        animation-delay:.94s; }
+      .ldx-card.wide i { display:block; height:15px; border-radius:8px; background:rgba(16,32,52,.08); }
+      .ldx-card.wide i:nth-child(1) { width:58%; }
+      .ldx-card.wide i:nth-child(2) { width:48%; }
+      .ldx-card.wide i:nth-child(3) { width:53%; }
+      @keyframes ldxRise { from { transform:translateY(20px); opacity:0; } to { transform:none; opacity:1; } }
 
-      .ldx-skip { position:absolute; right:20px; bottom:18px; z-index:4; font-family:inherit; font-size:12.5px;
+      .ldx-skip { position:absolute; right:20px; bottom:18px; z-index:5; font-family:inherit; font-size:12.5px;
         font-weight:700; padding:7px 14px; border-radius:999px; border:0; cursor:pointer;
         background:rgba(16,32,52,.08); color:var(--ink-2); }
-      @media (max-width: 820px) {
-        .ldx-hero { height:150px; } .ldx-cards { flex-direction:column; }
-        .ldx-card.tall, .ldx-card.wide { width:auto; height:110px; }
+      @media (max-width: 900px) {
+        .ldx-store, .ldx-pills { display:none; }
+        .ldx-hero { flex-wrap:wrap; }
+        .ldx-hero-side { display:none; }
+        .ldx-cards { flex-direction:column; }
+        .ldx-card.tall, .ldx-card.wide { width:auto; height:120px; }
       }
-      @media (prefers-reduced-motion: reduce) {
-        .ldx, .ldx * { animation:none !important; }
-      }
+      @media (prefers-reduced-motion: reduce) { .ldx, .ldx * { animation:none !important; } }
 
       /* ---------- sign-in handover ----------
          One continuous move in three overlapping beats. Nothing waits its turn
