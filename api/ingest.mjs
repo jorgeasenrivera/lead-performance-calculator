@@ -473,7 +473,11 @@ async function sbSwap(key, apply, tries = 5) {
     if (!cur) return { ok: false, why: "row does not exist" };
     const rev = Number(cur.rev) || 0;
     const next = { ...apply(cur), rev: rev + 1 };
-    const q = `${url}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}&value->>rev=eq.${rev}`;
+    // A row written before revisions existed has no rev, and in SQL a missing value
+    // matches nothing, so eq.0 can never hit those rows. Match on it being absent
+    // the first time; from then on it carries one.
+    const revFilter = (cur.rev == null) ? "value->>rev=is.null" : `value->>rev=eq.${rev}`;
+    const q = `${url}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}&${revFilter}`;
     const r = await fetch(q, {
       method: "PATCH",
       headers: { apikey: k, Authorization: `Bearer ${k}`, "Content-Type": "application/json",
