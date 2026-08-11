@@ -1465,9 +1465,16 @@ async function saveStoreCAS(key, build, tries = 5) {
         return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
       }
 
-      // Only replace the row if it is still the revision we just read.
-      const { data: hit, error } = await supabase.from("app_data")
-        .update({ value }).eq("key", key).eq("value->>rev", String(rev)).select("key");
+      /* Only replace the row if it is still the revision we just read.
+
+         A row written before revisions existed has no rev at all, and in SQL a
+         missing value equals nothing, not even itself. Matching on rev = '0' can
+         therefore never succeed on those rows, which is every row that predates
+         this change. The first save on such a row has to match on rev being
+         absent instead; after that it carries one like everything else. */
+      let q = supabase.from("app_data").update({ value }).eq("key", key);
+      q = (server.rev == null) ? q.is("value->>rev", null) : q.eq("value->>rev", String(rev));
+      const { data: hit, error } = await q.select("key");
       if (error) throw error;
       if (hit && hit.length) {
         lastSaveError = null;
@@ -1482,7 +1489,7 @@ async function saveStoreCAS(key, build, tries = 5) {
       return { ok: false, rev: null, conflictsResolved: conflicts };
     }
   }
-  lastSaveError = `Could not save after ${tries} attempts: the store is being changed by several people at once.`;
+  lastSaveError = `Could not save after ${tries} attempts. Someone else may be saving this store at the same moment, or the row is being rejected by a database rule. Nothing was overwritten.`;
   console.error("save gave up after conflicts", key);
   return { ok: false, rev: null, conflictsResolved: conflicts };
 }
@@ -2199,7 +2206,7 @@ export default function LeadPerformanceCalculator() {
     }
     setSaving(false); savingRef.current = false;
     if (!ok) {
-      alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a database write-permission (RLS) problem or a dropped connection.\n\nExact error from the database:\n" + (lastSaveError || "unknown") + "\n\nPlease send this exact message to your admin.");
+      alert("That change could NOT be saved, so it will reappear on refresh. Your other work is untouched and nothing was overwritten.\n\nWhat the database said:\n" + (lastSaveError || "unknown") + "\n\nTry once more. If it happens again, send this exact message to your admin.");
       return;
     }
     // Refresh the TV row so every casted screen picks this up on its next poll.
