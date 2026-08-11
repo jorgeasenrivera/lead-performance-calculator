@@ -14290,7 +14290,7 @@ function Style() {
       /* ---- store hero (manager landing) ---- */
       .hero { position:relative; z-index:220; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
       .hero-band { --px:0px; --pf:1; display:flex; align-items:center; justify-content:space-between; gap:32px; flex-wrap:wrap;
-        padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:8;
+        padding:30px 34px; border-radius:24px; position:relative; overflow:visible; z-index:240;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: heroIn .6s var(--spring) both; }
@@ -14440,16 +14440,16 @@ function Style() {
       .pod-1 { background:linear-gradient(148deg, rgba(255,246,225,.95) 0%, rgba(255,255,255,.82) 58%);
         box-shadow: 0 0 0 1px rgba(224,161,0,.3), 0 10px 24px -6px rgba(224,161,0,.2),
           inset 0 1px 0 rgba(255,255,255,.9); }
-      .pod-2 { background:linear-gradient(148deg, rgba(246,249,252,.95) 0%, rgba(255,255,255,.84) 58%);
-        box-shadow: 0 0 0 1px rgba(140,158,176,.28), 0 10px 24px -6px rgba(90,110,130,.16),
-          inset 0 1px 0 rgba(255,255,255,.9); }
+      .pod-2 { background:linear-gradient(148deg, rgba(226,234,242,.98) 0%, rgba(248,251,254,.9) 58%);
+        box-shadow: 0 0 0 1px rgba(128,148,170,.4), 0 10px 24px -6px rgba(90,110,130,.26),
+          inset 0 1px 0 rgba(255,255,255,.95); }
       .pod-3 { background:linear-gradient(148deg, rgba(255,243,234,.95) 0%, rgba(255,255,255,.84) 58%);
         box-shadow: 0 0 0 1px rgba(192,118,74,.28), 0 10px 24px -6px rgba(160,96,58,.18),
           inset 0 1px 0 rgba(255,255,255,.9); }
       .pod-1:hover { box-shadow: 0 0 0 1px rgba(224,161,0,.38), 0 16px 32px -8px rgba(224,161,0,.28),
           inset 0 1px 0 rgba(255,255,255,.95); }
-      .pod-2:hover { box-shadow: 0 0 0 1px rgba(140,158,176,.36), 0 16px 32px -8px rgba(90,110,130,.22),
-          inset 0 1px 0 rgba(255,255,255,.95); }
+      .pod-2:hover { box-shadow: 0 0 0 1px rgba(128,148,170,.5), 0 16px 32px -8px rgba(90,110,130,.32),
+          inset 0 1px 0 rgba(255,255,255,1); }
       .pod-3:hover { box-shadow: 0 0 0 1px rgba(192,118,74,.36), 0 16px 32px -8px rgba(160,96,58,.26),
           inset 0 1px 0 rgba(255,255,255,.95); }
       .pod .lb-medal { width:30px; height:30px; font-size:13px; margin:0; flex:0 0 auto; }
