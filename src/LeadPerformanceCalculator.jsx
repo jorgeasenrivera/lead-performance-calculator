@@ -404,6 +404,9 @@ const PIX5 = {
   tridown:  ["00000","00000","11111","01110","00100"],
   dot:      ["00000","00000","00100","00000","00000"],
 };
+// A question mark, on the fine grid: it needs the counter and the gap under the
+// hook to read as a question rather than a smudge.
+PIX.question = ["001111000","011001100","110000110","000000110","000011100","000111000","000000000","000111000","000111000"];
 
 function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
   // The marks that appear at text size come off the coarse grid, the same as The
@@ -527,6 +530,16 @@ const DEFAULT_CONFIG = {
   ],
   standards: {},
   approvedDomains: [],
+  /* Who to contact when something goes wrong, and where tickets land. Every error
+     message in the app points here, so a person who hits a problem is never left
+     staring at a dead end. */
+  support: {
+    name: "Jorge Asencio Rivera",
+    role: "Digital Sales Training",
+    email: "",
+    phone: "",
+    note: "",
+  },
   registrationOpen: true,
   holidays: [],
 };
@@ -1849,6 +1862,7 @@ export default function LeadPerformanceCalculator() {
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
   // means the next sign-in plays it as well, which is what makes it possible to
   // review the whole handover end to end.
@@ -2165,13 +2179,13 @@ export default function LeadPerformanceCalculator() {
   };
   const persistStore = async (storeId, next, audit) => {
     if (storeLoadFailed) {
-      alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page, make sure everything is showing, then try again.");
+      alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
       return;
     }
     const looksEmpty = (o) => !o || (!(o.roster || []).length && !Object.keys(o.months || {}).length && !Object.keys(o.activity || {}).length && !(o.plateRegistry || []).length);
     const prior = adminData[storeId] || storeData;
     if (prior && !looksEmpty(prior) && looksEmpty(next)) {
-      alert("That change was blocked because it would have wiped this store's records. Please reload the page and try again.");
+      alert("That change was blocked because it would have wiped this store's records. Nothing was lost.\n\nReload the page and try again. If it happens twice, use the Help button in the corner to report it, because that means something is wrong.");
       return;
     }
     // Keep the saved blob small. Snapshots are by far the biggest bloat (each is
@@ -2206,7 +2220,7 @@ export default function LeadPerformanceCalculator() {
     }
     setSaving(false); savingRef.current = false;
     if (!ok) {
-      alert("That change could NOT be saved, so it will reappear on refresh. Your other work is untouched and nothing was overwritten.\n\nWhat the database said:\n" + (lastSaveError || "unknown") + "\n\nTry once more. If it happens again, send this exact message to your admin.");
+      alert("That change could NOT be saved, so it will reappear on refresh. Your other work is untouched and nothing was overwritten.\n\nWhat the database said:\n" + (lastSaveError || "unknown") + "\n\nTry once more. If it happens again, use the Help button in the corner: it sends this message along with what you were doing.");
       return;
     }
     // Refresh the TV row so every casted screen picks this up on its next poll.
@@ -2614,11 +2628,21 @@ export default function LeadPerformanceCalculator() {
   const overviewStores = isAdmin ? config.stores : accessibleStores;
 
   // "The Board" chosen from the splash: scope it to who's signed in.
+  const helpNode = (
+    <>
+      <HelpButton config={config} who={session && session.name} store={view}
+        context={`${appModule || "performance"} / ${tab || ""} at ${view || "no store"}`} />
+      {helpOpen && <HelpPanel config={config} who={session && session.name} store={view}
+        context={`${appModule || "performance"} / ${tab || ""} at ${view || "no store"}`}
+        onClose={() => setHelpOpen(false)} />}
+    </>
+  );
+
   if (appModule === "board") {
     return (
       <Shell entering={entering}>
         <header className="topbar no-print">
-          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} />
+          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} />
           <div className="topbar-right">
             <ToolSwitcher value="board" onChange={(mod) => {
               if (mod === "board") return;
@@ -2638,6 +2662,7 @@ export default function LeadPerformanceCalculator() {
             onBack={signOut} />
         </div>
         <Style />
+      {helpNode}
       </Shell>
     );
   }
@@ -2679,7 +2704,7 @@ export default function LeadPerformanceCalculator() {
   // depends on the same context checks the render below uses.
   let navItems = null, navValue = null, navOnChange = null;
   if (view === "admin" && isAdmin) {
-    navItems = [["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]];
+    navItems = [["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["tickets", "Tickets"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]];
     navValue = adminTab; navOnChange = setAdminTab;
   } else if (view === "combined" && isOverseer) {
     navItems = [["board", "Combined Board"], ["gm", "Summary"]];
@@ -2705,7 +2730,7 @@ export default function LeadPerformanceCalculator() {
   return (
     <Shell entering={entering}>
       <header className="topbar no-print">
-        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} />
+        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} />
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
 
@@ -2791,13 +2816,14 @@ export default function LeadPerformanceCalculator() {
         <>
           <nav className="seg-wrap no-print">
             <SegControl
-              items={[["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]]}
+              items={[["overview", "Overview"], ["gm", "Summary"], ["access", "Access"], ["tickets", "Tickets"], ["audit", "Audit Log"], ["settings", "Stores"], ["backup", "Backup"]]}
               value={adminTab} onChange={setAdminTab} />
           </nav>
           <div key={adminTab} className="page">
             {adminTab === "overview" && <AdminOverview config={config} adminData={adminData} onOpenStore={setView} />}
             {adminTab === "gm" && <GMSummary config={config} data={adminData} stores={config.stores} />}
             {adminTab === "access" && <AccessPanel config={config} session={session} onChange={persistConfig} />}
+            {adminTab === "tickets" && <TicketsPanel config={config} onChange={persistConfig} />}
             {adminTab === "audit" && <AuditLog />}
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
@@ -2959,6 +2985,7 @@ export default function LeadPerformanceCalculator() {
           }} />
       )}
       <Style />
+    {helpNode}
     </Shell>
   );
 }
@@ -4328,7 +4355,7 @@ function CastLink({ storeId, label, config }) {
         {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : "Publish to TVs")}
       </button>
       {pub && pub !== "working" && !pub.ok && (
-        <span className="cast-err">Could not publish: {pub.err}. The TVs cannot show anything until this is fixed.</span>
+        <span className="cast-err">Could not publish: {pub.err}. The TVs will keep showing what they already have. Use the Help button to report this.</span>
       )}
     </span>
   );
@@ -4413,8 +4440,8 @@ async function openLeaderboard(config, storeId) {
   const board = buildBoardPayload(config, storeId, sdata || {});
   const pub = await publishBoard(config, storeId, sdata || {});
   if (!pub.ok) {
-    alert("This board opened here, but it could NOT be published for the TVs.\n\nExact error from the database:\n" + pub.err
-      + "\n\nA casted screen will keep saying no board has been published until this is fixed. It is almost always a write-permission (RLS) rule on lpc:board keys.");
+    alert("This board opened here, but it could NOT be published for the TVs.\n\nWhat the database said:\n" + pub.err
+      + "\n\nA casted screen will keep showing whatever it already had. This is almost always a write-permission rule on the board keys. Use the Help button to report it with these details.");
   }
   const payload = {
     ...board,
@@ -4507,7 +4534,7 @@ function BoardScreen({ storeId }) {
 
 /* The mark in the corner is the only thing that has to be in the top bar, so it
    carries the account rather than spending width on a title nobody reads twice. */
-function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro }) {
+function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onHelp }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -4535,12 +4562,362 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro }) {
             </span>
           </div>
           <div className="bm-app">Lead Performance</div>
+          {onHelp && <button className="bm-item" onClick={() => { setOpen(false); onHelp(); }}>Get help</button>}
           {onReplayIntro && (
             <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
           )}
           <button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---------------- What a salesperson sees about themselves ----------------
+   Two things they could never see before without asking a manager: what they are
+   meant to get done today, and how they are actually doing. Both read from data
+   the tool already holds. Nothing new is asked of anyone. */
+function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClose }) {
+  /* Three of these tick themselves. If the report says the calls were made, asking
+     someone to also tell us they were made is busywork, and worse, it invites a tick
+     on a day the work did not happen. The hand-ticked ones are the things no report
+     can see. */
+  const a = stats || {};
+  const autoFor = (c) => {
+    if (!c.from) return null;
+    const got = a[c.from] || 0;
+    const need = c.target ? (std[c.target] || 0) : 1;
+    return { got, need, done: got >= need && need > 0 };
+  };
+
+  const [ticks, setTicks] = useState(() => {
+    const out = {};
+    for (const c of DEFAULT_CHECKLIST) {
+      try { out[c.id] = localStorage.getItem(checklistKey(store, date, meId + ":" + c.id)) === "1"; }
+      catch (e) { out[c.id] = false; }
+    }
+    return out;
+  });
+  const toggle = (c) => {
+    if (c.from) return;                     // the reports own this one
+    setTicks((p) => {
+      const v = !p[c.id];
+      try { localStorage.setItem(checklistKey(store, date, meId + ":" + c.id), v ? "1" : "0"); } catch (e) {}
+      return { ...p, [c.id]: v };
+    });
+    buzz(10);
+  };
+  const isDone = (c) => (c.from ? !!(autoFor(c) || {}).done : !!ticks[c.id]);
+  const doneCount = DEFAULT_CHECKLIST.filter(isDone).length;
+
+  // A quiet celebration the first time an automatic one lands, so the moment the
+  // reports catch up is actually noticed rather than silently changing colour.
+  const seen = useRef(null);
+  const [pop, setPop] = useState(null);
+  useEffect(() => {
+    const now = DEFAULT_CHECKLIST.filter((c) => c.from && isDone(c)).map((c) => c.id).join(",");
+    if (seen.current !== null && now !== seen.current) {
+      const fresh = DEFAULT_CHECKLIST.find((c) => c.from && isDone(c) && !seen.current.includes(c.id));
+      if (fresh) { setPop(fresh.id); buzz([18, 40, 18]); setTimeout(() => setPop(null), 1600); }
+    }
+    seen.current = now;
+  }, [a.calls, a.video, a.tasks]); // eslint-disable-line
+
+  const ring = Math.round((doneCount / DEFAULT_CHECKLIST.length) * 100);
+  const stamp = updatedAt ? new Date(updatedAt) : null;
+
+  const tiles = [
+    { k: "calls", label: "Calls", v: a.calls || 0, target: std.minCalls, tone: "a" },
+    { k: "video", label: "Videos", v: a.video || 0, target: std.minVideos, tone: "b" },
+    { k: "tasks", label: "Tasks done", v: a.tasks || 0, target: null, tone: "c" },
+    { k: "appt", label: "Appts set", v: a.apptScheduled || 0, target: null, tone: "d" },
+    { k: "shown", label: "Appts shown", v: a.apptShow || 0, target: null, tone: "e" },
+  ];
+
+  return (
+    <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="help-sheet myday" role="dialog" aria-label="My day">
+        <div className="help-head">
+          <h3>{meName ? meName.split(" ")[0] + "'s day" : "My day"}</h3>
+          <button className="btn-x" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="help-body">
+          {/* the day at a glance */}
+          <div className="md-hero">
+            <div className="md-ring">
+              <svg viewBox="0 0 100 100">
+                <circle className="md-ring-bg" cx="50" cy="50" r="42" />
+                <circle className="md-ring-fg" cx="50" cy="50" r="42"
+                  style={{ strokeDashoffset: 264 - (264 * ring) / 100 }} />
+              </svg>
+              <span className="md-ring-face"><DmNumber value={doneCount} /><i>of {DEFAULT_CHECKLIST.length}</i></span>
+            </div>
+            <div className="md-hero-txt">
+              <b>{doneCount === DEFAULT_CHECKLIST.length ? "That is the day."
+                : doneCount === 0 ? "Nothing down yet."
+                : doneCount >= DEFAULT_CHECKLIST.length - 2 ? "Nearly there." : "Under way."}</b>
+              <span>
+                {stamp
+                  ? `Your numbers last landed at ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. They refresh about every hour.`
+                  : "Your numbers refresh about every hour, as the reports come in."}
+              </span>
+            </div>
+          </div>
+
+          <div className="md-cap">Today's list <span>{doneCount} of {DEFAULT_CHECKLIST.length}</span></div>
+          <div className="md-list">
+            {DEFAULT_CHECKLIST.map((c) => {
+              const auto = autoFor(c);
+              const done = isDone(c);
+              return (
+                <button key={c.id}
+                  className={"md-item" + (done ? " on" : "") + (c.from ? " md-auto" : "") + (pop === c.id ? " md-pop" : "")}
+                  onClick={() => toggle(c)}
+                  aria-disabled={!!c.from}>
+                  <span className="md-box">{done && <PixIcon glyph="check" size={13} />}</span>
+                  <span className="md-text">
+                    <b>{c.label}</b>
+                    <span>{c.hint}</span>
+                    {auto && (
+                      <span className="md-prog">
+                        <i style={{ width: Math.min(100, auto.need ? (auto.got / auto.need) * 100 : 0) + "%" }} />
+                      </span>
+                    )}
+                  </span>
+                  {auto
+                    ? <span className="md-count">{auto.got}{auto.need > 1 ? <i>/{auto.need}</i> : null}</span>
+                    : <span className="md-hand">{done ? "Done" : "Tap"}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <p className="hint">
+            The first three tick themselves from your reports, so there is nothing to claim.
+            The rest are yours: kept on this phone, and nobody is graded on them.
+          </p>
+
+          <div className="md-cap md-cap2">Where you are today</div>
+          {!stats ? (
+            <p className="hint">Today's numbers have not come through yet. They land through the day as the reports import.</p>
+          ) : (
+            <div className="md-stats">
+              {tiles.map((t) => {
+                const p = t.target ? Math.min(100, Math.round(((t.v || 0) / t.target) * 100)) : null;
+                return (
+                  <div key={t.k} className={"md-stat md-t" + t.tone + (p >= 100 ? " md-hit" : "")}>
+                    <span className="md-stat-top"><DmNumber value={t.v} />{t.target ? <i>of {t.target}</i> : null}</span>
+                    <span className="md-stat-lbl">{t.label}</span>
+                    {p != null && <span className="md-bar"><i style={{ width: p + "%" }} /></span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="hint">These come from the same reports your manager sees. If a number looks wrong, say so below and it will be looked at.</p>
+          <HelpButton config={config} who={meName} store={store}
+            context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Help and tickets ----------------
+   One button, everywhere, for everyone. A manager who cannot save and a salesperson
+   whose name is missing from the line both end up in the same place, and neither has
+   to know who to ask. */
+function HelpButton({ config, who, store, context, floating = true }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button className={"help-fab" + (floating ? "" : " inline")} onClick={() => setOpen(true)}
+        title="Get help" aria-label="Get help">
+        <PixIcon glyph="question" size={floating ? 20 : 15} fine />
+        {!floating && <span>Help</span>}
+      </button>
+      {open && <HelpPanel config={config} who={who} store={store} context={context} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function HelpPanel({ config, who, store, context, onClose }) {
+  const s = (config && config.support) || {};
+  const [tab, setTab] = useState("contact");
+  const [what, setWhat] = useState("");
+  const [name, setName] = useState(who || "");
+  const [reach, setReach] = useState("");
+  const [sent, setSent] = useState(null);   // null | "sending" | "ok" | "fail"
+
+  const send = async () => {
+    if (!what.trim()) return;
+    setSent("sending");
+    const t = {
+      id: uid() + Date.now().toString(36),
+      at: new Date().toISOString(),
+      from: name.trim() || "Not given",
+      reach: reach.trim(),
+      store: store || "",
+      // What the app was doing when they hit the button, so a ticket does not
+      // arrive as "it broke" with nothing to go on.
+      context: context || "",
+      page: (typeof window !== "undefined" && window.location ? window.location.pathname + window.location.search : ""),
+      agent: (typeof navigator !== "undefined" ? navigator.userAgent : ""),
+      body: what.trim(),
+      status: "open",
+    };
+    setSent((await saveTicket(t)) ? "ok" : "fail");
+  };
+
+  return (
+    <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="help-sheet" role="dialog" aria-label="Help">
+        <div className="help-head">
+          <h3>Need a hand?</h3>
+          <button className="btn-x" onClick={onClose}>✕</button>
+        </div>
+        <div className="help-tabs">
+          <button className={"help-tab" + (tab === "contact" ? " on" : "")} onClick={() => setTab("contact")}>Contact</button>
+          <button className={"help-tab" + (tab === "ticket" ? " on" : "")} onClick={() => setTab("ticket")}>Report a problem</button>
+        </div>
+
+        {tab === "contact" ? (
+          <div className="help-body">
+            <div className="help-person">
+              <span className="help-avatar">{String(s.name || "?").split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>
+              <span>
+                <b>{s.name || "Your administrator"}</b>
+                {s.role && <span className="help-role">{s.role}</span>}
+              </span>
+            </div>
+            {s.email && <a className="help-link" href={`mailto:${s.email}?subject=${encodeURIComponent("Lead Performance help" + (store ? " (" + store + ")" : ""))}`}>{s.email}</a>}
+            {s.phone && <a className="help-link" href={`tel:${String(s.phone).replace(/[^\d+]/g, "")}`}>{s.phone}</a>}
+            {s.note && <p className="hint">{s.note}</p>}
+            {!s.email && !s.phone && <p className="hint">No contact details have been set yet. Use Report a problem and it will still reach an administrator.</p>}
+            <p className="hint">Reporting the problem here sends more detail than a message can, so it is usually the faster route.</p>
+          </div>
+        ) : (
+          <div className="help-body">
+            {sent === "ok" ? (
+              <div className="help-done">
+                <PixIcon glyph="check" size={26} />
+                <b>Sent.</b>
+                <p className="hint">{s.name ? s.name.split(" ")[0] : "Your administrator"} will see this with the page you were on and what you were doing. You can close this.</p>
+              </div>
+            ) : (
+              <>
+                <label className="help-lbl">What happened?</label>
+                <textarea className="help-area" rows={4} value={what} onChange={(e) => setWhat(e.target.value)}
+                  placeholder="What you were trying to do, and what the screen did instead." />
+                <div className="help-row">
+                  <span>
+                    <label className="help-lbl">Your name</label>
+                    <input className="help-in" value={name} onChange={(e) => setName(e.target.value)} placeholder="So they know who to answer" />
+                  </span>
+                  <span>
+                    <label className="help-lbl">Phone or email</label>
+                    <input className="help-in" value={reach} onChange={(e) => setReach(e.target.value)} placeholder="Optional" />
+                  </span>
+                </div>
+                {context && <p className="hint">This will include: {context}</p>}
+                {sent === "fail" && <p className="sched-err">That did not send. Check the connection and try again, or use the Contact tab.</p>}
+                <button className="btn" disabled={!what.trim() || sent === "sending"} onClick={send}>
+                  {sent === "sending" ? "Sending..." : "Send it"}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Tickets, and who to send them to ---------------- */
+function TicketsPanel({ config, onChange }) {
+  const [items, setItems] = useState(null);
+  const [filter, setFilter] = useState("open");
+  const s = (config && config.support) || {};
+  const [form, setForm] = useState({ name: s.name || "", role: s.role || "", email: s.email || "", phone: s.phone || "", note: s.note || "" });
+
+  const reload = () => loadTickets().then(setItems);
+  useEffect(() => { reload(); }, []);
+
+  const setStatus = async (t, status) => {
+    const next = { ...t, status, closedAt: status === "closed" ? new Date().toISOString() : null };
+    if (await saveTicket(next)) reload();
+  };
+  const saveSupport = () => {
+    const next = JSON.parse(JSON.stringify(config));
+    next.support = { ...form };
+    onChange(next, { action: "Updated support contact", detail: form.name });
+  };
+
+  const shown = (items || []).filter((t) => (filter === "all" ? true : (t.status || "open") === filter));
+
+  return (
+    <div className="board-page">
+      <div className="card">
+        <h3>Who people reach</h3>
+        <p className="hint">
+          This is what the Help button shows, everywhere, including the sign-in pages that
+          salespeople use without an account. Leave anything blank and it simply is not shown.
+        </p>
+        <div className="help-row">
+          <span><label className="help-lbl">Name</label>
+            <input className="help-in" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></span>
+          <span><label className="help-lbl">Role</label>
+            <input className="help-in" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} /></span>
+        </div>
+        <div className="help-row">
+          <span><label className="help-lbl">Email</label>
+            <input className="help-in" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="name@holler.com" /></span>
+          <span><label className="help-lbl">Phone</label>
+            <input className="help-in" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="407..." /></span>
+        </div>
+        <label className="help-lbl">Anything else they should know</label>
+        <input className="help-in" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })}
+          placeholder="e.g. Text is fastest on weekends" />
+        <button className="btn" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
+      </div>
+
+      <div className="card">
+        <div className="tk-head">
+          <h3>Tickets</h3>
+          <div className="seg-small">
+            {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
+              <button key={id} className={"seg-opt " + (filter === id ? "on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
+            ))}
+          </div>
+          <button className="btn-quiet" onClick={reload}>Refresh</button>
+        </div>
+        {items === null ? <p className="hint">Loading...</p>
+          : shown.length === 0 ? <p className="hint">Nothing here. {filter === "open" ? "No open tickets." : ""}</p>
+          : (
+            <div className="tk-list">
+              {shown.map((t) => (
+                <div key={t.id} className={"tk" + ((t.status || "open") === "closed" ? " tk-closed" : "")}>
+                  <div className="tk-top">
+                    <b>{t.from || "Anonymous"}</b>
+                    {t.reach && <a className="tk-reach" href={t.reach.includes("@") ? `mailto:${t.reach}` : `tel:${t.reach.replace(/[^\d+]/g, "")}`}>{t.reach}</a>}
+                    <span className="tk-when">{t.at ? new Date(t.at).toLocaleString() : ""}</span>
+                  </div>
+                  <p className="tk-body">{t.body}</p>
+                  <div className="tk-meta">
+                    {t.store && <span>{t.store}</span>}
+                    {t.context && <span>{t.context}</span>}
+                    {t.page && <span className="tk-page">{t.page}</span>}
+                  </div>
+                  <div className="tk-actions">
+                    {(t.status || "open") === "open"
+                      ? <button className="btn-quiet" onClick={() => setStatus(t, "closed")}>Mark handled</button>
+                      : <button className="btn-quiet" onClick={() => setStatus(t, "open")}>Reopen</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+      </div>
     </div>
   );
 }
@@ -4715,6 +5092,49 @@ function ImportBadge({ storeData, activity }) {
 /* ===== PHONE-LEAD QUEUE ("The Line") — v4 ===== */
 
 const QUEUE_TABLE = "queue_public";
+/* Tickets ride in the queue table. That table is already readable and writable
+   without signing in, which matters: the people most likely to hit a problem are
+   salespeople on a sign-in page who have no account at all. A ticket nobody can
+   file is a ticket nobody sends. */
+const TICKET_PREFIX = "ticket:";
+
+/* What a salesperson is asked to get done while they wait. Deliberately short and
+   deliberately about the things that decide whether the day works: the standards
+   the store already grades them on, plus the two habits that move appointments. */
+const DEFAULT_CHECKLIST = [
+  // The first three tick themselves from the reports. `from` is the field on the
+  // day's activity row and `target` says where it comes from, so nobody has to
+  // claim credit for work the system can already see.
+  { id: "calls", label: "Make your calls", hint: "Work the list, not just the callbacks",
+    from: "calls", target: "minCalls" },
+  { id: "videos", label: "Send your videos", hint: "Name the vehicle in the first 10 seconds",
+    from: "video", target: "minVideos" },
+  { id: "tasks", label: "Clear your tasks", hint: "The ones already sitting in your queue",
+    from: "tasks", target: null },
+  { id: "appts", label: "Confirm tomorrow's appointments", hint: "Look 48 hours out, not the morning of" },
+  { id: "followup", label: "Follow up yesterday's ups", hint: "Anyone who did not buy is still yours" },
+  { id: "walk", label: "Walk the lot", hint: "Know what is on the ground before a customer asks" },
+];
+const checklistKey = (store, date, id) => `lpcq:list:${store}:${date}:${id}`;
+async function saveTicket(t) {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase.from(QUEUE_TABLE)
+      .upsert({ id: TICKET_PREFIX + t.id, data: t }, { onConflict: "id" });
+    if (error) throw error;
+    return true;
+  } catch (e) { console.error("saveTicket", e); return false; }
+}
+async function loadTickets() {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.from(QUEUE_TABLE)
+      .select("id,data").like("id", TICKET_PREFIX + "%");
+    if (error) throw error;
+    return (data || []).map((r) => r.data).filter(Boolean)
+      .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
+  } catch (e) { console.error("loadTickets", e); return []; }
+}
 const QUEUE_ID_TABLE = "queue_identity";
 const queueRowId = (store, date, kind) => (!kind || kind === "line" ? `${store}:${date}` : `${store}:${date}:${kind}`);
 
@@ -5024,11 +5444,42 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
   const [switchTo, setSwitchTo] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [myDay, setMyDay] = useState(false);
+  // The store's config (for standards and the support contact) and this person's own
+  // numbers. Read only, and only their own row.
+  const [cfg, setCfg] = useState(null);
+  const [mine, setMine] = useState(null);
+  const [mineAt, setMineAt] = useState(null);
+  useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
+  // Needs to be in scope before the panel is built, not after.
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
   const refetch = useCallback(async () => setRow((await loadQueueRow(store, date, variant.kind)) || null), [store, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
+
+  // Today's activity for this person only. The split day rows made this cheap: it
+  // is one small row, not the whole store document.
+  const meLabel = ((row && row.roster) || []).find((r) => r.id === meId)?.label || "";
+  useEffect(() => {
+    if (!meLabel || !supabase) return;
+    let dead = false;
+    const pull = async () => {
+      try {
+        const { data } = await supabase.from("app_data").select("value")
+          .eq("key", `lpc:store:${store}:act:${date}`).maybeSingle();
+        if (!dead && data && data.value) {
+          const r = data.value[norm(meLabel)] || null;
+          setMine(r);
+          if (r && r.uploadedAt) setMineAt(r.uploadedAt);
+        }
+      } catch (e) { /* the panel says so itself if nothing arrives */ }
+    };
+    pull();
+    const t = setInterval(pull, 120000);
+    return () => { dead = true; clearInterval(t); };
+  }, [store, date, meLabel]);
 
   const isToday = date === today();
   const valid = isToday && row && row.token && row.token === token;
@@ -5226,7 +5677,25 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
                   </button>
                 ))}
           </div>
-          <button className="sf-leave" disabled={busy} onClick={leave}>{variant.leave}</button>
+          {/* Today's three numbers, right on the panel. A salesperson standing on the
+              floor should not have to open anything to know where they are. */}
+          {mine && (
+            <button className="sf-today" onClick={() => { buzz(10); setMyDay(true); }}>
+              {[["Calls", mine.calls || 0, std.minCalls], ["Videos", mine.video || 0, std.minVideos], ["Tasks", mine.tasks || 0, 0]].map(([lbl, v, need]) => (
+                <span key={lbl} className={"sft" + (need > 0 && v >= need ? " sft-hit" : "")}>
+                  <span className="sft-v"><DmNumber value={v} /></span>
+                  <span className="sft-l">{lbl}{need > 0 ? ` / ${need}` : ""}</span>
+                  {need > 0 && <span className="sft-bar"><i style={{ width: Math.min(100, (v / need) * 100) + "%" }} /></span>}
+                </span>
+              ))}
+            </button>
+          )}
+          <div className="sf-extra">
+            <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
+              <DmIcon name="back" cell={4} /><span>My day</span>
+            </button>
+            <button className="sf-leave" disabled={busy} onClick={leave}>{variant.leave}</button>
+          </div>
         </div>
         {isNext && (
           <div className="sf-uptake">
@@ -5330,6 +5799,12 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
     <div className={`q-page sf ${variant.sf}`}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
+      {/* Everyone gets a way out of a problem, including the people with no account. */}
+      <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
+      {myDay && (
+        <MyDay store={store} date={date} meId={meId} meName={meLabel} stats={mine} std={std}
+          config={cfg} updatedAt={mineAt} onClose={() => setMyDay(false)} />
+      )}
     </div>
   );
 }
@@ -15661,6 +16136,146 @@ function Style() {
           animation:none !important; }
       }
 
+      .tk-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+      .tk-head h3 { margin-right:auto; }
+      .tk-list { display:flex; flex-direction:column; gap:10px; }
+      .tk { padding:14px 16px; border-radius:14px; border:1px solid rgba(16,32,52,.1); background:#fff; }
+      .tk-closed { opacity:.55; }
+      .tk-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
+      .tk-reach { font-size:12.5px; color:var(--blue); text-decoration:none; }
+      .tk-when { margin-left:auto; font-size:12px; color:var(--ink-3); }
+      .tk-body { font-size:14px; white-space:pre-wrap; margin-bottom:8px; }
+      .tk-meta { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+      .tk-meta span { font-size:11.5px; color:var(--ink-3); background:rgba(16,32,52,.05);
+        padding:3px 9px; border-radius:999px; }
+      .tk-page { font-family:var(--font-mono); }
+      .tk-actions { display:flex; gap:8px; }
+
+      /* ---------- help ---------- */
+      .help-fab { position:fixed; right:20px; bottom:20px; z-index:350; width:46px; height:46px;
+        border-radius:999px; border:0; cursor:pointer; display:flex; align-items:center; justify-content:center;
+        background:linear-gradient(135deg,#2A5E9B,#5566F0); color:#fff;
+        box-shadow:0 14px 30px -12px rgba(42,94,155,.7), inset 0 1px 0 rgba(255,255,255,.25);
+        transition:transform .16s var(--ease), box-shadow .2s var(--ease); }
+      .help-fab:hover { transform:translateY(-2px); box-shadow:0 20px 38px -12px rgba(42,94,155,.75); }
+      .help-fab.inline { position:static; width:auto; height:auto; gap:8px; padding:10px 16px;
+        border-radius:12px; font-family:inherit; font-size:13.5px; font-weight:700; margin-top:14px; }
+      .help-back { position:fixed; inset:0; z-index:420; background:rgba(15,23,42,.5);
+        backdrop-filter:blur(3px); display:flex; align-items:flex-end; justify-content:center;
+        animation:helpIn .2s var(--ease) both; }
+      @keyframes helpIn { from { opacity:0; } to { opacity:1; } }
+      .help-sheet { width:min(560px, 100%); max-height:88vh; overflow:auto; background:#fff;
+        border-radius:22px 22px 0 0; padding:18px 20px 26px;
+        box-shadow:0 -20px 60px -20px rgba(16,32,52,.5);
+        animation:helpUp .32s cubic-bezier(.34,1.3,.64,1) both; }
+      @keyframes helpUp { from { transform:translateY(28px); opacity:0; } to { transform:none; opacity:1; } }
+      @media (min-width:700px) {
+        .help-back { align-items:center; }
+        .help-sheet { border-radius:22px; }
+      }
+      .help-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+      .help-head h3 { font-size:19px; }
+      .help-tabs { display:flex; gap:6px; background:rgba(16,32,52,.05); border-radius:12px; padding:4px; margin-bottom:14px; }
+      .help-tab { flex:1; font-family:inherit; font-size:13px; font-weight:700; padding:9px; border:0;
+        border-radius:9px; background:none; color:var(--ink-2); cursor:pointer; }
+      .help-tab.on { background:#fff; color:var(--ink); box-shadow:0 3px 10px -6px rgba(16,32,52,.5); }
+      .help-body { display:flex; flex-direction:column; gap:10px; }
+      .help-person { display:flex; align-items:center; gap:12px; margin-bottom:4px; }
+      .help-avatar { width:42px; height:42px; border-radius:999px; display:flex; align-items:center;
+        justify-content:center; font-weight:800; color:#fff; background:linear-gradient(135deg,#2A5E9B,#5566F0); }
+      .help-person b { display:block; font-size:15px; }
+      .help-role { font-size:12px; color:var(--ink-3); }
+      .help-link { display:block; font-size:15px; font-weight:700; color:var(--blue); text-decoration:none;
+        padding:11px 14px; border-radius:12px; background:rgba(42,94,155,.07); }
+      .help-link:hover { background:rgba(42,94,155,.12); }
+      .help-lbl { display:block; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+        color:var(--ink-3); margin-bottom:5px; }
+      .help-area, .help-in { width:100%; box-sizing:border-box; font-family:inherit; font-size:14px;
+        padding:11px 13px; border-radius:12px; border:1px solid rgba(16,32,52,.14); background:#fff; }
+      .help-row { display:flex; gap:10px; flex-wrap:wrap; }
+      .help-row > span { flex:1 1 180px; }
+      .help-done { display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
+        padding:18px 0; color:#178A57; }
+      .help-done b { font-size:17px; color:var(--ink); }
+
+      /* ---------- my day ---------- */
+      .myday .md-cap { font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+        color:var(--ink-3); display:flex; justify-content:space-between; margin:2px 0 8px; }
+      .md-cap2 { margin-top:18px !important; }
+      /* the day at a glance */
+      .md-hero { display:flex; align-items:center; gap:16px; padding:16px 18px; border-radius:18px;
+        background:linear-gradient(140deg, rgba(42,94,155,.1), rgba(85,102,240,.06)); margin-bottom:16px; }
+      .md-ring { position:relative; width:78px; height:78px; flex:0 0 auto; }
+      .md-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
+      .md-ring-bg { fill:none; stroke:rgba(16,32,52,.1); stroke-width:8; }
+      .md-ring-fg { fill:none; stroke:#2A5E9B; stroke-width:8; stroke-linecap:round;
+        stroke-dasharray:264; transition:stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1); }
+      .md-ring-face { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+        justify-content:center; gap:1px; --led:#2A5E9B; }
+      .md-ring-face .dm { --cell:4px; }
+      .md-ring-face .ld { width:var(--cell); height:var(--cell); border-radius:50%; background:transparent; }
+      .md-ring-face .ld.on { background:#2A5E9B; }
+      .md-ring-face .dm-digit { display:grid; grid-template-columns:repeat(3,var(--cell)); gap:calc(var(--cell)*.44); }
+      .md-ring-face .dm { display:flex; gap:3px; }
+      .md-ring-face i { font-style:normal; font-size:9.5px; color:var(--ink-3); }
+      .md-hero-txt b { display:block; font-size:16px; margin-bottom:3px; }
+      .md-hero-txt span { font-size:12.5px; color:var(--ink-3); line-height:1.45; }
+
+      .md-list { display:flex; flex-direction:column; gap:7px; }
+      .md-item { display:flex; align-items:flex-start; gap:11px; text-align:left; width:100%;
+        font-family:inherit; padding:12px 14px; border-radius:14px; cursor:pointer;
+        border:1px solid rgba(16,32,52,.1); background:#fff; transition:background .15s, border-color .15s; }
+      .md-item.on { background:rgba(23,138,87,.07); border-color:rgba(23,138,87,.3); }
+      .md-box { width:22px; height:22px; flex:0 0 auto; border-radius:7px; display:flex; align-items:center;
+        justify-content:center; border:1.5px solid rgba(16,32,52,.2); color:#178A57; background:#fff; }
+      .md-item.on .md-box { border-color:#178A57; }
+      .md-item { align-items:center; }
+      .md-text { flex:1; min-width:0; }
+      .md-text b { display:block; font-size:14.5px; }
+      .md-text > span { display:block; font-size:12.5px; color:var(--ink-3); }
+      /* An automatic item is not tappable, so it must not look tappable. */
+      .md-auto { cursor:default; }
+      .md-prog { display:block; height:4px; border-radius:999px; background:rgba(16,32,52,.1);
+        margin-top:7px; overflow:hidden; max-width:190px; }
+      .md-prog i { display:block; height:100%; border-radius:999px; background:#2A5E9B;
+        transition:width .7s cubic-bezier(.2,.8,.2,1); }
+      .md-item.on .md-prog i { background:#178A57; }
+      .md-count { font-family:var(--font-display); font-weight:800; font-size:16px; color:var(--ink-2); }
+      .md-count i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
+      .md-hand { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); }
+      .md-item.on .md-hand { color:#178A57; }
+      /* the moment the reports catch up */
+      @keyframes mdPop {
+        0% { transform:scale(1); }
+        35% { transform:scale(1.03); box-shadow:0 0 0 4px rgba(23,138,87,.18); }
+        100% { transform:scale(1); }
+      }
+      .md-pop { animation:mdPop .9s cubic-bezier(.34,1.4,.64,1); }
+      .md-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+      /* Each measure gets its own colour, the way the inspiration boards do, so the
+         eye learns the tiles by position and hue rather than reading every label. */
+      .md-stat { padding:14px 15px; border-radius:16px; position:relative; overflow:hidden;
+        background:rgba(16,32,52,.04); transition:transform .16s var(--ease); }
+      .md-stat:hover { transform:translateY(-1px); }
+      .md-ta { background:linear-gradient(145deg, rgba(226,98,43,.16), rgba(226,98,43,.05)); --md-c:#D2542A; }
+      .md-tb { background:linear-gradient(145deg, rgba(85,102,240,.16), rgba(85,102,240,.05)); --md-c:#4A5AE0; }
+      .md-tc { background:linear-gradient(145deg, rgba(23,138,87,.16), rgba(23,138,87,.05)); --md-c:#178A57; }
+      .md-td { background:linear-gradient(145deg, rgba(139,92,246,.16), rgba(139,92,246,.05)); --md-c:#7C4DD8; }
+      .md-te { background:linear-gradient(145deg, rgba(217,164,37,.18), rgba(217,164,37,.05)); --md-c:#B5891C; }
+      .md-hit::after { content:""; position:absolute; inset:0; border-radius:16px; pointer-events:none;
+        box-shadow:inset 0 0 0 1.5px var(--md-c); opacity:.5; }
+      .md-stat-top { display:flex; align-items:baseline; gap:6px; --led:var(--md-c); }
+      .md-stat-top .dm { --cell:5px; display:flex; gap:4px; }
+      .md-stat-top .dm-digit { display:grid; grid-template-columns:repeat(3,var(--cell)); gap:calc(var(--cell)*.44); }
+      .md-stat-top .ld { width:var(--cell); height:var(--cell); border-radius:50%; background:transparent; }
+      .md-stat-top .ld.on { background:var(--md-c); }
+      .md-stat-top i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
+      .md-stat-lbl { display:block; font-size:11.5px; color:var(--ink-3); margin-top:7px;
+        letter-spacing:.03em; }
+      .md-bar { display:block; height:4px; border-radius:999px; background:rgba(16,32,52,.1); margin-top:8px; overflow:hidden; }
+      .md-bar i { display:block; height:100%; border-radius:999px; background:var(--md-c);
+        transition:width .7s cubic-bezier(.2,.8,.2,1); }
+
       .brand { position:relative; }
       .brand-btn { background:none; border:0; padding:0; cursor:pointer; border-radius:12px; line-height:0;
         transition:transform .14s ease, box-shadow .18s ease; }
@@ -17295,6 +17910,29 @@ function Style() {
 .sf-sbtn:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
 .sf-sbtn:disabled{ opacity:.55; }
 .sf-sbtn.active{ color:#03130d; background:linear-gradient(90deg,var(--a1),var(--a2)); border-color:transparent; }
+/* Today's three numbers, on the panel itself. Dot digits, one bar each, no medals
+   and no points: the aim is that a glance answers "where am I", not "am I winning". */
+.sf-today{ display:flex; gap:10px; width:100%; background:none; border:0; padding:0 2px 4px; cursor:pointer;
+  font-family:var(--sfmono); }
+.sft{ flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:5px;
+  padding:12px 13px; border-radius:14px; background:rgba(255,255,255,.045);
+  border:1px solid rgba(255,255,255,.07); transition:background .2s, border-color .2s, transform .16s; }
+.sf-today:hover .sft{ background:rgba(255,255,255,.07); }
+.sf-today:active .sft{ transform:scale(.99); }
+.sft-hit{ background:rgba(23,168,110,.12) !important; border-color:rgba(23,168,110,.35) !important; }
+.sft-v{ display:block; color:var(--sfink); }
+.sft-v .dm{ --cell:4px; }
+.sft-v .ld.on{ box-shadow:0 0 4px var(--led); }
+.sft-l{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--sfink3); }
+.sft-bar{ display:block; width:100%; height:3px; border-radius:999px; background:rgba(255,255,255,.1); overflow:hidden; }
+.sft-bar i{ display:block; height:100%; border-radius:999px; background:var(--sfled);
+  transition:width .6s cubic-bezier(.2,.8,.2,1); }
+.sft-hit .sft-bar i{ background:#17A86E; }
+.sf-extra{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
+.sf-mine{ display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.09); color:var(--sfink2); font-family:var(--sfmono); font-size:13px;
+  padding:11px 15px; border-radius:12px; cursor:pointer; transition:.2s; }
+.sf-mine:hover{ background:rgba(255,255,255,.1); color:var(--sfink); }
 .sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
 .sf-leave:hover{ color:var(--sfink2); }
 
