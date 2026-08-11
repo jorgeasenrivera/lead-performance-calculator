@@ -1301,6 +1301,98 @@ async function loadShared(key, fallback, throwOnError) {
     return data ? data.value : fallback;
   } catch (e) { console.error("load failed", key, e); if (throwOnError) throw e; return fallback; }
 }
+/* =======================================================================
+   SPLIT STORAGE
+   =======================================================================
+   One row per store meant every save rewrote everything, so an hourly import and a
+   manager editing a goal fought over the same document. Revision checking stopped
+   that being silent, but the contention is still there, and at a hundred people it
+   is constant.
+
+   Activity now lives one row per day. An import writing today cannot collide with
+   anyone editing anything else, because they are no longer the same row.
+
+   The split is confined to this layer on purpose. loadStore puts the object back
+   together in exactly the shape the app already expects, so every `data.activity[day]`
+   in the rest of the file keeps working untouched. Nothing above here knows.
+
+   Rolling out in stages, each independently reversible:
+     - reads take split rows when they exist and fall back to the embedded copy
+     - writes go to both places for now, so an older tab still works
+     - the embedded copy is dropped only once every store has moved
+   ======================================================================= */
+const actKey = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
+// Only recent days are worth splitting out: they are the ones being written. Older
+// days are read constantly and never change, so they stay in the main document.
+const SPLIT_ACT_DAYS = 45;
+
+function recentDays(n) {
+  const out = [];
+  const d = new Date(today() + "T12:00");
+  for (let i = 0; i < n; i++) {
+    out.push(d.toLocaleDateString("en-CA"));
+    d.setDate(d.getDate() - 1);
+  }
+  return out;
+}
+
+// Pull the split activity rows for a store in one request.
+async function loadActivityRows(storeId) {
+  if (!supabase) return {};
+  const prefix = `lpc:store:${storeId}:act:`;
+  const { data, error } = await supabase.from("app_data")
+    .select("key,value").like("key", prefix + "%");
+  if (error) throw error;
+  const out = {};
+  for (const row of data || []) {
+    const day = row.key.slice(prefix.length);
+    if (day && row.value) out[day] = row.value;
+  }
+  return out;
+}
+
+/* Read a store as one object. Split rows win over the embedded copy for any day
+   they cover, because they are the ones being kept current. */
+async function loadStore(storeId, fallback, throwOnError) {
+  const base = await loadShared(storeKey(storeId), fallback, throwOnError);
+  if (!base || typeof base !== "object") return base;
+  try {
+    const rows = await loadActivityRows(storeId);
+    if (Object.keys(rows).length) {
+      base.activity = { ...(base.activity || {}), ...rows };
+      base.__splitDays = Object.keys(rows);
+    }
+  } catch (e) {
+    // A failure here must not cost the whole store: the embedded copy still has
+    // the day, it is simply older. Losing the store outright would be worse.
+    console.error("split activity load failed", storeId, e);
+  }
+  return base;
+}
+
+/* Write the days this save actually changed, each to its own row. Days nobody
+   touched are not written at all, which is the entire point. */
+async function saveActivityDays(storeId, next, prev) {
+  if (!supabase) return { written: 0, failed: [] };
+  const keep = new Set(recentDays(SPLIT_ACT_DAYS));
+  const cur = next.activity || {};
+  const before = (prev && prev.activity) || {};
+  const changed = [];
+  for (const day of Object.keys(cur)) {
+    if (!keep.has(day)) continue;
+    if (JSON.stringify(cur[day]) === JSON.stringify(before[day])) continue;
+    changed.push(day);
+  }
+  if (!changed.length) return { written: 0, failed: [] };
+  const rows = changed.map((day) => ({ key: actKey(storeId, day), value: cur[day] }));
+  const { error } = await supabase.from("app_data").upsert(rows, { onConflict: "key" });
+  if (error) {
+    console.error("split activity save failed", storeId, error);
+    return { written: 0, failed: changed };
+  }
+  return { written: changed.length, failed: [] };
+}
+
 // The plate log is worked by several managers at once, so it has to be re-read
 // often. Pulling the whole store blob on a timer would be brutal, so this asks the
 // database for the two plate fields and nothing else.
@@ -1332,6 +1424,159 @@ async function saveShared(key, value) {
     lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
     return false;
   }
+}
+
+/* ---- Saving a store safely with many people on it ----
+   Every save rewrites the whole store document, so two people saving within a
+   second of each other means the second one silently erases the first. With a
+   handful of managers that was rare enough to look like bad luck. With a hundred
+   it is constant, and it is invisible: nobody gets an error, the work simply is
+   not there later.
+
+   So a store row now carries a revision number, and a save only lands if the row
+   is still on the revision it was read from. If somebody got there first the write
+   is refused rather than applied, and we start again from their copy: re-read,
+   re-run the same field merges against the newer document, bump, retry. The merge
+   is what makes a retry correct rather than just another race.
+
+   Returns { ok, rev, conflictsResolved } so a caller can tell a genuine failure
+   from a save that simply took two goes. */
+async function saveStoreCAS(key, build, tries = 5) {
+  if (!supabase) { lastSaveError = "No database client"; return { ok: false, rev: null }; }
+  let conflicts = 0;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    try {
+      const { data: row, error: readErr } = await supabase
+        .from("app_data").select("value").eq("key", key).maybeSingle();
+      if (readErr) throw readErr;
+      const server = row ? row.value : null;
+      const rev = (server && Number(server.rev)) || 0;
+      const value = { ...build(server), rev: rev + 1 };
+
+      if (!server) {
+        // First write for this store. insert, not upsert, so two browsers racing to
+        // create it cannot both believe they won.
+        const { error } = await supabase.from("app_data").insert({ key, value });
+        if (error) {
+          if (String(error.code) === "23505") { conflicts++; continue; }   // someone beat us
+          throw error;
+        }
+        lastSaveError = null;
+        return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
+      }
+
+      // Only replace the row if it is still the revision we just read.
+      const { data: hit, error } = await supabase.from("app_data")
+        .update({ value }).eq("key", key).eq("value->>rev", String(rev)).select("key");
+      if (error) throw error;
+      if (hit && hit.length) {
+        lastSaveError = null;
+        return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
+      }
+      // Somebody saved in between. Their work stands; go again from their copy.
+      conflicts++;
+      await new Promise((r) => setTimeout(r, 90 * (attempt + 1) + Math.random() * 120));
+    } catch (e) {
+      console.error("save failed", key, e);
+      lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+      return { ok: false, rev: null, conflictsResolved: conflicts };
+    }
+  }
+  lastSaveError = `Could not save after ${tries} attempts: the store is being changed by several people at once.`;
+  console.error("save gave up after conflicts", key);
+  return { ok: false, rev: null, conflictsResolved: conflicts };
+}
+
+/* Fold this browser's pending document into whatever the server currently holds.
+   Run on every save attempt, including retries, so a save that loses a race is
+   re-applied against the winner's copy rather than overwriting it. */
+function mergeAgainstServer(next, serverCopy) {
+  if (!serverCopy || typeof serverCopy !== "object") return next;
+        const mergeField = (field) => {
+          const out = { ...(next[field] || {}) };
+          const srv = serverCopy[field] || {};
+          for (const k of Object.keys(srv)) if (!(k in out)) out[k] = srv[k];
+          return out;
+        };
+        next.months = mergeField("months");
+        next.activity = mergeField("activity");
+
+        /* ---- The stale-tab problem ----
+           mergeField only fills in keys the client is missing. For months that is
+           useless: a browser opened this morning already HAS "2026-08", so its
+           hours-old copy of the month wins and every auto-import since is wiped.
+           This is why one store's uploads kept vanishing while quieter stores were
+           fine, and it fires hardest right after a deploy, when tabs are still
+           running older code that never polled at all.
+
+           The import log settles it. If the server has an import this browser has
+           never seen, then this browser's month and activity are definitionally
+           behind, and the server's copy is the one to keep. If OUR change is the
+           import, ours is the newest entry and ours wins. */
+        const newestImport = (d) => {
+          const log = (d && d.importLog) || [];
+          let t = "";
+          for (const e of log) if (e && e.t && e.t > t) t = e.t;
+          return t;
+        };
+        if (newestImport(serverCopy) > newestImport(next)) {
+          next.months = serverCopy.months || next.months;
+          next.activity = serverCopy.activity || next.activity;
+          next.activitySnaps = serverCopy.activitySnaps || next.activitySnaps;
+        }
+        // The log itself is a union: no entry from either side should disappear.
+        {
+          const seen = new Set();
+          const all = [...(next.importLog || []), ...(serverCopy.importLog || [])]
+            .filter((e) => e && e.id && !seen.has(e.id) && seen.add(e.id))
+            .sort((a, b) => String(b.t || "").localeCompare(String(a.t || "")))
+            .slice(0, 200);
+          next.importLog = all;
+        }
+
+        /* ---- People ----
+           Roster and departed were never merged at all, which is why someone marked
+           as gone kept coming back: any older tab still held a roster with them on
+           it and a departed list without them, and its next save undid the change.
+           Departed is a union, and it always wins over the roster: being taken off
+           is a decision somebody made, and no stale copy should be able to reverse
+           it by simply not knowing about it. */
+        {
+          const byName = new Map();
+          for (const d of [...(serverCopy.departed || []), ...(next.departed || [])]) {
+            if (d && d.name) byName.set(norm(d.name), d);
+          }
+          next.departed = [...byName.values()];
+          const gone = new Set(byName.keys());
+
+          const roster = [...(next.roster || [])];
+          const have = new Set(roster.map((a) => norm(a.name)));
+          for (const a of serverCopy.roster || []) {
+            if (a && a.name && !have.has(norm(a.name))) { roster.push(a); have.add(norm(a.name)); }
+          }
+          next.roster = roster.filter((a) => !gone.has(norm(a.name)));
+        }
+        // Same protection for the plate log: a day another manager started while this
+        // browser sat open is kept rather than dropped on save.
+        next.plates = mergeField("plates");
+        // The schedule was the worst case of this. A browser that had been open since
+        // before an upload carried an empty daysOff, and saving anything at all wiped
+        // the month for everybody. Each person now carries the time their off-days
+        // were last written, and whichever side wrote last is the one kept.
+        {
+          const mine = { ...(next.daysOff || {}) };
+          const mineAt = { ...(next.daysOffAt || {}) };
+          const srv = serverCopy.daysOff || {};
+          const srvAt = serverCopy.daysOffAt || {};
+          for (const id of Object.keys(srv)) {
+            const theirs = srvAt[id] || "";
+            const ours = mineAt[id] || "";
+            if (!(id in mine) || theirs > ours) { mine[id] = srv[id]; mineAt[id] = theirs || ours; }
+          }
+          next.daysOff = mine;
+          next.daysOffAt = mineAt;
+        }
+  return next;
 }
 
 // ---- auth ----
@@ -1830,7 +2075,7 @@ export default function LeadPerformanceCalculator() {
     (async () => {
       if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
       try {
-        const d = await loadShared(storeKey(view), emptyStoreData(), true); // throw on a real load error
+        const d = await loadStore(view, emptyStoreData(), true); // throw on a real load error
         try { storeStampRef.current = await loadStoreStamp(storeKey(view)); } catch (e) { storeStampRef.current = null; }
         setStoreData(d); setStoreLoadFailed(false);
       } catch (e) {
@@ -1891,7 +2136,7 @@ export default function LeadPerformanceCalculator() {
       try {
         const stamp = await loadStoreStamp(storeKey(view));
         if (!stamp || dead || stamp === storeStampRef.current) return;
-        const fresh = await loadShared(storeKey(view), null, true);
+        const fresh = await loadStore(view, null, true);
         if (!fresh || dead || savingRef.current) return;
         storeStampRef.current = stamp;
         setStoreData(fresh);
@@ -1931,47 +2176,27 @@ export default function LeadPerformanceCalculator() {
     if (next && Array.isArray(next.snapshots) && next.snapshots.length > 1) {
       next.snapshots = next.snapshots.slice(0, 1);
     }
-    // A server-side auto-import (email ingest) may have written this store's months or
-    // activity while this browser sat open with an older copy. Re-read the server's
-    // current blob and adopt its month/activity entries for any key WE did not touch,
-    // so a client save can only preserve a fresh auto-import, never erase it. Our own
-    // edits still win, and we never drop a key we already have.
-    try {
-      const serverCopy = await loadShared(storeKey(storeId), null, true);
-      if (serverCopy && typeof serverCopy === "object") {
-        const mergeField = (field) => {
-          const out = { ...(next[field] || {}) };
-          const srv = serverCopy[field] || {};
-          for (const k of Object.keys(srv)) if (!(k in out)) out[k] = srv[k];
-          return out;
-        };
-        next.months = mergeField("months");
-        next.activity = mergeField("activity");
-        // Same protection for the plate log: a day another manager started while this
-        // browser sat open is kept rather than dropped on save.
-        next.plates = mergeField("plates");
-        // The schedule was the worst case of this. A browser that had been open since
-        // before an upload carried an empty daysOff, and saving anything at all wiped
-        // the month for everybody. Each person now carries the time their off-days
-        // were last written, and whichever side wrote last is the one kept.
-        {
-          const mine = { ...(next.daysOff || {}) };
-          const mineAt = { ...(next.daysOffAt || {}) };
-          const srv = serverCopy.daysOff || {};
-          const srvAt = serverCopy.daysOffAt || {};
-          for (const id of Object.keys(srv)) {
-            const theirs = srvAt[id] || "";
-            const ours = mineAt[id] || "";
-            if (!(id in mine) || theirs > ours) { mine[id] = srv[id]; mineAt[id] = theirs || ours; }
-          }
-          next.daysOff = mine;
-          next.daysOffAt = mineAt;
-        }
-      }
-    } catch (e) { /* if the re-read fails, just save what we have */ }
     setStoreData(next); setSaving(true); savingRef.current = true;
     setAdminData((p) => ({ ...p, [storeId]: next }));
-    const ok = await saveShared(storeKey(storeId), next);
+
+    /* Activity days go to their own rows first. They are the contended part, and
+       writing them separately means an import and a manager editing anything else
+       never touch the same row. Done before the document so that if the document
+       write loses a race and retries, the day data is already safely stored. */
+    const prevDoc = adminData[storeId] || storeData;
+    try { await saveActivityDays(storeId, next, prevDoc); } catch (e) { console.error("day rows", e); }
+
+    // Compare and swap. The merge runs inside the loop, so if somebody saves while
+    // we are mid-flight we fold into THEIR document and try again rather than
+    // flattening it. Whoever loses the race loses nothing.
+    const res = await saveStoreCAS(storeKey(storeId), (server) => mergeAgainstServer(next, server));
+    const ok = res.ok;
+    if (ok) {
+      const merged = res.value || next;
+      setStoreData(merged);
+      setAdminData((p) => ({ ...p, [storeId]: merged }));
+      if (res.conflictsResolved) console.info("save merged around", res.conflictsResolved, "other save(s)");
+    }
     setSaving(false); savingRef.current = false;
     if (!ok) {
       alert("That change could NOT be saved to the server, so it will reappear on refresh. This is usually a database write-permission (RLS) problem or a dropped connection.\n\nExact error from the database:\n" + (lastSaveError || "unknown") + "\n\nPlease send this exact message to your admin.");
@@ -4165,7 +4390,7 @@ async function publishBoard(config, storeId, sdata) {
 // so a TV can be brought to life without opening the board window at all.
 async function publishBoardNow(config, storeId) {
   let sdata = null;
-  try { sdata = await loadShared(storeKey(storeId), null, true); }
+  try { sdata = await loadStore(storeId, null, true); }
   catch (e) { return { ok: false, err: "Could not read this store's data: " + ((e && (e.message || e.code)) || String(e)) }; }
   return publishBoard(config, storeId, sdata || {});
 }
@@ -4177,7 +4402,7 @@ async function openLeaderboard(config, storeId) {
   // Publish the sanitized TV row first, so this window and any casted screen are
   // reading the exact same thing.
   let sdata = null;
-  try { sdata = await loadShared(storeKey(storeId)); } catch (e) {}
+  try { sdata = await loadStore(storeId); } catch (e) {}
   const board = buildBoardPayload(config, storeId, sdata || {});
   const pub = await publishBoard(config, storeId, sdata || {});
   if (!pub.ok) {
@@ -7004,7 +7229,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
     let dead = false;
     if (!store) { setData(null); return; }
     setData(null); setLoadFailed(false);
-    loadShared(storeKey(store.id), emptyStoreData(), true)
+    loadStore(store.id, emptyStoreData(), true)
       .then((d) => { if (!dead) setData(d); })
       .catch(() => { if (!dead) { setData(emptyStoreData()); setLoadFailed(true); } });
     return () => { dead = true; };
