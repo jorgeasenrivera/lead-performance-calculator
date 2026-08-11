@@ -15153,15 +15153,16 @@ function Style() {
         margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
         background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
           color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
-        animation: ldxBloom 2.6s var(--ease) both; }
+        animation: ldxBloom 3.2s var(--ease) both; }
       .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
           color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
-        animation-delay:.18s; animation-duration:2.9s; }
+        animation-delay:.18s; animation-duration:3.5s; }
       @keyframes ldxBloom {
         0%   { transform:scale(.02); opacity:0; }
-        18%  { opacity:1; }
-        70%  { opacity:.5; }
-        100% { transform:scale(1); opacity:.24; }
+        14%  { opacity:1; }
+        62%  { opacity:.92; }
+        84%  { opacity:.68; }
+        100% { transform:scale(1); opacity:.4; }
       }
 
       /* The mark travels to the exact spot it occupies in the header: 24px in from
