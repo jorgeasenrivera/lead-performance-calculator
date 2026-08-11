@@ -15153,7 +15153,7 @@ function Style() {
         13%  { transform:translate(calc(50vw - 40px), calc(42vh - 40px)) scale(1.12); opacity:1; }
         30%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
         62%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
-        100% { transform:translate(30px, 12px) scale(.5); opacity:1;
+        100% { transform:translate(18px, 12px) scale(.5); opacity:1;
                filter:drop-shadow(0 0 0 transparent); }
       }
       .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 58px); z-index:4; text-align:center;
@@ -15187,10 +15187,11 @@ function Style() {
       @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
 
       .ldx-board { position:absolute; top:60px; left:0; right:0;
-        padding:26px clamp(24px, 4.75vw, 96px) 0; box-sizing:border-box; }
+        padding:20px 0 0; box-sizing:border-box; }
 
-      /* the sub-nav row, which the hero sits below */
-      .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:26px; }
+      /* the sub-nav row: the top bar's gutters, not the dashboard's */
+      .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px;
+        padding:0 24px; margin-bottom:41px; }
       .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
       .ldx-tabs { display:flex; align-items:center; gap:6px; padding:6px;
         background:rgba(16,32,52,.05); border-radius:16px; }
@@ -15204,7 +15205,8 @@ function Style() {
       .ldx-search { width:378px; height:44px; border-radius:14px; background:rgba(16,32,52,.06); flex:0 0 auto; }
 
       .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
-        gap:32px; padding:30px 34px; border-radius:24px; min-height:152px; box-sizing:border-box;
+        gap:32px; margin:0 clamp(24px, 4.75vw, 96px); padding:30px 34px; border-radius:24px;
+        min-height:167px; box-sizing:border-box;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: ldxHero .75s var(--spring) both; animation-delay:.74s; }
@@ -15233,12 +15235,12 @@ function Style() {
         to   { transform:none; opacity:1; filter:blur(0); }
       }
 
-      .ldx-cards { display:flex; gap:24px; margin-top:26px; }
+      .ldx-cards { display:flex; gap:22px; margin:23px clamp(24px, 4.75vw, 96px) 0; }
       .ldx-card { border-radius:20px; animation: ldxRise .6s var(--ease) both; }
-      .ldx-card.tall { width:412px; height:212px; flex:0 0 auto;
+      .ldx-card.tall { width:415px; height:219px; flex:0 0 auto;
         background:linear-gradient(150deg,#F09A3E,#E2622B);
         box-shadow:0 18px 40px -26px rgba(226,98,43,.6); animation-delay:.84s; }
-      .ldx-card.wide { flex:1; height:212px; padding:30px 32px; box-sizing:border-box;
+      .ldx-card.wide { flex:1; height:219px; padding:30px 32px; box-sizing:border-box;
         display:flex; flex-direction:column; justify-content:center; gap:26px;
         background:rgba(255,255,255,.72); box-shadow:0 18px 40px -30px rgba(16,32,52,.45);
         animation-delay:.94s; }
@@ -15253,7 +15255,8 @@ function Style() {
         background:rgba(16,32,52,.08); color:var(--ink-2); }
       @media (max-width: 900px) {
         .ldx-store, .ldx-pills { display:none; }
-        .ldx-hero { flex-wrap:wrap; }
+        .ldx-hero { flex-wrap:wrap; margin:0 20px; }
+        .ldx-cards { margin:20px; }
         .ldx-hero-side { display:none; }
         .ldx-cards { flex-direction:column; }
         .ldx-card.tall, .ldx-card.wide { width:auto; height:120px; }
