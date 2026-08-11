@@ -1597,6 +1597,14 @@ export default function LeadPerformanceCalculator() {
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
+  // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
+  // means the next sign-in plays it as well, which is what makes it possible to
+  // review the whole handover end to end.
+  const replayIntro = () => {
+    try { localStorage.removeItem(INTRO_KEY); } catch (e) {}
+    setIntroDone(false);
+    setIntroPlaying(true);
+  };
   const sawSession = useRef(false);
   useEffect(() => {
     if (!session || sawSession.current) return;
@@ -2376,7 +2384,7 @@ export default function LeadPerformanceCalculator() {
     return (
       <Shell entering={entering}>
         <header className="topbar no-print">
-          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} />
+          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} />
           <div className="topbar-right">
             <ToolSwitcher value="board" onChange={(mod) => {
               if (mod === "board") return;
@@ -2463,7 +2471,7 @@ export default function LeadPerformanceCalculator() {
   return (
     <Shell entering={entering}>
       <header className="topbar no-print">
-        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} />
+        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} />
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
 
@@ -4220,7 +4228,7 @@ function BoardScreen({ storeId }) {
 
 /* The mark in the corner is the only thing that has to be in the top bar, so it
    carries the account rather than spending width on a title nobody reads twice. */
-function BrandMenu({ session, isOverseer, isAdmin, onSignOut }) {
+function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -4248,6 +4256,9 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut }) {
             </span>
           </div>
           <div className="bm-app">Lead Performance</div>
+          {onReplayIntro && (
+            <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
+          )}
           <button className="bm-item" onClick={() => { setOpen(false); onSignOut(); }}>Sign out</button>
         </div>
       )}
