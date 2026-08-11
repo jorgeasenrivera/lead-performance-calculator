@@ -3894,6 +3894,16 @@ const BRAND_FONTS = [
   [/toyota|lexus/i,        "Nunito+Sans",    "wght@700"],
   [/chevrolet|gmc|buick/i, "Overpass",       "wght@700"],
 ];
+function inkOn(bg) {
+  const hex = String(bg || "").trim().replace("#", "");
+  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
+  if (full.length !== 6) return "#FFFFFF";
+  const lin = (v) => { const s = parseInt(v, 16) / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin(full.slice(0, 2)) + 0.7152 * lin(full.slice(2, 4)) + 0.0722 * lin(full.slice(4, 6));
+  // 0.45 sits between the contrast ratios for black and white against mid tones
+  return L > 0.45 ? "#101820" : "#FFFFFF";
+}
+
 function brandFontFor(name) {
   const hit = BRAND_FONTS.find(([re]) => re.test(String(name || "")));
   return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
@@ -3989,8 +3999,14 @@ function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
       {/* The mark does not fade. It travels to where it will live in the header,
           which is what stitches this screen to the one it becomes. */}
       <div className="ldx-mark"><Logo size={72} /></div>
-      <div className="ldx-word" style={bf ? { fontFamily: `'${bf.family}', var(--font-display)` } : undefined}>
-        {storeName || "your board"}
+      {/* The name drops in on a pill in the store's own colour, holds, then lifts
+          away just before the mark leaves for the header. */}
+      <div className="ldx-word">
+        <span className="ldx-pill" style={{
+          background: `linear-gradient(120deg, ${vars["--sp"]}, ${vars["--sd"]})`,
+          color: inkOn(vars["--sp"]),
+          ...(bf ? { fontFamily: `'${bf.family}', var(--font-display)` } : null),
+        }}>{storeName || "your board"}</span>
       </div>
 
       {seen >= 3 && <button className="ldx-skip" onClick={finish}>Skip</button>}
@@ -15158,17 +15174,24 @@ function Style() {
         13%  { transform:translate(calc(50vw - 40px), calc(42vh - 40px)) scale(1.12); opacity:1; }
         30%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
         62%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
-        100% { transform:translate(32px, 23px) scale(.5); opacity:1;
+        100% { transform:translate(17px, 9px) scale(.5); opacity:1;
                filter:drop-shadow(0 0 0 transparent); }
       }
-      .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 58px); z-index:4; text-align:center;
-        font-family:var(--font-display); font-weight:700; font-size:26px; letter-spacing:-.015em;
-        color:var(--ink); animation: ldxWord 2.6s var(--ease) both; }
-      @keyframes ldxWord {
-        0%,8%  { opacity:0; transform:translateY(12px) scale(.98); }
-        24%    { opacity:1; transform:none; }
-        66%    { opacity:1; }
-        100%   { opacity:0; transform:translateY(-14px) scale(.97); }
+      .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 52px); z-index:4; text-align:center; }
+      .ldx-pill { display:inline-block; padding:11px 26px; border-radius:999px;
+        font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-.015em;
+        box-shadow:0 16px 34px -16px rgba(16,32,52,.5), inset 0 1px 0 rgba(255,255,255,.22);
+        transform-origin:50% 0;
+        animation: ldxPill 2.6s cubic-bezier(.34,1.56,.64,1) both; }
+      /* Drops in past its resting point, settles, then springs back up and out just
+         before the mark leaves for the header. */
+      @keyframes ldxPill {
+        0%    { opacity:0; transform:translateY(-30px) scale(.86); }
+        12%   { opacity:1; transform:translateY(7px) scale(1.03); }
+        20%   { transform:translateY(0) scale(1); }
+        70%   { opacity:1; transform:translateY(0) scale(1); }
+        80%   { transform:translateY(5px) scale(1.02); }
+        100%  { opacity:0; transform:translateY(-34px) scale(.9); }
       }
 
       /* ---- the dashboard's own shapes ---- */
@@ -15181,14 +15204,14 @@ function Style() {
       .ldx-pills, .ldx-queues { display:flex; gap:8px; align-items:center; }
       .ldx-pills { margin-left:auto; background:rgba(16,32,52,.05); border-radius:10px; padding:3px; }
       .ldx-bar > :last-child { margin-right:0; }
-      .ldx-pills i { width:92px; height:29px; border-radius:8px; background:rgba(16,32,52,.08); }
+      .ldx-pills i { width:74px; height:23px; border-radius:8px; background:rgba(16,32,52,.08); }
       .ldx-pills i:first-child { background:#fff; }
-      .ldx-queues i { width:96px; height:30px; border-radius:999px; position:relative; overflow:hidden; }
+      .ldx-queues i { width:77px; height:24px; border-radius:999px; position:relative; overflow:hidden; }
       .ldx-queues i:nth-child(1) { background:#10B981; }
       .ldx-queues i:nth-child(2) { background:#5566F0; }
       .ldx-queues i:nth-child(3) { background:#8B5CF6; }
-      .ldx-store { width:344px; height:40px; border-radius:10px; border:1px solid rgba(16,32,52,.14);
-        background:#fff; margin-left:15px; flex:0 0 auto; }
+      .ldx-store { width:275px; height:32px; border-radius:10px; border:1px solid rgba(16,32,52,.14);
+        background:#fff; margin-left:12px; flex:0 0 auto; }
       @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
 
       .ldx-board { position:absolute; top:60px; left:0; right:0;
@@ -15196,72 +15219,72 @@ function Style() {
 
       /* the sub-nav row: the top bar's gutters, not the dashboard's */
       .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px;
-        padding:0 27px; margin-bottom:41px; }
+        padding:0 21px; margin-bottom:33px; }
       .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
-      .ldx-tabs { display:flex; align-items:center; gap:6px; padding:7px;
+      .ldx-tabs { display:flex; align-items:center; gap:5px; padding:6px;
         background:rgba(16,32,52,.05); border-radius:14px; }
-      .ldx-tabs i { height:38px; border-radius:9px; background:transparent; }
-      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:127px; }
-      .ldx-tabs i:nth-child(2) { width:122px; }
-      .ldx-tabs i:nth-child(3) { width:101px; }
-      .ldx-tabs i:nth-child(4) { width:85px; }
-      .ldx-tabs i:nth-child(5) { width:99px; }
-      .ldx-tabs i:nth-child(6) { width:80px; }
-      .ldx-search { width:376px; height:45px; border-radius:13px; background:rgba(16,32,52,.06); flex:0 0 auto; }
+      .ldx-tabs i { height:30px; border-radius:9px; background:transparent; }
+      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:102px; }
+      .ldx-tabs i:nth-child(2) { width:98px; }
+      .ldx-tabs i:nth-child(3) { width:81px; }
+      .ldx-tabs i:nth-child(4) { width:68px; }
+      .ldx-tabs i:nth-child(5) { width:79px; }
+      .ldx-tabs i:nth-child(6) { width:64px; }
+      .ldx-search { width:301px; height:36px; border-radius:13px; background:rgba(16,32,52,.06); flex:0 0 auto; }
 
       .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
         gap:32px; margin:0 clamp(24px, 4.75vw, 96px); padding:30px 34px; border-radius:24px;
-        min-height:227px; box-sizing:border-box;
+        height:182px; box-sizing:border-box;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: ldxHero .75s var(--spring) both; animation-delay:.74s; }
       .ldx-hero-id { display:flex; align-items:center; gap:20px; }
-      .ldx-hero-logo { width:78px; height:78px; border-radius:20px; background:rgba(255,255,255,.92); flex:0 0 auto; }
-      .ldx-hero-text { display:flex; flex-direction:column; gap:11px; }
+      .ldx-hero-logo { width:62px; height:62px; border-radius:17px; background:rgba(255,255,255,.92); flex:0 0 auto; }
+      .ldx-hero-text { display:flex; flex-direction:column; gap:9px; }
       .ldx-hero-text span { display:block; border-radius:7px; background:rgba(255,255,255,.34); }
-      .ldx-hero-text .w1 { width:206px; height:11px; }
-      .ldx-hero-text .w2 { width:452px; height:30px; background:rgba(255,255,255,.86); }
-      .ldx-hero-text .w3 { width:140px; height:11px; }
-      .ldx-hero-right { display:flex; align-items:center; gap:26px; }
-      .ldx-ring { width:122px; height:122px; flex:0 0 auto; }
+      .ldx-hero-text .w1 { width:165px; height:9px; }
+      .ldx-hero-text .w2 { width:362px; height:24px; background:rgba(255,255,255,.86); }
+      .ldx-hero-text .w3 { width:112px; height:9px; }
+      .ldx-hero-right { display:flex; align-items:center; gap:21px; }
+      .ldx-ring { width:98px; height:98px; flex:0 0 auto; }
       .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
       .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:9; }
       .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:9; stroke-linecap:round;
         stroke-dasharray:264; stroke-dashoffset:264;
         animation: ldxRing 1.4s var(--ease) both; animation-delay:.9s; }
       @keyframes ldxRing { to { stroke-dashoffset:78; } }
-      .ldx-hero-side { display:flex; flex-direction:column; gap:10px; }
+      .ldx-hero-side { display:flex; flex-direction:column; gap:8px; }
       .ldx-hero-side span { display:block; border-radius:7px; background:rgba(255,255,255,.3); }
-      .ldx-hero-side .s1 { width:306px; height:18px; background:rgba(255,255,255,.8); }
-      .ldx-hero-side .s2 { width:330px; height:11px; }
-      .ldx-hero-side .s3 { width:252px; height:11px; }
+      .ldx-hero-side .s1 { width:245px; height:14px; background:rgba(255,255,255,.8); }
+      .ldx-hero-side .s2 { width:264px; height:9px; }
+      .ldx-hero-side .s3 { width:202px; height:9px; }
       @keyframes ldxHero {
         from { transform:translateY(24px) scale(.975); opacity:0; filter:blur(5px); }
         to   { transform:none; opacity:1; filter:blur(0); }
       }
 
-      .ldx-cards { display:flex; gap:22px; margin:23px clamp(24px, 4.75vw, 96px) 0; }
+      .ldx-cards { display:flex; gap:18px; margin:18px clamp(24px, 4.75vw, 96px) 0; }
       .ldx-card { border-radius:20px; animation: ldxRise .6s var(--ease) both; }
-      .ldx-card.tall { width:415px; height:219px; flex:0 0 auto; padding:26px 28px; box-sizing:border-box;
-        display:flex; flex-direction:column; justify-content:flex-start; gap:14px;
+      .ldx-card.tall { width:332px; height:175px; flex:0 0 auto; padding:21px 22px; box-sizing:border-box;
+        display:flex; flex-direction:column; justify-content:flex-start; gap:11px;
         background:linear-gradient(150deg,#F09A3E,#E2622B);
         box-shadow:0 18px 40px -26px rgba(226,98,43,.6); animation-delay:.84s; }
-      .ldx-card.wide { flex:1; height:219px; padding:30px 32px; box-sizing:border-box;
-        display:flex; flex-direction:column; justify-content:center; gap:26px;
+      .ldx-card.wide { flex:1; height:175px; padding:24px 26px; box-sizing:border-box;
+        display:flex; flex-direction:column; justify-content:center; gap:21px;
         background:rgba(255,255,255,.72); box-shadow:0 18px 40px -30px rgba(16,32,52,.45);
         animation-delay:.94s; }
-      .ldx-card.wide i { display:block; height:15px; border-radius:8px; background:rgba(16,32,52,.08); }
+      .ldx-card.wide i { display:block; height:12px; border-radius:8px; background:rgba(16,32,52,.08); }
       .ldx-card.wide i:nth-child(1) { width:58%; }
       .ldx-card.wide i:nth-child(2) { width:48%; }
       .ldx-card.wide i:nth-child(3) { width:53%; }
       .ldx-card.tall span { display:block; border-radius:6px; background:rgba(255,255,255,.34); }
-      .ldx-card.tall .t1 { width:132px; height:10px; }
-      .ldx-card.tall .t2 { width:214px; height:17px; background:rgba(255,255,255,.9); margin-top:2px; }
-      .ldx-card.tall .t3 { width:130px; height:10px; }
+      .ldx-card.tall .t1 { width:106px; height:8px; }
+      .ldx-card.tall .t2 { width:171px; height:14px; background:rgba(255,255,255,.9); margin-top:2px; }
+      .ldx-card.tall .t3 { width:104px; height:8px; }
       /* The weakest-standard bar fills rather than sitting there finished, for the
          same reason the health ring draws itself: a number that arrives is read,
          a number that is simply present is skipped. */
-      .ldx-meter { width:100%; height:8px; border-radius:999px; background:rgba(255,255,255,.3) !important;
+      .ldx-meter { width:100%; height:6px; border-radius:999px; background:rgba(255,255,255,.3) !important;
         overflow:hidden; margin-top:8px; }
       .ldx-meter i { display:block; height:100%; width:0; border-radius:999px; background:#fff;
         animation: ldxMeter 1.3s var(--ease) both; animation-delay:1.06s; }
