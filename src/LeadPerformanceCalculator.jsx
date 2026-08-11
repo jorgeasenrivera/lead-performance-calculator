@@ -2719,6 +2719,7 @@ export default function LeadPerformanceCalculator() {
         <LoadingSequence
           storeName={currentStore?.name || (isAdmin ? "your stores" : "your board")}
           brand={currentStore?.brand}
+          showStorePicker={accessibleStores.length + (isAdmin ? 1 : 0) + (hasOverview ? 1 : 0) >= 2}
           onComplete={() => {
             markIntroPlayed(session.userId || session.id);
             setIntroDone(true);
@@ -3898,7 +3899,7 @@ function brandFontFor(name) {
   return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
 }
 
-function LoadingSequence({ storeName, brand, onComplete }) {
+function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
   const [seen] = useState(() => introSeenCount());
   const [exiting, setExiting] = useState(false);
   const doneRef = useRef(false);
@@ -3950,7 +3951,7 @@ function LoadingSequence({ storeName, brand, onComplete }) {
           <span className="ldx-mark-slot" />
           <span className="ldx-pills"><i /><i /><i /></span>
           <span className="ldx-queues"><i /><i /><i /></span>
-          <span className="ldx-store" />
+          {showStorePicker && <span className="ldx-store" />}
         </div>
         {/* The sub-nav and its search. Leaving these out was what let the hero ride
             up the page: the skeleton has to reserve the same rows the app does. */}
@@ -15153,7 +15154,7 @@ function Style() {
         13%  { transform:translate(calc(50vw - 40px), calc(42vh - 40px)) scale(1.12); opacity:1; }
         30%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
         62%  { transform:translate(calc(50vw - 36px), calc(42vh - 36px)) scale(1); opacity:1; }
-        100% { transform:translate(18px, 12px) scale(.5); opacity:1;
+        100% { transform:translate(23px, 13px) scale(.5); opacity:1;
                filter:drop-shadow(0 0 0 transparent); }
       }
       .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 58px); z-index:4; text-align:center;
@@ -15182,8 +15183,8 @@ function Style() {
       .ldx-queues i:nth-child(1) { background:#10B981; }
       .ldx-queues i:nth-child(2) { background:#5566F0; }
       .ldx-queues i:nth-child(3) { background:#8B5CF6; }
-      .ldx-store { width:340px; height:38px; border-radius:11px; border:1px solid rgba(16,32,52,.14);
-        background:#fff; margin-left:14px; flex:0 0 auto; }
+      .ldx-store { width:342px; height:40px; border-radius:11px; border:1px solid rgba(16,32,52,.14);
+        background:#fff; margin-left:15px; flex:0 0 auto; }
       @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
 
       .ldx-board { position:absolute; top:60px; left:0; right:0;
@@ -15191,22 +15192,22 @@ function Style() {
 
       /* the sub-nav row: the top bar's gutters, not the dashboard's */
       .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px;
-        padding:0 24px; margin-bottom:41px; }
+        padding:0 24px; margin-bottom:26px; }
       .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
       .ldx-tabs { display:flex; align-items:center; gap:6px; padding:6px;
         background:rgba(16,32,52,.05); border-radius:16px; }
-      .ldx-tabs i { height:34px; border-radius:11px; background:transparent; width:86px; }
-      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:104px; }
+      .ldx-tabs i { height:38px; border-radius:11px; background:transparent; }
+      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:122px; }
       .ldx-tabs i:nth-child(2) { width:118px; }
-      .ldx-tabs i:nth-child(3) { width:96px; }
-      .ldx-tabs i:nth-child(4) { width:80px; }
-      .ldx-tabs i:nth-child(5) { width:92px; }
-      .ldx-tabs i:nth-child(6) { width:76px; }
-      .ldx-search { width:378px; height:44px; border-radius:14px; background:rgba(16,32,52,.06); flex:0 0 auto; }
+      .ldx-tabs i:nth-child(3) { width:98px; }
+      .ldx-tabs i:nth-child(4) { width:82px; }
+      .ldx-tabs i:nth-child(5) { width:96px; }
+      .ldx-tabs i:nth-child(6) { width:78px; }
+      .ldx-search { width:380px; height:45px; border-radius:14px; background:rgba(16,32,52,.06); flex:0 0 auto; }
 
       .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
         gap:32px; margin:0 clamp(24px, 4.75vw, 96px); padding:30px 34px; border-radius:24px;
-        min-height:167px; box-sizing:border-box;
+        min-height:227px; box-sizing:border-box;
         background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
         box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
         animation: ldxHero .75s var(--spring) both; animation-delay:.74s; }
