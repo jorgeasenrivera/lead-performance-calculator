@@ -377,7 +377,7 @@ const PIX = {
   clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
   phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
   globe:    ["001111100","011000110","110101011","101010101","111111111","101010101","110101011","011000110","001111100"],
-  search:   ["011110000","111111000","110011000","110011000","111111000","011110000","000011100","000001110","000000111"],
+  search:   ["0011111000000","0111111100000","1110001110000","1100000110000","1100000110000","1100000110000","1110001110000","0111111100000","0011111011000","0000000111000","0000000011100","0000000001110","0000000000110"],
   plus:     ["000000000","000010000","000010000","000010000","011111110","000010000","000010000","000010000","000000000"],
   trophy:   ["011111110","011111110","110111011","110111011","011111110","000111000","000111000","001111100","011111110"],
   flame:    ["000010000","000110000","001110000","001111000","011011100","110001110","110000110","011001100","001111000"],
@@ -412,7 +412,8 @@ function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
   const rows = (!fine && PIX5[glyph]) || PIX[glyph] || PIX.dot;
   const n = rows.length;
   const cell = size / n;
-  const r = +(cell * (n <= 5 ? 0.46 : 0.40)).toFixed(2);
+  // Finer grids need proportionally fatter dots or the shape dissolves into grey.
+  const r = +(cell * (n <= 5 ? 0.46 : n >= 13 ? 0.46 : 0.40)).toFixed(2);
   const dots = [];
   for (let y = 0; y < n; y++) {
     const row = rows[y];
@@ -1593,6 +1594,17 @@ export default function LeadPerformanceCalculator() {
   const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
   const [introPlaying, setIntroPlaying] = useState(false);
+  // True for the length of the build-in only. Set the moment a session appears, so
+  // the regions animate in while the sign-in wash is still clearing over the top.
+  const [entering, setEntering] = useState(false);
+  const sawSession = useRef(false);
+  useEffect(() => {
+    if (!session || sawSession.current) return;
+    sawSession.current = true;
+    setEntering(true);
+    const t = setTimeout(() => setEntering(false), 1100);
+    return () => clearTimeout(t);
+  }, [session]);
   // The cinematic intro plays once per calendar day per user. null = not decided yet.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
@@ -2362,7 +2374,7 @@ export default function LeadPerformanceCalculator() {
   // "The Board" chosen from the splash: scope it to who's signed in.
   if (appModule === "board") {
     return (
-      <Shell>
+      <Shell entering={entering}>
         <header className="topbar no-print">
           <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} />
           <div className="topbar-right">
@@ -2449,7 +2461,7 @@ export default function LeadPerformanceCalculator() {
   }
 
   return (
-    <Shell>
+    <Shell entering={entering}>
       <header className="topbar no-print">
         <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} />
         <div className="topbar-right">
@@ -4253,6 +4265,11 @@ function Login({ config, onBack, onAuthed }) {
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
+  // "leaving" runs the deconstruction. The card does not simply disappear: its
+  // parts leave in different directions at different moments, and the mark stays
+  // put and travels, so the eye has something continuous to hold on to while the
+  // app assembles behind it.
+  const [leaving, setLeaving] = useState(false);
 
   const domains = config.approvedDomains || [];
   const canRegister = config.registrationOpen && domains.length > 0;
@@ -4262,9 +4279,13 @@ function Login({ config, onBack, onAuthed }) {
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
     const res = await authSignIn(email.trim().toLowerCase(), password);
-    setBusy(false);
-    if (res.error) { setErr(res.error); return; }
-    onAuthed();
+    if (res.error) { setBusy(false); setErr(res.error); return; }
+    // Authenticated. Take the card apart, THEN hand over: the app mounting
+    // underneath is what the deconstruction is uncovering.
+    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (mq && mq.matches) { setBusy(false); onAuthed(); return; }
+    setLeaving(true);
+    setTimeout(() => { setBusy(false); onAuthed(); }, 760);
   };
 
   const signUp = async () => {
@@ -4299,9 +4320,12 @@ function Login({ config, onBack, onAuthed }) {
   };
 
   return (
-    <div className="login">
+    <div className={"login" + (leaving ? " is-leaving" : "")}>
+      {/* The wash is the thread through the whole move: it blooms out of the card,
+          covers the join, and contracts away as the app builds. */}
+      {leaving && <div className="login-wash" />}
       <div className={"login-card " + (busy ? "login-busy" : "")}>
-        <div className="login-logo"><Logo size={64} animated={!busy} loading={busy} /></div>
+        <div className="login-logo"><Logo size={64} animated={!busy && !leaving} loading={busy && !leaving} /></div>
         <h1 className="login-title">Lead Performance</h1>
         <p className="login-sub">{busy ? "Signing you in…" : "Sign in to continue"}</p>
 
@@ -9153,7 +9177,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 function AssocSearch({ value, onChange, store }) {
   return (
     <div className="search-wrap search-top">
-      <span className="search-icon"><PixIcon glyph="search" size={16} fine /></span>
+      <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
       <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
         placeholder="Search associates" />
       {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
@@ -9584,7 +9608,7 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
         <span className="stat-dim">● {counts.off} off leads</span>
       </div>
       <div className="search-wrap">
-        <span className="search-icon"><PixIcon glyph="search" size={16} fine /></span>
+        <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search across all my stores" />
         {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
       </div>
@@ -14098,8 +14122,8 @@ function LogoCropper({ src, onCancel, onSave }) {
 }
 
 /* ---------------- Shell + styles ---------------- */
-function Shell({ children }) {
-  return <div className="lpc">
+function Shell({ children, entering }) {
+  return <div className={"lpc" + (entering ? " is-entering" : "")}>
       <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
@@ -15050,6 +15074,81 @@ function Style() {
       .ac-prints li { list-style:disc; margin:1px 0; }
       @keyframes pulse { 50% { opacity:.4; } }
       .whoami { font-size:13px; color:var(--ink-2); }
+      /* ---------- sign-in handover ----------
+         One continuous move in three overlapping beats. Nothing waits its turn
+         politely: the card comes apart while the wash is already blooming, and the
+         app is already building before the wash has finished leaving. That overlap
+         is the difference between fluid and clunky. */
+      .login.is-leaving { pointer-events:none; }
+      .login.is-leaving .login-card {
+        animation: lgCard .62s var(--ease) forwards; }
+      @keyframes lgCard {
+        0%   { transform:none; opacity:1; }
+        100% { transform:scale(1.06); opacity:0; filter:blur(6px); }
+      }
+      /* Each part leaves on its own vector and its own clock, so the card reads as
+         coming apart rather than fading out in one piece. */
+      .login.is-leaving .login-card > * { animation:lgPart .5s var(--ease) both; }
+      .login.is-leaving .login-card > *:nth-child(1) { animation:lgMark .74s var(--ease) both; }
+      .login.is-leaving .login-card > *:nth-child(2) { animation-delay:.02s; --lgx:-26px; --lgy:-10px; }
+      .login.is-leaving .login-card > *:nth-child(3) { animation-delay:.05s; --lgx:24px;  --lgy:-6px; }
+      .login.is-leaving .login-card > *:nth-child(4) { animation-delay:.08s; --lgx:-30px; --lgy:8px; }
+      .login.is-leaving .login-card > *:nth-child(5) { animation-delay:.11s; --lgx:28px;  --lgy:12px; }
+      .login.is-leaving .login-card > *:nth-child(6) { animation-delay:.14s; --lgx:-22px; --lgy:16px; }
+      .login.is-leaving .login-card > *:nth-child(n+7) { animation-delay:.17s; --lgx:0px; --lgy:22px; }
+      @keyframes lgPart {
+        0%   { transform:none; opacity:1; filter:blur(0); }
+        100% { transform:translate3d(var(--lgx,0), var(--lgy,14px), 0) scale(.94); opacity:0; filter:blur(3px); }
+      }
+      /* The mark is the one thing that does not scatter. It lifts and holds while
+         everything else clears, which is what makes the two screens feel like one. */
+      @keyframes lgMark {
+        0%   { transform:none; opacity:1; }
+        40%  { transform:translate3d(0,-14px,0) scale(1.1); opacity:1; }
+        100% { transform:translate3d(0,-34px,0) scale(.72); opacity:0; }
+      }
+      .login-wash { position:fixed; inset:0; z-index:5; pointer-events:none;
+        background:radial-gradient(120% 90% at 50% 46%, var(--blue) 0%, rgba(42,94,155,.86) 42%, rgba(16,32,52,.0) 78%);
+        animation: lgWash .78s var(--ease) forwards; }
+      @keyframes lgWash {
+        0%   { opacity:0; transform:scale(.28); }
+        38%  { opacity:1; transform:scale(1.04); }
+        100% { opacity:0; transform:scale(1.5); }
+      }
+
+      /* ---------- the app assembling ----------
+         Regions arrive in reading order rather than all at once, so the screen
+         resolves the way the eye already scans it. */
+      .lpc.is-entering .topbar   { animation: appBar .52s var(--ease) both; }
+      .lpc.is-entering .seg-wrap { animation: appRise .54s var(--ease) both; animation-delay:.06s; }
+      .lpc.is-entering .hero     { animation: appHero .66s var(--ease-bloop) both; animation-delay:.10s; }
+      .lpc.is-entering .card,
+      .lpc.is-entering .checkout-split > *,
+      .lpc.is-entering .dash-split > * { animation: appRise .58s var(--ease) both; animation-delay:.20s; }
+      .lpc.is-entering .card:nth-of-type(2) { animation-delay:.26s; }
+      .lpc.is-entering .card:nth-of-type(3) { animation-delay:.32s; }
+      .lpc.is-entering .card:nth-of-type(n+4) { animation-delay:.38s; }
+      @keyframes appBar {
+        0%   { transform:translate3d(0,-100%,0); opacity:0; }
+        100% { transform:none; opacity:1; }
+      }
+      @keyframes appRise {
+        0%   { transform:translate3d(0,18px,0) scale(.985); opacity:0; }
+        100% { transform:none; opacity:1; }
+      }
+      @keyframes appHero {
+        0%   { transform:translate3d(0,26px,0) scale(.97); opacity:0; filter:blur(4px); }
+        100% { transform:none; opacity:1; filter:blur(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .login.is-leaving .login-card,
+        .login.is-leaving .login-card > *,
+        .login-wash,
+        .lpc.is-entering .topbar, .lpc.is-entering .seg-wrap, .lpc.is-entering .hero,
+        .lpc.is-entering .card, .lpc.is-entering .checkout-split > *, .lpc.is-entering .dash-split > * {
+          animation:none !important; }
+      }
+
       .brand { position:relative; }
       .brand-btn { background:none; border:0; padding:0; cursor:pointer; border-radius:12px; line-height:0;
         transition:transform .14s ease, box-shadow .18s ease; }
