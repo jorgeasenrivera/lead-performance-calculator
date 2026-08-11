@@ -3920,7 +3920,7 @@ function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
     if (doneRef.current) return;
     doneRef.current = true;
     setExiting(true);
-    setTimeout(() => onDone.current(), 950);   // must match the ldxOut duration
+    setTimeout(() => onDone.current(), 720);   // must match the ldxOut duration
   }, []);
 
   useEffect(() => {
@@ -15137,21 +15137,15 @@ function Style() {
          padding, .board-page is max-width 1440 with 32px gutters, .hero-band is 30px/34px
          with a 24px radius and the same gradient tokens. The point is that the last
          frame of this and the first frame of the app are the same picture. */
-      .ldx { position:fixed; inset:0; z-index:120; overflow:hidden;
-        background:var(--bg); animation: ldxIn .45s var(--ease) both; }
-      .ldx.is-exiting { animation: ldxOut .95s cubic-bezier(.3,0,.2,1) forwards; }
-      /* the skeleton's own shapes step back a beat before the layer does, so the
-         real page appears to come forward rather than the overlay being pulled off */
-      .ldx.is-exiting .ldx-page { animation: ldxPageOut .55s var(--ease) forwards; }
-      .ldx.is-exiting .ldx-bloom { animation: ldxBloomOut .7s var(--ease) forwards; }
-      @keyframes ldxPageOut { to { opacity:0; transform:scale(1.012); } }
-      @keyframes ldxBloomOut { to { opacity:0; } }
+      .ldx { position:fixed; inset:0; z-index:120; overflow:hidden; contain:paint;
+        background:var(--bg); animation: ldxIn .45s var(--ease) both; transform:translateZ(0); }
+      .ldx.is-exiting { animation: ldxOut .72s cubic-bezier(.4,0,.2,1) forwards;
+        will-change:opacity; }
+      /* Everything inside holds its position and fades together. Nothing moves on
+         the way out, so there is nothing to catch the eye except the layer thinning. */
+      .ldx.is-exiting * { animation-play-state:paused !important; }
       @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
-      @keyframes ldxOut {
-        0%   { opacity:1; filter:blur(0); }
-        45%  { opacity:.55; filter:blur(1.5px); }
-        100% { opacity:0; filter:blur(4px); }
-      }
+      @keyframes ldxOut { from { opacity:1; } to { opacity:0; } }
 
       /* The glow the mark throws as it opens: the page's own aurora, brought
          forward rather than invented for the occasion. */
