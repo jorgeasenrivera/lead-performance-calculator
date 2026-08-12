@@ -4880,145 +4880,194 @@ function HelpPanel({ config, who, store, context, onClose }) {
    of the store is saved first. */
 function RepairPanel({ config }) {
   const [target, setTarget] = useState("");
+  const [source, setSource] = useState("");     // optional: compare against one store
   const [plan, setPlan] = useState(null);
+  const [picked, setPicked] = useState({});
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
 
+  /* How much a store's own records actually say about a person. Used to decide who a
+     name belongs to when it appears in two places, because the roster alone cannot
+     tell you: a copied roster looks exactly like a real one. Real work leaves a
+     trail of days and figures behind it; a name that got in by accident does not. */
+  const evidenceFor = (data) => {
+    const ev = {};
+    const bump = (k, n) => { if (!k) return; ev[k] = (ev[k] || 0) + n; };
+    for (const m of Object.values(data.months || {})) {
+      for (const [k, s] of Object.entries((m && m.stats) || {})) {
+        const real = s && Object.entries(s).some(([f, v]) =>
+          typeof v === "number" && v > 0 && !/^prev|Updated$/.test(f));
+        bump(k, real ? 3 : 0);
+      }
+    }
+    for (const day of Object.values(data.activity || {})) {
+      for (const [k, r] of Object.entries(day || {})) {
+        const worked = r && ((r.calls || 0) > 0 || (r.video || 0) > 0 || (r.tasks || 0) > 0);
+        bump(k, worked ? 2 : 0);
+      }
+    }
+    return ev;
+  };
+
   const build = async () => {
     if (!target) return;
-    setBusy(true); setPlan(null); setDone(null);
+    setBusy(true); setPlan(null); setDone(null); setPicked({});
     try {
       const data = await loadStore(target, null, true);
       if (!data) { setPlan({ error: "That store has no data document." }); return; }
+      const mine = evidenceFor(data);
 
-      // Every name this store's own reports have ever mentioned.
-      const known = new Set();
-      for (const m of Object.values(data.months || {})) {
-        for (const k of Object.keys((m && m.stats) || {})) known.add(k);
-        for (const list of Object.values((m && m.names) || {})) for (const k of list || []) known.add(norm(k));
-      }
-      for (const day of Object.values(data.activity || {})) for (const k of Object.keys(day || {})) known.add(k);
-
-      // Rosters of every OTHER store, so a name can be traced to where it came from.
-      const others = {};
+      // Every other store's roster and evidence, so a shared name can be weighed.
+      const others = [];
       for (const s of config.stores || []) {
         if (s.id === target) continue;
+        if (source && s.id !== source) continue;
         try {
-          const d = await loadShared(storeKey(s.id), null, true);
-          for (const a of (d && d.roster) || []) {
-            const k = norm(a.name);
-            if (!others[k]) others[k] = s.name;
-          }
-          for (const x of (d && d.excluded) || []) {
-            const k = norm(x);
-            if (!others[k]) others[k] = s.name;
-          }
+          const d = await loadStore(s.id, null, true);
+          if (!d) continue;
+          others.push({
+            id: s.id, name: s.name,
+            roster: new Set(((d.roster) || []).map((a) => norm(a.name))),
+            excluded: new Set(((d.excluded) || []).map(norm)),
+            ev: evidenceFor(d),
+          });
         } catch (e) { /* a store we cannot read is simply not used as evidence */ }
       }
 
-      const strangers = ((data.roster) || []).filter((a) => {
-        const k = norm(a.name);
-        return !known.has(k) && !!others[k];
-      }).map((a) => ({ name: a.name, from: others[norm(a.name)] }));
+      const judge = (name) => {
+        const k = norm(name);
+        const home = others.find((o) => o.roster.has(k) || o.excluded.has(k));
+        if (!home) return null;
+        return { from: home.name, hereScore: mine[k] || 0, thereScore: home.ev[k] || 0 };
+      };
 
-      const strangeExcluded = ((data.excluded) || []).filter((x) => {
-        const k = norm(x);
-        return !known.has(k) && !!others[k];
-      }).map((x) => ({ name: x, from: others[norm(x)] }));
+      const rows = [];
+      for (const a of (data.roster) || []) {
+        const j = judge(a.name);
+        if (j) rows.push({ kind: "roster", name: a.name, ...j });
+      }
+      for (const x of (data.excluded) || []) {
+        const j = judge(x);
+        if (j) rows.push({ kind: "excluded", name: x, ...j });
+      }
+      for (const d of (data.departed) || []) {
+        const j = judge(d.name);
+        if (j) rows.push({ kind: "departed", name: d.name, ...j });
+      }
 
-      const strangeDeparted = ((data.departed) || []).filter((d) => {
-        const k = norm(d.name);
-        return !known.has(k) && !!others[k];
-      }).map((d) => ({ name: d.name, from: others[norm(d.name)] }));
-
+      // Ticked by default only where the other store clearly has the stronger claim.
+      // Everything else is listed but left for a person to decide.
+      const pre = {};
+      for (const r of rows) pre[r.kind + ":" + norm(r.name)] = r.thereScore > r.hereScore;
+      setPicked(pre);
       setPlan({
         store: (config.stores || []).find((s) => s.id === target)?.name || target,
-        keptRoster: ((data.roster) || []).length - strangers.length,
-        strangers, strangeExcluded, strangeDeparted, data,
+        total: ((data.roster) || []).length, rows, data,
       });
     } catch (e) {
       setPlan({ error: String(e.message || e) });
     } finally { setBusy(false); }
   };
 
+  const chosen = plan && !plan.error ? plan.rows.filter((r) => picked[r.kind + ":" + norm(r.name)]) : [];
+
   const apply = async () => {
-    if (!plan || plan.error) return;
-    const total = plan.strangers.length + plan.strangeExcluded.length + plan.strangeDeparted.length;
-    if (!window.confirm(`Remove ${total} entries from ${plan.store}?\n\nA full copy of the store is saved first, and only the names listed are touched. Anyone who has appeared in this store's own reports is left exactly as they are.`)) return;
+    if (!chosen.length) return;
+    if (!window.confirm(`Remove ${chosen.length} entries from ${plan.store}?\n\nA full copy of the store is saved first, and only the ticked names are touched.`)) return;
     setBusy(true);
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-      await saveShared(`lpc:config:backup:repair-${target}-${stamp}:v1`, {
-        app: "lead-performance-calculator", version: 2, exportedAt: new Date().toISOString(),
-        by: "Repair tool", storeIds: [target], note: "Taken automatically before a cross-store repair",
-      });
       await saveShared(backupStoreKey(target, `repair-${stamp}`), plan.data);
 
-      const gone = new Set(plan.strangers.map((s) => norm(s.name)));
-      const goneX = new Set(plan.strangeExcluded.map((s) => norm(s.name)));
-      const goneD = new Set(plan.strangeDeparted.map((s) => norm(s.name)));
+      const go = { roster: new Set(), excluded: new Set(), departed: new Set() };
+      for (const r of chosen) go[r.kind].add(norm(r.name));
 
       const res = await saveStoreCAS(storeKey(target), (server) => {
         const out = JSON.parse(JSON.stringify(server || plan.data));
-        out.roster = (out.roster || []).filter((a) => !gone.has(norm(a.name)));
-        out.excluded = (out.excluded || []).filter((x) => !goneX.has(norm(x)));
-        out.departed = (out.departed || []).filter((d) => !goneD.has(norm(d.name)));
+        out.roster = (out.roster || []).filter((a) => !go.roster.has(norm(a.name)));
+        out.excluded = (out.excluded || []).filter((x) => !go.excluded.has(norm(x)));
+        out.departed = (out.departed || []).filter((d) => !go.departed.has(norm(d.name)));
+        // Their figures go too, or the Check Out sheet keeps showing them.
+        for (const m of Object.values(out.months || {})) {
+          if (!m || !m.stats) continue;
+          for (const k of Object.keys(m.stats)) if (go.roster.has(k)) delete m.stats[k];
+        }
+        for (const day of Object.keys(out.activity || {})) {
+          for (const k of Object.keys(out.activity[day] || {})) if (go.roster.has(k)) delete out.activity[day][k];
+        }
         out.__storeId = target;
         return out;
       });
       setDone(res.ok
-        ? `Done. ${gone.size + goneX.size + goneD.size} entries removed from ${plan.store}. A copy of the store as it was is in the backup list.`
+        ? `Done. ${chosen.length} entries removed from ${plan.store}, along with their figures. A copy of the store as it was is in the backup list.`
         : `Could not write: ${lastSaveError || "unknown"}`);
       setPlan(null);
     } catch (e) { setDone("Failed: " + String(e.message || e)); }
     finally { setBusy(false); }
   };
 
+  const groups = [["roster", "Roster"], ["excluded", "Ignored names"], ["departed", "Marked as departed"]];
+
   return (
     <div className="card">
       <h3>Repair a store that picked up another store's people</h3>
       <p className="hint">
-        Use this only if a store is showing names that belong somewhere else. It compares the roster
-        against this store's own imported reports: a name that has never appeared in one of its
-        reports, and that does belong to another store, is the one that got in by mistake. Anyone
-        this store has actually reported on is never touched.
+        For a store showing names that belong somewhere else. Every shared name is listed with how much
+        each store's own records actually say about that person: real days worked and real figures. Where
+        the other store clearly has the stronger claim it is ticked for you, and everything else is left
+        for you to decide. Nothing is removed until you press the button.
       </p>
       <div className="inline-form">
         <select value={target} onChange={(e) => { setTarget(e.target.value); setPlan(null); setDone(null); }}>
           <option value="">Which store is wrong?</option>
           {(config.stores || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        <select value={source} onChange={(e) => { setSource(e.target.value); setPlan(null); }}>
+          <option value="">Compare with every store</option>
+          {(config.stores || []).filter((s) => s.id !== target).map((s) => <option key={s.id} value={s.id}>Only {s.name}</option>)}
+        </select>
         <button className="btn" disabled={!target || busy} onClick={build}>{busy ? "Checking..." : "Check it"}</button>
       </div>
 
       {done && <p className="hint" style={{ marginTop: 10 }}><b>{done}</b></p>}
-
       {plan && plan.error && <p className="sched-err">{plan.error}</p>}
+
       {plan && !plan.error && (
         <div style={{ marginTop: 14 }}>
-          {plan.strangers.length + plan.strangeExcluded.length + plan.strangeDeparted.length === 0 ? (
-            <p className="hint"><b>Nothing to repair.</b> Every name on {plan.store} has appeared in its own reports.</p>
+          {plan.rows.length === 0 ? (
+            <p className="hint"><b>Nothing shared.</b> No name on {plan.store} also belongs to another store.</p>
           ) : (
             <>
               <p className="hint">
-                <b>{plan.store}</b> keeps {plan.keptRoster} associates. These would be removed, with where each
-                one actually belongs:
+                <b>{plan.store}</b> has {plan.total} on its roster. {plan.rows.length} names are shared with another
+                store. <b>{chosen.length} ticked</b> for removal.
               </p>
-              {[["Roster", plan.strangers], ["Ignored names", plan.strangeExcluded], ["Marked as departed", plan.strangeDeparted]]
-                .filter(([, list]) => list.length).map(([label, list]) => (
-                <div key={label} style={{ marginTop: 10 }}>
-                  <div className="md-cap">{label} <span>{list.length}</span></div>
-                  <div className="domain-list">
-                    {list.map((s) => (
-                      <span key={s.name} className="domain-chip">{s.name}
-                        <span className="hint" style={{ marginLeft: 6 }}>{s.from}</span>
-                      </span>
-                    ))}
+              {groups.filter(([k]) => plan.rows.some((r) => r.kind === k)).map(([k, label]) => (
+                <div key={k} style={{ marginTop: 12 }}>
+                  <div className="md-cap">{label} <span>{plan.rows.filter((r) => r.kind === k).length}</span></div>
+                  <div className="rp-list">
+                    {plan.rows.filter((r) => r.kind === k).map((r) => {
+                      const key = r.kind + ":" + norm(r.name);
+                      return (
+                        <button key={key} className={"rp-row" + (picked[key] ? " on" : "")}
+                          onClick={() => setPicked((p) => ({ ...p, [key]: !p[key] }))}>
+                          <span className="md-box">{picked[key] && <PixIcon glyph="check" size={13} />}</span>
+                          <span className="rp-nm">{r.name}</span>
+                          <span className="rp-ev">
+                            here <b>{r.hereScore}</b> · {r.from} <b>{r.thereScore}</b>
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
-              <button className="btn" style={{ marginTop: 14 }} disabled={busy} onClick={apply}>
-                {busy ? "Working..." : "Remove these"}
+              <p className="hint" style={{ marginTop: 10 }}>
+                The numbers are how much real work each store has on record for that person. A high number
+                somewhere else and a zero here is the clearest sign a name got in by mistake.
+              </p>
+              <button className="btn" style={{ marginTop: 8 }} disabled={busy || !chosen.length} onClick={apply}>
+                {busy ? "Working..." : `Remove the ${chosen.length} ticked`}
               </button>
             </>
           )}
@@ -16403,6 +16452,16 @@ function Style() {
       .q-test-tag { font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
         color:#9A6410; background:#FDF1DC; border:1px solid #E9CE93; padding:2px 7px; border-radius:999px;
         margin-left:8px; }
+      .rp-list { display:flex; flex-direction:column; gap:5px; }
+      .rp-row { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
+        font-family:inherit; padding:9px 12px; border-radius:11px; border:1px solid rgba(16,32,52,.1);
+        background:#fff; transition:background .15s, border-color .15s; }
+      .rp-row.on { background:rgba(210,64,44,.06); border-color:rgba(210,64,44,.3); }
+      .rp-row .md-box { color:#C0392B; }
+      .rp-row.on .md-box { border-color:#C0392B; }
+      .rp-nm { flex:1; font-size:14px; font-weight:600; }
+      .rp-ev { font-size:11.5px; color:var(--ink-3); white-space:nowrap; }
+      .rp-ev b { color:var(--ink-2); }
       .tk-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
       .tk-head h3 { margin-right:auto; }
       .tk-list { display:flex; flex-direction:column; gap:10px; }
