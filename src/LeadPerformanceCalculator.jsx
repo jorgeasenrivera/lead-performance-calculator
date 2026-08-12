@@ -1512,6 +1512,13 @@ async function saveStoreCAS(key, build, tries = 5) {
    re-applied against the winner's copy rather than overwriting it. */
 function mergeAgainstServer(next, serverCopy) {
   if (!serverCopy || typeof serverCopy !== "object") return next;
+  /* If these two documents are not the same store, merging them would blend two
+     rosters into one, which is exactly the damage this is meant to prevent. Return
+     the client copy untouched and let the caller's guard reject the save. */
+  if (next.__storeId && serverCopy.__storeId && next.__storeId !== serverCopy.__storeId) {
+    console.error("refused cross-store merge", next.__storeId, serverCopy.__storeId);
+    return next;
+  }
         const mergeField = (field) => {
           const out = { ...(next[field] || {}) };
           const srv = serverCopy[field] || {};
@@ -2093,18 +2100,32 @@ export default function LeadPerformanceCalculator() {
 
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
+    /* A load takes two round trips now (the document, then the split day rows), so
+       switching stores mid-flight used to let the SLOWER, older store answer last and
+       overwrite the newer one. The screen then showed one store's roster while the
+       app believed it was in another, and the next save wrote it to the wrong key.
+       That is how one store's people, ignore list and departures ended up merged into
+       another. Anything that resolves after the store has moved on is dropped. */
+    let dead = false;
+    const want = view;
     (async () => {
       if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
       try {
         const d = await loadStore(view, emptyStoreData(), true); // throw on a real load error
-        try { storeStampRef.current = await loadStoreStamp(storeKey(view)); } catch (e) { storeStampRef.current = null; }
+        if (dead || want !== view) return;
+        try { storeStampRef.current = await loadStoreStamp(storeKey(want)); } catch (e) { storeStampRef.current = null; }
+        if (dead || want !== view) return;
+        // Stamp which store this document is, so a save can refuse to write it anywhere else.
+        d.__storeId = want;
         setStoreData(d); setStoreLoadFailed(false);
       } catch (e) {
+        if (dead || want !== view) return;
         // A failed load must NOT masquerade as an empty store, or the next save wipes it.
         setStoreData(emptyStoreData()); setStoreLoadFailed(true);
       }
-      setTab("board");
+      if (!dead && want === view) setTab("board");
     })();
+    return () => { dead = true; };
   }, [view]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
@@ -2159,6 +2180,7 @@ export default function LeadPerformanceCalculator() {
         if (!stamp || dead || stamp === storeStampRef.current) return;
         const fresh = await loadStore(view, null, true);
         if (!fresh || dead || savingRef.current) return;
+        fresh.__storeId = view;
         storeStampRef.current = stamp;
         setStoreData(fresh);
         setAdminData((p) => (p[view] ? { ...p, [view]: fresh } : p));
@@ -2180,6 +2202,15 @@ export default function LeadPerformanceCalculator() {
   const persistStore = async (storeId, next, audit) => {
     if (storeLoadFailed) {
       alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
+      return;
+    }
+    /* The last line of defence. Every loaded document knows which store it is, and a
+       save that does not match is refused outright. A guard rather than a fix: if this
+       ever fires, something upstream is wrong and writing anyway would corrupt two
+       stores at once. */
+    if (next && next.__storeId && next.__storeId !== storeId) {
+      console.error("refused cross-store save", { belongsTo: next.__storeId, wouldWriteTo: storeId });
+      alert("That change was NOT saved, on purpose.\n\nThe data on screen belongs to a different store than the one currently selected, which usually means a store was switched while it was still loading. Nothing was overwritten.\n\nReload the page and try again, and please report it with the Help button so it can be looked at.");
       return;
     }
     const looksEmpty = (o) => !o || (!(o.roster || []).length && !Object.keys(o.months || {}).length && !Object.keys(o.activity || {}).length && !(o.plateRegistry || []).length);
@@ -2210,6 +2241,7 @@ export default function LeadPerformanceCalculator() {
     // Compare and swap. The merge runs inside the loop, so if somebody saves while
     // we are mid-flight we fold into THEIR document and try again rather than
     // flattening it. Whoever loses the race loses nothing.
+    next.__storeId = storeId;
     const res = await saveStoreCAS(storeKey(storeId), (server) => mergeAgainstServer(next, server));
     const ok = res.ok;
     if (ok) {
@@ -5313,9 +5345,27 @@ function loadQRCode() {
   });
   return _qrPromise;
 }
-function queueSignInUrl(storeId, date, token, param = "q") {
+function queueSignInUrl(storeId, date, token, param = "q", test = false) {
   const base = window.location.origin + window.location.pathname;
-  return `${base}?${param}=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`;
+  return `${base}?${param}=${encodeURIComponent(storeId)}&d=${encodeURIComponent(date)}&t=${encodeURIComponent(token)}`
+    + (test ? "&test=1" : "");
+}
+
+/* The test link. Offered only in the manager view, and deliberately never encoded
+   into the QR code that gets held up in front of the floor. */
+function TestLink({ storeId, date, token, param }) {
+  const [said, setSaid] = useState(false);
+  if (!token) return null;
+  const url = queueSignInUrl(storeId, date, token, param, true);
+  return (
+    <button className="btn-quiet" title="Opens this queue as a test person nobody else can see"
+      onClick={() => {
+        navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
+          () => window.prompt("Open this on your phone to test the salesperson view:", url));
+      }}>
+      {said ? "Copied" : "Copy test link"}
+    </button>
+  );
 }
 function QueueQR({ url, cell = 6 }) {
   const ref = useRef(null);
@@ -5427,7 +5477,7 @@ function DmIcon({ name, cell = 4 }) {
   );
 }
 
-function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
+function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
@@ -5485,7 +5535,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line }) {
   const valid = isToday && row && row.token && row.token === token;
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
-  const roster = (row && row.roster) || [];
+  // Filtered out entirely unless the address asked for it, so it cannot be picked
+  // by accident by somebody scrolling the name list.
+  const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
@@ -5952,6 +6004,8 @@ function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"]
     const by = {};
     for (const e of history || []) {
       if (!act.has(e.action)) continue;
+      if (isTestId(e.id)) continue;          // the test identity is not a person
+
       const b = by[e.id] || (by[e.id] = { id: e.id, n: 0, refs: [] });
       b.n += 1;
       b.refs.push({ ref: (e.ref || "").trim(), t: e.t || e.at || null, reason: e.reason || "" });
@@ -6278,6 +6332,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const ensureRow = useCallback(async () => {
     const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    // Always published, never shown unless the address asks for it.
+    snap.push({ id: TEST_ID, label: TEST_LABEL, role: "Test", test: true });
     const next = await mutateRow((cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
       cur.roster = snap; cur.storeName = store.name;
@@ -6326,13 +6382,14 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   };
 
   const assignNext = () => {
-    const first = line.find((p) => p.status === "waiting");
+    // The test identity never gets handed a real customer.
+    const first = line.find((p) => p.status === "waiting" && !isTestId(p.id));
     if (!first) return;
     const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
     if (ref === null) return;
     const rf = ref.trim();
     act((cur) => {
-      const i = (cur.line || []).findIndex((p) => p.status === "waiting");
+      const i = (cur.line || []).findIndex((p) => p.status === "waiting" && !isTestId(p.id));
       if (i < 0) return cur;
       const p = cur.line[i];
       pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager", ref: rf });
@@ -6402,7 +6459,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
-  const availCount = line.filter((p) => p.status === "waiting").length;
+  // Counts the floor is judged on leave the test identity out.
+  const availCount = withoutTest(line).filter((p) => p.status === "waiting").length;
   const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   return (
@@ -6412,6 +6470,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
         </div>
       </div>
 
@@ -6419,8 +6478,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })} />
 
       <QueueHero
-        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
-        waitingNames={line.map((p) => realName(p.id))}
+        nextName={(() => { const p = line.find((x) => x.status === "waiting" && !isTestId(x.id)); return p ? realName(p.id) : ""; })()}
+        waitingNames={withoutTest(line).map((p) => realName(p.id))}
         accent={variant.accent} kind="line"
         onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
 
@@ -6470,7 +6529,9 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
               <div className="q-rank">{i + 1}</div>
               <span className="mf-av" style={{ background: `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
               <div className="q-who">
-                <div className="q-nm">{realName(p.id)} {isNext && <span className="q-next-tag">NEXT</span>}</div>
+                <div className="q-nm">{realName(p.id)}
+                  {isTestId(p.id) && <span className="q-test-tag">Test</span>}
+                  {isNext && <span className="q-next-tag">NEXT</span>}</div>
                 <div className="q-meta">
                   <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <QFlagIcon status={p.status} className="q-chip-ico" />}{QUEUE_FLAGS[p.status]?.label || p.status}</span>
                   <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
@@ -6831,7 +6892,7 @@ function floorSignInUrl(storeId, date, token) {
    Mirrors QueueSignIn (name fuzzy-match + PIN, curtain wipe, reuse identities);
    the "done" screen adds the accidental-check-in self-reverse.
    ========================================================================= */
-function FloorSignIn({ store, date, token }) {
+function FloorSignIn({ store, date, token, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
@@ -6857,7 +6918,9 @@ function FloorSignIn({ store, date, token }) {
   const valid = isToday && row && row.token && row.token === token;
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
-  const roster = (row && row.roster) || [];
+  // Filtered out entirely unless the address asked for it, so it cannot be picked
+  // by accident by somebody scrolling the name list.
+  const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
   const variant = { label: "Live Floor" };
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
@@ -7199,6 +7262,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const ensureRow = useCallback(async () => {
     if (!data) return;
     const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    // Always published, never shown unless the address asks for it.
+    snap.push({ id: TEST_ID, name: TEST_LABEL, label: TEST_LABEL, role: "Test", test: true });
     const next = await mutateFloorRow(store.id, date, (cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [], unmatched: [], processed: [], lastEventAt: null };
       cur.roster = snap; cur.storeName = store.name;
@@ -7296,13 +7361,14 @@ function FloorBoard({ config, store, data, onData, userName }) {
   };
 
   const assignNext = () => {
-    const first = line.find((p) => p.status === "waiting");
+    // The test identity never gets handed a real customer.
+    const first = line.find((p) => p.status === "waiting" && !isTestId(p.id));
     if (!first) return;
     const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
     if (ref === null) return;
     const rf = ref.trim();
     act((cur) => {
-      const i = (cur.line || []).findIndex((p) => p.status === "waiting");
+      const i = (cur.line || []).findIndex((p) => p.status === "waiting" && !isTestId(p.id));
       if (i < 0) return cur;
       const p = cur.line[i];
       pushH(cur, { action: "assigned", id: p.id, who: p.label, by: "manager", ref: rf });
@@ -7375,7 +7441,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? floorSignInUrl(store.id, date, row.token) : "";
-  const availCount = line.filter((p) => p.status === "waiting").length;
+  // Counts the floor is judged on leave the test identity out.
+  const availCount = withoutTest(line).filter((p) => p.status === "waiting").length;
   const withCust = line.filter((p) => p.status === "customer").length;
   const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const unmatched = (row && row.unmatched) || [];
@@ -7387,6 +7454,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
         </div>
       </div>
 
@@ -7402,8 +7470,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
         metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] })} />
 
       <QueueHero
-        nextName={(() => { const p = line.find((x) => x.status === "waiting"); return p ? realName(p.id) : ""; })()}
-        waitingNames={line.map((p) => realName(p.id))}
+        nextName={(() => { const p = line.find((x) => x.status === "waiting" && !isTestId(x.id)); return p ? realName(p.id) : ""; })()}
+        waitingNames={withoutTest(line).map((p) => realName(p.id))}
         accent="#0FB37E" kind="floor"
         onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
 
@@ -16136,6 +16204,10 @@ function Style() {
           animation:none !important; }
       }
 
+      /* A fake person in a live queue must never be mistaken for a real one. */
+      .q-test-tag { font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+        color:#9A6410; background:#FDF1DC; border:1px solid #E9CE93; padding:2px 7px; border-radius:999px;
+        margin-left:8px; }
       .tk-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
       .tk-head h3 { margin-right:auto; }
       .tk-list { display:flex; flex-direction:column; gap:10px; }
