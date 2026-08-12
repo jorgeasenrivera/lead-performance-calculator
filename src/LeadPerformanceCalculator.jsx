@@ -6530,8 +6530,14 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   };
   async function act(mutator, audit) {
     if (busy) return; setBusy(true);
-    const next = await mutateRow((cur) => (cur ? mutator(cur) : cur));
-    if (next) { setRow(next); mirror(next, audit); }
+    try {
+      const next = await mutateRow((cur) => (cur ? mutator(cur) : cur));
+      if (next) { setRow(next); mirror(next, audit); }
+    } catch (e) {
+      alert("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
+        + String((e && e.message) || e)
+        + "\n\nTry once more. If it happens again, use the Help button in the corner and it will be sent with everything needed to look into it.");
+    }
     setBusy(false);
   }
   const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
@@ -6869,14 +6875,18 @@ async function loadFloorRow(store, date) {
     return data ? data.data : null;
   } catch (e) { console.error("loadFloorRow", e); return null; }
 }
+/* Same reasoning as the queue write: a refused write that reports success is worse
+   than one that fails loudly, because the screen agrees with you for five seconds
+   and then quietly disagrees. */
 async function saveFloorRow(store, date, data) {
-  if (!supabase) return false;
-  try {
-    const { error } = await supabase.from(FLOOR_TABLE).upsert(
-      { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
-    if (error) throw error;
-    return true;
-  } catch (e) { console.error("saveFloorRow", e); return false; }
+  if (!supabase) throw new Error("No database connection");
+  const { error } = await supabase.from(FLOOR_TABLE).upsert(
+    { id: floorRowId(store, date), store, fdate: date, data, updated_at: qNowIso() }, { onConflict: "id" });
+  if (error) {
+    console.error("saveFloorRow", error);
+    throw new Error(error.message || error.hint || error.code || "write refused");
+  }
+  return true;
 }
 async function mutateFloorRow(store, date, fn) {
   const cur = await loadFloorRow(store, date);
@@ -7509,8 +7519,14 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const mirror = (rowData, audit) => { /* light mirror for future coaching: data.floor[date] */ };
   async function act(mutator, audit) {
     if (busy) return; setBusy(true);
-    const next = await mutateFloorRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
-    if (next) setRow(next);
+    try {
+      const next = await mutateFloorRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
+      if (next) setRow(next);
+    } catch (e) {
+      alert("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
+        + String((e && e.message) || e)
+        + "\n\nTry once more. If it happens again, use the Help button in the corner and it will be sent with everything needed to look into it.");
+    }
     setBusy(false);
   }
   const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
