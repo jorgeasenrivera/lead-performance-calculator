@@ -4775,14 +4775,18 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClo
                   <span className="md-text">
                     <b>{c.label}</b>
                     <span>{c.hint}</span>
-                    {auto && (
+                    {auto && stats && (
                       <span className="md-prog">
                         <i style={{ width: Math.min(100, auto.need ? (auto.got / auto.need) * 100 : 0) + "%" }} />
                       </span>
                     )}
                   </span>
                   {auto
-                    ? <span className="md-count">{auto.got}{auto.need > 1 ? <i>/{auto.need}</i> : null}</span>
+                    ? (stats
+                        ? <span className="md-count">{auto.got}{auto.need > 1 ? <i>/{auto.need}</i> : null}</span>
+                        // Nothing has landed yet. Saying so is better than a zero,
+                        // which reads as "you have done none of it".
+                        : <span className="md-hand">Waiting</span>)
                     : <span className="md-hand">{done ? "Done" : "Tap"}</span>}
                 </button>
               );
@@ -7570,7 +7574,7 @@ function FloorSignIn({ store, date, token, test = false }) {
               <DmIcon name="back" cell={4} /><span>My day</span>
             </button>
             <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
-              <span className="sf-door"><DmIcon name="door" cell={3} /></span>
+              <span className="sf-door"><DmIcon name="door" cell={4} /></span>
               <span>Leave the floor</span>
             </button>
           </div>
@@ -18692,24 +18696,22 @@ function Style() {
 .sft-bar i{ display:block; height:100%; border-radius:999px; background:var(--sfled);
   transition:width .6s cubic-bezier(.2,.8,.2,1); }
 .sft-hit .sft-bar i{ background:#17A86E; }
-.sf-extra{ display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; }
-.sf-mine{ display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.09); color:var(--sfink2); font-family:var(--sfmono); font-size:13px;
-  padding:11px 15px; border-radius:12px; cursor:pointer; transition:.2s; }
-.sf-mine:hover{ background:rgba(255,255,255,.1); color:var(--sfink); }
-.q-page.sf{ padding-bottom:88px; }   /* room for the help button in the corner */
+.sf-extra{ display:flex; align-items:stretch; gap:10px; width:100%; }
+/* Same shape, same height, same icon size as the status buttons above. */
+.sf-mine, .sf-leave-door{ flex:1; appearance:none; cursor:pointer; font-family:var(--sffont); font-weight:500;
+  font-size:clamp(12px,3.4vw,13px); color:var(--sfink2); background:var(--sfcard);
+  border:1px solid var(--sfstroke); border-radius:14px; padding:12px 6px 10px;
+  display:flex; flex-direction:column; align-items:center; gap:7px; transition:.16s; }
+.sf-mine:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
+.q-page.sf{ padding-bottom:34px; }
 .sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
 .sf-leave:hover{ color:var(--sfink2); }
 /* Leaving should feel like leaving: the door lights and the label steps toward it,
    so the action reads before the words are. */
-.sf-leave-door{ display:inline-flex; align-items:center; gap:9px; padding:11px 16px; border-radius:12px;
-  border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03);
-  transition:background .2s, border-color .2s, color .2s; }
 .sf-leave-door:hover:not(:disabled){ background:rgba(255,120,110,.1); border-color:rgba(255,120,110,.32); color:#ffc9c4; }
 .sf-door{ display:inline-flex; opacity:.7; transition:opacity .2s, transform .26s cubic-bezier(.34,1.4,.64,1); }
-.sf-leave-door:hover:not(:disabled) .sf-door{ opacity:1; transform:translateX(-2px); }
+.sf-leave-door:hover:not(:disabled) .sf-door{ opacity:1; transform:translateY(-2px); }
 .sf-leave-door span:last-child{ transition:transform .26s cubic-bezier(.34,1.4,.64,1); }
-.sf-leave-door:hover:not(:disabled) span:last-child{ transform:translateX(3px); }
 .sf-leave-door:active:not(:disabled){ transform:scale(.985); }
 @media (prefers-reduced-motion: reduce){ .sf-door, .sf-leave-door span:last-child{ transition:none; } }
 
