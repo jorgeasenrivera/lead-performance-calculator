@@ -127,6 +127,10 @@ const LEADERBOARD_REPORTS = {
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+// Plate tags are compared with punctuation and case stripped, so "DLR-1042" and
+// "dlr1042" are understood to be the same plate. Defined here because both the
+// plate tracker and the repair tool need it, and the repair tool is declared first.
+const normTag = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 // Every unit a person delivered this month, across all four channels.
 const unitsOf = (s) =>
   (s?.internetUnits ?? 0) + (s?.phoneUnits ?? 0) + (s?.showroomUnits ?? 0) + (s?.campaignUnits ?? 0);
@@ -4940,10 +4944,16 @@ function RepairPanel({ config }) {
         try {
           const d = await loadStore(s.id, null, true);
           if (!d) continue;
+          const plateTags = new Set();
+          for (const r of (d.plateRegistry) || []) if (r && r.tag) plateTags.add(normTag(r.tag));
+          for (const list of Object.values((d.plates) || {})) {
+            for (const p of list || []) if (p && p.tag) plateTags.add(normTag(p.tag));
+          }
           others.push({
             id: s.id, name: s.name,
             roster: new Set(((d.roster) || []).map((a) => norm(a.name))),
             excluded: new Set(((d.excluded) || []).map(norm)),
+            plateTags,
             ev: evidenceFor(d),
           });
         } catch (e) { /* a store we cannot read is simply not used as evidence */ }
@@ -4970,6 +4980,33 @@ function RepairPanel({ config }) {
         if (j) rows.push({ kind: "departed", name: d.name, ...j });
       }
 
+      /* Plates carry no activity history to weigh, so the evidence is who was holding
+         them: a plate logged out to somebody who works at another store came from that
+         store. Registry entries follow the same rule, and any tag whose only appearance
+         here is in the registry is judged by whether the other store owns it. */
+      const goneNames = new Set(rows.filter((r) => r.kind === "roster").map((r) => norm(r.name)));
+      const usedHere = new Set();
+      const plateRows = [];
+      for (const [d, list] of Object.entries((data.plates) || {})) {
+        for (const p of list || []) {
+          if (!p || !p.tag) continue;
+          const who = norm(p.assignee || "");
+          const home = others.find((o) => (who && o.roster.has(who)) || o.plateTags.has(normTag(p.tag)));
+          const mineNow = ((data.roster) || []).some((a) => norm(a.name) === who) && !goneNames.has(who);
+          if (home && !mineNow) plateRows.push({ kind: "plate", name: `${p.tag} (${p.assignee || "unassigned"}, ${d})`,
+            tag: p.tag, day: d, id: p.id, from: home.name, hereScore: 0, thereScore: 1 });
+          else usedHere.add(normTag(p.tag));
+        }
+      }
+      for (const r of (data.plateRegistry) || []) {
+        if (!r || !r.tag) continue;
+        if (usedHere.has(normTag(r.tag))) continue;
+        const home = others.find((o) => o.plateTags.has(normTag(r.tag)));
+        if (home) plateRows.push({ kind: "plateReg", name: r.tag, tag: r.tag, id: r.id,
+          from: home.name, hereScore: 0, thereScore: 1 });
+      }
+      rows.push(...plateRows);
+
       // Ticked by default only where the other store clearly has the stronger claim.
       // Everything else is listed but left for a person to decide.
       const pre = {};
@@ -4995,7 +5032,12 @@ function RepairPanel({ config }) {
       await saveShared(backupStoreKey(target, `repair-${stamp}`), plan.data);
 
       const go = { roster: new Set(), excluded: new Set(), departed: new Set() };
-      for (const r of chosen) go[r.kind].add(norm(r.name));
+      const goPlates = new Set(), goPlateReg = new Set();
+      for (const r of chosen) {
+        if (r.kind === "plate") goPlates.add(r.day + "|" + (r.id || normTag(r.tag)));
+        else if (r.kind === "plateReg") goPlateReg.add(normTag(r.tag));
+        else go[r.kind].add(norm(r.name));
+      }
 
       const res = await saveStoreCAS(storeKey(target), (server) => {
         const out = JSON.parse(JSON.stringify(server || plan.data));
@@ -5010,6 +5052,12 @@ function RepairPanel({ config }) {
         for (const day of Object.keys(out.activity || {})) {
           for (const k of Object.keys(out.activity[day] || {})) if (go.roster.has(k)) delete out.activity[day][k];
         }
+        for (const day of Object.keys(out.plates || {})) {
+          out.plates[day] = (out.plates[day] || []).filter((p) =>
+            !goPlates.has(day + "|" + (p.id || normTag(p.tag))));
+          if (!out.plates[day].length) delete out.plates[day];
+        }
+        out.plateRegistry = (out.plateRegistry || []).filter((r) => !goPlateReg.has(normTag(r.tag)));
         out.__storeId = target;
         return out;
       });
@@ -5021,7 +5069,8 @@ function RepairPanel({ config }) {
     finally { setBusy(false); }
   };
 
-  const groups = [["roster", "Roster"], ["excluded", "Ignored names"], ["departed", "Marked as departed"]];
+  const groups = [["roster", "Roster"], ["excluded", "Ignored names"], ["departed", "Marked as departed"],
+    ["plate", "Plates logged out"], ["plateReg", "Plates on the master list"]];
 
   return (
     <div className="card">
@@ -5069,7 +5118,9 @@ function RepairPanel({ config }) {
                           <span className="md-box">{picked[key] && <PixIcon glyph="check" size={13} />}</span>
                           <span className="rp-nm">{r.name}</span>
                           <span className="rp-ev">
-                            here <b>{r.hereScore}</b> · {r.from} <b>{r.thereScore}</b>
+                            {r.kind === "plate" || r.kind === "plateReg"
+                              ? <>belongs to {r.from}</>
+                              : <>here <b>{r.hereScore}</b> · {r.from} <b>{r.thereScore}</b></>}
                           </span>
                         </button>
                       );
@@ -5376,6 +5427,7 @@ const DEFAULT_CHECKLIST = [
   { id: "walk", label: "Walk the lot", hint: "Know what is on the ground before a customer asks" },
 ];
 const checklistKey = (store, date, id) => `lpcq:list:${store}:${date}:${id}`;
+
 
 /* ---- The test identity ----
    There is no way to check what a salesperson actually sees without being one, and
@@ -9683,7 +9735,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
      full number and every past record is relinked so the plate's history stays one
      unbroken trail. */
   const registry = data.plateRegistry || [];
-  const normTag = (t) => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  // (normTag is defined at module level so the repair tool can use it too)
   const findRegistryMatch = (t) => {
     const T = normTag(t);
     if (!T) return null;
