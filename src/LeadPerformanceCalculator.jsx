@@ -6408,6 +6408,40 @@ function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
     </div>
   );
 }
+/* Tasks are not pass or fail like calls and videos: nobody clears every task every
+   day, and a store that demanded it would be teaching people to close tasks rather
+   than work them. Eighty per cent is the line, marked on the dial, so the shape says
+   whether somebody is at it without turning it into another point. */
+function TaskDial({ done, posted, target = 0.8, size = 30 }) {
+  const known = posted != null && posted > 0;
+  const pct = known ? Math.min(1, (done || 0) / posted) : 0;
+  const r = (size - 5) / 2, c = 2 * Math.PI * r;
+  const dash = pct * c;
+  const state = !known ? "dim" : pct >= target ? "ok" : pct >= target * 0.6 ? "mid" : "low";
+  const left = known ? Math.max(0, posted - (done || 0)) : null;
+  const title = known
+    ? `${done || 0} of ${posted} tasks done, ${left} left. Clear at ${Math.round(target * 100)}%.`
+    : "No task count came through for today.";
+  return (
+    <span className={"tdial tdial-" + state} title={title}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="tdial-track" strokeWidth="4" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="tdial-fg" strokeWidth="4"
+          strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+        {/* the line that counts as clear */}
+        {known && (() => {
+          const a = (target * 360 - 90) * (Math.PI / 180);
+          const x1 = size / 2 + Math.cos(a) * (r - 3.4), y1 = size / 2 + Math.sin(a) * (r - 3.4);
+          const x2 = size / 2 + Math.cos(a) * (r + 3.4), y2 = size / 2 + Math.sin(a) * (r + 3.4);
+          return <line x1={x1} y1={y1} x2={x2} y2={y2} className="tdial-mark" strokeWidth="1.6" strokeLinecap="round" />;
+        })()}
+      </svg>
+      <b className="tdial-n">{known ? done ?? 0 : "-"}</b>
+    </span>
+  );
+}
+
 function GaugeCard({ label, value, pct, tone }) {
   return (
     <div className="ic-card">
@@ -7238,6 +7272,14 @@ function FloorSignIn({ store, date, token, test = false }) {
   const [switchTo, setSwitchTo] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  // Same as The Line: somebody standing on the floor should be able to see their own
+  // list and their own numbers without asking a manager for them.
+  const [myDay, setMyDay] = useState(false);
+  const [cfg, setCfg] = useState(null);
+  const [mine, setMine] = useState(null);
+  const [mineAt, setMineAt] = useState(null);
+  useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
   const refetch = useCallback(async () => setRow((await loadFloorRow(store, date)) || null), [store, date]);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
@@ -7251,6 +7293,26 @@ function FloorSignIn({ store, date, token, test = false }) {
   // by accident by somebody scrolling the name list.
   const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
   const variant = { label: "Live Floor" };
+  const meLabel = ((row && row.roster) || []).find((r) => r.id === meId)?.label || "";
+  // One small row, not the whole store, thanks to the per-day activity split.
+  useEffect(() => {
+    if (!meLabel || !supabase) return;
+    let dead = false;
+    const pull = async () => {
+      try {
+        const { data } = await supabase.from("app_data").select("value")
+          .eq("key", `lpc:store:${store}:act:${date}`).maybeSingle();
+        if (!dead && data && data.value) {
+          const r = data.value[norm(meLabel)] || null;
+          setMine(r);
+          if (r && r.uploadedAt) setMineAt(r.uploadedAt);
+        }
+      } catch (e) { /* the panel says so itself if nothing arrives */ }
+    };
+    pull();
+    const t = setInterval(pull, 120000);
+    return () => { dead = true; clearInterval(t); };
+  }, [store, date, meLabel]);
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
@@ -7454,7 +7516,24 @@ function FloorSignIn({ store, date, token, test = false }) {
                   </button>
                 ))}
           </div>
-          <button className="sf-leave" disabled={busy} onClick={leave}>Leave the floor</button>
+          {/* Today's three numbers, the same as The Line. */}
+          {mine && (
+            <button className="sf-today" onClick={() => { buzz(10); setMyDay(true); }}>
+              {[["Calls", mine.calls || 0, std.minCalls], ["Videos", mine.video || 0, std.minVideos], ["Tasks", mine.tasks || 0, 0]].map(([lbl, v, need]) => (
+                <span key={lbl} className={"sft" + (need > 0 && v >= need ? " sft-hit" : "")}>
+                  <span className="sft-v"><DmNumber value={v} /></span>
+                  <span className="sft-l">{lbl}{need > 0 ? ` / ${need}` : ""}</span>
+                  {need > 0 && <span className="sft-bar"><i style={{ width: Math.min(100, (v / need) * 100) + "%" }} /></span>}
+                </span>
+              ))}
+            </button>
+          )}
+          <div className="sf-extra">
+            <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
+              <DmIcon name="back" cell={4} /><span>My day</span>
+            </button>
+            <button className="sf-leave" disabled={busy} onClick={leave}>Leave the floor</button>
+          </div>
         </div>
         {isNext && (
           <div className="sf-uptake">
@@ -7558,6 +7637,12 @@ function FloorSignIn({ store, date, token, test = false }) {
     <div className="q-page f-page sf sf-floor">
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
+      {/* Everyone gets a way out of a problem, including the people with no account. */}
+      <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
+      {myDay && (
+        <MyDay store={store} date={date} meId={meId} meName={meLabel} stats={mine} std={std}
+          config={cfg} updatedAt={mineAt} onClose={() => setMyDay(false)} />
+      )}
     </div>
   );
 }
@@ -8354,7 +8439,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <div className="card checkout-card">
           <table className="checkout-table">
             <thead><tr>
-              <th>Name</th><th>Calls</th><th>Videos</th><th>Tasks</th><th>RockEd</th><th>Points</th>
+              <th>Name</th><th>Tasks</th><th>Calls</th><th>Videos</th><th>RockEd</th><th>Points</th>
             </tr></thead>
             <tbody>
               {/* On today first, off today underneath. Reading a single alphabetical
@@ -8383,6 +8468,11 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                     {!r.off && (data.daysOff?.[r.a.id] || []).includes(day) &&
                       <span className="co-off-tag co-worked" title="Scheduled off, but calls or videos were logged, so the day counts. Mark them off to override.">Off · worked</span>}
                   </td>
+                  {/* Tasks first: it is the pile they arrive to, and it frames whether
+                      the rest of the day was ever going to happen. */}
+                  <td className="co-tasks">
+                    <TaskDial done={r.tasks} posted={r.tasksPosted} />
+                  </td>
                   <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark"><PixIcon glyph={r.callsMet ? "check" : "close"} size={13} /></span>}
                     {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
@@ -8390,15 +8480,6 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                   <td className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark"><PixIcon glyph={r.videoMet ? "check" : "close"} size={13} /></span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
-                  </td>
-                  {/* Completed tasks so far today. There is no standard on it, so it is
-                      shown plainly rather than graded: it is context for the conversation,
-                      not another point on the board. Open tasks sit behind it where the
-                      report carried them. */}
-                  <td className="co-tasks">
-                    {r.hasData
-                      ? <><b>{r.tasks ?? "-"}</b>{r.tasksPosted != null && <span className="cell-need" title="Tasks posted for the day"> / {r.tasksPosted}</span>}</>
-                      : "-"}
                   </td>
                   {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
                   <td>
@@ -17298,6 +17379,15 @@ function Style() {
       .cast-wrap { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
       .cast-err { color:var(--red); font-size:12px; max-width:520px; }
       .co-tasks { white-space:nowrap; }
+      .tdial { display:inline-flex; align-items:center; gap:8px; cursor:help; }
+      .tdial svg { display:block; flex:0 0 auto; }
+      .tdial-track { stroke:rgba(16,32,52,.1); }
+      .tdial-mark { stroke:rgba(16,32,52,.42); }
+      .tdial-n { font-family:var(--font-display); font-size:14px; font-weight:800; }
+      .tdial-ok .tdial-fg { stroke:#178A57; }   .tdial-ok .tdial-n { color:#137048; }
+      .tdial-mid .tdial-fg { stroke:#D9A425; }  .tdial-mid .tdial-n { color:#9A6410; }
+      .tdial-low .tdial-fg { stroke:#D2402C; }  .tdial-low .tdial-n { color:#B4331F; }
+      .tdial-dim .tdial-fg { stroke:transparent; } .tdial-dim .tdial-n { color:var(--ink-3); }
       .co-nodata { opacity:.5; }
       .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
       .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
