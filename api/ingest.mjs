@@ -535,6 +535,24 @@ async function sbPutActivityDay(storeId, day, rows) {
   await sbPut(actKey(storeId, day), rows);
 }
 
+/* The same figures again, under the board prefix, which is the only thing a phone
+   with no account can read. Without this a salesperson can never see their own day:
+   the store rows require a signed-in session and a sign-in page has none. Counts
+   only, one day, for the people on the floor. */
+const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
+const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email", "tasks", "tasksPosted",
+  "apptScheduled", "apptConfirmed", "apptShow", "units", "uploadedAt"];
+async function sbPutFloorStats(storeId, day, rows) {
+  const out = {};
+  for (const [k, r] of Object.entries(rows || {})) {
+    if (!r) continue;
+    const keep = {};
+    for (const f of FLOOR_STAT_FIELDS) if (r[f] !== undefined) keep[f] = r[f];
+    out[k] = keep;
+  }
+  await sbPut(floorStatsKey(storeId, day), out);
+}
+
 /* ---------- the TV board row ----------
    The board on the wall reads its own sanitized row, and until now only a
    browser ever wrote it. That meant every screen sat on figures from the last
@@ -926,8 +944,11 @@ export default async function handler(req, res) {
       if (r.type !== "activity" || !r.day) continue;
       const rows = next && next.activity && next.activity[r.day];
       if (!rows) continue;
-      try { await sbPutActivityDay(store.id, r.day, rows); dayWrites.push(r.day); }
-      catch (e) { console.error("ingest: day row write failed", store.id, r.day, String(e.message || e)); }
+      try {
+        await sbPutActivityDay(store.id, r.day, rows);
+        await sbPutFloorStats(store.id, r.day, rows);
+        dayWrites.push(r.day);
+      } catch (e) { console.error("ingest: day row write failed", store.id, r.day, String(e.message || e)); }
     }
 
     // Push the fresh figures to the wall. A board that cannot be refreshed must
