@@ -1373,6 +1373,27 @@ async function loadShared(key, fallback, throwOnError) {
      - the embedded copy is dropped only once every store has moved
    ======================================================================= */
 const actKey = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
+/* A salesperson on a sign-in page has no account, and the store rows are gated on
+   having one. So their own numbers were unreadable to them: the query returned
+   nothing and the panel simply stayed empty.
+
+   The board keys are the one thing already readable without signing in, so today's
+   figures get a slim copy under that prefix. It carries counts only, for the people
+   on the floor, for one day. No goals, no money, nothing that is not already on the
+   wall in front of them. */
+const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
+const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email", "tasks", "tasksPosted",
+  "apptScheduled", "apptConfirmed", "apptShow", "units", "uploadedAt"];
+function slimFloorStats(dayRows) {
+  const out = {};
+  for (const [k, r] of Object.entries(dayRows || {})) {
+    if (!r) continue;
+    const keep = {};
+    for (const f of FLOOR_STAT_FIELDS) if (r[f] !== undefined) keep[f] = r[f];
+    out[k] = keep;
+  }
+  return out;
+}
 // Only recent days are worth splitting out: they are the ones being written. Older
 // days are read constantly and never change, so they stay in the main document.
 const SPLIT_ACT_DAYS = 45;
@@ -4482,6 +4503,10 @@ function buildBoardPayload(config, storeId, sdata) {
 // row that never got written looks exactly like a board that was never opened.
 async function publishBoard(config, storeId, sdata) {
   try {
+    // Today's floor figures, in the one place a signed-out phone can read them.
+    const t = today();
+    const rows = ((sdata && sdata.activity) || {})[t];
+    if (rows) { try { await saveShared(floorStatsKey(storeId, t), slimFloorStats(rows)); } catch (e) {} }
     const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
     if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
     return { ok, err: ok ? null : (lastSaveError || "unknown") };
@@ -5841,8 +5866,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     let dead = false;
     const pull = async () => {
       try {
+        // The board prefix, not the store prefix: this page has no account.
         const { data } = await supabase.from("app_data").select("value")
-          .eq("key", `lpc:store:${store}:act:${date}`).maybeSingle();
+          .eq("key", floorStatsKey(store, date)).maybeSingle();
         if (!dead && data && data.value) {
           const r = data.value[norm(meFull)] || data.value[norm(meLabel)] || null;
           setMine(r);
@@ -7310,8 +7336,9 @@ function FloorSignIn({ store, date, token, test = false }) {
     let dead = false;
     const pull = async () => {
       try {
+        // The board prefix, not the store prefix: this page has no account.
         const { data } = await supabase.from("app_data").select("value")
-          .eq("key", `lpc:store:${store}:act:${date}`).maybeSingle();
+          .eq("key", floorStatsKey(store, date)).maybeSingle();
         if (!dead && data && data.value) {
           const r = data.value[norm(meFull)] || data.value[norm(meLabel)] || null;
           setMine(r);
@@ -16836,7 +16863,7 @@ function Style() {
       .tk-actions { display:flex; gap:8px; }
 
       /* ---------- help ---------- */
-      .help-fab { position:fixed; right:20px; bottom:20px; z-index:350; width:46px; height:46px;
+      .help-fab { position:fixed; right:18px; bottom:18px; z-index:350; width:46px; height:46px;
         border-radius:999px; border:0; cursor:pointer; display:flex; align-items:center; justify-content:center;
         background:linear-gradient(135deg,#2A5E9B,#5566F0); color:#fff;
         box-shadow:0 14px 30px -12px rgba(42,94,155,.7), inset 0 1px 0 rgba(255,255,255,.25);
@@ -16844,6 +16871,12 @@ function Style() {
       .help-fab:hover { transform:translateY(-2px); box-shadow:0 20px 38px -12px rgba(42,94,155,.75); }
       .help-fab.inline { position:static; width:auto; height:auto; gap:8px; padding:10px 16px;
         border-radius:12px; font-family:inherit; font-size:13.5px; font-weight:700; margin-top:14px; }
+      /* The sign-in pages are a single column with the controls at the foot, so the
+         floating button is lifted clear of them rather than sitting on top. */
+      .q-page .help-fab { bottom:auto; top:18px; right:18px; width:40px; height:40px;
+        background:rgba(255,255,255,.12); box-shadow:0 6px 18px -8px rgba(0,0,0,.5);
+        backdrop-filter:blur(6px); }
+      .q-page .help-fab:hover { background:rgba(255,255,255,.2); }
       .help-back { position:fixed; inset:0; z-index:420; background:rgba(15,23,42,.5);
         backdrop-filter:blur(3px); display:flex; align-items:flex-end; justify-content:center;
         animation:helpIn .2s var(--ease) both; }
@@ -18664,6 +18697,7 @@ function Style() {
   border:1px solid rgba(255,255,255,.09); color:var(--sfink2); font-family:var(--sfmono); font-size:13px;
   padding:11px 15px; border-radius:12px; cursor:pointer; transition:.2s; }
 .sf-mine:hover{ background:rgba(255,255,255,.1); color:var(--sfink); }
+.q-page.sf{ padding-bottom:88px; }   /* room for the help button in the corner */
 .sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
 .sf-leave:hover{ color:var(--sfink2); }
 /* Leaving should feel like leaving: the door lights and the label steps toward it,
