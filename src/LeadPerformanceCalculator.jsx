@@ -8203,10 +8203,15 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   };
 
   const q = norm(query);
-  // Left-side sheet is alphabetical by name so managers can find anyone fast.
-  // Check Out is a sales-floor sheet: only roles that are coached on sales behaviours
-  // appear (Sales Associate and Service to Sales). BDC agents and managers stay off it.
-  const salesRoles = new Set((config.roles || []).filter((r) => r.coaching !== false && r.tracked !== false).map((r) => r.id));
+  /* Left-side sheet is alphabetical by name so managers can find anyone fast.
+     Check Out is a sales-floor sheet: only roles that are coached on sales behaviours
+     appear. BDC agents and managers stay off it, and so does Service to Sales, whose
+     day is driven by whatever comes through the service drive rather than by a call
+     and video count. Holding them to a floor standard would mark them down every day
+     for work they were never asked to do. They still appear everywhere else. */
+  const salesRoles = new Set((config.roles || [])
+    .filter((r) => r.coaching !== false && r.tracked !== false && r.id !== "service")
+    .map((r) => r.id));
   const roster = (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
 
   // A clean text recap of the day the manager can paste into a group chat or email.
@@ -8714,16 +8719,24 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
       c.fillText(r.a.name, rx + 34, ry + 1);
       streak(rx + 34 + c.measureText(r.a.name).width + 9, ry + 1, streaks[r.a.id]);
 
+      /* The chip is drawn around the number rather than beside it: measure the text,
+         centre both on the same point, and the digit sits in the middle whatever its
+         width. Drawing from an edge is what left the number riding out of the pill. */
       const col = heat(r.points);
+      const label = String(r.points);
       c.font = `700 17px ${DISPLAY}`;
-      const nw = c.measureText(String(r.points)).width;
-      c.fillStyle = col; c.globalAlpha = 0.12;
-      round(rx + colW - nw - 13, ry - 15, nw + 26, 26, 13); c.fill();
+      const nw = c.measureText(label).width;
+      const chipW = Math.max(nw + 24, 38);
+      const chipH = 26;
+      const cxMid = rx + colW - chipW / 2;      // chip centre, flush to the right edge
+      const cyMid = ry - 4;                     // row centre, not the text baseline
+      c.fillStyle = col; c.globalAlpha = 0.14;
+      round(cxMid - chipW / 2, cyMid - chipH / 2, chipW, chipH, chipH / 2); c.fill();
       c.globalAlpha = 1;
-      c.textAlign = "right";
       c.fillStyle = col;
-      c.fillText(String(r.points), rx + colW - 13, ry + 3);
-      c.textAlign = "left";
+      c.textAlign = "center"; c.textBaseline = "middle";
+      c.fillText(label, cxMid, cyMid + 1);
+      c.textAlign = "left"; c.textBaseline = "alphabetic";
       ry += 34; i++;
     }
     if (offenders.length > 14) {
