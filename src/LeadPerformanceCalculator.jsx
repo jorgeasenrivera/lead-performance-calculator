@@ -302,6 +302,8 @@ function looksAbsent(data, aId, d) {
   if (!isScheduled(data, aId, d)) return false;
   if (data.daysOff?.[aId]?.includes(d)) return false;   // already off
   if (!activityLandedOn(data, d)) return false;
+  // A manager has said this person was here. That outranks the absence of numbers.
+  if (((data.presentAnyway || {})[d] || []).includes(aId)) return false;
   return !workedAnyway(data, aId, d);
 }
 
@@ -853,17 +855,30 @@ async function extractPdfLinesInBrowser(file) {
   const pdfjs = await loadPdfJs();
   const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
-  const items = [];
+  let items = [];
   for (let pn = 1; pn <= doc.numPages; pn++) {
     const page = await doc.getPage(pn);
     const vp = page.getViewport({ scale: 1 });
     const tc = await page.getTextContent();
     for (const it of tc.items) {
       if (!it.str.trim()) continue;
-      items.push({ str: it.str.trim(), x: it.transform[4], y: vp.height - it.transform[5], pg: pn });
+      items.push({ str: it.str.trim(), x: it.transform[4], y: vp.height - it.transform[5], w: it.width || 0, pg: pn });
     }
   }
   items.sort((a, b) => a.pg - b.pg || a.y - b.y || a.x - b.x);
+  /* Ligatures come back as their own text runs. A name set with "ff" or "fi" in it
+     arrives as three pieces sitting flush against each other, so "Jeffrey Berlan"
+     reads as "Je ff rey Berlan" and stops matching the roster. The gap between two
+     pieces is what separates a real space from a ligature seam: touching pieces are
+     one word, pieces with air between them are two. */
+  const glued = [];
+  for (const it of items) {
+    const p = glued[glued.length - 1];
+    const touching = p && p.pg === it.pg && Math.abs(p.y - it.y) < 2 && (it.x - (p.x + p.w)) < 0.9;
+    if (touching) { p.str += it.str; p.w = (it.x + it.w) - p.x; }
+    else glued.push({ ...it });
+  }
+  items = glued;
   const lines = [];
   for (const it of items) {
     const L = lines[lines.length - 1];
@@ -8161,8 +8176,21 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const noShowSuspects = (() => {
     if (day !== today()) return [];
     if (new Date().getHours() < 14) return [];
-    return roster.filter((a) => looksAbsent(data, a.id, day)).map((a) => ({ a }));
+    const said = (data.presentAnyway || {})[day] || [];
+    return roster.filter((a) => looksAbsent(data, a.id, day) && !said.includes(a.id)).map((a) => ({ a }));
   })();
+
+  /* Somebody vouching for a person is evidence too. It stops the prompt returning
+     every time the page is opened, and it stops the overnight close-out marking a
+     day off for somebody a manager has said was standing right there. */
+  const confirmOn = (a) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.presentAnyway = next.presentAnyway || {};
+    const list = new Set(next.presentAnyway[day] || []);
+    list.add(a.id);
+    next.presentAnyway[day] = [...list];
+    onChange(next, { action: "Confirmed present with no activity", detail: `${a.name} · ${day}` });
+  };
   const monthDays = activityDays.filter((d) => d.startsWith(ym()));
 
   // Month-to-date points per person, for the Top Offenders panel.
@@ -8219,13 +8247,15 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <div className="co-callout">
           <div className="co-callout-head">
             <b>Nothing logged today for {noShowSuspects.length === 1 ? noShowSuspects[0].a.name : noShowSuspects.length + " people"}</b>
-            <span className="hint">The schedule has them in today, the activity report has run, and there are no calls, videos or line sign-in against their name. That usually means they called out. Mark them off and the day stops counting against them; leave it and it will be closed out as a day off after midnight.</span>
+            <span className="hint">The schedule has them in today, the activity report has run, and there are no calls, videos or line sign-in against their name. Say which it is: off means the day stops counting against them, and here means it counts as normal and they will not be asked about again today. Leave it and it will be closed out as a day off after midnight.</span>
           </div>
           <div className="co-callout-list">
             {noShowSuspects.map((r) => (
-              <button key={r.a.id} className="co-callout-btn" onClick={() => toggleOff(r.a)}>
-                Mark {r.a.name} off
-              </button>
+              <span key={r.a.id} className="co-ask">
+                <b>{r.a.name}</b>
+                <button className="co-callout-btn" onClick={() => toggleOff(r.a)}>Off today</button>
+                <button className="co-callout-btn co-on" onClick={() => confirmOn(r.a)}>Here, working</button>
+              </span>
             ))}
           </div>
         </div>
@@ -12519,8 +12549,16 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const remaining = Math.max(0, workingDays - calElapsed);
   const stillNeeded = Math.max(0, goal - delivered);
   const perDayNeeded = remaining > 0 ? stillNeeded / remaining : 0;
-  const pace = (delivered / calElapsed) * workingDays;      // where the month lands at today's rate
-  const onTrack = goal > 0 && pace >= goal;
+  /* Where the month lands at today's rate. The guard matters: at Holler Honda a
+     person with one day worked and four deliveries projected 100 units for the
+     month, because one good day was being treated as the whole story. A rate needs
+     a few days behind it before it means anything, so until then the projection
+     stays honest and simply says it does not know yet. */
+  const PACE_MIN_DAYS = 3;
+  const paceKnown = calElapsed >= PACE_MIN_DAYS;
+  const pace = paceKnown ? (delivered / calElapsed) * workingDays : null;
+  const paceCap = Math.max(goal * 3, 30);   // a projection above this is noise, not a forecast
+  const onTrack = goal > 0 && pace != null && pace >= goal;
 
   const setGoal = (v) => {
     const next = JSON.parse(JSON.stringify(data));
@@ -12565,8 +12603,10 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
               <span><b>{delivered}</b> delivered</span>
               <span><b>{stillNeeded}</b> still needed</span>
               <span><b>{remaining}</b> days left</span>
-              <span className={onTrack ? "good" : "behind"}>
-                <b>{fmtNum(pace)}</b> projected
+              <span className={pace == null ? "" : onTrack ? "good" : "behind"}>
+                {pace == null
+                  ? <><b>-</b> projected <span className="hint">after {PACE_MIN_DAYS} days</span></>
+                  : <><b>{fmtNum(Math.min(pace, paceCap))}</b> projected{pace > paceCap ? "+" : ""}</>}
               </span>
             </div>
             {stillNeeded > 0 && remaining > 0 && (
@@ -16866,7 +16906,12 @@ function Style() {
       .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
       .co-callout { background:#FFF8E8; border:1px solid #F2DFAE; border-radius:14px; padding:12px 16px; margin-bottom:12px; }
       .co-callout-head { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
-      .co-callout-list { display:flex; flex-wrap:wrap; gap:7px; }
+      .co-callout-list { display:flex; flex-wrap:wrap; gap:10px; }
+      .co-ask { display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,.65);
+        border:1px solid rgba(226,201,131,.6); border-radius:999px; padding:5px 7px 5px 13px; }
+      .co-ask b { font-size:13px; margin-right:2px; }
+      .co-on { border-color:#9CCBB0 !important; color:#177245 !important; }
+      .co-on:hover { background:#E4F4EA !important; }
       .co-callout-btn { font-family:inherit; font-size:12.5px; font-weight:700; padding:6px 12px; border-radius:999px;
         border:1px solid #E3C983; background:#fff; color:#8A6314; cursor:pointer; transition:background .15s, transform .12s; }
       .co-callout-btn:hover { background:#FBEFD4; transform:translateY(-1px); }
