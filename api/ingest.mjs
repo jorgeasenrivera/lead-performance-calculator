@@ -125,17 +125,30 @@ function parseReport(rows, type) {
 /* ---------- shared PDF line extraction ---------- */
 async function extractPdfLines(buffer) {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
-  const items = [];
+  let items = [];
   for (let pn = 1; pn <= doc.numPages; pn++) {
     const page = await doc.getPage(pn);
     const vp = page.getViewport({ scale: 1 });
     const tc = await page.getTextContent();
     for (const it of tc.items) {
       if (!it.str.trim()) continue;
-      items.push({ str: it.str.trim(), x: it.transform[4], y: vp.height - it.transform[5], pg: pn });
+      items.push({ str: it.str.trim(), x: it.transform[4], y: vp.height - it.transform[5], w: it.width || 0, pg: pn });
     }
   }
   items.sort((a, b) => a.pg - b.pg || a.y - b.y || a.x - b.x);
+  /* Ligatures come back as their own text runs. A name set with "ff" or "fi" in it
+     arrives as three pieces sitting flush against each other, so "Jeffrey Berlan"
+     reads as "Je ff rey Berlan" and stops matching the roster. The gap between two
+     pieces is what separates a real space from a ligature seam: touching pieces are
+     one word, pieces with air between them are two. */
+  const glued = [];
+  for (const it of items) {
+    const p = glued[glued.length - 1];
+    const touching = p && p.pg === it.pg && Math.abs(p.y - it.y) < 2 && (it.x - (p.x + p.w)) < 0.9;
+    if (touching) { p.str += it.str; p.w = (it.x + it.w) - p.x; }
+    else glued.push({ ...it });
+  }
+  items = glued;
   const lines = [];
   for (const it of items) {
     const L = lines[lines.length - 1];
