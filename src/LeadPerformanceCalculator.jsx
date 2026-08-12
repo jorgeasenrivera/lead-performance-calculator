@@ -8447,7 +8447,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
    names sit together, who is climbing, who is sliding. Canvas rather than a
    screenshot library so there is nothing to load and nothing to go stale, and the
    result is a real PNG on the clipboard. */
-function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName }) {
+function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName, takenAt }) {
   const S = 2;                                  // draw at 2x for a crisp paste
   const W = 1080;
   const PAD = 40, COLGAP = 30;
@@ -8479,7 +8479,7 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
   const offLines = off.length ? wrapChips(off.map((r) => r.a.name), chipFont, colW) : 0;
 
   const hLeft = 30
-    + (flagged.length ? 26 + flagged.length * ROW + 10 : 0)
+    + (flagged.length ? 26 + flagged.length * ROW + 10 : 66)
     + (clean.length ? 26 + cleanLines * CHIProw + 10 : 0)
     + (off.length ? 26 + offLines * CHIProw + 10 : 0);
   const shown = offenders.slice(0, 14);
@@ -8505,15 +8505,27 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
 
   /* ---- header band ---- */
   const brand = (store.brand && store.brand.primary) || "#2A5E9B";
-  const brand2 = (store.brand && store.brand.dark) || brand;
-  const g = c.createLinearGradient(0, 0, W, HEAD);
-  g.addColorStop(0, brand); g.addColorStop(1, brand2);
+  const brand2 = (store.brand && store.brand.deep) || (store.brand && store.brand.dark) || brand;
+  const accent = (store.brand && store.brand.accent) || null;
+  // The same 120deg sweep the store's hero uses, so the print matches the screen.
+  const g = c.createLinearGradient(0, 0, W * 0.9, HEAD * 1.6);
+  g.addColorStop(0, brand); g.addColorStop(0.42, brand); g.addColorStop(1, brand2);
   c.fillStyle = g; c.fillRect(0, 0, W, HEAD);
+  if (accent) {
+    // a thin band of the store's accent along the foot of the header
+    c.fillStyle = accent; c.globalAlpha = 0.9;
+    c.fillRect(0, HEAD - 3, W, 3); c.globalAlpha = 1;
+  }
 
   c.fillStyle = "#FFFFFF"; c.font = `700 30px ${DISPLAY}`;
-  c.fillText("Daily report", PAD, 47);
+  c.fillText("Daily report", PAD, 44);
+  const titleW = c.measureText("Daily report").width;
+  // The time matters: two of these in a group chat an hour apart are different days'
+  // worth of work, and without a stamp nobody can tell which is the later one.
+  c.font = `500 13px ${UI}`; c.globalAlpha = 0.85;
+  c.fillText(`as of ${takenAt}`, PAD + titleW + 12, 44);
   c.font = `500 15px ${UI}`; c.globalAlpha = 0.9;
-  c.fillText(`${store.name} · ${dayLabel}`, PAD, 74);
+  c.fillText(`${store.name} · ${dayLabel}`, PAD, 71);
   c.globalAlpha = 1;
 
   const tallies = [[clean.length, "QUALIFIED"], [flagged.length, "WITH POINTS"], [off.length, "OFF"]];
@@ -8561,16 +8573,28 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
 
   label("Today");
   y -= 6;
+  if (!flagged.length) {
+    // Worth a line of its own. A blank space where the misses usually are reads as
+    // missing data, not as a clean day.
+    c.fillStyle = "#E6F5EC"; round(PAD, y - 6, colW, 52, 14); c.fill();
+    c.fillStyle = "#177245"; c.font = `700 15px ${DISPLAY}`;
+    c.fillText("All salespeople have completed responsibilities", PAD + 16, y + 20);
+    c.fillStyle = "#3D8A63"; c.font = `400 12px ${UI}`;
+    c.fillText("Calls, videos and RockEd, everyone on today.", PAD + 16, y + 37);
+    y += 66;
+  }
   if (flagged.length) {
     label("Did Not Complete Below");
+    // The missed items sit on their own column line rather than trailing each name,
+    // so they read down the page instead of jittering with every name length.
+    const missX = PAD + Math.min(colW * 0.52, 210);
     for (const r of flagged) {
       const rowY = y + 4;
       c.fillStyle = INK; c.font = `700 14.5px ${DISPLAY}`;
       c.fillText(r.a.name, PAD, rowY);
-      let x = PAD + c.measureText(r.a.name).width + 9;
-      x += streak(x, rowY, streaks[r.a.id]);
+      streak(PAD + c.measureText(r.a.name).width + 9, rowY, streaks[r.a.id]);
       c.fillStyle = INK3; c.font = `400 12.5px ${UI}`;
-      c.fillText(r.missed.map((m) => (m === "rocked" ? "RockEd" : cap(m))).join(", "), x, rowY);
+      c.fillText(r.missed.map((m) => (m === "rocked" ? "RockEd" : cap(m))).join(", "), missX, rowY);
       const hot = r.points >= 3;
       c.fillStyle = hot ? "#FCE6E2" : "#FDF1DC";
       round(PAD + colW - 32, rowY - 14, 32, 21, 10.5); c.fill();
@@ -8618,11 +8642,11 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
        read. The rest follow underneath as a plain list. */
     const top = shown.slice(0, 3);
     if (top.length === 3) {
-      const order = [top[1], top[0], top[2]];
-      const metal = ["#8FA0B3", "#D9A425", "#B5713C"];
-      const wash  = ["#EDF1F5", "#FBF3DE", "#F7EAE0"];
-      const rank  = [2, 1, 3];
-      const hts   = [56, 76, 44];
+      const order = [top[0], top[1], top[2]];
+      const metal = ["#D9A425", "#8FA0B3", "#B5713C"];
+      const wash  = ["#FBF3DE", "#EDF1F5", "#F7EAE0"];
+      const rank  = [1, 2, 3];
+      const hts   = [82, 64, 48];
       const bw = (colW - 16) / 3;
       const base = ry + 108;
       for (let k = 0; k < 3; k++) {
@@ -8642,9 +8666,10 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
         c.fillStyle = wash[k]; round(bx, base - h, bw, h, 10); c.fill();
         c.fillStyle = metal[k];
         c.font = `700 22px ${DISPLAY}`;
-        c.fillText(String(r.points), bx + bw / 2, base - h + 30);
+        c.fillText(String(r.points), bx + bw / 2, base - h + 32);
         c.font = `600 9.5px ${UI}`;
-        c.fillText("#" + rank[k], bx + bw / 2, base - h + 46);
+        // pinned to the foot of the block, so a short block cannot push it past the line
+        c.fillText("#" + rank[k], bx + bw / 2, base - 12);
         c.textAlign = "left";
       }
       // the line the blocks stand on
@@ -8654,6 +8679,18 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
     }
     const rest = top.length === 3 ? shown.slice(3) : shown;
     let i = top.length === 3 ? 4 : 1;
+    /* The points run hot to cool down the list. Ranking already tells you the order,
+       so the colour is there to show how far apart they actually are: a run of equal
+       numbers stays one shade, a steep drop is visible without reading. */
+    const vals = rest.map((r) => r.points);
+    const hi = Math.max(...vals, 1), lo = Math.min(...vals, 0);
+    const heat = (v) => {
+      const t = hi === lo ? 1 : (v - lo) / (hi - lo);
+      // deep red at the top of the list through to a muted clay at the bottom
+      const r0 = [192, 57, 43], r1 = [214, 154, 133];
+      const mix = r0.map((c0, idx) => Math.round(c0 + (r1[idx] - c0) * (1 - t)));
+      return `rgb(${mix.join(",")})`;
+    };
     for (const r of rest) {
       c.fillStyle = "#EDE9F6"; round(rx, ry - 15, 23, 23, 11.5); c.fill();
       c.fillStyle = "#6A5AC0"; c.font = `700 11.5px ${DISPLAY}`;
@@ -8664,9 +8701,7 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
       streak(rx + 34 + c.measureText(r.a.name).width + 9, ry + 1, streaks[r.a.id]);
 
       c.textAlign = "right";
-      c.fillStyle = INK3; c.font = `400 12px ${UI}`;
-      c.fillText(`${r.worked} day${r.worked === 1 ? "" : "s"}`, rx + colW - 42, ry + 1);
-      c.fillStyle = "#C0392B"; c.font = `700 17px ${DISPLAY}`;
+      c.fillStyle = heat(r.points); c.font = `700 17px ${DISPLAY}`;
       c.fillText(String(r.points), rx + colW, ry + 2);
       c.textAlign = "left";
       ry += 34; i++;
@@ -8700,7 +8735,8 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onC
   const [imgState, setImgState] = useState(null);   // null | working | copied | error
   const [imgErr, setImgErr] = useState("");
 
-  const build = () => drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName });
+  const build = () => drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streaks, monthName,
+    takenAt: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase() });
 
   // Canvas silently substitutes a system face for a webfont that has not loaded,
   // which is exactly how the first paste of the day ends up looking wrong.
