@@ -894,6 +894,25 @@ async function extractPdfLinesInBrowser(file) {
 
 const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
+/* Some rows print the name twice, so the pieces assemble into "Peter Tran Peter
+   Tran". The key built from that matches nobody on the roster and the person shows
+   up with no data at all. If the second half of a name is the first half repeated,
+   it is one name that was printed twice, not two people. */
+function dedupeName(s) {
+  const t = String(s || "").trim().replace(/\s+/g, " ");
+  if (!t) return t;
+  const w = t.split(" ");
+  if (w.length >= 2 && w.length % 2 === 0) {
+    const half = w.length / 2;
+    if (w.slice(0, half).join(" ").toLowerCase() === w.slice(half).join(" ").toLowerCase()) {
+      return w.slice(0, half).join(" ");
+    }
+  }
+  // also catches a single word doubled with no space, e.g. "LetitiaLetitia"
+  const m = t.match(/^(.{3,})\1$/i);
+  return m ? m[1].trim() : t;
+}
+
 function stripVocabWith(vocab, tokens) {
   const kept = [];
   let i = 0;
@@ -960,7 +979,7 @@ function mapDailyActivityGrid(lines) {
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 19) continue;
       const parts = nameParts.slice();
-      let nm = parts.join(" ").replace(/\s+/g, " ").trim();
+      let nm = dedupeName(parts.join(" "));
       nameParts = [];
       const v = nums.slice(0, 19).map(val);
       if (!storeName) {
@@ -968,7 +987,7 @@ function mapDailyActivityGrid(lines) {
         storeName = nm;
         storeParts = parts;
         // anything past the first fragment may belong to a person, not the store
-        if (parts.length > 1) pendingName = parts.slice(1).join(" ").replace(/\s+/g, " ").trim();
+        if (parts.length > 1) pendingName = dedupeName(parts.slice(1).join(" "));
         continue;
       }
       // A data row with no name of its own is the tell: its name was absorbed into
@@ -1058,7 +1077,7 @@ function mapDeliverySummaryGrid(lines) {
 
   const commitName = () => {
     if (!pendingFrags.length) return;
-    const nm = pendingFrags.join(" ").replace(/\s+/g, " ").trim();
+    const nm = dedupeName(pendingFrags.join(" "));
     pendingFrags = [];
     if (!nm) return;
     if (!storeName) { storeName = nm; curName = null; return; }
