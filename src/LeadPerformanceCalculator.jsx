@@ -8646,7 +8646,7 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
       const metal = ["#D9A425", "#8FA0B3", "#B5713C"];
       const wash  = ["#FBF3DE", "#EDF1F5", "#F7EAE0"];
       const rank  = [1, 2, 3];
-      const hts   = [82, 64, 48];
+      const hts   = [88, 72, 58];   // the shortest still has to hold a number and a rank
       const bw = (colW - 16) / 3;
       const base = ry + 108;
       for (let k = 0; k < 3; k++) {
@@ -8664,12 +8664,14 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
         c.fillText(last, bx + bw / 2, base - h - 13);
 
         c.fillStyle = wash[k]; round(bx, base - h, bw, h, 10); c.fill();
+        /* Both figures are placed from the foot of the block upward, with the rank
+           closest to the line. On the shortest block a fixed offset from the top and
+           a fixed offset from the bottom used to meet in the middle. */
         c.fillStyle = metal[k];
-        c.font = `700 22px ${DISPLAY}`;
-        c.fillText(String(r.points), bx + bw / 2, base - h + 32);
         c.font = `600 9.5px ${UI}`;
-        // pinned to the foot of the block, so a short block cannot push it past the line
-        c.fillText("#" + rank[k], bx + bw / 2, base - 12);
+        c.fillText("#" + rank[k], bx + bw / 2, base - 11);
+        c.font = `700 22px ${DISPLAY}`;
+        c.fillText(String(r.points), bx + bw / 2, base - 30);
         c.textAlign = "left";
       }
       // the line the blocks stand on
@@ -8684,12 +8686,24 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
        numbers stays one shade, a steep drop is visible without reading. */
     const vals = rest.map((r) => r.points);
     const hi = Math.max(...vals, 1), lo = Math.min(...vals, 0);
+    /* Red through orange and amber to green. Two shades of the same red were too
+       close to register at a glance; running across hues means the top and bottom of
+       the list are obviously different colours, and the middle reads as the middle. */
+    const RAMP = [
+      [0.00, [21, 128, 61]],    // green, fewest points
+      [0.35, [202, 138, 4]],    // amber
+      [0.65, [217, 119, 6]],    // orange
+      [1.00, [190, 24, 24]],    // deep red, most points
+    ];
     const heat = (v) => {
       const t = hi === lo ? 1 : (v - lo) / (hi - lo);
-      // deep red at the top of the list through to a muted clay at the bottom
-      const r0 = [192, 57, 43], r1 = [214, 154, 133];
-      const mix = r0.map((c0, idx) => Math.round(c0 + (r1[idx] - c0) * (1 - t)));
-      return `rgb(${mix.join(",")})`;
+      let a = RAMP[0], b = RAMP[RAMP.length - 1];
+      for (let i2 = 0; i2 < RAMP.length - 1; i2++) {
+        if (t >= RAMP[i2][0] && t <= RAMP[i2 + 1][0]) { a = RAMP[i2]; b = RAMP[i2 + 1]; break; }
+      }
+      const span = b[0] - a[0] || 1;
+      const f = (t - a[0]) / span;
+      return `rgb(${a[1].map((c0, idx) => Math.round(c0 + (b[1][idx] - c0) * f)).join(",")})`;
     };
     for (const r of rest) {
       c.fillStyle = "#EDE9F6"; round(rx, ry - 15, 23, 23, 11.5); c.fill();
@@ -8700,9 +8714,15 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
       c.fillText(r.a.name, rx + 34, ry + 1);
       streak(rx + 34 + c.measureText(r.a.name).width + 9, ry + 1, streaks[r.a.id]);
 
+      const col = heat(r.points);
+      c.font = `700 17px ${DISPLAY}`;
+      const nw = c.measureText(String(r.points)).width;
+      c.fillStyle = col; c.globalAlpha = 0.12;
+      round(rx + colW - nw - 13, ry - 15, nw + 26, 26, 13); c.fill();
+      c.globalAlpha = 1;
       c.textAlign = "right";
-      c.fillStyle = heat(r.points); c.font = `700 17px ${DISPLAY}`;
-      c.fillText(String(r.points), rx + colW, ry + 2);
+      c.fillStyle = col;
+      c.fillText(String(r.points), rx + colW - 13, ry + 3);
       c.textAlign = "left";
       ry += 34; i++;
     }
@@ -16230,8 +16250,10 @@ function Style() {
       .flag-banner-foot { font-size:12px; color:var(--ink-3); margin-top:8px; }
 
       /* ---- delivery guide + wrong-report stop screen ---- */
+      /* One z-index only. There were two on this rule and the later one won, which
+         put every modal underneath the top bar. */
       .modal-backdrop { position:fixed; inset:0; z-index:360; background:rgba(15,23,42,.55); backdrop-filter:blur(3px);
-        display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; z-index:200; overflow-y:auto; }
+        display:flex; align-items:flex-start; justify-content:center; padding:40px 20px; overflow-y:auto; }
       .modal { background:#fff; border-radius:20px; box-shadow:0 30px 80px rgba(0,0,0,.35);
         border:1px solid rgba(255,255,255,.7); color:var(--ink); }
       .guide-modal { background:var(--card,#fff); border-radius:20px; max-width:640px; width:100%;
