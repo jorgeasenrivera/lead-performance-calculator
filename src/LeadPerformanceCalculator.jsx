@@ -2856,6 +2856,7 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "gm" && <GMSummary config={config} data={adminData} stores={config.stores} />}
             {adminTab === "access" && <AccessPanel config={config} session={session} onChange={persistConfig} />}
             {adminTab === "tickets" && <TicketsPanel config={config} onChange={persistConfig} />}
+            {adminTab === "backup" && <RepairPanel config={config} />}
             {adminTab === "audit" && <AuditLog />}
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
@@ -4861,6 +4862,168 @@ function HelpPanel({ config, who, store, context, onClose }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Repairing a store that got another store's people ----------------
+   A cross-store race merged one store's roster, ignore list and departures into
+   another, and every snapshot taken afterwards carries the damage, so rolling back
+   cannot undo it.
+
+   This does not guess. A store's own imported reports are the record of who actually
+   works there: if a name has never appeared in this store's month stats or in any of
+   its activity days, it was never in one of its reports, and it does not belong on
+   its roster. That test is what makes the repair safe to run.
+
+   Nothing is written until the preview has been read and confirmed, and a full copy
+   of the store is saved first. */
+function RepairPanel({ config }) {
+  const [target, setTarget] = useState("");
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+
+  const build = async () => {
+    if (!target) return;
+    setBusy(true); setPlan(null); setDone(null);
+    try {
+      const data = await loadStore(target, null, true);
+      if (!data) { setPlan({ error: "That store has no data document." }); return; }
+
+      // Every name this store's own reports have ever mentioned.
+      const known = new Set();
+      for (const m of Object.values(data.months || {})) {
+        for (const k of Object.keys((m && m.stats) || {})) known.add(k);
+        for (const list of Object.values((m && m.names) || {})) for (const k of list || []) known.add(norm(k));
+      }
+      for (const day of Object.values(data.activity || {})) for (const k of Object.keys(day || {})) known.add(k);
+
+      // Rosters of every OTHER store, so a name can be traced to where it came from.
+      const others = {};
+      for (const s of config.stores || []) {
+        if (s.id === target) continue;
+        try {
+          const d = await loadShared(storeKey(s.id), null, true);
+          for (const a of (d && d.roster) || []) {
+            const k = norm(a.name);
+            if (!others[k]) others[k] = s.name;
+          }
+          for (const x of (d && d.excluded) || []) {
+            const k = norm(x);
+            if (!others[k]) others[k] = s.name;
+          }
+        } catch (e) { /* a store we cannot read is simply not used as evidence */ }
+      }
+
+      const strangers = ((data.roster) || []).filter((a) => {
+        const k = norm(a.name);
+        return !known.has(k) && !!others[k];
+      }).map((a) => ({ name: a.name, from: others[norm(a.name)] }));
+
+      const strangeExcluded = ((data.excluded) || []).filter((x) => {
+        const k = norm(x);
+        return !known.has(k) && !!others[k];
+      }).map((x) => ({ name: x, from: others[norm(x)] }));
+
+      const strangeDeparted = ((data.departed) || []).filter((d) => {
+        const k = norm(d.name);
+        return !known.has(k) && !!others[k];
+      }).map((d) => ({ name: d.name, from: others[norm(d.name)] }));
+
+      setPlan({
+        store: (config.stores || []).find((s) => s.id === target)?.name || target,
+        keptRoster: ((data.roster) || []).length - strangers.length,
+        strangers, strangeExcluded, strangeDeparted, data,
+      });
+    } catch (e) {
+      setPlan({ error: String(e.message || e) });
+    } finally { setBusy(false); }
+  };
+
+  const apply = async () => {
+    if (!plan || plan.error) return;
+    const total = plan.strangers.length + plan.strangeExcluded.length + plan.strangeDeparted.length;
+    if (!window.confirm(`Remove ${total} entries from ${plan.store}?\n\nA full copy of the store is saved first, and only the names listed are touched. Anyone who has appeared in this store's own reports is left exactly as they are.`)) return;
+    setBusy(true);
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      await saveShared(`lpc:config:backup:repair-${target}-${stamp}:v1`, {
+        app: "lead-performance-calculator", version: 2, exportedAt: new Date().toISOString(),
+        by: "Repair tool", storeIds: [target], note: "Taken automatically before a cross-store repair",
+      });
+      await saveShared(backupStoreKey(target, `repair-${stamp}`), plan.data);
+
+      const gone = new Set(plan.strangers.map((s) => norm(s.name)));
+      const goneX = new Set(plan.strangeExcluded.map((s) => norm(s.name)));
+      const goneD = new Set(plan.strangeDeparted.map((s) => norm(s.name)));
+
+      const res = await saveStoreCAS(storeKey(target), (server) => {
+        const out = JSON.parse(JSON.stringify(server || plan.data));
+        out.roster = (out.roster || []).filter((a) => !gone.has(norm(a.name)));
+        out.excluded = (out.excluded || []).filter((x) => !goneX.has(norm(x)));
+        out.departed = (out.departed || []).filter((d) => !goneD.has(norm(d.name)));
+        out.__storeId = target;
+        return out;
+      });
+      setDone(res.ok
+        ? `Done. ${gone.size + goneX.size + goneD.size} entries removed from ${plan.store}. A copy of the store as it was is in the backup list.`
+        : `Could not write: ${lastSaveError || "unknown"}`);
+      setPlan(null);
+    } catch (e) { setDone("Failed: " + String(e.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="card">
+      <h3>Repair a store that picked up another store's people</h3>
+      <p className="hint">
+        Use this only if a store is showing names that belong somewhere else. It compares the roster
+        against this store's own imported reports: a name that has never appeared in one of its
+        reports, and that does belong to another store, is the one that got in by mistake. Anyone
+        this store has actually reported on is never touched.
+      </p>
+      <div className="inline-form">
+        <select value={target} onChange={(e) => { setTarget(e.target.value); setPlan(null); setDone(null); }}>
+          <option value="">Which store is wrong?</option>
+          {(config.stores || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <button className="btn" disabled={!target || busy} onClick={build}>{busy ? "Checking..." : "Check it"}</button>
+      </div>
+
+      {done && <p className="hint" style={{ marginTop: 10 }}><b>{done}</b></p>}
+
+      {plan && plan.error && <p className="sched-err">{plan.error}</p>}
+      {plan && !plan.error && (
+        <div style={{ marginTop: 14 }}>
+          {plan.strangers.length + plan.strangeExcluded.length + plan.strangeDeparted.length === 0 ? (
+            <p className="hint"><b>Nothing to repair.</b> Every name on {plan.store} has appeared in its own reports.</p>
+          ) : (
+            <>
+              <p className="hint">
+                <b>{plan.store}</b> keeps {plan.keptRoster} associates. These would be removed, with where each
+                one actually belongs:
+              </p>
+              {[["Roster", plan.strangers], ["Ignored names", plan.strangeExcluded], ["Marked as departed", plan.strangeDeparted]]
+                .filter(([, list]) => list.length).map(([label, list]) => (
+                <div key={label} style={{ marginTop: 10 }}>
+                  <div className="md-cap">{label} <span>{list.length}</span></div>
+                  <div className="domain-list">
+                    {list.map((s) => (
+                      <span key={s.name} className="domain-chip">{s.name}
+                        <span className="hint" style={{ marginLeft: 6 }}>{s.from}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button className="btn" style={{ marginTop: 14 }} disabled={busy} onClick={apply}>
+                {busy ? "Working..." : "Remove these"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
