@@ -5759,6 +5759,8 @@ const SF_ICONS = {
   lunch:    ["0000000","1111010","1111011","1111011","1111010","0000000","1111110"],
   away:     ["0000000","0001000","0000100","1111110","0000100","0001000","0000000"],
   back:     ["0000000","0110000","0111000","0111100","0111000","0110000","0000000"],
+  // an open doorway with the handle side toward the exit
+  door:     ["1111100","1000110","1000010","1000010","1001010","1000010","1111110"],
 };
 // analog LED numeral: each digit is keyed by its value so it remounts and "flips" on change
 // light haptic feedback where supported (no-op elsewhere)
@@ -5830,16 +5832,19 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   // Today's activity for this person only. The split day rows made this cheap: it
   // is one small row, not the whole store document.
-  const meLabel = ((row && row.roster) || []).find((r) => r.id === meId)?.label || "";
+  const meEntry = ((row && row.roster) || []).find((r) => r.id === meId) || null;
+  const meLabel = (meEntry && meEntry.label) || "";
+  // Reports are keyed by the full name, never the short label.
+  const meFull = (meEntry && meEntry.name) || "";
   useEffect(() => {
-    if (!meLabel || !supabase) return;
+    if ((!meFull && !meLabel) || !supabase) return;
     let dead = false;
     const pull = async () => {
       try {
         const { data } = await supabase.from("app_data").select("value")
           .eq("key", `lpc:store:${store}:act:${date}`).maybeSingle();
         if (!dead && data && data.value) {
-          const r = data.value[norm(meLabel)] || null;
+          const r = data.value[norm(meFull)] || data.value[norm(meLabel)] || null;
           setMine(r);
           if (r && r.uploadedAt) setMineAt(r.uploadedAt);
         }
@@ -5848,7 +5853,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     pull();
     const t = setInterval(pull, 120000);
     return () => { dead = true; clearInterval(t); };
-  }, [store, date, meLabel]);
+  }, [store, date, meFull, meLabel]);
 
   const isToday = date === today();
   const valid = isToday && row && row.token && row.token === token;
@@ -6173,7 +6178,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
       {myDay && (
-        <MyDay store={store} date={date} meId={meId} meName={meLabel} stats={mine} std={std}
+        <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
           config={cfg} updatedAt={mineAt} onClose={() => setMyDay(false)} />
       )}
     </div>
@@ -6423,7 +6428,7 @@ function TaskDial({ done, posted, target = 0.8, size = 30 }) {
     ? `${done || 0} of ${posted} tasks done, ${left} left. Clear at ${Math.round(target * 100)}%.`
     : "No task count came through for today.";
   return (
-    <span className={"tdial tdial-" + state} title={title}>
+    <span className={"tdial tdial-" + state} tabIndex={0} data-tip={title}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="tdial-track" strokeWidth="4" />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="tdial-fg" strokeWidth="4"
@@ -6684,7 +6689,9 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   const mutateRow = (fn) => mutateQueueRow(store.id, date, fn, variant.kind);
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const ensureRow = useCallback(async () => {
-    const snap = salesRoster.map((a) => ({ id: a.id, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    // The short label is what the floor sees; the full name is what every report is
+    // keyed by. Without it a salesperson's own numbers can never be looked up.
+    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
     // Always published, never shown unless the address asks for it.
     snap.push({ id: TEST_ID, label: TEST_LABEL, role: "Test", test: true });
     const next = await mutateRow((cur) => {
@@ -7293,17 +7300,20 @@ function FloorSignIn({ store, date, token, test = false }) {
   // by accident by somebody scrolling the name list.
   const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
   const variant = { label: "Live Floor" };
-  const meLabel = ((row && row.roster) || []).find((r) => r.id === meId)?.label || "";
+  const meEntry = ((row && row.roster) || []).find((r) => r.id === meId) || null;
+  const meLabel = (meEntry && meEntry.label) || "";
+  // Reports are keyed by the full name, never the short label.
+  const meFull = (meEntry && meEntry.name) || "";
   // One small row, not the whole store, thanks to the per-day activity split.
   useEffect(() => {
-    if (!meLabel || !supabase) return;
+    if ((!meFull && !meLabel) || !supabase) return;
     let dead = false;
     const pull = async () => {
       try {
         const { data } = await supabase.from("app_data").select("value")
           .eq("key", `lpc:store:${store}:act:${date}`).maybeSingle();
         if (!dead && data && data.value) {
-          const r = data.value[norm(meLabel)] || null;
+          const r = data.value[norm(meFull)] || data.value[norm(meLabel)] || null;
           setMine(r);
           if (r && r.uploadedAt) setMineAt(r.uploadedAt);
         }
@@ -7312,7 +7322,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     pull();
     const t = setInterval(pull, 120000);
     return () => { dead = true; clearInterval(t); };
-  }, [store, date, meLabel]);
+  }, [store, date, meFull, meLabel]);
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
@@ -7532,7 +7542,10 @@ function FloorSignIn({ store, date, token, test = false }) {
             <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
               <DmIcon name="back" cell={4} /><span>My day</span>
             </button>
-            <button className="sf-leave" disabled={busy} onClick={leave}>Leave the floor</button>
+            <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
+              <span className="sf-door"><DmIcon name="door" cell={3} /></span>
+              <span>Leave the floor</span>
+            </button>
           </div>
         </div>
         {isNext && (
@@ -7640,7 +7653,7 @@ function FloorSignIn({ store, date, token, test = false }) {
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
       {myDay && (
-        <MyDay store={store} date={date} meId={meId} meName={meLabel} stats={mine} std={std}
+        <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
           config={cfg} updatedAt={mineAt} onClose={() => setMyDay(false)} />
       )}
     </div>
@@ -17379,8 +17392,29 @@ function Style() {
       .cast-wrap { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
       .cast-err { color:var(--red); font-size:12px; max-width:520px; }
       .co-tasks { white-space:nowrap; }
-      .tdial { display:inline-flex; align-items:center; gap:8px; cursor:help; }
-      .tdial svg { display:block; flex:0 0 auto; }
+      /* Its own bubble rather than the browser's, so it appears at once, matches the
+         rest of the tool, and arrives with the same small overshoot everything else
+         does instead of blinking into place. */
+      .tdial { position:relative; display:inline-flex; align-items:center; gap:8px; cursor:help;
+        transition:transform .16s cubic-bezier(.34,1.4,.64,1); }
+      .tdial:hover, .tdial:focus-visible { transform:translateY(-1px) scale(1.04); outline:none; }
+      .tdial svg { display:block; flex:0 0 auto; transition:filter .18s var(--ease); }
+      .tdial:hover svg { filter:drop-shadow(0 3px 8px rgba(16,32,52,.22)); }
+      .tdial::after { content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 9px);
+        transform:translateX(-50%) translateY(4px) scale(.94); transform-origin:50% 100%;
+        opacity:0; pointer-events:none; z-index:60; white-space:nowrap;
+        background:#101820; color:#fff; font-family:var(--font-ui); font-size:12px; font-weight:600;
+        padding:7px 11px; border-radius:10px; box-shadow:0 10px 26px -10px rgba(16,32,52,.6);
+        transition:opacity .16s var(--ease), transform .2s cubic-bezier(.34,1.5,.64,1); }
+      .tdial::before { content:""; position:absolute; left:50%; bottom:calc(100% + 4px);
+        transform:translateX(-50%) translateY(4px); width:9px; height:9px; background:#101820;
+        rotate:45deg; opacity:0; pointer-events:none; z-index:59;
+        transition:opacity .16s var(--ease), transform .2s cubic-bezier(.34,1.5,.64,1); }
+      .tdial:hover::after, .tdial:focus-visible::after { opacity:1; transform:translateX(-50%) translateY(0) scale(1); }
+      .tdial:hover::before, .tdial:focus-visible::before { opacity:1; transform:translateX(-50%) translateY(0); }
+      @media (prefers-reduced-motion: reduce) {
+        .tdial, .tdial::after, .tdial::before { transition:none !important; }
+      }
       .tdial-track { stroke:rgba(16,32,52,.1); }
       .tdial-mark { stroke:rgba(16,32,52,.42); }
       .tdial-n { font-family:var(--font-display); font-size:14px; font-weight:800; }
@@ -18632,6 +18666,18 @@ function Style() {
 .sf-mine:hover{ background:rgba(255,255,255,.1); color:var(--sfink); }
 .sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
 .sf-leave:hover{ color:var(--sfink2); }
+/* Leaving should feel like leaving: the door lights and the label steps toward it,
+   so the action reads before the words are. */
+.sf-leave-door{ display:inline-flex; align-items:center; gap:9px; padding:11px 16px; border-radius:12px;
+  border:1px solid rgba(255,255,255,.09); background:rgba(255,255,255,.03);
+  transition:background .2s, border-color .2s, color .2s; }
+.sf-leave-door:hover:not(:disabled){ background:rgba(255,120,110,.1); border-color:rgba(255,120,110,.32); color:#ffc9c4; }
+.sf-door{ display:inline-flex; opacity:.7; transition:opacity .2s, transform .26s cubic-bezier(.34,1.4,.64,1); }
+.sf-leave-door:hover:not(:disabled) .sf-door{ opacity:1; transform:translateX(-2px); }
+.sf-leave-door span:last-child{ transition:transform .26s cubic-bezier(.34,1.4,.64,1); }
+.sf-leave-door:hover:not(:disabled) span:last-child{ transform:translateX(3px); }
+.sf-leave-door:active:not(:disabled){ transform:scale(.985); }
+@media (prefers-reduced-motion: reduce){ .sf-door, .sf-leave-door span:last-child{ transition:none; } }
 
 /* full-screen "you're up" takeover */
 .sf-uptake{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
