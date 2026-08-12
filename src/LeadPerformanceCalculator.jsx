@@ -8175,9 +8175,12 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     if (s != null) return s >= (std.rockEdStars ?? 40) ? "yes" : "no";
     return "unset";
   };
+  /* Two states now, not three. Unset and Not yet meant the same thing to anybody
+     reading the sheet, and the third stop only made the button take an extra tap to
+     get back to where it started. */
   const cycleQualified = (k) => {
     const cur = qualState(k);
-    const nextVal = cur === "unset" ? true : cur === "yes" ? false : null;
+    const nextVal = cur === "yes" ? false : true;
     const next = JSON.parse(JSON.stringify(data));
     next.qualified = next.qualified || {};
     next.qualified[day] = next.qualified[day] || {};
@@ -8216,7 +8219,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     const off = list.filter((r) => r.off);
     if (clean.length) lines.push(`✅ Qualified (${clean.length}): ${clean.map((r) => r.a.name).join(", ")}`, "");
     if (flagged.length) {
-      lines.push(`⚠️ Needs follow-up (${flagged.length}):`);
+      lines.push(`⚠️ Did Not Complete Below (${flagged.length}):`);
       for (const r of flagged) lines.push(`  • ${r.a.name}: ${r.dp.points} pt${r.dp.points === 1 ? "" : "s"} (missed ${r.dp.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")})`);
       lines.push("");
     }
@@ -8310,8 +8313,8 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
             {noShowSuspects.map((r) => (
               <span key={r.a.id} className="co-ask">
                 <b>{r.a.name}</b>
-                <button className="co-callout-btn" onClick={() => toggleOff(r.a)}>Off today</button>
-                <button className="co-callout-btn co-on" onClick={() => confirmOn(r.a)}>Here, working</button>
+                <button className="co-callout-btn" onClick={() => toggleOff(r.a)}>Off Today</button>
+                <button className="co-callout-btn co-on" onClick={() => confirmOn(r.a)}>On Today</button>
               </span>
             ))}
           </div>
@@ -8327,13 +8330,29 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <div className="card checkout-card">
           <table className="checkout-table">
             <thead><tr>
-              <th>Name</th><th>Calls</th><th>Videos</th><th>Tasks</th><th>RockEd</th><th>Points</th><th>Off</th>
+              <th>Name</th><th>Calls</th><th>Videos</th><th>Tasks</th><th>RockEd</th><th>Points</th>
             </tr></thead>
             <tbody>
-              {rows.map((r) => (
+              {/* On today first, off today underneath. Reading a single alphabetical
+                  list means holding in your head who is even in the building; split,
+                  the top block is simply everyone you can act on. */}
+              {[["on", rows.filter((r) => !r.off)], ["off", rows.filter((r) => r.off)]]
+                .filter(([, list]) => list.length)
+                .flatMap(([which, list]) => [
+                  <tr key={"h-" + which} className="co-sep">
+                    <td colSpan={6}>{which === "on" ? "On today" : "Off today"} <span>{list.length}</span></td>
+                  </tr>,
+                  ...list.map((r) => (
                 <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
-                  <td><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
+                  <td className="co-namecell"><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
                     {r.off && <span className="co-off-tag">Off</span>}
+                    {/* Kept out of the row until it is wanted: a column of buttons the
+                        eye has to skip past on every row, for something used once or
+                        twice a day, was costing more than it earned. */}
+                    <button className="co-off-hover" onClick={() => toggleOff(r.a)}
+                      title={r.off ? "Marked off. Click to put them back on." : "Mark this person off for the day."}>
+                      {r.off ? "Put back on" : "Mark off"}
+                    </button>
                     {/* Scheduled off, but they made calls or sent videos. Say so, rather
                         than quietly counting the day and leaving the manager to wonder
                         why the schedule looks like it skipped them. */}
@@ -8359,11 +8378,13 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                   </td>
                   {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
                   <td>
-                    <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : r.qual === "no" ? "no" : "")}
+                    <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : "no")}
                       disabled={r.off} onClick={() => cycleQualified(norm(r.a.name))}
-                      title="RockEd: tap to mark Qualified, tap again for Not qualified, again to clear.">
+                      title="RockEd: tap to mark Qualified, tap again for Not yet.">
+                      {/* Nobody is qualified until somebody says so, so an untouched
+                          row reads as Not yet rather than as an unanswered question. */}
                       {r.qual === "yes" ? <><PixIcon glyph="check" size={12} /> Qualified</>
-                        : r.qual === "no" ? <><PixIcon glyph="close" size={12} /> Not yet</> : "Mark"}
+                        : <><PixIcon glyph="close" size={12} /> Not yet</>}
                     </button>
                   </td>
                   <td>
@@ -8371,13 +8392,9 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                       : !r.hasData ? <span className="pt-badge dim">no data</span>
                       : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>{r.points} {r.points === 1 ? "pt" : "pts"}</span>}
                   </td>
-                  <td>
-                    <button className={"off-toggle " + (r.off ? "on" : "")} onClick={() => toggleOff(r.a)} title={r.off ? "Marked off. Click to clear." : "Mark this person off for the day."}>
-                      {r.off ? <><PixIcon glyph="check" size={12} /> Off</> : "Mark off"}
-                    </button>
-                  </td>
                 </tr>
-              ))}
+                  )),
+                ])}
             </tbody>
           </table>
         </div>
@@ -8466,7 +8483,9 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
     + (clean.length ? 26 + cleanLines * CHIProw + 10 : 0)
     + (off.length ? 26 + offLines * CHIProw + 10 : 0);
   const shown = offenders.slice(0, 14);
-  const hRight = 34 + (shown.length ? shown.length * 34 : 30) + (offenders.length > 14 ? 26 : 0);
+  const podiumH = shown.length >= 3 ? 138 : 0;
+  const listCount = shown.length >= 3 ? shown.length - 3 : shown.length;
+  const hRight = 34 + podiumH + (shown.length ? listCount * 34 : 30) + (offenders.length > 14 ? 26 : 0);
   const body = Math.max(hLeft, hRight) + 18;
   const H = HEAD + GAP + body + PAD;
 
@@ -8543,7 +8562,7 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
   label("Today");
   y -= 6;
   if (flagged.length) {
-    label("Needs follow-up");
+    label("Did Not Complete Below");
     for (const r of flagged) {
       const rowY = y + 4;
       c.fillStyle = INK; c.font = `700 14.5px ${DISPLAY}`;
@@ -8594,8 +8613,48 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
     c.fillStyle = INK3; c.font = `400 13px ${UI}`;
     c.fillText("Nobody has a point this month. Worth saying out loud.", rx, ry);
   } else {
-    let i = 1;
-    for (const r of shown) {
+    /* The top three on a podium. Second, first, third, at three heights, the way a
+       podium actually stands, so the shape says who leads before a single number is
+       read. The rest follow underneath as a plain list. */
+    const top = shown.slice(0, 3);
+    if (top.length === 3) {
+      const order = [top[1], top[0], top[2]];
+      const metal = ["#8FA0B3", "#D9A425", "#B5713C"];
+      const wash  = ["#EDF1F5", "#FBF3DE", "#F7EAE0"];
+      const rank  = [2, 1, 3];
+      const hts   = [56, 76, 44];
+      const bw = (colW - 16) / 3;
+      const base = ry + 108;
+      for (let k = 0; k < 3; k++) {
+        const r = order[k];
+        if (!r) continue;
+        const bx = rx + k * (bw + 8);
+        const h = hts[k];
+        // the name sits above its own block, shortened so three fit side by side
+        c.textAlign = "center";
+        c.fillStyle = INK; c.font = `700 12px ${DISPLAY}`;
+        const first = String(r.a.name).split(" ")[0];
+        const last = String(r.a.name).split(" ").slice(1).join(" ");
+        c.fillText(first, bx + bw / 2, base - h - 26);
+        c.fillStyle = INK2; c.font = `400 10.5px ${UI}`;
+        c.fillText(last, bx + bw / 2, base - h - 13);
+
+        c.fillStyle = wash[k]; round(bx, base - h, bw, h, 10); c.fill();
+        c.fillStyle = metal[k];
+        c.font = `700 22px ${DISPLAY}`;
+        c.fillText(String(r.points), bx + bw / 2, base - h + 30);
+        c.font = `600 9.5px ${UI}`;
+        c.fillText("#" + rank[k], bx + bw / 2, base - h + 46);
+        c.textAlign = "left";
+      }
+      // the line the blocks stand on
+      c.fillStyle = "rgba(16,32,52,.12)";
+      c.fillRect(rx, base, colW, 1.5);
+      ry = base + 30;
+    }
+    const rest = top.length === 3 ? shown.slice(3) : shown;
+    let i = top.length === 3 ? 4 : 1;
+    for (const r of rest) {
       c.fillStyle = "#EDE9F6"; round(rx, ry - 15, 23, 23, 11.5); c.fill();
       c.fillStyle = "#6A5AC0"; c.font = `700 11.5px ${DISPLAY}`;
       c.textAlign = "center"; c.fillText(String(i), rx + 11.5, ry + 1); c.textAlign = "left";
@@ -8727,7 +8786,7 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onC
             </div>
             {flagged.length > 0 && (
               <div className="dr-block">
-                <div className="dr-block-label">Needs follow-up</div>
+                <div className="dr-block-label">Did Not Complete Below</div>
                 {flagged.map((r) => (
                   <div key={r.a.id} className="dr-row">
                     <span className="dr-name">{r.a.name}<DayReportStreak st={streaks[r.a.id]} /></span>
@@ -16979,6 +17038,18 @@ function Style() {
       /* Centred wording, with the padding kept equal on both sides so the text sits
          on the true centre of the box rather than off the magnifier. */
       .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
+      .co-sep td { padding-top:16px !important; padding-bottom:6px !important; font-size:11px; font-weight:800;
+        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid rgba(16,32,52,.08); }
+      .co-sep td span { font-weight:700; color:var(--ink-3); opacity:.7; margin-left:6px; }
+      .co-sep + tr td { padding-top:12px; }
+      .co-namecell { position:relative; }
+      .co-off-hover { position:absolute; right:8px; top:50%; transform:translateY(-50%) translateX(4px);
+        opacity:0; pointer-events:none; transition:opacity .14s var(--ease), transform .14s var(--ease);
+        font-family:inherit; font-size:11.5px; font-weight:700; padding:5px 11px; border-radius:999px;
+        border:1px solid rgba(16,32,52,.14); background:#fff; color:var(--ink-2); cursor:pointer;
+        box-shadow:0 4px 12px -6px rgba(16,32,52,.4); }
+      tr:hover .co-off-hover, .co-off-hover:focus-visible { opacity:1; pointer-events:auto; transform:translateY(-50%) translateX(0); }
+      .co-off-hover:hover { background:rgba(16,32,52,.06); color:var(--ink); }
       .co-callout { background:#FFF8E8; border:1px solid #F2DFAE; border-radius:14px; padding:12px 16px; margin-bottom:12px; }
       .co-callout-head { display:flex; flex-direction:column; gap:3px; margin-bottom:9px; }
       .co-callout-list { display:flex; flex-wrap:wrap; gap:10px; }
