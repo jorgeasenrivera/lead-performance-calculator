@@ -5158,6 +5158,7 @@ function Login({ config, onBack, onAuthed }) {
     if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
     if (password !== password2) { setErr("The two passwords do not match."); return; }
     // The very first account created becomes the admin, so it is not domain-gated.
+    const domainOf = (addr) => String(addr).split("@")[1] || "";
     if (domains.length > 0 && !domains.includes(domainOf(e))) {
       setErr("Email must be on an approved company domain (" + domains.join(", ") + ").");
       return;
@@ -5311,6 +5312,21 @@ const DEFAULT_CHECKLIST = [
   { id: "walk", label: "Walk the lot", hint: "Know what is on the ground before a customer asks" },
 ];
 const checklistKey = (store, date, id) => `lpcq:list:${store}:${date}:${id}`;
+
+/* ---- The test identity ----
+   There is no way to check what a salesperson actually sees without being one, and
+   borrowing a real person's name puts a fake body in the rotation, takes a real up,
+   and lands in their numbers.
+
+   So every queue carries one extra identity that only appears when the address says
+   `&test=1`. Nobody else can see it or pick it, it is skipped when assigning, and it
+   is left out of every count the floor is judged on. It is deliberately visible in
+   the manager list rather than hidden: an invisible fake person in a live queue is
+   how somebody ends up wondering why the numbers do not add up. */
+const TEST_ID = "__lpc_test__";
+const TEST_LABEL = "Test (not a real person)";
+const isTestId = (id) => id === TEST_ID;
+const withoutTest = (list) => (list || []).filter((p) => !isTestId(p.id));
 async function saveTicket(t) {
   if (!supabase) return false;
   try {
