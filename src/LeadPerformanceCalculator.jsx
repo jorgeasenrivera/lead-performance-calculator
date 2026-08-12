@@ -4991,10 +4991,15 @@ function RepairPanel({ config }) {
         for (const p of list || []) {
           if (!p || !p.tag) continue;
           const who = norm(p.assignee || "");
+          /* Who was holding it settles it. If the holder has real work on record at
+             another store and none here, the plate came with them. Being on this
+             store's roster is not enough on its own, because a contaminated roster
+             is exactly what put them there. */
           const home = others.find((o) => (who && o.roster.has(who)) || o.plateTags.has(normTag(p.tag)));
-          const mineNow = ((data.roster) || []).some((a) => norm(a.name) === who) && !goneNames.has(who);
-          if (home && !mineNow) plateRows.push({ kind: "plate", name: `${p.tag} (${p.assignee || "unassigned"}, ${d})`,
-            tag: p.tag, day: d, id: p.id, from: home.name, hereScore: 0, thereScore: 1 });
+          const holderIsOurs = who && (mine[who] || 0) > 0 && !goneNames.has(who);
+          if (home && !holderIsOurs) plateRows.push({ kind: "plate", name: `${p.tag} (${p.assignee || "unassigned"}, ${d})`,
+            tag: p.tag, day: d, id: p.id, from: home.name, hereScore: mine[who] || 0,
+            thereScore: (home.ev[who] || 0) || 1 });
           else usedHere.add(normTag(p.tag));
         }
       }
@@ -10004,6 +10009,20 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     onChange(next, { action: "Plate returned late", detail: `${tag2} (out since ${d})` });
   };
 
+  /* A plate that was never this store's has no business being marked returned: that
+     writes a false custody record saying this store had it and gave it back. It has
+     to be removed instead, and the audit log says which was done and why. */
+  const dropPriorRecord = (d, id) => {
+    const p = ((data.plates || {})[d] || []).find((x) => x.id === id);
+    if (!p) return;
+    if (!window.confirm(`Remove the record of ${p.tag} entirely?\n\nUse this only if the plate was never this store's, for example if it arrived here by mistake. The whole entry for ${d} goes, including its custody log. If this store really did have the plate, use Mark returned instead so the record stays honest.`)) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[d] = (next.plates[d] || []).filter((x) => x.id !== id);
+    if (!next.plates[d].length) delete next.plates[d];
+    onChange(next, { action: "Removed a plate record that was not this store's", detail: `${p.tag} (${p.assignee || "unassigned"}, ${d})` });
+  };
+
   return (
     <div className="plates">
       {missing.length > 0 && (
@@ -10012,7 +10031,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           {missing.map((x) => (
             <div key={x.plate.tag + x.day} className="plate-missing-row">
               <span><b>{x.plate.tag}</b>: out since {x.day} with {x.plate.assignee || "unassigned"}, never marked returned. It can't go out again until it's checked back in.</span>
-              <button className="btn secondary" onClick={() => markReturnedPrior(x.day, x.plate.id)}>Mark returned now</button>
+              <span className="plate-missing-acts">
+                <button className="btn secondary" onClick={() => markReturnedPrior(x.day, x.plate.id)}>Mark returned now</button>
+                <button className="btn-quiet" onClick={() => dropPriorRecord(x.day, x.plate.id)}>Not this store's</button>
+              </span>
             </div>
           ))}
         </div>
@@ -16544,6 +16566,7 @@ function Style() {
       .q-test-tag { font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
         color:#9A6410; background:#FDF1DC; border:1px solid #E9CE93; padding:2px 7px; border-radius:999px;
         margin-left:8px; }
+      .plate-missing-acts { display:inline-flex; align-items:center; gap:8px; flex:0 0 auto; }
       .rp-list { display:flex; flex-direction:column; gap:5px; }
       .rp-row { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
         font-family:inherit; padding:9px 12px; border-radius:11px; border:1px solid rgba(16,32,52,.1);
