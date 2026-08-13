@@ -1735,12 +1735,20 @@ function mergeAgainstServer(next, serverCopy) {
           next.departed = [...byName.values()];
           const gone = new Set(byName.keys());
 
+          /* Ignored names are a decision too, and they are a union for the same
+             reason departures are: an older tab that has never heard of the
+             decision must not be able to reverse it by simply not knowing. */
+          const ignored = new Set([...(next.excluded || []), ...(serverCopy.excluded || [])].map(norm));
+          next.excluded = [...new Set([...(next.excluded || []), ...(serverCopy.excluded || [])]
+            .filter((x, i, arr) => arr.findIndex((y) => norm(y) === norm(x)) === i))];
+
           const roster = [...(next.roster || [])];
           const have = new Set(roster.map((a) => norm(a.name)));
           for (const a of serverCopy.roster || []) {
             if (a && a.name && !have.has(norm(a.name))) { roster.push(a); have.add(norm(a.name)); }
           }
-          next.roster = roster.filter((a) => !gone.has(norm(a.name)));
+          // Anyone gone or ignored comes out, whichever copy they arrived from.
+          next.roster = roster.filter((a) => !gone.has(norm(a.name)) && !ignored.has(norm(a.name)));
         }
         // Same protection for the plate log: a day another manager started while this
         // browser sat open is kept rather than dropped on save.
@@ -6202,6 +6210,30 @@ function DmIcon({ name, cell = 4 }) {
   );
 }
 
+/* The time on the ring itself. Full turn at an hour, which is long enough that a
+   normal wait reads as part of a turn rather than pinning immediately. Ticks itself
+   so the figure keeps moving between server updates. */
+function RingTimer({ mins, cap = 60 }) {
+  const [now, setNow] = useState(mins);
+  useEffect(() => { setNow(mins); }, [mins]);
+  useEffect(() => {
+    const t = setInterval(() => setNow((m) => m + 1), 60000);
+    return () => clearInterval(t);
+  }, []);
+  const frac = Math.min(1, Math.max(0, now / cap));
+  const R = 50, C = 2 * Math.PI * R;
+  return (
+    <span className="sf-timer" aria-label={qWaitLabel(now)}>
+      <svg viewBox="0 0 110 110">
+        <circle className="sf-timer-bg" cx="55" cy="55" r={R} />
+        <circle className="sf-timer-fg" cx="55" cy="55" r={R}
+          strokeDasharray={C} strokeDashoffset={C * (1 - frac)} />
+      </svg>
+      <b>{qWaitLabel(now)}</b>
+    </span>
+  );
+}
+
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
@@ -6382,6 +6414,20 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   async function setFlag(status) {
     if (busy || !meId) return; setBusy(true);
+    /* Change the screen first, then tell the server. Waiting for the round trip meant
+       a second of nothing happening after a tap, which on a busy floor reads as a
+       button that did not work, so people press it again. If the write fails the next
+       poll puts the old state back within seconds and the alert says so. */
+    setRow((cur) => {
+      if (!cur) return cur;
+      const copy = JSON.parse(JSON.stringify(cur));
+      const p = (copy.line || []).find((x) => x.id === meId);
+      if (p) {
+        if (status === "waiting") p.awayReason = null; else p.awayReason = status;
+        p.status = status; p.statusAt = qNowIso();
+      }
+      return copy;
+    });
     const next = await mutateRow((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
@@ -6450,8 +6496,13 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         </div>
         <div className="sf-poswrap">
           <div className="sf-aura" />
+          {/* The arc fills as the time passes, so a long wait has a shape before it has
+              a number. The figure sits on a tab at the foot with no label: the line
+              underneath already says whether it is a wait or a customer. */}
+          <div className="sf-ringwrap">
+          <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
-          <span className="sf-orbit sf-orbit-l">{qWaitLabel(qMinsSince(me.joinedAt))}</span>
+          </div>
           <span className="sf-orbit sf-orbit-r">{line.length} {variant.count}</span>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
@@ -6492,7 +6543,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   } else if (eff === "switch" && selected && switchTo) {
     content = (
       <div className="q-card">
-        <div className="q-head"><h2>Is this you?</h2></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <h2>Is this you?</h2>
+        </div>
         <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
         <p className="q-big-q">Are you {switchTo.label}?</p>
         <div className="q-flags">
@@ -6505,6 +6559,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <div className="q-head">
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
           <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
           <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. You'll use it to sign in, and to get back in if you close this tab." : "So only you can claim your spot."}</p>
@@ -6531,7 +6586,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
       <div className="q-card">
-        <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p>
+        </div>
         <div className="q-roster">
           {resolved.people.map((p) => (
             <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
@@ -6545,7 +6603,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   } else if (eff === "confirm" && resolved && resolved.person) {
     content = (
       <div className="q-card">
-        <div className="q-head"><h2>Did you mean…</h2></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <h2>Did you mean…</h2>
+        </div>
         <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
         <div className="q-flags">
           <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
@@ -6557,7 +6618,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <PhonePill />
-        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p>
+        </div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
           onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
         {msg && <p className="q-err">{msg}</p>}
@@ -7852,6 +7916,20 @@ function FloorSignIn({ store, date, token, test = false }) {
 
   async function setFlag(status) {
     if (busy || !meId) return; setBusy(true);
+    /* Change the screen first, then tell the server. Waiting for the round trip meant
+       a second of nothing happening after a tap, which on a busy floor reads as a
+       button that did not work, so people press it again. If the write fails the next
+       poll puts the old state back within seconds and the alert says so. */
+    setRow((cur) => {
+      if (!cur) return cur;
+      const copy = JSON.parse(JSON.stringify(cur));
+      const p = (copy.line || []).find((x) => x.id === meId);
+      if (p) {
+        if (status === "waiting") p.awayReason = null; else p.awayReason = status;
+        p.status = status; p.statusAt = qNowIso();
+      }
+      return copy;
+    });
     const next = await mutateFloorRow(store, date, (cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
@@ -7937,8 +8015,10 @@ function FloorSignIn({ store, date, token, test = false }) {
             once, in the place the eye already is. */}
         <div className="sf-poswrap">
           <div className="sf-aura" />
+          <div className="sf-ringwrap">
+          <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
-          <span className="sf-orbit sf-orbit-l">{qWaitLabel(qMinsSince(me.joinedAt))}</span>
+          </div>
           <span className="sf-orbit sf-orbit-r">{line.length} on</span>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
@@ -7980,7 +8060,10 @@ function FloorSignIn({ store, date, token, test = false }) {
   } else if (eff === "switch" && selected && switchTo) {
     content = (
       <div className="q-card">
-        <div className="q-head"><h2>Is this you?</h2></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <h2>Is this you?</h2>
+        </div>
         <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
         <p className="q-big-q">Are you {switchTo.label}?</p>
         <div className="q-flags">
@@ -7993,6 +8076,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <div className="q-head">
+          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
           <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
           <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. It's the same PIN as the phone line." : "So only you can claim your spot."}</p>
@@ -8019,7 +8103,10 @@ function FloorSignIn({ store, date, token, test = false }) {
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
       <div className="q-card">
-        <div className="q-head"><h2>Which one is you?</h2><p className="q-muted">A few names are close to "{typed}".</p></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <h2>Which one is you?</h2><p className="q-muted">A few names are close to "{typed}".</p>
+        </div>
         <div className="q-roster">
           {resolved.people.map((p) => (
             <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
@@ -8033,7 +8120,10 @@ function FloorSignIn({ store, date, token, test = false }) {
   } else if (eff === "confirm" && resolved && resolved.person) {
     content = (
       <div className="q-card">
-        <div className="q-head"><h2>Did you mean…</h2></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <h2>Did you mean…</h2>
+        </div>
         <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
         <div className="q-flags">
           <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
@@ -8045,7 +8135,10 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <FloorPill />
-        <div className="q-head"><p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to claim the next walk-up.</p></div>
+        <div className="q-head">
+          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to claim the next walk-up.</p>
+        </div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
           onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
         {msg && <p className="q-err">{msg}</p>}
@@ -15517,7 +15610,7 @@ function RosterEditor({ config, data, onChange, userName }) {
                     matched without anyone having to ask around the floor. */}
                 <td>
                   <input className="lang-in" defaultValue={(a.langs || []).join(", ")}
-                    placeholder="Spanish, Creole"
+                    placeholder="add.."
                     title={(a.langs || []).map(langName).join(", ")}
                     onBlur={(e) => setLangs(a.id, e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
@@ -17519,8 +17612,11 @@ function Style() {
       .skill-chip.on { background:var(--blue); border-color:var(--blue); color:#fff; }
       .skill-chip.earned { cursor:help; background:rgba(217,164,37,.16); border-color:rgba(217,164,37,.45);
         color:#8A6314; }
-      .lang-in { width:110px; padding:7px 10px; border-radius:9px; font-family:inherit; font-size:13px;
+      .lang-in { width:118px; padding:7px 10px; border-radius:9px; font-family:inherit; font-size:13px;
         border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); text-transform:uppercase; }
+      /* An empty field was reading as though it already held everyone's languages,
+         because the uppercase rule was being applied to the placeholder too. */
+      .lang-in::placeholder { text-transform:none; font-style:italic; color:var(--ink-3); opacity:.7; }
       .cl-list { display:flex; flex-direction:column; gap:8px; margin-bottom:6px; }
       .cl-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px;
         border:1px solid rgba(16,32,52,.1); background:#fff; }
@@ -19369,12 +19465,32 @@ function Style() {
 .sf-line-1{ font-size:clamp(20px,6vw,23px); font-weight:600; letter-spacing:-.02em; }
 .sf-line-2{ font-size:clamp(13px,4vw,15px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
 .sf-wait{ font-family:var(--sfmono); font-size:12px; color:var(--sfink3); margin-top:13px; }
-/* The two facts that belong to the ring, set either side of it. */
+/* The queue's own mark on every sign-in screen, so somebody halfway through typing
+   a PIN can still see which queue they are joining. */
+.q-mark{ display:inline-flex; align-items:center; gap:9px; margin-bottom:14px;
+  padding:8px 15px; border-radius:999px; background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.09); color:var(--sfled,#19c58f);
+  font-family:var(--sfmono); font-size:13px; font-weight:600; letter-spacing:.04em; }
+/* How many are in with you, set beside the ring. */
 .sf-orbit{ position:absolute; top:50%; transform:translateY(-50%); font-family:var(--sfmono);
   font-size:11.5px; letter-spacing:.02em; color:var(--sfink3); white-space:nowrap; }
-.sf-orbit-l{ right:calc(50% + 108px); text-align:right; }
 .sf-orbit-r{ left:calc(50% + 108px); }
-@media (max-width:380px){ .sf-orbit-l{ right:calc(50% + 92px); } .sf-orbit-r{ left:calc(50% + 92px); } }
+@media (max-width:380px){ .sf-orbit-r{ left:calc(50% + 92px); } }
+
+/* The timer rides the ring. No label on it: the line below already says whether the
+   time is a wait or a customer, and saying it twice only makes both harder to read. */
+.sf-ringwrap{ position:relative; display:grid; place-items:center; }
+.sf-timer{ position:absolute; inset:-13px; z-index:0; pointer-events:none; }
+.sf-timer svg{ width:100%; height:100%; transform:rotate(-90deg); display:block; }
+.sf-timer-bg{ fill:none; stroke:rgba(255,255,255,.07); stroke-width:2.6; }
+.sf-timer-fg{ fill:none; stroke:var(--sfled,#19c58f); stroke-width:2.6; stroke-linecap:round;
+  filter:drop-shadow(0 0 5px color-mix(in srgb, var(--sfled,#19c58f) 65%, transparent));
+  transition:stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1); }
+.sf-timer b{ position:absolute; left:50%; bottom:-9px; transform:translateX(-50%);
+  background:#070b12; padding:3px 13px; border-radius:999px;
+  font-family:var(--sfmono); font-size:12.5px; font-weight:500; letter-spacing:.04em;
+  color:var(--sfink2); white-space:nowrap; }
+.sf-off .sf-timer-fg{ stroke:var(--sfink3); filter:none; }
 .sf-dot{ color:var(--sfink3); padding:0 .35em; }
 .sf-actions{ display:flex; flex-direction:column; gap:10px; }
 .sf-status-row{ display:flex; gap:8px; }
