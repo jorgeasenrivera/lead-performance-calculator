@@ -350,7 +350,7 @@ function mapDeliverySummaryGrid(lines) {
     if (!storeName) { storeName = nm; curName = null; return; }
     curName = nm;
     const k = norm(nm);
-    if (!people[k]) { people[k] = { displayName: nm, sources: {} }; order.push(k); }
+    if (!people[k]) { people[k] = { displayName: nm, sources: {}, vehicles: {} }; order.push(k); }
   };
 
   for (const L of lines) {
@@ -363,13 +363,21 @@ function mapDeliverySummaryGrid(lines) {
     // A data row ends the header block, so commit whatever name accumulated.
     if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
       commitName();
-      if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 6) continue;
       if (!curName) continue;                             // store block: not a person
       const k = norm(curName);
-      if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
-      people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
+      if (!people[k]) { people[k] = { displayName: curName, sources: {}, vehicles: {} }; order.push(k); }
+      people[k].vehicles = people[k].vehicles || {};
+      const vals = nums.slice(0, 6).map(val);
+      /* The New/Used/Other/Total rows carry the same six columns cut by vehicle type
+         rather than by source. They used to be thrown away at this line, which is why
+         nothing in the tool could say how much of a month was new against used.
+         Only the delivered column is read off them: the lead counts on these rows are
+         the same leads already counted under the source rows, so keeping those would
+         double count every opportunity. */
+      if (DS_VEHICLE.includes(rowTag)) { people[k].vehicles[rowTag.toLowerCase()] = vals; continue; }
+      people[k].sources[rowTag.toLowerCase()] = vals;
       continue;
     }
 
@@ -392,13 +400,17 @@ function mapDeliverySummaryGrid(lines) {
     "internetUnits","internetPct","phoneUnits","phonePct",
     "showroomUnits","showroomPct","campaignUnits",
     "internetLeads","phoneLeads","showroomLeads",
-    "showroomUps","showroomUnsold","showroomBeBacks"];
+    "showroomUps","showroomUnsold","showroomBeBacks",
+    "newUnits","usedUnits","otherUnits"];
   const rows = [["Delivery Summary"], header];
 
   for (const k of order) {
     const p = people[k];
     const s = p.sources;
+    const veh = p.vehicles || {};
     const pick = (src, i) => (s[src] ? s[src][i] : null);
+    // index 4 is Total Delivered/F&I, the same column read off the source rows
+    const pickV = (t) => (veh[t] ? veh[t][4] : null);
     // val() already returns percentages as a fraction, matching what the old
     // CSV stored with Round % switched off.
     const pctOf = (src) => pick(src, 5);
@@ -419,6 +431,7 @@ function mapDeliverySummaryGrid(lines) {
       pick("showroom", 1),             // Total Ups          (showroom-only)
       pick("showroom", 2),             // Unsold In Showroom (showroom-only)
       pick("showroom", 3),             // Be Backs           (showroom-only)
+      pickV("new"), pickV("used"), pickV("other"),   // the vehicle split
     ]);
     pairings.push({
       name: p.displayName,
@@ -458,6 +471,11 @@ function parseDeliverySummaryRows(rows) {
       showroomUps: row[idx("showroomUps")],
       showroomUnsold: row[idx("showroomUnsold")],
       showroomBeBacks: row[idx("showroomBeBacks")],
+      // Absent on every month imported before the vehicle split was read, so
+      // anything showing these has to treat null as "not known" and say so.
+      newUnits: row[idx("newUnits")],
+      usedUnits: row[idx("usedUnits")],
+      otherUnits: row[idx("otherUnits")],
     };
   }
   return out;

@@ -1184,7 +1184,7 @@ function mapDeliverySummaryGrid(lines) {
     if (!storeName) { storeName = nm; curName = null; return; }
     curName = nm;
     const k = norm(nm);
-    if (!people[k]) { people[k] = { displayName: nm, sources: {} }; order.push(k); }
+    if (!people[k]) { people[k] = { displayName: nm, sources: {}, vehicles: {} }; order.push(k); }
   };
 
   for (const L of lines) {
@@ -1197,13 +1197,21 @@ function mapDeliverySummaryGrid(lines) {
     // A data row ends the header block, so commit whatever name accumulated.
     if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
       commitName();
-      if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 6) continue;
       if (!curName) continue;                             // store block: not a person
       const k = norm(curName);
-      if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
-      people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
+      if (!people[k]) { people[k] = { displayName: curName, sources: {}, vehicles: {} }; order.push(k); }
+      people[k].vehicles = people[k].vehicles || {};
+      const vals = nums.slice(0, 6).map(val);
+      /* The New/Used/Other/Total rows carry the same six columns cut by vehicle type
+         rather than by source. They used to be thrown away at this line, which is why
+         nothing in the tool could say how much of a month was new against used.
+         Only the delivered column is read off them: the lead counts on these rows are
+         the same leads already counted under the source rows, so keeping those would
+         double count every opportunity. */
+      if (DS_VEHICLE.includes(rowTag)) { people[k].vehicles[rowTag.toLowerCase()] = vals; continue; }
+      people[k].sources[rowTag.toLowerCase()] = vals;
       continue;
     }
 
@@ -1226,13 +1234,17 @@ function mapDeliverySummaryGrid(lines) {
     "internetUnits","internetPct","phoneUnits","phonePct",
     "showroomUnits","showroomPct","campaignUnits",
     "internetLeads","phoneLeads","showroomLeads",
-    "showroomUps","showroomUnsold","showroomBeBacks"];
+    "showroomUps","showroomUnsold","showroomBeBacks",
+    "newUnits","usedUnits","otherUnits"];
   const rows = [["Delivery Summary"], header];
 
   for (const k of order) {
     const p = people[k];
     const s = p.sources;
+    const veh = p.vehicles || {};
     const pick = (src, i) => (s[src] ? s[src][i] : null);
+    // index 4 is Total Delivered/F&I, the same column read off the source rows
+    const pickV = (t) => (veh[t] ? veh[t][4] : null);
     // val() already returns percentages as a fraction, matching what the old
     // CSV stored with Round % switched off.
     const pctOf = (src) => pick(src, 5);
@@ -1253,6 +1265,7 @@ function mapDeliverySummaryGrid(lines) {
       pick("showroom", 1),             // Total Ups          (showroom-only)
       pick("showroom", 2),             // Unsold In Showroom (showroom-only)
       pick("showroom", 3),             // Be Backs           (showroom-only)
+      pickV("new"), pickV("used"), pickV("other"),   // the vehicle split
     ]);
     pairings.push({
       name: p.displayName,
@@ -1295,6 +1308,11 @@ function parseDeliverySummaryRows(rows) {
       showroomUps: row[idx("showroomUps")],
       showroomUnsold: row[idx("showroomUnsold")],
       showroomBeBacks: row[idx("showroomBeBacks")],
+      // Absent on every month imported before the vehicle split was read, so
+      // anything showing these has to treat null as "not known" and say so.
+      newUnits: row[idx("newUnits")],
+      usedUnits: row[idx("usedUnits")],
+      otherUnits: row[idx("otherUnits")],
     };
   }
   return out;
@@ -6993,7 +7011,11 @@ function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
    day, and a store that demanded it would be teaching people to close tasks rather
    than work them. Eighty per cent is the line, marked on the dial, so the shape says
    whether somebody is at it without turning it into another point. */
-function TaskDial({ done, posted, target = 0.8, size = 30 }) {
+/* The count sits inside the ring, the way the Performance dials carry their value.
+   It used to ride alongside as its own element, which made the pair read as a chart
+   plus a number rather than as one gauge, and cost width in a column that is already
+   the first thing on the row. Sized up so a three-digit count still fits the middle. */
+function TaskDial({ done, posted, target = 0.8, size = 38 }) {
   const known = posted != null && posted > 0;
   const pct = known ? Math.min(1, (done || 0) / posted) : 0;
   const r = (size - 5) / 2, c = 2 * Math.PI * r;
@@ -7017,8 +7039,12 @@ function TaskDial({ done, posted, target = 0.8, size = 30 }) {
           const x2 = size / 2 + Math.cos(a) * (r + 3.4), y2 = size / 2 + Math.sin(a) * (r + 3.4);
           return <line x1={x1} y1={y1} x2={x2} y2={y2} className="tdial-mark" strokeWidth="1.6" strokeLinecap="round" />;
         })()}
+        {/* dominant-baseline rather than a nudged y: it centres the same on every
+            browser, and a count can be one digit or three. */}
+        <text className="tdial-n" x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central">
+          {known ? done ?? 0 : "-"}
+        </text>
       </svg>
-      <b className="tdial-n">{known ? done ?? 0 : "-"}</b>
     </span>
   );
 }
@@ -9116,8 +9142,18 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
               {[["on", rows.filter((r) => !r.off)], ["off", rows.filter((r) => r.off)]]
                 .filter(([, list]) => list.length)
                 .flatMap(([which, list]) => [
-                  <tr key={"h-" + which} className="co-sep">
-                    <td colSpan={6}>{which === "on" ? "On today" : "Off today"} <span>{list.length}</span></td>
+                  /* Built to read like a role header over in Performance: a colour
+                     swatch, the name at heading weight, and the count as a pill. Two
+                     different section treatments in one tool made the tracker feel
+                     like a different product one tab across. */
+                  <tr key={"h-" + which} className={"co-sep co-sep-" + which}>
+                    <td colSpan={6}>
+                      <span className="co-sep-head">
+                        <span className="co-sep-swatch" />
+                        {which === "on" ? "On today" : "Off today"}
+                        <span className="co-sep-count">{list.length}</span>
+                      </span>
+                    </td>
                   </tr>,
                   ...list.map((r) => (
                 <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
@@ -13443,11 +13479,11 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
   const closeVals = ratios ? [ratios.close_phone, ratios.close_showroom, ratios.close_internet].filter((v) => v != null) : [];
   const closeRate = closeVals.length ? closeVals.reduce((a, b) => a + b, 0) / closeVals.length : null;
   const pacePct = goal > 0 ? pace / goal : 0;
-  const delivPct = goal > 0 ? delivered / goal : 0;
   const gaugesHtml = goal > 0
     ? ('<div class="gauges">' +
         gauCell(pacePct, Math.round(pacePct * 100) + "%", monthEnd ? "Final pace" : "Pace to goal", gTone(clamp01(pacePct))) +
-        gauCell(delivPct, Math.round(delivPct * 100) + "%", "Delivered", gTone(clamp01(delivPct))) +
+        /* No "Delivered" gauge. It is delivered/goal, which the goal box already
+           headlines and the pace bar already draws: the same fact three times. */
         (closeRate != null ? gauCell(closeRate, (closeRate * 100).toFixed(0) + "%", "Close rate", "#2B3844") : "") +
       "</div>")
     : "";
@@ -13470,7 +13506,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.gau-dial { display:flex; justify-content:center; }' +
 '.gau b { display:block; font-size:15px; font-weight:800; letter-spacing:-.02em; margin-top:1px; }' +
 '.gau span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
-'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
+'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:5px 0 3px; padding:2px 0 2px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
 '.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
 '.why.bad { border-left-color:#1A2430; border-left-width:6px; background:#E9ECEF; }' +
 '.why.good { border-left-color:#9AA5B1; background:#F7F9FA; }' +
@@ -13482,7 +13518,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.stat span { font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
 'table { width:100%; border-collapse:collapse; }' +
 'th { text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:3px 7px; border-bottom:1px solid #DDE3E9; }' +
-'td { padding:2.5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'td { padding:2px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
 'td.r, th.r { text-align:right; }' +
 '.good { color:#5B6874; font-weight:700; } .bad { color:#12212F; font-weight:800; } .par { color:#7A8590; font-weight:700; }' +'.mk { display:inline-block; margin-right:4px; font-size:9px; }' +'.rk { width:14px; color:#8B95A1; font-weight:800; text-align:center; }' +'.bad-row td { background:#F2F4F6; }' +
 '.mini { position:relative; height:11px; background:#EEF1F4; border-radius:6px; overflow:hidden; min-width:220px; }' +
@@ -13505,7 +13541,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.sign div { flex:1; }' +
 '.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
 '.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
-'.rc-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:7px 0 3px;}' +'.rc-grid{display:flex;gap:6px;margin-bottom:2px;}' +'.rc-tile{flex:1;border:1.2px solid #E4E8EE;border-radius:8px;padding:6px 8px;}' +'.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}' +'.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}' +'.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +'.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +'.rc-v{font-size:18px;font-weight:800;color:#1B2A3B;line-height:1.05;margin-top:1px;}' +'.rc-s{font-size:9px;color:#7A8699;}' +'.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +'.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:6px;padding:5px 9px;margin-bottom:4px;}' +'.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +'.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +'.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +'.play ul{margin:4px 0 0 23px;padding:0;}' +'.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +'</style></head><body><div class="sheet">' +
+'</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
   '<div>' + (monthEnd ? '<div class="badge">' + esc(lastMonthName) + ' month-end review</div>' : '<div class="badge">Coaching plan &middot; ' + esc(thisMonthName) + '</div>') +
@@ -13522,8 +13558,9 @@ gaugesHtml +
   failRows + '</tbody></table>' : '') +
 
 '<h2>Results this month</h2>' +
+/* Units delivered is not repeated here; it is the goal box at the top of the page.
+   What this strip is for is the three closing rates. */
 '<div class="stats">' +
-  '<div class="stat"><b>' + delivered + '</b><span>Units delivered</span></div>' +
   '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet delivered</span></div>' +
   '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone delivered</span></div>' +
   '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom delivered</span></div>' +
@@ -13533,13 +13570,12 @@ gaugesHtml +
 '<h2>Behavior vs the Top ' + (topCount || 6) + ' Sales Associates in Your Store</h2>' +
 '<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
 '<tbody>' + behaviourRows + '</tbody></table>' +
-'<p class="note">Ordered by leverage on your closing ratio, strongest first. The upright line is what the top ' + (topCount || 6) + ' sales associates here do: solid bar past it is a strength, striped bar short of it is the next gain.</p>'
+'<p class="note">Strongest leverage first. The upright line is the top ' + (topCount || 6) + '; past it is a strength, short of it is the next gain.</p>'
 : '') +
 
 (goal > 0 ?
 '<h2>' + (monthEnd ? "Where the month landed" : "Pace to your goal") + '</h2>' +
 '<div class="stats">' +
-  '<div class="stat"><b>' + num(delivered) + '</b><span>Delivered</span></div>' +
   '<div class="stat"><b>' + num(stillNeeded) + '</b><span>' + (monthEnd ? "Short of goal" : "Still needed") + '</span></div>' +
   '<div class="stat"><b>' + remaining + '</b><span>Days left</span></div>' +
   '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>' + (monthEnd ? "Final pace" : "Projected") + '</span></div>' +
@@ -13550,7 +13586,7 @@ gaugesHtml +
 // pace progress bar: delivered vs goal, with a marker for where they "should" be by now
 '<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
   (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
-  '<div class="pbar-legend"><span>' + delivered + ' delivered' + (pace >= goal ? ' (solid = on pace)' : ' (striped = behind pace)') + '</span>' + (!monthEnd ? '<span>| marks today</span>' : '') + '<span>' + goal + ' goal</span></div></div>'
+  '<div class="pbar-legend"><span>' + delivered + ' delivered' + (pace >= goal ? '' : ', behind pace') + '</span>' + '<span>' + goal + ' goal</span></div></div>'
 : '') +
 
 (ratios ?
@@ -13563,7 +13599,7 @@ gaugesHtml +
   '<h2>How many leads does it take to reach your goal?</h2>' +
   '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
   '<tbody>' + leadRows + '</tbody></table>' +
-  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' split by ' + (mixInfo.personal ? 'your own sales mix so far this month (' + mixInfo.total + ' cars)' : 'the typical mix (internet about half, showroom and phone the rest; switches to your own mix at ' + OYO_MIX_MIN_CARS + ' delivered)') + ', at your own closing rates: about <b>' + leadTotal + ' leads</b> gets you to your goal. Raise a closing rate and that number drops.</p>' : '')
+  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' at your own closing rates, split by ' + (mixInfo.personal ? 'your mix this month' : 'the typical mix') + ': about <b>' + leadTotal + ' leads</b>. Raise a closing rate and that drops.</p>' : '')
 : '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
 '<div class="sign">' +
@@ -14635,6 +14671,24 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   ];
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+
+  /* New against used, off the Delivery Summary's vehicle rows. Those rows were
+     discarded by the parser until now, so a month imported before that change has
+     nothing here at all: "seen" stays false and the block hides itself rather than
+     drawing a confident 0 new / 0 used over a month that sold plenty of both. */
+  const vehicleSplit = (() => {
+    let nw = 0, us = 0, other = 0, seen = false;
+    for (const a of closingRoster) {
+      const st = M?.stats?.[norm(a.name)];
+      if (!st) continue;
+      if (st.newUnits == null && st.usedUnits == null && st.otherUnits == null) continue;
+      seen = true;
+      nw += st.newUnits ?? 0; us += st.usedUnits ?? 0; other += st.otherUnits ?? 0;
+    }
+    const known = nw + us + other;
+    return { seen, nw, us, other, known,
+      newPct: known > 0 ? nw / known : null, usedPct: known > 0 ? us / known : null };
+  })();
   const thr = normThresholds(store.thresholds);
   const chanTone = (id, v) => v == null ? "dim"
     : v * 100 >= thr[id].green ? "g" : v * 100 >= thr[id].yellow ? "y" : "r";
@@ -14719,6 +14773,31 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               )}
             </div>
             <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
+
+            {/* New against used. Sits under the channel rows because it cuts the same
+                units a second way rather than adding more of them. */}
+            {vehicleSplit.seen && vehicleSplit.known > 0 && (
+              <div className="hp-mix">
+                <div className="hp-mix-cap">New and used</div>
+                <div className="hp-mix-bar">
+                  <i className="hp-mix-new" style={{ width: (vehicleSplit.newPct * 100) + "%" }} />
+                  <i className="hp-mix-used" style={{ width: (vehicleSplit.usedPct * 100) + "%" }} />
+                </div>
+                <div className="hp-mix-keys">
+                  <span className="hp-mix-k hp-mix-kn">
+                    <b>{fmtNum(vehicleSplit.nw)}</b> new
+                    <i>{Math.round(vehicleSplit.newPct * 100)}%</i>
+                  </span>
+                  <span className="hp-mix-k hp-mix-ku">
+                    <b>{fmtNum(vehicleSplit.us)}</b> used
+                    <i>{Math.round(vehicleSplit.usedPct * 100)}%</i>
+                  </span>
+                  {vehicleSplit.other > 0 && (
+                    <span className="hp-mix-k hp-mix-ko"><b>{fmtNum(vehicleSplit.other)}</b> other</span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -16550,6 +16629,24 @@ function Style() {
         font-size:11.5px; color:var(--ink-2); }
       .hp-total b { font-family:var(--font-display); font-size:15px; color:var(--ink);
         letter-spacing:-.02em; margin-right:4px; }
+      /* new vs used: one bar, because the two halves are shares of the same total
+         and reading them as a split is the whole point of showing them */
+      .hp-mix { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
+      .hp-mix-cap { font-size:9.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+        color:var(--ink-3); margin-bottom:6px; }
+      .hp-mix-bar { display:flex; height:8px; border-radius:999px; overflow:hidden;
+        background:rgba(16,32,52,.08); }
+      .hp-mix-bar i { display:block; height:100%; }
+      .hp-mix-new { background:#2A5E9B; }
+      .hp-mix-used { background:#00A896; }
+      .hp-mix-keys { display:flex; flex-wrap:wrap; gap:12px; margin-top:7px; }
+      .hp-mix-k { font-size:11px; color:var(--ink-2); display:inline-flex; align-items:baseline; gap:4px; }
+      .hp-mix-k b { font-family:var(--font-display); font-size:14px; color:var(--ink); letter-spacing:-.02em; }
+      .hp-mix-k i { font-style:normal; font-size:10px; font-weight:700; color:var(--ink-3); }
+      .hp-mix-k::before { content:""; width:8px; height:8px; border-radius:2px; align-self:center; }
+      .hp-mix-kn::before { background:#2A5E9B; }
+      .hp-mix-ku::before { background:#00A896; }
+      .hp-mix-ko::before { background:rgba(16,32,52,.25); }
       .hh-row.ok { background:rgba(120,220,150,.22); }
       .hh-row.bad { background:rgba(255,150,140,.22); }
       .hh-row.dim { background:rgba(255,255,255,.12); }
@@ -18275,9 +18372,25 @@ function Style() {
       .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
       .co-stamp { padding:4px 11px; border-radius:999px; background:rgba(16,32,52,.05); white-space:nowrap; }
       .co-stamp-none { background:rgba(217,164,37,.14); color:#8A6314; }
-      .co-sep td { padding-top:16px !important; padding-bottom:6px !important; font-size:11px; font-weight:800;
-        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid rgba(16,32,52,.08); }
-      .co-sep td span { font-weight:700; color:var(--ink-3); opacity:.7; margin-left:6px; }
+      /* Section headings borrowed from Performance's .role-header so the two views
+         read as one product: swatch, heading-weight name, count in a tinted pill,
+         over a soft band of the section's own colour. */
+      .co-sep td { padding-top:22px !important; padding-bottom:8px !important;
+        border-bottom:1px solid rgba(16,32,52,.08); }
+      .co-sep-head { display:inline-flex; align-items:center; gap:8px;
+        font-size:16px; font-weight:700; letter-spacing:-.01em; color:var(--ink);
+        text-transform:none; }
+      .co-sep-swatch { width:10px; height:10px; border-radius:50%; background:var(--sep);
+        box-shadow:0 0 0 3.5px color-mix(in srgb, var(--sep) 16%, transparent); flex:0 0 auto; }
+      .co-sep-count { font-size:12px; font-weight:700; border-radius:10px; padding:2px 9px;
+        background:color-mix(in srgb, var(--sep) 13%, transparent);
+        color:color-mix(in srgb, var(--sep) 72%, #12212F); }
+      .co-sep-on  { --sep:#2A5E9B; }
+      .co-sep-off { --sep:#8A94A3; }
+      .co-sep td { background:linear-gradient(180deg, color-mix(in srgb, var(--sep) 11%, transparent), transparent 88%); }
+      /* The first section sits directly under the table head, so it does not need
+         the full separating gap that divides one section from the next. */
+      .checkout-table tbody tr:first-child.co-sep td { padding-top:10px !important; }
       .co-sep + tr td { padding-top:12px; }
       .co-namecell { position:relative; }
       .co-off-hover { position:absolute; right:8px; top:50%; transform:translateY(-50%) translateX(4px);
@@ -18448,7 +18561,7 @@ function Style() {
       /* Its own bubble rather than the browser's, so it appears at once, matches the
          rest of the tool, and arrives with the same small overshoot everything else
          does instead of blinking into place. */
-      .tdial { position:relative; display:inline-flex; align-items:center; gap:8px; cursor:help;
+      .tdial { position:relative; display:inline-flex; align-items:center; gap:0; cursor:help;
         transition:transform .16s cubic-bezier(.34,1.4,.64,1); }
       .tdial:hover, .tdial:focus-visible { transform:translateY(-1px) scale(1.04); outline:none; }
       .tdial svg { display:block; flex:0 0 auto; transition:filter .18s var(--ease); }
@@ -18470,11 +18583,14 @@ function Style() {
       }
       .tdial-track { stroke:rgba(16,32,52,.1); }
       .tdial-mark { stroke:rgba(16,32,52,.42); }
-      .tdial-n { font-family:var(--font-display); font-size:14px; font-weight:800; }
-      .tdial-ok .tdial-fg { stroke:#178A57; }   .tdial-ok .tdial-n { color:#137048; }
-      .tdial-mid .tdial-fg { stroke:#D9A425; }  .tdial-mid .tdial-n { color:#9A6410; }
-      .tdial-low .tdial-fg { stroke:#D2402C; }  .tdial-low .tdial-n { color:#B4331F; }
-      .tdial-dim .tdial-fg { stroke:transparent; } .tdial-dim .tdial-n { color:var(--ink-3); }
+      /* An svg <text> now, not a <b> beside the ring, so these paint with fill.
+         Leaving them on "color" silently did nothing and every count went black. */
+      .tdial-n { font-family:var(--font-display); font-size:13px; font-weight:800;
+        letter-spacing:-.02em; }
+      .tdial-ok .tdial-fg { stroke:#178A57; }   .tdial-ok .tdial-n { fill:#137048; }
+      .tdial-mid .tdial-fg { stroke:#D9A425; }  .tdial-mid .tdial-n { fill:#9A6410; }
+      .tdial-low .tdial-fg { stroke:#D2402C; }  .tdial-low .tdial-n { fill:#B4331F; }
+      .tdial-dim .tdial-fg { stroke:transparent; } .tdial-dim .tdial-n { fill:var(--ink-3); }
       .co-nodata { opacity:.5; }
       .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
       .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
