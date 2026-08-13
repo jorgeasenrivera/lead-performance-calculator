@@ -5910,7 +5910,7 @@ const LEAD_VARIANTS = {
   line: {
     kind: "line", dataKey: "queue", param: "q", label: "The Line", count: "in line",
     channel: "close_phone", closeLabel: "phone close", sf: "sf-line", mf: "mf-line", accent: "#5566F0",
-    joinTitle: "Get in line", joinSub: "Type your name to claim the next phone opportunity.",
+    joinTitle: "Get in line", joinSub: "Type your name to log in and start getting in line.",
     ready1: "You're in line", wait: "In line", aheadSub: "ahead of you for the next call",
     upSub: "The next phone opportunity is yours.", custTitle: "On a call", custSub: "Back in line the moment your call wraps.",
     custFlag: "On a call", joinBtn: "Join the line", bannerLabel: "Phone Opportunities", bannerGlyph: "phone", leave: "Leave the line", empty: "Nobody's in line yet. Post the code, or add someone below.",
@@ -5918,7 +5918,7 @@ const LEAD_VARIANTS = {
   online: {
     kind: "online", dataKey: "queueOnline", param: "o", label: "Online", count: "in the queue",
     channel: "close_internet", closeLabel: "online close", sf: "sf-online", mf: "mf-online", accent: "#8B5CF6",
-    joinTitle: "Get in the queue", joinSub: "Type your name to claim the next online lead.",
+    joinTitle: "Get in the queue", joinSub: "Type your name to log in and start getting in line.",
     ready1: "You're in the queue", wait: "In the queue", aheadSub: "ahead of you for the next lead",
     upSub: "The next online lead is yours.", custTitle: "On a lead", custSub: "Back in the queue when you wrap up.",
     custFlag: "On a lead", joinBtn: "Join the queue", bannerLabel: "Internet Lead Opportunities", bannerGlyph: "globe", leave: "Leave the queue", empty: "Nobody's in the queue yet. Post the code, or add someone below.",
@@ -6251,6 +6251,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
   const [wiping, setWiping] = useState(false);
+  // Set the instant "Got it" is tapped, cleared when the data agrees. Without it the
+  // overlay lingers for the round trip and people tap it again and again.
+  const [tookIt, setTookIt] = useState(false);
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -6437,6 +6440,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       }
       return copy;
     });
+    // Back in line means the next turn should show the up-take overlay again.
+    if (status === "waiting") setTookIt(false);
     const next = await mutateRow((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
@@ -6473,7 +6478,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   /* ---------- render ---------- */
   const storeName = (row && row.storeName) || "Phone Line";
-  const PhonePill = () => <div className="q-phone-pill"><QPhoneIcon className="q-pill-ico" /> Phone opportunity</div>;
 
   // content is chosen by `shown`, which lags `screen` and swaps behind the curtain
   const eff = (shown === "done" && !me) ? "name" : shown;
@@ -6501,7 +6505,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
-          <span className="sf-tag"><span className="sf-live-dot" />{variant.label}</span>
+          <span className="q-mark q-mark-live"><span className="sf-live-dot" />
+            <PixIcon glyph={variant.bannerGlyph} size={18} fine /><span>{variant.label}</span></span>
         </div>
         <div className="sf-poswrap">
           <div className="sf-aura" />
@@ -6512,7 +6517,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
           <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
           </div>
-          <span className="sf-orbit sf-orbit-r">{line.length} {variant.count}</span>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
             <div className="sf-line-2">{sub}</div>
@@ -6538,13 +6542,13 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </button>
           </div>
         </div>
-        {isNext && (
+        {isNext && !tookIt && (
           <div className="sf-uptake">
             <div className="sf-shock" />
             <DmNumber value={1} up />
             <h2>You're up</h2>
             <p>{variant.upSub}</p>
-            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setFlag("customer"); }}>Got it</button>
+            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>Got it</button>
           </div>
         )}
       </div>
@@ -6628,7 +6632,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   } else {
     content = (
       <div className="q-card">
-        <PhonePill />
         <div className="q-head">
           <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
           <p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p>
@@ -7761,6 +7764,9 @@ function FloorSignIn({ store, date, token, test = false }) {
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
   const [wiping, setWiping] = useState(false);
+  // Set the instant "Got it" is tapped, cleared when the data agrees. Without it the
+  // overlay lingers for the round trip and people tap it again and again.
+  const [tookIt, setTookIt] = useState(false);
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -7941,6 +7947,8 @@ function FloorSignIn({ store, date, token, test = false }) {
       }
       return copy;
     });
+    // Back in line means the next turn should show the up-take overlay again.
+    if (status === "waiting") setTookIt(false);
     const next = await mutateFloorRow(store, date, (cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
@@ -7992,7 +8000,6 @@ function FloorSignIn({ store, date, token, test = false }) {
   }
 
   const storeName = (row && row.storeName) || "Live Floor";
-  const FloorPill = () => <div className="q-phone-pill f-pill"><FDoorIcon className="q-pill-ico" /> Walk-up floor</div>;
   const eff = (shown === "done" && !me) ? "name" : shown;
   let content;
 
@@ -8019,7 +8026,8 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
-          <span className="sf-tag"><span className="sf-live-dot" />Live Floor</span>
+          <span className="q-mark q-mark-live"><span className="sf-live-dot" />
+            <PixIcon glyph="door" size={18} fine /><span>Live Floor</span></span>
         </div>
         {/* The ring carries the position, and around it the two facts that belonged to
             it anyway: how long you have been on, and how many are on with you. Said
@@ -8030,7 +8038,6 @@ function FloorSignIn({ store, date, token, test = false }) {
           <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
           </div>
-          <span className="sf-orbit sf-orbit-r">{line.length} on</span>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
             <div className="sf-line-2">{sub}</div>
@@ -8057,13 +8064,13 @@ function FloorSignIn({ store, date, token, test = false }) {
             </button>
           </div>
         </div>
-        {isNext && (
+        {isNext && !tookIt && (
           <div className="sf-uptake">
             <div className="sf-shock" />
             <DmNumber value={1} up />
             <h2>You're up</h2>
             <p>Head to the door. The next one is yours.</p>
-            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setFlag("customer"); }}>I've got it</button>
+            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
           </div>
         )}
       </div>
@@ -8090,7 +8097,7 @@ function FloorSignIn({ store, date, token, test = false }) {
           <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
           <p className="q-kicker">{selected.label}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
-          <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. It's the same PIN as the phone line." : "So only you can claim your spot."}</p>
+          {pinMode === "create" && <p className="q-muted">4 to 6 digits. The same PIN as the phone line.</p>}
         </div>
         <div className="q-pin-field">
           {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
@@ -8147,10 +8154,9 @@ function FloorSignIn({ store, date, token, test = false }) {
   } else {
     content = (
       <div className="q-card">
-        <FloorPill />
         <div className="q-head">
           <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
-          <p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to claim the next walk-up.</p>
+          <p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to log in and start getting in line.</p>
         </div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
           onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
@@ -19524,25 +19530,22 @@ function Style() {
   background:rgba(255,255,255,.04); color:var(--sfink3); font-family:var(--sffont);
   font-size:13.5px; font-weight:600; transition:.18s; }
 .q-notme:hover{ background:rgba(255,255,255,.09); color:var(--sfink); }
-/* How many are in with you, set beside the ring. */
-.sf-orbit{ position:absolute; top:50%; transform:translateY(-50%); font-family:var(--sfmono);
-  font-size:11.5px; letter-spacing:.02em; color:var(--sfink3); white-space:nowrap; }
-.sf-orbit-r{ left:calc(50% + 108px); }
-@media (max-width:380px){ .sf-orbit-r{ left:calc(50% + 92px); } }
 
 /* The timer rides the ring. No label on it: the line below already says whether the
    time is a wait or a customer, and saying it twice only makes both harder to read. */
 .sf-ringwrap{ position:relative; display:grid; place-items:center; }
 .sf-timer{ position:absolute; inset:-22px; z-index:3; pointer-events:none; }
 .sf-timer svg{ width:100%; height:100%; transform:rotate(-90deg); display:block; }
-.sf-timer-bg{ fill:none; stroke:rgba(255,255,255,.1); stroke-width:4; }
-.sf-timer-fg{ fill:none; stroke:var(--sfled,#19c58f); stroke-width:4; stroke-linecap:round;
-  filter:drop-shadow(0 0 5px color-mix(in srgb, var(--sfled,#19c58f) 65%, transparent));
+.sf-timer-bg{ fill:none; stroke:rgba(255,255,255,.06); stroke-width:5; }
+.sf-timer-fg{ fill:none; stroke:#fff; stroke-width:5; stroke-linecap:round;
+  filter:drop-shadow(0 0 8px rgba(255,255,255,.75))
+         drop-shadow(0 0 18px color-mix(in srgb, var(--sfled,#19c58f) 70%, transparent));
   transition:stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1); }
-.sf-timer b{ position:absolute; left:50%; bottom:-11px; transform:translateX(-50%);
-  background:#070b12; padding:3px 13px; border-radius:999px;
-  font-family:var(--sfmono); font-size:12.5px; font-weight:500; letter-spacing:.04em;
-  color:var(--sfink2); white-space:nowrap; }
+.sf-timer b{ position:absolute; left:50%; bottom:-13px; transform:translateX(-50%);
+  background:#070b12; padding:4px 15px; border-radius:999px;
+  border:1px solid rgba(255,255,255,.1);
+  font-family:var(--sfmono); font-size:13px; font-weight:600; letter-spacing:.04em;
+  color:#fff; white-space:nowrap; }
 .sf-off .sf-timer-fg{ stroke:var(--sfink3); filter:none; }
 .sf-dot{ color:var(--sfink3); padding:0 .35em; }
 .sf-actions{ display:flex; flex-direction:column; gap:10px; }
