@@ -127,6 +127,103 @@ const LEADERBOARD_REPORTS = {
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+/* ---- Tags ----
+   A tag says what somebody can be handed. Two kinds, deliberately:
+
+   A SKILL is a fact. Speaks Spanish, knows trucks, handles finance. Either true or
+   not, and a manager sets it.
+
+   A STRENGTH is earned. It is not typed in by anybody: the tool works out who is
+   genuinely ahead on that thing over the last 90 days and marks them. That is the
+   difference between "can take a truck up" and "is the person you want on a truck".
+
+   Tags never skip anybody and never reorder a queue. They are there to be seen, so
+   that when a manager does go out of order they are choosing with the facts in front
+   of them, and that choice still has to carry a reason. */
+const TAG_KINDS = { skill: "Skill", strength: "Strength" };
+const DEFAULT_TAGS = [
+  { id: "trucks", label: "Trucks", kind: "skill" },
+  { id: "finance", label: "Finance", kind: "skill" },
+  { id: "ev", label: "EV", kind: "skill" },
+  { id: "fleet", label: "Fleet", kind: "skill" },
+  { id: "firsttime", label: "First-time buyer", kind: "skill" },
+];
+// What a strength is measured on, and the field it reads.
+const STRENGTH_METRICS = [
+  { id: "closer", label: "Closer", from: "showroomPct", need: 4, what: "showroom closing over 90 days" },
+  { id: "phone", label: "Phone", from: "phonePct", need: 4, what: "phone closing over 90 days" },
+  { id: "internet", label: "Internet", from: "internetPct", need: 4, what: "internet delivery over 90 days" },
+  { id: "video", label: "Video", from: "videoPct", need: 8, what: "personalised video over 90 days" },
+];
+const TAG_WINDOW_DAYS = 90;
+
+/* Who is genuinely ahead on each measure over the window. Top three only, and only
+   where there is enough behind the number to mean something: a single lead closed is
+   not a hundred per cent, and a strength awarded on one deal is worse than no
+   strength at all. */
+function earnedStrengths(data, roster) {
+  const out = {};
+  const since = (() => { const d = new Date(); d.setDate(d.getDate() - TAG_WINDOW_DAYS); return d.toLocaleDateString("en-CA"); })();
+  const months = Object.entries(data.months || {}).filter(([k]) => k >= since.slice(0, 7));
+  for (const m of STRENGTH_METRICS) {
+    const scored = [];
+    for (const a of roster) {
+      const k = norm(a.name);
+      let sum = 0, leads = 0, n = 0;
+      for (const [, mo] of months) {
+        const s = (mo && mo.stats && mo.stats[k]) || null;
+        if (!s || s[m.from] == null) continue;
+        sum += s[m.from]; n++;
+        leads += (s[m.from.replace("Pct", "Leads")] || 0);
+      }
+      if (!n || leads < m.need) continue;
+      scored.push({ k, v: sum / n });
+    }
+    scored.sort((a, b) => b.v - a.v).slice(0, 3).forEach((s) => {
+      (out[s.k] = out[s.k] || []).push({ id: m.id, label: m.label, kind: "strength", what: m.what });
+    });
+  }
+  return out;
+}
+
+/* Four letters, not two. "ES" means nothing to somebody reading the wall for the
+   first time; "SPAN" is guessable from across a showroom. Anything typed that is not
+   on the list is kept as the first four letters of whatever was written, so a floor
+   that speaks something unusual is never blocked from recording it. */
+const LANG_NAMES = {
+  SPAN: "Spanish", SPANISH: "Spanish", ES: "Spanish",
+  HAIT: "Haitian Creole", HT: "Haitian Creole", CREOLE: "Haitian Creole",
+  PORT: "Portuguese", PT: "Portuguese",
+  FREN: "French", FR: "French",
+  ARAB: "Arabic", AR: "Arabic",
+  URDU: "Urdu", UR: "Urdu",
+  HIND: "Hindi", HI: "Hindi",
+  MAND: "Mandarin", ZH: "Mandarin",
+  VIET: "Vietnamese", VI: "Vietnamese",
+  RUSS: "Russian", RU: "Russian",
+  GERM: "German", DE: "German",
+  ITAL: "Italian", IT: "Italian",
+  TAGA: "Tagalog", TL: "Tagalog",
+  KORE: "Korean", KO: "Korean",
+  JAPA: "Japanese", JA: "Japanese",
+  POLI: "Polish", PL: "Polish",
+  SINH: "Sinhala", SI: "Sinhala",
+  ASL: "Sign language", SIGN: "Sign language",
+};
+const LANG_CODE = {
+  Spanish: "SPAN", "Haitian Creole": "HAIT", Portuguese: "PORT", French: "FREN", Arabic: "ARAB",
+  Urdu: "URDU", Hindi: "HIND", Mandarin: "MAND", Vietnamese: "VIET", Russian: "RUSS", German: "GERM",
+  Italian: "ITAL", Tagalog: "TAGA", Korean: "KORE", Japanese: "JAPA", Polish: "POLI", Sinhala: "SINH",
+  "Sign language": "ASL",
+};
+function langCode(raw) {
+  const t = String(raw || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
+  if (!t) return "";
+  const known = LANG_NAMES[t];
+  return known ? (LANG_CODE[known] || t.slice(0, 4)) : t.slice(0, 4);
+}
+const langName = (code) => LANG_NAMES[String(code || "").toUpperCase()] || String(code || "");
+
 // Plate tags are compared with punctuation and case stripped, so "DLR-1042" and
 // "dlr1042" are understood to be the same plate. Defined here because both the
 // plate tracker and the repair tool need it, and the repair tool is declared first.
@@ -413,6 +510,9 @@ const PIX5 = {
 // A question mark, on the fine grid: it needs the counter and the gap under the
 // hook to read as a question rather than a smudge.
 PIX.question = ["001111000","011001100","110000110","000000110","000011100","000111000","000000000","000111000","000111000"];
+// board statuses
+PIX.cup   = ["000000000","111111000","111111100","111111010","111111010","111111100","011111000","000000000","000000000"];
+PIX.walk  = ["000110000","000110000","001111000","011111100","001111000","001111000","011001100","110000110","000000000"];
 
 function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
   // The marks that appear at text size come off the coarse grid, the same as The
@@ -2653,6 +2753,16 @@ export default function LeadPerformanceCalculator() {
     return <Shell><QueueSignIn store={queueParams.store} date={queueParams.date} token={queueParams.token} variant={queueParams.variant} /><Style /></Shell>;
   }
   // --- casted board: a TV pointed at this URL, no sign-in, read-only ---
+  // ?qboard={storeId}&k=line|online|floor
+  const qBoardParams = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const b = p.get("qboard");
+      return b ? { store: b, kind: (p.get("k") || "line").toLowerCase() } : null;
+    } catch { return null; }
+  })();
+  if (qBoardParams) return <Shell><QueueBoard storeId={qBoardParams.store} kind={qBoardParams.kind} /><Style /></Shell>;
+
   const boardParams = (() => {
     try {
       const b = new URLSearchParams(window.location.search).get("board");
@@ -3019,7 +3129,8 @@ export default function LeadPerformanceCalculator() {
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
-                {tab === "actstd" && isAdmin && <ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+                {tab === "actstd" && isAdmin && <><ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />
+                  <ChecklistEditor config={config} storeId={view} onChange={persistConfig} /></>}
               </>
             ) : (
               <>
@@ -4550,6 +4661,242 @@ async function openLeaderboard(config, storeId) {
   w.document.close();
 }
 
+/* ---------------- Queue boards on a wall ----------------
+   A screen showing who is up, in order, for one queue. Pointed at
+   ?qboard={storeId}&k=line|online|floor and left alone: it reads the queue row,
+   which is already readable without an account, refreshes every five seconds like
+   the floor phones do, and reloads itself when a new build ships.
+
+   Deliberately not the leaderboard. That board is about the month; this is about
+   the next ten minutes, so it says one thing large: who is next. */
+function QueueBoard({ storeId, kind }) {
+  const [row, setRow] = useState(null);
+  const [board, setBoard] = useState(null);   // the published board row: names, month units
+  const [err, setErr] = useState(false);
+  useBuildWatchdog();
+
+  const variant = kind === "floor"
+    ? { label: "Live Floor", accent: "#10B981", glyph: "door", count: "on the floor" }
+    : kind === "online"
+      ? { label: "Online", accent: "#8B5CF6", glyph: "globe", count: "in the queue" }
+      : { label: "The Line", accent: "#5566F0", glyph: "phone", count: "in line" };
+
+  useEffect(() => {
+    let dead = false;
+    const pull = async () => {
+      try {
+        const d = kind === "floor"
+          ? await loadFloorRow(storeId, today())
+          : await loadQueueRow(storeId, today(), kind === "online" ? "online" : "line");
+        if (!dead) { setRow(d || null); setErr(false); }
+      } catch (e) { if (!dead) setErr(true); }
+    };
+    pull();
+
+    /* A five second poll is fine for a phone in a pocket and wrong for a wall: a
+       manager assigns somebody and the screen argues with the room for a few
+       seconds. Postgres pushes the change instead, so the board turns over as the
+       click happens. The poll stays underneath as a safety net, slowed right down,
+       because a dropped socket must not leave a screen frozen for the afternoon. */
+    const rowId = kind === "floor"
+      ? floorRowId(storeId, today())
+      : queueRowId(storeId, today(), kind === "online" ? "online" : "line");
+    const table = kind === "floor" ? FLOOR_TABLE : QUEUE_TABLE;
+    let channel = null;
+    if (supabase) {
+      try {
+        channel = supabase.channel(`qb:${table}:${rowId}`)
+          .on("postgres_changes",
+            { event: "*", schema: "public", table, filter: `id=eq.${rowId}` },
+            (payload) => {
+              const v = payload && payload.new && payload.new.data;
+              if (!dead && v) { setRow(v); setErr(false); }
+            })
+          .subscribe();
+      } catch (e) { /* no realtime: the poll below still carries it */ }
+    }
+    const t = setInterval(pull, channel ? 20000 : 5000);
+    const nightly = setInterval(() => {
+      const d = new Date();
+      if (d.getHours() === 4 && d.getMinutes() < 6) window.location.reload();
+    }, 5 * 60 * 1000);
+    return () => {
+      dead = true; clearInterval(t); clearInterval(nightly);
+      if (channel) { try { supabase.removeChannel(channel); } catch (e) {} }
+    };
+  }, [storeId, kind]);
+
+  // The published board row carries this month's units, which is what decides the
+  // top three. Read once a minute: it moves slowly and the queue does not.
+  useEffect(() => {
+    let dead = false;
+    const pull = () => loadShared(boardKey(storeId), null).then((b) => { if (!dead && b) setBoard(b); }).catch(() => {});
+    pull();
+    const t = setInterval(pull, 60000);
+    return () => { dead = true; clearInterval(t); };
+  }, [storeId]);
+
+  /* The store's top three for units this month. Ranked here rather than published,
+     so the board and the leaderboard can never disagree about who is ahead. */
+  const rank = useMemo(() => {
+    const stats = ((board && board.months) || {})[board && board.ym] || null;
+    if (!stats || !stats.stats) return {};
+    const rows = Object.entries(stats.stats).map(([k, s]) => ({
+      k, units: (s.internetUnits || 0) + (s.phoneUnits || 0) + (s.showroomUnits || 0) + (s.campaignUnits || 0),
+    })).filter((r) => r.units > 0).sort((a, b) => b.units - a.units);
+    const out = {};
+    rows.slice(0, 3).forEach((r, i) => { out[r.k] = i + 1; });
+    return out;
+  }, [board]);
+
+  const roster = (row && row.roster) || [];
+  const entry = (id) => roster.find((r) => r.id === id) || null;
+  const nameOf = (id) => (entry(id) || {}).label || "";
+  const fullOf = (id) => (entry(id) || {}).name || (entry(id) || {}).label || "";
+  const rankOf = (id) => rank[norm(fullOf(id))] || 0;
+  const langsOf = (id) => ((entry(id) || {}).langs || []);
+
+  const line = (row && row.line) || [];
+  const waiting = line.filter((p) => p.status === "waiting" && !isTestId(p.id));
+  const busy = line.filter((p) => p.status !== "waiting" && !isTestId(p.id));
+  const next = waiting[0] || null;
+
+  /* The way people actually get in the queue.
+     A printed code goes stale the moment somebody reprints it, and on a wall there
+     is a screen already showing the queue, so the code belongs there. It surfaces
+     on its own every couple of minutes, holds long enough to be scanned from a few
+     feet away, and goes again. Nobody has to be asked to put it up. */
+  const signInUrl = (row && row.token)
+    ? (kind === "floor"
+        ? `${window.location.origin}${window.location.pathname}?f=${encodeURIComponent(storeId)}&d=${today()}&t=${encodeURIComponent(row.token)}`
+        : queueSignInUrl(storeId, today(), row.token, kind === "online" ? "o" : "q"))
+    : "";
+  const [scan, setScan] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    if (!signInUrl || pinned) return;
+    let t1 = null, t2 = null;
+    const cycle = () => {
+      setScan(true);
+      t2 = setTimeout(() => setScan(false), 22000);   // long enough to walk over and scan
+    };
+    t1 = setInterval(cycle, 150000);                   // every two and a half minutes
+    return () => { clearInterval(t1); clearTimeout(t2); };
+  }, [signInUrl, pinned]);
+  const pod = waiting.slice(1, 4);
+  const rest = waiting.slice(4, 9);
+
+  const warmOf = (id) => { const r = rankOf(id); return r ? ` qb-warm qb-p${r}` : ""; };
+  /* Languages, then earned strengths, then skills. A strength is set apart because
+     it was earned rather than typed: it is the one thing on this wall that nobody
+     can give themselves. */
+  const tagPills = (id) => {
+    const e = entry(id) || {};
+    const l = e.langs || [], st = e.strengths || [], sk = e.skills || [];
+    if (!l.length && !st.length && !sk.length) return null;
+    const skillLabel = (t) => (DEFAULT_TAGS.find((x) => x.id === t) || {}).label || t;
+    const strengthLabel = (t) => (STRENGTH_METRICS.find((x) => x.id === t) || {}).label || t;
+    return (
+      <span className="qb-langs">
+        {l.map((x) => <span key={"l" + x} className="qb-lang" title={langName(x)}>{x}</span>)}
+        {st.map((x) => <span key={"s" + x} className="qb-lang qb-strength">{strengthLabel(x)}</span>)}
+        {sk.map((x) => <span key={"k" + x} className="qb-lang qb-skill">{skillLabel(x)}</span>)}
+      </span>
+    );
+  };
+  const avatar = (id, cls) => (
+    <span className={"qb-av " + cls} style={{ background: `hsl(${hueFromName(fullOf(id))} 62% 62%)` }}>{initialsOf(fullOf(id))}</span>
+  );
+  const stepH = [150, 118, 92];
+
+  return (
+    <div className="qb" style={{ "--a": variant.accent }}>
+      <div className="qb-hd">
+        <span className="qb-tag"><span className="qb-live" /><PixIcon glyph={variant.glyph} size={22} fine /> {variant.label}</span>
+        <span className="qb-store">{(row && row.storeName) || ""}</span>
+        <span className="qb-hd-right">
+          <span className="qb-pill"><b>{waiting.length}</b> {variant.count}</span>
+          {next && <span className="qb-pill"><b>{qWaitLabel(qMinsSince(next.joinedAt))}</b> longest</span>}
+        </span>
+      </div>
+
+      {err && <div className="qb-empty">Cannot reach the queue. This screen keeps trying on its own.</div>}
+      {!err && !next && <div className="qb-empty">Nobody is up yet.</div>}
+
+      {next && (
+        <>
+          <div className="qb-top">
+            <div className={"qb-hero" + warmOf(next.id)}>
+              <div className="qb-cap">Next up</div>
+              <div className="qb-name">{nameOf(next.id)}</div>
+              <div className="qb-sub">{qWaitLabel(qMinsSince(next.joinedAt))} waiting {tagPills(next.id)}</div>
+            </div>
+            <div className="qb-pod">
+              {pod.map((p, i) => (
+                <div key={p.id} className={"qb-col" + warmOf(p.id)}>
+                  {avatar(p.id, "qb-av-md")}
+                  <div className="qb-cnm">{nameOf(p.id)}</div>
+                  <div className="qb-cw">{qWaitLabel(qMinsSince(p.joinedAt))}</div>
+                  {tagPills(p.id)}
+                  <div className="qb-step" style={{ height: stepH[i] }}>{i + 2}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="qb-strip">
+            {rest.map((p, i) => (
+              <div key={p.id} className={"qb-card" + warmOf(p.id)}>
+                <div className="qb-chead">
+                  {avatar(p.id, "qb-av-sm")}
+                  <span className="qb-pos">{i + 5}</span>
+                </div>
+                <div className="qb-cnm qb-left">{nameOf(p.id)}</div>
+                <div className="qb-crow">
+                  <span className="qb-cw">{qWaitLabel(qMinsSince(p.joinedAt))}</span>
+                  {tagPills(p.id)}
+                </div>
+              </div>
+            ))}
+            {waiting.length > 9 && <div className="qb-card qb-more">+{waiting.length - 9} more</div>}
+          </div>
+        </>
+      )}
+
+      {/* Tap or click the screen to hold the code up, tap again to release it. Useful
+          at a shift change, when everybody needs it at once. */}
+      {signInUrl && (
+        <button className="qb-scan-toggle" onClick={() => { setPinned((v) => !v); setScan(!pinned); }}>
+          {pinned ? "Hide the code" : "Show the code"}
+        </button>
+      )}
+
+      {signInUrl && (scan || pinned) && (
+        <div className={"qb-scan" + (pinned ? " qb-scan-pin" : "")}>
+          <div className="qb-scan-card">
+            <div className="qb-scan-cap">{variant.label}</div>
+            <div className="qb-scan-title">Scan to check in</div>
+            <div className="qb-scan-qr"><QueueQR url={signInUrl} cell={9} /></div>
+            <div className="qb-scan-sub">Point a phone camera at the code</div>
+          </div>
+        </div>
+      )}
+
+      {busy.length > 0 && (
+        <div className="qb-busy">
+          <span className="qb-busy-lbl">Not available</span>
+          {busy.slice(0, 8).map((p) => (
+            <span key={p.id} className="qb-chip">
+              <PixIcon glyph={p.status === "customer" ? "car" : p.status === "lunch" ? "cup" : "walk"} size={15} fine />
+              {nameOf(p.id)}<i>{p.status === "customer" ? "with a customer" : p.status === "lunch" ? "lunch" : "away"}</i>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------------- Casted board (kiosk) ----------------
    A TV is pointed at ?board=<storeId> and left alone. Because this is a real page
    and not a written-into popup, a reboot recovers on its own and a reload picks up
@@ -4673,7 +5020,8 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
    Two things they could never see before without asking a manager: what they are
    meant to get done today, and how they are actually doing. Both read from data
    the tool already holds. Nothing new is asked of anyone. */
-function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClose }) {
+function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, list, onClose }) {
+  const LIST = (Array.isArray(list) && list.length) ? list : DEFAULT_CHECKLIST;
   /* Three of these tick themselves. If the report says the calls were made, asking
      someone to also tell us they were made is busywork, and worse, it invites a tick
      on a day the work did not happen. The hand-ticked ones are the things no report
@@ -4688,7 +5036,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClo
 
   const [ticks, setTicks] = useState(() => {
     const out = {};
-    for (const c of DEFAULT_CHECKLIST) {
+    for (const c of LIST) {
       try { out[c.id] = localStorage.getItem(checklistKey(store, date, meId + ":" + c.id)) === "1"; }
       catch (e) { out[c.id] = false; }
     }
@@ -4704,23 +5052,41 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClo
     buzz(10);
   };
   const isDone = (c) => (c.from ? !!(autoFor(c) || {}).done : !!ticks[c.id]);
-  const doneCount = DEFAULT_CHECKLIST.filter(isDone).length;
+  const doneCount = LIST.filter(isDone).length;
 
   // A quiet celebration the first time an automatic one lands, so the moment the
   // reports catch up is actually noticed rather than silently changing colour.
   const seen = useRef(null);
   const [pop, setPop] = useState(null);
   useEffect(() => {
-    const now = DEFAULT_CHECKLIST.filter((c) => c.from && isDone(c)).map((c) => c.id).join(",");
+    const now = LIST.filter((c) => c.from && isDone(c)).map((c) => c.id).join(",");
     if (seen.current !== null && now !== seen.current) {
-      const fresh = DEFAULT_CHECKLIST.find((c) => c.from && isDone(c) && !seen.current.includes(c.id));
+      const fresh = LIST.find((c) => c.from && isDone(c) && !seen.current.includes(c.id));
       if (fresh) { setPop(fresh.id); buzz([18, 40, 18]); setTimeout(() => setPop(null), 1600); }
     }
     seen.current = now;
   }, [a.calls, a.video, a.tasks]); // eslint-disable-line
 
-  const ring = Math.round((doneCount / DEFAULT_CHECKLIST.length) * 100);
   const stamp = updatedAt ? new Date(updatedAt) : null;
+
+  /* Closing rates, month to date. A single day of these means nothing: one showroom
+     lead and one sale is not a hundred per cent. They come from the month stats the
+     board already publishes for this store. */
+  const closers = (() => {
+    const s = (monthStats && monthStats[norm(meName)]) || null;
+    if (!s) return [];
+    const one = (k, label, unitsF, pctF, leadsF) => ({
+      k, label,
+      units: s[unitsF] == null ? null : s[unitsF],
+      leads: s[leadsF] == null ? null : s[leadsF],
+      pct: s[pctF] == null ? null : s[pctF],
+    });
+    return [
+      one("showroom", "Showroom", "showroomUnits", "showroomPct", "showroomLeads"),
+      one("phone", "Phone", "phoneUnits", "phonePct", "phoneLeads"),
+      one("internet", "Internet", "internetUnits", "internetPct", "internetLeads"),
+    ].filter((c) => c.pct != null || c.leads != null);
+  })();
 
   const tiles = [
     { k: "calls", label: "Calls", v: a.calls || 0, target: std.minCalls, tone: "a" },
@@ -4739,31 +5105,44 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClo
         </div>
 
         <div className="help-body">
-          {/* the day at a glance */}
-          <div className="md-hero">
-            <div className="md-ring">
-              <svg viewBox="0 0 100 100">
-                <circle className="md-ring-bg" cx="50" cy="50" r="42" />
-                <circle className="md-ring-fg" cx="50" cy="50" r="42"
-                  style={{ strokeDashoffset: 264 - (264 * ring) / 100 }} />
-              </svg>
-              <span className="md-ring-face"><DmNumber value={doneCount} /><i>of {DEFAULT_CHECKLIST.length}</i></span>
+          <div className="md-cap">Where you are today</div>
+          {!stats ? (
+            <p className="hint">Today's numbers have not landed yet. They come in through the day.</p>
+          ) : (
+            <div className="md-stats">
+              {tiles.map((t) => {
+                const p = t.target ? Math.min(100, Math.round(((t.v || 0) / t.target) * 100)) : null;
+                return (
+                  <div key={t.k} className={"md-stat md-t" + t.tone + (p >= 100 ? " md-hit" : "")}>
+                    <span className="md-stat-top"><b>{t.v}</b>{t.target ? <i>of {t.target}</i> : null}</span>
+                    <span className="md-stat-lbl">{t.label}</span>
+                    {p != null && <span className="md-bar"><i style={{ width: p + "%" }} /></span>}
+                  </div>
+                );
+              })}
             </div>
-            <div className="md-hero-txt">
-              <b>{doneCount === DEFAULT_CHECKLIST.length ? "That is the day."
-                : doneCount === 0 ? "Nothing down yet."
-                : doneCount >= DEFAULT_CHECKLIST.length - 2 ? "Nearly there." : "Under way."}</b>
-              <span>
-                {stamp
-                  ? `Your numbers last landed at ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. They refresh about every hour.`
-                  : "Your numbers refresh about every hour, as the reports come in."}
-              </span>
-            </div>
-          </div>
+          )}
 
-          <div className="md-cap">Today's list <span>{doneCount} of {DEFAULT_CHECKLIST.length}</span></div>
+          {/* Closing rates. Month to date, because a single day of them says nothing:
+              one showroom lead and one sale is not a hundred per cent. */}
+          {closers.length > 0 && (
+            <>
+              <div className="md-cap md-cap2">Closing this month</div>
+              <div className="md-close">
+                {closers.map((c) => (
+                  <div key={c.k} className="md-cl">
+                    <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
+                    <span className="md-cl-l">{c.label}</span>
+                    <span className="md-cl-s">{c.units == null ? "no leads yet" : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="md-cap md-cap2">Today's list <span>{doneCount} of {LIST.length}</span></div>
           <div className="md-list">
-            {DEFAULT_CHECKLIST.map((c) => {
+            {LIST.map((c) => {
               const auto = autoFor(c);
               const done = isDone(c);
               return (
@@ -4775,46 +5154,18 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, onClo
                   <span className="md-text">
                     <b>{c.label}</b>
                     <span>{c.hint}</span>
-                    {auto && stats && (
-                      <span className="md-prog">
-                        <i style={{ width: Math.min(100, auto.need ? (auto.got / auto.need) * 100 : 0) + "%" }} />
-                      </span>
-                    )}
                   </span>
                   {auto
                     ? (stats
                         ? <span className="md-count">{auto.got}{auto.need > 1 ? <i>/{auto.need}</i> : null}</span>
-                        // Nothing has landed yet. Saying so is better than a zero,
-                        // which reads as "you have done none of it".
                         : <span className="md-hand">Waiting</span>)
                     : <span className="md-hand">{done ? "Done" : "Tap"}</span>}
                 </button>
               );
             })}
           </div>
-          <p className="hint">
-            The first three tick themselves from your reports, so there is nothing to claim.
-            The rest are yours: kept on this phone, and nobody is graded on them.
-          </p>
+          <p className="hint">The top three tick themselves. The rest are yours and nobody is graded on them.</p>
 
-          <div className="md-cap md-cap2">Where you are today</div>
-          {!stats ? (
-            <p className="hint">Today's numbers have not come through yet. They land through the day as the reports import.</p>
-          ) : (
-            <div className="md-stats">
-              {tiles.map((t) => {
-                const p = t.target ? Math.min(100, Math.round(((t.v || 0) / t.target) * 100)) : null;
-                return (
-                  <div key={t.k} className={"md-stat md-t" + t.tone + (p >= 100 ? " md-hit" : "")}>
-                    <span className="md-stat-top"><DmNumber value={t.v} />{t.target ? <i>of {t.target}</i> : null}</span>
-                    <span className="md-stat-lbl">{t.label}</span>
-                    {p != null && <span className="md-bar"><i style={{ width: p + "%" }} /></span>}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <p className="hint">These come from the same reports your manager sees. If a number looks wrong, say so below and it will be looked at.</p>
           <HelpButton config={config} who={meName} store={store}
             context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
         </div>
@@ -5465,19 +5816,28 @@ const TICKET_PREFIX = "ticket:";
 /* What a salesperson is asked to get done while they wait. Deliberately short and
    deliberately about the things that decide whether the day works: the standards
    the store already grades them on, plus the two habits that move appointments. */
+/* The three that tick themselves are fixed, because they are tied to fields in the
+   reports and a free-text item cannot be. Everything below them is the store's own,
+   and a manager can say what those are. */
+const AUTO_CHECK_IDS = ["calls", "videos", "tasks"];
+function checklistFor(store) {
+  const custom = (store && Array.isArray(store.checklist)) ? store.checklist : null;
+  const auto = DEFAULT_CHECKLIST.filter((c) => AUTO_CHECK_IDS.includes(c.id));
+  if (!custom) return DEFAULT_CHECKLIST;
+  const own = custom
+    .filter((c) => c && c.label && !AUTO_CHECK_IDS.includes(c.id))
+    .map((c) => ({ id: c.id, label: String(c.label).trim(), hint: String(c.hint || "").trim() }));
+  return [...auto, ...own];
+}
+
 const DEFAULT_CHECKLIST = [
-  // The first three tick themselves from the reports. `from` is the field on the
-  // day's activity row and `target` says where it comes from, so nobody has to
-  // claim credit for work the system can already see.
-  { id: "calls", label: "Make your calls", hint: "Work the list, not just the callbacks",
-    from: "calls", target: "minCalls" },
-  { id: "videos", label: "Send your videos", hint: "Name the vehicle in the first 10 seconds",
-    from: "video", target: "minVideos" },
-  { id: "tasks", label: "Clear your tasks", hint: "The ones already sitting in your queue",
-    from: "tasks", target: null },
-  { id: "appts", label: "Confirm tomorrow's appointments", hint: "Look 48 hours out, not the morning of" },
-  { id: "followup", label: "Follow up yesterday's ups", hint: "Anyone who did not buy is still yours" },
-  { id: "walk", label: "Walk the lot", hint: "Know what is on the ground before a customer asks" },
+  // The first three tick themselves from the reports.
+  { id: "calls", label: "Calls", hint: "Work the list", from: "calls", target: "minCalls" },
+  { id: "videos", label: "Videos", hint: "Vehicle named in the first 10 seconds", from: "video", target: "minVideos" },
+  { id: "tasks", label: "Tasks", hint: "Clear your queue", from: "tasks", target: null },
+  { id: "appts", label: "Confirm appointments", hint: "48 hours out, not the morning of" },
+  { id: "followup", label: "Follow up yesterday's ups", hint: "Anyone who did not buy" },
+  { id: "walk", label: "Walk the lot", hint: "Know the ground before a customer asks" },
 ];
 const checklistKey = (store, date, id) => `lpcq:list:${store}:${date}:${id}`;
 
@@ -5701,6 +6061,21 @@ function queueSignInUrl(storeId, date, token, param = "q", test = false) {
 
 /* The test link. Offered only in the manager view, and deliberately never encoded
    into the QR code that gets held up in front of the floor. */
+/* The wall address for this queue. Copy it once into a screen and leave it. */
+function QueueBoardLink({ storeId, kind }) {
+  const [said, setSaid] = useState(false);
+  const url = `${window.location.origin}${window.location.pathname}?qboard=${encodeURIComponent(storeId)}&k=${kind}`;
+  return (
+    <button className="btn-quiet" title={url}
+      onClick={() => {
+        navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
+          () => window.prompt("Point a screen at this address:", url));
+      }}>
+      {said ? "Copied" : "Copy board link"}
+    </button>
+  );
+}
+
 function TestLink({ storeId, date, token, param }) {
   const [said, setSaid] = useState(false);
   if (!token) return null;
@@ -5850,6 +6225,16 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const [cfg, setCfg] = useState(null);
   const [mine, setMine] = useState(null);
   const [mineAt, setMineAt] = useState(null);
+  // The published board row carries this month's channel figures and is readable
+  // without an account, which is the only way a sign-in page can get them.
+  const [monthStats, setMonthStats] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    loadShared(`lpc:board:${store}:v1`, null)
+      .then((b) => { if (!dead && b && b.months) setMonthStats((b.months[b.ym] || {}).stats || null); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [store]);
   useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
   // Needs to be in scope before the panel is built, not after.
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
@@ -6062,15 +6447,15 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
           <span className="sf-tag"><span className="sf-live-dot" />{variant.label}</span>
-          <span className="sf-tag">{line.length} {variant.count}</span>
         </div>
         <div className="sf-poswrap">
           <div className="sf-aura" />
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <span className="sf-orbit sf-orbit-l">{qWaitLabel(qMinsSince(me.joinedAt))}</span>
+          <span className="sf-orbit sf-orbit-r">{line.length} {variant.count}</span>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
             <div className="sf-line-2">{sub}</div>
-            <div className="sf-wait">{variant.wait} <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
           </div>
         </div>
         <div className="sf-actions">
@@ -6083,24 +6468,14 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
                   </button>
                 ))}
           </div>
-          {/* Today's three numbers, right on the panel. A salesperson standing on the
-              floor should not have to open anything to know where they are. */}
-          {mine && (
-            <button className="sf-today" onClick={() => { buzz(10); setMyDay(true); }}>
-              {[["Calls", mine.calls || 0, std.minCalls], ["Videos", mine.video || 0, std.minVideos], ["Tasks", mine.tasks || 0, 0]].map(([lbl, v, need]) => (
-                <span key={lbl} className={"sft" + (need > 0 && v >= need ? " sft-hit" : "")}>
-                  <span className="sft-v"><DmNumber value={v} /></span>
-                  <span className="sft-l">{lbl}{need > 0 ? ` / ${need}` : ""}</span>
-                  {need > 0 && <span className="sft-bar"><i style={{ width: Math.min(100, (v / need) * 100) + "%" }} /></span>}
-                </span>
-              ))}
-            </button>
-          )}
           <div className="sf-extra">
             <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
               <DmIcon name="back" cell={4} /><span>My day</span>
             </button>
-            <button className="sf-leave" disabled={busy} onClick={leave}>{variant.leave}</button>
+            <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
+              <span className="sf-door"><DmIcon name="door" cell={4} /></span>
+              <span>{variant.leave}</span>
+            </button>
           </div>
         </div>
         {isNext && (
@@ -6209,7 +6584,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
-          config={cfg} updatedAt={mineAt} onClose={() => setMyDay(false)} />
+          config={cfg} updatedAt={mineAt} monthStats={monthStats}
+          list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
     </div>
   );
@@ -6721,12 +7097,21 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   const ensureRow = useCallback(async () => {
     // The short label is what the floor sees; the full name is what every report is
     // keyed by. Without it a salesperson's own numbers can never be looked up.
-    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    // Worked out before the snapshot, because the snapshot reads it.
+    const strengths = earnedStrengths(data, salesRoster);
+    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name),
+      role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "",
+      // What they speak beyond English. Published so the wall can match a walk-in
+      // asking for a language without anybody having to ask around the floor.
+      langs: Array.isArray(a.langs) ? a.langs : [],
+      skills: Array.isArray(a.skills) ? a.skills : [],
+      strengths: (strengths[norm(a.name)] || []).map((s) => s.id) }));
     // Always published, never shown unless the address asks for it.
     snap.push({ id: TEST_ID, label: TEST_LABEL, role: "Test", test: true });
+    const list = checklistFor(store);
     const next = await mutateRow((cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
-      cur.roster = snap; cur.storeName = store.name;
+      cur.roster = snap; cur.storeName = store.name; cur.checklist = list;
       if (!cur.token) cur.token = uid();
       if (!cur.date) cur.date = date;
       return cur;
@@ -6867,6 +7252,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
+          <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
         </div>
       </div>
 
@@ -7315,6 +7701,16 @@ function FloorSignIn({ store, date, token, test = false }) {
   const [cfg, setCfg] = useState(null);
   const [mine, setMine] = useState(null);
   const [mineAt, setMineAt] = useState(null);
+  // The published board row carries this month's channel figures and is readable
+  // without an account, which is the only way a sign-in page can get them.
+  const [monthStats, setMonthStats] = useState(null);
+  useEffect(() => {
+    let dead = false;
+    loadShared(`lpc:board:${store}:v1`, null)
+      .then((b) => { if (!dead && b && b.months) setMonthStats((b.months[b.ym] || {}).stats || null); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [store]);
   useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
@@ -7535,15 +7931,18 @@ function FloorSignIn({ store, date, token, test = false }) {
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
           <span className="sf-tag"><span className="sf-live-dot" />Live Floor</span>
-          <span className="sf-tag">{line.length} on the floor</span>
         </div>
+        {/* The ring carries the position, and around it the two facts that belonged to
+            it anyway: how long you have been on, and how many are on with you. Said
+            once, in the place the eye already is. */}
         <div className="sf-poswrap">
           <div className="sf-aura" />
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <span className="sf-orbit sf-orbit-l">{qWaitLabel(qMinsSince(me.joinedAt))}</span>
+          <span className="sf-orbit sf-orbit-r">{line.length} on</span>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
             <div className="sf-line-2">{sub}</div>
-            <div className="sf-wait">On the floor <span className="sf-dot">·</span> {qWaitLabel(qMinsSince(me.joinedAt))}</div>
           </div>
         </div>
         <div className="sf-actions">
@@ -7557,18 +7956,6 @@ function FloorSignIn({ store, date, token, test = false }) {
                   </button>
                 ))}
           </div>
-          {/* Today's three numbers, the same as The Line. */}
-          {mine && (
-            <button className="sf-today" onClick={() => { buzz(10); setMyDay(true); }}>
-              {[["Calls", mine.calls || 0, std.minCalls], ["Videos", mine.video || 0, std.minVideos], ["Tasks", mine.tasks || 0, 0]].map(([lbl, v, need]) => (
-                <span key={lbl} className={"sft" + (need > 0 && v >= need ? " sft-hit" : "")}>
-                  <span className="sft-v"><DmNumber value={v} /></span>
-                  <span className="sft-l">{lbl}{need > 0 ? ` / ${need}` : ""}</span>
-                  {need > 0 && <span className="sft-bar"><i style={{ width: Math.min(100, (v / need) * 100) + "%" }} /></span>}
-                </span>
-              ))}
-            </button>
-          )}
           <div className="sf-extra">
             <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
               <DmIcon name="back" cell={4} /><span>My day</span>
@@ -7685,7 +8072,8 @@ function FloorSignIn({ store, date, token, test = false }) {
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
-          config={cfg} updatedAt={mineAt} onClose={() => setMyDay(false)} />
+          config={cfg} updatedAt={mineAt} monthStats={monthStats}
+          list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
     </div>
   );
@@ -7719,12 +8107,21 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   const ensureRow = useCallback(async () => {
     if (!data) return;
-    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name), role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "" }));
+    // Worked out before the snapshot, because the snapshot reads it.
+    const strengths = earnedStrengths(data, salesRoster);
+    const snap = salesRoster.map((a) => ({ id: a.id, name: a.name, label: shortLabel(a.name),
+      role: (config.roles || []).find((r) => r.id === a.roleId)?.name || "",
+      // What they speak beyond English. Published so the wall can match a walk-in
+      // asking for a language without anybody having to ask around the floor.
+      langs: Array.isArray(a.langs) ? a.langs : [],
+      skills: Array.isArray(a.skills) ? a.skills : [],
+      strengths: (strengths[norm(a.name)] || []).map((s) => s.id) }));
     // Always published, never shown unless the address asks for it.
     snap.push({ id: TEST_ID, name: TEST_LABEL, label: TEST_LABEL, role: "Test", test: true });
+    const list = checklistFor(store);
     const next = await mutateFloorRow(store.id, date, (cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [], unmatched: [], processed: [], lastEventAt: null };
-      cur.roster = snap; cur.storeName = store.name;
+      cur.roster = snap; cur.storeName = store.name; cur.checklist = list;
       if (!cur.token) cur.token = uid();
       if (!cur.date) cur.date = date;
       return cur;
@@ -7919,6 +8316,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
+          <QueueBoardLink storeId={store.id} kind="floor" />
         </div>
       </div>
 
@@ -10519,6 +10917,97 @@ function StoreStepper({ label, value, onChange, hint }) {
         <button className="stepper-btn" onClick={() => onChange(value + 1)}>+</button>
       </div>
       <div className="stepper-hint">{hint}</div>
+    </div>
+  );
+}
+
+/* What the floor is asked to do, in the store's own words. The three that tick
+   themselves are fixed and shown greyed, because they are tied to fields in the
+   reports; a manager cannot invent one of those. The rest are theirs. */
+function ChecklistEditor({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const list = checklistFor(store);
+  const own = list.filter((c) => !AUTO_CHECK_IDS.includes(c.id));
+  const [draft, setDraft] = useState({ label: "", hint: "" });
+
+  const write = (items, detail) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    s.checklist = items;
+    onChange(next, { store: storeId, action: "Changed the floor checklist", detail: `${store.name}: ${detail}` });
+  };
+  const add = () => {
+    const label = draft.label.trim();
+    if (!label) return;
+    write([...own, { id: uid(), label, hint: draft.hint.trim() }], `added "${label}"`);
+    setDraft({ label: "", hint: "" });
+  };
+  const edit = (id, field, v) => write(own.map((c) => (c.id === id ? { ...c, [field]: v } : c)), "reworded an item");
+  const drop = (c) => {
+    if (!window.confirm(`Remove "${c.label}" from the checklist?`)) return;
+    write(own.filter((x) => x.id !== c.id), `removed "${c.label}"`);
+  };
+  const move = (i, dir) => {
+    const to = i + dir;
+    if (to < 0 || to >= own.length) return;
+    const copy = [...own];
+    [copy[i], copy[to]] = [copy[to], copy[i]];
+    write(copy, "reordered");
+  };
+  const reset = () => {
+    if (!window.confirm("Put the checklist back to the standard list?")) return;
+    write(DEFAULT_CHECKLIST.filter((c) => !AUTO_CHECK_IDS.includes(c.id)).map((c) => ({ id: c.id, label: c.label, hint: c.hint })), "reset to standard");
+  };
+
+  return (
+    <div className="card">
+      <h3>The floor checklist</h3>
+      <p className="hint">
+        What a salesperson sees under My day. Keep the wording short: it is read on a phone,
+        between customers. Nobody is graded on these.
+      </p>
+
+      <div className="md-cap">Ticked by the reports</div>
+      <div className="cl-list">
+        {list.filter((c) => AUTO_CHECK_IDS.includes(c.id)).map((c) => (
+          <div key={c.id} className="cl-row cl-fixed">
+            <span className="cl-txt"><b>{c.label}</b><span>{c.hint}</span></span>
+            <span className="hint">from the reports</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="md-cap md-cap2">Yours to set</div>
+      <div className="cl-list">
+        {own.length === 0 && <p className="hint">Nothing here. The list will show only the three above.</p>}
+        {own.map((c, i) => (
+          <div key={c.id} className="cl-row">
+            <span className="cl-ord">
+              <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
+              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down">↓</button>
+            </span>
+            <span className="cl-fields">
+              <input className="help-in" value={c.label} placeholder="What to do"
+                onChange={(e) => edit(c.id, "label", e.target.value)} />
+              <input className="help-in" value={c.hint} placeholder="A few words on why"
+                onChange={(e) => edit(c.id, "hint", e.target.value)} />
+            </span>
+            <button className="btn-x danger" onClick={() => drop(c)}>Remove</button>
+          </div>
+        ))}
+      </div>
+
+      <div className="cl-add">
+        <input className="help-in" value={draft.label} placeholder="Add an item"
+          onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+          onKeyDown={(e) => e.key === "Enter" && add()} />
+        <input className="help-in" value={draft.hint} placeholder="A few words on why (optional)"
+          onChange={(e) => setDraft({ ...draft, hint: e.target.value })}
+          onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="btn" onClick={add} disabled={!draft.label.trim()}>Add</button>
+      </div>
+      <button className="btn-quiet" style={{ marginTop: 10 }} onClick={reset}>Back to the standard list</button>
+      <p className="hint">A change reaches the floor the next time this queue is opened here.</p>
     </div>
   );
 }
@@ -14875,6 +15364,34 @@ function RosterEditor({ config, data, onChange, userName }) {
     setName("");
     onChange(next, { action: "Added associate", detail: `${n} (${config.roles.find((r) => r.id === roleId)?.name})` });
   };
+  /* Free text rather than a fixed list. A dealership floor speaks whatever it speaks,
+     and a list somebody has to maintain is a list that goes stale. */
+  const setLangs = (id, raw) => {
+    // "spanish", "es" and "SPAN" all land on the same code, so nobody has to learn
+    // the shorthand before they can record something true.
+    const langs = String(raw || "").split(/[,/]+/).map((s) => langCode(s))
+      .filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 4);
+    const a = (data.roster || []).find((x) => x.id === id);
+    if (!a || JSON.stringify(a.langs || []) === JSON.stringify(langs)) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.roster = next.roster.map((x) => (x.id === id ? { ...x, langs } : x));
+    onChange(next, { action: "Set languages", detail: `${a.name}: ${langs.join(", ") || "none"}` });
+  };
+
+  // Recomputed on render: a strength should never be a stored fact that can go stale.
+  const earned = useMemo(() => earnedStrengths(data, data.roster || []), [data]);
+
+  const toggleSkill = (id, tagId) => {
+    const a = (data.roster || []).find((x) => x.id === id);
+    if (!a) return;
+    const have = new Set(a.skills || []);
+    have.has(tagId) ? have.delete(tagId) : have.add(tagId);
+    const next = JSON.parse(JSON.stringify(data));
+    next.roster = next.roster.map((x) => (x.id === id ? { ...x, skills: [...have] } : x));
+    const label = (DEFAULT_TAGS.find((t) => t.id === tagId) || {}).label || tagId;
+    onChange(next, { action: have.has(tagId) ? "Added a tag" : "Removed a tag", detail: `${a.name}: ${label}` });
+  };
+
   const setRole = (id, rid) => {
     const next = JSON.parse(JSON.stringify(data));
     const a = next.roster.find((x) => x.id === id); if (!a) return;
@@ -14984,7 +15501,7 @@ function RosterEditor({ config, data, onChange, userName }) {
       </div>
       <div className="card">
         <table className="roster-table">
-          <thead><tr><th>Name</th><th>Position</th><th /></tr></thead>
+          <thead><tr><th>Name</th><th>Position</th><th>Languages</th><th>Tags</th><th /></tr></thead>
           <tbody>
             {(data.roster || []).sort((a, b) => a.order - b.order).map((a) => (
               <tr key={a.id}>
@@ -14994,6 +15511,36 @@ function RosterEditor({ config, data, onChange, userName }) {
                     <option value="">needs a position</option>
                     {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
+                </td>
+                {/* Beyond English, as short codes so they fit on a wall: ES, HT, UR.
+                    Shown on the queue boards so a walk-in asking for a language can be
+                    matched without anyone having to ask around the floor. */}
+                <td>
+                  <input className="lang-in" defaultValue={(a.langs || []).join(", ")}
+                    placeholder="Spanish, Creole"
+                    title={(a.langs || []).map(langName).join(", ")}
+                    onBlur={(e) => setLangs(a.id, e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                </td>
+                {/* Skills only. A strength is worked out from what somebody has
+                    actually done, so there is nothing here to tick. */}
+                <td>
+                  <span className="skill-set">
+                    {DEFAULT_TAGS.map((t) => {
+                      const on = (a.skills || []).includes(t.id);
+                      return (
+                        <button key={t.id} className={"skill-chip" + (on ? " on" : "")}
+                          onClick={() => toggleSkill(a.id, t.id)}>{t.label}</button>
+                      );
+                    })}
+                  </span>
+                  {(earned[norm(a.name)] || []).length > 0 && (
+                    <span className="skill-earned">
+                      {(earned[norm(a.name)] || []).map((s) => (
+                        <span key={s.id} className="skill-chip earned" title={`Earned: top three for ${s.what}`}>{s.label}</span>
+                      ))}
+                    </span>
+                  )}
                 </td>
                 <td><button className="btn-x" onClick={() => remove(a.id)}>Remove</button></td>
               </tr>
@@ -16841,6 +17388,151 @@ function Style() {
         color:#9A6410; background:#FDF1DC; border:1px solid #E9CE93; padding:2px 7px; border-radius:999px;
         margin-left:8px; }
       .plate-missing-acts { display:inline-flex; align-items:center; gap:8px; flex:0 0 auto; }
+      /* ---- a queue on a wall ----
+         Sized in vw and vh so one stylesheet serves a 32in screen in an office and a
+         75in one in a showroom without a second layout. */
+      .qb { position:fixed; inset:0; z-index:400; background:#0B1622; color:#EAF2F8; overflow:hidden;
+        font-family:var(--font-ui); display:flex; flex-direction:column; padding:3.8vh 3.1vw 4vh; }
+      .qb::before { content:""; position:absolute; width:75vw; height:75vw; left:-20vw; top:-55vh;
+        border-radius:50%; pointer-events:none;
+        background:radial-gradient(circle, color-mix(in srgb, var(--a) 24%, transparent) 0%, transparent 62%); }
+      .qb::after { content:""; position:absolute; inset:0; pointer-events:none; opacity:.32;
+        background-image:radial-gradient(rgba(255,255,255,.07) 1px, transparent 1px);
+        background-size:1.6vw 1.6vw; mask-image:linear-gradient(180deg,#000,transparent 72%); }
+
+      .qb-hd { display:flex; align-items:center; gap:1.1vw; position:relative; z-index:2; }
+      .qb-tag { display:inline-flex; align-items:center; gap:.75vw; font-weight:700;
+        font-size:clamp(15px,1.45vw,26px); color:var(--a); }
+      .qb-live { width:.8vw; height:.8vw; min-width:10px; min-height:10px; border-radius:50%; background:var(--a);
+        box-shadow:0 0 1vw var(--a); animation:qbPulse 2.4s ease-in-out infinite; }
+      @keyframes qbPulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+      .qb-store { color:rgba(234,242,248,.5); font-size:clamp(14px,1.32vw,24px); }
+      .qb-hd-right { margin-left:auto; display:flex; gap:.75vw; }
+      .qb-pill { display:inline-flex; align-items:center; gap:.55vw; padding:.9vh 1vw; border-radius:999px;
+        background:rgba(255,255,255,.06); font-size:clamp(12px,1.13vw,20px); color:rgba(234,242,248,.72); }
+      .qb-pill b { color:#fff; font-family:var(--font-display); }
+
+      .qb-av { flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+        font-family:var(--font-display); font-weight:700; color:#0B1622; }
+      .qb-av-md { width:4.8vw; height:4.8vw; border-radius:1.45vw; font-size:1.75vw; }
+      .qb-av-sm { width:3.25vw; height:3.25vw; border-radius:1vw; font-size:1.25vw; }
+      .qb-cap { font-size:clamp(11px,1vw,18px); letter-spacing:.16em; text-transform:uppercase;
+        color:rgba(234,242,248,.45); margin-bottom:.7vh; }
+      .qb-langs { display:inline-flex; gap:.35vw; }
+      .qb-lang { display:inline-flex; padding:.45vh .7vw; border-radius:999px; background:rgba(255,255,255,.11);
+        font-size:clamp(10px,.94vw,17px); font-weight:700; letter-spacing:.05em; color:rgba(234,242,248,.9); }
+      /* Earned, so it gets the store's own colour. Nobody can give themselves one. */
+      .qb-strength { background:color-mix(in srgb, var(--a) 34%, transparent); color:#fff;
+        letter-spacing:.02em; }
+      .qb-skill { background:rgba(255,255,255,.055); color:rgba(234,242,248,.62);
+        font-weight:600; letter-spacing:.02em; }
+
+      /* Placement shows as warmth, not a badge: the queue colour still owns who is
+         next, so the two never argue about what the screen is saying. */
+      .qb-p1 { --w1:#FFD86B; --w2:#D9A425; }
+      .qb-p2 { --w1:#E4ECF4; --w2:#8FA0B3; }
+      .qb-p3 { --w1:#E7B183; --w2:#B5713C; }
+      .qb-warm .qb-av { box-shadow:0 0 0 .26vw color-mix(in srgb, var(--w2) 60%, transparent),
+        0 0 2.8vw color-mix(in srgb, var(--w2) 42%, transparent); }
+      .qb-warm .qb-cnm, .qb-warm .qb-name { color:var(--w1); }
+      .qb-warm.qb-card { background:linear-gradient(180deg, color-mix(in srgb, var(--w2) 18%, transparent),
+        color-mix(in srgb, var(--w2) 4%, transparent)); border-color:color-mix(in srgb, var(--w2) 40%, transparent); }
+      .qb-warm .qb-step { background:linear-gradient(180deg, color-mix(in srgb, var(--w2) 30%, transparent),
+        color-mix(in srgb, var(--w2) 8%, transparent)); border-color:color-mix(in srgb, var(--w2) 42%, transparent); }
+
+      .qb-top { display:flex; align-items:flex-start; gap:2.75vw; margin-top:2.2vh; position:relative; z-index:2; }
+      .qb-hero { flex:0 0 35vw; }
+      .qb-name { font-family:var(--font-display); font-weight:700; letter-spacing:-.025em; line-height:.94;
+        font-size:clamp(40px,6.5vw,118px); color:#fff; }
+      .qb-sub { margin-top:1.4vh; display:flex; gap:.8vw; align-items:center;
+        font-size:clamp(13px,1.2vw,21px); color:rgba(234,242,248,.5); }
+
+      .qb-pod { flex:1; display:flex; align-items:flex-end; gap:1vw; height:37vh; }
+      .qb-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:1.1vh; }
+      .qb-cnm { font-size:clamp(14px,1.38vw,24px); font-weight:600; text-align:center; line-height:1.2; }
+      .qb-cw { font-size:clamp(11px,1vw,18px); color:rgba(234,242,248,.4); }
+      .qb-step { width:100%; border-radius:1vw 1vw 0 0; border:1px solid rgba(255,255,255,.09); border-bottom:0;
+        background:rgba(255,255,255,.05); display:flex; align-items:flex-start; justify-content:center;
+        padding-top:1.2vh; font-family:var(--font-display); font-weight:700;
+        font-size:clamp(15px,1.56vw,27px); color:rgba(234,242,248,.45); }
+
+      .qb-strip { display:flex; gap:.8vw; margin-top:auto; position:relative; z-index:2; }
+      .qb-card { flex:1; background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.07);
+        border-radius:1.25vw; padding:1.9vh 1vw; display:flex; flex-direction:column; gap:1.1vh; }
+      .qb-chead { display:flex; align-items:flex-start; justify-content:space-between; }
+      .qb-pos { font-family:var(--font-display); font-weight:700; font-size:clamp(13px,1.31vw,23px);
+        color:rgba(234,242,248,.28); }
+      .qb-left { text-align:left; }
+      .qb-crow { display:flex; align-items:center; justify-content:space-between; gap:.5vw; }
+      .qb-more { flex:0 0 8vw; align-items:center; justify-content:center;
+        color:rgba(234,242,248,.38); font-size:clamp(12px,1.25vw,22px); }
+
+      .qb-busy { display:flex; align-items:center; gap:.7vw; flex-wrap:wrap; padding-top:1.4vh; margin-top:1.8vh;
+        border-top:1px solid rgba(255,255,255,.07); position:relative; z-index:2; }
+      .qb-busy-lbl { font-size:clamp(10px,.88vw,16px); letter-spacing:.12em; text-transform:uppercase;
+        color:rgba(234,242,248,.3); }
+      .qb-chip { display:inline-flex; align-items:center; gap:.5vw; padding:.8vh .9vw; border-radius:999px;
+        background:rgba(255,255,255,.05); font-size:clamp(11px,1.06vw,19px); color:rgba(234,242,248,.55); }
+      .qb-chip i { font-style:normal; font-size:.78em; color:rgba(234,242,248,.3); }
+      .qb-empty { margin:auto; font-size:clamp(18px,2.6vw,46px); color:rgba(234,242,248,.4); text-align:center; }
+
+      /* ---- scan to check in ----
+         Arrives with the same overshoot everything else in the tool uses, sits over a
+         dimmed board rather than replacing it, and leaves the same way. */
+      .qb-scan { position:absolute; inset:0; z-index:6; display:flex; align-items:center; justify-content:center;
+        background:rgba(6,12,20,.72); backdrop-filter:blur(6px);
+        animation:qbScanIn .34s cubic-bezier(.34,1.4,.64,1) both; }
+      @keyframes qbScanIn { from { opacity:0; } to { opacity:1; } }
+      .qb-scan-card { background:#fff; color:#101820; border-radius:2vw; padding:3.4vh 3vw;
+        display:flex; flex-direction:column; align-items:center; gap:1.4vh;
+        box-shadow:0 4vh 10vh -3vh rgba(0,0,0,.7);
+        animation:qbScanPop .46s cubic-bezier(.34,1.5,.64,1) both; }
+      @keyframes qbScanPop {
+        0%   { transform:scale(.72) translateY(3vh); opacity:0; }
+        60%  { transform:scale(1.035) translateY(0); opacity:1; }
+        100% { transform:scale(1); }
+      }
+      .qb-scan-cap { font-size:clamp(11px,1vw,18px); font-weight:800; letter-spacing:.16em;
+        text-transform:uppercase; color:var(--a); }
+      .qb-scan-title { font-family:var(--font-display); font-weight:700; letter-spacing:-.02em;
+        font-size:clamp(22px,2.9vw,52px); }
+      .qb-scan-qr { width:26vh; max-width:34vw; }
+      .qb-scan-qr svg { display:block; width:100%; height:auto; }
+      .qb-scan-sub { font-size:clamp(12px,1.15vw,20px); color:#5A6472; }
+      /* held open on purpose: no pulse, nothing asking for attention */
+      .qb-scan-pin .qb-scan-card { animation-duration:.3s; }
+      .qb-scan-toggle { position:absolute; right:1.6vw; bottom:1.6vh; z-index:7; cursor:pointer;
+        font-family:inherit; font-size:clamp(11px,.95vw,17px); font-weight:700;
+        padding:.9vh 1.2vw; border-radius:999px; border:1px solid rgba(255,255,255,.12);
+        background:rgba(255,255,255,.06); color:rgba(234,242,248,.5); }
+      .qb-scan-toggle:hover { background:rgba(255,255,255,.12); color:rgba(234,242,248,.85); }
+      @media (prefers-reduced-motion: reduce) {
+        .qb-scan, .qb-scan-card { animation:none !important; }
+      }
+
+      .skill-set, .skill-earned { display:inline-flex; flex-wrap:wrap; gap:5px; }
+      .skill-earned { margin-left:6px; }
+      .skill-chip { font-family:inherit; font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px;
+        border:1px solid rgba(16,32,52,.13); background:#fff; color:var(--ink-3); cursor:pointer;
+        transition:background .14s, color .14s, border-color .14s; }
+      .skill-chip:hover { border-color:rgba(42,94,155,.4); color:var(--ink-2); }
+      .skill-chip.on { background:var(--blue); border-color:var(--blue); color:#fff; }
+      .skill-chip.earned { cursor:help; background:rgba(217,164,37,.16); border-color:rgba(217,164,37,.45);
+        color:#8A6314; }
+      .lang-in { width:110px; padding:7px 10px; border-radius:9px; font-family:inherit; font-size:13px;
+        border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); text-transform:uppercase; }
+      .cl-list { display:flex; flex-direction:column; gap:8px; margin-bottom:6px; }
+      .cl-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px;
+        border:1px solid rgba(16,32,52,.1); background:#fff; }
+      .cl-fixed { background:rgba(16,32,52,.03); }
+      .cl-txt b { display:block; font-size:14px; }
+      .cl-txt span { font-size:12px; color:var(--ink-3); }
+      .cl-txt { flex:1; }
+      .cl-ord { display:flex; flex-direction:column; gap:2px; }
+      .cl-fields { flex:1; display:flex; gap:8px; flex-wrap:wrap; }
+      .cl-fields input { flex:1 1 180px; }
+      .cl-add { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+      .cl-add input { flex:1 1 200px; }
       .rp-list { display:flex; flex-direction:column; gap:5px; }
       .rp-row { display:flex; align-items:center; gap:10px; width:100%; text-align:left; cursor:pointer;
         font-family:inherit; padding:9px 12px; border-radius:11px; border:1px solid rgba(16,32,52,.1);
@@ -16923,8 +17615,8 @@ function Style() {
       .myday .md-cap { font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
         color:var(--ink-3); display:flex; justify-content:space-between; margin:2px 0 8px; }
       .md-cap2 { margin-top:18px !important; }
-      /* the day at a glance */
-      .md-hero { display:flex; align-items:center; gap:16px; padding:16px 18px; border-radius:18px;
+      .md-hero { display:none; }
+      .md-hero-unused { display:flex; align-items:center; gap:16px; padding:16px 18px; border-radius:18px;
         background:linear-gradient(140deg, rgba(42,94,155,.1), rgba(85,102,240,.06)); margin-bottom:16px; }
       .md-ring { position:relative; width:78px; height:78px; flex:0 0 auto; }
       .md-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
@@ -16985,12 +17677,19 @@ function Style() {
       .md-te { background:linear-gradient(145deg, rgba(217,164,37,.18), rgba(217,164,37,.05)); --md-c:#B5891C; }
       .md-hit::after { content:""; position:absolute; inset:0; border-radius:16px; pointer-events:none;
         box-shadow:inset 0 0 0 1.5px var(--md-c); opacity:.5; }
-      .md-stat-top { display:flex; align-items:baseline; gap:6px; --led:var(--md-c); }
-      .md-stat-top .dm { --cell:5px; display:flex; gap:4px; }
-      .md-stat-top .dm-digit { display:grid; grid-template-columns:repeat(3,var(--cell)); gap:calc(var(--cell)*.44); }
-      .md-stat-top .ld { width:var(--cell); height:var(--cell); border-radius:50%; background:transparent; }
-      .md-stat-top .ld.on { background:var(--md-c); }
+      /* Plain numerals here. The dot digits belong on the dark floor screens, where
+         they read as a display; on a white panel of figures they only slow reading. */
+      .md-stat-top { display:flex; align-items:baseline; gap:6px; }
+      .md-stat-top b { font-family:var(--font-display); font-size:26px; font-weight:800;
+        letter-spacing:-.02em; color:var(--md-c); }
       .md-stat-top i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
+      /* closing rates */
+      .md-close { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+      .md-cl { padding:13px 14px; border-radius:16px; background:rgba(16,32,52,.04); }
+      .md-cl-v { display:block; font-family:var(--font-display); font-size:22px; font-weight:800;
+        letter-spacing:-.02em; }
+      .md-cl-l { display:block; font-size:12px; font-weight:600; margin-top:2px; }
+      .md-cl-s { display:block; font-size:11px; color:var(--ink-3); margin-top:3px; }
       .md-stat-lbl { display:block; font-size:11.5px; color:var(--ink-3); margin-top:7px;
         letter-spacing:.03em; }
       .md-bar { display:block; height:4px; border-radius:999px; background:rgba(16,32,52,.1); margin-top:8px; overflow:hidden; }
@@ -18670,6 +19369,12 @@ function Style() {
 .sf-line-1{ font-size:clamp(20px,6vw,23px); font-weight:600; letter-spacing:-.02em; }
 .sf-line-2{ font-size:clamp(13px,4vw,15px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
 .sf-wait{ font-family:var(--sfmono); font-size:12px; color:var(--sfink3); margin-top:13px; }
+/* The two facts that belong to the ring, set either side of it. */
+.sf-orbit{ position:absolute; top:50%; transform:translateY(-50%); font-family:var(--sfmono);
+  font-size:11.5px; letter-spacing:.02em; color:var(--sfink3); white-space:nowrap; }
+.sf-orbit-l{ right:calc(50% + 108px); text-align:right; }
+.sf-orbit-r{ left:calc(50% + 108px); }
+@media (max-width:380px){ .sf-orbit-l{ right:calc(50% + 92px); } .sf-orbit-r{ left:calc(50% + 92px); } }
 .sf-dot{ color:var(--sfink3); padding:0 .35em; }
 .sf-actions{ display:flex; flex-direction:column; gap:10px; }
 .sf-status-row{ display:flex; gap:8px; }
@@ -18678,24 +19383,6 @@ function Style() {
 .sf-sbtn:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
 .sf-sbtn:disabled{ opacity:.55; }
 .sf-sbtn.active{ color:#03130d; background:linear-gradient(90deg,var(--a1),var(--a2)); border-color:transparent; }
-/* Today's three numbers, on the panel itself. Dot digits, one bar each, no medals
-   and no points: the aim is that a glance answers "where am I", not "am I winning". */
-.sf-today{ display:flex; gap:10px; width:100%; background:none; border:0; padding:0 2px 4px; cursor:pointer;
-  font-family:var(--sfmono); }
-.sft{ flex:1; display:flex; flex-direction:column; align-items:flex-start; gap:5px;
-  padding:12px 13px; border-radius:14px; background:rgba(255,255,255,.045);
-  border:1px solid rgba(255,255,255,.07); transition:background .2s, border-color .2s, transform .16s; }
-.sf-today:hover .sft{ background:rgba(255,255,255,.07); }
-.sf-today:active .sft{ transform:scale(.99); }
-.sft-hit{ background:rgba(23,168,110,.12) !important; border-color:rgba(23,168,110,.35) !important; }
-.sft-v{ display:block; color:var(--sfink); }
-.sft-v .dm{ --cell:4px; }
-.sft-v .ld.on{ box-shadow:0 0 4px var(--led); }
-.sft-l{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--sfink3); }
-.sft-bar{ display:block; width:100%; height:3px; border-radius:999px; background:rgba(255,255,255,.1); overflow:hidden; }
-.sft-bar i{ display:block; height:100%; border-radius:999px; background:var(--sfled);
-  transition:width .6s cubic-bezier(.2,.8,.2,1); }
-.sft-hit .sft-bar i{ background:#17A86E; }
 .sf-extra{ display:flex; align-items:stretch; gap:10px; width:100%; }
 /* Same shape, same height, same icon size as the status buttons above. */
 .sf-mine, .sf-leave-door{ flex:1; appearance:none; cursor:pointer; font-family:var(--sffont); font-weight:500;
