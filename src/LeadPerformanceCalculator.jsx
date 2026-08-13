@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
 
@@ -5030,7 +5031,33 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
    Two things they could never see before without asking a manager: what they are
    meant to get done today, and how they are actually doing. Both read from data
    the tool already holds. Nothing new is asked of anyone. */
-function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, list, onClose }) {
+/* Every one of these sheets is a full-screen overlay, so it belongs at the top of
+   the document and nowhere else.
+
+   Help is opened from inside My day, so its overlay was a position:fixed element
+   nested inside .help-sheet. That sheet runs the helpUp entry animation with
+   animation-fill-mode:both, and a filling transform animation leaves the computed
+   transform as an identity matrix rather than none. Measured in the browser: the
+   sheet reports transform matrix(1,0,0,1,0,0) forever after the animation ends, and
+   ANY transform other than none makes an element the containing block for fixed
+   descendants. So the Help overlay sized itself against the scrolled sheet instead
+   of the screen and was clipped by the sheet's overflow, which is why it surfaced
+   part-way up the checklist rather than rising from the bottom. A fixed probe in
+   that position read top=-343 h=787 against an 844px viewport; with the animation
+   removed it read top=0 h=844.
+
+   The fill mode is fixed below too, but this portal is the guard that holds: it
+   keeps working whatever transform, filter or containment an ancestor later grows. */
+function Overlay({ children }) {
+  if (typeof document === "undefined") return children;
+  return createPortal(children, document.body);
+}
+
+/* Keyed on the report field an item ticks from, not the item id, because a store can
+   rename "Calls" but it still reads the calls column. */
+const AUTO_TONE = { calls: "a", video: "b", tasks: "c" };
+
+function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, thresholds, list, onClose }) {
   const LIST = (Array.isArray(list) && list.length) ? list : DEFAULT_CHECKLIST;
   /* Three of these tick themselves. If the report says the calls were made, asking
      someone to also tell us they were made is busywork, and worse, it invites a tick
@@ -5087,11 +5114,14 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   const closers = (() => {
     const s = (monthStats && monthStats[norm(meName)]) || null;
     if (!s) return [];
+    // The same prevPct the wall reads its triangles from, off the same published row.
+    const prev = s.prevPct || {};
     const one = (k, label, unitsF, pctF, leadsF) => ({
       k, label,
       units: s[unitsF] == null ? null : s[unitsF],
       leads: s[leadsF] == null ? null : s[leadsF],
       pct: s[pctF] == null ? null : s[pctF],
+      prev: prev[k] == null ? null : prev[k],
     });
     return [
       one("showroom", "Showroom", "showroomUnits", "showroomPct", "showroomLeads"),
@@ -5099,6 +5129,30 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
       one("internet", "Internet", "internetUnits", "internetPct", "internetLeads"),
     ].filter((c) => c.pct != null || (c.units != null && c.units > 0));
   })();
+
+  /* These percentages are graded on the wall, so they are graded the same way in the
+     salesperson's hand. Both the thresholds and the previous reading travel on the
+     published board row, so this is not a second opinion about the numbers, it is the
+     wall's own arithmetic re-run on the phone. Inventing a separate scale here would
+     eventually put a green number on the TV and an amber one in their pocket, and
+     nobody on the floor would know which to believe. */
+  const thr = normThresholds(thresholds);
+  const toneOf = (pct, ch) => {
+    if (pct == null) return "dim";
+    const t = thr[ch] || DEFAULT_THRESHOLDS[ch] || { green: 20, yellow: 10 };
+    const v = pct * 100;
+    return v >= t.green ? "g" : v >= t.yellow ? "y" : "r";
+  };
+  const TONE_MARK = { g: "check", y: "warn", r: "close", dim: "dot" };
+  // Direction and distance since the previous report, in percentage points, with the
+  // board's own 0.05pt deadband so a rounding wobble is never dressed up as a trend.
+  const moveOf = (cur, prv) => {
+    if (cur == null || prv == null) return { dir: "flat", delta: "" };
+    const d = (cur - prv) * 100;
+    if (d > 0.05) return { dir: "up", delta: "+" + d.toFixed(1) };
+    if (d < -0.05) return { dir: "down", delta: d.toFixed(1) };
+    return { dir: "flat", delta: "" };
+  };
 
   const tiles = [
     { k: "calls", label: "Calls", v: a.calls || 0, target: std.minCalls, tone: "a" },
@@ -5109,11 +5163,16 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   ];
 
   return (
+    <Overlay>
     <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help-sheet myday" role="dialog" aria-label="My day">
         <div className="help-head">
           <h3>{meName ? meName.split(" ")[0] + "'s day" : "My day"}</h3>
-          <button className="btn-x" onClick={onClose}>✕</button>
+          {/* The one mark in this panel that was still a typed character. Everything
+              else the floor sees is drawn on the dot grid, so this is too. */}
+          <button className="btn-x md-x" onClick={onClose} aria-label="Close">
+            <PixIcon glyph="close" size={19} />
+          </button>
         </div>
 
         <div className="help-body">
@@ -5141,18 +5200,31 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             <>
               <div className="md-cap md-cap2">Closing this month</div>
               <div className="md-close">
-                {closers.map((c) => (
-                  <div key={c.k} className="md-cl">
-                    <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
-                    <span className="md-cl-l">{c.label}</span>
-                    <span className="md-cl-s">
-                      {c.units == null ? "nothing yet"
-                        : c.leads == null || c.leads === 0
-                          ? `${fmtNum(c.units)} delivered`
-                          : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}
-                    </span>
-                  </div>
-                ))}
+                {closers.map((c) => {
+                  const tn = toneOf(c.pct, c.k);
+                  const mv = moveOf(c.pct, c.prev);
+                  return (
+                    <div key={c.k} className={"md-cl md-tone-" + tn}>
+                      <span className="md-cl-top">
+                        <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
+                        {/* Colour is never the only channel here, exactly as on the
+                            board: the mark says green, amber or red on its own. */}
+                        <PixIcon className="md-cl-mark" glyph={TONE_MARK[tn]} size={11} />
+                        <span className={"md-cl-move " + mv.dir}>
+                          <PixIcon glyph={mv.dir === "up" ? "triup" : mv.dir === "down" ? "tridown" : "dot"} size={9} />
+                          {mv.delta ? <i>{mv.delta}</i> : null}
+                        </span>
+                      </span>
+                      <span className="md-cl-l">{c.label}</span>
+                      <span className="md-cl-s">
+                        {c.units == null ? "nothing yet"
+                          : c.leads == null || c.leads === 0
+                            ? `${fmtNum(c.units)} delivered`
+                            : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -5162,15 +5234,22 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             {LIST.map((c) => {
               const auto = autoFor(c);
               const done = isDone(c);
+              // The three automatic items wear the same colour as their tile above, so
+              // the eye ties "Calls" on the list to the Calls figure without reading.
+              const tone = AUTO_TONE[c.from] || "";
+              // How far along, for the bar under an automatic item. A run at the number
+              // is worth seeing; the tick alone only ever says yes or no.
+              const p = auto && auto.need > 0 ? Math.min(100, Math.round((auto.got / auto.need) * 100)) : null;
               return (
                 <button key={c.id}
-                  className={"md-item" + (done ? " on" : "") + (c.from ? " md-auto" : "") + (pop === c.id ? " md-pop" : "")}
+                  className={"md-item" + (done ? " on" : "") + (c.from ? " md-auto" : "") + (tone ? " md-i" + tone : "") + (pop === c.id ? " md-pop" : "")}
                   onClick={() => toggle(c)}
                   aria-disabled={!!c.from}>
-                  <span className="md-box">{done && <PixIcon glyph="check" size={13} />}</span>
+                  <span className="md-box">{done && <PixIcon glyph="check" size={17} />}</span>
                   <span className="md-text">
                     <b>{c.label}</b>
                     <span>{c.hint}</span>
+                    {p != null && stats && <span className="md-prog"><i style={{ width: p + "%" }} /></span>}
                   </span>
                   {auto
                     ? (stats
@@ -5188,6 +5267,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
         </div>
       </div>
     </div>
+    </Overlay>
   );
 }
 
@@ -5238,11 +5318,14 @@ function HelpPanel({ config, who, store, context, onClose }) {
   };
 
   return (
+    <Overlay>
     <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help-sheet" role="dialog" aria-label="Help">
         <div className="help-head">
           <h3>Need a hand?</h3>
-          <button className="btn-x" onClick={onClose}>✕</button>
+          <button className="btn-x md-x" onClick={onClose} aria-label="Close">
+            <PixIcon glyph="close" size={19} />
+          </button>
         </div>
         <div className="help-tabs">
           <button className={"help-tab" + (tab === "contact" ? " on" : "")} onClick={() => setTab("contact")}>Contact</button>
@@ -5298,6 +5381,7 @@ function HelpPanel({ config, who, store, context, onClose }) {
         )}
       </div>
     </div>
+    </Overlay>
   );
 }
 
@@ -6272,10 +6356,18 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   // The published board row carries this month's channel figures and is readable
   // without an account, which is the only way a sign-in page can get them.
   const [monthStats, setMonthStats] = useState(null);
+  // The board's own grading thresholds ride on the same published row. My day colours
+  // its percentages by these, so the wall and the phone can never disagree about
+  // whether a number is green.
+  const [boardThr, setBoardThr] = useState(null);
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
-      .then((b) => { if (!dead && b && b.months) setMonthStats((b.months[b.ym] || {}).stats || null); })
+      .then((b) => {
+        if (dead || !b) return;
+        if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
+        setBoardThr(b.thresholds || null);
+      })
       .catch(() => {});
     return () => { dead = true; };
   }, [store]);
@@ -6662,7 +6754,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
-          config={cfg} updatedAt={mineAt} monthStats={monthStats}
+          config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
           list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
     </div>
@@ -7785,10 +7877,18 @@ function FloorSignIn({ store, date, token, test = false }) {
   // The published board row carries this month's channel figures and is readable
   // without an account, which is the only way a sign-in page can get them.
   const [monthStats, setMonthStats] = useState(null);
+  // The board's own grading thresholds ride on the same published row. My day colours
+  // its percentages by these, so the wall and the phone can never disagree about
+  // whether a number is green.
+  const [boardThr, setBoardThr] = useState(null);
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
-      .then((b) => { if (!dead && b && b.months) setMonthStats((b.months[b.ym] || {}).stats || null); })
+      .then((b) => {
+        if (dead || !b) return;
+        if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
+        setBoardThr(b.thresholds || null);
+      })
       .catch(() => {});
     return () => { dead = true; };
   }, [store]);
@@ -8184,7 +8284,7 @@ function FloorSignIn({ store, date, token, test = false }) {
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
-          config={cfg} updatedAt={mineAt} monthStats={monthStats}
+          config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
           list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
     </div>
@@ -17705,8 +17805,13 @@ function Style() {
         background:rgba(255,255,255,.12); box-shadow:0 6px 18px -8px rgba(0,0,0,.5);
         backdrop-filter:blur(6px); }
       .q-page .help-fab:hover { background:rgba(255,255,255,.2); }
-      .help-back { position:fixed; inset:0; z-index:420; background:rgba(15,23,42,.5);
-        backdrop-filter:blur(3px); display:flex; align-items:flex-end; justify-content:center;
+      /* No backdrop-filter here, deliberately. Blurring a full-screen scrim makes the
+         browser re-blur everything behind it on every scrolled frame, which is what
+         made the sheet drag under a finger. The scrim is simply darker instead.
+         (This was not what mis-placed the Help panel: that was the sheet's own
+         filling transform animation. See the Overlay component.) */
+      .help-back { position:fixed; inset:0; z-index:420; background:rgba(15,23,42,.62);
+        display:flex; align-items:flex-end; justify-content:center;
         animation:helpIn .2s var(--ease) both; }
       @keyframes helpIn { from { opacity:0; } to { opacity:1; } }
       /* This panel is a white sheet inside a black app. Without pinning its own ink
@@ -17716,10 +17821,24 @@ function Style() {
       .help-sheet h3, .help-sheet b, .help-sheet .md-cl-v { color:var(--ink); }
       .help-sheet .hint, .help-sheet .md-cap, .help-sheet .md-stat-lbl,
       .help-sheet .md-cl-s, .help-sheet .md-hand { color:var(--ink-3); }
-      .help-sheet { width:min(560px, 100%); max-height:88vh; overflow:auto; background:#fff;
+      /* A dot glyph draws with fill:currentColor, and the blanket pin above matches the
+         svg itself rather than only its parent, so an icon meant to carry a tone colour
+         was being repainted plain ink. These take the colour of the box they sit in. */
+      .help-sheet .md-box .pix, .help-sheet .md-cl-move .pix, .help-sheet .md-x .pix { color:inherit; }
+      /* overscroll-behavior keeps a flick at the end of the list from handing the
+         scroll to the page underneath, which on a phone reads as the sheet sticking. */
+      .help-sheet { width:min(560px, 100%); max-height:88vh; overflow-y:auto; overflow-x:hidden;
+        overscroll-behavior:contain; -webkit-overflow-scrolling:touch; background:#fff;
         border-radius:22px 22px 0 0; padding:18px 20px 26px;
         box-shadow:0 -20px 60px -20px rgba(16,32,52,.5);
-        animation:helpUp .32s cubic-bezier(.34,1.3,.64,1) both; }
+        /* "backwards", not "both". With "both" the animation keeps filling after it
+           ends, so transform stays an identity matrix instead of returning to none,
+           and this sheet silently becomes the containing block for every fixed child
+           AND keeps a compositor layer alive under the scroller. "backwards" gives
+           the same entry (the from-state applies before it starts, and the end state
+           already matches the element's own transform:none / opacity:1) with neither
+           side effect. Verified identical on screen. */
+        animation:helpUp .32s cubic-bezier(.34,1.3,.64,1) backwards; }
       @keyframes helpUp { from { transform:translateY(28px); opacity:0; } to { transform:none; opacity:1; } }
       @media (min-width:700px) {
         .help-back { align-items:center; }
@@ -17727,6 +17846,12 @@ function Style() {
       }
       .help-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
       .help-head h3 { font-size:19px; }
+      /* The sheet's close mark. Scoped to .md-x so the plain text .btn-x everywhere
+         else in the manager tool is left exactly as it was. */
+      .help-sheet .md-x { display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+        width:36px; height:36px; padding:0; border-radius:11px; color:var(--ink-2);
+        background:rgba(16,32,52,.05); transition:background .16s, color .16s; }
+      .help-sheet .md-x:hover { background:rgba(16,32,52,.1); color:var(--ink); }
       .help-tabs { display:flex; gap:6px; background:rgba(16,32,52,.05); border-radius:12px; padding:4px; margin-bottom:14px; }
       .help-tab { flex:1; font-family:inherit; font-size:13px; font-weight:700; padding:9px; border:0;
         border-radius:9px; background:none; color:var(--ink-2); cursor:pointer; }
@@ -17778,10 +17903,11 @@ function Style() {
         font-family:inherit; padding:12px 14px; border-radius:14px; cursor:pointer;
         border:1px solid rgba(16,32,52,.1); background:#fff; transition:background .15s, border-color .15s; }
       .md-item.on { background:rgba(23,138,87,.07); border-color:rgba(23,138,87,.3); }
-      .md-box { width:22px; height:22px; flex:0 0 auto; border-radius:7px; display:flex; align-items:center;
-        justify-content:center; border:1.5px solid rgba(16,32,52,.2); color:#178A57; background:#fff; }
-      .md-item.on .md-box { border-color:#178A57; }
-      .md-item { align-items:center; }
+      .md-box { width:27px; height:27px; flex:0 0 auto; border-radius:9px; display:flex; align-items:center;
+        justify-content:center; border:1.5px solid rgba(16,32,52,.2); color:#178A57; background:#fff;
+        transition:border-color .15s, background .15s; }
+      .md-item.on .md-box { border-color:#178A57; background:rgba(23,138,87,.1); }
+      .md-item { align-items:center; position:relative; overflow:hidden; }
       .md-text { flex:1; min-width:0; }
       .md-text b { display:block; font-size:14.5px; }
       .md-text > span { display:block; font-size:12.5px; color:var(--ink-3); }
@@ -17796,6 +17922,25 @@ function Style() {
       .md-count i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
       .md-hand { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); }
       .md-item.on .md-hand { color:#178A57; }
+
+      /* The three automatic items wear the colour of their tile in the row above, so
+         the eye ties "Calls" on the list to the Calls figure without reading either.
+         These sit below the plain .md-item rules on purpose: they carry the same
+         specificity, so the cascade only picks them because they come last. Moving
+         this block up puts the green back on every ticked row.
+         Named one class at a time: a substring match on "md-i" also catches "md-item". */
+      .md-ia { --md-c:#D2542A; --md-soft:rgba(210,84,42,.1); }
+      .md-ib { --md-c:#4A5AE0; --md-soft:rgba(74,90,224,.1); }
+      .md-ic { --md-c:#178A57; --md-soft:rgba(23,138,87,.1); }
+      .md-ia::before, .md-ib::before, .md-ic::before { content:""; position:absolute;
+        left:0; top:0; bottom:0; width:3px; background:var(--md-c); opacity:.55; }
+      .md-ia .md-box, .md-ib .md-box, .md-ic .md-box { color:var(--md-c); }
+      .md-ia.on, .md-ib.on, .md-ic.on { background:var(--md-soft); border-color:var(--md-c); }
+      .md-ia.on .md-box, .md-ib.on .md-box, .md-ic.on .md-box {
+        border-color:var(--md-c); background:var(--md-soft); }
+      .md-ia.on .md-hand, .md-ib.on .md-hand, .md-ic.on .md-hand { color:var(--md-c); }
+      .md-ia .md-prog i, .md-ib .md-prog i, .md-ic .md-prog i { background:var(--md-c); }
+      .md-ia.on .md-prog i, .md-ib.on .md-prog i, .md-ic.on .md-prog i { background:var(--md-c); }
       /* the moment the reports catch up */
       @keyframes mdPop {
         0% { transform:scale(1); }
@@ -17807,8 +17952,13 @@ function Style() {
       /* Each measure gets its own colour, the way the inspiration boards do, so the
          eye learns the tiles by position and hue rather than reading every label. */
       .md-stat { padding:14px 15px; border-radius:16px; position:relative; overflow:hidden;
-        background:rgba(16,32,52,.04); transition:transform .16s var(--ease); }
-      .md-stat:hover { transform:translateY(-1px); }
+        background:rgba(16,32,52,.04); }
+      /* Lift on hover only where there is a pointer. On a touch screen every tap
+         counted as a hover, so a scrolled finger left a trail of tiles animating. */
+      @media (hover:hover) {
+        .md-stat { transition:transform .16s var(--ease); }
+        .md-stat:hover { transform:translateY(-1px); }
+      }
       .md-ta { background:linear-gradient(145deg, rgba(226,98,43,.16), rgba(226,98,43,.05)); --md-c:#D2542A; }
       .md-tb { background:linear-gradient(145deg, rgba(85,102,240,.16), rgba(85,102,240,.05)); --md-c:#4A5AE0; }
       .md-tc { background:linear-gradient(145deg, rgba(23,138,87,.16), rgba(23,138,87,.05)); --md-c:#178A57; }
@@ -17822,13 +17972,39 @@ function Style() {
       .md-stat-top b { font-family:var(--font-display); font-size:26px; font-weight:800;
         letter-spacing:-.02em; color:var(--md-c); }
       .md-stat-top i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
-      /* closing rates */
-      .md-close { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-      .md-cl { padding:13px 14px; border-radius:16px; background:rgba(16,32,52,.04); }
-      .md-cl-v { display:block; font-family:var(--font-display); font-size:22px; font-weight:800;
-        letter-spacing:-.02em; }
+      /* closing rates.
+         Graded exactly as the leaderboard grades them, and wearing the leaderboard's
+         own pill colours, so a rep who checks their phone and then looks up at the TV
+         sees the same verdict twice rather than two opinions. */
+      /* Three fixed columns left each tile about 100px on a phone, which the mark and
+         the trend chip no longer fit inside. Same auto-fit grid as the stat tiles
+         above it, so a narrow screen drops to two columns instead of crushing them. */
+      .md-close { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:10px; }
+      .md-cl { padding:13px 14px; border-radius:16px; background:rgba(16,32,52,.04);
+        border:1px solid transparent; }
+      .md-cl-top { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+      .md-cl-v { font-family:var(--font-display); font-size:22px; font-weight:800;
+        letter-spacing:-.02em; line-height:1.1; }
+      .md-cl-mark { flex:0 0 auto; opacity:.9; }
       .md-cl-l { display:block; font-size:12px; font-weight:600; margin-top:2px; }
       .md-cl-s { display:block; font-size:11px; color:var(--ink-3); margin-top:3px; }
+      /* The board's light pill palette, value for value. */
+      .help-sheet .md-tone-g { background:#E4F4E7; border-color:rgba(46,158,79,.28); }
+      .help-sheet .md-tone-y { background:#FCF2D3; border-color:rgba(224,161,0,.3); }
+      .help-sheet .md-tone-r { background:#FBE3E1; border-color:rgba(213,67,58,.26); }
+      .help-sheet .md-tone-g .md-cl-v, .help-sheet .md-tone-g .md-cl-mark { color:#2E9E4F; }
+      .help-sheet .md-tone-y .md-cl-v, .help-sheet .md-tone-y .md-cl-mark { color:#95600A; }
+      .help-sheet .md-tone-r .md-cl-v, .help-sheet .md-tone-r .md-cl-mark { color:#D5433A; }
+      .help-sheet .md-tone-dim .md-cl-v { color:var(--ink-3); }
+      .help-sheet .md-tone-dim .md-cl-mark { color:var(--ink-3); opacity:.5; }
+      /* The move since the last report. Same triangles, same 0.05pt deadband, same
+         reading as the wall: up is the number climbing, not the person. */
+      .md-cl-move { display:inline-flex; align-items:center; gap:2px; margin-left:auto; }
+      .md-cl-move i { font-style:normal; font-size:10px; font-weight:700;
+        font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+      .help-sheet .md-cl-move.up, .help-sheet .md-cl-move.up i { color:#2E9E4F; }
+      .help-sheet .md-cl-move.down, .help-sheet .md-cl-move.down i { color:#D5433A; }
+      .help-sheet .md-cl-move.flat { color:var(--ink-3); opacity:.45; }
       .md-stat-lbl { display:block; font-size:11.5px; color:var(--ink-3); margin-top:7px;
         letter-spacing:.03em; }
       .md-bar { display:block; height:4px; border-radius:999px; background:rgba(16,32,52,.1); margin-top:8px; overflow:hidden; }
