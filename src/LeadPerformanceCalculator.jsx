@@ -4575,7 +4575,9 @@ function CastLink({ storeId, label, config }) {
 // The only fields the board draws. Anything not on this list never leaves the
 // private store row, which is the whole point of publishing a separate one.
 const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
-  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits"];
+  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits",
+  // the lead counts too, so a salesperson can see what the percentage is out of
+  "internetLeads", "phoneLeads", "showroomLeads"];
 
 function buildBoardPayload(config, storeId, sdata) {
   const store = (config?.stores || []).find((s) => s.id === storeId);
@@ -5038,8 +5040,10 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   const autoFor = (c) => {
     if (!c.from) return null;
     const got = a[c.from] || 0;
-    const need = c.target ? (std[c.target] || 0) : 1;
-    return { got, need, done: got >= need && need > 0 };
+    // Tasks are measured against what was actually posted that day, not a standard:
+    // the pile is different every morning.
+    const need = c.target === "__posted" ? (a.tasksPosted || 0) : c.target ? (std[c.target] || 0) : 1;
+    return { got, need, done: need > 0 ? got >= need * 0.8 : got > 0, left: Math.max(0, need - got) };
   };
 
   const [ticks, setTicks] = useState(() => {
@@ -5091,15 +5095,15 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     });
     return [
       one("showroom", "Showroom", "showroomUnits", "showroomPct", "showroomLeads"),
-      one("phone", "Phone", "phoneUnits", "phonePct", "phoneLeads"),
+      one("phone", "Phone", "phonePct" in s ? "phoneUnits" : "phoneUnits", "phonePct", "phoneLeads"),
       one("internet", "Internet", "internetUnits", "internetPct", "internetLeads"),
-    ].filter((c) => c.pct != null || c.leads != null);
+    ].filter((c) => c.pct != null || (c.units != null && c.units > 0));
   })();
 
   const tiles = [
     { k: "calls", label: "Calls", v: a.calls || 0, target: std.minCalls, tone: "a" },
     { k: "video", label: "Videos", v: a.video || 0, target: std.minVideos, tone: "b" },
-    { k: "tasks", label: "Tasks done", v: a.tasks || 0, target: null, tone: "c" },
+    { k: "tasks", label: "Tasks done", v: a.tasks || 0, target: a.tasksPosted || null, tone: "c" },
     { k: "appt", label: "Appts set", v: a.apptScheduled || 0, target: null, tone: "d" },
     { k: "shown", label: "Appts shown", v: a.apptShow || 0, target: null, tone: "e" },
   ];
@@ -5141,7 +5145,12 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
                   <div key={c.k} className="md-cl">
                     <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
                     <span className="md-cl-l">{c.label}</span>
-                    <span className="md-cl-s">{c.units == null ? "no leads yet" : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}</span>
+                    <span className="md-cl-s">
+                      {c.units == null ? "nothing yet"
+                        : c.leads == null || c.leads === 0
+                          ? `${fmtNum(c.units)} delivered`
+                          : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -5842,7 +5851,7 @@ const DEFAULT_CHECKLIST = [
   // The first three tick themselves from the reports.
   { id: "calls", label: "Calls", hint: "Work the list", from: "calls", target: "minCalls" },
   { id: "videos", label: "Videos", hint: "Vehicle named in the first 10 seconds", from: "video", target: "minVideos" },
-  { id: "tasks", label: "Tasks", hint: "Clear your queue", from: "tasks", target: null },
+  { id: "tasks", label: "Tasks", hint: "Clear your queue", from: "tasks", target: "__posted" },
   { id: "appts", label: "Confirm appointments", hint: "48 hours out, not the morning of" },
   { id: "followup", label: "Follow up yesterday's ups", hint: "Anyone who did not buy" },
   { id: "walk", label: "Walk the lot", hint: "Know the ground before a customer asks" },
@@ -6560,9 +6569,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <div className="q-card">
         <div className="q-head">
           <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
-          <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
+          <p className="q-kicker">{selected.label}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
-          <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. You'll use it to sign in, and to get back in if you close this tab." : "So only you can claim your spot."}</p>
+          {pinMode === "create" && <p className="q-muted">4 to 6 digits. You will use it to sign in.</p>}
         </div>
         <div className="q-pin-field">
           {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
@@ -6580,7 +6589,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         )}
         {msg && <p className="q-err">{msg}</p>}
         <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : variant.joinBtn}</button>
-        <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
+        <button className="q-notme" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>
+          <DmIcon name="back" cell={3} /><span>That's not me</span>
+        </button>
       </div>
     );
   } else if (eff === "pick" && resolved && resolved.people) {
@@ -8077,7 +8088,7 @@ function FloorSignIn({ store, date, token, test = false }) {
       <div className="q-card">
         <div className="q-head">
           <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
-          <p className="q-kicker">{selected.label}{selected.role ? ` · ${selected.role}` : ""}</p>
+          <p className="q-kicker">{selected.label}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
           <p className="q-muted">{pinMode === "create" ? "Pick a 4 to 6 digit PIN. It's the same PIN as the phone line." : "So only you can claim your spot."}</p>
         </div>
@@ -8097,7 +8108,9 @@ function FloorSignIn({ store, date, token, test = false }) {
         )}
         {msg && <p className="q-err">{msg}</p>}
         <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the floor"}</button>
-        <button className="q-leave" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>← That's not me</button>
+        <button className="q-notme" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>
+          <DmIcon name="back" cell={3} /><span>That's not me</span>
+        </button>
       </div>
     );
   } else if (eff === "pick" && resolved && resolved.people) {
@@ -8946,6 +8959,20 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
         <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
         <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
+        {/* When these numbers last moved. Without it a quiet sheet is ambiguous: it
+            could be a slow morning or an import that never landed. */}
+        {(() => {
+          const stamps = Object.values((data.activity || {})[day] || {})
+            .map((r) => r && r.uploadedAt).filter(Boolean).sort();
+          const last = stamps[stamps.length - 1];
+          return (
+            <span className={"hint co-stamp" + (last ? "" : " co-stamp-none")}>
+              {last
+                ? `Numbers as of ${new Date(last).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                : "No activity report has landed for this day yet"}
+            </span>
+          );
+        })()}
       </div>
       {noShowSuspects.length > 0 && (
         <div className="co-callout">
@@ -17661,11 +17688,14 @@ function Style() {
         box-shadow:0 14px 30px -12px rgba(42,94,155,.7), inset 0 1px 0 rgba(255,255,255,.25);
         transition:transform .16s var(--ease), box-shadow .2s var(--ease); }
       .help-fab:hover { transform:translateY(-2px); box-shadow:0 20px 38px -12px rgba(42,94,155,.75); }
-      .help-fab.inline { position:static; width:auto; height:auto; gap:8px; padding:10px 16px;
-        border-radius:12px; font-family:inherit; font-size:13.5px; font-weight:700; margin-top:14px; }
+      .help-fab.inline { position:static !important; inset:auto !important; width:auto; height:auto;
+        gap:8px; padding:11px 18px; border-radius:12px; font-family:inherit; font-size:13.5px;
+        font-weight:700; margin-top:16px; align-self:flex-start; box-shadow:none;
+        background:rgba(42,94,155,.1); color:var(--blue); }
+      .help-fab.inline:hover { background:rgba(42,94,155,.18); transform:none; }
       /* The sign-in pages are a single column with the controls at the foot, so the
          floating button is lifted clear of them rather than sitting on top. */
-      .q-page .help-fab { bottom:auto; top:18px; right:18px; width:40px; height:40px;
+      .q-page .help-fab:not(.inline) { bottom:auto; top:18px; right:18px; width:40px; height:40px;
         background:rgba(255,255,255,.12); box-shadow:0 6px 18px -8px rgba(0,0,0,.5);
         backdrop-filter:blur(6px); }
       .q-page .help-fab:hover { background:rgba(255,255,255,.2); }
@@ -17673,6 +17703,13 @@ function Style() {
         backdrop-filter:blur(3px); display:flex; align-items:flex-end; justify-content:center;
         animation:helpIn .2s var(--ease) both; }
       @keyframes helpIn { from { opacity:0; } to { opacity:1; } }
+      /* This panel is a white sheet inside a black app. Without pinning its own ink
+         the salesperson view's light-on-dark colours bleed through and the headings
+         come out white on white. */
+      .help-sheet, .help-sheet * { color:var(--ink); }
+      .help-sheet h3, .help-sheet b, .help-sheet .md-cl-v { color:var(--ink); }
+      .help-sheet .hint, .help-sheet .md-cap, .help-sheet .md-stat-lbl,
+      .help-sheet .md-cl-s, .help-sheet .md-hand { color:var(--ink-3); }
       .help-sheet { width:min(560px, 100%); max-height:88vh; overflow:auto; background:#fff;
         border-radius:22px 22px 0 0; padding:18px 20px 26px;
         box-shadow:0 -20px 60px -20px rgba(16,32,52,.5);
@@ -18054,6 +18091,8 @@ function Style() {
       /* Centred wording, with the padding kept equal on both sides so the text sits
          on the true centre of the box rather than off the magnifier. */
       .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
+      .co-stamp { padding:4px 11px; border-radius:999px; background:rgba(16,32,52,.05); white-space:nowrap; }
+      .co-stamp-none { background:rgba(217,164,37,.14); color:#8A6314; }
       .co-sep td { padding-top:16px !important; padding-bottom:6px !important; font-size:11px; font-weight:800;
         letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid rgba(16,32,52,.08); }
       .co-sep td span { font-weight:700; color:var(--ink-3); opacity:.7; margin-left:6px; }
@@ -19465,12 +19504,26 @@ function Style() {
 .sf-line-1{ font-size:clamp(20px,6vw,23px); font-weight:600; letter-spacing:-.02em; }
 .sf-line-2{ font-size:clamp(13px,4vw,15px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
 .sf-wait{ font-family:var(--sfmono); font-size:12px; color:var(--sfink3); margin-top:13px; }
-/* The queue's own mark on every sign-in screen, so somebody halfway through typing
-   a PIN can still see which queue they are joining. */
-.q-mark{ display:inline-flex; align-items:center; gap:9px; margin-bottom:14px;
-  padding:8px 15px; border-radius:999px; background:rgba(255,255,255,.06);
-  border:1px solid rgba(255,255,255,.09); color:var(--sfled,#19c58f);
-  font-family:var(--sfmono); font-size:13px; font-weight:600; letter-spacing:.04em; }
+/* One face for the whole salesperson view. The mono was meant for figures only and
+   had crept onto labels and buttons, which is why the screens read as three
+   different apps stitched together. */
+.sf, .sf button, .sf input, .sf .q-mark, .sf .q-notme, .sf-mine, .sf-leave, .sf-sbtn,
+.sf-orbit, .sf-line-1, .sf-line-2, .sf .q-kicker, .sf .q-muted{ font-family:var(--sffont); }
+.sf-timer b, .sf .dm, .sf .q-pin-in{ font-family:var(--sfmono); }
+
+/* The queue's own mark, in the queue's own colour, on every screen. */
+.q-mark{ display:inline-flex; align-items:center; gap:9px; margin-bottom:16px;
+  padding:9px 17px; border-radius:999px; border:0;
+  background:linear-gradient(90deg,var(--a1),var(--a2)); color:#03130d;
+  font-family:var(--sffont); font-size:13.5px; font-weight:700; letter-spacing:.02em;
+  box-shadow:0 8px 22px -12px var(--glow, rgba(25,197,143,.7)); }
+.q-mark-live{ margin-bottom:0; }
+.q-mark-live .sf-live-dot{ background:#03130d; box-shadow:none; }
+.q-notme{ display:inline-flex; align-items:center; gap:8px; margin:16px auto 0; cursor:pointer;
+  padding:11px 18px; border-radius:12px; border:1px solid rgba(255,255,255,.09);
+  background:rgba(255,255,255,.04); color:var(--sfink3); font-family:var(--sffont);
+  font-size:13.5px; font-weight:600; transition:.18s; }
+.q-notme:hover{ background:rgba(255,255,255,.09); color:var(--sfink); }
 /* How many are in with you, set beside the ring. */
 .sf-orbit{ position:absolute; top:50%; transform:translateY(-50%); font-family:var(--sfmono);
   font-size:11.5px; letter-spacing:.02em; color:var(--sfink3); white-space:nowrap; }
@@ -19480,13 +19533,13 @@ function Style() {
 /* The timer rides the ring. No label on it: the line below already says whether the
    time is a wait or a customer, and saying it twice only makes both harder to read. */
 .sf-ringwrap{ position:relative; display:grid; place-items:center; }
-.sf-timer{ position:absolute; inset:-13px; z-index:0; pointer-events:none; }
+.sf-timer{ position:absolute; inset:-22px; z-index:3; pointer-events:none; }
 .sf-timer svg{ width:100%; height:100%; transform:rotate(-90deg); display:block; }
-.sf-timer-bg{ fill:none; stroke:rgba(255,255,255,.07); stroke-width:2.6; }
-.sf-timer-fg{ fill:none; stroke:var(--sfled,#19c58f); stroke-width:2.6; stroke-linecap:round;
+.sf-timer-bg{ fill:none; stroke:rgba(255,255,255,.1); stroke-width:4; }
+.sf-timer-fg{ fill:none; stroke:var(--sfled,#19c58f); stroke-width:4; stroke-linecap:round;
   filter:drop-shadow(0 0 5px color-mix(in srgb, var(--sfled,#19c58f) 65%, transparent));
   transition:stroke-dashoffset .8s cubic-bezier(.2,.8,.2,1); }
-.sf-timer b{ position:absolute; left:50%; bottom:-9px; transform:translateX(-50%);
+.sf-timer b{ position:absolute; left:50%; bottom:-11px; transform:translateX(-50%);
   background:#070b12; padding:3px 13px; border-radius:999px;
   font-family:var(--sfmono); font-size:12.5px; font-weight:500; letter-spacing:.04em;
   color:var(--sfink2); white-space:nowrap; }
