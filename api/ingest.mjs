@@ -927,6 +927,14 @@ export default async function handler(req, res) {
             const dkey = "lpc:config:unparsed:v1";
             const prev = (await sbGet(dkey)) || {};
             const items = Array.isArray(prev.items) ? prev.items : [];
+            /* The stored copy keeps far more than the 120 lines the HTTP response
+               carries, and keeps the page and y of every line. Two things were
+               missing from the first real capture and both need the extra reach:
+               a header row naming the columns, which may sit on a later page or be
+               repeated per page, and enough of the document to prove whether the
+               figures belong to the name above them or the name below. Getting that
+               pairing wrong shifts every person's numbers by one, silently, which is
+               worse than declining the report. */
             await sbPut(dkey, { items: [{
               at: new Date().toISOString(),
               file: a.filename || "email.pdf",
@@ -934,7 +942,10 @@ export default async function handler(req, res) {
               pages: lines.length ? lines[lines.length - 1].pg : 0,
               lineCount: lines.length,
               debugLines: dbg,
-            }, ...items].slice(0, 6) });
+              fullDump: lines.slice(0, 900).map((L) =>
+                `p${L.pg} y${Math.round(L.y)}  ` +
+                L.parts.map((pt) => `${pt.str}@${Math.round(pt.x)}`).join(" | ")),
+            }, ...items].slice(0, 4) });
           } catch (e) { console.error("ingest: could not store the unparsed dump", String(e.message || e)); }
         }
       } catch (e) {
