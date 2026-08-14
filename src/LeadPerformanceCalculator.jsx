@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
 
@@ -1183,7 +1184,7 @@ function mapDeliverySummaryGrid(lines) {
     if (!storeName) { storeName = nm; curName = null; return; }
     curName = nm;
     const k = norm(nm);
-    if (!people[k]) { people[k] = { displayName: nm, sources: {} }; order.push(k); }
+    if (!people[k]) { people[k] = { displayName: nm, sources: {}, vehicles: {} }; order.push(k); }
   };
 
   for (const L of lines) {
@@ -1196,13 +1197,21 @@ function mapDeliverySummaryGrid(lines) {
     // A data row ends the header block, so commit whatever name accumulated.
     if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
       commitName();
-      if (DS_VEHICLE.includes(rowTag)) continue;          // vehicle-type: ignored
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 6) continue;
       if (!curName) continue;                             // store block: not a person
       const k = norm(curName);
-      if (!people[k]) { people[k] = { displayName: curName, sources: {} }; order.push(k); }
-      people[k].sources[rowTag.toLowerCase()] = nums.slice(0, 6).map(val);
+      if (!people[k]) { people[k] = { displayName: curName, sources: {}, vehicles: {} }; order.push(k); }
+      people[k].vehicles = people[k].vehicles || {};
+      const vals = nums.slice(0, 6).map(val);
+      /* The New/Used/Other/Total rows carry the same six columns cut by vehicle type
+         rather than by source. They used to be thrown away at this line, which is why
+         nothing in the tool could say how much of a month was new against used.
+         Only the delivered column is read off them: the lead counts on these rows are
+         the same leads already counted under the source rows, so keeping those would
+         double count every opportunity. */
+      if (DS_VEHICLE.includes(rowTag)) { people[k].vehicles[rowTag.toLowerCase()] = vals; continue; }
+      people[k].sources[rowTag.toLowerCase()] = vals;
       continue;
     }
 
@@ -1225,13 +1234,17 @@ function mapDeliverySummaryGrid(lines) {
     "internetUnits","internetPct","phoneUnits","phonePct",
     "showroomUnits","showroomPct","campaignUnits",
     "internetLeads","phoneLeads","showroomLeads",
-    "showroomUps","showroomUnsold","showroomBeBacks"];
+    "showroomUps","showroomUnsold","showroomBeBacks",
+    "newUnits","usedUnits","otherUnits"];
   const rows = [["Delivery Summary"], header];
 
   for (const k of order) {
     const p = people[k];
     const s = p.sources;
+    const veh = p.vehicles || {};
     const pick = (src, i) => (s[src] ? s[src][i] : null);
+    // index 4 is Total Delivered/F&I, the same column read off the source rows
+    const pickV = (t) => (veh[t] ? veh[t][4] : null);
     // val() already returns percentages as a fraction, matching what the old
     // CSV stored with Round % switched off.
     const pctOf = (src) => pick(src, 5);
@@ -1252,6 +1265,7 @@ function mapDeliverySummaryGrid(lines) {
       pick("showroom", 1),             // Total Ups          (showroom-only)
       pick("showroom", 2),             // Unsold In Showroom (showroom-only)
       pick("showroom", 3),             // Be Backs           (showroom-only)
+      pickV("new"), pickV("used"), pickV("other"),   // the vehicle split
     ]);
     pairings.push({
       name: p.displayName,
@@ -1294,6 +1308,11 @@ function parseDeliverySummaryRows(rows) {
       showroomUps: row[idx("showroomUps")],
       showroomUnsold: row[idx("showroomUnsold")],
       showroomBeBacks: row[idx("showroomBeBacks")],
+      // Absent on every month imported before the vehicle split was read, so
+      // anything showing these has to treat null as "not known" and say so.
+      newUnits: row[idx("newUnits")],
+      usedUnits: row[idx("usedUnits")],
+      otherUnits: row[idx("otherUnits")],
     };
   }
   return out;
@@ -5030,7 +5049,33 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
    Two things they could never see before without asking a manager: what they are
    meant to get done today, and how they are actually doing. Both read from data
    the tool already holds. Nothing new is asked of anyone. */
-function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, list, onClose }) {
+/* Every one of these sheets is a full-screen overlay, so it belongs at the top of
+   the document and nowhere else.
+
+   Help is opened from inside My day, so its overlay was a position:fixed element
+   nested inside .help-sheet. That sheet runs the helpUp entry animation with
+   animation-fill-mode:both, and a filling transform animation leaves the computed
+   transform as an identity matrix rather than none. Measured in the browser: the
+   sheet reports transform matrix(1,0,0,1,0,0) forever after the animation ends, and
+   ANY transform other than none makes an element the containing block for fixed
+   descendants. So the Help overlay sized itself against the scrolled sheet instead
+   of the screen and was clipped by the sheet's overflow, which is why it surfaced
+   part-way up the checklist rather than rising from the bottom. A fixed probe in
+   that position read top=-343 h=787 against an 844px viewport; with the animation
+   removed it read top=0 h=844.
+
+   The fill mode is fixed below too, but this portal is the guard that holds: it
+   keeps working whatever transform, filter or containment an ancestor later grows. */
+function Overlay({ children }) {
+  if (typeof document === "undefined") return children;
+  return createPortal(children, document.body);
+}
+
+/* Keyed on the report field an item ticks from, not the item id, because a store can
+   rename "Calls" but it still reads the calls column. */
+const AUTO_TONE = { calls: "a", video: "b", tasks: "c" };
+
+function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, thresholds, list, onClose }) {
   const LIST = (Array.isArray(list) && list.length) ? list : DEFAULT_CHECKLIST;
   /* Three of these tick themselves. If the report says the calls were made, asking
      someone to also tell us they were made is busywork, and worse, it invites a tick
@@ -5087,17 +5132,64 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   const closers = (() => {
     const s = (monthStats && monthStats[norm(meName)]) || null;
     if (!s) return [];
+    // The same prevPct the wall reads its triangles from, off the same published row.
+    const prev = s.prevPct || {};
     const one = (k, label, unitsF, pctF, leadsF) => ({
       k, label,
       units: s[unitsF] == null ? null : s[unitsF],
       leads: s[leadsF] == null ? null : s[leadsF],
       pct: s[pctF] == null ? null : s[pctF],
+      prev: prev[k] == null ? null : prev[k],
     });
     return [
       one("showroom", "Showroom", "showroomUnits", "showroomPct", "showroomLeads"),
       one("phone", "Phone", "phonePct" in s ? "phoneUnits" : "phoneUnits", "phonePct", "phoneLeads"),
       one("internet", "Internet", "internetUnits", "internetPct", "internetLeads"),
     ].filter((c) => c.pct != null || (c.units != null && c.units > 0));
+  })();
+
+  /* These percentages are graded on the wall, so they are graded the same way in the
+     salesperson's hand. Both the thresholds and the previous reading travel on the
+     published board row, so this is not a second opinion about the numbers, it is the
+     wall's own arithmetic re-run on the phone. Inventing a separate scale here would
+     eventually put a green number on the TV and an amber one in their pocket, and
+     nobody on the floor would know which to believe. */
+  const thr = normThresholds(thresholds);
+  const toneOf = (pct, ch) => {
+    if (pct == null) return "dim";
+    const t = thr[ch] || DEFAULT_THRESHOLDS[ch] || { green: 20, yellow: 10 };
+    const v = pct * 100;
+    return v >= t.green ? "g" : v >= t.yellow ? "y" : "r";
+  };
+  const TONE_MARK = { g: "check", y: "warn", r: "close", dim: "dot" };
+  // Direction and distance since the previous report, in percentage points, with the
+  // board's own 0.05pt deadband so a rounding wobble is never dressed up as a trend.
+  const moveOf = (cur, prv) => {
+    if (cur == null || prv == null) return { dir: "flat", delta: "" };
+    const d = (cur - prv) * 100;
+    if (d > 0.05) return { dir: "up", delta: "+" + d.toFixed(1) };
+    if (d < -0.05) return { dir: "down", delta: d.toFixed(1) };
+    return { dir: "flat", delta: "" };
+  };
+
+  /* The one channel worth naming today: furthest under its own bar, measured as a
+     share of the bar so a 5% internet rate against 20 outranks a 28% showroom rate
+     against 30. Silent when everything is at or over, because inventing something to
+     fix on a good month is how a coaching tool stops being read. */
+  const FOCUS_PLAY = {
+    internet: "Send a personalized video on every new lead before you do anything else with it. It is the single biggest lever on this number.",
+    phone: "Take the phone ups you are passing on, and get the appointment set before you hang up.",
+    showroom: "Ask for the appointment before they leave the lot, and log the be-back the same day.",
+  };
+  const focus = (() => {
+    const cand = closers
+      .filter((c) => c.pct != null && thr[c.k] && thr[c.k].green > 0)
+      .map((c) => ({ ...c, green: thr[c.k].green, share: (c.pct * 100) / thr[c.k].green }))
+      .filter((c) => c.share < 1)
+      .sort((x, y) => x.share - y.share)[0];
+    if (!cand) return null;
+    return { label: cand.label, pct: cand.pct, green: cand.green,
+      tone: toneOf(cand.pct, cand.k), play: FOCUS_PLAY[cand.k] || "" };
   })();
 
   const tiles = [
@@ -5109,11 +5201,16 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   ];
 
   return (
+    <Overlay>
     <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help-sheet myday" role="dialog" aria-label="My day">
         <div className="help-head">
           <h3>{meName ? meName.split(" ")[0] + "'s day" : "My day"}</h3>
-          <button className="btn-x" onClick={onClose}>✕</button>
+          {/* The one mark in this panel that was still a typed character. Everything
+              else the floor sees is drawn on the dot grid, so this is too. */}
+          <button className="btn-x md-x" onClick={onClose} aria-label="Close">
+            <PixIcon glyph="close" size={19} />
+          </button>
         </div>
 
         <div className="help-body">
@@ -5141,18 +5238,59 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             <>
               <div className="md-cap md-cap2">Closing this month</div>
               <div className="md-close">
-                {closers.map((c) => (
-                  <div key={c.k} className="md-cl">
-                    <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
-                    <span className="md-cl-l">{c.label}</span>
-                    <span className="md-cl-s">
-                      {c.units == null ? "nothing yet"
-                        : c.leads == null || c.leads === 0
-                          ? `${fmtNum(c.units)} delivered`
-                          : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}
-                    </span>
-                  </div>
-                ))}
+                {closers.map((c) => {
+                  const tn = toneOf(c.pct, c.k);
+                  const mv = moveOf(c.pct, c.prev);
+                  return (
+                    <div key={c.k} className={"md-cl md-tone-" + tn}>
+                      <span className="md-cl-top">
+                        <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
+                        {/* Colour is never the only channel here, exactly as on the
+                            board: the mark says green, amber or red on its own. */}
+                        <PixIcon className="md-cl-mark" glyph={TONE_MARK[tn]} size={11} />
+                        <span className={"md-cl-move " + mv.dir}>
+                          <PixIcon glyph={mv.dir === "up" ? "triup" : mv.dir === "down" ? "tridown" : "dot"} size={9} />
+                          {mv.delta ? <i>{mv.delta}</i> : null}
+                        </span>
+                      </span>
+                      <span className="md-cl-l">{c.label}</span>
+                      {/* What good looks like, from the same per channel thresholds
+                          the coaching sheet and the wall grade against. A rate with
+                          no bar beside it cannot tell anyone whether to act. */}
+                      <span className="md-cl-goal">
+                        {tn === "g" ? "at or over " : "goal "}{(thr[c.k] || {}).green}%
+                      </span>
+                      <span className="md-cl-s">
+                        {c.units == null ? "nothing yet"
+                          : c.leads == null || c.leads === 0
+                            ? `${fmtNum(c.units)} delivered`
+                            : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Coaching, on the phone, every day rather than once a month on a printed
+              sheet. This page is anonymous, so it only ever holds the board row: no
+              baselines, no top performer averages. What it CAN work out honestly is
+              which channel sits furthest under this store's own bar, which is the
+              same call the coaching sheet's alert makes. One thing, never a list. */}
+          {focus && (
+            <>
+              <div className="md-cap md-cap2">Start here</div>
+              <div className={"md-focus md-tone-" + focus.tone}>
+                <div className="md-focus-h">
+                  <b>{focus.label}</b>
+                  <span>{Math.round(focus.pct * 100)}% against a bar of {focus.green}%</span>
+                </div>
+                <div className="md-focus-bar">
+                  <i style={{ width: Math.max(4, Math.min(100, (focus.pct / (focus.green / 100)) * 70)) + "%" }} />
+                  <u />
+                </div>
+                <p>{focus.play}</p>
               </div>
             </>
           )}
@@ -5162,15 +5300,22 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             {LIST.map((c) => {
               const auto = autoFor(c);
               const done = isDone(c);
+              // The three automatic items wear the same colour as their tile above, so
+              // the eye ties "Calls" on the list to the Calls figure without reading.
+              const tone = AUTO_TONE[c.from] || "";
+              // How far along, for the bar under an automatic item. A run at the number
+              // is worth seeing; the tick alone only ever says yes or no.
+              const p = auto && auto.need > 0 ? Math.min(100, Math.round((auto.got / auto.need) * 100)) : null;
               return (
                 <button key={c.id}
-                  className={"md-item" + (done ? " on" : "") + (c.from ? " md-auto" : "") + (pop === c.id ? " md-pop" : "")}
+                  className={"md-item" + (done ? " on" : "") + (c.from ? " md-auto" : "") + (tone ? " md-i" + tone : "") + (pop === c.id ? " md-pop" : "")}
                   onClick={() => toggle(c)}
                   aria-disabled={!!c.from}>
-                  <span className="md-box">{done && <PixIcon glyph="check" size={13} />}</span>
+                  <span className="md-box">{done && <PixIcon glyph="check" size={17} />}</span>
                   <span className="md-text">
                     <b>{c.label}</b>
                     <span>{c.hint}</span>
+                    {p != null && stats && <span className="md-prog"><i style={{ width: p + "%" }} /></span>}
                   </span>
                   {auto
                     ? (stats
@@ -5182,12 +5327,21 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             })}
           </div>
           <p className="hint">The top three tick themselves. The rest are yours and nobody is graded on them.</p>
+          {/* The same stamp the daily tracker carries. Without it a quiet morning and
+              an import that never landed look identical, and the first thing anyone
+              does with a number they distrust is stop reading it. */}
+          <div className={"md-stamp" + (stamp ? "" : " md-stamp-none")}>
+            {stamp
+              ? `Numbers as of ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+              : "No activity report has landed for today yet"}
+          </div>
 
           <HelpButton config={config} who={meName} store={store}
             context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
         </div>
       </div>
     </div>
+    </Overlay>
   );
 }
 
@@ -5238,11 +5392,14 @@ function HelpPanel({ config, who, store, context, onClose }) {
   };
 
   return (
+    <Overlay>
     <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help-sheet" role="dialog" aria-label="Help">
         <div className="help-head">
           <h3>Need a hand?</h3>
-          <button className="btn-x" onClick={onClose}>✕</button>
+          <button className="btn-x md-x" onClick={onClose} aria-label="Close">
+            <PixIcon glyph="close" size={19} />
+          </button>
         </div>
         <div className="help-tabs">
           <button className={"help-tab" + (tab === "contact" ? " on" : "")} onClick={() => setTab("contact")}>Contact</button>
@@ -5298,6 +5455,7 @@ function HelpPanel({ config, who, store, context, onClose }) {
         )}
       </div>
     </div>
+    </Overlay>
   );
 }
 
@@ -6272,10 +6430,18 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   // The published board row carries this month's channel figures and is readable
   // without an account, which is the only way a sign-in page can get them.
   const [monthStats, setMonthStats] = useState(null);
+  // The board's own grading thresholds ride on the same published row. My day colours
+  // its percentages by these, so the wall and the phone can never disagree about
+  // whether a number is green.
+  const [boardThr, setBoardThr] = useState(null);
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
-      .then((b) => { if (!dead && b && b.months) setMonthStats((b.months[b.ym] || {}).stats || null); })
+      .then((b) => {
+        if (dead || !b) return;
+        if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
+        setBoardThr(b.thresholds || null);
+      })
       .catch(() => {});
     return () => { dead = true; };
   }, [store]);
@@ -6662,7 +6828,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
-          config={cfg} updatedAt={mineAt} monthStats={monthStats}
+          config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
           list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
     </div>
@@ -6697,11 +6863,22 @@ function queueCoachingStats(data, associateId) {
     }
   }
   const total = taken + declined;
+  /* Live Floor is counted separately from the two queues. Standing on the floor and
+     waiting in a line are different commitments, and blending them would let a strong
+     week on one paper over an absent week on the other. Added on the end so every
+     existing caller keeps the shape it already reads. */
+  const f = (data && data.floor) || {};
+  let floorDays = 0;
+  for (const d of Object.keys(f)) {
+    const evs = ((f[d] || {}).history || []).filter((e) => e.id === associateId);
+    if (evs.some((e) => e.action === "signed-in")) floorDays++;
+  }
   return {
     hasData: dates.length > 0 && (signedDays > 0 || scheduledDays > 0),
     scheduledDays, signedDays, missedScheduled, taken, declined,
     acceptRate: total > 0 ? taken / total : null,
     unavailMin: Math.round(unavail.lunch + unavail.away + unavail.customer),
+    floorDays, hasFloor: floorDays > 0,
   };
 }
 
@@ -6901,7 +7078,11 @@ function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
    day, and a store that demanded it would be teaching people to close tasks rather
    than work them. Eighty per cent is the line, marked on the dial, so the shape says
    whether somebody is at it without turning it into another point. */
-function TaskDial({ done, posted, target = 0.8, size = 30 }) {
+/* The count sits inside the ring, the way the Performance dials carry their value.
+   It used to ride alongside as its own element, which made the pair read as a chart
+   plus a number rather than as one gauge, and cost width in a column that is already
+   the first thing on the row. Sized up so a three-digit count still fits the middle. */
+function TaskDial({ done, posted, target = 0.8, size = 38 }) {
   const known = posted != null && posted > 0;
   const pct = known ? Math.min(1, (done || 0) / posted) : 0;
   const r = (size - 5) / 2, c = 2 * Math.PI * r;
@@ -6925,8 +7106,12 @@ function TaskDial({ done, posted, target = 0.8, size = 30 }) {
           const x2 = size / 2 + Math.cos(a) * (r + 3.4), y2 = size / 2 + Math.sin(a) * (r + 3.4);
           return <line x1={x1} y1={y1} x2={x2} y2={y2} className="tdial-mark" strokeWidth="1.6" strokeLinecap="round" />;
         })()}
+        {/* dominant-baseline rather than a nudged y: it centres the same on every
+            browser, and a count can be one digit or three. */}
+        <text className="tdial-n" x={size / 2} y={size / 2} textAnchor="middle" dominantBaseline="central">
+          {known ? done ?? 0 : "-"}
+        </text>
       </svg>
-      <b className="tdial-n">{known ? done ?? 0 : "-"}</b>
     </span>
   );
 }
@@ -7785,10 +7970,18 @@ function FloorSignIn({ store, date, token, test = false }) {
   // The published board row carries this month's channel figures and is readable
   // without an account, which is the only way a sign-in page can get them.
   const [monthStats, setMonthStats] = useState(null);
+  // The board's own grading thresholds ride on the same published row. My day colours
+  // its percentages by these, so the wall and the phone can never disagree about
+  // whether a number is green.
+  const [boardThr, setBoardThr] = useState(null);
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
-      .then((b) => { if (!dead && b && b.months) setMonthStats((b.months[b.ym] || {}).stats || null); })
+      .then((b) => {
+        if (dead || !b) return;
+        if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
+        setBoardThr(b.thresholds || null);
+      })
       .catch(() => {});
     return () => { dead = true; };
   }, [store]);
@@ -8184,7 +8377,7 @@ function FloorSignIn({ store, date, token, test = false }) {
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
-          config={cfg} updatedAt={mineAt} monthStats={monthStats}
+          config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
           list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
     </div>
@@ -8768,6 +8961,70 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
     setSaving(false);
   };
 
+  /* ---- the coaching mirror ----
+     The comment above used to claim this "keeps flowing exactly as before". It did
+     not flow at all. Every queue event is pushed to the queue_public row through
+     mutateQueueRow, while queueCoachingStats reads data.queue[date].history off the
+     STORE document, which nothing wrote. Live Floor was worse: its mirror was an
+     empty stub. So hasData came back false for everybody and the line and floor
+     numbers never appeared anywhere, on screen or in print.
+
+     This copies the day's rows across. It runs off refs rather than the data in
+     scope so the interval is not town down and rebuilt on every save, it writes
+     only when the event counts have actually moved, and it carries no audit entry:
+     it is a record of what the queues already did, not a manager's action. */
+  const dataRef = useRef(null); dataRef.current = data;
+  const storeRef = useRef(null); storeRef.current = store;
+  const failRef = useRef(false); failRef.current = loadFailed;
+  const mirrorSig = useRef("");
+  useEffect(() => {
+    mirrorSig.current = "";           // a different store is a different record
+  }, [store?.id]);
+  useEffect(() => {
+    let dead = false;
+    const pull = async () => {
+      const st = storeRef.current, d = dataRef.current;
+      if (dead || !st || !d || failRef.current) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        const day = today();
+        const [line, online, floor] = await Promise.all([
+          loadQueueRow(st.id, day, "line").catch(() => null),
+          loadQueueRow(st.id, day, "online").catch(() => null),
+          loadFloorRow(st.id, day).catch(() => null),
+        ]);
+        // The Line and Online are one record for coaching: both are a rep waiting
+        // their turn for a lead. Live Floor is kept apart because being on the floor
+        // is a different commitment from being in a queue.
+        const qh = [];
+        for (const r of [line, online]) if (r && Array.isArray(r.history)) qh.push(...r.history);
+        const fh = (floor && Array.isArray(floor.history)) ? floor.history : [];
+        if (!qh.length && !fh.length) return;
+        qh.sort((a, b) => (a.t < b.t ? -1 : 1));
+        const sig = `${st.id}|${day}|${qh.length}|${fh.length}`;
+        if (mirrorSig.current === sig) return;
+        const cur = dataRef.current;
+        if (!cur) return;
+        const next = JSON.parse(JSON.stringify(cur));
+        next.queue = next.queue || {};
+        next.floor = next.floor || {};
+        next.queue[day] = { ...(next.queue[day] || {}), history: qh };
+        next.floor[day] = { ...(next.floor[day] || {}), history: fh };
+        // Keep the mirror to the coaching window. Ninety days is what the sheet and
+        // earnedStrengths look back over; beyond that it is only weight on the row.
+        const cutoff = dayIn(new Date(Date.now() - 95 * 864e5));
+        for (const bag of [next.queue, next.floor]) {
+          for (const k of Object.keys(bag)) if (k < cutoff) delete bag[k];
+        }
+        mirrorSig.current = sig;
+        await persist(next);
+      } catch (e) { /* the sheet says so itself when the band is empty */ }
+    };
+    pull();
+    const t = setInterval(pull, 90000);
+    return () => { dead = true; clearInterval(t); };
+  }, []); // eslint-disable-line
+
   // The settings sub-tab only exists for Live Floor; The Line has no per-store settings here.
   const effSub = queue === "floor" ? subtab : "board";
 
@@ -9016,8 +9273,18 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
               {[["on", rows.filter((r) => !r.off)], ["off", rows.filter((r) => r.off)]]
                 .filter(([, list]) => list.length)
                 .flatMap(([which, list]) => [
-                  <tr key={"h-" + which} className="co-sep">
-                    <td colSpan={6}>{which === "on" ? "On today" : "Off today"} <span>{list.length}</span></td>
+                  /* Built to read like a role header over in Performance: a colour
+                     swatch, the name at heading weight, and the count as a pill. Two
+                     different section treatments in one tool made the tracker feel
+                     like a different product one tab across. */
+                  <tr key={"h-" + which} className={"co-sep co-sep-" + which}>
+                    <td colSpan={6}>
+                      <span className="co-sep-head">
+                        <span className="co-sep-swatch" />
+                        {which === "on" ? "On today" : "Off today"}
+                        <span className="co-sep-count">{list.length}</span>
+                      </span>
+                    </td>
                   </tr>,
                   ...list.map((r) => (
                 <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
@@ -13210,7 +13477,7 @@ function printAllMonthEndRecaps({ store, config, data }) {
   setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 450);
 }
 
-function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act }) {
+function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act, data }) {
   const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
   if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
 
@@ -13258,7 +13525,15 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     headClass = "flat";
   }
 
-  const failRows = (ev && ev.failures ? ev.failures : []).map((f) =>
+  /* Sorted by how far under, and cut to three. One page is a hard limit, and a rep
+     handed nine failing standards reads none of them. The worst is also called out
+     by name in the alert at the top when it is severe. */
+  const failRows = (ev && ev.failures ? ev.failures : [])
+    .map((f) => { const need = f.def.kind === "pct" ? f.min / 100 : f.min;
+      return { f, ratio: need > 0 ? (f.val ?? 0) / need : 1 }; })
+    .sort((x, y) => x.ratio - y.ratio)
+    .slice(0, 3)
+    .map(({ f }) =>
     '<tr><td>' + esc(f.def.short) + '</td>' +
     '<td class="r">' + (f.val == null ? "no data" : (f.def.kind === "pct" ? pct(f.val) : num(f.val))) + '</td>' +
     '<td class="r">' + (f.def.kind === "pct" ? f.min + "%" : f.min) + '</td>' +
@@ -13324,154 +13599,246 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
         '<td class="r ' + state + '"><span class="mk">' + mark + '</span>' + word + '</td></tr>';
     }).join("") : "";
 
-  // ---- speedometer gauges for the print-off ----
-  const clamp01 = (x) => Math.max(0, Math.min(1, x || 0));
-  const gTone = (p) => (p >= 0.9 ? "#1E8E5A" : p >= 0.6 ? "#C77F16" : "#C0392B");
-  const speedo = (pctRaw, color) => {
-    const R = 28, cx = 34, cy = 34, len = Math.PI * R, p = clamp01(pctRaw);
-    const ang = Math.PI - p * Math.PI;
-    const nx = (cx + Math.cos(ang) * (R - 4)).toFixed(1), ny = (cy - Math.sin(ang) * (R - 4)).toFixed(1);
-    const arc = "M " + (cx - R) + " " + cy + " A " + R + " " + R + " 0 0 1 " + (cx + R) + " " + cy;
-    return '<svg width="68" height="40" viewBox="0 0 68 40">' +
-      '<path d="' + arc + '" fill="none" stroke="#E4E8ED" stroke-width="6" stroke-linecap="round"/>' +
-      '<path d="' + arc + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + (p * len).toFixed(1) + " " + len.toFixed(1) + '"/>' +
-      '<line x1="' + cx + '" y1="' + cy + '" x2="' + nx + '" y2="' + ny + '" stroke="#12212F" stroke-width="2" stroke-linecap="round"/>' +
-      '<circle cx="' + cx + '" cy="' + cy + '" r="2.6" fill="#12212F"/></svg>';
+
+  /* ---- things the sheet has to be able to say, worked out before the markup ----
+     The sheet is printed at any point in the month, so every one of these degrades
+     rather than disappearing. On the third of the month a projection is noise, so it
+     says so instead of printing a confident number nobody should act on. */
+  const PACE_MIN_DAYS = 3;
+  const paceKnown = calElapsed >= PACE_MIN_DAYS;
+  const pctOfGoal = goal > 0 ? Math.min(100, (delivered / goal) * 100) : 0;
+  const throughMonth = workingDays > 0 ? Math.min(100, (calElapsed / workingDays) * 100) : 0;
+  const onPace = paceKnown && goal > 0 && pace >= goal;
+
+  // Queue discipline, now that the mirror actually writes it. Silent when empty:
+  // an absent band is honest, a band of zeroes reads as an accusation.
+  const qs = data ? queueCoachingStats(data, a.id) : { hasData: false, hasFloor: false };
+
+  /* The one thing on here that is not coaching: a rep close to their lead cap, or a
+     long way under a standard, needs to know before it becomes a restriction. Said
+     once, at the top, in the plainest words available. */
+  const capUse = ev && ev.capUse != null ? ev.capUse : null;
+  const nearCap = !restrictedNow && capUse != null && capUse >= 0.85;
+  const worstFail = (ev && ev.failures ? ev.failures : [])
+    .map((f) => { const need = f.def.kind === "pct" ? f.min / 100 : f.min;
+      return { f, ratio: need > 0 ? (f.val ?? 0) / need : 1 }; })
+    .sort((x, y) => x.ratio - y.ratio)[0] || null;
+  const severe = worstFail && worstFail.ratio < 0.6 ? worstFail.f : null;
+  let alertHtml = "";
+  if (restrictedNow) {
+    alertHtml = '<div class="alert"><b>You are off leads right now</b><span>Since ' +
+      esc(new Date(restriction.since).toLocaleDateString()) +
+      (restriction.until ? '. We look at this again together on ' + esc(new Date(restriction.until).toLocaleDateString()) + '.' : '.') +
+      ' The plan on the right is how we get you back on.</span></div>';
+  } else if (nearCap) {
+    alertHtml = '<div class="alert"><b>You are close to your lead cap</b><span>Holding ' +
+      num(ev.opps) + ' of ' + num(ev.cap) + ' leads, which is ' + Math.round(capUse * 100) +
+      '%. Work the ones you have and this takes care of itself.</span></div>';
+  } else if (severe) {
+    alertHtml = '<div class="alert"><b>' + esc(severe.def.label) + ' is a long way under</b><span>You are at ' +
+      (severe.def.kind === "pct" ? pct(severe.val) : num(severe.val)) + ' against ' +
+      (severe.def.kind === "pct" ? severe.min + '%' : severe.min) +
+      '. It is the first thing on the plan, and it is fixable.</span></div>';
+  }
+
+  /* Bottom right: what to change, drawn as bars rather than written as numbers, so
+     the size of each gap is something you see rather than something you compute.
+     Same bar grammar as the habits table on the left, so the sheet reads as one
+     language rather than two. Capped at three: this is a page somebody has to act
+     on before their next shift, not an audit. */
+  const changeRows = (act && topAvg) ? BEHAVIOURS
+    .filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null)
+    .map((b) => ({ b, ratio: act[b.id] / topAvg[b.id] }))
+    .filter((x) => x.ratio < 1)
+    .sort((x, y) => (x.b.impact || 99) - (y.b.impact || 99) || x.ratio - y.ratio)
+    .slice(0, 3)
+    .map((x, i) => {
+      const f = x.b.kind === "pct" ? pct : num;
+      const fill = Math.max(4, Math.min(100, x.ratio * 70));
+      return '<div class="chg">' +
+        '<div class="chg-h"><em>' + (i + 1) + '</em>' + esc(x.b.label) + '</div>' +
+        '<div class="chg-bar"><div class="chg-fill" style="width:' + fill.toFixed(0) + '%"></div>' +
+          '<div class="chg-mark"></div></div>' +
+        '<div class="chg-f"><span>now ' + f(act[x.b.id]) + '</span><span>aim for ' + f(topAvg[x.b.id]) + '</span></div>' +
+      '</div>';
+    }).join("") : "";
+
+  /* A closing rate on its own is a number, not a verdict: a rep cannot tell whether
+     5% internet is a problem without knowing the bar. These are the same per channel
+     thresholds The Board colours its pills with and the health card grades against,
+     so the sheet, the wall and the phone all say good at the same place. The mark and
+     the word carry it in grayscale; the bar is never colour alone. */
+  const sheetThr = normThresholds(store.thresholds);
+  const chanStat = (label, id, v) => {
+    const t = sheetThr[id] || { green: 20 };
+    const met = v != null && v * 100 >= t.green;
+    return '<div class="stat"><b>' + pct(v) + '</b><span>' + label + '</span>' +
+      '<u class="tgt">' + (v == null ? 'goal ' + t.green + '%'
+        : (met ? '&#9679; at or over ' : '&#9675; goal ') + t.green + '%') + '</u></div>';
   };
-  const gauCell = (pctRaw, valStr, label, color) =>
-    '<div class="gau"><div class="gau-dial">' + speedo(pctRaw, color) + "</div><b>" + valStr + "</b><span>" + label + "</span></div>";
-  const closeVals = ratios ? [ratios.close_phone, ratios.close_showroom, ratios.close_internet].filter((v) => v != null) : [];
-  const closeRate = closeVals.length ? closeVals.reduce((a, b) => a + b, 0) / closeVals.length : null;
-  const pacePct = goal > 0 ? pace / goal : 0;
-  const delivPct = goal > 0 ? delivered / goal : 0;
-  const gaugesHtml = goal > 0
-    ? ('<div class="gauges">' +
-        gauCell(pacePct, Math.round(pacePct * 100) + "%", monthEnd ? "Final pace" : "Pace to goal", gTone(clamp01(pacePct))) +
-        gauCell(delivPct, Math.round(delivPct * 100) + "%", "Delivered", gTone(clamp01(delivPct))) +
-        (closeRate != null ? gauCell(closeRate, (closeRate * 100).toFixed(0) + "%", "Close rate", "#2B3844") : "") +
-      "</div>")
-    : "";
+  const chanStats = '<div class="stats">' +
+    chanStat("Showroom", "showroom", stats.showroomPct) +
+    chanStat("Phone", "phone", stats.phonePct) +
+    chanStat("Internet", "internet", stats.internetPct) +
+  '</div>';
 
   const html =
-'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
-'@page { size: letter portrait; margin: 12mm; }' +
-'* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
-'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
-'.sheet { max-width:186mm; }' +
-'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #1A2430; padding-bottom:6px; margin-bottom:9px; }' +
-'.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
-'.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
-'.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#1A2430; color:#fff; margin-bottom:4px; }' +
-'.goalbox { text-align:right; }' +
-'.goalbox b { font-size:26px; font-weight:800; color:#12212F; display:block; line-height:1; }' +
-'.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
-'.gauges { display:flex; gap:8px; margin:8px 0 2px; }' +
-'.gau { flex:1; text-align:center; border:1px solid #DDE3E9; border-radius:8px; padding:6px 4px 5px; }' +
-'.gau-dial { display:flex; justify-content:center; }' +
-'.gau b { display:block; font-size:15px; font-weight:800; letter-spacing:-.02em; margin-top:1px; }' +
-'.gau span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
-'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:7px 0 4px; padding:3px 0 3px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
-'.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
-'.why.bad { border-left-color:#1A2430; border-left-width:6px; background:#E9ECEF; }' +
-'.why.good { border-left-color:#9AA5B1; background:#F7F9FA; }' +
-'.why b { font-size:13px; display:block; margin-bottom:2px; }' +
-'.stats { display:flex; gap:0; border:1px solid #DDE3E9; border-radius:7px; overflow:hidden; margin-top:4px; }' +
-'.stat { flex:1; padding:6px 10px; border-right:1px solid #DDE3E9; }' +
+'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching</title><style>' +
+'@page { size: letter portrait; margin: 11mm; }' +
+'* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }' +
+/* Four greys and nothing else. The sheet is printed on a mono laser, so green,
+   amber and red all land as the same mid tone and stop meaning anything. Every
+   state here is carried by fill, by a mark, and by a word. */
+'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#14181A;' +
+  ' font-size:10px; line-height:1.34; }' +
+'.sheet { max-width:188mm; display:flex; flex-direction:column; gap:6px; }' +
+'.hd { display:flex; justify-content:space-between; align-items:flex-start;' +
+  ' border-bottom:2.5px solid #14181A; padding-bottom:6px; }' +
+'.nm { font-size:23px; font-weight:800; letter-spacing:-.025em; line-height:1; }' +
+'.sub { color:#5B6874; font-size:9.5px; margin-top:3px; }' +
+'.goalbox { text-align:right; line-height:1; }' +
+'.goalbox b { font-size:27px; font-weight:800; display:block; letter-spacing:-.03em; }' +
+'.goalbox span { font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
+'.alert { border:1.5px solid #14181A; border-radius:4px; padding:6px 10px; background:#F1F3EF; }' +
+'.alert b { font-size:12px; display:block; }' +
+'.alert span { font-size:10px; color:#3D4842; }' +
+/* the pace bar: solid means delivered, hatched means the gap, the rule is today */
+'.pace { position:relative; height:17px; background:#EAEDE9; border-radius:9px; overflow:hidden; }' +
+'.pace-fill { position:absolute; top:0; left:0; height:100%; border-radius:9px; background:#14181A; }' +
+'.pace-fill.behind { background:repeating-linear-gradient(135deg,#14181A 0 2px,#fff 2px 5px);' +
+  ' border:1.5px solid #14181A; }' +
+'.pace-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#14181A; z-index:3; }' +
+'.pace-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; font-weight:700; margin-top:2px; }' +
+'.cols { display:flex; gap:12px; align-items:stretch; }' +
+'.col { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }' +
+'h2 { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;' +
+  ' padding:2px 0 2px 8px; border-left:4px solid #14181A; background:linear-gradient(90deg,#E4E7E3,transparent 70%); }' +
+'.lede { font-size:9px; color:#5B6874; }' +
+'.stats { display:flex; border:1px solid #C9CFCA; border-radius:5px; overflow:hidden; }' +
+'.stat { flex:1; padding:5px 7px; border-right:1px solid #C9CFCA; }' +
 '.stat:last-child { border-right:none; }' +
-'.stat b { display:block; font-size:17px; font-weight:800; letter-spacing:-.02em; }' +
-'.stat span { font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
+'.stat b { display:block; font-size:16px; font-weight:800; letter-spacing:-.02em; line-height:1.05; }' +
+'.stat span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
+'.stat .tgt { display:block; text-decoration:none; font-size:8px; color:#3D4842; font-weight:700; margin-top:1px; }' +
 'table { width:100%; border-collapse:collapse; }' +
-'th { text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:3px 7px; border-bottom:1px solid #DDE3E9; }' +
-'td { padding:2.5px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'th { text-align:left; font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874;' +
+  ' padding:2px 5px; border-bottom:1px solid #C9CFCA; font-weight:700; }' +
+'td { padding:2px 5px; border-bottom:1px solid #EAEDE9; font-variant-numeric:tabular-nums; font-size:9.5px; }' +
 'td.r, th.r { text-align:right; }' +
-'.good { color:#5B6874; font-weight:700; } .bad { color:#12212F; font-weight:800; } .par { color:#7A8590; font-weight:700; }' +'.mk { display:inline-block; margin-right:4px; font-size:9px; }' +'.rk { width:14px; color:#8B95A1; font-weight:800; text-align:center; }' +'.bad-row td { background:#F2F4F6; }' +
-'.mini { position:relative; height:11px; background:#EEF1F4; border-radius:6px; overflow:hidden; min-width:220px; }' +
-'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#9AA5B1; border-radius:6px; }' +
-'.mini-bar.good { background:#2B3844; } .mini-bar.par { background:#9AA5B1; } .mini-bar.bad { background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
-'.mini-bench { position:absolute; top:-2px; bottom:-2px; left:70%; width:2px; background:#12212F; z-index:3; }' +
+'.mini { position:relative; height:9px; background:#EAEDE9; border-radius:5px; min-width:70px; }' +
+'.mini-bar { position:absolute; top:0; left:0; height:100%; border-radius:5px; background:#14181A; }' +
+'.mini-bar.bad { background:repeating-linear-gradient(135deg,#14181A 0 1.6px,#fff 1.6px 4.4px); border:1px solid #14181A; }' +
+'.mini-bar.par { background:#97A099; }' +
+'.mini-bench { position:absolute; top:-2px; bottom:-2px; left:70%; width:2px; background:#14181A; z-index:3; }' +
 '.vs { color:#8B95A1; font-weight:600; }' +
-'.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:7px 11px; margin-top:6px; font-size:11.5px; }' +
-'.big b { color:#12212F; }' +
-'.pbar-wrap { margin-top:6px; }' +
-'.pbar { position:relative; height:16px; background:#EEF1F4; border-radius:8px; overflow:hidden; }' +
-'.pbar-fill { position:absolute; top:0; left:0; height:100%; border-radius:8px; background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
-'.pbar-fill.good { background:#2B3844; background-image:none; border:none; }' +
-'.pbar-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#12212F; z-index:3; }' +
-'.pbar-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; margin-top:3px; font-weight:600; }' +
-'.cols { display:flex; gap:14px; }' +
-'.cols > div { flex:1; }' +
-'.note { font-size:8.5px; color:#5B6874; margin:2px 0 0; }' +
-'.sign { margin-top:8px; padding-top:7px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
-'.sign div { flex:1; }' +
-'.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
-'.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
-'.rc-lbl{font-size:9px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5E6B82;margin:7px 0 3px;}' +'.rc-grid{display:flex;gap:6px;margin-bottom:2px;}' +'.rc-tile{flex:1;border:1.2px solid #E4E8EE;border-radius:8px;padding:6px 8px;}' +'.rc-tile.bad{border-color:#E5473C;background:#FCEBEA;}' +'.rc-tile.good{border-color:#0FB37E;background:#E7F7F0;}' +'.rc-tile.flat{border-color:#D6DBE3;background:#F7F8FA;}' +'.rc-t{font-size:9px;font-weight:700;color:#5E6B82;text-transform:uppercase;letter-spacing:.03em;}' +'.rc-v{font-size:18px;font-weight:800;color:#1B2A3B;line-height:1.05;margin-top:1px;}' +'.rc-s{font-size:9px;color:#7A8699;}' +'.rc-c{font-size:9.5px;color:#33445E;margin-top:3px;font-weight:600;}' +'.play{border-left:3px solid #0FB37E;background:#F4FAF7;border-radius:6px;padding:5px 9px;margin-bottom:4px;}' +'.play-h{font-weight:700;color:#1B2A3B;display:flex;align-items:center;gap:7px;font-size:12px;}' +'.play-n{background:#0FB37E;color:#fff;width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex:0 0 auto;}' +'.play-tgt{margin-left:auto;font-size:10px;color:#0B8F66;font-weight:700;}' +'.play ul{margin:4px 0 0 23px;padding:0;}' +'.play li{font-size:10.5px;color:#33445E;margin:1px 0;}' +'</style></head><body><div class="sheet">' +
+'.mk { display:inline-block; margin-right:3px; }' +
+'.big { border:1px solid #C9CFCA; border-left:4px solid #14181A; background:#F1F3EF; border-radius:4px;' +
+  ' padding:6px 9px; font-size:11px; }' +
+'.big b { font-weight:800; }' +
+'.qbar { display:flex; gap:5px; }' +
+'.qbar div { flex:1; border:1px solid #C9CFCA; border-radius:4px; padding:4px 6px; }' +
+'.qbar b { display:block; font-size:13px; font-weight:800; line-height:1.05; }' +
+'.qbar span { font-size:7.5px; text-transform:uppercase; letter-spacing:.05em; color:#5B6874; font-weight:700; }' +
+/* the change bars, bottom right */
+'.chg { margin-bottom:5px; }' +
+'.chg-h { font-size:10px; font-weight:800; display:flex; align-items:center; gap:5px; }' +
+'.chg-h em { font-style:normal; background:#14181A; color:#fff; width:12px; height:12px; border-radius:50%;' +
+  ' display:inline-flex; align-items:center; justify-content:center; font-size:8px; font-weight:800; flex:0 0 auto; }' +
+'.chg-bar { position:relative; height:11px; background:#EAEDE9; border-radius:6px; margin-top:2px; }' +
+'.chg-fill { position:absolute; top:0; left:0; height:100%; border-radius:6px;' +
+  ' background:repeating-linear-gradient(135deg,#14181A 0 1.8px,#fff 1.8px 5px); border:1.2px solid #14181A; }' +
+'.chg-mark { position:absolute; top:-2px; bottom:-2px; left:70%; width:2.5px; background:#14181A; z-index:3; }' +
+'.chg-f { display:flex; justify-content:space-between; font-size:8px; color:#5B6874; font-weight:700; margin-top:1px; }' +
+'.note { font-size:8.5px; color:#5B6874; }' +
+'.foot { margin-top:2px; padding-top:5px; border-top:1px solid #C9CFCA; font-size:8px; color:#8B95A1; }' +
+'</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
-  '<div>' + (monthEnd ? '<div class="badge">' + esc(lastMonthName) + ' month-end review</div>' : '<div class="badge">Coaching plan &middot; ' + esc(thisMonthName) + '</div>') +
-  '<div class="nm">' + esc(a.name) + '</div>' +
-  '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
-  (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>' + (monthEnd ? "Final units" : "Units this month") + '</span></div>' : '') +
-'</div>' +
-gaugesHtml +
-
-'<h2>' + (monthEnd ? "How the month finished" : "Where you stand today") + '</h2>' +
-'<div class="why ' + headClass + '"><b>' + headTitle + '</b>' + esc(headBody) + '</div>' +
-(failRows ?
-  '<table style="margin-top:6px"><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Focus</th></tr></thead><tbody>' +
-  failRows + '</tbody></table>' : '') +
-
-'<h2>Results this month</h2>' +
-'<div class="stats">' +
-  '<div class="stat"><b>' + delivered + '</b><span>Units delivered</span></div>' +
-  '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet delivered</span></div>' +
-  '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone delivered</span></div>' +
-  '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom delivered</span></div>' +
+  '<div><div class="nm">' + esc(a.name) + '</div>' +
+  '<div class="sub">' + esc(store.name) + ' &middot; ' + esc(thisMonthName) + ' &middot; day ' + calElapsed + ' of ' + workingDays + ' you have worked</div></div>' +
+  (goal > 0 ? '<div class="goalbox"><b>' + delivered + '/' + goal + '</b><span>Units this month</span></div>' : '') +
 '</div>' +
 
-(behaviourRows ?
-'<h2>Behavior vs the Top ' + (topCount || 6) + ' Sales Associates in Your Store</h2>' +
-'<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
-'<tbody>' + behaviourRows + '</tbody></table>' +
-'<p class="note">Ordered by leverage on your closing ratio, strongest first. The upright line is what the top ' + (topCount || 6) + ' sales associates here do: solid bar past it is a strength, striped bar short of it is the next gain.</p>'
-: '') +
+alertHtml +
 
+/* Pace, full width, directly under the header. It is the one thing on the sheet
+   that changes meaning depending on the day it is printed, so it is drawn rather
+   than stated and it carries its own caption. */
 (goal > 0 ?
-'<h2>' + (monthEnd ? "Where the month landed" : "Pace to your goal") + '</h2>' +
-'<div class="stats">' +
-  '<div class="stat"><b>' + num(delivered) + '</b><span>Delivered</span></div>' +
-  '<div class="stat"><b>' + num(stillNeeded) + '</b><span>' + (monthEnd ? "Short of goal" : "Still needed") + '</span></div>' +
-  '<div class="stat"><b>' + remaining + '</b><span>Days left</span></div>' +
-  '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>' + (monthEnd ? "Final pace" : "Projected") + '</span></div>' +
-'</div>' +
-(!monthEnd && stillNeeded > 0 && remaining > 0 ?
-  '<div class="big">To hit <b>' + goal + '</b>, aim for <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> over the ' + remaining + ' working days left.</div>'
- : stillNeeded === 0 ? '<div class="big">Goal met. <b>' + num(delivered) + '</b> delivered against <b>' + goal + '</b>. Strong month.</div>' : '') +
-// pace progress bar: delivered vs goal, with a marker for where they "should" be by now
-'<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
-  (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
-  '<div class="pbar-legend"><span>' + delivered + ' delivered' + (pace >= goal ? ' (solid = on pace)' : ' (striped = behind pace)') + '</span>' + (!monthEnd ? '<span>| marks today</span>' : '') + '<span>' + goal + ' goal</span></div></div>'
-: '') +
+'<div>' +
+  '<div class="pace"><div class="pace-fill ' + (onPace ? '' : 'behind') + '" style="width:' + Math.max(2, pctOfGoal).toFixed(0) + '%"></div>' +
+    '<div class="pace-mark" style="left:' + throughMonth.toFixed(0) + '%"></div></div>' +
+  '<div class="pace-legend"><span>' + delivered + ' delivered' + (onPace ? ', on pace' : '') + '</span>' +
+    '<span>| where the month is</span><span>' + goal + ' goal</span></div>' +
+'</div>' : '') +
 
-(ratios ?
-'<h2>' + (monthEnd ? "What got you there, per car" : "What it takes, per car") + '</h2>' +
 '<div class="cols">' +
-  '<div><table><thead><tr><th>Every day</th><th class="r">90 Day Average</th><th class="r">Target Effort to Reach Goal</th><th class="r">Current Month Pace</th><th class="r"></th></tr></thead>' +
-  '<tbody>' + outreachRows + '</tbody></table></div>' +
-'</div>' +
-(leadRows ?
-  '<h2>How many leads does it take to reach your goal?</h2>' +
-  '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
-  '<tbody>' + leadRows + '</tbody></table>' +
-  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' split by ' + (mixInfo.personal ? 'your own sales mix so far this month (' + mixInfo.total + ' cars)' : 'the typical mix (internet about half, showroom and phone the rest; switches to your own mix at ' + OYO_MIX_MIN_CARS + ' delivered)') + ', at your own closing rates: about <b>' + leadTotal + ' leads</b> gets you to your goal. Raise a closing rate and that number drops.</p>' : '')
-: '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
-'<div class="sign">' +
-  '<div><div class="line"></div>Associate</div>' +
-  '<div><div class="line"></div>Manager</div>' +
-  '<div><div class="line"></div>Date</div>' +
+  /* LEFT: the record. Closed, factual, no instructions. */
+  '<div class="col">' +
+    '<h2>Your month so far</h2>' +
+    '<div class="lede">What the reports have you at, through today.</div>' +
+    chanStats +
+    '<div class="note">Of every 100 leads you work in each channel, that is how many you deliver. The number under each one is what this store counts as good.</div>' +
+
+    (failRows ?
+      '<h2>Standards you are under</h2>' +
+      '<div class="lede">The bar your store sets for your role. Under is not a strike, it is the next thing to move.</div>' +
+      '<table><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Read</th></tr></thead>' +
+      '<tbody>' + failRows + '</tbody></table>' : '') +
+
+    (behaviourRows ?
+      '<h2>Your habits, next to the top ' + (topCount || 6) + '</h2>' +
+      '<div class="lede">The upright line is what the best here average. Solid past it is a strength.</div>' +
+      '<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top</th><th class="r">Read</th></tr></thead>' +
+      '<tbody>' + behaviourRows + '</tbody></table>' : '') +
+
+    (qs.hasData || qs.hasFloor ?
+      '<h2>Being there for the turn</h2>' +
+      '<div class="lede">Leads only reach you if you are in the rotation.</div>' +
+      '<div class="qbar">' +
+        (qs.hasData ? '<div><b>' + qs.signedDays + '/' + qs.scheduledDays + '</b><span>Days in line</span></div>' : '') +
+        (qs.hasFloor ? '<div><b>' + qs.floorDays + '</b><span>Days on floor</span></div>' : '') +
+        (qs.hasData ? '<div><b>' + qs.taken + '</b><span>Ups taken</span></div>' : '') +
+        (qs.hasData && qs.acceptRate != null ? '<div><b>' + pct(qs.acceptRate) + '</b><span>Accepted</span></div>' : '') +
+      '</div>' : '') +
+  '</div>' +
+
+  /* RIGHT: the plan. Everything here is something to do next. */
+  '<div class="col">' +
+    '<h2>What it takes, per car</h2>' +
+    (ratios ?
+      '<div class="lede">Your own averages, and what the same day looks like at goal pace.</div>' +
+      '<table><thead><tr><th>Every day</th><th class="r">90 day avg</th><th class="r">To hit goal</th><th class="r">This month</th></tr></thead>' +
+      '<tbody>' + outreachRows + '</tbody></table>'
+      : '<div class="big">Not enough history yet to build the plan. A few more weeks of activity and this fills in on its own.</div>') +
+
+    (goal > 0 && stillNeeded > 0 && remaining > 0 ?
+      '<div class="big"><b>' + num(stillNeeded) + ' more car' + (stillNeeded === 1 ? '' : 's') + ' in ' + remaining +
+        ' working day' + (remaining === 1 ? '' : 's') + '.</b> That is about <b>' + num(perDay) + ' a day</b>' +
+        (leadTotal ? ', or roughly <b>' + leadTotal + ' leads</b> worked at your closing rates' : '') + '.</div>'
+      : goal > 0 && stillNeeded === 0 ?
+      '<div class="big"><b>Goal met.</b> ' + num(delivered) + ' delivered against ' + goal + '. Everything from here is on top.</div>'
+      : '') +
+
+    (!paceKnown && goal > 0 ?
+      '<div class="note">Too early in the month to project where this lands. The bar above is the honest picture for now.</div>' : '') +
+
+    (leadRows ?
+      '<table style="margin-top:2px"><thead><tr><th>Where they come from</th><th class="r">You close</th>' +
+      '<th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
+      '<tbody>' + leadRows + '</tbody></table>' : '') +
+
+    (changeRows ?
+      '<h2>Start here</h2>' +
+      '<div class="lede">Biggest lever first. The line is the top ' + (topCount || 6) + '; close the gap and the rest follows.</div>' +
+      changeRows
+      : '<h2>Start here</h2><div class="big">Nothing is behind the floor average right now. Hold the routine and the month takes care of itself.</div>') +
+  '</div>' +
+
 '</div>' +
-'<div class="foot">Every number here comes from this associate\'s own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
+
+'<div class="foot">Every number here is from your own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
 '</div></body></html>';
 
   w.document.open();
@@ -13982,7 +14349,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
               goal: data.goals?.[a.id]?.monthly ?? 0,
               workingDays: personWorkingDaysInMonth(data, a),
               elapsedDays: Math.max(1, daysWorkedThisMonth(data, a)),
-              topAvg, topCount, act,
+              topAvg, topCount, act, data,
             }); }}>
             Print one-pager
           </button>
@@ -14535,6 +14902,24 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   ];
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+
+  /* New against used, off the Delivery Summary's vehicle rows. Those rows were
+     discarded by the parser until now, so a month imported before that change has
+     nothing here at all: "seen" stays false and the block hides itself rather than
+     drawing a confident 0 new / 0 used over a month that sold plenty of both. */
+  const vehicleSplit = (() => {
+    let nw = 0, us = 0, other = 0, seen = false;
+    for (const a of closingRoster) {
+      const st = M?.stats?.[norm(a.name)];
+      if (!st) continue;
+      if (st.newUnits == null && st.usedUnits == null && st.otherUnits == null) continue;
+      seen = true;
+      nw += st.newUnits ?? 0; us += st.usedUnits ?? 0; other += st.otherUnits ?? 0;
+    }
+    const known = nw + us + other;
+    return { seen, nw, us, other, known,
+      newPct: known > 0 ? nw / known : null, usedPct: known > 0 ? us / known : null };
+  })();
   const thr = normThresholds(store.thresholds);
   const chanTone = (id, v) => v == null ? "dim"
     : v * 100 >= thr[id].green ? "g" : v * 100 >= thr[id].yellow ? "y" : "r";
@@ -14619,6 +15004,31 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               )}
             </div>
             <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
+
+            {/* New against used. Sits under the channel rows because it cuts the same
+                units a second way rather than adding more of them. */}
+            {vehicleSplit.seen && vehicleSplit.known > 0 && (
+              <div className="hp-mix">
+                <div className="hp-mix-cap">New and used</div>
+                <div className="hp-mix-bar">
+                  <i className="hp-mix-new" style={{ width: (vehicleSplit.newPct * 100) + "%" }} />
+                  <i className="hp-mix-used" style={{ width: (vehicleSplit.usedPct * 100) + "%" }} />
+                </div>
+                <div className="hp-mix-keys">
+                  <span className="hp-mix-k hp-mix-kn">
+                    <b>{fmtNum(vehicleSplit.nw)}</b> new
+                    <i>{Math.round(vehicleSplit.newPct * 100)}%</i>
+                  </span>
+                  <span className="hp-mix-k hp-mix-ku">
+                    <b>{fmtNum(vehicleSplit.us)}</b> used
+                    <i>{Math.round(vehicleSplit.usedPct * 100)}%</i>
+                  </span>
+                  {vehicleSplit.other > 0 && (
+                    <span className="hp-mix-k hp-mix-ko"><b>{fmtNum(vehicleSplit.other)}</b> other</span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -16450,6 +16860,24 @@ function Style() {
         font-size:11.5px; color:var(--ink-2); }
       .hp-total b { font-family:var(--font-display); font-size:15px; color:var(--ink);
         letter-spacing:-.02em; margin-right:4px; }
+      /* new vs used: one bar, because the two halves are shares of the same total
+         and reading them as a split is the whole point of showing them */
+      .hp-mix { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
+      .hp-mix-cap { font-size:9.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+        color:var(--ink-3); margin-bottom:6px; }
+      .hp-mix-bar { display:flex; height:8px; border-radius:999px; overflow:hidden;
+        background:rgba(16,32,52,.08); }
+      .hp-mix-bar i { display:block; height:100%; }
+      .hp-mix-new { background:#2A5E9B; }
+      .hp-mix-used { background:#00A896; }
+      .hp-mix-keys { display:flex; flex-wrap:wrap; gap:12px; margin-top:7px; }
+      .hp-mix-k { font-size:11px; color:var(--ink-2); display:inline-flex; align-items:baseline; gap:4px; }
+      .hp-mix-k b { font-family:var(--font-display); font-size:14px; color:var(--ink); letter-spacing:-.02em; }
+      .hp-mix-k i { font-style:normal; font-size:10px; font-weight:700; color:var(--ink-3); }
+      .hp-mix-k::before { content:""; width:8px; height:8px; border-radius:2px; align-self:center; }
+      .hp-mix-kn::before { background:#2A5E9B; }
+      .hp-mix-ku::before { background:#00A896; }
+      .hp-mix-ko::before { background:rgba(16,32,52,.25); }
       .hh-row.ok { background:rgba(120,220,150,.22); }
       .hh-row.bad { background:rgba(255,150,140,.22); }
       .hh-row.dim { background:rgba(255,255,255,.12); }
@@ -17705,8 +18133,13 @@ function Style() {
         background:rgba(255,255,255,.12); box-shadow:0 6px 18px -8px rgba(0,0,0,.5);
         backdrop-filter:blur(6px); }
       .q-page .help-fab:hover { background:rgba(255,255,255,.2); }
-      .help-back { position:fixed; inset:0; z-index:420; background:rgba(15,23,42,.5);
-        backdrop-filter:blur(3px); display:flex; align-items:flex-end; justify-content:center;
+      /* No backdrop-filter here, deliberately. Blurring a full-screen scrim makes the
+         browser re-blur everything behind it on every scrolled frame, which is what
+         made the sheet drag under a finger. The scrim is simply darker instead.
+         (This was not what mis-placed the Help panel: that was the sheet's own
+         filling transform animation. See the Overlay component.) */
+      .help-back { position:fixed; inset:0; z-index:420; background:rgba(15,23,42,.62);
+        display:flex; align-items:flex-end; justify-content:center;
         animation:helpIn .2s var(--ease) both; }
       @keyframes helpIn { from { opacity:0; } to { opacity:1; } }
       /* This panel is a white sheet inside a black app. Without pinning its own ink
@@ -17716,10 +18149,24 @@ function Style() {
       .help-sheet h3, .help-sheet b, .help-sheet .md-cl-v { color:var(--ink); }
       .help-sheet .hint, .help-sheet .md-cap, .help-sheet .md-stat-lbl,
       .help-sheet .md-cl-s, .help-sheet .md-hand { color:var(--ink-3); }
-      .help-sheet { width:min(560px, 100%); max-height:88vh; overflow:auto; background:#fff;
+      /* A dot glyph draws with fill:currentColor, and the blanket pin above matches the
+         svg itself rather than only its parent, so an icon meant to carry a tone colour
+         was being repainted plain ink. These take the colour of the box they sit in. */
+      .help-sheet .md-box .pix, .help-sheet .md-cl-move .pix, .help-sheet .md-x .pix { color:inherit; }
+      /* overscroll-behavior keeps a flick at the end of the list from handing the
+         scroll to the page underneath, which on a phone reads as the sheet sticking. */
+      .help-sheet { width:min(560px, 100%); max-height:88vh; overflow-y:auto; overflow-x:hidden;
+        overscroll-behavior:contain; -webkit-overflow-scrolling:touch; background:#fff;
         border-radius:22px 22px 0 0; padding:18px 20px 26px;
         box-shadow:0 -20px 60px -20px rgba(16,32,52,.5);
-        animation:helpUp .32s cubic-bezier(.34,1.3,.64,1) both; }
+        /* "backwards", not "both". With "both" the animation keeps filling after it
+           ends, so transform stays an identity matrix instead of returning to none,
+           and this sheet silently becomes the containing block for every fixed child
+           AND keeps a compositor layer alive under the scroller. "backwards" gives
+           the same entry (the from-state applies before it starts, and the end state
+           already matches the element's own transform:none / opacity:1) with neither
+           side effect. Verified identical on screen. */
+        animation:helpUp .32s cubic-bezier(.34,1.3,.64,1) backwards; }
       @keyframes helpUp { from { transform:translateY(28px); opacity:0; } to { transform:none; opacity:1; } }
       @media (min-width:700px) {
         .help-back { align-items:center; }
@@ -17727,6 +18174,12 @@ function Style() {
       }
       .help-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
       .help-head h3 { font-size:19px; }
+      /* The sheet's close mark. Scoped to .md-x so the plain text .btn-x everywhere
+         else in the manager tool is left exactly as it was. */
+      .help-sheet .md-x { display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+        width:36px; height:36px; padding:0; border-radius:11px; color:var(--ink-2);
+        background:rgba(16,32,52,.05); transition:background .16s, color .16s; }
+      .help-sheet .md-x:hover { background:rgba(16,32,52,.1); color:var(--ink); }
       .help-tabs { display:flex; gap:6px; background:rgba(16,32,52,.05); border-radius:12px; padding:4px; margin-bottom:14px; }
       .help-tab { flex:1; font-family:inherit; font-size:13px; font-weight:700; padding:9px; border:0;
         border-radius:9px; background:none; color:var(--ink-2); cursor:pointer; }
@@ -17778,10 +18231,11 @@ function Style() {
         font-family:inherit; padding:12px 14px; border-radius:14px; cursor:pointer;
         border:1px solid rgba(16,32,52,.1); background:#fff; transition:background .15s, border-color .15s; }
       .md-item.on { background:rgba(23,138,87,.07); border-color:rgba(23,138,87,.3); }
-      .md-box { width:22px; height:22px; flex:0 0 auto; border-radius:7px; display:flex; align-items:center;
-        justify-content:center; border:1.5px solid rgba(16,32,52,.2); color:#178A57; background:#fff; }
-      .md-item.on .md-box { border-color:#178A57; }
-      .md-item { align-items:center; }
+      .md-box { width:27px; height:27px; flex:0 0 auto; border-radius:9px; display:flex; align-items:center;
+        justify-content:center; border:1.5px solid rgba(16,32,52,.2); color:#178A57; background:#fff;
+        transition:border-color .15s, background .15s; }
+      .md-item.on .md-box { border-color:#178A57; background:rgba(23,138,87,.1); }
+      .md-item { align-items:center; position:relative; overflow:hidden; }
       .md-text { flex:1; min-width:0; }
       .md-text b { display:block; font-size:14.5px; }
       .md-text > span { display:block; font-size:12.5px; color:var(--ink-3); }
@@ -17796,6 +18250,25 @@ function Style() {
       .md-count i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
       .md-hand { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-3); }
       .md-item.on .md-hand { color:#178A57; }
+
+      /* The three automatic items wear the colour of their tile in the row above, so
+         the eye ties "Calls" on the list to the Calls figure without reading either.
+         These sit below the plain .md-item rules on purpose: they carry the same
+         specificity, so the cascade only picks them because they come last. Moving
+         this block up puts the green back on every ticked row.
+         Named one class at a time: a substring match on "md-i" also catches "md-item". */
+      .md-ia { --md-c:#D2542A; --md-soft:rgba(210,84,42,.1); }
+      .md-ib { --md-c:#4A5AE0; --md-soft:rgba(74,90,224,.1); }
+      .md-ic { --md-c:#178A57; --md-soft:rgba(23,138,87,.1); }
+      .md-ia::before, .md-ib::before, .md-ic::before { content:""; position:absolute;
+        left:0; top:0; bottom:0; width:3px; background:var(--md-c); opacity:.55; }
+      .md-ia .md-box, .md-ib .md-box, .md-ic .md-box { color:var(--md-c); }
+      .md-ia.on, .md-ib.on, .md-ic.on { background:var(--md-soft); border-color:var(--md-c); }
+      .md-ia.on .md-box, .md-ib.on .md-box, .md-ic.on .md-box {
+        border-color:var(--md-c); background:var(--md-soft); }
+      .md-ia.on .md-hand, .md-ib.on .md-hand, .md-ic.on .md-hand { color:var(--md-c); }
+      .md-ia .md-prog i, .md-ib .md-prog i, .md-ic .md-prog i { background:var(--md-c); }
+      .md-ia.on .md-prog i, .md-ib.on .md-prog i, .md-ic.on .md-prog i { background:var(--md-c); }
       /* the moment the reports catch up */
       @keyframes mdPop {
         0% { transform:scale(1); }
@@ -17807,8 +18280,13 @@ function Style() {
       /* Each measure gets its own colour, the way the inspiration boards do, so the
          eye learns the tiles by position and hue rather than reading every label. */
       .md-stat { padding:14px 15px; border-radius:16px; position:relative; overflow:hidden;
-        background:rgba(16,32,52,.04); transition:transform .16s var(--ease); }
-      .md-stat:hover { transform:translateY(-1px); }
+        background:rgba(16,32,52,.04); }
+      /* Lift on hover only where there is a pointer. On a touch screen every tap
+         counted as a hover, so a scrolled finger left a trail of tiles animating. */
+      @media (hover:hover) {
+        .md-stat { transition:transform .16s var(--ease); }
+        .md-stat:hover { transform:translateY(-1px); }
+      }
       .md-ta { background:linear-gradient(145deg, rgba(226,98,43,.16), rgba(226,98,43,.05)); --md-c:#D2542A; }
       .md-tb { background:linear-gradient(145deg, rgba(85,102,240,.16), rgba(85,102,240,.05)); --md-c:#4A5AE0; }
       .md-tc { background:linear-gradient(145deg, rgba(23,138,87,.16), rgba(23,138,87,.05)); --md-c:#178A57; }
@@ -17822,13 +18300,66 @@ function Style() {
       .md-stat-top b { font-family:var(--font-display); font-size:26px; font-weight:800;
         letter-spacing:-.02em; color:var(--md-c); }
       .md-stat-top i { font-style:normal; font-size:11.5px; color:var(--ink-3); }
-      /* closing rates */
-      .md-close { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
-      .md-cl { padding:13px 14px; border-radius:16px; background:rgba(16,32,52,.04); }
-      .md-cl-v { display:block; font-family:var(--font-display); font-size:22px; font-weight:800;
-        letter-spacing:-.02em; }
+      /* closing rates.
+         Graded exactly as the leaderboard grades them, and wearing the leaderboard's
+         own pill colours, so a rep who checks their phone and then looks up at the TV
+         sees the same verdict twice rather than two opinions. */
+      /* Three fixed columns left each tile about 100px on a phone, which the mark and
+         the trend chip no longer fit inside. Same auto-fit grid as the stat tiles
+         above it, so a narrow screen drops to two columns instead of crushing them. */
+      .md-close { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:10px; }
+      .md-cl { padding:13px 14px; border-radius:16px; background:rgba(16,32,52,.04);
+        border:1px solid transparent; }
+      .md-cl-top { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
+      .md-cl-v { font-family:var(--font-display); font-size:22px; font-weight:800;
+        letter-spacing:-.02em; line-height:1.1; }
+      .md-cl-mark { flex:0 0 auto; opacity:.9; }
       .md-cl-l { display:block; font-size:12px; font-weight:600; margin-top:2px; }
+      .md-cl-goal { display:block; font-size:10.5px; font-weight:700; margin-top:1px; }
+      .help-sheet .md-tone-g .md-cl-goal { color:#2E9E4F; }
+      .help-sheet .md-tone-y .md-cl-goal { color:#95600A; }
+      .help-sheet .md-tone-r .md-cl-goal { color:#D5433A; }
+      .help-sheet .md-tone-dim .md-cl-goal { color:var(--ink-3); }
+      /* Start here: one bar, the store's bar marked on it, and what to do about it.
+         Same grammar as the coaching sheet so the phone and the paper agree. */
+      .md-focus { border-radius:16px; padding:13px 15px; background:rgba(16,32,52,.04);
+        border:1px solid transparent; }
+      .help-sheet .md-focus.md-tone-y { background:#FCF2D3; border-color:rgba(224,161,0,.3); }
+      .help-sheet .md-focus.md-tone-r { background:#FBE3E1; border-color:rgba(213,67,58,.26); }
+      .md-focus-h { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 9px; }
+      .md-focus-h b { font-size:15px; }
+      .help-sheet .md-focus-h span { font-size:11.5px; font-weight:700; color:var(--ink-2); }
+      .md-focus-bar { position:relative; height:9px; border-radius:999px; margin-top:9px;
+        background:rgba(16,32,52,.1); }
+      .md-focus-bar i { position:absolute; left:0; top:0; bottom:0; border-radius:999px; background:var(--ink-2); }
+      .help-sheet .md-tone-y .md-focus-bar i { background:#95600A; }
+      .help-sheet .md-tone-r .md-focus-bar i { background:#D5433A; }
+      .md-focus-bar u { position:absolute; left:70%; top:-3px; bottom:-3px; width:2.5px;
+        background:var(--ink); border-radius:2px; }
+      .help-sheet .md-focus p { font-size:12.5px; line-height:1.45; margin:9px 0 0; color:var(--ink-2); }
+      /* the import stamp, matching the daily tracker's chip */
+      .md-stamp { align-self:flex-start; margin-top:2px; font-size:11.5px; font-weight:600;
+        padding:5px 12px; border-radius:999px; background:rgba(16,32,52,.05); }
+      .help-sheet .md-stamp { color:var(--ink-3); }
+      .help-sheet .md-stamp-none { background:rgba(217,164,37,.16); color:#8A6314; }
       .md-cl-s { display:block; font-size:11px; color:var(--ink-3); margin-top:3px; }
+      /* The board's light pill palette, value for value. */
+      .help-sheet .md-tone-g { background:#E4F4E7; border-color:rgba(46,158,79,.28); }
+      .help-sheet .md-tone-y { background:#FCF2D3; border-color:rgba(224,161,0,.3); }
+      .help-sheet .md-tone-r { background:#FBE3E1; border-color:rgba(213,67,58,.26); }
+      .help-sheet .md-tone-g .md-cl-v, .help-sheet .md-tone-g .md-cl-mark { color:#2E9E4F; }
+      .help-sheet .md-tone-y .md-cl-v, .help-sheet .md-tone-y .md-cl-mark { color:#95600A; }
+      .help-sheet .md-tone-r .md-cl-v, .help-sheet .md-tone-r .md-cl-mark { color:#D5433A; }
+      .help-sheet .md-tone-dim .md-cl-v { color:var(--ink-3); }
+      .help-sheet .md-tone-dim .md-cl-mark { color:var(--ink-3); opacity:.5; }
+      /* The move since the last report. Same triangles, same 0.05pt deadband, same
+         reading as the wall: up is the number climbing, not the person. */
+      .md-cl-move { display:inline-flex; align-items:center; gap:2px; margin-left:auto; }
+      .md-cl-move i { font-style:normal; font-size:10px; font-weight:700;
+        font-variant-numeric:tabular-nums; letter-spacing:-.01em; }
+      .help-sheet .md-cl-move.up, .help-sheet .md-cl-move.up i { color:#2E9E4F; }
+      .help-sheet .md-cl-move.down, .help-sheet .md-cl-move.down i { color:#D5433A; }
+      .help-sheet .md-cl-move.flat { color:var(--ink-3); opacity:.45; }
       .md-stat-lbl { display:block; font-size:11.5px; color:var(--ink-3); margin-top:7px;
         letter-spacing:.03em; }
       .md-bar { display:block; height:4px; border-radius:999px; background:rgba(16,32,52,.1); margin-top:8px; overflow:hidden; }
@@ -18099,9 +18630,25 @@ function Style() {
       .co-worked { background:rgba(42,94,155,.12) !important; color:var(--blue) !important; }
       .co-stamp { padding:4px 11px; border-radius:999px; background:rgba(16,32,52,.05); white-space:nowrap; }
       .co-stamp-none { background:rgba(217,164,37,.14); color:#8A6314; }
-      .co-sep td { padding-top:16px !important; padding-bottom:6px !important; font-size:11px; font-weight:800;
-        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid rgba(16,32,52,.08); }
-      .co-sep td span { font-weight:700; color:var(--ink-3); opacity:.7; margin-left:6px; }
+      /* Section headings borrowed from Performance's .role-header so the two views
+         read as one product: swatch, heading-weight name, count in a tinted pill,
+         over a soft band of the section's own colour. */
+      .co-sep td { padding-top:22px !important; padding-bottom:8px !important;
+        border-bottom:1px solid rgba(16,32,52,.08); }
+      .co-sep-head { display:inline-flex; align-items:center; gap:8px;
+        font-size:16px; font-weight:700; letter-spacing:-.01em; color:var(--ink);
+        text-transform:none; }
+      .co-sep-swatch { width:10px; height:10px; border-radius:50%; background:var(--sep);
+        box-shadow:0 0 0 3.5px color-mix(in srgb, var(--sep) 16%, transparent); flex:0 0 auto; }
+      .co-sep-count { font-size:12px; font-weight:700; border-radius:10px; padding:2px 9px;
+        background:color-mix(in srgb, var(--sep) 13%, transparent);
+        color:color-mix(in srgb, var(--sep) 72%, #12212F); }
+      .co-sep-on  { --sep:#2A5E9B; }
+      .co-sep-off { --sep:#8A94A3; }
+      .co-sep td { background:linear-gradient(180deg, color-mix(in srgb, var(--sep) 11%, transparent), transparent 88%); }
+      /* The first section sits directly under the table head, so it does not need
+         the full separating gap that divides one section from the next. */
+      .checkout-table tbody tr:first-child.co-sep td { padding-top:10px !important; }
       .co-sep + tr td { padding-top:12px; }
       .co-namecell { position:relative; }
       .co-off-hover { position:absolute; right:8px; top:50%; transform:translateY(-50%) translateX(4px);
@@ -18272,7 +18819,7 @@ function Style() {
       /* Its own bubble rather than the browser's, so it appears at once, matches the
          rest of the tool, and arrives with the same small overshoot everything else
          does instead of blinking into place. */
-      .tdial { position:relative; display:inline-flex; align-items:center; gap:8px; cursor:help;
+      .tdial { position:relative; display:inline-flex; align-items:center; gap:0; cursor:help;
         transition:transform .16s cubic-bezier(.34,1.4,.64,1); }
       .tdial:hover, .tdial:focus-visible { transform:translateY(-1px) scale(1.04); outline:none; }
       .tdial svg { display:block; flex:0 0 auto; transition:filter .18s var(--ease); }
@@ -18294,11 +18841,14 @@ function Style() {
       }
       .tdial-track { stroke:rgba(16,32,52,.1); }
       .tdial-mark { stroke:rgba(16,32,52,.42); }
-      .tdial-n { font-family:var(--font-display); font-size:14px; font-weight:800; }
-      .tdial-ok .tdial-fg { stroke:#178A57; }   .tdial-ok .tdial-n { color:#137048; }
-      .tdial-mid .tdial-fg { stroke:#D9A425; }  .tdial-mid .tdial-n { color:#9A6410; }
-      .tdial-low .tdial-fg { stroke:#D2402C; }  .tdial-low .tdial-n { color:#B4331F; }
-      .tdial-dim .tdial-fg { stroke:transparent; } .tdial-dim .tdial-n { color:var(--ink-3); }
+      /* An svg <text> now, not a <b> beside the ring, so these paint with fill.
+         Leaving them on "color" silently did nothing and every count went black. */
+      .tdial-n { font-family:var(--font-display); font-size:13px; font-weight:800;
+        letter-spacing:-.02em; }
+      .tdial-ok .tdial-fg { stroke:#178A57; }   .tdial-ok .tdial-n { fill:#137048; }
+      .tdial-mid .tdial-fg { stroke:#D9A425; }  .tdial-mid .tdial-n { fill:#9A6410; }
+      .tdial-low .tdial-fg { stroke:#D2402C; }  .tdial-low .tdial-n { fill:#B4331F; }
+      .tdial-dim .tdial-fg { stroke:transparent; } .tdial-dim .tdial-n { fill:var(--ink-3); }
       .co-nodata { opacity:.5; }
       .co-badge { font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; }
       .co-badge.yes { background:rgba(48,177,85,.14); color:#1E7A3C; }
