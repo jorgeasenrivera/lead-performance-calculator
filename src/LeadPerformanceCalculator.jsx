@@ -366,23 +366,25 @@ const showsOutreach = (store) => store
   : false;
 
 /* ---- when the day's numbers are called final ----
-   A store sets the hour it expects the last activity report to have landed. Two
-   things have to be true for that to be useful rather than annoying.
+   A store sets the hour it expects the last activity report to have landed, plus a
+   grace window, because the report is emailed, forwarded by a worker and parsed by a
+   serverless function, so a 7pm cutoff genuinely lands at 7:11 some evenings.
+   Treating that as a miss would cry wolf most weeks.
 
-   It has to be forgiving about a few minutes. The report is emailed, forwarded by a
-   worker and parsed by a serverless function, so a 7pm cutoff genuinely lands at
-   7:11 some evenings. Treating that as a miss would cry wolf most weeks and the flag
-   would stop being read, so anything inside the grace window counts as on time and
-   simply says it was a little late.
+   THERE IS NO ROLLING "QUIET FOR AN HOUR" CHECK, AND THERE SHOULD NOT BE ONE.
+   The first version had one, and Cloudflare's own logs killed it on day one: the
+   DriveCentric reports are SCHEDULED, and the schedule is right there in the subject
+   lines ("Daily Activity 1:30 - CH", "Daily Summary 2:30 - HH"). They all land in an
+   early-afternoon burst and then there is nothing more until tomorrow, because there
+   is nothing more due. A gap-since-last-import rule turns every ordinary evening
+   amber from about half past two onward, and a warning that is always on is a
+   warning nobody reads.
 
-   And it has to notice silence. An import that stopped at 2pm looks exactly like a
-   quiet afternoon if all you print is the time of the last one, so a gap longer than
-   the stale window is called out on its own, whatever the cutoff says. */
-const DEFAULT_REPORT_CUTOFF = { at: "19:00", graceMin: 30, staleMin: 60 };
+   What actually matters is whether the day's numbers arrived at all, so that is the
+   only thing asked. Silence after the last scheduled report is not a fault. */
+const DEFAULT_REPORT_CUTOFF = { at: "19:00", graceMin: 30 };
 const cutoffFor = (store) => ({ ...DEFAULT_REPORT_CUTOFF, ...((store && store.reportCutoff) || {}) });
 
-/* lastAt is the newest uploadedAt across the day's rows. Everything else is derived
-   from it, so a caller that has no rows still gets a shape it can render. */
 const fmtClock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 function reportFreshness(store, rows, now = new Date()) {
   const c = cutoffFor(store);
@@ -391,19 +393,18 @@ function reportFreshness(store, rows, now = new Date()) {
   const [hh, mm] = String(c.at || "19:00").split(":").map((n) => parseInt(n, 10) || 0);
   const cutoff = new Date(now); cutoff.setHours(hh, mm, 0, 0);
   const graceEnd = new Date(cutoff.getTime() + c.graceMin * 60000);
-  const minsAgo = lastAt ? Math.round((now - lastAt) / 60000) : null;
   const afterCutoff = now >= cutoff;
   return {
-    lastAt, minsAgo, cutoff, cutoffLabel: fmtClock(cutoff),
+    lastAt, cutoff, cutoffLabel: fmtClock(cutoff),
     // landed after the hour but inside the grace window: on time, said out loud
     lateButCounted: !!lastAt && lastAt > cutoff && lastAt <= graceEnd,
-    // nothing at all, and the hour has been and gone
+    // the hour has been and gone with nothing at all. The only real alarm.
     missed: !lastAt && afterCutoff,
-    // it was running and then it stopped
-    stale: !!lastAt && minsAgo > c.staleMin,
-    staleMin: c.staleMin,
+    // nothing yet, but the day is not over. Worth saying, not worth shouting.
+    waiting: !lastAt && !afterCutoff,
   };
 }
+
 
 const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40, repeatDays: 3 };
 
@@ -9267,13 +9268,12 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
             could be a slow morning or an import that never landed. */}
         {(() => {
           const f = reportFreshness(store, (data.activity || {})[day]);
-          const bad = f.missed || f.stale || !f.lastAt;
+          const bad = f.missed;
           return (
             <span className={"hint co-stamp" + (bad ? " co-stamp-none" : "")}
               title={`This store expects the last report by ${f.cutoffLabel}.`}>
               {f.missed ? `Nothing has landed and it is past ${f.cutoffLabel}`
-                : !f.lastAt ? "No activity report has landed for this day yet"
-                : f.stale ? `Last import ${f.minsAgo} minutes ago, nothing since`
+                : f.waiting ? "No activity report has landed for this day yet"
                 : f.lateButCounted ? `Numbers as of ${fmtClock(f.lastAt)}, just after the ${f.cutoffLabel} cutoff`
                 : `Numbers as of ${fmtClock(f.lastAt)}`}
             </span>
@@ -9865,11 +9865,11 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
             ingested or what a salesperson sees; it exists so a manager knows whether
             the picture they are about to paste is the finished day. A day in the past
             is finished by definition, so it is never questioned. */}
-        {freshness && day === today() && (freshness.missed || freshness.stale || !freshness.lastAt) && (
+        {freshness && day === today() && (freshness.missed || freshness.waiting) && (
           <p className="dr-warn">
-            {freshness.missed ? `Nothing has landed today and it is past ${freshness.cutoffLabel}. This report is empty or stale.`
-              : !freshness.lastAt ? "No activity report has landed today yet, so there is nothing to report."
-              : `Last import was ${freshness.minsAgo} minutes ago. The day may not be finished.`}
+            {freshness.missed
+              ? `Nothing has landed today and it is past ${freshness.cutoffLabel}. There is nothing to report.`
+              : "No activity report has landed today yet, so there is nothing to report."}
           </p>
         )}
         {freshness && day === today() && freshness.lateButCounted && (
@@ -12556,8 +12556,9 @@ function StoreWizard({ config, store, onCancel, onSave }) {
             </div>
 
             <label>Daily report cutoff</label>
-            <p className="hint">The hour you expect the last activity report to have landed. A report inside
-              the grace window still counts, and a gap longer than the quiet window gets flagged on its own.</p>
+            <p className="hint">The hour you expect the day's reports to have landed. Anything inside the
+              grace window still counts as on time. Silence after the last scheduled report is not flagged,
+              because DriveCentric sends on a schedule and the day is simply finished.</p>
             <div className="wiz-nums">
               <label className="thr-label">Expected by
                 <input type="time" value={cutoff.at}
@@ -12566,10 +12567,6 @@ function StoreWizard({ config, store, onCancel, onSave }) {
               <label className="thr-label">Grace (min)
                 <input type="number" min="0" max="180" value={cutoff.graceMin}
                   onChange={(e) => setCutoff({ ...cutoff, graceMin: Math.max(0, Math.min(180, parseInt(e.target.value) || 0)) })} />
-              </label>
-              <label className="thr-label">Quiet before flag (min)
-                <input type="number" min="15" max="480" value={cutoff.staleMin}
-                  onChange={(e) => setCutoff({ ...cutoff, staleMin: Math.max(15, Math.min(480, parseInt(e.target.value) || 0)) })} />
               </label>
             </div>
 
