@@ -5172,6 +5172,26 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     return { dir: "flat", delta: "" };
   };
 
+  /* The one channel worth naming today: furthest under its own bar, measured as a
+     share of the bar so a 5% internet rate against 20 outranks a 28% showroom rate
+     against 30. Silent when everything is at or over, because inventing something to
+     fix on a good month is how a coaching tool stops being read. */
+  const FOCUS_PLAY = {
+    internet: "Send a personalized video on every new lead before you do anything else with it. It is the single biggest lever on this number.",
+    phone: "Take the phone ups you are passing on, and get the appointment set before you hang up.",
+    showroom: "Ask for the appointment before they leave the lot, and log the be-back the same day.",
+  };
+  const focus = (() => {
+    const cand = closers
+      .filter((c) => c.pct != null && thr[c.k] && thr[c.k].green > 0)
+      .map((c) => ({ ...c, green: thr[c.k].green, share: (c.pct * 100) / thr[c.k].green }))
+      .filter((c) => c.share < 1)
+      .sort((x, y) => x.share - y.share)[0];
+    if (!cand) return null;
+    return { label: cand.label, pct: cand.pct, green: cand.green,
+      tone: toneOf(cand.pct, cand.k), play: FOCUS_PLAY[cand.k] || "" };
+  })();
+
   const tiles = [
     { k: "calls", label: "Calls", v: a.calls || 0, target: std.minCalls, tone: "a" },
     { k: "video", label: "Videos", v: a.video || 0, target: std.minVideos, tone: "b" },
@@ -5234,6 +5254,12 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
                         </span>
                       </span>
                       <span className="md-cl-l">{c.label}</span>
+                      {/* What good looks like, from the same per channel thresholds
+                          the coaching sheet and the wall grade against. A rate with
+                          no bar beside it cannot tell anyone whether to act. */}
+                      <span className="md-cl-goal">
+                        {tn === "g" ? "at or over " : "goal "}{(thr[c.k] || {}).green}%
+                      </span>
                       <span className="md-cl-s">
                         {c.units == null ? "nothing yet"
                           : c.leads == null || c.leads === 0
@@ -5243,6 +5269,28 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
                     </div>
                   );
                 })}
+              </div>
+            </>
+          )}
+
+          {/* Coaching, on the phone, every day rather than once a month on a printed
+              sheet. This page is anonymous, so it only ever holds the board row: no
+              baselines, no top performer averages. What it CAN work out honestly is
+              which channel sits furthest under this store's own bar, which is the
+              same call the coaching sheet's alert makes. One thing, never a list. */}
+          {focus && (
+            <>
+              <div className="md-cap md-cap2">Start here</div>
+              <div className={"md-focus md-tone-" + focus.tone}>
+                <div className="md-focus-h">
+                  <b>{focus.label}</b>
+                  <span>{Math.round(focus.pct * 100)}% against a bar of {focus.green}%</span>
+                </div>
+                <div className="md-focus-bar">
+                  <i style={{ width: Math.max(4, Math.min(100, (focus.pct / (focus.green / 100)) * 70)) + "%" }} />
+                  <u />
+                </div>
+                <p>{focus.play}</p>
               </div>
             </>
           )}
@@ -5279,6 +5327,14 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             })}
           </div>
           <p className="hint">The top three tick themselves. The rest are yours and nobody is graded on them.</p>
+          {/* The same stamp the daily tracker carries. Without it a quiet morning and
+              an import that never landed look identical, and the first thing anyone
+              does with a number they distrust is stop reading it. */}
+          <div className={"md-stamp" + (stamp ? "" : " md-stamp-none")}>
+            {stamp
+              ? `Numbers as of ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+              : "No activity report has landed for today yet"}
+          </div>
 
           <HelpButton config={config} who={meName} store={store}
             context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
@@ -13607,6 +13663,25 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
       '</div>';
     }).join("") : "";
 
+  /* A closing rate on its own is a number, not a verdict: a rep cannot tell whether
+     5% internet is a problem without knowing the bar. These are the same per channel
+     thresholds The Board colours its pills with and the health card grades against,
+     so the sheet, the wall and the phone all say good at the same place. The mark and
+     the word carry it in grayscale; the bar is never colour alone. */
+  const sheetThr = normThresholds(store.thresholds);
+  const chanStat = (label, id, v) => {
+    const t = sheetThr[id] || { green: 20 };
+    const met = v != null && v * 100 >= t.green;
+    return '<div class="stat"><b>' + pct(v) + '</b><span>' + label + '</span>' +
+      '<u class="tgt">' + (v == null ? 'goal ' + t.green + '%'
+        : (met ? '&#9679; at or over ' : '&#9675; goal ') + t.green + '%') + '</u></div>';
+  };
+  const chanStats = '<div class="stats">' +
+    chanStat("Showroom", "showroom", stats.showroomPct) +
+    chanStat("Phone", "phone", stats.phonePct) +
+    chanStat("Internet", "internet", stats.internetPct) +
+  '</div>';
+
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching</title><style>' +
 '@page { size: letter portrait; margin: 11mm; }' +
@@ -13644,6 +13719,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.stat:last-child { border-right:none; }' +
 '.stat b { display:block; font-size:16px; font-weight:800; letter-spacing:-.02em; line-height:1.05; }' +
 '.stat span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
+'.stat .tgt { display:block; text-decoration:none; font-size:8px; color:#3D4842; font-weight:700; margin-top:1px; }' +
 'table { width:100%; border-collapse:collapse; }' +
 'th { text-align:left; font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874;' +
   ' padding:2px 5px; border-bottom:1px solid #C9CFCA; font-weight:700; }' +
@@ -13702,12 +13778,8 @@ alertHtml +
   '<div class="col">' +
     '<h2>Your month so far</h2>' +
     '<div class="lede">What the reports have you at, through today.</div>' +
-    '<div class="stats">' +
-      '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom</span></div>' +
-      '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone</span></div>' +
-      '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet</span></div>' +
-    '</div>' +
-    '<div class="note">Of every 100 leads you work in each channel, that is how many you deliver.</div>' +
+    chanStats +
+    '<div class="note">Of every 100 leads you work in each channel, that is how many you deliver. The number under each one is what this store counts as good.</div>' +
 
     (failRows ?
       '<h2>Standards you are under</h2>' +
@@ -18243,6 +18315,33 @@ function Style() {
         letter-spacing:-.02em; line-height:1.1; }
       .md-cl-mark { flex:0 0 auto; opacity:.9; }
       .md-cl-l { display:block; font-size:12px; font-weight:600; margin-top:2px; }
+      .md-cl-goal { display:block; font-size:10.5px; font-weight:700; margin-top:1px; }
+      .help-sheet .md-tone-g .md-cl-goal { color:#2E9E4F; }
+      .help-sheet .md-tone-y .md-cl-goal { color:#95600A; }
+      .help-sheet .md-tone-r .md-cl-goal { color:#D5433A; }
+      .help-sheet .md-tone-dim .md-cl-goal { color:var(--ink-3); }
+      /* Start here: one bar, the store's bar marked on it, and what to do about it.
+         Same grammar as the coaching sheet so the phone and the paper agree. */
+      .md-focus { border-radius:16px; padding:13px 15px; background:rgba(16,32,52,.04);
+        border:1px solid transparent; }
+      .help-sheet .md-focus.md-tone-y { background:#FCF2D3; border-color:rgba(224,161,0,.3); }
+      .help-sheet .md-focus.md-tone-r { background:#FBE3E1; border-color:rgba(213,67,58,.26); }
+      .md-focus-h { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 9px; }
+      .md-focus-h b { font-size:15px; }
+      .help-sheet .md-focus-h span { font-size:11.5px; font-weight:700; color:var(--ink-2); }
+      .md-focus-bar { position:relative; height:9px; border-radius:999px; margin-top:9px;
+        background:rgba(16,32,52,.1); }
+      .md-focus-bar i { position:absolute; left:0; top:0; bottom:0; border-radius:999px; background:var(--ink-2); }
+      .help-sheet .md-tone-y .md-focus-bar i { background:#95600A; }
+      .help-sheet .md-tone-r .md-focus-bar i { background:#D5433A; }
+      .md-focus-bar u { position:absolute; left:70%; top:-3px; bottom:-3px; width:2.5px;
+        background:var(--ink); border-radius:2px; }
+      .help-sheet .md-focus p { font-size:12.5px; line-height:1.45; margin:9px 0 0; color:var(--ink-2); }
+      /* the import stamp, matching the daily tracker's chip */
+      .md-stamp { align-self:flex-start; margin-top:2px; font-size:11.5px; font-weight:600;
+        padding:5px 12px; border-radius:999px; background:rgba(16,32,52,.05); }
+      .help-sheet .md-stamp { color:var(--ink-3); }
+      .help-sheet .md-stamp-none { background:rgba(217,164,37,.16); color:#8A6314; }
       .md-cl-s { display:block; font-size:11px; color:var(--ink-3); margin-top:3px; }
       /* The board's light pill palette, value for value. */
       .help-sheet .md-tone-g { background:#E4F4E7; border-color:rgba(46,158,79,.28); }
