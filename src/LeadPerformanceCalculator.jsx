@@ -9402,7 +9402,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <aside className="checkout-side">
           <div className={"card offender-card " + (offenders.length === 0 ? "offender-clear" : "")}>
             <h3 className="off-title">
-              {offenders.length === 0 ? "No points this month" : "Top offenders"}
+              {offenders.length === 0 ? "No points this month" : "Biggest Loser"}
               <span className="section-sub">{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
             </h3>
             {offenders.length === 0 ? (
@@ -9410,14 +9410,36 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
             ) : (
               <>
                 <p className="hint">Month to date.</p>
+                {/* The podium the report image has drawn all along, which the screen
+                    the managers actually work on never did. Same three, same order,
+                    same figure: one picture of the month, not two. Only stands when
+                    there are three to stand on it. */}
+                {offenders.length >= 3 && (
+                  <div className="bl-podium">
+                    {[1, 0, 2].map((k) => {
+                      const r = offenders[k];
+                      return (
+                        <div key={r.a.id} className={"bl-slot bl-" + (k + 1)}>
+                          <span className="bl-name">{r.a.name.split(" ")[0]}</span>
+                          <span className="bl-block">
+                            <b>{r.points}</b>
+                            <i>#{k + 1}</i>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <ol className="offender-rank">
-                  {offenders.map((r, i) => (
+                  {offenders.slice(offenders.length >= 3 ? 3 : 0).map((r, i0) => {
+                  const i = i0 + (offenders.length >= 3 ? 3 : 0);
+                  return (
                     <div key={r.a.id} className="offender-rank-row">
                       <span className="orr-rank">{i + 1}</span>
                       <b className="orr-name">{r.a.name}</b>
                       <span className={"orr-points pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
                     </div>
-                  ))}
+                  );})}
                 </ol>
               </>
             )}
@@ -9627,7 +9649,7 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
 
   let ry = panelTop + 32;
   c.fillStyle = INK3; c.font = `600 10.5px ${UI}`;
-  c.fillText("TOP OFFENDERS", rx, ry);
+  c.fillText("BIGGEST LOSER", rx, ry);
   const thw = c.measureText("TOP OFFENDERS").width;
   c.fillStyle = "#AEB6C0";
   c.fillText(`${monthName.toUpperCase()} TO DATE`, rx + thw + 14, ry);
@@ -9894,7 +9916,7 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
 
           {/* RIGHT: running total */}
           <div className="dr-col dr-col-alt">
-            <div className="dr-col-title">Top offenders <span className="section-sub">{monthName} to date</span></div>
+            <div className="dr-col-title">Biggest Loser <span className="section-sub">{monthName} to date</span></div>
             {offenders.length === 0 ? (
               <p className="hint">Nobody has a point this month. Worth saying out loud.</p>
             ) : (
@@ -18758,6 +18780,20 @@ function Style() {
         border-bottom:1px solid rgba(16,32,52,.08); }
       /* The standard, under the list rather than over it. Numbers carry the weight;
          the rule behind them is said once, quietly, and nowhere else on the screen. */
+      /* Second, first, third, at three heights, the way a podium actually stands and
+         the way the report image already draws it. The metals match the canvas. */
+      .bl-podium { display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
+        align-items:end; margin:12px 0 14px; }
+      .bl-slot { display:flex; flex-direction:column; align-items:center; gap:5px; min-width:0; }
+      .bl-name { font-size:12px; font-weight:700; color:var(--ink); max-width:100%;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .bl-block { width:100%; border-radius:10px; display:flex; flex-direction:column;
+        align-items:center; justify-content:flex-end; gap:2px; padding:9px 4px 7px; }
+      .bl-block b { font-family:var(--font-display); font-size:20px; font-weight:800; letter-spacing:-.02em; }
+      .bl-block i { font-style:normal; font-size:9.5px; font-weight:700; }
+      .bl-1 .bl-block { height:74px; background:#FBF3DE; } .bl-1 .bl-block b, .bl-1 .bl-block i { color:#9A7413; }
+      .bl-2 .bl-block { height:60px; background:#EDF1F5; } .bl-2 .bl-block b, .bl-2 .bl-block i { color:#5B6B7D; }
+      .bl-3 .bl-block { height:50px; background:#F7EAE0; } .bl-3 .bl-block b, .bl-3 .bl-block i { color:#8C5730; }
       .dr-warn { font-size:12.5px; font-weight:600; color:#8A6314; background:rgba(217,164,37,.16);
         padding:9px 13px; border-radius:11px; margin-bottom:10px; }
       .dr-ok { font-size:12.5px; color:var(--ink-3); background:rgba(16,32,52,.05);
