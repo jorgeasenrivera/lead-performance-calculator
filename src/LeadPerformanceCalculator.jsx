@@ -6807,11 +6807,22 @@ function queueCoachingStats(data, associateId) {
     }
   }
   const total = taken + declined;
+  /* Live Floor is counted separately from the two queues. Standing on the floor and
+     waiting in a line are different commitments, and blending them would let a strong
+     week on one paper over an absent week on the other. Added on the end so every
+     existing caller keeps the shape it already reads. */
+  const f = (data && data.floor) || {};
+  let floorDays = 0;
+  for (const d of Object.keys(f)) {
+    const evs = ((f[d] || {}).history || []).filter((e) => e.id === associateId);
+    if (evs.some((e) => e.action === "signed-in")) floorDays++;
+  }
   return {
     hasData: dates.length > 0 && (signedDays > 0 || scheduledDays > 0),
     scheduledDays, signedDays, missedScheduled, taken, declined,
     acceptRate: total > 0 ? taken / total : null,
     unavailMin: Math.round(unavail.lunch + unavail.away + unavail.customer),
+    floorDays, hasFloor: floorDays > 0,
   };
 }
 
@@ -8893,6 +8904,70 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
     if (audit) await appendAudit({ user: session?.name, store: store.id, ...audit });
     setSaving(false);
   };
+
+  /* ---- the coaching mirror ----
+     The comment above used to claim this "keeps flowing exactly as before". It did
+     not flow at all. Every queue event is pushed to the queue_public row through
+     mutateQueueRow, while queueCoachingStats reads data.queue[date].history off the
+     STORE document, which nothing wrote. Live Floor was worse: its mirror was an
+     empty stub. So hasData came back false for everybody and the line and floor
+     numbers never appeared anywhere, on screen or in print.
+
+     This copies the day's rows across. It runs off refs rather than the data in
+     scope so the interval is not town down and rebuilt on every save, it writes
+     only when the event counts have actually moved, and it carries no audit entry:
+     it is a record of what the queues already did, not a manager's action. */
+  const dataRef = useRef(null); dataRef.current = data;
+  const storeRef = useRef(null); storeRef.current = store;
+  const failRef = useRef(false); failRef.current = loadFailed;
+  const mirrorSig = useRef("");
+  useEffect(() => {
+    mirrorSig.current = "";           // a different store is a different record
+  }, [store?.id]);
+  useEffect(() => {
+    let dead = false;
+    const pull = async () => {
+      const st = storeRef.current, d = dataRef.current;
+      if (dead || !st || !d || failRef.current) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        const day = today();
+        const [line, online, floor] = await Promise.all([
+          loadQueueRow(st.id, day, "line").catch(() => null),
+          loadQueueRow(st.id, day, "online").catch(() => null),
+          loadFloorRow(st.id, day).catch(() => null),
+        ]);
+        // The Line and Online are one record for coaching: both are a rep waiting
+        // their turn for a lead. Live Floor is kept apart because being on the floor
+        // is a different commitment from being in a queue.
+        const qh = [];
+        for (const r of [line, online]) if (r && Array.isArray(r.history)) qh.push(...r.history);
+        const fh = (floor && Array.isArray(floor.history)) ? floor.history : [];
+        if (!qh.length && !fh.length) return;
+        qh.sort((a, b) => (a.t < b.t ? -1 : 1));
+        const sig = `${st.id}|${day}|${qh.length}|${fh.length}`;
+        if (mirrorSig.current === sig) return;
+        const cur = dataRef.current;
+        if (!cur) return;
+        const next = JSON.parse(JSON.stringify(cur));
+        next.queue = next.queue || {};
+        next.floor = next.floor || {};
+        next.queue[day] = { ...(next.queue[day] || {}), history: qh };
+        next.floor[day] = { ...(next.floor[day] || {}), history: fh };
+        // Keep the mirror to the coaching window. Ninety days is what the sheet and
+        // earnedStrengths look back over; beyond that it is only weight on the row.
+        const cutoff = dayIn(new Date(Date.now() - 95 * 864e5));
+        for (const bag of [next.queue, next.floor]) {
+          for (const k of Object.keys(bag)) if (k < cutoff) delete bag[k];
+        }
+        mirrorSig.current = sig;
+        await persist(next);
+      } catch (e) { /* the sheet says so itself when the band is empty */ }
+    };
+    pull();
+    const t = setInterval(pull, 90000);
+    return () => { dead = true; clearInterval(t); };
+  }, []); // eslint-disable-line
 
   // The settings sub-tab only exists for Live Floor; The Line has no per-store settings here.
   const effSub = queue === "floor" ? subtab : "board";
@@ -13346,7 +13421,7 @@ function printAllMonthEndRecaps({ store, config, data }) {
   setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 450);
 }
 
-function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act }) {
+function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act, data }) {
   const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
   if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
 
@@ -13394,7 +13469,15 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     headClass = "flat";
   }
 
-  const failRows = (ev && ev.failures ? ev.failures : []).map((f) =>
+  /* Sorted by how far under, and cut to three. One page is a hard limit, and a rep
+     handed nine failing standards reads none of them. The worst is also called out
+     by name in the alert at the top when it is severe. */
+  const failRows = (ev && ev.failures ? ev.failures : [])
+    .map((f) => { const need = f.def.kind === "pct" ? f.min / 100 : f.min;
+      return { f, ratio: need > 0 ? (f.val ?? 0) / need : 1 }; })
+    .sort((x, y) => x.ratio - y.ratio)
+    .slice(0, 3)
+    .map(({ f }) =>
     '<tr><td>' + esc(f.def.short) + '</td>' +
     '<td class="r">' + (f.val == null ? "no data" : (f.def.kind === "pct" ? pct(f.val) : num(f.val))) + '</td>' +
     '<td class="r">' + (f.def.kind === "pct" ? f.min + "%" : f.min) + '</td>' +
@@ -13460,154 +13543,230 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
         '<td class="r ' + state + '"><span class="mk">' + mark + '</span>' + word + '</td></tr>';
     }).join("") : "";
 
-  // ---- speedometer gauges for the print-off ----
-  const clamp01 = (x) => Math.max(0, Math.min(1, x || 0));
-  const gTone = (p) => (p >= 0.9 ? "#1E8E5A" : p >= 0.6 ? "#C77F16" : "#C0392B");
-  const speedo = (pctRaw, color) => {
-    const R = 28, cx = 34, cy = 34, len = Math.PI * R, p = clamp01(pctRaw);
-    const ang = Math.PI - p * Math.PI;
-    const nx = (cx + Math.cos(ang) * (R - 4)).toFixed(1), ny = (cy - Math.sin(ang) * (R - 4)).toFixed(1);
-    const arc = "M " + (cx - R) + " " + cy + " A " + R + " " + R + " 0 0 1 " + (cx + R) + " " + cy;
-    return '<svg width="68" height="40" viewBox="0 0 68 40">' +
-      '<path d="' + arc + '" fill="none" stroke="#E4E8ED" stroke-width="6" stroke-linecap="round"/>' +
-      '<path d="' + arc + '" fill="none" stroke="' + color + '" stroke-width="6" stroke-linecap="round" stroke-dasharray="' + (p * len).toFixed(1) + " " + len.toFixed(1) + '"/>' +
-      '<line x1="' + cx + '" y1="' + cy + '" x2="' + nx + '" y2="' + ny + '" stroke="#12212F" stroke-width="2" stroke-linecap="round"/>' +
-      '<circle cx="' + cx + '" cy="' + cy + '" r="2.6" fill="#12212F"/></svg>';
-  };
-  const gauCell = (pctRaw, valStr, label, color) =>
-    '<div class="gau"><div class="gau-dial">' + speedo(pctRaw, color) + "</div><b>" + valStr + "</b><span>" + label + "</span></div>";
-  const closeVals = ratios ? [ratios.close_phone, ratios.close_showroom, ratios.close_internet].filter((v) => v != null) : [];
-  const closeRate = closeVals.length ? closeVals.reduce((a, b) => a + b, 0) / closeVals.length : null;
-  const pacePct = goal > 0 ? pace / goal : 0;
-  const gaugesHtml = goal > 0
-    ? ('<div class="gauges">' +
-        gauCell(pacePct, Math.round(pacePct * 100) + "%", monthEnd ? "Final pace" : "Pace to goal", gTone(clamp01(pacePct))) +
-        /* No "Delivered" gauge. It is delivered/goal, which the goal box already
-           headlines and the pace bar already draws: the same fact three times. */
-        (closeRate != null ? gauCell(closeRate, (closeRate * 100).toFixed(0) + "%", "Close rate", "#2B3844") : "") +
-      "</div>")
-    : "";
+
+  /* ---- things the sheet has to be able to say, worked out before the markup ----
+     The sheet is printed at any point in the month, so every one of these degrades
+     rather than disappearing. On the third of the month a projection is noise, so it
+     says so instead of printing a confident number nobody should act on. */
+  const PACE_MIN_DAYS = 3;
+  const paceKnown = calElapsed >= PACE_MIN_DAYS;
+  const pctOfGoal = goal > 0 ? Math.min(100, (delivered / goal) * 100) : 0;
+  const throughMonth = workingDays > 0 ? Math.min(100, (calElapsed / workingDays) * 100) : 0;
+  const onPace = paceKnown && goal > 0 && pace >= goal;
+
+  // Queue discipline, now that the mirror actually writes it. Silent when empty:
+  // an absent band is honest, a band of zeroes reads as an accusation.
+  const qs = data ? queueCoachingStats(data, a.id) : { hasData: false, hasFloor: false };
+
+  /* The one thing on here that is not coaching: a rep close to their lead cap, or a
+     long way under a standard, needs to know before it becomes a restriction. Said
+     once, at the top, in the plainest words available. */
+  const capUse = ev && ev.capUse != null ? ev.capUse : null;
+  const nearCap = !restrictedNow && capUse != null && capUse >= 0.85;
+  const worstFail = (ev && ev.failures ? ev.failures : [])
+    .map((f) => { const need = f.def.kind === "pct" ? f.min / 100 : f.min;
+      return { f, ratio: need > 0 ? (f.val ?? 0) / need : 1 }; })
+    .sort((x, y) => x.ratio - y.ratio)[0] || null;
+  const severe = worstFail && worstFail.ratio < 0.6 ? worstFail.f : null;
+  let alertHtml = "";
+  if (restrictedNow) {
+    alertHtml = '<div class="alert"><b>You are off leads right now</b><span>Since ' +
+      esc(new Date(restriction.since).toLocaleDateString()) +
+      (restriction.until ? '. We look at this again together on ' + esc(new Date(restriction.until).toLocaleDateString()) + '.' : '.') +
+      ' The plan on the right is how we get you back on.</span></div>';
+  } else if (nearCap) {
+    alertHtml = '<div class="alert"><b>You are close to your lead cap</b><span>Holding ' +
+      num(ev.opps) + ' of ' + num(ev.cap) + ' leads, which is ' + Math.round(capUse * 100) +
+      '%. Work the ones you have and this takes care of itself.</span></div>';
+  } else if (severe) {
+    alertHtml = '<div class="alert"><b>' + esc(severe.def.label) + ' is a long way under</b><span>You are at ' +
+      (severe.def.kind === "pct" ? pct(severe.val) : num(severe.val)) + ' against ' +
+      (severe.def.kind === "pct" ? severe.min + '%' : severe.min) +
+      '. It is the first thing on the plan, and it is fixable.</span></div>';
+  }
+
+  /* Bottom right: what to change, drawn as bars rather than written as numbers, so
+     the size of each gap is something you see rather than something you compute.
+     Same bar grammar as the habits table on the left, so the sheet reads as one
+     language rather than two. Capped at three: this is a page somebody has to act
+     on before their next shift, not an audit. */
+  const changeRows = (act && topAvg) ? BEHAVIOURS
+    .filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null)
+    .map((b) => ({ b, ratio: act[b.id] / topAvg[b.id] }))
+    .filter((x) => x.ratio < 1)
+    .sort((x, y) => (x.b.impact || 99) - (y.b.impact || 99) || x.ratio - y.ratio)
+    .slice(0, 3)
+    .map((x, i) => {
+      const f = x.b.kind === "pct" ? pct : num;
+      const fill = Math.max(4, Math.min(100, x.ratio * 70));
+      return '<div class="chg">' +
+        '<div class="chg-h"><em>' + (i + 1) + '</em>' + esc(x.b.label) + '</div>' +
+        '<div class="chg-bar"><div class="chg-fill" style="width:' + fill.toFixed(0) + '%"></div>' +
+          '<div class="chg-mark"></div></div>' +
+        '<div class="chg-f"><span>now ' + f(act[x.b.id]) + '</span><span>aim for ' + f(topAvg[x.b.id]) + '</span></div>' +
+      '</div>';
+    }).join("") : "";
 
   const html =
-'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching Plan</title><style>' +
-'@page { size: letter portrait; margin: 12mm; }' +
-'* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
-'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#12212F; font-size:10px; line-height:1.32; -webkit-print-color-adjust: exact; print-color-adjust: exact; }' +
-'.sheet { max-width:186mm; }' +
-'.hd { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #1A2430; padding-bottom:6px; margin-bottom:9px; }' +
-'.nm { font-size:22px; font-weight:800; letter-spacing:-.02em; }' +
-'.sub { color:#5B6874; font-size:10px; margin-top:2px; }' +
-'.badge { display:inline-block; font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em; padding:2px 8px; border-radius:99px; background:#1A2430; color:#fff; margin-bottom:4px; }' +
-'.goalbox { text-align:right; }' +
-'.goalbox b { font-size:26px; font-weight:800; color:#12212F; display:block; line-height:1; }' +
-'.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
-'.gauges { display:flex; gap:8px; margin:8px 0 2px; }' +
-'.gau { flex:1; text-align:center; border:1px solid #DDE3E9; border-radius:8px; padding:6px 4px 5px; }' +
-'.gau-dial { display:flex; justify-content:center; }' +
-'.gau b { display:block; font-size:15px; font-weight:800; letter-spacing:-.02em; margin-top:1px; }' +
-'.gau span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
-'h2 { font-size:11.5px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#12212F; margin:5px 0 3px; padding:2px 0 2px 9px; border-left:4px solid #1A2430; background:linear-gradient(90deg, rgba(0,0,0,.10), transparent 60%); }' +
-'.why { padding:7px 10px; border-radius:7px; border-left:4px solid #9AA5B1; background:#F4F6F8; }' +
-'.why.bad { border-left-color:#1A2430; border-left-width:6px; background:#E9ECEF; }' +
-'.why.good { border-left-color:#9AA5B1; background:#F7F9FA; }' +
-'.why b { font-size:13px; display:block; margin-bottom:2px; }' +
-'.stats { display:flex; gap:0; border:1px solid #DDE3E9; border-radius:7px; overflow:hidden; margin-top:4px; }' +
-'.stat { flex:1; padding:6px 10px; border-right:1px solid #DDE3E9; }' +
+'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching</title><style>' +
+'@page { size: letter portrait; margin: 11mm; }' +
+'* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }' +
+/* Four greys and nothing else. The sheet is printed on a mono laser, so green,
+   amber and red all land as the same mid tone and stop meaning anything. Every
+   state here is carried by fill, by a mark, and by a word. */
+'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#14181A;' +
+  ' font-size:10px; line-height:1.34; }' +
+'.sheet { max-width:188mm; display:flex; flex-direction:column; gap:6px; }' +
+'.hd { display:flex; justify-content:space-between; align-items:flex-start;' +
+  ' border-bottom:2.5px solid #14181A; padding-bottom:6px; }' +
+'.nm { font-size:23px; font-weight:800; letter-spacing:-.025em; line-height:1; }' +
+'.sub { color:#5B6874; font-size:9.5px; margin-top:3px; }' +
+'.goalbox { text-align:right; line-height:1; }' +
+'.goalbox b { font-size:27px; font-weight:800; display:block; letter-spacing:-.03em; }' +
+'.goalbox span { font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
+'.alert { border:1.5px solid #14181A; border-radius:4px; padding:6px 10px; background:#F1F3EF; }' +
+'.alert b { font-size:12px; display:block; }' +
+'.alert span { font-size:10px; color:#3D4842; }' +
+/* the pace bar: solid means delivered, hatched means the gap, the rule is today */
+'.pace { position:relative; height:17px; background:#EAEDE9; border-radius:9px; overflow:hidden; }' +
+'.pace-fill { position:absolute; top:0; left:0; height:100%; border-radius:9px; background:#14181A; }' +
+'.pace-fill.behind { background:repeating-linear-gradient(135deg,#14181A 0 2px,#fff 2px 5px);' +
+  ' border:1.5px solid #14181A; }' +
+'.pace-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#14181A; z-index:3; }' +
+'.pace-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; font-weight:700; margin-top:2px; }' +
+'.cols { display:flex; gap:12px; align-items:stretch; }' +
+'.col { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }' +
+'h2 { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;' +
+  ' padding:2px 0 2px 8px; border-left:4px solid #14181A; background:linear-gradient(90deg,#E4E7E3,transparent 70%); }' +
+'.lede { font-size:9px; color:#5B6874; }' +
+'.stats { display:flex; border:1px solid #C9CFCA; border-radius:5px; overflow:hidden; }' +
+'.stat { flex:1; padding:5px 7px; border-right:1px solid #C9CFCA; }' +
 '.stat:last-child { border-right:none; }' +
-'.stat b { display:block; font-size:17px; font-weight:800; letter-spacing:-.02em; }' +
-'.stat span { font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; font-weight:700; }' +
+'.stat b { display:block; font-size:16px; font-weight:800; letter-spacing:-.02em; line-height:1.05; }' +
+'.stat span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
 'table { width:100%; border-collapse:collapse; }' +
-'th { text-align:left; font-size:8px; text-transform:uppercase; letter-spacing:.07em; color:#5B6874; padding:3px 7px; border-bottom:1px solid #DDE3E9; }' +
-'td { padding:2px 7px; border-bottom:1px solid #EEF1F4; font-variant-numeric:tabular-nums; }' +
+'th { text-align:left; font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874;' +
+  ' padding:2px 5px; border-bottom:1px solid #C9CFCA; font-weight:700; }' +
+'td { padding:2px 5px; border-bottom:1px solid #EAEDE9; font-variant-numeric:tabular-nums; font-size:9.5px; }' +
 'td.r, th.r { text-align:right; }' +
-'.good { color:#5B6874; font-weight:700; } .bad { color:#12212F; font-weight:800; } .par { color:#7A8590; font-weight:700; }' +'.mk { display:inline-block; margin-right:4px; font-size:9px; }' +'.rk { width:14px; color:#8B95A1; font-weight:800; text-align:center; }' +'.bad-row td { background:#F2F4F6; }' +
-'.mini { position:relative; height:11px; background:#EEF1F4; border-radius:6px; overflow:hidden; min-width:220px; }' +
-'.mini-bar { position:absolute; top:0; left:0; height:100%; background:#9AA5B1; border-radius:6px; }' +
-'.mini-bar.good { background:#2B3844; } .mini-bar.par { background:#9AA5B1; } .mini-bar.bad { background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
-'.mini-bench { position:absolute; top:-2px; bottom:-2px; left:70%; width:2px; background:#12212F; z-index:3; }' +
+'.mini { position:relative; height:9px; background:#EAEDE9; border-radius:5px; min-width:70px; }' +
+'.mini-bar { position:absolute; top:0; left:0; height:100%; border-radius:5px; background:#14181A; }' +
+'.mini-bar.bad { background:repeating-linear-gradient(135deg,#14181A 0 1.6px,#fff 1.6px 4.4px); border:1px solid #14181A; }' +
+'.mini-bar.par { background:#97A099; }' +
+'.mini-bench { position:absolute; top:-2px; bottom:-2px; left:70%; width:2px; background:#14181A; z-index:3; }' +
 '.vs { color:#8B95A1; font-weight:600; }' +
-'.big { background:#F0F5FA; border:1px solid #C9DAEA; border-radius:7px; padding:7px 11px; margin-top:6px; font-size:11.5px; }' +
-'.big b { color:#12212F; }' +
-'.pbar-wrap { margin-top:6px; }' +
-'.pbar { position:relative; height:16px; background:#EEF1F4; border-radius:8px; overflow:hidden; }' +
-'.pbar-fill { position:absolute; top:0; left:0; height:100%; border-radius:8px; background:#FFFFFF; border:1.5px solid #2B3844; background-image:repeating-linear-gradient(135deg,#2B3844 0 2px,transparent 2px 5px); }' +
-'.pbar-fill.good { background:#2B3844; background-image:none; border:none; }' +
-'.pbar-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#12212F; z-index:3; }' +
-'.pbar-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; margin-top:3px; font-weight:600; }' +
-'.cols { display:flex; gap:14px; }' +
-'.cols > div { flex:1; }' +
-'.note { font-size:8.5px; color:#5B6874; margin:2px 0 0; }' +
-'.sign { margin-top:8px; padding-top:7px; border-top:1px solid #DDE3E9; display:flex; gap:24px; font-size:9px; color:#5B6874; }' +
-'.sign div { flex:1; }' +
-'.line { border-bottom:1px solid #9AA5B1; height:18px; margin-bottom:3px; }' +
-'.foot { margin-top:7px; font-size:8px; color:#8B95A1; }' +
+'.mk { display:inline-block; margin-right:3px; }' +
+'.big { border:1px solid #C9CFCA; border-left:4px solid #14181A; background:#F1F3EF; border-radius:4px;' +
+  ' padding:6px 9px; font-size:11px; }' +
+'.big b { font-weight:800; }' +
+'.qbar { display:flex; gap:5px; }' +
+'.qbar div { flex:1; border:1px solid #C9CFCA; border-radius:4px; padding:4px 6px; }' +
+'.qbar b { display:block; font-size:13px; font-weight:800; line-height:1.05; }' +
+'.qbar span { font-size:7.5px; text-transform:uppercase; letter-spacing:.05em; color:#5B6874; font-weight:700; }' +
+/* the change bars, bottom right */
+'.chg { margin-bottom:5px; }' +
+'.chg-h { font-size:10px; font-weight:800; display:flex; align-items:center; gap:5px; }' +
+'.chg-h em { font-style:normal; background:#14181A; color:#fff; width:12px; height:12px; border-radius:50%;' +
+  ' display:inline-flex; align-items:center; justify-content:center; font-size:8px; font-weight:800; flex:0 0 auto; }' +
+'.chg-bar { position:relative; height:11px; background:#EAEDE9; border-radius:6px; margin-top:2px; }' +
+'.chg-fill { position:absolute; top:0; left:0; height:100%; border-radius:6px;' +
+  ' background:repeating-linear-gradient(135deg,#14181A 0 1.8px,#fff 1.8px 5px); border:1.2px solid #14181A; }' +
+'.chg-mark { position:absolute; top:-2px; bottom:-2px; left:70%; width:2.5px; background:#14181A; z-index:3; }' +
+'.chg-f { display:flex; justify-content:space-between; font-size:8px; color:#5B6874; font-weight:700; margin-top:1px; }' +
+'.note { font-size:8.5px; color:#5B6874; }' +
+'.foot { margin-top:2px; padding-top:5px; border-top:1px solid #C9CFCA; font-size:8px; color:#8B95A1; }' +
 '</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
-  '<div>' + (monthEnd ? '<div class="badge">' + esc(lastMonthName) + ' month-end review</div>' : '<div class="badge">Coaching plan &middot; ' + esc(thisMonthName) + '</div>') +
-  '<div class="nm">' + esc(a.name) + '</div>' +
-  '<div class="sub">' + esc(store.name) + ' &middot; ' + now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) + '</div></div>' +
-  (goal > 0 ? '<div class="goalbox"><b>' + delivered + ' / ' + goal + '</b><span>' + (monthEnd ? "Final units" : "Units this month") + '</span></div>' : '') +
-'</div>' +
-gaugesHtml +
-
-'<h2>' + (monthEnd ? "How the month finished" : "Where you stand today") + '</h2>' +
-'<div class="why ' + headClass + '"><b>' + headTitle + '</b>' + esc(headBody) + '</div>' +
-(failRows ?
-  '<table style="margin-top:6px"><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Focus</th></tr></thead><tbody>' +
-  failRows + '</tbody></table>' : '') +
-
-'<h2>Results this month</h2>' +
-/* Units delivered is not repeated here; it is the goal box at the top of the page.
-   What this strip is for is the three closing rates. */
-'<div class="stats">' +
-  '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet delivered</span></div>' +
-  '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone delivered</span></div>' +
-  '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom delivered</span></div>' +
+  '<div><div class="nm">' + esc(a.name) + '</div>' +
+  '<div class="sub">' + esc(store.name) + ' &middot; ' + esc(thisMonthName) + ' &middot; day ' + calElapsed + ' of ' + workingDays + ' you have worked</div></div>' +
+  (goal > 0 ? '<div class="goalbox"><b>' + delivered + '/' + goal + '</b><span>Units this month</span></div>' : '') +
 '</div>' +
 
-(behaviourRows ?
-'<h2>Behavior vs the Top ' + (topCount || 6) + ' Sales Associates in Your Store</h2>' +
-'<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top ' + (topCount || 6) + '</th><th class="r">Read</th></tr></thead>' +
-'<tbody>' + behaviourRows + '</tbody></table>' +
-'<p class="note">Strongest leverage first. The upright line is the top ' + (topCount || 6) + '; past it is a strength, short of it is the next gain.</p>'
-: '') +
+alertHtml +
 
+/* Pace, full width, directly under the header. It is the one thing on the sheet
+   that changes meaning depending on the day it is printed, so it is drawn rather
+   than stated and it carries its own caption. */
 (goal > 0 ?
-'<h2>' + (monthEnd ? "Where the month landed" : "Pace to your goal") + '</h2>' +
-'<div class="stats">' +
-  '<div class="stat"><b>' + num(stillNeeded) + '</b><span>' + (monthEnd ? "Short of goal" : "Still needed") + '</span></div>' +
-  '<div class="stat"><b>' + remaining + '</b><span>Days left</span></div>' +
-  '<div class="stat"><b class="' + (pace >= goal ? "good" : "bad") + '">' + num(pace) + '</b><span>' + (monthEnd ? "Final pace" : "Projected") + '</span></div>' +
-'</div>' +
-(!monthEnd && stillNeeded > 0 && remaining > 0 ?
-  '<div class="big">To hit <b>' + goal + '</b>, aim for <b>' + num(perDay) + ' car' + (perDay === 1 ? "" : "s") + ' a day</b> over the ' + remaining + ' working days left.</div>'
- : stillNeeded === 0 ? '<div class="big">Goal met. <b>' + num(delivered) + '</b> delivered against <b>' + goal + '</b>. Strong month.</div>' : '') +
-// pace progress bar: delivered vs goal, with a marker for where they "should" be by now
-'<div class="pbar-wrap"><div class="pbar"><div class="pbar-fill ' + (pace >= goal ? "good" : "") + '" style="width:' + Math.max(2, Math.min(100, (delivered / Math.max(1, goal)) * 100)) + '%"></div>' +
-  (!monthEnd ? '<div class="pbar-mark" style="left:' + Math.min(100, (calElapsed / Math.max(1, workingDays)) * 100) + '%"></div>' : '') + '</div>' +
-  '<div class="pbar-legend"><span>' + delivered + ' delivered' + (pace >= goal ? '' : ', behind pace') + '</span>' + '<span>' + goal + ' goal</span></div></div>'
-: '') +
+'<div>' +
+  '<div class="pace"><div class="pace-fill ' + (onPace ? '' : 'behind') + '" style="width:' + Math.max(2, pctOfGoal).toFixed(0) + '%"></div>' +
+    '<div class="pace-mark" style="left:' + throughMonth.toFixed(0) + '%"></div></div>' +
+  '<div class="pace-legend"><span>' + delivered + ' delivered' + (onPace ? ', on pace' : '') + '</span>' +
+    '<span>| where the month is</span><span>' + goal + ' goal</span></div>' +
+'</div>' : '') +
 
-(ratios ?
-'<h2>' + (monthEnd ? "What got you there, per car" : "What it takes, per car") + '</h2>' +
 '<div class="cols">' +
-  '<div><table><thead><tr><th>Every day</th><th class="r">90 Day Average</th><th class="r">Target Effort to Reach Goal</th><th class="r">Current Month Pace</th><th class="r"></th></tr></thead>' +
-  '<tbody>' + outreachRows + '</tbody></table></div>' +
-'</div>' +
-(leadRows ?
-  '<h2>How many leads does it take to reach your goal?</h2>' +
-  '<table><thead><tr><th>Channel</th><th class="r">You deliver</th><th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
-  '<tbody>' + leadRows + '</tbody></table>' +
-  '<p class="note">Your remaining ' + stillNeeded + ' car' + (stillNeeded === 1 ? '' : 's') + ' at your own closing rates, split by ' + (mixInfo.personal ? 'your mix this month' : 'the typical mix') + ': about <b>' + leadTotal + ' leads</b>. Raise a closing rate and that drops.</p>' : '')
-: '<h2>What it takes</h2><div class="why flat">Not enough history yet to build the plan. Seed the 90-day baseline or let a few weeks of activity import, and this fills in.</div>') +
 
-'<div class="sign">' +
-  '<div><div class="line"></div>Associate</div>' +
-  '<div><div class="line"></div>Manager</div>' +
-  '<div><div class="line"></div>Date</div>' +
+  /* LEFT: the record. Closed, factual, no instructions. */
+  '<div class="col">' +
+    '<h2>Your month so far</h2>' +
+    '<div class="lede">What the reports have you at, through today.</div>' +
+    '<div class="stats">' +
+      '<div class="stat"><b>' + pct(stats.showroomPct) + '</b><span>Showroom</span></div>' +
+      '<div class="stat"><b>' + pct(stats.phonePct) + '</b><span>Phone</span></div>' +
+      '<div class="stat"><b>' + pct(stats.internetPct) + '</b><span>Internet</span></div>' +
+    '</div>' +
+    '<div class="note">Of every 100 leads you work in each channel, that is how many you deliver.</div>' +
+
+    (failRows ?
+      '<h2>Standards you are under</h2>' +
+      '<div class="lede">The bar your store sets for your role. Under is not a strike, it is the next thing to move.</div>' +
+      '<table><thead><tr><th>What we measure</th><th class="r">You</th><th class="r">Target</th><th class="r">Read</th></tr></thead>' +
+      '<tbody>' + failRows + '</tbody></table>' : '') +
+
+    (behaviourRows ?
+      '<h2>Your habits, next to the top ' + (topCount || 6) + '</h2>' +
+      '<div class="lede">The upright line is what the best here average. Solid past it is a strength.</div>' +
+      '<table><thead><tr><th class="rk">#</th><th>Habit</th><th>You vs the line</th><th class="r">You / Top</th><th class="r">Read</th></tr></thead>' +
+      '<tbody>' + behaviourRows + '</tbody></table>' : '') +
+
+    (qs.hasData || qs.hasFloor ?
+      '<h2>Being there for the turn</h2>' +
+      '<div class="lede">Leads only reach you if you are in the rotation.</div>' +
+      '<div class="qbar">' +
+        (qs.hasData ? '<div><b>' + qs.signedDays + '/' + qs.scheduledDays + '</b><span>Days in line</span></div>' : '') +
+        (qs.hasFloor ? '<div><b>' + qs.floorDays + '</b><span>Days on floor</span></div>' : '') +
+        (qs.hasData ? '<div><b>' + qs.taken + '</b><span>Ups taken</span></div>' : '') +
+        (qs.hasData && qs.acceptRate != null ? '<div><b>' + pct(qs.acceptRate) + '</b><span>Accepted</span></div>' : '') +
+      '</div>' : '') +
+  '</div>' +
+
+  /* RIGHT: the plan. Everything here is something to do next. */
+  '<div class="col">' +
+    '<h2>What it takes, per car</h2>' +
+    (ratios ?
+      '<div class="lede">Your own averages, and what the same day looks like at goal pace.</div>' +
+      '<table><thead><tr><th>Every day</th><th class="r">90 day avg</th><th class="r">To hit goal</th><th class="r">This month</th></tr></thead>' +
+      '<tbody>' + outreachRows + '</tbody></table>'
+      : '<div class="big">Not enough history yet to build the plan. A few more weeks of activity and this fills in on its own.</div>') +
+
+    (goal > 0 && stillNeeded > 0 && remaining > 0 ?
+      '<div class="big"><b>' + num(stillNeeded) + ' more car' + (stillNeeded === 1 ? '' : 's') + ' in ' + remaining +
+        ' working day' + (remaining === 1 ? '' : 's') + '.</b> That is about <b>' + num(perDay) + ' a day</b>' +
+        (leadTotal ? ', or roughly <b>' + leadTotal + ' leads</b> worked at your closing rates' : '') + '.</div>'
+      : goal > 0 && stillNeeded === 0 ?
+      '<div class="big"><b>Goal met.</b> ' + num(delivered) + ' delivered against ' + goal + '. Everything from here is on top.</div>'
+      : '') +
+
+    (!paceKnown && goal > 0 ?
+      '<div class="note">Too early in the month to project where this lands. The bar above is the honest picture for now.</div>' : '') +
+
+    (leadRows ?
+      '<table style="margin-top:2px"><thead><tr><th>Where they come from</th><th class="r">You close</th>' +
+      '<th class="r">Cars of the gap</th><th class="r">Leads needed</th></tr></thead>' +
+      '<tbody>' + leadRows + '</tbody></table>' : '') +
+
+    (changeRows ?
+      '<h2>Start here</h2>' +
+      '<div class="lede">Biggest lever first. The line is the top ' + (topCount || 6) + '; close the gap and the rest follows.</div>' +
+      changeRows
+      : '<h2>Start here</h2><div class="big">Nothing is behind the floor average right now. Hold the routine and the month takes care of itself.</div>') +
+  '</div>' +
+
 '</div>' +
-'<div class="foot">Every number here comes from this associate\'s own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
+
+'<div class="foot">Every number here is from your own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
 '</div></body></html>';
 
   w.document.open();
@@ -14118,7 +14277,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
               goal: data.goals?.[a.id]?.monthly ?? 0,
               workingDays: personWorkingDaysInMonth(data, a),
               elapsedDays: Math.max(1, daysWorkedThisMonth(data, a)),
-              topAvg, topCount, act,
+              topAvg, topCount, act, data,
             }); }}>
             Print one-pager
           </button>
