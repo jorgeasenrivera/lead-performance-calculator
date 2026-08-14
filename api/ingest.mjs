@@ -670,6 +670,13 @@ function applyToStore(data, entries, sourceLabel) {
       parsed[c] = { ...(parsed[c] || {}), ...v };
     }
     M.names[type] = Object.keys(parsed);
+    /* The combined Delivery Summary already ticks every per-channel box in
+       M.imports. It never did the same for M.names, and M.names is what the
+       per-associate "incomplete file" check reads. So for every store on the PDF
+       rather than the per-channel CSVs, the delivery half of that check has been
+       silently skipped: names.delivery was never written, so delivery never
+       counted as a required report for anybody. Write it here too. */
+    if (type === "delivery-summary") M.names.delivery = Object.keys(parsed);
     let count = 0;
 
     if (type === "activity") {
