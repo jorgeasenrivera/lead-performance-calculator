@@ -9191,26 +9191,6 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const roster = (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
 
   // A clean text recap of the day the manager can paste into a group chat or email.
-  const copyDayReport = () => {
-    const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-    const lines = [`Daily Check Out · ${store.name} · ${dayLabel}`, ""];
-    const list = roster.map((a) => ({ a, dp: dayPoints(data, a, day, std), off: isOff(data, a.id, day) }));
-    const clean = list.filter((r) => !r.off && !r.dp.noData && r.dp.points === 0);
-    const flagged = list.filter((r) => !r.off && !r.dp.noData && r.dp.points > 0).sort((x, y) => y.dp.points - x.dp.points);
-    const off = list.filter((r) => r.off);
-    if (clean.length) lines.push(`✅ Qualified (${clean.length}): ${clean.map((r) => r.a.name).join(", ")}`, "");
-    if (flagged.length) {
-      lines.push(`⚠️ Did Not Complete Below (${flagged.length}):`);
-      for (const r of flagged) lines.push(`  • ${r.a.name}: ${r.dp.points} pt${r.dp.points === 1 ? "" : "s"} (missed ${r.dp.missed.map((m) => m === "rocked" ? "RockEd" : m).join(", ")})`);
-      lines.push("");
-    }
-    if (off.length) lines.push(`🌴 Off: ${off.map((r) => r.a.name).join(", ")}`);
-    const text = lines.join("\n").trim();
-    navigator.clipboard.writeText(text).then(
-      () => alert("Day's report copied. Paste it into your group chat or email."),
-      () => alert("Couldn't copy automatically. Your browser may be blocking clipboard access.")
-    );
-  };
   // People the schedule says are working today, whose report has run, and who
   // still have nothing at all against their name. Anyone with no schedule on file
   // is left alone: there is nothing to be absent from.
@@ -9451,7 +9431,8 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
       {showReport && (
         <DayReportModal store={store} day={day} rows={rows} offenders={offenders}
           streaks={Object.fromEntries(roster.map((a) => [a.id, currentStreak(data, a, std)]))}
-          onCopy={copyDayReport} onClose={() => setShowReport(false)} />
+          freshness={reportFreshness(store, (data.activity || {})[day])}
+          onClose={() => setShowReport(false)} />
       )}
     </div>
   );
@@ -9772,13 +9753,15 @@ function DayReportStreak({ st }) {
   );
 }
 
-function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onClose }) {
+function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, onClose }) {
   const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const withData = rows.filter((r) => r.hasData && !r.off);
   const clean = withData.filter((r) => r.points === 0);
   const flagged = withData.filter((r) => r.points > 0).sort((a, b) => b.points - a.points);
   const off = rows.filter((r) => r.off);
-  const monthName = new Date().toLocaleDateString("en-US", { month: "long" });
+  // From the day being reported, not from today: a report backfilled for the 31st
+  // built on the 1st was carrying the wrong month's name across the top of it.
+  const monthName = new Date(day + "T12:00").toLocaleDateString("en-US", { month: "long" });
   const [imgState, setImgState] = useState(null);   // null | working | copied | error
   const [imgErr, setImgErr] = useState("");
 
@@ -9846,17 +9829,33 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, onCopy, onC
             <p className="plate-hist-sub">{store.name} · {dayLabel}</p>
           </div>
           <div className="dr-head-actions">
-            {/* The picture is the default: it is what actually gets pasted into a
-                group chat. Text stays for anywhere an image will not go. */}
+            {/* The report is the picture. A text version was a second thing to keep in
+                step with the first, and the two drifted the moment either changed. */}
             <button className="btn" onClick={copyImage} disabled={imgState === "working"}>
               {imgState === "working" ? "Building..." : imgState === "copied" ? "Copied" : "Copy as image"}
             </button>
             <button className="btn secondary" onClick={saveImage}>Save image</button>
-            <button className="btn secondary" onClick={onCopy}>Copy as text</button>
             <button className="btn-x" onClick={onClose}>✕</button>
           </div>
         </div>
 
+        {/* The cutoff lives here and nowhere else. It has no say over what gets
+            ingested or what a salesperson sees; it exists so a manager knows whether
+            the picture they are about to paste is the finished day. A day in the past
+            is finished by definition, so it is never questioned. */}
+        {freshness && day === today() && (freshness.missed || freshness.stale || !freshness.lastAt) && (
+          <p className="dr-warn">
+            {freshness.missed ? `Nothing has landed today and it is past ${freshness.cutoffLabel}. This report is empty or stale.`
+              : !freshness.lastAt ? "No activity report has landed today yet, so there is nothing to report."
+              : `Last import was ${freshness.minsAgo} minutes ago. The day may not be finished.`}
+          </p>
+        )}
+        {freshness && day === today() && freshness.lateButCounted && (
+          <p className="dr-ok">Today's numbers landed at {fmtClock(freshness.lastAt)}, just after the {freshness.cutoffLabel} cutoff. Counted as the full day.</p>
+        )}
+        {day !== today() && (
+          <p className="dr-ok">Backfilled report for {dayLabel}. Built from the numbers already stored for that day.</p>
+        )}
         {imgErr && <p className="sched-err">{imgErr}</p>}
         <div className="dr-cols">
           {/* LEFT: today */}
@@ -18759,6 +18758,10 @@ function Style() {
         border-bottom:1px solid rgba(16,32,52,.08); }
       /* The standard, under the list rather than over it. Numbers carry the weight;
          the rule behind them is said once, quietly, and nowhere else on the screen. */
+      .dr-warn { font-size:12.5px; font-weight:600; color:#8A6314; background:rgba(217,164,37,.16);
+        padding:9px 13px; border-radius:11px; margin-bottom:10px; }
+      .dr-ok { font-size:12.5px; color:var(--ink-3); background:rgba(16,32,52,.05);
+        padding:9px 13px; border-radius:11px; margin-bottom:10px; }
       .co-out { color:var(--ink-2); font-variant-numeric:tabular-nums; }
       .co-legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;
         padding:14px 4px 2px; margin-top:6px; border-top:1px solid rgba(16,32,52,.08);
@@ -19284,6 +19287,16 @@ function Style() {
         background:rgba(255,255,255,.82); color:var(--ink);
         box-shadow: inset 0 1px 2px rgba(16,40,68,.04);
         transition: border-color .25s var(--ease), box-shadow .25s var(--ease), background .25s var(--ease); outline:none; }
+      /* Selects kept the operating system's own chevron and metrics, so next to the
+         app's inputs and pills they read as browser furniture dropped onto the page.
+         One rule covers all of them: the native arrow goes, ours is drawn in the
+         background, and the extra right padding is what stops a long store name
+         running underneath it. */
+      select { appearance:none; -webkit-appearance:none; -moz-appearance:none;
+        padding-right:34px; cursor:pointer;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1.4 1.6 6 6.2l4.6-4.6' fill='none' stroke='%234A5A6B' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat:no-repeat; background-position:right 13px center; background-size:12px 8px; }
+      select::-ms-expand { display:none; }
       input:hover, select:hover { background:rgba(255,255,255,.92); }
       input:focus, select:focus { border-color:var(--blue); background:#fff; box-shadow: 0 0 0 3.5px rgba(42,94,155,.18); }
       input[type=number] { width:84px; }
