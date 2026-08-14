@@ -2538,6 +2538,13 @@ export default function LeadPerformanceCalculator() {
         parsed[c] = { ...(parsed[c] || {}), ...v };
       }
       M.names[type] = Object.keys(parsed);
+      /* The combined Delivery Summary already ticks every per-channel box in
+         M.imports. It never did the same for M.names, and M.names is what the
+         per-associate "incomplete file" check reads. So for every store on the PDF
+         rather than the per-channel CSVs, the delivery half of that check has been
+         silently skipped: names.delivery was never written, so delivery never
+         counted as a required report for anybody. Write it here too. */
+      if (type === "delivery-summary") M.names.delivery = Object.keys(parsed);
       if (type === "delivery-summary") ["internet", "phone", "showroom", "campaign"].forEach((c) => importedChannels.add(c));
       else if (type.startsWith("delivery-")) importedChannels.add(type.split("-")[1]);
       else if (type === "delivery") importedChannels.add("internet");
@@ -11557,11 +11564,26 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
   // reports. The optional Board channels (phone/showroom) and the Daily Activity
   // report also land in `names`, and mapping those through REPORTS returned undefined,
   // which crashed the whole page the moment anyone was given a role.
-  const requiredTypes = Object.keys(REPORTS).filter((t) => names[t]);
+  /* A report counts as required once it has landed this month. The test used to be
+     that names[t] merely EXISTS, and an empty array exists: any import that parsed
+     nobody (an unrecognised layout, a file for another store, everyone on it
+     excluded) wrote names[t] = [] and from that moment every associate in the store
+     was permanently "waiting on" that report, with no way to clear it short of a
+     clean import. Requiring at least one name means a report that named nobody is
+     treated as not having landed, which is what it actually is. */
+  const requiredTypes = Object.keys(REPORTS).filter((t) => (names[t] || []).length > 0);
+  /* Say WHY a report is missing for this person, because the two reasons need
+     completely different fixes and looked identical before. A report that never ran
+     is an upload; a report that ran and carried names that match nobody on the
+     roster is a name-format problem between two exports, and the count is what makes
+     that obvious at a glance instead of after an afternoon of guessing. */
   const missingReports = (nameKey) =>
     requiredTypes
       .filter((t) => !(names[t] || []).includes(nameKey))
-      .map((t) => reportLabel(t));
+      .map((t) => {
+        const n = (names[t] || []).length;
+        return reportLabel(t) + (n > 0 ? ` (landed with ${n} name${n === 1 ? "" : "s"}, none matching)` : "");
+      });
   const importedTypes = requiredTypes;
 
   const graceDays = store.graceDays ?? 10;
