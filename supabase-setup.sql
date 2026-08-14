@@ -25,9 +25,28 @@ create trigger app_data_touch
   before update on app_data
   for each row execute function touch_updated_at();
 
--- Turn on row-level security, then allow the public (anon) key to
--- read and write. The app's own email + PIN + domain gate is what
--- controls access; this mirrors how the artifact shared storage worked.
+-- =====================================================================
+-- WARNING: THE POLICY BLOCK BELOW IS UNSAFE. DO NOT RUN IT AS IS.
+-- =====================================================================
+-- These three policies grant `using (true)` for select, insert AND
+-- update on app_data. The anon key ships inside the browser bundle by
+-- design, so with these live, anyone who opens devtools can read and
+-- REWRITE every store document, the config and every backup.
+--
+-- The comment that used to sit here said the app's own email + PIN +
+-- domain gate controls access. That gate is client-side. It is not a
+-- security boundary and it never was: RLS is the only thing standing
+-- between the anon key and the data.
+--
+-- HANDOFF_2 section 3 describes a much tighter model that is believed to
+-- be live (per-key-pattern policies plus has_store()), which would mean
+-- this file is simply stale and was never re-run. That has not been
+-- verified. Run supabase-rls-audit.sql, which is read only, to find out
+-- what is actually in force before touching anything here.
+--
+-- Left in place rather than deleted because the table, trigger and index
+-- definitions above are still correct and still worth having.
+-- =====================================================================
 alter table app_data enable row level security;
 
 drop policy if exists "app_data read"  on app_data;
