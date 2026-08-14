@@ -352,6 +352,19 @@ function normThresholds(t) {
 // rockEdStars is the RockEd bar used by the point system (the third point). Default 40.
 // repeatDays is how many days below standard in a month before someone is flagged
 // automatically as a repeat offender.
+/* Texts and emails on the daily tracker, by request from Driver's Mart Winter Park.
+   Off everywhere else on purpose: automated follow-up fires whether or not a person
+   is present, so these two are a record of outreach rather than a standard anyone is
+   graded against, and a column nobody grades is a column most stores do not want.
+   Add a store id here to turn it on, or set trackerOutreach on the store to override
+   either way without touching this list. */
+const OUTREACH_COLUMN_STORES = ["driver-s-mart-winter-park"];
+const showsOutreach = (store) => store
+  ? (store.trackerOutreach !== undefined
+      ? !!store.trackerOutreach
+      : OUTREACH_COLUMN_STORES.includes(store.id))
+  : false;
+
 const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40, repeatDays: 3 };
 
 // ---- Days off + the Check Out point system ----
@@ -9077,6 +9090,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const [showSchedule, setShowSchedule] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
+  const outreach = showsOutreach(store);
   const activityDays = Object.keys(data.activity || {}).sort().reverse();
   const dayData = data.activity?.[day] || {};
 
@@ -9189,7 +9203,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     const hasData = !dp.noData && !off;
     return {
       a, rec, qual, off,
-      calls: rec.calls, video: rec.video,
+      calls: rec.calls, video: rec.video, text: rec.text, email: rec.email,
       tasks: rec.tasks, tasksPosted: rec.tasksPosted,
       callsMet: rec.calls != null && rec.calls >= std.minCalls,
       videoMet: rec.video != null && rec.video >= std.minVideos,
@@ -9264,7 +9278,9 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <div className="card checkout-card">
           <table className="checkout-table">
             <thead><tr>
-              <th>Name</th><th>Tasks</th><th>Calls</th><th>Videos</th><th>RockEd</th><th>Points</th>
+              <th>Name</th><th>Tasks</th><th>Calls</th><th>Videos</th>
+              {outreach && <><th>Texts</th><th>Emails</th></>}
+              <th>RockEd</th><th>Points</th>
             </tr></thead>
             <tbody>
               {/* On today first, off today underneath. Reading a single alphabetical
@@ -9278,7 +9294,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                      different section treatments in one tool made the tracker feel
                      like a different product one tab across. */
                   <tr key={"h-" + which} className={"co-sep co-sep-" + which}>
-                    <td colSpan={6}>
+                    <td colSpan={outreach ? 8 : 6}>
                       <span className="co-sep-head">
                         <span className="co-sep-swatch" />
                         {which === "on" ? "On today" : "Off today"}
@@ -9316,6 +9332,12 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                     {r.hasData && <span className="cell-mark"><PixIcon glyph={r.videoMet ? "check" : "close"} size={13} /></span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
+                  {/* Not graded and deliberately unmarked: no tick, no cross, no target.
+                      A number the manager can see and ask about, nothing more. */}
+                  {outreach && <>
+                    <td className="co-out">{r.hasData ? (r.text ?? "-") : "-"}</td>
+                    <td className="co-out">{r.hasData ? (r.email ?? "-") : "-"}</td>
+                  </>}
                   {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
                   <td>
                     <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : "no")}
@@ -13592,6 +13614,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     .filter((b) => topAvg[b.id] != null && topAvg[b.id] > 0 && act[b.id] != null)
     .slice()
     .sort((x, y) => (x.impact || 99) - (y.impact || 99))   // biggest lever on closing first
+    .slice(0, 5)                                            // keeps the worst case on one page
     .map((b, i) => {
       const f = b.kind === "pct" ? pct : num;
       const ratio = act[b.id] / topAvg[b.id];
@@ -13692,48 +13715,48 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 
   const html =
 '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching</title><style>' +
-'@page { size: letter portrait; margin: 11mm; }' +
+'@page { size: letter portrait; margin: 10mm; }' +
 '* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }' +
 /* Four greys and nothing else. The sheet is printed on a mono laser, so green,
    amber and red all land as the same mid tone and stop meaning anything. Every
    state here is carried by fill, by a mark, and by a word. */
 'body { font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#14181A;' +
-  ' font-size:10px; line-height:1.34; }' +
-'.sheet { max-width:188mm; display:flex; flex-direction:column; gap:6px; }' +
+  ' font-size:11.5px; line-height:1.36; }' +
+'.sheet { max-width:188mm; display:flex; flex-direction:column; gap:9px; }' +
 '.hd { display:flex; justify-content:space-between; align-items:flex-start;' +
   ' border-bottom:2.5px solid #14181A; padding-bottom:6px; }' +
-'.nm { font-size:23px; font-weight:800; letter-spacing:-.025em; line-height:1; }' +
-'.sub { color:#5B6874; font-size:9.5px; margin-top:3px; }' +
+'.nm { font-size:27px; font-weight:800; letter-spacing:-.025em; line-height:1; }' +
+'.sub { color:#5B6874; font-size:11px; margin-top:4px; }' +
 '.goalbox { text-align:right; line-height:1; }' +
-'.goalbox b { font-size:27px; font-weight:800; display:block; letter-spacing:-.03em; }' +
-'.goalbox span { font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
+'.goalbox b { font-size:32px; font-weight:800; display:block; letter-spacing:-.03em; }' +
+'.goalbox span { font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:#5B6874; font-weight:700; }' +
 '.alert { border:1.5px solid #14181A; border-radius:4px; padding:6px 10px; background:#F1F3EF; }' +
-'.alert b { font-size:12px; display:block; }' +
-'.alert span { font-size:10px; color:#3D4842; }' +
+'.alert b { font-size:14px; display:block; }' +
+'.alert span { font-size:11.5px; color:#3D4842; }' +
 /* the pace bar: solid means delivered, hatched means the gap, the rule is today */
-'.pace { position:relative; height:17px; background:#EAEDE9; border-radius:9px; overflow:hidden; }' +
+'.pace { position:relative; height:22px; background:#EAEDE9; border-radius:9px; overflow:hidden; }' +
 '.pace-fill { position:absolute; top:0; left:0; height:100%; border-radius:9px; background:#14181A; }' +
 '.pace-fill.behind { background:repeating-linear-gradient(135deg,#14181A 0 2px,#fff 2px 5px);' +
   ' border:1.5px solid #14181A; }' +
 '.pace-mark { position:absolute; top:-3px; bottom:-3px; width:3px; background:#14181A; z-index:3; }' +
-'.pace-legend { display:flex; justify-content:space-between; font-size:8.5px; color:#5B6874; font-weight:700; margin-top:2px; }' +
-'.cols { display:flex; gap:12px; align-items:stretch; }' +
-'.col { flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }' +
-'h2 { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;' +
+'.pace-legend { display:flex; justify-content:space-between; font-size:9.5px; color:#5B6874; font-weight:700; margin-top:2px; }' +
+'.cols { display:flex; gap:15px; align-items:stretch; }' +
+'.col { flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }' +
+'h2 { font-size:12.5px; font-weight:800; text-transform:uppercase; letter-spacing:.06em;' +
   ' padding:2px 0 2px 8px; border-left:4px solid #14181A; background:linear-gradient(90deg,#E4E7E3,transparent 70%); }' +
-'.lede { font-size:9px; color:#5B6874; }' +
+'.lede { font-size:10px; color:#5B6874; }' +
 '.stats { display:flex; border:1px solid #C9CFCA; border-radius:5px; overflow:hidden; }' +
-'.stat { flex:1; padding:5px 7px; border-right:1px solid #C9CFCA; }' +
+'.stat { flex:1; padding:8px 10px; border-right:1px solid #C9CFCA; }' +
 '.stat:last-child { border-right:none; }' +
-'.stat b { display:block; font-size:16px; font-weight:800; letter-spacing:-.02em; line-height:1.05; }' +
-'.stat span { font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
-'.stat .tgt { display:block; text-decoration:none; font-size:8px; color:#3D4842; font-weight:700; margin-top:1px; }' +
+'.stat b { display:block; font-size:20px; font-weight:800; letter-spacing:-.02em; line-height:1.05; }' +
+'.stat span { font-size:8.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874; font-weight:700; }' +
+'.stat .tgt { display:block; text-decoration:none; font-size:9.5px; color:#3D4842; font-weight:700; margin-top:1px; }' +
 'table { width:100%; border-collapse:collapse; }' +
-'th { text-align:left; font-size:7.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874;' +
+'th { text-align:left; font-size:8.5px; text-transform:uppercase; letter-spacing:.06em; color:#5B6874;' +
   ' padding:2px 5px; border-bottom:1px solid #C9CFCA; font-weight:700; }' +
-'td { padding:2px 5px; border-bottom:1px solid #EAEDE9; font-variant-numeric:tabular-nums; font-size:9.5px; }' +
+'td { padding:4px 6px; border-bottom:1px solid #EAEDE9; font-variant-numeric:tabular-nums; font-size:11px; }' +
 'td.r, th.r { text-align:right; }' +
-'.mini { position:relative; height:9px; background:#EAEDE9; border-radius:5px; min-width:70px; }' +
+'.mini { position:relative; height:11px; background:#EAEDE9; border-radius:5px; min-width:70px; }' +
 '.mini-bar { position:absolute; top:0; left:0; height:100%; border-radius:5px; background:#14181A; }' +
 '.mini-bar.bad { background:repeating-linear-gradient(135deg,#14181A 0 1.6px,#fff 1.6px 4.4px); border:1px solid #14181A; }' +
 '.mini-bar.par { background:#97A099; }' +
@@ -13741,24 +13764,24 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.vs { color:#8B95A1; font-weight:600; }' +
 '.mk { display:inline-block; margin-right:3px; }' +
 '.big { border:1px solid #C9CFCA; border-left:4px solid #14181A; background:#F1F3EF; border-radius:4px;' +
-  ' padding:6px 9px; font-size:11px; }' +
+  ' padding:9px 12px; font-size:12.5px; }' +
 '.big b { font-weight:800; }' +
 '.qbar { display:flex; gap:5px; }' +
-'.qbar div { flex:1; border:1px solid #C9CFCA; border-radius:4px; padding:4px 6px; }' +
-'.qbar b { display:block; font-size:13px; font-weight:800; line-height:1.05; }' +
-'.qbar span { font-size:7.5px; text-transform:uppercase; letter-spacing:.05em; color:#5B6874; font-weight:700; }' +
+'.qbar div { flex:1; border:1px solid #C9CFCA; border-radius:4px; padding:7px 9px; }' +
+'.qbar b { display:block; font-size:16px; font-weight:800; line-height:1.05; }' +
+'.qbar span { font-size:8.5px; text-transform:uppercase; letter-spacing:.05em; color:#5B6874; font-weight:700; }' +
 /* the change bars, bottom right */
-'.chg { margin-bottom:5px; }' +
-'.chg-h { font-size:10px; font-weight:800; display:flex; align-items:center; gap:5px; }' +
+'.chg { margin-bottom:8px; }' +
+'.chg-h { font-size:11.5px; font-weight:800; display:flex; align-items:center; gap:5px; }' +
 '.chg-h em { font-style:normal; background:#14181A; color:#fff; width:12px; height:12px; border-radius:50%;' +
   ' display:inline-flex; align-items:center; justify-content:center; font-size:8px; font-weight:800; flex:0 0 auto; }' +
-'.chg-bar { position:relative; height:11px; background:#EAEDE9; border-radius:6px; margin-top:2px; }' +
+'.chg-bar { position:relative; height:14px; background:#EAEDE9; border-radius:6px; margin-top:2px; }' +
 '.chg-fill { position:absolute; top:0; left:0; height:100%; border-radius:6px;' +
   ' background:repeating-linear-gradient(135deg,#14181A 0 1.8px,#fff 1.8px 5px); border:1.2px solid #14181A; }' +
 '.chg-mark { position:absolute; top:-2px; bottom:-2px; left:70%; width:2.5px; background:#14181A; z-index:3; }' +
-'.chg-f { display:flex; justify-content:space-between; font-size:8px; color:#5B6874; font-weight:700; margin-top:1px; }' +
-'.note { font-size:8.5px; color:#5B6874; }' +
-'.foot { margin-top:2px; padding-top:5px; border-top:1px solid #C9CFCA; font-size:8px; color:#8B95A1; }' +
+'.chg-f { display:flex; justify-content:space-between; font-size:9px; color:#5B6874; font-weight:700; margin-top:1px; }' +
+'.note { font-size:9.5px; color:#5B6874; }' +
+'.foot { margin-top:auto; padding-top:7px; border-top:1px solid #C9CFCA; font-size:9px; color:#8B95A1; }' +
 '</style></head><body><div class="sheet">' +
 
 '<div class="hd">' +
@@ -18645,6 +18668,7 @@ function Style() {
         border-bottom:1px solid rgba(16,32,52,.08); }
       /* The standard, under the list rather than over it. Numbers carry the weight;
          the rule behind them is said once, quietly, and nowhere else on the screen. */
+      .co-out { color:var(--ink-2); font-variant-numeric:tabular-nums; }
       .co-legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;
         padding:14px 4px 2px; margin-top:6px; border-top:1px solid rgba(16,32,52,.08);
         font-size:12.5px; color:var(--ink-3); }
