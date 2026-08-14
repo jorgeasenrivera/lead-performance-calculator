@@ -365,6 +365,46 @@ const showsOutreach = (store) => store
       : OUTREACH_COLUMN_STORES.includes(store.id))
   : false;
 
+/* ---- when the day's numbers are called final ----
+   A store sets the hour it expects the last activity report to have landed. Two
+   things have to be true for that to be useful rather than annoying.
+
+   It has to be forgiving about a few minutes. The report is emailed, forwarded by a
+   worker and parsed by a serverless function, so a 7pm cutoff genuinely lands at
+   7:11 some evenings. Treating that as a miss would cry wolf most weeks and the flag
+   would stop being read, so anything inside the grace window counts as on time and
+   simply says it was a little late.
+
+   And it has to notice silence. An import that stopped at 2pm looks exactly like a
+   quiet afternoon if all you print is the time of the last one, so a gap longer than
+   the stale window is called out on its own, whatever the cutoff says. */
+const DEFAULT_REPORT_CUTOFF = { at: "19:00", graceMin: 30, staleMin: 60 };
+const cutoffFor = (store) => ({ ...DEFAULT_REPORT_CUTOFF, ...((store && store.reportCutoff) || {}) });
+
+/* lastAt is the newest uploadedAt across the day's rows. Everything else is derived
+   from it, so a caller that has no rows still gets a shape it can render. */
+const fmtClock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function reportFreshness(store, rows, now = new Date()) {
+  const c = cutoffFor(store);
+  const stamps = Object.values(rows || {}).map((r) => r && r.uploadedAt).filter(Boolean).sort();
+  const lastAt = stamps.length ? new Date(stamps[stamps.length - 1]) : null;
+  const [hh, mm] = String(c.at || "19:00").split(":").map((n) => parseInt(n, 10) || 0);
+  const cutoff = new Date(now); cutoff.setHours(hh, mm, 0, 0);
+  const graceEnd = new Date(cutoff.getTime() + c.graceMin * 60000);
+  const minsAgo = lastAt ? Math.round((now - lastAt) / 60000) : null;
+  const afterCutoff = now >= cutoff;
+  return {
+    lastAt, minsAgo, cutoff, cutoffLabel: fmtClock(cutoff),
+    // landed after the hour but inside the grace window: on time, said out loud
+    lateButCounted: !!lastAt && lastAt > cutoff && lastAt <= graceEnd,
+    // nothing at all, and the hour has been and gone
+    missed: !lastAt && afterCutoff,
+    // it was running and then it stopped
+    stale: !!lastAt && minsAgo > c.staleMin,
+    staleMin: c.staleMin,
+  };
+}
+
 const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40, repeatDays: 3 };
 
 // ---- Days off + the Check Out point system ----
@@ -9246,14 +9286,16 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         {/* When these numbers last moved. Without it a quiet sheet is ambiguous: it
             could be a slow morning or an import that never landed. */}
         {(() => {
-          const stamps = Object.values((data.activity || {})[day] || {})
-            .map((r) => r && r.uploadedAt).filter(Boolean).sort();
-          const last = stamps[stamps.length - 1];
+          const f = reportFreshness(store, (data.activity || {})[day]);
+          const bad = f.missed || f.stale || !f.lastAt;
           return (
-            <span className={"hint co-stamp" + (last ? "" : " co-stamp-none")}>
-              {last
-                ? `Numbers as of ${new Date(last).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-                : "No activity report has landed for this day yet"}
+            <span className={"hint co-stamp" + (bad ? " co-stamp-none" : "")}
+              title={`This store expects the last report by ${f.cutoffLabel}.`}>
+              {f.missed ? `Nothing has landed and it is past ${f.cutoffLabel}`
+                : !f.lastAt ? "No activity report has landed for this day yet"
+                : f.stale ? `Last import ${f.minsAgo} minutes ago, nothing since`
+                : f.lateButCounted ? `Numbers as of ${fmtClock(f.lastAt)}, just after the ${f.cutoffLabel} cutoff`
+                : `Numbers as of ${fmtClock(f.lastAt)}`}
             </span>
           );
         })()}
@@ -11859,8 +11901,14 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
 
   const restrictedNow = restriction && (!restriction.until || new Date(restriction.until) > new Date());
   const daysLeft = restriction?.until ? Math.ceil((new Date(restriction.until) - new Date()) / 86400000) : null;
-  // Dials sit on the name's own row, so one associate reads as one line.
-  const showDials = !incomplete && !restrictedNow && ev.status === "fail";
+  /* Dials sit on the name's own row, so one associate reads as one line.
+
+     They used to be drawn only for people who were FAILING, which meant clearing
+     your standards made your numbers disappear. A manager could see who was doing
+     well and nothing whatsoever about how well, and the people worth talking about
+     in a floor meeting were the only ones with no figures next to their name.
+     Anybody who is graded gets their dials. */
+  const showDials = !incomplete && !restrictedNow && (ev.status === "fail" || ev.status === "pass");
 
   const confirmRestrict = () => {
     const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
@@ -11874,7 +11922,9 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       <div className="assoc-row" onClick={() => setOpen(!open)}>
         {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
-        {star && <span className="star-badge" title="Wildly surpassing standard">★ Crushing it</span>}
+        {star && <span className="star-badge" title="Wildly surpassing standard">
+          <PixIcon glyph="star" size={12} /> Crushing it
+        </span>}
         {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
         {showDials && <MetricStrip ev={ev} stats={stats} />}
         <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
@@ -12391,6 +12441,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
   const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
   const [hours, setHours] = useState(store?.hours || { ...DEFAULT_HOURS });
+  const [cutoff, setCutoff] = useState(() => cutoffFor(store));
   const [cropSrc, setCropSrc] = useState(null);
   const [err, setErr] = useState("");
 
@@ -12410,7 +12461,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
     if (!name.trim()) { setErr("Give the store a name."); return; }
     if (!id) { setErr("That name doesn't make a valid store ID. Try adding a letter or number."); return; }
     if (idTaken) { setErr("A store with that name already exists."); return; }
-    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours });
+    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours, reportCutoff: cutoff });
   };
 
   return (
@@ -12480,6 +12531,24 @@ function StoreWizard({ config, store, onCancel, onSave }) {
               <label className="thr-label">Grace days
                 <input type="number" min="0" max="28" value={graceDays}
                   onChange={(e) => setGraceDays(Math.max(0, Math.min(28, parseInt(e.target.value) || 0)))} />
+              </label>
+            </div>
+
+            <label>Daily report cutoff</label>
+            <p className="hint">The hour you expect the last activity report to have landed. A report inside
+              the grace window still counts, and a gap longer than the quiet window gets flagged on its own.</p>
+            <div className="wiz-nums">
+              <label className="thr-label">Expected by
+                <input type="time" value={cutoff.at}
+                  onChange={(e) => setCutoff({ ...cutoff, at: e.target.value || "19:00" })} />
+              </label>
+              <label className="thr-label">Grace (min)
+                <input type="number" min="0" max="180" value={cutoff.graceMin}
+                  onChange={(e) => setCutoff({ ...cutoff, graceMin: Math.max(0, Math.min(180, parseInt(e.target.value) || 0)) })} />
+              </label>
+              <label className="thr-label">Quiet before flag (min)
+                <input type="number" min="15" max="480" value={cutoff.staleMin}
+                  onChange={(e) => setCutoff({ ...cutoff, staleMin: Math.max(15, Math.min(480, parseInt(e.target.value) || 0)) })} />
               </label>
             </div>
 
@@ -18795,8 +18864,18 @@ function Style() {
       .rank-1 { background:linear-gradient(150deg,#FFE595,#E0A100); color:#4A3200; }
       .rank-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
       .rank-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
-      .star-badge { font-size:11px; font-weight:700; color:#1E7A3C; background:rgba(48,177,85,.14); padding:3px 9px; border-radius:20px;
+      .star-badge { display:inline-flex; align-items:center; gap:5px; flex:0 0 auto;
+        font-size:11px; font-weight:800; letter-spacing:.01em; color:#146B41;
+        background:rgba(48,177,85,.16); padding:4px 11px; border-radius:20px;
         animation: starGlow 3.2s ease-in-out infinite; }
+      /* A cleared month used to look identical to a failing one apart from one small
+         pill at the far end of the row. The people doing well are the ones a floor
+         meeting is built on, so the row says so before anybody reads it. */
+      .assoc-card.pass { position:relative; }
+      .assoc-card.pass::before { content:""; position:absolute; left:-10px; top:6px; bottom:6px;
+        width:3px; border-radius:2px; background:#30B155; opacity:.55; }
+      .assoc-card.pass .assoc-name { color:#12212F; font-weight:700; }
+      .assoc-card.pass:has(.star-badge)::before { opacity:1; width:4px; }
       @keyframes starGlow {
         0%,100% { box-shadow: 0 0 0 0 rgba(48,177,85,0); }
         50%     { box-shadow: 0 0 0 3px rgba(48,177,85,.10); }
