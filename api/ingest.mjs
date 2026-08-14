@@ -914,6 +914,28 @@ export default async function handler(req, res) {
             pages: lines.length ? lines[lines.length - 1].pg : 0,
             lineCount: lines.length, debugLines: dbg });
           failures.push({ file: a.filename, why: note });
+          /* Park the dump somewhere it can be read later. The worker logs the first
+             2000 characters of this response and no more, and these reports are sent
+             to the worker address rather than to a person, so an unrecognised layout
+             used to be diagnosable only in the minutes before the log rolled and only
+             if somebody happened to be looking. Writing the geometry down is what
+             makes the mapper writable at all: 120 lines with the x of every fragment
+             is what separates a name from a column of figures.
+             Best effort by design. A diagnostic that can fail an import is worse than
+             no diagnostic. */
+          try {
+            const dkey = "lpc:config:unparsed:v1";
+            const prev = (await sbGet(dkey)) || {};
+            const items = Array.isArray(prev.items) ? prev.items : [];
+            await sbPut(dkey, { items: [{
+              at: new Date().toISOString(),
+              file: a.filename || "email.pdf",
+              subject, to,
+              pages: lines.length ? lines[lines.length - 1].pg : 0,
+              lineCount: lines.length,
+              debugLines: dbg,
+            }, ...items].slice(0, 6) });
+          } catch (e) { console.error("ingest: could not store the unparsed dump", String(e.message || e)); }
         }
       } catch (e) {
         const why = "PDF read failed: " + String(e.message || e);
