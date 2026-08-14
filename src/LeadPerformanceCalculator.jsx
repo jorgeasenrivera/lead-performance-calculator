@@ -9221,7 +9221,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         </select>
         <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
         <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
-        <span className="hint">Standard: {std.minCalls} calls · {std.minVideos} videos · RockEd qualified. One point per item missed. Days off don't count.</span>
+
         {/* When these numbers last moved. Without it a quiet sheet is ambiguous: it
             could be a slow morning or an import that never landed. */}
         {(() => {
@@ -9330,13 +9330,22 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                   <td>
                     {r.off ? <span className="pt-badge off">—</span>
                       : !r.hasData ? <span className="pt-badge dim">no data</span>
-                      : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>{r.points} {r.points === 1 ? "pt" : "pts"}</span>}
+                      : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>
+                          <PixIcon glyph={r.points === 0 ? "check" : "close"} size={12} />
+                          {r.points} {r.points === 1 ? "pt" : "pts"}
+                        </span>}
                   </td>
                 </tr>
                   )),
                 ])}
             </tbody>
           </table>
+          <div className="co-legend">
+            <span><b>{std.minCalls}</b> calls</span>
+            <span><b>{std.minVideos}</b> videos</span>
+            <span><b>RockEd</b> qualified</span>
+            <i>One point per miss. Days off excluded.</i>
+          </div>
         </div>
 
         <aside className="checkout-side">
@@ -9349,13 +9358,12 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
               <p className="hint">Nobody has accrued a point this month. Worth saying out loud.</p>
             ) : (
               <>
-                <p className="hint">Most points month-to-date. One point per missed item (calls, videos, RockEd), days off excluded.</p>
+                <p className="hint">Month to date.</p>
                 <ol className="offender-rank">
                   {offenders.map((r, i) => (
                     <div key={r.a.id} className="offender-rank-row">
                       <span className="orr-rank">{i + 1}</span>
                       <b className="orr-name">{r.a.name}</b>
-                      <span className="orr-worked">{r.worked} day{r.worked === 1 ? "" : "s"} worked</span>
                       <span className={"orr-points pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
                     </div>
                   ))}
@@ -18635,6 +18643,14 @@ function Style() {
          over a soft band of the section's own colour. */
       .co-sep td { padding-top:22px !important; padding-bottom:8px !important;
         border-bottom:1px solid rgba(16,32,52,.08); }
+      /* The standard, under the list rather than over it. Numbers carry the weight;
+         the rule behind them is said once, quietly, and nowhere else on the screen. */
+      .co-legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;
+        padding:14px 4px 2px; margin-top:6px; border-top:1px solid rgba(16,32,52,.08);
+        font-size:12.5px; color:var(--ink-3); }
+      .co-legend b { font-family:var(--font-display); font-size:15px; font-weight:800;
+        color:var(--ink-2); letter-spacing:-.02em; margin-right:2px; }
+      .co-legend i { font-style:normal; margin-left:auto; font-size:11.5px; }
       .co-sep-head { display:inline-flex; align-items:center; gap:8px;
         font-size:16px; font-weight:700; letter-spacing:-.01em; color:var(--ink);
         text-transform:none; }
@@ -18855,6 +18871,7 @@ function Style() {
       .co-badge.no { background:rgba(229,71,60,.13); color:#C13529; }
       .co-badge.dim { background:#F2F2F4; color:var(--ink-2); }
       /* point system badges */
+      .pt-badge { display:inline-flex; align-items:center; gap:5px; }
       .pt-badge { font-size:11.5px; font-weight:800; padding:4px 11px; border-radius:20px; font-variant-numeric:tabular-nums; }
       .pt-badge.pt-0 { background:rgba(48,177,85,.14); color:#1E7A3C; }
       .pt-badge.pt-1 { background:rgba(255,159,10,.16); color:#95600A; }
