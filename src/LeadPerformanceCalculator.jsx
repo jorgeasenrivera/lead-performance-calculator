@@ -1643,6 +1643,34 @@ async function saveActivityDays(storeId, next, prev) {
   return { written: changed.length, failed: [] };
 }
 
+/* ---- the daily digest, so rates have a yesterday ----
+   The board rates cannot be trended from anything already stored: the Delivery
+   Summary overwrites the month's totals on every import, and data.snapshots is
+   trimmed to a single entry. So one small row a day is kept — counts only, no
+   names, no money — and that is what "up from last week" is measured against.
+
+   The key sits UNDER lpc:store:<id>: on purpose. RLS allows exactly five
+   prefixes, and a new lpc:digest:% would have been refused with the write
+   failing quietly. As lpc:store:<id>:digest:<day> it lands on the existing
+   store policy, gated by has_store(split_part(key,':',3)) — the same rule the
+   split activity rows already ride on, so it needs no SQL change at all. */
+const digestKey = (storeId, day) => `lpc:store:${storeId}:digest:${day}`;
+const DIGEST_KEEP = 30;
+
+async function loadDigests(storeId) {
+  if (!supabase) return {};
+  const prefix = `lpc:store:${storeId}:digest:`;
+  const { data, error } = await supabase.from("app_data")
+    .select("key,value").like("key", prefix + "%");
+  if (error) throw error;
+  const out = {};
+  for (const row of data || []) {
+    const day = row.key.slice(prefix.length);
+    if (day && row.value) out[day] = row.value;
+  }
+  return out;
+}
+
 // The plate log is worked by several managers at once, so it has to be re-read
 // often. Pulling the whole store blob on a timer would be brutal, so this asks the
 // database for the two plate fields and nothing else.
@@ -11603,7 +11631,60 @@ function ruSum(data, days, t) {
   return n;
 }
 
-function buildRoundUp({ config, store, data, M }) {
+/* One pass over the roster, two consumers: the round-up reads it for today and
+   the digest stores it so tomorrow has something to compare against. */
+function ruEvaluate({ config, store, data, M }) {
+  const restrictions = data.restrictions || {};
+  const inGrace = new Date().getDate() <= (store.graceDays ?? 10);
+  const isRestricted = (a) => {
+    const r = restrictions[a.id];
+    return !!(r && (!r.until || new Date(r.until) > new Date()));
+  };
+  const failBy = {}, verdicts = {};
+  const nearing = [];
+  let evaluated = 0, restricted = 0;
+  for (const a of data.roster || []) {
+    if (!a.roleId) continue;
+    const st = M?.stats?.[norm(a.name)];
+    const ev = evaluateAssociate(st, config.standards?.[store.id]?.[a.roleId]?.tiers);
+    if (ev.status === "no-standards") continue;
+    evaluated++;
+    const restrictedNow = isRestricted(a);
+    if (restrictedNow) restricted++;
+    const v = verdictOf(ev, { restricted: restrictedNow, inGrace });
+    verdicts[v.key] = (verdicts[v.key] || 0) + 1;
+    for (const f of ev.failures || []) {
+      const label = f.def?.label || f.metric;
+      failBy[label] = (failBy[label] || 0) + 1;
+    }
+    if (ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 && !restrictedNow && !inGrace)
+      nearing.push({ name: a.name, opps: ev.opps, cap: ev.cap, miss: ev.failures.length });
+  }
+  return { evaluated, restricted, failBy, verdicts, nearing };
+}
+
+// Counts only. Nothing here is not already on a wall the floor walks past.
+function buildDigest(args) {
+  const e = ruEvaluate(args);
+  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy };
+}
+
+/* The digest closest to `back` days ago, so a missed day degrades to the
+   nearest one either side rather than silently dropping the comparison. */
+function nearestDigest(digests, back) {
+  const want = new Date(today() + "T12:00");
+  want.setDate(want.getDate() - back);
+  const target = want.toLocaleDateString("en-CA");
+  let best = null, bestGap = Infinity;
+  for (const [day, val] of Object.entries(digests || {})) {
+    if (day >= today()) continue;
+    const gap = Math.abs((new Date(day + "T12:00") - new Date(target + "T12:00")) / 86400000);
+    if (gap < bestGap) { bestGap = gap; best = { day, val, gap }; }
+  }
+  return best && bestGap <= 4 ? best : null;
+}
+
+function buildRoundUp({ config, store, data, M, digests }) {
   const improved = [], worsened = [], work = [], aware = [];
 
   /* ---- what improved / what worsened ---- */
@@ -11627,33 +11708,41 @@ function buildRoundUp({ config, store, data, M }) {
     worsened.sort((x, y) => y.weight - x.weight);
   }
 
-  /* ---- work on / be aware ---- these need no history, so they are live on day one */
-  const restrictions = data.restrictions || {};
-  const inGrace = new Date().getDate() <= (store.graceDays ?? 10);
-  const isRestricted = (a) => {
-    const r = restrictions[a.id];
-    return !!(r && (!r.until || new Date(r.until) > new Date()));
-  };
-  const failBy = new Map();     // metric label -> how many people miss it
-  let evaluated = 0, restricted = 0;
-  const nearing = [];
-  for (const a of data.roster || []) {
-    if (!a.roleId) continue;
-    const st = M?.stats?.[norm(a.name)];
-    const ev = evaluateAssociate(st, config.standards?.[store.id]?.[a.roleId]?.tiers);
-    if (ev.status === "no-standards") continue;
-    evaluated++;
-    if (isRestricted(a)) restricted++;
-    for (const f of ev.failures || []) {
-      const label = f.def?.label || f.metric;
-      failBy.set(label, (failBy.get(label) || 0) + 1);
+  /* ---- standards, from the one shared pass ---- */
+  const { evaluated, restricted, failBy, verdicts, nearing } = ruEvaluate({ config, store, data, M });
+
+  /* ---- what the digest adds: the rates, which have no other past ----
+     Everything above trends activity, which is stored per day anyway. These are
+     the numbers that only exist because yesterday's row was kept. */
+  const was = nearestDigest(digests, RU_WINDOW);
+  if (was) {
+    // Never "against 2 7 days ago" — two numbers running together is unreadable.
+    const ago = was.gap <= 1 ? "a week ago" : `on ${was.day}`;
+    const cleared = (verdicts.cleared || 0) - (was.val.v?.cleared || 0);
+    if (Math.abs(cleared) >= 1)
+      (cleared > 0 ? improved : worsened).push({
+        weight: Math.abs(cleared) / Math.max(1, evaluated),
+        t: `${Math.abs(cleared)} ${cleared > 0 ? "more" : "fewer"} ${Math.abs(cleared) === 1 ? "person is" : "people are"} cleared to grab leads`,
+        d: `${verdicts.cleared || 0} of ${evaluated} clear now, against ${was.val.v?.cleared || 0} ${ago}.`,
+        v: (cleared > 0 ? "+" : "−") + Math.abs(cleared),
+      });
+    for (const [label, n] of Object.entries(failBy)) {
+      const before = was.val.below?.[label];
+      if (before == null) continue;
+      const diff = n - before;
+      if (Math.abs(diff) < 2) continue;   // one person moving is not a trend
+      (diff < 0 ? improved : worsened).push({
+        weight: Math.abs(diff) / Math.max(1, evaluated),
+        t: `${label}: ${Math.abs(diff)} ${diff < 0 ? "fewer" : "more"} below target`,
+        d: `${n} of ${evaluated} below it now, against ${before} ${ago}.`,
+        v: (diff < 0 ? "−" : "+") + Math.abs(diff),
+      });
     }
-    // At or near the ceiling while still missing a standard is the coaching
-    // conversation with a deadline on it, so it outranks everything else.
-    if (ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 && !isRestricted(a) && !inGrace)
-      nearing.push({ name: a.name, opps: ev.opps, cap: ev.cap, miss: ev.failures.length });
+    improved.sort((x, y) => y.weight - x.weight);
+    worsened.sort((x, y) => y.weight - x.weight);
   }
-  const weakest = [...failBy.entries()].sort((x, y) => y[1] - x[1])[0];
+
+  const weakest = Object.entries(failBy).sort((x, y) => y[1] - x[1])[0];
   if (weakest && evaluated > 0)
     work.push({
       t: `${weakest[0]} is the weakest standard`,
@@ -11681,10 +11770,17 @@ function buildRoundUp({ config, store, data, M }) {
   if (!trendable)
     aware.push({
       t: "Not enough history to compare weeks yet",
-      d: `${cur.length} day${cur.length === 1 ? "" : "s"} of activity on file. Two weeks of imports and the trends fill in on their own.`,
+      d: `${cur.length} day${cur.length === 1 ? "" : "s"} of activity on file. Two weeks of imports and the activity trends fill in on their own.`,
+    });
+  else if (!was)
+    aware.push({
+      t: "Standards aren't being compared yet",
+      d: Object.keys(digests || {}).length
+        ? "Nothing close enough to a week ago is on file, so who cleared and who slipped is being left out rather than measured against the wrong day."
+        : "Today is the first day the floor's standing was written down. From tomorrow this also shows who cleared and who slipped.",
     });
 
-  return { improved, worsened, work, aware, trendable, days: cur.length,
+  return { improved, worsened, work, aware, trendable, days: cur.length, rated: !!was,
     any: improved.length + worsened.length + work.length + aware.length > 0 };
 }
 
@@ -11712,17 +11808,46 @@ function RuFinding({ item, tone, delay }) {
    first sign-in of the day, because a takeover every morning stops being a
    briefing and becomes a door. "Seen today" is per device, which is the right
    scope: it is about this person's morning, not the store's. */
+const ruWritten = new Set();   // one write per store per day per session
+
 function RoundUp({ config, store, data, M }) {
-  const ru = useMemo(() => buildRoundUp({ config, store, data, M }), [config, store, data, M]);
+  const [digests, setDigests] = useState(null);
+  const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
+    [config, store, data, M, digests]);
   const seenKey = `lpc:roundup:${store.id}:${today()}`;
   const [full, setFull] = useState(() => {
     try { return !localStorage.getItem(seenKey); } catch { return false; }
   });
-  const [open, setOpen] = useState(true);
   const close = () => {
-    try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it just shows again */ }
+    try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it shows again, which is survivable */ }
     setFull(false);
   };
+
+  // Read what's on file, then write today's row if it isn't there. The write is
+  // never allowed to matter: a failure costs tomorrow's comparison and nothing
+  // that is on screen now.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const got = await loadDigests(store.id);
+        if (!live) return;
+        setDigests(got);
+        const stamp = store.id + ":" + today();
+        if (got[today()] || ruWritten.has(stamp)) return;
+        ruWritten.add(stamp);
+        const row = buildDigest({ config, store, data, M });
+        if (!row.ev) return;                 // nobody evaluated: nothing worth keeping
+        await saveShared(digestKey(store.id, today()), row);
+        if (live) setDigests((d) => ({ ...(d || {}), [today()]: row }));
+      } catch (e) {
+        console.error("round-up digest", e);
+        if (live) setDigests({});
+      }
+    })();
+    return () => { live = false; };
+  }, [store.id]);
+
   useEffect(() => {
     if (!full) return;
     const onKey = (e) => { if (e.key === "Escape") close(); };
@@ -11767,31 +11892,20 @@ function RoundUp({ config, store, data, M }) {
     );
   }
 
-  if (!open) return null;
+  /* Once it has been read, all that is left is the way back into it. The sheet
+     is the round-up; this is a door handle, not a second version of it. */
   return (
-    <div className="ru-strip">
-      <div className="ru-strip-top">
-        <div className="ru-strip-title">Your round-up <span>{ru.trendable ? `last ${ru.days} days with data` : "today"}</span></div>
-        <button className="ru-x" onClick={() => setOpen(false)} aria-label="Hide the round-up">&times;</button>
-      </div>
-      <div className="ru-cols">
-        {RU_SECTIONS.map((s, i) => {
-          const items = ru[s.key];
-          return (
-            <div className="ru-col" key={s.key} style={{ animationDelay: 120 + i * 90 + "ms" }}>
-              <h4><span className={"ru-" + s.tone}><PixIcon glyph={s.glyph} size={13} fine /></span>{s.label}</h4>
-              {items.length === 0
-                ? <div className="ru-col-none">Nothing today</div>
-                : <>
-                    <div className={"ru-col-n ru-" + s.tone}><CountUp value={items.length} delay={220 + i * 90} /></div>
-                    <div className="ru-col-line">{items[0].t}</div>
-                    {items.length > 1 && <div className="ru-col-more">+ {items.length - 1} more</div>}
-                  </>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <button className="ru-reopen" onClick={() => setFull(true)}>
+      <span className="ru-reopen-t">Your round-up</span>
+      <span className="ru-reopen-tally">
+        {RU_SECTIONS.filter((s) => ru[s.key].length).map((s) => (
+          <span key={s.key} className={"ru-tally ru-" + s.tone}>
+            <PixIcon glyph={s.glyph} size={12} fine />{ru[s.key].length}
+          </span>
+        ))}
+      </span>
+      <span className="ru-reopen-go">Open</span>
+    </button>
   );
 }
 
@@ -17860,27 +17974,19 @@ function Style() {
       .ru-find-t { font-size:14px; font-weight:650; line-height:1.35; }
       .ru-find-d { font-size:12.5px; color:var(--ink-2); margin-top:2px; line-height:1.45; }
 
-      /* --- the strip --- */
-      .ru-strip { background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
-        padding:16px 18px; margin-bottom:22px; box-shadow:var(--shadow-1); }
-      .ru-strip-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:13px; }
-      .ru-strip-title { font-family:var(--font-display); font-size:17px; letter-spacing:-.015em; }
-      .ru-strip-title span { font-family:var(--font-ui); font-size:12.5px; font-weight:400; color:var(--ink-3); margin-left:6px; }
-      .ru-x { border:none; background:none; font-size:20px; line-height:1; color:var(--ink-3);
-        cursor:pointer; padding:2px 8px; border-radius:8px; transition:color .2s var(--ease); }
-      .ru-x:hover { color:var(--ink); }
-      .ru-cols { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
-      .ru-col { border:1px solid var(--line); border-radius:14px; padding:13px 14px; min-width:0;
-        opacity:0; animation:ruBloop .6s var(--ease-bloop) both;
-        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease); }
-      .ru-col:hover { transform:translateY(-3px); box-shadow:var(--shadow-2); }
-      .ru-col h4 { display:flex; align-items:center; gap:6px; font-size:11.5px; letter-spacing:.07em;
-        text-transform:uppercase; color:var(--ink-3); margin:0 0 8px; }
-      .ru-col h4 span { display:flex; flex:0 0 auto; }
-      .ru-col-n { font-family:var(--font-display); font-size:28px; line-height:1; font-variant-numeric:tabular-nums; }
-      .ru-col-line { font-size:12.5px; color:var(--ink-2); margin-top:7px; line-height:1.4; }
-      .ru-col-more { font-size:12px; color:var(--ink-3); margin-top:4px; }
-      .ru-col-none { font-size:12.5px; color:var(--ink-3); }
+      /* --- the way back in, once the sheet has been read --- */
+      .ru-reopen { display:flex; align-items:center; gap:14px; width:100%; text-align:left;
+        font:inherit; cursor:pointer; background:var(--card); border:1px solid var(--line);
+        border-radius:14px; padding:11px 16px; margin-bottom:20px; box-shadow:var(--shadow-1);
+        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease);
+        opacity:0; animation:ruBloop .5s var(--ease-bloop) .1s both; }
+      .ru-reopen:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:rgba(42,94,155,.4); }
+      .ru-reopen:active { transform:scale(.99); }
+      .ru-reopen-t { font-family:var(--font-display); font-size:14.5px; letter-spacing:-.01em; }
+      .ru-reopen-tally { display:flex; gap:9px; flex-wrap:wrap; margin-left:auto; }
+      .ru-tally { display:inline-flex; align-items:center; gap:4px; font-family:var(--font-display);
+        font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+      .ru-reopen-go { font-size:13px; font-weight:700; color:var(--blue); flex:0 0 auto; }
 
       /* --- the once-a-day sheet --- */
       .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.42);
@@ -17912,10 +18018,10 @@ function Style() {
       .ru-btn:active { transform:scale(.97); }
 
       @media (prefers-reduced-motion: reduce) {
-        .ru-find, .ru-col, .ru-eyebrow, .ru-sheet-store, .ru-sheet-date,
+        .ru-find, .ru-reopen, .ru-eyebrow, .ru-sheet-store, .ru-sheet-date,
         .ru-sec-h, .ru-sheet-foot, .ru-sheet, .ru-scrim {
           animation:none !important; opacity:1 !important; transform:none !important; }
-        .ru-col:hover { transform:none; }
+        .ru-reopen:hover, .ru-reopen:active { transform:none; }
       }
 
       /* ---- upload history ---- */
@@ -20024,13 +20130,11 @@ function Style() {
         .podium-row { flex-direction:column; }
         .pod { flex:1 1 auto; }
 
-        /* --- the round-up: four columns become a snap-scrolling rail, and the
-               once-a-day sheet takes the whole screen rather than floating --- */
-        .ru-strip { padding:14px; border-radius:16px; margin-bottom:18px; }
-        .ru-cols { display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory;
-          -webkit-overflow-scrolling:touch; margin:0 -14px; padding:2px 14px 6px; }
-        .ru-col { flex:0 0 76%; scroll-snap-align:start; }
-        .ru-col:hover { transform:none; box-shadow:none; }
+        /* --- the sheet takes the bottom of the screen rather than floating --- */
+        .ru-reopen { padding:10px 13px; gap:10px; }
+        .ru-reopen:hover { transform:none; box-shadow:var(--shadow-1); }
+        .ru-reopen-t { font-size:13.5px; }
+        .ru-reopen-go { display:none; }        /* the whole bar is the target on a phone */
         .ru-scrim { padding:0; align-items:flex-end; }
         .ru-sheet { width:100%; max-height:92vh; border-radius:22px 22px 0 0; }
         .ru-sheet-head { padding:20px 18px 4px; }
