@@ -561,6 +561,11 @@ const PIX5 = {
   triup:    ["00100","01110","11111","00000","00000"],
   tridown:  ["00000","00000","11111","01110","00100"],
   dot:      ["00000","00000","00100","00000","00000"],
+  // The bottom bar's overflow button. An ellipsis is only ever three dots, so
+  // on the fine grid it renders a third the weight of the glyphs beside it and
+  // the bar looks unevenly inked. It belongs on the coarse grid for the same
+  // reason the tick does.
+  more:     ["00000","00000","10101","00000","00000"],
 };
 // A question mark, on the fine grid: it needs the counter and the gap under the
 // hook to read as a question rather than a smudge.
@@ -1636,6 +1641,34 @@ async function saveActivityDays(storeId, next, prev) {
     return { written: 0, failed: changed };
   }
   return { written: changed.length, failed: [] };
+}
+
+/* ---- the daily digest, so rates have a yesterday ----
+   The board rates cannot be trended from anything already stored: the Delivery
+   Summary overwrites the month's totals on every import, and data.snapshots is
+   trimmed to a single entry. So one small row a day is kept — counts only, no
+   names, no money — and that is what "up from last week" is measured against.
+
+   The key sits UNDER lpc:store:<id>: on purpose. RLS allows exactly five
+   prefixes, and a new lpc:digest:% would have been refused with the write
+   failing quietly. As lpc:store:<id>:digest:<day> it lands on the existing
+   store policy, gated by has_store(split_part(key,':',3)) — the same rule the
+   split activity rows already ride on, so it needs no SQL change at all. */
+const digestKey = (storeId, day) => `lpc:store:${storeId}:digest:${day}`;
+const DIGEST_KEEP = 30;
+
+async function loadDigests(storeId) {
+  if (!supabase) return {};
+  const prefix = `lpc:store:${storeId}:digest:`;
+  const { data, error } = await supabase.from("app_data")
+    .select("key,value").like("key", prefix + "%");
+  if (error) throw error;
+  const out = {};
+  for (const row of data || []) {
+    const day = row.key.slice(prefix.length);
+    if (day && row.value) out[day] = row.value;
+  }
+  return out;
 }
 
 // The plate log is worked by several managers at once, so it has to be re-read
@@ -11552,6 +11585,330 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
   );
 }
 
+/* ================= THE MORNING ROUND-UP =================
+   What improved, what worsened, what to work on, what to be aware of.
+
+   On history: activity is the one thing with a real past. Every day lands in
+   `data.activity[day]` and, for the last 45 days, in its own row, so a week can
+   be compared against the week before it today, retroactively, with nothing new
+   to store. The board RATES cannot: the Delivery Summary overwrites the month's
+   totals on every import and `data.snapshots` is trimmed to one entry, so
+   yesterday's Delivery % is genuinely gone. Nothing here trends a rate. When
+   that is wanted, a small daily digest row is the missing piece, and the two
+   sections below that need no history at all keep working either way.
+
+   Texts and emails are deliberately not trended. They are never graded anywhere
+   else in the app, because automated follow-up fires whether or not a person is
+   in that day, and ranking a week of them here would contradict that. */
+const RU_TRENDS = [
+  { key: "apptCreated", label: "Appointments set", alt: ["apptScheduled"] },
+  { key: "apptShow", label: "Appointments shown", alt: ["apptShowed"] },
+  { key: "video", label: "Videos sent" },
+  { key: "calls", label: "Calls made" },
+  { key: "contacted", label: "Customers reached" },
+];
+const RU_WINDOW = 7;      // days per side of the comparison
+const RU_FLOOR = 5;       // below this the prior week is too small to call a trend
+const RU_NOISE = 0.10;    // moves smaller than this are not worth anyone's morning
+
+const ruVal = (row, t) => {
+  if (!row) return 0;
+  if (row[t.key] != null) return row[t.key] || 0;
+  for (const a of t.alt || []) if (row[a] != null) return row[a] || 0;
+  return 0;
+};
+/* Only days that actually carry rows. A store that does not import on a Sunday
+   has not had a bad Sunday, and padding the window with zeros would invent one. */
+function ruDays(data, n, skip = 0) {
+  const all = Object.keys(data.activity || {})
+    .filter((d) => data.activity[d] && Object.keys(data.activity[d]).length > 0)
+    .sort().reverse();
+  return all.slice(skip, skip + n);
+}
+function ruSum(data, days, t) {
+  let n = 0;
+  for (const d of days) for (const row of Object.values(data.activity[d] || {})) n += ruVal(row, t);
+  return n;
+}
+
+/* One pass over the roster, two consumers: the round-up reads it for today and
+   the digest stores it so tomorrow has something to compare against. */
+function ruEvaluate({ config, store, data, M }) {
+  const restrictions = data.restrictions || {};
+  const inGrace = new Date().getDate() <= (store.graceDays ?? 10);
+  const isRestricted = (a) => {
+    const r = restrictions[a.id];
+    return !!(r && (!r.until || new Date(r.until) > new Date()));
+  };
+  const failBy = {}, verdicts = {};
+  const nearing = [];
+  let evaluated = 0, restricted = 0;
+  for (const a of data.roster || []) {
+    if (!a.roleId) continue;
+    const st = M?.stats?.[norm(a.name)];
+    const ev = evaluateAssociate(st, config.standards?.[store.id]?.[a.roleId]?.tiers);
+    if (ev.status === "no-standards") continue;
+    evaluated++;
+    const restrictedNow = isRestricted(a);
+    if (restrictedNow) restricted++;
+    const v = verdictOf(ev, { restricted: restrictedNow, inGrace });
+    verdicts[v.key] = (verdicts[v.key] || 0) + 1;
+    for (const f of ev.failures || []) {
+      const label = f.def?.label || f.metric;
+      failBy[label] = (failBy[label] || 0) + 1;
+    }
+    if (ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 && !restrictedNow && !inGrace)
+      nearing.push({ name: a.name, opps: ev.opps, cap: ev.cap, miss: ev.failures.length });
+  }
+  return { evaluated, restricted, failBy, verdicts, nearing };
+}
+
+// Counts only. Nothing here is not already on a wall the floor walks past.
+function buildDigest(args) {
+  const e = ruEvaluate(args);
+  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy };
+}
+
+/* The digest closest to `back` days ago, so a missed day degrades to the
+   nearest one either side rather than silently dropping the comparison. */
+function nearestDigest(digests, back) {
+  const want = new Date(today() + "T12:00");
+  want.setDate(want.getDate() - back);
+  const target = want.toLocaleDateString("en-CA");
+  let best = null, bestGap = Infinity;
+  for (const [day, val] of Object.entries(digests || {})) {
+    if (day >= today()) continue;
+    const gap = Math.abs((new Date(day + "T12:00") - new Date(target + "T12:00")) / 86400000);
+    if (gap < bestGap) { bestGap = gap; best = { day, val, gap }; }
+  }
+  return best && bestGap <= 4 ? best : null;
+}
+
+function buildRoundUp({ config, store, data, M, digests }) {
+  const improved = [], worsened = [], work = [], aware = [];
+
+  /* ---- what improved / what worsened ---- */
+  const cur = ruDays(data, RU_WINDOW), prev = ruDays(data, RU_WINDOW, RU_WINDOW);
+  const trendable = cur.length >= 3 && prev.length >= 3;
+  if (trendable) {
+    for (const t of RU_TRENDS) {
+      const a = ruSum(data, cur, t), b = ruSum(data, prev, t);
+      if (b < RU_FLOOR) continue;
+      const pct = (a - b) / b;
+      if (Math.abs(pct) < RU_NOISE) continue;
+      const n = Math.round(Math.abs(pct) * 100);
+      (pct > 0 ? improved : worsened).push({
+        weight: Math.abs(pct),
+        t: `${t.label} ${pct > 0 ? "up" : "down"} ${n}%`,
+        d: `${fmtNum(a)} over the last ${cur.length} days with data, against ${fmtNum(b)} the ${prev.length} before.`,
+        v: (pct > 0 ? "+" : "−") + n + "%",
+      });
+    }
+    improved.sort((x, y) => y.weight - x.weight);
+    worsened.sort((x, y) => y.weight - x.weight);
+  }
+
+  /* ---- standards, from the one shared pass ---- */
+  const { evaluated, restricted, failBy, verdicts, nearing } = ruEvaluate({ config, store, data, M });
+
+  /* ---- what the digest adds: the rates, which have no other past ----
+     Everything above trends activity, which is stored per day anyway. These are
+     the numbers that only exist because yesterday's row was kept. */
+  const was = nearestDigest(digests, RU_WINDOW);
+  if (was) {
+    // Never "against 2 7 days ago" — two numbers running together is unreadable.
+    const ago = was.gap <= 1 ? "a week ago" : `on ${was.day}`;
+    const cleared = (verdicts.cleared || 0) - (was.val.v?.cleared || 0);
+    if (Math.abs(cleared) >= 1)
+      (cleared > 0 ? improved : worsened).push({
+        weight: Math.abs(cleared) / Math.max(1, evaluated),
+        t: `${Math.abs(cleared)} ${cleared > 0 ? "more" : "fewer"} ${Math.abs(cleared) === 1 ? "person is" : "people are"} cleared to grab leads`,
+        d: `${verdicts.cleared || 0} of ${evaluated} clear now, against ${was.val.v?.cleared || 0} ${ago}.`,
+        v: (cleared > 0 ? "+" : "−") + Math.abs(cleared),
+      });
+    for (const [label, n] of Object.entries(failBy)) {
+      const before = was.val.below?.[label];
+      if (before == null) continue;
+      const diff = n - before;
+      if (Math.abs(diff) < 2) continue;   // one person moving is not a trend
+      (diff < 0 ? improved : worsened).push({
+        weight: Math.abs(diff) / Math.max(1, evaluated),
+        t: `${label}: ${Math.abs(diff)} ${diff < 0 ? "fewer" : "more"} below target`,
+        d: `${n} of ${evaluated} below it now, against ${before} ${ago}.`,
+        v: (diff < 0 ? "−" : "+") + Math.abs(diff),
+      });
+    }
+    improved.sort((x, y) => y.weight - x.weight);
+    worsened.sort((x, y) => y.weight - x.weight);
+  }
+
+  const weakest = Object.entries(failBy).sort((x, y) => y[1] - x[1])[0];
+  if (weakest && evaluated > 0)
+    work.push({
+      t: `${weakest[0]} is the weakest standard`,
+      d: `${weakest[1]} of ${evaluated} evaluated ${evaluated === 1 ? "person" : "people"} ${weakest[1] === 1 ? "is" : "are"} below target on it.`,
+    });
+  nearing.sort((x, y) => (y.opps / (y.cap || 1)) - (x.opps / (x.cap || 1)));
+  for (const p of nearing.slice(0, 2))
+    work.push({
+      t: `Talk to ${p.name}`,
+      d: `${p.opps} of ${p.cap} leads held, still missing ${p.miss} standard${p.miss === 1 ? "" : "s"}.`,
+    });
+
+  const t = M?.imports?.[today()] || {};
+  const waiting = ["appointment", "video"].filter((k) => !t[k]).map(reportLabel);
+  if (waiting.length)
+    aware.push({
+      t: `${waiting.join(" and ")} ${waiting.length === 1 ? "has" : "have"} not landed today`,
+      d: "Today's numbers are incomplete until they do.",
+    });
+  if (restricted > 0)
+    aware.push({
+      t: `${restricted} ${restricted === 1 ? "person is" : "people are"} restricted`,
+      d: "They keep their leads but cannot take another until a standard clears.",
+    });
+  if (!trendable)
+    aware.push({
+      t: "Not enough history to compare weeks yet",
+      d: `${cur.length} day${cur.length === 1 ? "" : "s"} of activity on file. Two weeks of imports and the activity trends fill in on their own.`,
+    });
+  else if (!was)
+    aware.push({
+      t: "Standards aren't being compared yet",
+      d: Object.keys(digests || {}).length
+        ? "Nothing close enough to a week ago is on file, so who cleared and who slipped is being left out rather than measured against the wrong day."
+        : "Today is the first day the floor's standing was written down. From tomorrow this also shows who cleared and who slipped.",
+    });
+
+  return { improved, worsened, work, aware, trendable, days: cur.length, rated: !!was,
+    any: improved.length + worsened.length + work.length + aware.length > 0 };
+}
+
+const RU_SECTIONS = [
+  { key: "improved", label: "What improved", tone: "up", glyph: "triup" },
+  { key: "worsened", label: "What worsened", tone: "down", glyph: "tridown" },
+  { key: "work", label: "Work on this", tone: "watch", glyph: "bolt" },
+  { key: "aware", label: "Be aware", tone: "watch", glyph: "warn" },
+];
+
+function RuFinding({ item, tone, delay }) {
+  return (
+    <div className="ru-find" style={{ animationDelay: delay + "ms" }}>
+      <span className={"ru-find-ico ru-" + tone}><PixIcon glyph={tone === "up" ? "triup" : tone === "down" ? "tridown" : "warn"} size={15} fine /></span>
+      <span className="ru-find-body">
+        <span className="ru-find-t">{item.t}</span>
+        <span className="ru-find-d">{item.d}</span>
+      </span>
+      {item.v && <span className={"ru-chip ru-" + tone}>{item.v}</span>}
+    </div>
+  );
+}
+
+/* The strip is what survives daily use. The fuller sequence runs once, on the
+   first sign-in of the day, because a takeover every morning stops being a
+   briefing and becomes a door. "Seen today" is per device, which is the right
+   scope: it is about this person's morning, not the store's. */
+const ruWritten = new Set();   // one write per store per day per session
+
+function RoundUp({ config, store, data, M }) {
+  const [digests, setDigests] = useState(null);
+  const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
+    [config, store, data, M, digests]);
+  const seenKey = `lpc:roundup:${store.id}:${today()}`;
+  const [full, setFull] = useState(() => {
+    try { return !localStorage.getItem(seenKey); } catch { return false; }
+  });
+  const close = () => {
+    try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it shows again, which is survivable */ }
+    setFull(false);
+  };
+
+  // Read what's on file, then write today's row if it isn't there. The write is
+  // never allowed to matter: a failure costs tomorrow's comparison and nothing
+  // that is on screen now.
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const got = await loadDigests(store.id);
+        if (!live) return;
+        setDigests(got);
+        const stamp = store.id + ":" + today();
+        if (got[today()] || ruWritten.has(stamp)) return;
+        ruWritten.add(stamp);
+        const row = buildDigest({ config, store, data, M });
+        if (!row.ev) return;                 // nobody evaluated: nothing worth keeping
+        await saveShared(digestKey(store.id, today()), row);
+        if (live) setDigests((d) => ({ ...(d || {}), [today()]: row }));
+      } catch (e) {
+        console.error("round-up digest", e);
+        if (live) setDigests({});
+      }
+    })();
+    return () => { live = false; };
+  }, [store.id]);
+
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
+
+  if (!ru.any) return null;
+
+  if (full) {
+    let d = 420;
+    return (
+      <Overlay>
+        <div className="ru-scrim" onClick={close}>
+          <div className="ru-sheet" role="dialog" aria-label="Your round-up" onClick={(e) => e.stopPropagation()}>
+            <div className="ru-sheet-body">
+              <div className="ru-sheet-head">
+                <p className="ru-eyebrow">Your round-up</p>
+                <div className="ru-sheet-store">{store.name}</div>
+                <div className="ru-sheet-date">{new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}</div>
+              </div>
+              {RU_SECTIONS.map((s) => {
+                const items = ru[s.key];
+                if (!items.length) return null;
+                const head = d; d += 70;
+                return (
+                  <div className="ru-sec" key={s.key}>
+                    <div className="ru-sec-h" style={{ animationDelay: head + "ms" }}>
+                      <h4>{s.label}</h4><span className="ru-count">{items.length}</span>
+                    </div>
+                    {items.map((it, i) => { const at = d; d += 70; return <RuFinding key={i} item={it} tone={s.tone} delay={at} />; })}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="ru-sheet-foot" style={{ animationDelay: d + 60 + "ms" }}>
+              <button className="ru-btn" onClick={close}>Open the board</button>
+            </div>
+          </div>
+        </div>
+      </Overlay>
+    );
+  }
+
+  /* Once it has been read, all that is left is the way back into it. The sheet
+     is the round-up; this is a door handle, not a second version of it. */
+  return (
+    <button className="ru-reopen" onClick={() => setFull(true)}>
+      <span className="ru-reopen-t">Your round-up</span>
+      <span className="ru-reopen-tally">
+        {RU_SECTIONS.filter((s) => ru[s.key].length).map((s) => (
+          <span key={s.key} className={"ru-tally ru-" + s.tone}>
+            <PixIcon glyph={s.glyph} size={12} fine />{ru[s.key].length}
+          </span>
+        ))}
+      </span>
+      <span className="ru-reopen-go">Open</span>
+    </button>
+  );
+}
+
 /* ---------------- Admin overview ---------------- */
 function AdminOverview({ config, adminData, onOpenStore }) {
   return (
@@ -11731,6 +12088,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
 
   return (
     <div className="board">
+      {!query && !filter && <RoundUp config={config} store={store} data={data} M={M} />}
       {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
 
       {!query && top3.length > 0 && (
@@ -14688,29 +15046,58 @@ function BottomNav({ items, value, onChange, appModule, onToolChange, storeData,
     <nav className="botnav no-print" aria-label="Sections">
       {primary.map(([id, label]) => (
         <button key={id} className={"botnav-btn" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
-          <span className="botnav-ico">{NAV_ICON[id] || "•"}</span>
+          <span className="botnav-ico"><PixIcon glyph={NAV_ICON[id] || "dot"} size={21} fine /></span>
           <span className="botnav-lbl">{NAV_SHORT[id] || label}</span>
           {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
         </button>
       ))}
       <button className={"botnav-btn" + (activeInOverflow ? " on" : "")} onClick={onMore}>
-        <span className="botnav-ico">⋯</span>
+        <span className="botnav-ico"><PixIcon glyph="more" size={21} /></span>
         <span className="botnav-lbl">More</span>
       </button>
     </nav>
   );
 }
 
+/* Dot-matrix glyphs, so the bar speaks the same language as the rest of the
+   app rather than borrowing Unicode furniture. Each one is picked for what the
+   button actually opens, and no glyph is used twice inside one bar:
+     Board      standing against the standards        chart
+     Home       the whole group, every store          globe
+     Import     reports going up into the app         arrowup   (Backup pulls down)
+     Summary    a report you read                     doc
+     History    what happened, and when               clock
+     Rules      the targets that pass or fail         check
+     Roster     everyone                              users
+     Coaching   one person at a time                  user
+     Check Out  a deal being closed                   handshake
+     Line       who takes the next call               phone
+     Access     who gets through the door             door
+     Plates     dealer plates on cars                 car
+     Audit      the log                               clipboard
+     Tickets    a raised issue                        warn
+     Stores     configuration                         gear                     */
 const NAV_ICON = {
-  board: "◎", dashboard: "◎", import: "⇪", gm: "▤", history: "↺", standards: "◈",
-  roster: "☰", checkout: "✓", queue: "☎", coaching: "◇", plates: "▦", actstd: "◈",
-  overview: "▦", access: "◐", audit: "❑", settings: "⚙", backup: "⇩",
+  board: "chart", dashboard: "chart", import: "arrowup", gm: "doc", history: "clock",
+  standards: "check", actstd: "check", roster: "users", checkout: "handshake",
+  queue: "phone", coaching: "user", plates: "car", overview: "globe",
+  access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
+  backup: "arrowdown",
 };
+/* These only ever SHORTEN the name a destination already carries elsewhere.
+   They must never rename one: a tab that reads differently from the drawer
+   entry it opens is a different place as far as anyone using it is concerned.
+   Standards was "Rules" and Overview was "Home", words that appear nowhere
+   else in the app, and Check Out was the only two-word label in the bar.
+   Anything already short enough is left out and falls through to its real
+   label — Summary, Import, History, Roster, Access, Coaching, Standards,
+   Overview, Tickets, Stores, Backup. */
 const NAV_SHORT = {
-  board: "Board", dashboard: "Board", import: "Import", gm: "Summary", history: "History",
-  standards: "Rules", roster: "Roster", checkout: "Check Out", queue: "Line", coaching: "Coaching",
-  plates: "Plates", actstd: "Rules", overview: "Home", access: "Access", audit: "Audit",
-  settings: "Stores", backup: "Backup",
+  board: "Board", dashboard: "Board",  // "Dashboard", or "Combined Board" in the group view
+  checkout: "Checkout",                // "Check Out"
+  plates: "Plates",                    // "License Plates"
+  audit: "Audit",                      // "Audit Log"
+  queue: "Line",                       // "The Line"
 };
 
 function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
@@ -17563,6 +17950,91 @@ function Style() {
       .btn-x.danger { color:var(--red); }
       .btn-x.danger:hover { background:rgba(229,71,60,.1); }
 
+      /* ---- the morning round-up ----
+         Two surfaces, one set of pieces. The strip lives on the board; the sheet
+         is the same content given the whole screen once a day. Motion is the
+         app's own: --ease-bloop for anything that arrives, --ease for anything
+         that travels. */
+      @keyframes ruBloop { from { opacity:0; transform:translateY(14px) scale(.95); } to { opacity:1; transform:none; } }
+      @keyframes ruSheetUp { from { transform:translateY(100%); } to { transform:none; } }
+      @keyframes ruScrim { from { opacity:0; } to { opacity:1; } }
+
+      .ru-up { color:var(--green); } .ru-down { color:var(--red); } .ru-watch { color:var(--amber); }
+      .ru-chip { flex:0 0 auto; align-self:flex-start; font-family:var(--font-display); font-size:12px; font-weight:700;
+        font-variant-numeric:tabular-nums; padding:3px 9px; border-radius:999px; line-height:1.45; }
+      .ru-chip.ru-up { background:rgba(48,177,85,.12); }
+      .ru-chip.ru-down { background:rgba(229,71,60,.11); }
+      .ru-chip.ru-watch { background:rgba(199,120,0,.13); }
+
+      .ru-find { display:flex; gap:10px; align-items:flex-start; padding:11px 0;
+        border-top:1px solid rgba(0,0,0,.05); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru-find:first-of-type { border-top:none; }
+      .ru-find-ico { flex:0 0 auto; display:flex; margin-top:2px; }
+      .ru-find-body { flex:1; min-width:0; display:flex; flex-direction:column; }
+      .ru-find-t { font-size:14px; font-weight:650; line-height:1.35; }
+      .ru-find-d { font-size:12.5px; color:var(--ink-2); margin-top:2px; line-height:1.45; }
+
+      /* --- the way back in, once the sheet has been read --- */
+      .ru-reopen { display:flex; align-items:center; gap:14px; width:100%; text-align:left;
+        font:inherit; cursor:pointer; background:var(--card); border:1px solid var(--line);
+        border-radius:14px; padding:11px 16px; margin-bottom:20px; box-shadow:var(--shadow-1);
+        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease);
+        opacity:0; animation:ruBloop .5s var(--ease-bloop) .1s both; }
+      .ru-reopen:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:rgba(42,94,155,.4); }
+      .ru-reopen:active { transform:scale(.99); }
+      .ru-reopen-t { font-family:var(--font-display); font-size:14.5px; letter-spacing:-.01em; }
+      .ru-reopen-tally { display:flex; gap:9px; flex-wrap:wrap; margin-left:auto; }
+      .ru-tally { display:inline-flex; align-items:center; gap:4px; font-family:var(--font-display);
+        font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
+      .ru-reopen-go { font-size:13px; font-weight:700; color:var(--blue); flex:0 0 auto; }
+
+      /* --- the once-a-day sheet --- */
+      /* Overlay portals this to document.body, which is OUTSIDE .lpc — and .lpc is
+         where the app's font, size and ink are set. Anything here that did not name
+         a face explicitly was inheriting the browser default, so the headings came
+         out right and every line of body copy under them came out in Times. The
+         sheet has to restate what it left behind. */
+      .ru-scrim { font-family:var(--font-ui); font-size:14px; color:var(--ink);
+        -webkit-font-smoothing:antialiased; }
+      .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.42);
+        backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+        display:flex; align-items:center; justify-content:center; padding:24px;
+        animation:ruScrim .3s var(--ease) both; }
+      .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
+        width:min(560px, 100%); max-height:min(760px, 88vh); display:flex; flex-direction:column;
+        overflow:hidden; animation:ruSheetUp .55s var(--ease) both; }
+      /* Without overscroll-behavior a flick at either end of this list hands the
+         scroll to the board underneath, so closing the sheet left the page sitting
+         further down than it started. Same guard the help sheet already carries. */
+      .ru-sheet-body { flex:1; overflow-y:auto; overscroll-behavior:contain;
+        -webkit-overflow-scrolling:touch; }
+      .ru-sheet-head { padding:24px 24px 4px; }
+      .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+        color:var(--ink-3); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
+      .ru-sheet-store { font-family:var(--font-display); font-size:25px; letter-spacing:-.02em; line-height:1.12;
+        margin-top:3px; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
+      .ru-sheet-date { font-size:13px; color:var(--ink-2); margin-top:2px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) .24s both; }
+      .ru-sec { padding:14px 24px 4px; }
+      .ru-sec-h { display:flex; align-items:center; justify-content:space-between; gap:10px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru-sec-h h4 { font-size:12.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); margin:0; }
+      .ru-count { font-family:var(--font-display); font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+      .ru-sheet-foot { padding:14px 24px calc(18px + env(safe-area-inset-bottom, 0px));
+        border-top:1px solid var(--line); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru-btn { width:100%; font:inherit; font-size:15px; font-weight:700; padding:13px; border-radius:13px;
+        cursor:pointer; border:1px solid var(--blue); background:var(--blue); color:#fff;
+        transition:transform .25s var(--ease-bloop), filter .2s var(--ease); }
+      .ru-btn:hover { filter:brightness(1.08); }
+      .ru-btn:active { transform:scale(.97); }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ru-find, .ru-reopen, .ru-eyebrow, .ru-sheet-store, .ru-sheet-date,
+        .ru-sec-h, .ru-sheet-foot, .ru-sheet, .ru-scrim {
+          animation:none !important; opacity:1 !important; transform:none !important; }
+        .ru-reopen:hover, .ru-reopen:active { transform:none; }
+      }
+
       /* ---- upload history ---- */
       .up-list { display:flex; flex-direction:column; }
       .up-row { display:grid; grid-template-columns: 140px 140px 1fr 120px 90px auto; gap:10px; align-items:center;
@@ -19573,14 +20045,28 @@ function Style() {
       .botnav { display:none; }
       @media (max-width: 760px) {
         /* --- chrome --- */
-        .topbar { position:sticky; top:0; z-index:40; padding:10px 14px; gap:10px;
+        /* z-index stays at the desktop value. At 40 the hero (220), the hero band
+           (240) and both pop cards (240) painted straight over the sticky header,
+           so the store name and the greeting card collided while scrolling. It has
+           to sit above page content but below the bottom bar (340), the help
+           button (350) and every sheet (360+). */
+        .topbar { position:sticky; top:0; z-index:300; padding:10px 14px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
-        .topbar-right { gap:8px; }
+        /* The <=720px block above still forces topbar-right onto its own
+           full-width row. That was right when the hamburger and the account
+           controls lived there, but the bottom bar replaced all of it and the
+           row now holds only the store selector — so it cost a second header
+           row, and every page started ~50px further down. One row again. */
+        .topbar-right { width:auto; order:0; flex:1 1 auto;
+          justify-content:flex-end; gap:8px; }
         .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
         .hamburger { display:none !important; }                       /* replaced by the bottom bar */
         .brand-title { font-size:16px; }
-        .view-select { max-width:46vw; font-size:13px; }
+        .view-select { max-width:62vw; font-size:13px; }
+        /* the bar measures 55px before the home-indicator inset, so at bottom:18px
+           the help button sat on top of the More tab and swallowed its taps */
+        .help-fab:not(.inline) { bottom:calc(67px + env(safe-area-inset-bottom, 0px)); }
         .btn-quiet { padding:7px 10px; }
         .seg-wrap { display:none; }                                   /* the desktop tab strip */
 
@@ -19600,10 +20086,21 @@ function Style() {
           color:var(--ink-3); transition:color .2s var(--ease), transform .2s var(--ease-bloop); }
         .botnav-btn.on { color:var(--blue); }
         .botnav-btn:active { transform:scale(.9); }
-        .botnav-ico { font-size:19px; line-height:1; }
+        /* holds an SVG now, not a character, so it needs a box rather than a
+           font size or the row height drifts between glyphs */
+        .botnav-ico { display:flex; align-items:center; justify-content:center;
+          width:21px; height:21px; line-height:0; }
+        .botnav-ico .pix { display:block; }
         .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
         .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
-        .botnav-btn .badge { position:absolute; top:0; right:22%; transform:scale(.72); }
+        /* The import count sat squarely on top of its glyph, so the badge and the
+           arrow smeared into each other and neither read. It now hangs off the
+           icon's top-right corner, clear of it, with a ring to lift it off the
+           bar. Scaling a padded pill was also why its text looked soft — it is
+           drawn at its real size now instead of being shrunk with a transform. */
+        .botnav-btn .badge { position:absolute; top:-1px; left:calc(50% + 11px); right:auto;
+          transform:none; font-size:9px; font-weight:800; padding:0.5px 4px; line-height:1.6;
+          border-radius:999px; white-space:nowrap; box-shadow:0 0 0 1.5px rgba(255,255,255,.95); }
 
         /* --- hero reflows to one column --- */
         .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
@@ -19626,9 +20123,17 @@ function Style() {
         .mstrip { gap:14px 12px; }
         .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
         .mdial { width:calc(33.333% - 8px); }
-        .mdial-pop { left:50%; transform:translateX(-50%) translateY(-6px) scale(.9); transform-origin:bottom center;
-          width:min(262px, 84vw); }
-        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0) scale(1); }
+        /* Centring a 262px card on a dial whose own centre is ~86px from the
+           left edge put a third of it off-screen. On a phone it anchors to the
+           strip instead of the dial, so it spans the row and cannot leave the
+           viewport whichever dial is tapped. The arrow goes: it would point at
+           the middle dial regardless of which one opened it. */
+        .mstrip { position:relative; }
+        .mdial { position:static; }
+        .mdial-pop { left:0; right:0; width:auto; bottom:calc(100% + 10px);
+          transform:translateY(-6px) scale(.98); transform-origin:bottom center; }
+        .mdial-pop::after { display:none; }
+        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
         .hf-fix.popped .hf-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
         .hf-pop { width:min(300px, 86vw); }
 
@@ -19642,6 +20147,30 @@ function Style() {
         /* --- podium stacks --- */
         .podium-row { flex-direction:column; }
         .pod { flex:1 1 auto; }
+
+        /* --- the sheet takes the bottom of the screen rather than floating --- */
+        .ru-reopen { padding:10px 13px; gap:10px; }
+        .ru-reopen:hover { transform:none; box-shadow:var(--shadow-1); }
+        .ru-reopen-t { font-size:13.5px; }
+        .ru-reopen-go { display:none; }        /* the whole bar is the target on a phone */
+        .ru-scrim { padding:0; align-items:flex-end; }
+        .ru-sheet { width:100%; max-height:92vh; border-radius:22px 22px 0 0; }
+        .ru-sheet-head { padding:20px 18px 4px; }
+        .ru-sheet-store { font-size:22px; }
+        .ru-sec { padding:12px 18px 4px; }
+        .ru-sheet-foot { padding:12px 18px calc(14px + env(safe-area-inset-bottom, 0px)); }
+
+        /* --- upload history stacks; its six fixed columns need 643px and so
+               dragged the whole page sideways on a phone --- */
+        .up-row { grid-template-columns: minmax(0,1fr) auto; gap:2px 10px;
+          padding:11px 0; align-items:start; }
+        .up-when { grid-column:1; grid-row:1; }
+        .up-type { grid-column:1; grid-row:2; }
+        .up-file { grid-column:1; grid-row:3; }
+        .up-count { grid-column:1; grid-row:4; }
+        .up-by   { grid-column:1; grid-row:5; }
+        .up-row > button, .up-row > .hint { grid-column:2; grid-row:1 / span 5;
+          align-self:center; white-space:nowrap; }
 
         /* --- tables scroll rather than crush --- */
         .gm-table, .checkout-table, .history-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
