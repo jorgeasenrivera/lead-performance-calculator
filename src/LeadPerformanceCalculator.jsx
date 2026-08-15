@@ -19581,7 +19581,13 @@ function Style() {
         .topbar { position:sticky; top:0; z-index:300; padding:10px 14px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
-        .topbar-right { gap:8px; }
+        /* The <=720px block above still forces topbar-right onto its own
+           full-width row. That was right when the hamburger and the account
+           controls lived there, but the bottom bar replaced all of it and the
+           row now holds only the store selector — so it cost a second header
+           row, and every page started ~50px further down. One row again. */
+        .topbar-right { width:auto; order:0; flex:1 1 auto;
+          justify-content:flex-end; gap:8px; }
         .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
         .hamburger { display:none !important; }                       /* replaced by the bottom bar */
         .brand-title { font-size:16px; }
@@ -19634,9 +19640,17 @@ function Style() {
         .mstrip { gap:14px 12px; }
         .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
         .mdial { width:calc(33.333% - 8px); }
-        .mdial-pop { left:50%; transform:translateX(-50%) translateY(-6px) scale(.9); transform-origin:bottom center;
-          width:min(262px, 84vw); }
-        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0) scale(1); }
+        /* Centring a 262px card on a dial whose own centre is ~86px from the
+           left edge put a third of it off-screen. On a phone it anchors to the
+           strip instead of the dial, so it spans the row and cannot leave the
+           viewport whichever dial is tapped. The arrow goes: it would point at
+           the middle dial regardless of which one opened it. */
+        .mstrip { position:relative; }
+        .mdial { position:static; }
+        .mdial-pop { left:0; right:0; width:auto; bottom:calc(100% + 10px);
+          transform:translateY(-6px) scale(.98); transform-origin:bottom center; }
+        .mdial-pop::after { display:none; }
+        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
         .hf-fix.popped .hf-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
         .hf-pop { width:min(300px, 86vw); }
 
