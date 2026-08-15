@@ -11557,6 +11557,244 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
   );
 }
 
+/* ================= THE MORNING ROUND-UP =================
+   What improved, what worsened, what to work on, what to be aware of.
+
+   On history: activity is the one thing with a real past. Every day lands in
+   `data.activity[day]` and, for the last 45 days, in its own row, so a week can
+   be compared against the week before it today, retroactively, with nothing new
+   to store. The board RATES cannot: the Delivery Summary overwrites the month's
+   totals on every import and `data.snapshots` is trimmed to one entry, so
+   yesterday's Delivery % is genuinely gone. Nothing here trends a rate. When
+   that is wanted, a small daily digest row is the missing piece, and the two
+   sections below that need no history at all keep working either way.
+
+   Texts and emails are deliberately not trended. They are never graded anywhere
+   else in the app, because automated follow-up fires whether or not a person is
+   in that day, and ranking a week of them here would contradict that. */
+const RU_TRENDS = [
+  { key: "apptCreated", label: "Appointments set", alt: ["apptScheduled"] },
+  { key: "apptShow", label: "Appointments shown", alt: ["apptShowed"] },
+  { key: "video", label: "Videos sent" },
+  { key: "calls", label: "Calls made" },
+  { key: "contacted", label: "Customers reached" },
+];
+const RU_WINDOW = 7;      // days per side of the comparison
+const RU_FLOOR = 5;       // below this the prior week is too small to call a trend
+const RU_NOISE = 0.10;    // moves smaller than this are not worth anyone's morning
+
+const ruVal = (row, t) => {
+  if (!row) return 0;
+  if (row[t.key] != null) return row[t.key] || 0;
+  for (const a of t.alt || []) if (row[a] != null) return row[a] || 0;
+  return 0;
+};
+/* Only days that actually carry rows. A store that does not import on a Sunday
+   has not had a bad Sunday, and padding the window with zeros would invent one. */
+function ruDays(data, n, skip = 0) {
+  const all = Object.keys(data.activity || {})
+    .filter((d) => data.activity[d] && Object.keys(data.activity[d]).length > 0)
+    .sort().reverse();
+  return all.slice(skip, skip + n);
+}
+function ruSum(data, days, t) {
+  let n = 0;
+  for (const d of days) for (const row of Object.values(data.activity[d] || {})) n += ruVal(row, t);
+  return n;
+}
+
+function buildRoundUp({ config, store, data, M }) {
+  const improved = [], worsened = [], work = [], aware = [];
+
+  /* ---- what improved / what worsened ---- */
+  const cur = ruDays(data, RU_WINDOW), prev = ruDays(data, RU_WINDOW, RU_WINDOW);
+  const trendable = cur.length >= 3 && prev.length >= 3;
+  if (trendable) {
+    for (const t of RU_TRENDS) {
+      const a = ruSum(data, cur, t), b = ruSum(data, prev, t);
+      if (b < RU_FLOOR) continue;
+      const pct = (a - b) / b;
+      if (Math.abs(pct) < RU_NOISE) continue;
+      const n = Math.round(Math.abs(pct) * 100);
+      (pct > 0 ? improved : worsened).push({
+        weight: Math.abs(pct),
+        t: `${t.label} ${pct > 0 ? "up" : "down"} ${n}%`,
+        d: `${fmtNum(a)} over the last ${cur.length} days with data, against ${fmtNum(b)} the ${prev.length} before.`,
+        v: (pct > 0 ? "+" : "−") + n + "%",
+      });
+    }
+    improved.sort((x, y) => y.weight - x.weight);
+    worsened.sort((x, y) => y.weight - x.weight);
+  }
+
+  /* ---- work on / be aware ---- these need no history, so they are live on day one */
+  const restrictions = data.restrictions || {};
+  const inGrace = new Date().getDate() <= (store.graceDays ?? 10);
+  const isRestricted = (a) => {
+    const r = restrictions[a.id];
+    return !!(r && (!r.until || new Date(r.until) > new Date()));
+  };
+  const failBy = new Map();     // metric label -> how many people miss it
+  let evaluated = 0, restricted = 0;
+  const nearing = [];
+  for (const a of data.roster || []) {
+    if (!a.roleId) continue;
+    const st = M?.stats?.[norm(a.name)];
+    const ev = evaluateAssociate(st, config.standards?.[store.id]?.[a.roleId]?.tiers);
+    if (ev.status === "no-standards") continue;
+    evaluated++;
+    if (isRestricted(a)) restricted++;
+    for (const f of ev.failures || []) {
+      const label = f.def?.label || f.metric;
+      failBy.set(label, (failBy.get(label) || 0) + 1);
+    }
+    // At or near the ceiling while still missing a standard is the coaching
+    // conversation with a deadline on it, so it outranks everything else.
+    if (ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 && !isRestricted(a) && !inGrace)
+      nearing.push({ name: a.name, opps: ev.opps, cap: ev.cap, miss: ev.failures.length });
+  }
+  const weakest = [...failBy.entries()].sort((x, y) => y[1] - x[1])[0];
+  if (weakest && evaluated > 0)
+    work.push({
+      t: `${weakest[0]} is the weakest standard`,
+      d: `${weakest[1]} of ${evaluated} evaluated ${evaluated === 1 ? "person" : "people"} ${weakest[1] === 1 ? "is" : "are"} below target on it.`,
+    });
+  nearing.sort((x, y) => (y.opps / (y.cap || 1)) - (x.opps / (x.cap || 1)));
+  for (const p of nearing.slice(0, 2))
+    work.push({
+      t: `Talk to ${p.name}`,
+      d: `${p.opps} of ${p.cap} leads held, still missing ${p.miss} standard${p.miss === 1 ? "" : "s"}.`,
+    });
+
+  const t = M?.imports?.[today()] || {};
+  const waiting = ["appointment", "video"].filter((k) => !t[k]).map(reportLabel);
+  if (waiting.length)
+    aware.push({
+      t: `${waiting.join(" and ")} ${waiting.length === 1 ? "has" : "have"} not landed today`,
+      d: "Today's numbers are incomplete until they do.",
+    });
+  if (restricted > 0)
+    aware.push({
+      t: `${restricted} ${restricted === 1 ? "person is" : "people are"} restricted`,
+      d: "They keep their leads but cannot take another until a standard clears.",
+    });
+  if (!trendable)
+    aware.push({
+      t: "Not enough history to compare weeks yet",
+      d: `${cur.length} day${cur.length === 1 ? "" : "s"} of activity on file. Two weeks of imports and the trends fill in on their own.`,
+    });
+
+  return { improved, worsened, work, aware, trendable, days: cur.length,
+    any: improved.length + worsened.length + work.length + aware.length > 0 };
+}
+
+const RU_SECTIONS = [
+  { key: "improved", label: "What improved", tone: "up", glyph: "triup" },
+  { key: "worsened", label: "What worsened", tone: "down", glyph: "tridown" },
+  { key: "work", label: "Work on this", tone: "watch", glyph: "bolt" },
+  { key: "aware", label: "Be aware", tone: "watch", glyph: "warn" },
+];
+
+function RuFinding({ item, tone, delay }) {
+  return (
+    <div className="ru-find" style={{ animationDelay: delay + "ms" }}>
+      <span className={"ru-find-ico ru-" + tone}><PixIcon glyph={tone === "up" ? "triup" : tone === "down" ? "tridown" : "warn"} size={15} fine /></span>
+      <span className="ru-find-body">
+        <span className="ru-find-t">{item.t}</span>
+        <span className="ru-find-d">{item.d}</span>
+      </span>
+      {item.v && <span className={"ru-chip ru-" + tone}>{item.v}</span>}
+    </div>
+  );
+}
+
+/* The strip is what survives daily use. The fuller sequence runs once, on the
+   first sign-in of the day, because a takeover every morning stops being a
+   briefing and becomes a door. "Seen today" is per device, which is the right
+   scope: it is about this person's morning, not the store's. */
+function RoundUp({ config, store, data, M }) {
+  const ru = useMemo(() => buildRoundUp({ config, store, data, M }), [config, store, data, M]);
+  const seenKey = `lpc:roundup:${store.id}:${today()}`;
+  const [full, setFull] = useState(() => {
+    try { return !localStorage.getItem(seenKey); } catch { return false; }
+  });
+  const [open, setOpen] = useState(true);
+  const close = () => {
+    try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it just shows again */ }
+    setFull(false);
+  };
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
+
+  if (!ru.any) return null;
+
+  if (full) {
+    let d = 420;
+    return (
+      <Overlay>
+        <div className="ru-scrim" onClick={close}>
+          <div className="ru-sheet" role="dialog" aria-label="Your round-up" onClick={(e) => e.stopPropagation()}>
+            <div className="ru-sheet-body">
+              <div className="ru-sheet-head">
+                <p className="ru-eyebrow">Your round-up</p>
+                <div className="ru-sheet-store">{store.name}</div>
+                <div className="ru-sheet-date">{new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}</div>
+              </div>
+              {RU_SECTIONS.map((s) => {
+                const items = ru[s.key];
+                if (!items.length) return null;
+                const head = d; d += 70;
+                return (
+                  <div className="ru-sec" key={s.key}>
+                    <div className="ru-sec-h" style={{ animationDelay: head + "ms" }}>
+                      <h4>{s.label}</h4><span className="ru-count">{items.length}</span>
+                    </div>
+                    {items.map((it, i) => { const at = d; d += 70; return <RuFinding key={i} item={it} tone={s.tone} delay={at} />; })}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="ru-sheet-foot" style={{ animationDelay: d + 60 + "ms" }}>
+              <button className="ru-btn" onClick={close}>Open the board</button>
+            </div>
+          </div>
+        </div>
+      </Overlay>
+    );
+  }
+
+  if (!open) return null;
+  return (
+    <div className="ru-strip">
+      <div className="ru-strip-top">
+        <div className="ru-strip-title">Your round-up <span>{ru.trendable ? `last ${ru.days} days with data` : "today"}</span></div>
+        <button className="ru-x" onClick={() => setOpen(false)} aria-label="Hide the round-up">&times;</button>
+      </div>
+      <div className="ru-cols">
+        {RU_SECTIONS.map((s, i) => {
+          const items = ru[s.key];
+          return (
+            <div className="ru-col" key={s.key} style={{ animationDelay: 120 + i * 90 + "ms" }}>
+              <h4><span className={"ru-" + s.tone}><PixIcon glyph={s.glyph} size={13} fine /></span>{s.label}</h4>
+              {items.length === 0
+                ? <div className="ru-col-none">Nothing today</div>
+                : <>
+                    <div className={"ru-col-n ru-" + s.tone}><CountUp value={items.length} delay={220 + i * 90} /></div>
+                    <div className="ru-col-line">{items[0].t}</div>
+                    {items.length > 1 && <div className="ru-col-more">+ {items.length - 1} more</div>}
+                  </>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ---------------- Admin overview ---------------- */
 function AdminOverview({ config, adminData, onOpenStore }) {
   return (
@@ -11736,6 +11974,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
 
   return (
     <div className="board">
+      {!query && !filter && <RoundUp config={config} store={store} data={data} M={M} />}
       {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
 
       {!query && top3.length > 0 && (
@@ -17597,6 +17836,88 @@ function Style() {
       .btn-x.danger { color:var(--red); }
       .btn-x.danger:hover { background:rgba(229,71,60,.1); }
 
+      /* ---- the morning round-up ----
+         Two surfaces, one set of pieces. The strip lives on the board; the sheet
+         is the same content given the whole screen once a day. Motion is the
+         app's own: --ease-bloop for anything that arrives, --ease for anything
+         that travels. */
+      @keyframes ruBloop { from { opacity:0; transform:translateY(14px) scale(.95); } to { opacity:1; transform:none; } }
+      @keyframes ruSheetUp { from { transform:translateY(100%); } to { transform:none; } }
+      @keyframes ruScrim { from { opacity:0; } to { opacity:1; } }
+
+      .ru-up { color:var(--green); } .ru-down { color:var(--red); } .ru-watch { color:var(--amber); }
+      .ru-chip { flex:0 0 auto; align-self:flex-start; font-family:var(--font-display); font-size:12px; font-weight:700;
+        font-variant-numeric:tabular-nums; padding:3px 9px; border-radius:999px; line-height:1.45; }
+      .ru-chip.ru-up { background:rgba(48,177,85,.12); }
+      .ru-chip.ru-down { background:rgba(229,71,60,.11); }
+      .ru-chip.ru-watch { background:rgba(199,120,0,.13); }
+
+      .ru-find { display:flex; gap:10px; align-items:flex-start; padding:11px 0;
+        border-top:1px solid rgba(0,0,0,.05); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru-find:first-of-type { border-top:none; }
+      .ru-find-ico { flex:0 0 auto; display:flex; margin-top:2px; }
+      .ru-find-body { flex:1; min-width:0; display:flex; flex-direction:column; }
+      .ru-find-t { font-size:14px; font-weight:650; line-height:1.35; }
+      .ru-find-d { font-size:12.5px; color:var(--ink-2); margin-top:2px; line-height:1.45; }
+
+      /* --- the strip --- */
+      .ru-strip { background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+        padding:16px 18px; margin-bottom:22px; box-shadow:var(--shadow-1); }
+      .ru-strip-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:13px; }
+      .ru-strip-title { font-family:var(--font-display); font-size:17px; letter-spacing:-.015em; }
+      .ru-strip-title span { font-family:var(--font-ui); font-size:12.5px; font-weight:400; color:var(--ink-3); margin-left:6px; }
+      .ru-x { border:none; background:none; font-size:20px; line-height:1; color:var(--ink-3);
+        cursor:pointer; padding:2px 8px; border-radius:8px; transition:color .2s var(--ease); }
+      .ru-x:hover { color:var(--ink); }
+      .ru-cols { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; }
+      .ru-col { border:1px solid var(--line); border-radius:14px; padding:13px 14px; min-width:0;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both;
+        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease); }
+      .ru-col:hover { transform:translateY(-3px); box-shadow:var(--shadow-2); }
+      .ru-col h4 { display:flex; align-items:center; gap:6px; font-size:11.5px; letter-spacing:.07em;
+        text-transform:uppercase; color:var(--ink-3); margin:0 0 8px; }
+      .ru-col h4 span { display:flex; flex:0 0 auto; }
+      .ru-col-n { font-family:var(--font-display); font-size:28px; line-height:1; font-variant-numeric:tabular-nums; }
+      .ru-col-line { font-size:12.5px; color:var(--ink-2); margin-top:7px; line-height:1.4; }
+      .ru-col-more { font-size:12px; color:var(--ink-3); margin-top:4px; }
+      .ru-col-none { font-size:12.5px; color:var(--ink-3); }
+
+      /* --- the once-a-day sheet --- */
+      .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.42);
+        backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+        display:flex; align-items:center; justify-content:center; padding:24px;
+        animation:ruScrim .3s var(--ease) both; }
+      .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
+        width:min(560px, 100%); max-height:min(760px, 88vh); display:flex; flex-direction:column;
+        overflow:hidden; animation:ruSheetUp .55s var(--ease) both; }
+      .ru-sheet-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+      .ru-sheet-head { padding:24px 24px 4px; }
+      .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+        color:var(--ink-3); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
+      .ru-sheet-store { font-family:var(--font-display); font-size:25px; letter-spacing:-.02em; line-height:1.12;
+        margin-top:3px; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
+      .ru-sheet-date { font-size:13px; color:var(--ink-2); margin-top:2px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) .24s both; }
+      .ru-sec { padding:14px 24px 4px; }
+      .ru-sec-h { display:flex; align-items:center; justify-content:space-between; gap:10px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru-sec-h h4 { font-size:12.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); margin:0; }
+      .ru-count { font-family:var(--font-display); font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+      .ru-sheet-foot { padding:14px 24px calc(18px + env(safe-area-inset-bottom, 0px));
+        border-top:1px solid var(--line); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru-btn { width:100%; font:inherit; font-size:15px; font-weight:700; padding:13px; border-radius:13px;
+        cursor:pointer; border:1px solid var(--blue); background:var(--blue); color:#fff;
+        transition:transform .25s var(--ease-bloop), filter .2s var(--ease); }
+      .ru-btn:hover { filter:brightness(1.08); }
+      .ru-btn:active { transform:scale(.97); }
+
+      @media (prefers-reduced-motion: reduce) {
+        .ru-find, .ru-col, .ru-eyebrow, .ru-sheet-store, .ru-sheet-date,
+        .ru-sec-h, .ru-sheet-foot, .ru-sheet, .ru-scrim {
+          animation:none !important; opacity:1 !important; transform:none !important; }
+        .ru-col:hover { transform:none; }
+      }
+
       /* ---- upload history ---- */
       .up-list { display:flex; flex-direction:column; }
       .up-row { display:grid; grid-template-columns: 140px 140px 1fr 120px 90px auto; gap:10px; align-items:center;
@@ -19702,6 +20023,20 @@ function Style() {
         /* --- podium stacks --- */
         .podium-row { flex-direction:column; }
         .pod { flex:1 1 auto; }
+
+        /* --- the round-up: four columns become a snap-scrolling rail, and the
+               once-a-day sheet takes the whole screen rather than floating --- */
+        .ru-strip { padding:14px; border-radius:16px; margin-bottom:18px; }
+        .ru-cols { display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory;
+          -webkit-overflow-scrolling:touch; margin:0 -14px; padding:2px 14px 6px; }
+        .ru-col { flex:0 0 76%; scroll-snap-align:start; }
+        .ru-col:hover { transform:none; box-shadow:none; }
+        .ru-scrim { padding:0; align-items:flex-end; }
+        .ru-sheet { width:100%; max-height:92vh; border-radius:22px 22px 0 0; }
+        .ru-sheet-head { padding:20px 18px 4px; }
+        .ru-sheet-store { font-size:22px; }
+        .ru-sec { padding:12px 18px 4px; }
+        .ru-sheet-foot { padding:12px 18px calc(14px + env(safe-area-inset-bottom, 0px)); }
 
         /* --- upload history stacks; its six fixed columns need 643px and so
                dragged the whole page sideways on a phone --- */
