@@ -19573,14 +19573,22 @@ function Style() {
       .botnav { display:none; }
       @media (max-width: 760px) {
         /* --- chrome --- */
-        .topbar { position:sticky; top:0; z-index:40; padding:10px 14px; gap:10px;
+        /* z-index stays at the desktop value. At 40 the hero (220), the hero band
+           (240) and both pop cards (240) painted straight over the sticky header,
+           so the store name and the greeting card collided while scrolling. It has
+           to sit above page content but below the bottom bar (340), the help
+           button (350) and every sheet (360+). */
+        .topbar { position:sticky; top:0; z-index:300; padding:10px 14px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
         .topbar-right { gap:8px; }
         .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
         .hamburger { display:none !important; }                       /* replaced by the bottom bar */
         .brand-title { font-size:16px; }
-        .view-select { max-width:46vw; font-size:13px; }
+        .view-select { max-width:62vw; font-size:13px; }
+        /* the bar measures 55px before the home-indicator inset, so at bottom:18px
+           the help button sat on top of the More tab and swallowed its taps */
+        .help-fab:not(.inline) { bottom:calc(67px + env(safe-area-inset-bottom, 0px)); }
         .btn-quiet { padding:7px 10px; }
         .seg-wrap { display:none; }                                   /* the desktop tab strip */
 
@@ -19642,6 +19650,18 @@ function Style() {
         /* --- podium stacks --- */
         .podium-row { flex-direction:column; }
         .pod { flex:1 1 auto; }
+
+        /* --- upload history stacks; its six fixed columns need 643px and so
+               dragged the whole page sideways on a phone --- */
+        .up-row { grid-template-columns: minmax(0,1fr) auto; gap:2px 10px;
+          padding:11px 0; align-items:start; }
+        .up-when { grid-column:1; grid-row:1; }
+        .up-type { grid-column:1; grid-row:2; }
+        .up-file { grid-column:1; grid-row:3; }
+        .up-count { grid-column:1; grid-row:4; }
+        .up-by   { grid-column:1; grid-row:5; }
+        .up-row > button, .up-row > .hint { grid-column:2; grid-row:1 / span 5;
+          align-self:center; white-space:nowrap; }
 
         /* --- tables scroll rather than crush --- */
         .gm-table, .checkout-table, .history-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
