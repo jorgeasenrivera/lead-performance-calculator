@@ -40,39 +40,51 @@ Note the ingest file is **`api/ingest.mjs`**, not `api/ingest.js` as HANDOFF_2 s
 
 ---
 
-## 2. THE ONE THING THAT OUTRANKS EVERY COMMIT HERE
+## 2. RLS: WHAT HAPPENED, AND WHERE IT LANDED
 
-`supabase-setup.sql` in the repo contains:
+`supabase-setup.sql` ends with three policies granting `using (true)` on select,
+insert and update for `app_data`. The anon key ships in the browser bundle by design;
+RLS is the only boundary. The file's own comment said the app's email, PIN and domain
+gate controls access, which is client-side and is not a boundary.
 
-```sql
-create policy "app_data read"   on app_data for select using (true);
-create policy "app_data write"  on app_data for insert with check (true);
-create policy "app_data update" on app_data for update using (true) with check (true);
-```
+**It was pasted whole into the SQL editor on the live database.** The file's header
+says to do exactly that, and a warning comment had been added above the policy block
+without making it inert, which is not a safeguard. The audit afterwards showed the
+damage was worse than a stray permissive policy:
 
-`using (true)` means **anyone holding the anon key can read, insert and update every row
-in `app_data`** — every store document, config, and backup. The anon key ships in the
-bundle by design; RLS is supposed to be the boundary. The file's own comment says the
-quiet part: *"The app's own email + PIN + domain gate is what controls access."* That gate
-is client-side and is not a boundary.
+The real policies were **named** `app_data read`, `app_data write` and `app_data
+update`, each carrying the key-pattern list. The setup file opens its policy block by
+dropping exactly those names. So it deleted the security model and put `true` in its
+place. Only `lpc:board:%` and `lpc:backup:%` still had real rules afterwards, because
+those live in separately named policies. **Nothing at all covered `lpc:config:%`,
+`lpc:audit:%` or `lpc:store:%`** — which is why simply dropping the three open
+policies would have taken the app down rather than secured it.
 
-HANDOFF_2 section 3 describes a much tighter live model (`has_store(split_part(key,':',3))`
-plus explicit key patterns), **so this file may simply be stale.** Nobody has verified
-which is actually live. **Run `supabase-rls-audit.sql` before anything else.** It is entirely SELECTs, so it is
-safe on a live database, and it answers exactly this question: what policies exist, whether
-RLS is on, whether `has_store()` exists and what it does, what anon can reach, and what key
-shapes are stored. No replacement policies were written, deliberately: too tight breaks
-every manager's save immediately, too loose puts you back here while believing otherwise,
-and the right set depends on how `has_store` resolves a user's stores. The audit file ends
-with the five checks to run after any change.
+**Resolved by `supabase-rls-restore.sql`**, which drops and recreates in one
+transaction. Patterns from HANDOFF_2 section 3; `has_store()` confirmed to exist
+because the surviving backup policies call it. Ran successfully Aug 15.
 
-Verified clean while checking: no `SERVICE_ROLE`, no `INGEST_SECRET`, no JWTs in the
-built bundle, and no source maps emitted. Those are correct already.
+**Two things now permanent:**
+
+1. Every access-widening statement in `supabase-setup.sql` is commented out. It must
+   stay that way. The table, trigger and index definitions above it still run, which is
+   all that file was ever for.
+2. `supabase-rls-audit.sql` is read-only and safe on production. Run it before and
+   after any policy change.
+
+**Watch for one regression:** the anonymous sign-in pages read `lpc:config:v2` for the
+support contact and per-store activity standards. Under `to authenticated` that read is
+refused and the code swallows it, so the pages still work but fall back to default
+standards and lose the Help contact. The narrow fix (anon select, config only) is
+written out at the foot of the restore file, unapplied.
+
+Verified clean separately: no `SERVICE_ROLE`, no `INGEST_SECRET`, no JWTs in the built
+bundle, and no source maps emitted.
 
 On "stop people inspecting element": you cannot. Everything shipped to a browser is
 readable and minified code is one click from pretty-printed. Obfuscators and
-devtools-blockers cost real debuggability and buy minutes. The question that matters is
-what a logged-out person with the anon key can *do*, and that answer lives entirely in RLS.
+devtools-blockers cost real debuggability and buy minutes. What matters is what a
+logged-out person with the anon key can *do*, and that lives entirely in RLS.
 
 ---
 
