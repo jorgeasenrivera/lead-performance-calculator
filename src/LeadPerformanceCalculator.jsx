@@ -3433,7 +3433,15 @@ function LEADERBOARD_HTML(p) {
   @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
-    --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
+    --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1;
+    /* The board is its own document, so it needs its own copy of the font stacks.
+       They are written to match the app's exactly, including the fallbacks: a stack
+       ending in a bare sans-serif resolves to a different face than one ending in
+       system-ui, which is how the same heading ends up looking like two fonts on two
+       screens. If you change one of these, change the other.
+       No backticks in here: this whole stylesheet is a JS template literal. */
+    --font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-ui: 'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; }
   html,body { height:100%; }
   body { font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
     font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
@@ -3489,12 +3497,12 @@ function LEADERBOARD_HTML(p) {
   .head-r { display:flex; align-items:center; gap:2.4vw; }
   .head-logo { width:calc(6.6vh * var(--tscale)); height:calc(6.6vh * var(--tscale)); border-radius:1.2vh; background:#fff; display:flex; align-items:center; justify-content:center; overflow:hidden; }
   .head-logo img { width:100%; height:100%; object-fit:contain; }
-  .head-title { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.4vh * var(--tscale)); letter-spacing:.5px; line-height:1; }
+  .head-title { font-family:var(--font-display); font-weight:700; letter-spacing:-.01em; font-size:calc(5.4vh * var(--tscale)); letter-spacing:.5px; line-height:1; }
   .head-sub { font-size:calc(1.7vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
   .total { text-align:right; }
-  .total-num { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
+  .total-num { font-family:var(--font-display); font-weight:700; letter-spacing:-.01em; font-size:calc(5.8vh * var(--tscale)); line-height:1; color:var(--lime); }
   .total-cap { font-size:calc(1.5vh * var(--tscale)); color:#A8CBEA; letter-spacing:.10em; text-transform:uppercase; font-weight:700; margin-top:.4vh; }
-  .clock { text-align:right; font-family:'Space Grotesk',sans-serif; }
+  .clock { text-align:right; font-family:var(--font-display); }
   .clock-time { font-size:calc(3.2vh * var(--tscale)); font-weight:700; }
   .clock-date { font-size:1.5vh; color:#9FC2E4; display:flex; align-items:center; gap:.4vw; justify-content:flex-end; }
   .live { width:.8vh; height:.8vh; border-radius:50%; background:#69E08A; flex:0 0 auto;
@@ -3530,7 +3538,7 @@ function LEADERBOARD_HTML(p) {
   /* podium badges. Gold, silver, bronze read instantly from across a floor. */
   .badge { display:inline-flex; align-items:center; justify-content:center;
     width:calc(var(--rowfs) * 1.7); height:calc(var(--rowfs) * 1.7); border-radius:50%;
-    font-family:'Space Grotesk',sans-serif;  font-size:calc(var(--rowfs) * .82);
+    font-family:var(--font-display);  font-size:calc(var(--rowfs) * .82);
     background:rgba(255,255,255,.08); color:#8FB3D6; }
   .badge.m1 { background:linear-gradient(145deg,#FFD75E,#E0A100); color:#3A2B00;
     box-shadow:0 0 calc(var(--rowfs)*.8) rgba(255,200,60,.55); }
@@ -3551,7 +3559,7 @@ function LEADERBOARD_HTML(p) {
     background:linear-gradient(90deg, rgba(193,215,48,.32), rgba(193,215,48,.08));
     border-radius:.5vh; z-index:0; transition:width .8s cubic-bezier(.22,1,.36,1); }
   .lb .sold .soldnum { position:relative; z-index:1;
-    font-family:'Space Grotesk',sans-serif;  color:var(--lime);
+    font-family:var(--font-display);  color:var(--lime);
     font-size:calc(var(--rowfs) * 1.45); }
   .lb .pcell { width:16.6%; white-space:nowrap; }
 
@@ -3569,7 +3577,7 @@ function LEADERBOARD_HTML(p) {
     background-size:220% 100%; animation: shine 5.5s ease-in-out infinite; }
   @keyframes shine { 0% { background-position:180% 0; } 55%,100% { background-position:-60% 0; } }
 
-  .pill { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em; font-size:calc(var(--rowfs) * 1.05);
+  .pill { font-family:var(--font-display); font-weight:700; letter-spacing:-.01em; font-size:calc(var(--rowfs) * 1.05);
     padding:.3vh 0; border-radius:.9vh; display:inline-flex; align-items:center; justify-content:center;
     width:7vw; text-align:center; box-sizing:border-box; font-variant-numeric:tabular-nums; }
   .pill.g { background:var(--greenbg); color:var(--green); }
@@ -3615,7 +3623,7 @@ function LEADERBOARD_HTML(p) {
   .lb2 tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
   .lb2 .rank { width:5%; text-align:center; }
   .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lb2 .sold2 { width:10%; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+  .lb2 .sold2 { width:10%; text-align:center; font-family:var(--font-display); font-weight:700; letter-spacing:-.01em;
     font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
   /* Each % column is a fixed width and its contents are centred, so every pill is
      the same size across the whole board. The pill has a fixed width too (all
@@ -3658,7 +3666,7 @@ function LEADERBOARD_HTML(p) {
   @keyframes cgOut { from { transform:translateX(0); opacity:1; } to { transform:translateX(120%); opacity:0; } }
   .cg-ico { font-size:4vh; line-height:1; animation: cgPop .5s ease var(--d) both; }
   @keyframes cgPop { 0%{ transform:scale(0) rotate(-20deg);} 60%{ transform:scale(1.25) rotate(8deg);} 100%{ transform:scale(1) rotate(0);} }
-  .cg-txt b { font-family:'Space Grotesk',sans-serif; font-size:2.7vh; display:block; letter-spacing:-.01em; }
+  .cg-txt b { font-family:var(--font-display); font-size:2.7vh; display:block; letter-spacing:-.01em; }
   .cg-txt span { font-size:1.9vh; font-weight:600; opacity:.85; }
   /* confetti burst behind the icon */
   .cg-burst { position:absolute; left:2.6vw; top:50%; width:0; height:0; }
@@ -3670,7 +3678,7 @@ function LEADERBOARD_HTML(p) {
     0% { transform:translate(0,0) scale(1); opacity:1; }
     100% { transform:translate(3vw,-4vh) scale(0); opacity:0; }
   }
-  .car-more { font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:calc(var(--rowfs) * .9);
+  .car-more { font-family:var(--font-display); font-weight:700; font-size:calc(var(--rowfs) * .9);
     color:#C7DDF2; margin-left:.4vw; align-self:center; }
   .cars { display:flex; align-items:center; flex-wrap:nowrap; gap:0 .12vw; overflow:hidden;
     animation: carsIn .6s cubic-bezier(.22,1,.36,1) both; animation-delay:calc(var(--i) * .06s); }
@@ -9416,7 +9424,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                     there are three to stand on it. */}
                 {offenders.length >= 3 && (
                   <div className="bl-podium">
-                    {[1, 0, 2].map((k) => {
+                    {[0, 1, 2].map((k) => {
                       const r = offenders[k];
                       return (
                         <div key={r.a.id} className={"bl-slot bl-" + (k + 1)}>
@@ -9659,14 +9667,14 @@ function drawDayReport({ store, dayLabel, clean, flagged, off, offenders, streak
     c.fillStyle = INK3; c.font = `400 13px ${UI}`;
     c.fillText("Nobody has a point this month. Worth saying out loud.", rx, ry);
   } else {
-    /* The top three on a podium. Second, first, third, at three heights, the way a
-       podium actually stands, so the shape says who leads before a single number is
-       read. The rest follow underneath as a plain list. */
+    /* The worst three, ranked left to right. Not a podium anybody stands on, so the
+       blocks run the same red to amber ramp as the list underneath rather than
+       wearing medals, which said the opposite of what this measures. */
     const top = shown.slice(0, 3);
     if (top.length === 3) {
       const order = [top[0], top[1], top[2]];
-      const metal = ["#D9A425", "#8FA0B3", "#B5713C"];
-      const wash  = ["#FBF3DE", "#EDF1F5", "#F7EAE0"];
+      const metal = ["#A81818", "#9C5406", "#8A6003"];
+      const wash  = ["#F8E7E7", "#FBEEDF", "#FAF3DC"];
       const rank  = [1, 2, 3];
       const hts   = [88, 72, 58];   // the shortest still has to hold a number and a rank
       const bw = (colW - 16) / 3;
@@ -16853,7 +16861,15 @@ function Style() {
       .lpc :focus:not(:focus-visible) { outline:none; }
       /* The browser's default body margin was leaving a strip down both sides, so
          the top bar stopped short of the corners. */
-      html, body { margin:0; padding:0; }
+      /* The base font belongs on the root, not on the app container.
+         It used to sit only on the container, so anything rendered outside it fell
+         through to the browser default, which is a SERIF. That is what "mismatching
+         fonts" was: My day and the Help sheet are portalled to document.body so their
+         overlays position against the viewport, and portalling them out of the
+         container took their typeface with it. Every heading and label in them came
+         out in Times New Roman next to numbers that named the variable directly.
+         Setting it here means anything, anywhere, inherits the right face. */
+      html, body { margin:0; padding:0; font-family:var(--font-ui); }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: var(--font-ui);
         font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
@@ -18777,8 +18793,11 @@ function Style() {
         border-bottom:1px solid rgba(16,32,52,.08); }
       /* The standard, under the list rather than over it. Numbers carry the weight;
          the rule behind them is said once, quietly, and nowhere else on the screen. */
-      /* Second, first, third, at three heights, the way a podium actually stands and
-         the way the report image already draws it. The metals match the canvas. */
+      /* Worst first, reading left to right, because this is not a podium anybody is
+         standing on. Gold, silver and bronze were borrowed from the Top Performers
+         block and said the opposite of what this means, so the blocks run down the
+         same red to amber ramp the list underneath uses: the deepest colour is the
+         most points, and the eye reads severity rather than achievement. */
       .bl-podium { display:grid; grid-template-columns:repeat(3,1fr); gap:8px;
         align-items:end; margin:12px 0 14px; }
       .bl-slot { display:flex; flex-direction:column; align-items:center; gap:5px; min-width:0; }
@@ -18788,9 +18807,12 @@ function Style() {
         align-items:center; justify-content:flex-end; gap:2px; padding:9px 4px 7px; }
       .bl-block b { font-family:var(--font-display); font-size:20px; font-weight:800; letter-spacing:-.02em; }
       .bl-block i { font-style:normal; font-size:9.5px; font-weight:700; }
-      .bl-1 .bl-block { height:74px; background:#FBF3DE; } .bl-1 .bl-block b, .bl-1 .bl-block i { color:#9A7413; }
-      .bl-2 .bl-block { height:60px; background:#EDF1F5; } .bl-2 .bl-block b, .bl-2 .bl-block i { color:#5B6B7D; }
-      .bl-3 .bl-block { height:50px; background:#F7EAE0; } .bl-3 .bl-block b, .bl-3 .bl-block i { color:#8C5730; }
+      .bl-1 .bl-block { height:74px; background:rgba(190,24,24,.13); }
+      .bl-1 .bl-block b, .bl-1 .bl-block i { color:#A81818; }
+      .bl-2 .bl-block { height:62px; background:rgba(217,119,6,.14); }
+      .bl-2 .bl-block b, .bl-2 .bl-block i { color:#9C5406; }
+      .bl-3 .bl-block { height:52px; background:rgba(202,138,4,.14); }
+      .bl-3 .bl-block b, .bl-3 .bl-block i { color:#8A6003; }
       .dr-warn { font-size:12.5px; font-weight:600; color:#8A6314; background:rgba(217,164,37,.16);
         padding:9px 13px; border-radius:11px; margin-bottom:10px; }
       .dr-ok { font-size:12.5px; color:var(--ink-3); background:rgba(16,32,52,.05);
@@ -19330,8 +19352,12 @@ function Style() {
         background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1.4 1.6 6 6.2l4.6-4.6' fill='none' stroke='%234A5A6B' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
         background-repeat:no-repeat; background-position:right 13px center; background-size:12px 8px; }
       select::-ms-expand { display:none; }
-      input:hover, select:hover { background:rgba(255,255,255,.92); }
-      input:focus, select:focus { border-color:var(--blue); background:#fff; box-shadow: 0 0 0 3.5px rgba(42,94,155,.18); }
+      /* background-color, NOT the background shorthand. The shorthand resets
+         background-image to none, which erased the select chevron the moment a
+         dropdown was hovered or focused: the exact state it is in while anyone is
+         looking at it. That is why the selects still read as unstyled. */
+      input:hover, select:hover { background-color:rgba(255,255,255,.92); }
+      input:focus, select:focus { border-color:var(--blue); background-color:#fff; box-shadow: 0 0 0 3.5px rgba(42,94,155,.18); }
       input[type=number] { width:84px; }
       .btn { background:linear-gradient(180deg, #3B72B0 0%, var(--blue) 100%); color:#fff; border:none;
         border-radius:12px; padding:10px 20px; font-weight:600; font-size:13px; letter-spacing:.005em;

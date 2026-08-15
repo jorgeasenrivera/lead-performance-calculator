@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Lead Performance Calculator</title>
+    <!-- The app never loaded its own fonts. Every font-family in the stylesheet named
+         Space Grotesk, Geist, Sora or the monos, and none of them existed, so the whole
+         app has been running on fallbacks. Text using the variables fell back to
+         system-ui while hardcoded stacks fell back to a bare sans-serif, which is two
+         genuinely different faces sitting next to each other and is what "mismatching
+         fonts" actually was. The @import that loads these only ever existed inside the
+         TV board's own generated document. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" />
   </head>
   <body>
     <div id="root"></div>
