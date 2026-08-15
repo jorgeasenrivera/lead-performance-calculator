@@ -2963,7 +2963,10 @@ export default function LeadPerformanceCalculator() {
   if (appModule === "board") {
     return (
       <Shell entering={entering}>
-        <header className="topbar no-print">
+        {/* solo-top for the same reason FloorModule needs it: this module renders
+            its own header, has no bottom bar, and this switcher is the only way
+            back to anything else. */}
+        <header className="topbar solo-top no-print">
           <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} />
           <div className="topbar-right">
             <ToolSwitcher value="board" onChange={(mod) => {
@@ -9134,12 +9137,14 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
 
   return (
     <Shell>
-      {/* floor-top marks a header that has no bottom bar under it. The mobile
-          rules hide the tool switcher on the grounds that switching lives in the
-          More drawer, which is true of the performance shell and false here:
-          this module returns before that shell is ever built, so hiding the
-          switcher left Live Floor, The Line and Online with no way back out. */}
-      <header className="topbar floor-top no-print">
+      {/* solo-top marks a header with NO bottom bar under it. The mobile rules
+          hide the tool switcher because switching lives in the More drawer, and
+          that is true of the performance shell and false in every module that
+          returns before the shell is built. Those modules keep their switcher,
+          because it is the only way out of them. Two qualify today: this one and
+          The Board. Anything that grows its own topbar needs this class or it
+          strands whoever opens it. */}
+      <header className="topbar solo-top no-print">
         <div className="brand">
           <Logo size={36} />
           <div><div className="brand-title">Lead Performance</div></div>
@@ -20085,14 +20090,14 @@ function Style() {
            defaults to min-width:auto and so refuses to shrink below its content,
            and a nowrap strip of six tools then widens the whole page instead of
            scrolling inside itself. */
-        .floor-top .tool-row { display:flex !important; width:100%; max-width:100%;
+        .solo-top .tool-row { display:flex !important; width:100%; max-width:100%;
           min-width:0; order:3; gap:8px;
           flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
           scrollbar-width:none; margin:0 -14px; padding:2px 14px 4px; }
-        .floor-top .topbar-right { min-width:0; flex-wrap:wrap; }
-        .floor-top .tool-row::-webkit-scrollbar { display:none; }
-        .floor-top .tool-switch, .floor-top .qsel { flex:0 0 auto; }
-        .floor-top .tool-btn { padding:6px 10px; font-size:12px; }
+        .solo-top .topbar-right { min-width:0; flex-wrap:wrap; }
+        .solo-top .tool-row::-webkit-scrollbar { display:none; }
+        .solo-top .tool-switch, .solo-top .qsel { flex:0 0 auto; }
+        .solo-top .tool-btn { padding:6px 10px; font-size:12px; }
         .brand-title { font-size:16px; }
         .view-select { max-width:62vw; font-size:13px; }
         /* the bar measures 55px before the home-indicator inset, so at bottom:18px
