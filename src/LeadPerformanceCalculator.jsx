@@ -17989,6 +17989,13 @@ function Style() {
       .ru-reopen-go { font-size:13px; font-weight:700; color:var(--blue); flex:0 0 auto; }
 
       /* --- the once-a-day sheet --- */
+      /* Overlay portals this to document.body, which is OUTSIDE .lpc — and .lpc is
+         where the app's font, size and ink are set. Anything here that did not name
+         a face explicitly was inheriting the browser default, so the headings came
+         out right and every line of body copy under them came out in Times. The
+         sheet has to restate what it left behind. */
+      .ru-scrim { font-family:var(--font-ui); font-size:14px; color:var(--ink);
+        -webkit-font-smoothing:antialiased; }
       .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.42);
         backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
         display:flex; align-items:center; justify-content:center; padding:24px;
@@ -17996,7 +18003,11 @@ function Style() {
       .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
         width:min(560px, 100%); max-height:min(760px, 88vh); display:flex; flex-direction:column;
         overflow:hidden; animation:ruSheetUp .55s var(--ease) both; }
-      .ru-sheet-body { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+      /* Without overscroll-behavior a flick at either end of this list hands the
+         scroll to the board underneath, so closing the sheet left the page sitting
+         further down than it started. Same guard the help sheet already carries. */
+      .ru-sheet-body { flex:1; overflow-y:auto; overscroll-behavior:contain;
+        -webkit-overflow-scrolling:touch; }
       .ru-sheet-head { padding:24px 24px 4px; }
       .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
         color:var(--ink-3); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
@@ -20082,7 +20093,14 @@ function Style() {
         .botnav-ico .pix { display:block; }
         .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
         .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
-        .botnav-btn .badge { position:absolute; top:0; right:22%; transform:scale(.72); }
+        /* The import count sat squarely on top of its glyph, so the badge and the
+           arrow smeared into each other and neither read. It now hangs off the
+           icon's top-right corner, clear of it, with a ring to lift it off the
+           bar. Scaling a padded pill was also why its text looked soft — it is
+           drawn at its real size now instead of being shrunk with a transform. */
+        .botnav-btn .badge { position:absolute; top:-1px; left:calc(50% + 11px); right:auto;
+          transform:none; font-size:9px; font-weight:800; padding:0.5px 4px; line-height:1.6;
+          border-radius:999px; white-space:nowrap; box-shadow:0 0 0 1.5px rgba(255,255,255,.95); }
 
         /* --- hero reflows to one column --- */
         .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
