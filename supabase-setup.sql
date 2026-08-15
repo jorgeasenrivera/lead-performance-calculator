@@ -44,15 +44,19 @@ create trigger app_data_touch
 -- verified. Run supabase-rls-audit.sql, which is read only, to find out
 -- what is actually in force before touching anything here.
 --
--- Left in place rather than deleted because the table, trigger and index
--- definitions above are still correct and still worth having.
+-- COMMENTED OUT ON PURPOSE, AND IT MUST STAY THAT WAY.
+-- A warning above executable SQL is not a safeguard. This file was pasted whole
+-- into a live SQL editor with the warning sitting right there in it, and the
+-- policies ran. Anything in this file that can widen access is now inert text.
+-- If you need policies, write them from the output of supabase-rls-audit.sql
+-- against what is actually live. Never from this file.
 -- =====================================================================
 alter table app_data enable row level security;
 
-drop policy if exists "app_data read"  on app_data;
-drop policy if exists "app_data write" on app_data;
-drop policy if exists "app_data update" on app_data;
+-- drop policy if exists "app_data read"  on app_data;
+-- drop policy if exists "app_data write" on app_data;
+-- drop policy if exists "app_data update" on app_data;
 
-create policy "app_data read"   on app_data for select using (true);
-create policy "app_data write"  on app_data for insert with check (true);
-create policy "app_data update" on app_data for update using (true) with check (true);
+-- create policy "app_data read"   on app_data for select using (true);
+-- create policy "app_data write"  on app_data for insert with check (true);
+-- create policy "app_data update" on app_data for update using (true) with check (true);
