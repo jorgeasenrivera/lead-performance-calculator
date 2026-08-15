@@ -3429,10 +3429,20 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
 
   useEffect(() => {
     measure();
-    // smoothly bring the active segment into view when the control overflows
+    /* Centre the active segment by scrolling this control and nothing else.
+       scrollIntoView was doing it before, and block:"nearest" is not the
+       safeguard it looks like: "nearest" still scrolls every ancestor that can
+       scroll, the document included, whenever the control is off screen. On a
+       phone a strip sitting below the fold pulled the whole page down to itself
+       on mount, so every page carrying one opened slightly scrolled. Setting
+       scrollLeft touches the horizontal axis of this element only, which is all
+       that was ever wanted. */
     const btn = btnRefs.current[value];
-    if (btn?.scrollIntoView) {
-      try { btn.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); } catch {}
+    const wrap = wrapRef.current;
+    if (btn && wrap && wrap.scrollWidth > wrap.clientWidth + 1) {
+      const want = btn.offsetLeft - (wrap.clientWidth - btn.offsetWidth) / 2;
+      const max = wrap.scrollWidth - wrap.clientWidth;
+      wrap.scrollLeft = Math.max(0, Math.min(max, want));
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
@@ -9124,7 +9134,12 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
 
   return (
     <Shell>
-      <header className="topbar no-print">
+      {/* floor-top marks a header that has no bottom bar under it. The mobile
+          rules hide the tool switcher on the grounds that switching lives in the
+          More drawer, which is true of the performance shell and false here:
+          this module returns before that shell is ever built, so hiding the
+          switcher left Live Floor, The Line and Online with no way back out. */}
+      <header className="topbar floor-top no-print">
         <div className="brand">
           <Logo size={36} />
           <div><div className="brand-title">Lead Performance</div></div>
@@ -20058,10 +20073,26 @@ function Style() {
            controls lived there, but the bottom bar replaced all of it and the
            row now holds only the store selector — so it cost a second header
            row, and every page started ~50px further down. One row again. */
-        .topbar-right { width:auto; order:0; flex:1 1 auto;
+        .topbar-right { width:auto; order:0; flex:1 1 auto; min-width:0;
           justify-content:flex-end; gap:8px; }
         .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
         .hamburger { display:none !important; }                       /* replaced by the bottom bar */
+        /* ...except where there is no bottom bar to live in. Live Floor, The Line
+           and Online render their own header and never reach the drawer, so this
+           switcher is the only way out of them. It scrolls rather than wraps, so
+           six tools still fit across a phone. */
+        /* min-width:0 on both is what makes overflow-x actually clip: a flex item
+           defaults to min-width:auto and so refuses to shrink below its content,
+           and a nowrap strip of six tools then widens the whole page instead of
+           scrolling inside itself. */
+        .floor-top .tool-row { display:flex !important; width:100%; max-width:100%;
+          min-width:0; order:3; gap:8px;
+          flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+          scrollbar-width:none; margin:0 -14px; padding:2px 14px 4px; }
+        .floor-top .topbar-right { min-width:0; flex-wrap:wrap; }
+        .floor-top .tool-row::-webkit-scrollbar { display:none; }
+        .floor-top .tool-switch, .floor-top .qsel { flex:0 0 auto; }
+        .floor-top .tool-btn { padding:6px 10px; font-size:12px; }
         .brand-title { font-size:16px; }
         .view-select { max-width:62vw; font-size:13px; }
         /* the bar measures 55px before the home-indicator inset, so at bottom:18px
