@@ -161,6 +161,41 @@ fragment**, newest first, last four reports. Read that row out of Supabase once 
 report with real numbers lands, and the mapper can be written from it without anyone
 ever obtaining the PDF.
 
+---
+
+## 2d. MOBILE IS THE NEXT REAL PIECE OF WORK
+
+Reported Aug 15 with screenshots, from an iPhone in Safari against the live site.
+Nobody has looked at mobile in a long time and it shows. These are specific and
+observed, not a general "make it responsive":
+
+1. **The store selector overlaps the content beneath it.** On the Performance board,
+   the History tab and the Import tab, the selector sits on top of the hero card and
+   the cards below rather than above them in the flow. It reads as a sticky or fixed
+   element without a solid background, without enough z-index, and without matching
+   top padding on the scroll container, so content slides underneath and both are
+   legible at once. This is the worst of them: it happens on every tab and it is the
+   first thing anyone sees.
+
+2. **Values are truncated mid-number in "Talk to these first".** "Delivery % 6.7..."
+   and "Delivery % 1.7% vs ..." both elide the figure the row exists to show. On a
+   narrow screen the label should give way before the number does.
+
+3. **Upload history overflows horizontally.** Undo and Delete run off the right edge
+   with no scroll container and no wrap, so the one action on the row is the part that
+   cannot be reached.
+
+4. **The Help FAB sits on top of the bottom nav** and covers the "More" item.
+
+5. Fine as they are: the bottom nav itself, the slide-over menu, and Group Overview.
+   Top Performers medals are correct there, since that one genuinely is a best-of
+   podium, unlike Biggest Loser.
+
+Worth knowing before starting: a `@media` block near the foot of the stylesheet already
+carries mobile rules for `.role-group`, `.mdial`, `.health-pop` and others, so there is
+a pattern to follow rather than one to invent. The sticky header is the highest-value
+single fix, since it accounts for three of the five.
+
 ## 3. WHAT CHANGED THIS SESSION (16 commits)
 
 | Commit | What |
