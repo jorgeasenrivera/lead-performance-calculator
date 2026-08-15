@@ -14731,11 +14731,20 @@ const NAV_ICON = {
   access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
   backup: "arrowdown",
 };
+/* These only ever SHORTEN the name a destination already carries elsewhere.
+   They must never rename one: a tab that reads differently from the drawer
+   entry it opens is a different place as far as anyone using it is concerned.
+   Standards was "Rules" and Overview was "Home", words that appear nowhere
+   else in the app, and Check Out was the only two-word label in the bar.
+   Anything already short enough is left out and falls through to its real
+   label — Summary, Import, History, Roster, Access, Coaching, Standards,
+   Overview, Tickets, Stores, Backup. */
 const NAV_SHORT = {
-  board: "Board", dashboard: "Board", import: "Import", gm: "Summary", history: "History",
-  standards: "Rules", roster: "Roster", checkout: "Check Out", queue: "Line", coaching: "Coaching",
-  plates: "Plates", actstd: "Rules", overview: "Home", access: "Access", audit: "Audit",
-  settings: "Stores", backup: "Backup",
+  board: "Board", dashboard: "Board",  // "Dashboard", or "Combined Board" in the group view
+  checkout: "Checkout",                // "Check Out"
+  plates: "Plates",                    // "License Plates"
+  audit: "Audit",                      // "Audit Log"
+  queue: "Line",                       // "The Line"
 };
 
 function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
