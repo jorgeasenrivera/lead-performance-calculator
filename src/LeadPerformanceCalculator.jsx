@@ -561,6 +561,11 @@ const PIX5 = {
   triup:    ["00100","01110","11111","00000","00000"],
   tridown:  ["00000","00000","11111","01110","00100"],
   dot:      ["00000","00000","00100","00000","00000"],
+  // The bottom bar's overflow button. An ellipsis is only ever three dots, so
+  // on the fine grid it renders a third the weight of the glyphs beside it and
+  // the bar looks unevenly inked. It belongs on the coarse grid for the same
+  // reason the tick does.
+  more:     ["00000","00000","10101","00000","00000"],
 };
 // A question mark, on the fine grid: it needs the counter and the gap under the
 // hook to read as a question rather than a smudge.
@@ -14688,23 +14693,43 @@ function BottomNav({ items, value, onChange, appModule, onToolChange, storeData,
     <nav className="botnav no-print" aria-label="Sections">
       {primary.map(([id, label]) => (
         <button key={id} className={"botnav-btn" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
-          <span className="botnav-ico">{NAV_ICON[id] || "•"}</span>
+          <span className="botnav-ico"><PixIcon glyph={NAV_ICON[id] || "dot"} size={21} fine /></span>
           <span className="botnav-lbl">{NAV_SHORT[id] || label}</span>
           {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
         </button>
       ))}
       <button className={"botnav-btn" + (activeInOverflow ? " on" : "")} onClick={onMore}>
-        <span className="botnav-ico">⋯</span>
+        <span className="botnav-ico"><PixIcon glyph="more" size={21} /></span>
         <span className="botnav-lbl">More</span>
       </button>
     </nav>
   );
 }
 
+/* Dot-matrix glyphs, so the bar speaks the same language as the rest of the
+   app rather than borrowing Unicode furniture. Each one is picked for what the
+   button actually opens, and no glyph is used twice inside one bar:
+     Board      standing against the standards        chart
+     Home       the whole group, every store          globe
+     Import     reports going up into the app         arrowup   (Backup pulls down)
+     Summary    a report you read                     doc
+     History    what happened, and when               clock
+     Rules      the targets that pass or fail         check
+     Roster     everyone                              users
+     Coaching   one person at a time                  user
+     Check Out  a deal being closed                   handshake
+     Line       who takes the next call               phone
+     Access     who gets through the door             door
+     Plates     dealer plates on cars                 car
+     Audit      the log                               clipboard
+     Tickets    a raised issue                        warn
+     Stores     configuration                         gear                     */
 const NAV_ICON = {
-  board: "◎", dashboard: "◎", import: "⇪", gm: "▤", history: "↺", standards: "◈",
-  roster: "☰", checkout: "✓", queue: "☎", coaching: "◇", plates: "▦", actstd: "◈",
-  overview: "▦", access: "◐", audit: "❑", settings: "⚙", backup: "⇩",
+  board: "chart", dashboard: "chart", import: "arrowup", gm: "doc", history: "clock",
+  standards: "check", actstd: "check", roster: "users", checkout: "handshake",
+  queue: "phone", coaching: "user", plates: "car", overview: "globe",
+  access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
+  backup: "arrowdown",
 };
 const NAV_SHORT = {
   board: "Board", dashboard: "Board", import: "Import", gm: "Summary", history: "History",
@@ -19614,7 +19639,11 @@ function Style() {
           color:var(--ink-3); transition:color .2s var(--ease), transform .2s var(--ease-bloop); }
         .botnav-btn.on { color:var(--blue); }
         .botnav-btn:active { transform:scale(.9); }
-        .botnav-ico { font-size:19px; line-height:1; }
+        /* holds an SVG now, not a character, so it needs a box rather than a
+           font size or the row height drifts between glyphs */
+        .botnav-ico { display:flex; align-items:center; justify-content:center;
+          width:21px; height:21px; line-height:0; }
+        .botnav-ico .pix { display:block; }
         .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
         .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
         .botnav-btn .badge { position:absolute; top:0; right:22%; transform:scale(.72); }
