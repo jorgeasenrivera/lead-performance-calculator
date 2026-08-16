@@ -815,21 +815,79 @@ const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><d
 // until they are observed, so it must only ever engage when this bundle is live.
 // If the script never runs, nothing is hidden and the app renders plainly.
 if (typeof document !== "undefined") document.documentElement.classList.add("js-anim");
-// Touch has no hover, so the dial/health/weakest popups would never open. On a
-// touch device a tap toggles the "popped" class the CSS opens on; a tap anywhere
-// else closes whatever is open. One document-level listener covers every popup.
+/* Touch has no hover, so the dial / health / weakest popups would never open.
+
+   These used to open in place, by toggling a "popped" class the CSS revealed.
+   That cannot be made to work on a phone. Every one of them lives inside a card
+   that sets its own z-index — .hero is 220, .hf-fix is 220 — and a z-index makes
+   a stacking context, so the popup is sealed inside its card and paints BEHIND
+   the card above it no matter what z-index the popup itself carries. Lifting the
+   card instead just moves the problem: then the card paints over the sticky
+   header and the bottom bar.
+
+   So on touch the popup leaves the page. The content is cloned into a sheet
+   portaled to document.body, where there is no ancestor to be trapped by. One
+   sheet exists at a time, so opening a second closes the first for free, and
+   nothing on the page changes depth at all.
+
+   The clone is a DOM node, not innerHTML: React already rendered and escaped it,
+   and these blocks are read-only text, so a copy behaves identically. */
+const tapSheet = { node: null, subs: new Set() };
+function openTapSheet(node) {
+  tapSheet.node = node;
+  tapSheet.subs.forEach((f) => f());
+}
+function useTapSheet() {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const f = () => bump((n) => n + 1);
+    tapSheet.subs.add(f);
+    return () => { tapSheet.subs.delete(f); };
+  }, []);
+  return tapSheet.node;
+}
+
+function TapSheetHost() {
+  const node = useTapSheet();
+  const slot = useRef(null);
+  useEffect(() => {
+    if (!node || !slot.current) return;
+    slot.current.replaceChildren(node);
+  }, [node]);
+  useEffect(() => {
+    if (!node) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") openTapSheet(null); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [node]);
+  if (!node) return null;
+  return (
+    <Overlay>
+      <div className="bsheet-root tap-sheet" role="dialog" aria-label="Details">
+        <div className="bsheet-scrim" onClick={() => openTapSheet(null)} />
+        <div className="bsheet">
+          <button className="bsheet-x tap-sheet-x" onClick={() => openTapSheet(null)} aria-label="Close">
+            <PixIcon glyph="close" size={13} />
+          </button>
+          <div className="bsheet-body" ref={slot} />
+        </div>
+      </div>
+    </Overlay>
+  );
+}
+
 if (typeof document !== "undefined" && typeof window !== "undefined") {
   const isTouch = window.matchMedia && window.matchMedia("(hover: none)").matches;
   if (isTouch) {
     document.documentElement.classList.add("is-touch");
     document.addEventListener("click", (e) => {
       const host = e.target.closest(".mdial, .hf-fix, .hero-health, .pod");
-      const open = document.querySelector(".popped");
-      if (open && open !== host) open.classList.remove("popped");
-      if (host && host.querySelector(".mdial-pop, .hf-pop, .health-pop")) {
-        e.preventDefault();
-        host.classList.toggle("popped");
-      }
+      const pop = host && host.querySelector(".mdial-pop, .hf-pop, .health-pop");
+      if (!pop) return;
+      e.preventDefault();
+      openTapSheet(pop.cloneNode(true));
     }, true);
   }
 }
@@ -4505,6 +4563,40 @@ function inkOn(bg) {
   const L = 0.2126 * lin(full.slice(0, 2)) + 0.7152 * lin(full.slice(2, 4)) + 0.0722 * lin(full.slice(4, 6));
   // 0.45 sits between the contrast ratios for black and white against mid tones
   return L > 0.45 ? "#101820" : "#FFFFFF";
+}
+
+/* A translucent plate on the store's own colour, and the ink that reads on it.
+
+   Picking the ink alone is not enough. The date chip started as white text on a
+   22%-white plate, which lightens the plate TOWARD the text: on Driver's Mart
+   teal that measured 2.36:1, below even the 3:1 large-text floor. The plate has
+   to tint AWAY from the ink, and which direction wins depends on the brand — so
+   both are computed and the better one is used.
+
+   Measured across the brands in play: Driver's Mart 11.8, Honda 9.4,
+   Chevrolet 11.8, Mazda 12.4, and a pale or yellow brand 15+. */
+function chipOn(bg) {
+  const raw = String(bg || "").trim().replace("#", "");
+  // #0A9 and #00AA99 are the same colour; only one of them survives a /../ split
+  const full = /^[0-9a-f]{3}$/i.test(raw) ? raw.split("").map((c) => c + c).join("") : raw;
+  const parts = /^[0-9a-f]{6}$/i.test(full) ? full.match(/../g) : null;
+  if (!parts) return { ink: "#FFFFFF", plate: "rgba(255,255,255,.22)" };
+  const rgb = parts.slice(0, 3).map((v) => parseInt(v, 16));
+  const hx = (a) => "#" + a.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
+  const over = (t, a) => hx(rgb.map((v, i) => v + (t[i] - v) * a));
+  const lum = (h) => {
+    const c = h.replace("#", "").match(/../g).map((v) => parseInt(v, 16) / 255);
+    const g = (s) => (s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4));
+    return 0.2126 * g(c[0]) + 0.7152 * g(c[1]) + 0.0722 * g(c[2]);
+  };
+  const ratio = (a, b) => {
+    const x = lum(a), y = lum(b);
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+  const dark = over([0, 0, 0], 0.28), light = over([255, 255, 255], 0.62);
+  return ratio("#FFFFFF", dark) >= ratio("#101820", light)
+    ? { ink: "#FFFFFF", plate: dark }
+    : { ink: "#101820", plate: light };
 }
 
 function brandFontFor(name) {
@@ -15845,6 +15937,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
+  const dateChip = chipOn(b.primary);
   const bandRef = useRef(null);
   // Parallax removed: nothing else in the app drifts on scroll, so the hero stays put.
 
@@ -15858,7 +15951,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           <div className="hero-text">
             {/* The date reads as a stamp on the card rather than a third line of
                 prose under the store name — asked for, and it buys back the line. */}
-            <div className="hero-datechip">
+            {/* The chip is a translucent plate on the store's own gradient, so it
+                cannot assume white text — see chipOn, which computes both
+                directions and takes the one that actually reads. */}
+            <div className="hero-datechip" style={{ color: dateChip.ink, background: dateChip.plate }}>
               <PixIcon glyph="calendar" size={11} />
               {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
             </div>
@@ -17678,6 +17774,7 @@ function AppShell({
         items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData} storeName={storeName}
         onToolChange={(mod) => { onToolChange(mod); setDrawerOpen(false); }} />
+      <TapSheetHost />
       <Style />
       {help}
     </Shell>
@@ -17848,8 +17945,7 @@ function Style() {
       /* Closing rates on hover, same bloop as the dials. */
       .hero-datechip { display:inline-flex; align-items:center; gap:5px; align-self:flex-start;
         font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
-        padding:3px 8px; border-radius:999px; background:rgba(255,255,255,.20);
-        margin-bottom:7px; color:inherit; }
+        padding:3px 8px; border-radius:999px; margin-bottom:7px; }
       .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
@@ -20566,6 +20662,18 @@ function Style() {
       .bsheet-body { overflow-y:auto; overscroll-behavior:contain; padding:14px 16px 18px;
         display:flex; flex-direction:column; gap:11px; }
 
+      /* A popup cloned into the sheet arrives still wearing the CSS that hid it
+         and floated it next to its card. Inside the sheet it is just content. */
+      .tap-sheet .health-pop, .tap-sheet .hf-pop, .tap-sheet .mdial-pop {
+        position:static; opacity:1; pointer-events:auto; transform:none;
+        width:auto; max-width:none; min-width:0; border:none; box-shadow:none;
+        background:none; padding:0; z-index:auto; }
+      .tap-sheet .health-pop::after, .tap-sheet .hf-pop::after, .tap-sheet .mdial-pop::after { display:none; }
+      .tap-sheet .bsheet { padding-top:6px; }
+      .tap-sheet-x { position:absolute; top:12px; right:12px; z-index:2; }
+      .tap-sheet .bsheet-body { padding:18px 16px 18px; }
+      .tap-sheet .mp-title { padding-right:34px; }
+
       /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
       @media (prefers-reduced-motion: reduce) {
         .lpc *, .lpc *::before, .lpc *::after {
@@ -20742,17 +20850,10 @@ function Style() {
           font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
           pointer-events:none; }
 
-        /* --- a tapped popup has to clear the chrome ---
-           .hero sets z-index:220, which makes it a stacking context: nothing
-           inside it can paint above the sticky header (300) or the bar (340) no
-           matter what z-index the popup itself carries. So the popup was opening
-           behind the app. The fix has to lift the whole hero, and only while
-           something is actually open — a permanently raised hero would paint over
-           the header on every scroll. Same for an associate card holding an open
-           dial. */
-        .hero:has(.popped), .assoc-card:has(.popped) { z-index:355; }
-        .assoc-card:has(.popped) { position:relative; }
-        .health-pop, .hf-pop, .mdial-pop { z-index:356; }
+        /* Nothing on the page changes depth when a popup opens any more — the
+           content is cloned into a portaled sheet instead. Lifting the card was
+           the previous attempt and it traded one bug for two: the hero then
+           painted over the sticky header and the bottom bar. See TapSheetHost. */
 
         /* --- rhythm between the board's blocks ---
            Each of these carried its own desktop margin, and stacked on a phone
@@ -20802,6 +20903,11 @@ function Style() {
         .hf-fix.popped .hf-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
         .hf-pop { width:min(300px, 86vw); }
 
+        /* The 23px indent lines the bar up under the desktop rank badge. On a
+           phone the row wraps and there is no badge to line up with, so the
+           indent just made the bar look off-centre in its card. */
+        .gauge, .reasons { margin-left:0; }
+
         /* --- associate rows stack instead of spanning a wide line --- */
         .assoc-row { flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
         .assoc-name { flex:1 1 60%; font-size:15px; }
@@ -20810,8 +20916,17 @@ function Style() {
         .verdict, .restrict-btn, .grab-btn { flex:0 0 auto; }
 
         /* --- podium stacks --- */
+        /* flex-basis:auto was the whole bug: with the row switched to a column,
+           auto sizes each card to its CONTENT, so a long name made the card
+           wider than the row and it ran off the right edge.
+
+           The width has to be set on the CROSS axis. Once the row is a column,
+           flex-basis is the height, and align-items:stretch will not take a card
+           below its min-content width — so neither flex:1 1 100% nor min-width:0
+           alone does anything to how wide it is. An explicit width plus min-width:0
+           is what actually lets the name ellipse instead of pushing. */
         .podium-row { flex-direction:column; }
-        .pod { flex:1 1 auto; }
+        .pod { flex:0 0 auto; width:100%; min-width:0; }
 
         /* --- the sheet takes the bottom of the screen rather than floating --- */
         .ru-reopen { padding:10px 13px; gap:10px; }
@@ -20868,6 +20983,10 @@ function Style() {
          520 and 760 still gets three. */
       @media (max-width: 520px) {
         .mdial { width:calc(50% - 7px); }
+        /* The svg is a fixed 88px display:block, so in a half-width column it sat
+           hard left while the label under it centred — the two read as unrelated.
+           It fills the column now and the viewBox does the scaling. */
+        .mdial svg { width:100%; height:auto; }
       }
       /* "Performance" is the longest tool name and the only one that runs out of
          room: it needs 64px in a 62px button at 320. Nothing here is renamed to
