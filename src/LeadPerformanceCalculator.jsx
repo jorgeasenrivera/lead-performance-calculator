@@ -15635,10 +15635,19 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   useLayoutEffect(() => {
     const bar = barRef.current, tab = tabRefs.current[appModule];
     if (!bar || !tab) { setPill(null); return; }
-    const place = () => setPill({
-      x: tab.offsetLeft, y: tab.offsetTop,
-      w: tab.offsetWidth, h: tab.offsetHeight,
-    });
+    const place = () => {
+      const ico = tab.querySelector(".botnav-ico");
+      if (!ico) return;
+      /* padded out from the glyph rather than sized to the tab. The glyph box is
+         square and the same in every tab, so the pill is one constant shape that
+         only ever moves — which is what makes the slide read as one object. */
+      const w = ico.offsetWidth + 26, h = ico.offsetHeight + 13;
+      setPill({
+        w, h,
+        x: tab.offsetLeft + ico.offsetLeft + (ico.offsetWidth - w) / 2,
+        y: tab.offsetTop + ico.offsetTop + (ico.offsetHeight - h) / 2,
+      });
+    };
     place();
     /* Rotating the phone changes every offset at once. ResizeObserver on the bar
        catches that, and the orientation change that comes with it, without a
@@ -15659,7 +15668,6 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
 
   return (
     <nav className="botnav no-print" aria-label="Tools" ref={barRef}>
-      <span className="botnav-notch" aria-hidden="true" />
       {/* Rendered even with no measurement yet, at opacity 0, so the first paint
           after a tool change animates from where the pill was rather than
           appearing under the new tab. */}
@@ -15672,7 +15680,7 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
           className={"botnav-btn" + (appModule === id ? " on" : "")}
           onClick={() => onToolChange(id)}>
-          <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
+          <span className="botnav-ico"><PixIcon glyph={glyph} size={17} /></span>
           <span className="botnav-lbl">{label}</span>
         </button>
       ))}
@@ -15697,12 +15705,12 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
           className={"botnav-btn" + (appModule === id ? " on" : "")}
           onClick={() => onToolChange(id)}>
-          <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
+          <span className="botnav-ico"><PixIcon glyph={glyph} size={17} /></span>
           <span className="botnav-lbl">{label}</span>
         </button>
       ))}
       <button className="botnav-btn" onClick={onMore}>
-        <span className="botnav-ico"><PixIcon glyph="more" size={21} /></span>
+        <span className="botnav-ico"><PixIcon glyph="more" size={17} /></span>
         <span className="botnav-lbl">More</span>
       </button>
     </nav>
@@ -21524,9 +21532,10 @@ function Style() {
         .hamburger { display:none !important; }
         .brand-title { font-size:16px; }
         .view-select { max-width:62vw; font-size:13px; }
-        /* the bar measures 55px before the home-indicator inset, so at bottom:18px
-           the help button sat on top of the More tab and swallowed its taps */
-        .help-fab:not(.inline) { bottom:calc(67px + env(safe-area-inset-bottom, 0px)); }
+        /* the bar measures 55px and now floats 9px clear of the bottom edge, so
+           the help button clears 64px of it before the home-indicator inset. At
+           bottom:18px it sat on top of the More tab and swallowed its taps. */
+        .help-fab:not(.inline) { bottom:calc(76px + env(safe-area-inset-bottom, 0px)); }
         .btn-quiet { padding:7px 10px; }
         /* The sections moved to the chip strip, so the desktop tab control goes —
            but the associate search lives in this same row, and hiding the whole
@@ -21541,7 +21550,7 @@ function Style() {
         /* --- page gets out of the way of the bar --- */
         .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
         .settings, .checkout, .coaching, .plates {
-          padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
+          padding:16px 14px calc(88px + env(safe-area-inset-bottom, 0px)); }
 
         /* --- the first five, then the rest on request --- */
         .assoc-card.rolled { display:none; }
@@ -21556,7 +21565,7 @@ function Style() {
            list you tapped from — off screen, and you had to hunt for it. */
         .coach-detail-open { position:fixed; inset:auto 0 0 0; top:56px; z-index:360;
           background:var(--card); border-radius:18px 18px 0 0; overflow-y:auto;
-          overscroll-behavior:contain; padding:16px 14px calc(84px + env(safe-area-inset-bottom, 0px));
+          overscroll-behavior:contain; padding:16px 14px calc(94px + env(safe-area-inset-bottom, 0px));
           box-shadow:0 -8px 40px rgba(16,40,68,.28); animation:coachUp .38s var(--ease-bloop) both; }
         @keyframes coachUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:none; } }
         .coach-close { display:flex; position:sticky; top:0; margin-left:auto; z-index:2;
@@ -21589,23 +21598,33 @@ function Style() {
         .sect-chip .badge { margin-left:6px; font-size:9px; font-weight:800; padding:0.5px 4px;
           line-height:1.6; border-radius:999px; vertical-align:1px; }
 
-        /* --- bottom bar: the tools --- */
-        .botnav { position:fixed; left:0; right:0; bottom:0; z-index:340; display:flex;
+        /* --- bottom bar: the tools ---
+           The bar floats rather than sitting welded to the bottom edge. An
+           edge-to-edge white strip with a hairline over it is what every app
+           ships by default; lifted off the edge with its corners rounded, it
+           reads as one of this app's own cards, and the backdrop's colour runs
+           underneath it on all four sides. */
+        .botnav { position:fixed; left:10px; right:10px; z-index:340; display:flex;
           align-items:flex-end;
-          padding:6px 2px calc(7px + env(safe-area-inset-bottom, 0px));
-          background:rgba(255,255,255,.9); backdrop-filter:blur(20px) saturate(180%);
-          -webkit-backdrop-filter:blur(20px) saturate(180%);
-          box-shadow:0 -1px 0 rgba(16,40,68,.10), 0 -8px 24px rgba(16,40,68,.06); }
-        /* the bite the centre button sits in, so it reads as part of the bar
-           rather than a disc floating over it */
-        .botnav-notch { position:absolute; left:50%; top:-1px; transform:translateX(-50%);
-          width:78px; height:34px; background:var(--bg); border-radius:0 0 999px 999px;
-          box-shadow:inset 0 1px 0 rgba(16,40,68,.10); pointer-events:none; }
-        /* the pill that slides between tabs. Sized and placed from JS off the live
-           button, so it tracks whatever the labels do at each width. It sits at
-           z-index 0 — under the buttons, over the bar — and takes no taps, so the
-           button it is currently sitting on still gets them. */
-        .botnav-thumb { position:absolute; left:0; top:0; z-index:0; border-radius:14px;
+          bottom:calc(9px + env(safe-area-inset-bottom, 0px));
+          padding:7px 5px 8px; border-radius:26px;
+          background:rgba(255,255,255,.82); backdrop-filter:blur(22px) saturate(180%);
+          -webkit-backdrop-filter:blur(22px) saturate(180%);
+          border:1px solid rgba(255,255,255,.72);
+          box-shadow:0 1px 0 rgba(255,255,255,.6) inset,
+            0 10px 30px -6px rgba(16,40,68,.18), 0 2px 8px rgba(16,40,68,.06); }
+        /* The notch went with the welded bar. A bite cut in the top edge only
+           works when the bar meets the page behind it — a floating bar has open
+           air above it, so the notch became a grey tab sticking out of the top.
+           The centre button's own halo already separates it from the row. */
+        /* the pill that slides between tabs. It is measured around the GLYPH, not
+           the whole button: a pill the full width of the tab is both too wide to
+           read as a selection and too tight around the icon, and it crowds the
+           label it sits behind. Around the glyph it has air on every side and the
+           label below simply takes the accent colour. Placed from JS so it tracks
+           where the glyph actually lands at each width. z-index 0 puts it under
+           the buttons and over the bar; it takes no taps. */
+        .botnav-thumb { position:absolute; left:0; top:0; z-index:0; border-radius:13px;
           background:color-mix(in srgb, var(--sp, var(--blue)) 13%, transparent);
           pointer-events:none;
           transition:transform .48s var(--ease-bloop), width .48s var(--ease-bloop),
@@ -21617,20 +21636,22 @@ function Style() {
         }
         @media (prefers-reduced-motion: reduce) { .botnav-thumb { transition:opacity .2s linear; } }
         .botnav-btn { flex:1; min-width:0; position:relative; z-index:1; display:flex;
-          flex-direction:column; align-items:center; gap:3px;
+          flex-direction:column; align-items:center; gap:5px;
           border:none; background:none; font:inherit; cursor:pointer; padding:5px 1px; border-radius:12px;
           color:var(--ink-3); transition:color .22s var(--ease), transform .2s var(--ease-bloop); }
         .botnav-btn.on { color:var(--sp, var(--blue)); }
         .botnav-btn:active { transform:scale(.9); }
         /* holds an SVG now, not a character, so it needs a box rather than a
-           font size or the row height drifts between glyphs */
+           font size or the row height drifts between glyphs. 17 rather than 21:
+           the dot matrix is a dense glyph and at 21 the five bar icons were the
+           heaviest thing on the screen, competing with the numbers they lead to. */
         .botnav-ico { display:flex; align-items:center; justify-content:center;
-          width:21px; height:21px; line-height:0;
-          transition:transform .42s var(--ease-bloop); }
+          width:17px; height:17px; line-height:0; }
         .botnav-ico .pix { display:block; }
         .botnav-lbl { font-size:9.5px; font-weight:700; letter-spacing:-.01em;
           white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
-        .botnav-btn.on .botnav-ico { transform:translateY(-2px); }
+        /* the active glyph used to lift 2px to mark itself. The pill marks it now,
+           and a lifted glyph inside a pill just sits off centre. */
 
         /* --- the centre verb --- */
         /* align-self:stretch is load-bearing: under align-items:flex-end the slot
