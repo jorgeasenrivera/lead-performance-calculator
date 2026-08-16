@@ -819,119 +819,34 @@ const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><d
 // If the script never runs, nothing is hidden and the app renders plainly.
 if (typeof document !== "undefined") document.documentElement.classList.add("js-anim");
 /* Touch has no hover, so the dial / health / weakest popups would never open.
+   On a touch device a tap toggles the "popped" class the CSS opens on, and a tap
+   anywhere else closes whatever is open.
 
-   These used to open in place, by toggling a "popped" class the CSS revealed.
-   That cannot be made to work on a phone. Every one of them lives inside a card
-   that sets its own z-index — .hero is 220, .hf-fix is 220 — and a z-index makes
-   a stacking context, so the popup is sealed inside its card and paints BEHIND
-   the card above it no matter what z-index the popup itself carries. Lifting the
-   card instead just moves the problem: then the card paints over the sticky
-   header and the bottom bar.
+   Two attempts came before this and both fought the same losing battle. Each
+   popup lives inside a card that sets its own z-index, and a z-index makes a
+   stacking context, so an absolutely-positioned popup is sealed inside its card
+   and paints behind whatever is above it. Portaling the content out to
+   document.body escaped that — but it left the original still in the page, so
+   two copies of the same panel showed at once, and the floating copy had to be
+   positioned by hand against a card it no longer lived near.
 
-   So on touch the popup leaves the page. The content is cloned into a card
-   portaled to document.body, where there is no ancestor to be trapped by. One
-   card exists at a time, so opening a second closes the first for free, and
-   nothing on the page changes depth at all.
-
-   It stays a small card anchored to what was tapped rather than a full-screen
-   modal: the modal answered the stacking problem but took over the whole screen
-   to show three lines, and the point of these is to be glanceable. It is placed
-   above the tapped element when there is room and below when there is not, and
-   clamped so it never leaves the viewport.
-
-   The clone is a DOM node, not innerHTML: React already rendered and escaped it,
-   and these blocks are read-only text, so a copy behaves identically. */
-const tapSheet = { node: null, at: null, subs: new Set() };
-function openTapSheet(node, at) {
-  tapSheet.node = node;
-  tapSheet.at = at || null;
-  tapSheet.subs.forEach((f) => f());
-}
-function useTapSheet() {
-  const [, bump] = useState(0);
-  useEffect(() => {
-    const f = () => bump((n) => n + 1);
-    tapSheet.subs.add(f);
-    return () => { tapSheet.subs.delete(f); };
-  }, []);
-  return tapSheet.node;
-}
-
-const TAP_W = 300, TAP_GAP = 10, TAP_EDGE = 12;
-
-/* Where the card goes: above what was tapped if it fits, below if not, and
-   pinned inside the viewport if neither. Pure, because "the popup went off the
-   screen" is the bug this whole feature keeps producing and arithmetic that
-   cannot be run on its own cannot be checked. */
-function tapPlacement(at, h, vw, vh) {
-  const w = Math.min(TAP_W, vw - TAP_EDGE * 2);
-  const above = at.top - TAP_GAP - h;
-  const below = at.bottom + TAP_GAP;
-  const top = above >= TAP_EDGE ? above
-    : below + h <= vh - TAP_EDGE ? below
-    : Math.max(TAP_EDGE, Math.min(vh - TAP_EDGE - h, at.top - h / 2));
-  const want = at.left + at.width / 2 - w / 2;
-  const left = Math.max(TAP_EDGE, Math.min(vw - TAP_EDGE - w, want));
-  return { top, left, width: w };
-}
-
-function TapSheetHost() {
-  const node = useTapSheet();
-  const at = tapSheet.at;
-  const slot = useRef(null);
-  const card = useRef(null);
-  const [pos, setPos] = useState(null);
-
-  useEffect(() => {
-    if (!node || !slot.current) return;
-    slot.current.replaceChildren(node);
-  }, [node]);
-
-  /* Measured after the content is in, because how tall it is decides whether
-     there is room above. Falls back to below, then to whichever side has more. */
-  useEffect(() => {
-    if (!node || !at || !card.current) { setPos(null); return; }
-    setPos(tapPlacement(at, card.current.offsetHeight, window.innerWidth, window.innerHeight));
-  }, [node, at]);
-  useEffect(() => {
-    if (!node) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e) => { if (e.key === "Escape") openTapSheet(null); };
-    window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
-  }, [node]);
-  if (!node) return null;
-  return (
-    <Overlay>
-      <div className="tapcard-root" role="dialog" aria-label="Details">
-        {/* a catcher, not a scrim: tapping away closes it without dimming the
-            page, which is what made the modal feel like an interruption */}
-        <div className="tapcard-catch" onClick={() => openTapSheet(null)} />
-        <div className="tapcard" ref={card}
-          style={pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: "hidden" }}>
-          <button className="tapcard-x" onClick={() => openTapSheet(null)} aria-label="Close">
-            <PixIcon glyph="close" size={11} />
-          </button>
-          <div className="tapcard-body" ref={slot} />
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
+   The answer is not to position it at all. On touch the popup opens IN FLOW,
+   below whatever was tapped, pushing the page down instead of floating over it.
+   There is nothing to place, nothing to clip it, and no stacking context to
+   escape, because it is not overlapping anything. The hover card on a desktop
+   is unchanged. */
 if (typeof document !== "undefined" && typeof window !== "undefined") {
   const isTouch = window.matchMedia && window.matchMedia("(hover: none)").matches;
   if (isTouch) {
     document.documentElement.classList.add("is-touch");
     document.addEventListener("click", (e) => {
       const host = e.target.closest(".mdial, .hf-fix, .hero-health, .pod");
-      const pop = host && host.querySelector(".mdial-pop, .hf-pop, .health-pop");
-      if (!pop) return;
-      e.preventDefault();
-      const r = host.getBoundingClientRect();
-      openTapSheet(pop.cloneNode(true),
-        { top: r.top, bottom: r.bottom, left: r.left, width: r.width });
+      const open = document.querySelector(".popped");
+      if (open && open !== host) open.classList.remove("popped");
+      if (host && host.querySelector(".mdial-pop, .hf-pop, .health-pop")) {
+        e.preventDefault();
+        host.classList.toggle("popped");
+      }
     }, true);
   }
 }
@@ -17889,7 +17804,6 @@ function AppShell({
         items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData} storeName={storeName}
         onToolChange={(mod) => { onToolChange(mod); setDrawerOpen(false); }} />
-      <TapSheetHost />
       <Style />
       {help}
     </Shell>
@@ -20782,42 +20696,40 @@ function Style() {
       .bsheet-body { overflow-y:auto; overscroll-behavior:contain; padding:14px 16px 18px;
         display:flex; flex-direction:column; gap:11px; }
 
-      /* The tapped popup, portaled out of its card and anchored back to it. */
-      .tapcard-root { position:fixed; inset:0; z-index:365;
-        font-family:var(--font-ui); color:var(--ink); font-size:16px; line-height:1.55;
-        -webkit-font-smoothing:antialiased; }
-      .tapcard-root h4, .tapcard-root .mp-title { font-family:var(--font-display); }
-      .tapcard-root text { font-family:var(--font-ui); }
-      .tapcard-catch { position:absolute; inset:0; }
-      .tapcard { position:absolute; background:var(--card); border:1px solid rgba(16,40,68,.08);
-        border-radius:16px; box-shadow:0 18px 44px -12px rgba(16,40,68,.34), 0 2px 8px rgba(16,40,68,.10);
-        padding:13px 15px 12px; max-height:74vh; overflow-y:auto; overscroll-behavior:contain;
-        animation:tapPop .34s var(--ease-bloop) both; }
-      @keyframes tapPop { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:none; } }
-      .tapcard-x { position:absolute; top:9px; right:9px; border:none; background:var(--line);
-        width:22px; height:22px; border-radius:50%; cursor:pointer; color:var(--ink);
-        display:flex; align-items:center; justify-content:center; }
-      .tapcard-x:active { transform:scale(.88); }
-      .tapcard .mp-title, .tapcard h4 { padding-right:26px; }
-      /* A cloned popup arrives still wearing the CSS that hid it and floated it
-         beside its card. Inside the tapcard it is just content. */
-      .tapcard .health-pop, .tapcard .hf-pop, .tapcard .mdial-pop {
-        position:static; opacity:1; pointer-events:auto; transform:none;
-        width:auto; max-width:none; min-width:0; border:none; box-shadow:none;
-        background:none; padding:0; z-index:auto; }
-      .tapcard .health-pop::after, .tapcard .hf-pop::after, .tapcard .mdial-pop::after { display:none; }
-
       /* The mark that says a card opens something. Touch has no hover, so
          without it nothing distinguishes a card you can press from one you
          cannot — and a word would cost a line on every card that has one. */
-      .tapmark { display:none; position:absolute; top:10px; right:11px; z-index:2;
-        opacity:.5; pointer-events:none; color:inherit; }
+      .tapmark { display:none; position:absolute; bottom:10px; right:12px; z-index:2;
+        opacity:.55; pointer-events:none; color:inherit; }
       .is-touch .tapmark { display:flex; }
-      .hero-health .tapmark { top:0; right:0; }
+      /* The hero's health block is a bare flex column, not a card with padding,
+         so its mark hangs off the corner it is meant to sit inside. */
+      .hero-health .tapmark { bottom:-2px; right:-2px; }
+      /* Once it is open the mark has done its job, and the block has grown to
+         hold the panel — so it would otherwise drift down to sit beside it. */
+      .is-touch .popped .tapmark { display:none; }
+      /* The flow card's bottom-right corner is where its month labels sit, so it
+         gets the room rather than the mark landing on top of them. */
+      .is-touch .flowcard { padding-bottom:28px; }
+
+      /* ---- a tapped popup opens in flow, under what was tapped ----
+         Not floated: see the comment on the touch handler. Nothing here
+         positions anything, which is the entire point. */
+      .is-touch .health-pop, .is-touch .hf-pop, .is-touch .mdial-pop { display:none; }
+      .is-touch .popped .health-pop, .is-touch .popped .hf-pop, .is-touch .popped .mdial-pop {
+        display:block; position:static; opacity:1; pointer-events:auto; transform:none;
+        width:100%; max-width:none; min-width:0; margin-top:12px;
+        animation:popOpen .34s var(--ease-bloop) both; }
+      .is-touch .popped .health-pop::after, .is-touch .popped .hf-pop::after,
+      .is-touch .popped .mdial-pop::after { display:none; }
+      @keyframes popOpen { from { opacity:0; transform:translateY(-6px) scale(.97); } to { opacity:1; transform:none; } }
+      /* .mstrip wraps, so a full-width popup drops onto its own line under the dials */
+      .is-touch .mdial.popped .mdial-pop { margin-top:10px; }
 
       /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
       @media (prefers-reduced-motion: reduce) {
-        .tapcard { animation:none !important; }
+        .is-touch .popped .health-pop, .is-touch .popped .hf-pop,
+        .is-touch .popped .mdial-pop { animation:none !important; }
         .lpc *, .lpc *::before, .lpc *::after {
           animation-duration: .001ms !important;
           animation-iteration-count: 1 !important;
@@ -20992,11 +20904,6 @@ function Style() {
           font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
           pointer-events:none; }
 
-        /* Nothing on the page changes depth when a popup opens any more — the
-           content is cloned into a portaled sheet instead. Lifting the card was
-           the previous attempt and it traded one bug for two: the hero then
-           painted over the sticky header and the bottom bar. See TapSheetHost. */
-
         /* --- rhythm between the board's blocks ---
            Each of these carried its own desktop margin, and stacked on a phone
            they ended up shoulder to shoulder. One spacing rule for the lot. */
@@ -21008,7 +20915,9 @@ function Style() {
         .podium-cap { margin-bottom:10px; }
 
         /* --- hero reflows to one column --- */
-        .hero-band { flex-direction:column; align-items:stretch; gap:16px; padding:18px 16px; overflow:hidden; }
+        /* overflow:hidden is what made the closing-rate panel "hide in the
+           bottom of the hero card". In flow the band simply grows to hold it. */
+        .hero-band { flex-direction:column; align-items:stretch; gap:16px; padding:18px 16px; }
         .hero-id { flex-direction:row; gap:14px; transform:none !important; opacity:1 !important; }
         .hero-store { font-size:23px; }
         .hero-health { flex-direction:column; align-items:stretch; gap:16px; transform:none !important; opacity:1 !important; }
@@ -21017,33 +20926,17 @@ function Style() {
         .hh-rows { justify-content:center; }
         .hero-focus { grid-template-columns:1fr; gap:12px; margin-top:14px; }
         .hf-wide { grid-column:auto; }
-        /* the closing-rate card can't hang off the right on a phone; centre it */
-        .health-pop { right:50%; left:auto; transform:translateX(50%) translateY(-6px) scale(.9);
-          transform-origin:top center; width:min(300px, 86vw); }
-        .hero-health.popped .health-pop, .health-pop { }
-        .hero-health.popped .health-pop { opacity:1; transform:translateX(50%) translateY(0) scale(1); }
-        .health-pop::after { right:calc(50% - 6px); }
-
-        /* --- dials: bigger tap targets, popup opens upward centred --- */
+        /* --- dials: bigger tap targets --- */
         .mstrip { gap:14px 12px; }
         .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
         .mdial { width:calc(33.333% - 8px); }
         /* The cap sentence is what the bar and the pill under it already say. On a
            phone, where reading is the expensive part, the visual carries it. */
         .reason-lead { display:none; }
-        /* Centring a 262px card on a dial whose own centre is ~86px from the
-           left edge put a third of it off-screen. On a phone it anchors to the
-           strip instead of the dial, so it spans the row and cannot leave the
-           viewport whichever dial is tapped. The arrow goes: it would point at
-           the middle dial regardless of which one opened it. */
-        .mstrip { position:relative; }
-        .mdial { position:static; }
-        .mdial-pop { left:0; right:0; width:auto; bottom:calc(100% + 10px);
-          transform:translateY(-6px) scale(.98); transform-origin:bottom center; }
-        .mdial-pop::after { display:none; }
-        .mdial.popped .mdial-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
-        .hf-fix.popped .hf-pop { opacity:1; pointer-events:auto; transform:translateY(0) scale(1); }
-        .hf-pop { width:min(300px, 86vw); }
+        /* Every rule that used to place these — centring the closing-rate card,
+           anchoring a dial's card to the strip so it could not leave the screen,
+           hiding arrows that pointed at the wrong dial — is gone. In flow there
+           is nothing to place and nothing to escape. */
 
         /* The 23px indent lines the bar up under the desktop rank badge. On a
            phone the row wraps and there is no badge to line up with, so the
