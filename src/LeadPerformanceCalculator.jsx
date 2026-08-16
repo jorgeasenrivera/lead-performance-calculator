@@ -12002,7 +12002,12 @@ function AssocSearch({ value, onChange, store }) {
   );
 }
 
+/* How many of a role's people a phone shows before asking. Five is what fits
+   above the fold next to the hero without the board turning into a scroll. */
+const ROLL_CAP = 5;
+
 function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus }) {
+  const [rollOpen, setRollOpen] = useState({});
   const M = data.months?.[ym()];
   const names = M?.names || {};
   // An associate is only "incomplete" if they're missing one of the three REQUIRED
@@ -12180,7 +12185,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         <section key={role.id} className="role-group" style={{ "--role": role.color }}>
           <h3 className="role-header"><span className="role-swatch" />{role.name} <span className="role-count">{people.length}</span></h3>
           {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : "No associates in this section"}</div>}
-          {people.map((a) => {
+          {people.map((a, i) => {
             const stats = M?.stats?.[norm(a.name)];
             const ev = evaluateAssociate(stats, config.standards?.[store.id]?.[role.id]?.tiers);
             const missing = importedTypes.length ? missingReports(norm(a.name)) : [];
@@ -12190,9 +12195,25 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
               <AssociateRow key={a.id} a={a} stats={stats} ev={ev} missing={missing} incomplete={incomplete}
                 grace={inGrace} rank={rankOf[norm(a.name)]} star={stars.has(norm(a.name))} readOnly={readOnly}
                 restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
-                focused={focusName === a.name} />
+                focused={focusName === a.name}
+                rolled={!query && i >= ROLL_CAP && !rollOpen[role.id]} />
             );
           })}
+          {/* A phone shows the first five, ranked by leads held, and a button for
+              the rest. The cap is CSS rather than a slice so a desktop still gets
+              the whole board with no second code path and no viewport guessing —
+              .rolled only hides below 760px. The class goes on the card itself
+              rather than a wrapper, because a wrapper would make every card the
+              only child of its own parent and .assoc-card:last-child — the rule
+              that drops the final divider — would then match all of them.
+              Search results are never capped:
+              hiding the person somebody just typed the name of is absurd. */}
+          {!query && people.length > ROLL_CAP && (
+            <button className={"roll-more" + (rollOpen[role.id] ? " open" : "")}
+              onClick={() => setRollOpen((o) => ({ ...o, [role.id]: !o[role.id] }))}>
+              {rollOpen[role.id] ? "Show fewer" : `Show the other ${people.length - ROLL_CAP}`}
+            </button>
+          )}
         </section>
       ))}
       {unassigned.length > 0 && (
@@ -12285,7 +12306,7 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled }) {
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
   // Picked out of the hero shortlist or the podium: open the card and bring it
@@ -12322,7 +12343,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
 
   return (
     <div ref={cardRef}
-      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "")}>
+      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "")}>
       <div className="assoc-row" onClick={() => setOpen(!open)}>
         {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
@@ -19570,7 +19591,11 @@ function Style() {
         color: color-mix(in srgb, var(--role) 72%, #12212F); }
       .role-empty { padding:16px; border:1.5px dashed var(--line); border-radius:12px; color:var(--ink-3); text-align:center; }
       .assoc-card { border-bottom:1px solid rgba(0,0,0,.05); padding:10px 0 12px; transition: background .2s; border-radius:10px; }
-      .assoc-card:last-child { border-bottom:none; }
+      /* :last-of-type, not :last-child — the "show the other N" button now sits
+         after the cards, so no card is the last child any more and every divider
+         came back. The button is a <button>, so the last div is still the last
+         card. */
+      .assoc-card:last-of-type { border-bottom:none; }
       .assoc-row { display:flex; align-items:center; gap:10px; cursor:grab; flex-wrap:wrap; }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
@@ -20444,6 +20469,9 @@ function Style() {
 
       @media (max-width: 700px) { .assoc-name { flex:1 1 auto; } }
 
+      /* the roll-up cap is desktop-inert: see the mobile block for .rolled */
+      .roll-more { display:none; }
+
       /* ---------------- Delivery, flowing ---------------- */
       .flowcard { display:block; width:100%; text-align:left; font:inherit; cursor:pointer;
         background:var(--card); border:1px solid var(--line); border-radius:16px;
@@ -20580,12 +20608,28 @@ function Style() {
            the help button sat on top of the More tab and swallowed its taps */
         .help-fab:not(.inline) { bottom:calc(67px + env(safe-area-inset-bottom, 0px)); }
         .btn-quiet { padding:7px 10px; }
-        .seg-wrap { display:none; }                                   /* the desktop tab strip */
+        /* The sections moved to the chip strip, so the desktop tab control goes —
+           but the associate search lives in this same row, and hiding the whole
+           row took the only way to find a salesperson by name on a phone with it.
+           Hide the control, keep the row, give the field the full width. */
+        .seg-wrap .seg { display:none; }
+        /* padding lives on the field, not the row, so the rows that hold only a
+           hidden tab control (admin, Live Floor) collapse to nothing */
+        .seg-wrap { padding:0; }
+        .seg-wrap .search-top { margin:10px 14px 0; max-width:none; flex:1 1 auto; min-width:0; }
 
         /* --- page gets out of the way of the bar --- */
         .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
         .settings, .checkout, .coaching, .plates {
           padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
+
+        /* --- the first five, then the rest on request --- */
+        .assoc-card.rolled { display:none; }
+        .roll-more { display:block; width:100%; font:inherit; font-size:12.5px; font-weight:700;
+          color:var(--sp, var(--blue)); cursor:pointer; background:var(--card);
+          border:1px dashed var(--line); border-radius:13px; padding:11px; margin-top:8px;
+          transition:border-color .2s var(--ease), transform .25s var(--ease-bloop); }
+        .roll-more:active { transform:scale(.98); }
 
         /* --- the sections, as a chip strip --- */
         /* These used to be the bottom bar. They sit under the header now, above
