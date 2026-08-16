@@ -21276,8 +21276,11 @@ function Style() {
            cell and a block button is one line each, every time. */
         .checkout-table td[data-col="name"] { grid-column:1 / 3; grid-row:1; font-size:15px; }
         .checkout-table td[data-col="name"]::before { display:none; }
-        .checkout-table td[data-col="points"] { grid-column:3; grid-row:1; justify-self:end; text-align:right; }
-        .checkout-table td[data-col="points"]::before { text-align:right; }
+        /* Right-aligning both put the label's right edge on the pill's right
+           edge, which is not the same as centring it over the pill — the pill is
+           the wider of the two. The cell shrinks to the pill and centres inside. */
+        .checkout-table td[data-col="points"] { grid-column:3; grid-row:1; justify-self:end;
+          width:fit-content; text-align:center; }
         .checkout-table td[data-col="tasks"]  { grid-column:1; grid-row:2; }
         .checkout-table td[data-col="calls"]  { grid-column:2; grid-row:2; }
         .checkout-table td[data-col="videos"] { grid-column:3; grid-row:2; }
@@ -21286,10 +21289,12 @@ function Style() {
         /* no explicit row: it lands under whatever the last row turned out to be,
            so a store without texts and emails simply has one row fewer */
         .checkout-table td[data-col="rocked"] { grid-column:1 / -1; }
-        /* The section header's tint band was sized to the table's columns, so
-           once the table stopped being a table the band stopped where the old
-           last column used to and read as chopped. As a block it simply runs the
-           width of the card. */
+        /* The tint band lives on the td, which has square corners and once ran
+           out where the old last column used to. It moves onto the header itself,
+           which is a rounded block the width of the card. */
+        .checkout-table .co-sep td { background:none; padding:0 !important; }
+        .checkout-table .co-sep .co-sep-head {
+          background:linear-gradient(180deg, color-mix(in srgb, var(--sep) 13%, transparent), transparent 92%); }
         .checkout-table tr.co-sep { display:block; padding:0; margin:16px 0 10px;
           background:none; border:none; box-shadow:none; }
         .checkout-table tr.co-sep td { display:block; padding:0; width:100%; }
@@ -21301,7 +21306,7 @@ function Style() {
            else that was up here has somewhere better to be. */
         .checkout .gm-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
         .checkout .gm-toolbar select { flex:0 0 auto; }
-        .checkout .co-stamp { flex:1 1 auto; min-width:0; text-align:right; }
+        .checkout .co-stamp { flex:1 1 auto; min-width:0; text-align:center; }
         .checkout .co-report { display:none; }          /* it is the bar's centre button */
         /* A monthly job does not need the most valuable strip on the screen, so it
            waits at the foot of the page where the rest of the month's admin is. */
@@ -21314,6 +21319,28 @@ function Style() {
            of the two things actually being read. */
         .checkout-table td[data-col="name"] .co-off-hover { display:block; width:fit-content;
           margin:7px 0 0; font-size:11.5px; padding:3px 9px; }
+        /* The tags sit after the name on a line that now belongs to the name
+           alone, so they need room around them rather than a left margin sized
+           for sitting mid-row. */
+        .checkout-table td[data-col="name"] .co-off-tag { display:inline-block; margin:3px 0 0 8px;
+          padding:2px 8px; vertical-align:middle; }
+
+        /* --- the daily report --- */
+        /* The title, the two actions and the close button were one row, so the
+           title wrapped to three lines under the buttons and the close sat in the
+           corner of nothing. Title and subtitle get the row; the actions get
+           their own, full width and thumb-sized. */
+        .dayreport-modal .plate-hist-head { display:grid; grid-template-columns:1fr auto;
+          gap:10px 12px; align-items:start; }
+        .dayreport-modal .plate-hist-title { font-size:22px; line-height:1.15; }
+        .dayreport-modal .dr-head-actions { grid-column:1 / -1; display:flex; gap:8px; }
+        .dayreport-modal .dr-head-actions .btn { flex:1 1 0; min-width:0; justify-content:center;
+          text-align:center; padding:10px 12px; }
+        /* out of the button row and up beside the title, where a close belongs */
+        .dayreport-modal .dr-head-actions .btn-x { position:absolute; top:14px; right:14px;
+          flex:0 0 auto; width:30px; height:30px; display:flex; align-items:center;
+          justify-content:center; padding:0; }
+        .dayreport-modal { position:relative; }
         /* The one thing on the card a manager actually presses, so it gets the
            size of a control rather than the size of a label. */
         .checkout-table td[data-col="rocked"] .qual-toggle { width:100%; justify-content:center;
