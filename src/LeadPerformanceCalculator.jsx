@@ -2950,6 +2950,26 @@ export default function LeadPerformanceCalculator() {
     });
   };
 
+  /* Ignoring from the board does exactly what the Roster tab's bulk action does:
+     off the roster, figures with them, and on the excluded list so the next
+     import cannot put them back. One path, so the two cannot drift. */
+  const ignoreNames = (keys) => {
+    if (!keys || !keys.length || !storeData) return;
+    const next = JSON.parse(JSON.stringify(storeData));
+    const picked = (next.roster || []).filter((a) => keys.includes(norm(a.name)));
+    const names = picked.map((a) => a.name);
+    if (!names.length) return;
+    next.excluded = [...(next.excluded || [])];
+    for (const nm of names) {
+      if (!next.excluded.some((x) => norm(x) === norm(nm))) next.excluded.push(nm);
+    }
+    stripPeople(next, new Set(keys));
+    persistStore(view, next, {
+      action: "Ignored names from imports",
+      detail: `${names.length}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? `, +${names.length - 8} more` : ""}`,
+    });
+  };
+
   const handleFiles = useCallback(async (fileList) => {
     if (!storeData || view === "admin") return;
     setImportFlags([]);
@@ -3409,7 +3429,8 @@ export default function LeadPerformanceCalculator() {
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
                       filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
-                      query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc} />
+                      query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc}
+                      onIgnore={ignoreNames} />
                   </div>
                 )}
                 {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -12269,8 +12290,19 @@ function AssocSearch({ value, onChange, store }) {
    above the fold next to the hero without the board turning into a scroll. */
 const ROLL_CAP = 5;
 
-function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus }) {
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus, onIgnore }) {
   const [rollOpen, setRollOpen] = useState({});
+  /* The board is where you notice somebody who does not belong — a name from
+     another rooftop that an import dragged in. Sending you to the Roster tab to
+     act on it means holding the names in your head on the way. Off by default,
+     because a board you might accidentally tick people on is worse than a
+     second tap. */
+  const [picking, setPicking] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
+  const toggleSel = (key) => setSel((p) => {
+    const n = new Set(p); if (n.has(key)) n.delete(key); else n.add(key); return n;
+  });
+  const stopPicking = () => { setPicking(false); setSel(new Set()); };
   const M = data.months?.[ym()];
   const names = M?.names || {};
   // An associate is only "incomplete" if they're missing one of the three REQUIRED
@@ -12397,6 +12429,22 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       {!query && !filter && <RoundUp config={config} store={store} data={data} M={M} />}
       {query && <p className="hint search-count">{totalMatches} match{totalMatches === 1 ? "" : "es"}</p>}
 
+      {!readOnly && onIgnore && (
+        picking ? (
+          <div className="bulk-bar">
+            <span className="bulk-n">{sel.size} selected</span>
+            <button className="btn" disabled={!sel.size}
+              onClick={() => { onIgnore([...sel]); stopPicking(); }}>
+              Ignore {sel.size === 1 ? "this name" : "these names"}
+            </button>
+            <button className="btn-quiet" onClick={stopPicking}>Done</button>
+          </div>
+        ) : (
+          <button className="btn-quiet board-pick" onClick={() => setPicking(true)}>
+            Select people to ignore
+          </button>
+        )
+      )}
       {!query && top3.length > 0 && (
         <div className="podium">
           <div className="podium-cap">Top Performers <span>units delivered, standards break the tie</span></div>
@@ -12474,6 +12522,8 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
                 focused={focusName === a.name}
                 thresholds={store.thresholds}
                 storeData={data}
+                picking={picking} picked={sel.has(norm(a.name))}
+                onPick={() => toggleSel(norm(a.name))}
                 rolled={!query && i >= ROLL_CAP && !rollOpen[role.id] && a.name !== focusName} />
             );
           })}
@@ -12584,7 +12634,7 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData, picking, picked, onPick }) {
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
   // Picked out of the hero shortlist or the podium: open the card and bring it
@@ -12621,8 +12671,12 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
 
   return (
     <div ref={cardRef}
-      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "")}>
-      <div className="assoc-row" onClick={() => setOpen(!open)}>
+      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "") + (picked ? " is-picked" : "")}>
+      <div className="assoc-row" onClick={() => (picking ? onPick() : setOpen(!open))}>
+        {picking && (
+          <input type="checkbox" className="assoc-pick" checked={!!picked} readOnly
+            aria-label={`Select ${a.name}`} />
+        )}
         {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
         {star && <span className="star-badge" title="Wildly surpassing standard">
@@ -12694,7 +12748,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           {star ? "Blowing past every requirement. " : `Tier ${ev.tierIndex + 1} requirements met. `}Cleared up to {ev.nextCap} leads.
         </div>
       )}
-      {open && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
+      {open && !picking && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
         data={storeData} associate={a} />}
     </div>
   );
@@ -17257,8 +17311,36 @@ function StandardsEditor({ config, storeId, onChange }) {
   );
 }
 
+/* Take people off a store: off the roster, and their figures with them.
+
+   Leaving the figures behind is not a smaller version of removing somebody — it
+   is worse. The board reads the roster, so they vanish from it, while the
+   month's totals and the store's closing rates still carry their numbers. The
+   purge tool has always done both; this is the same three loops, lifted out so
+   the roster's bulk actions cannot quietly do half the job. */
+function stripPeople(doc, keys) {
+  const go = new Set([...keys]);
+  doc.roster = (doc.roster || []).filter((a) => !go.has(norm(a.name)));
+  for (const m of Object.values(doc.months || {})) {
+    if (!m || !m.stats) continue;
+    for (const k of Object.keys(m.stats)) if (go.has(k)) delete m.stats[k];
+  }
+  for (const day of Object.keys(doc.activity || {})) {
+    for (const k of Object.keys(doc.activity[day] || {})) if (go.has(k)) delete doc.activity[day][k];
+  }
+  return doc;
+}
+
 /* ---------------- Roster editor ---------------- */
 function RosterEditor({ config, data, onChange, userName }) {
+  /* Which people are ticked. Held by normalised name rather than id, because
+     ignoring works on the name — that is what a future import will present. */
+  const [sel, setSel] = useState(() => new Set());
+  const toggleSel = (key) => setSel((p) => {
+    const n = new Set(p);
+    if (n.has(key)) n.delete(key); else n.add(key);
+    return n;
+  });
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
   const [mergeFrom, setMergeFrom] = useState("");
@@ -17267,6 +17349,30 @@ function RosterEditor({ config, data, onChange, userName }) {
 
   // names that are not people. Skipped on every future import, and removed from the
   // roster now if they already slipped in.
+  /* Ignore: off the roster, figures gone, and on the list so the next import
+     does not put them straight back. That last part is what makes this the right
+     tool for a report that was run against the wrong store — Remove alone would
+     hold until the file landed again. */
+  const bulk = (mode) => {
+    if (!sel.size) return;
+    const next = JSON.parse(JSON.stringify(data));
+    const picked = (next.roster || []).filter((a) => sel.has(norm(a.name)));
+    const names = picked.map((a) => a.name);
+    if (!names.length) { setSel(new Set()); return; }
+    if (mode === "ignore") {
+      next.excluded = [...(next.excluded || [])];
+      for (const nm of names) {
+        if (!next.excluded.some((x) => norm(x) === norm(nm))) next.excluded.push(nm);
+      }
+    }
+    stripPeople(next, sel);
+    setSel(new Set());
+    onChange(next, {
+      action: mode === "ignore" ? "Ignored names from imports" : "Removed from roster",
+      detail: `${names.length}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? `, +${names.length - 8} more` : ""}`,
+    });
+  };
+
   const addExcluded = () => {
     const n = excl.trim();
     if (!n) return;
@@ -17479,11 +17585,35 @@ function RosterEditor({ config, data, onChange, userName }) {
         )}
       </div>
       <div className="card">
+        {/* The bar only exists once something is ticked, so the roster is not
+            carrying a row of disabled buttons the rest of the time. */}
+        {sel.size > 0 && (
+          <div className="bulk-bar">
+            <span className="bulk-n">{sel.size} selected</span>
+            <button className="btn" onClick={() => bulk("ignore")}>
+              Ignore {sel.size === 1 ? "this name" : "these names"}
+            </button>
+            <button className="btn secondary" onClick={() => bulk("remove")}>Remove from roster</button>
+            <button className="btn-quiet" onClick={() => setSel(new Set())}>Clear</button>
+          </div>
+        )}
         <table className="roster-table">
-          <thead><tr><th>Name</th><th>Position</th><th>Languages</th><th>Tags</th><th /></tr></thead>
+          <thead><tr>
+            <th className="rt-pick">
+              <input type="checkbox" aria-label="Select everyone"
+                checked={sel.size > 0 && sel.size === (data.roster || []).length}
+                onChange={(e) => setSel(e.target.checked
+                  ? new Set((data.roster || []).map((a) => norm(a.name))) : new Set())} />
+            </th>
+            <th>Name</th><th>Position</th><th>Languages</th><th>Tags</th><th /></tr></thead>
           <tbody>
             {(data.roster || []).sort((a, b) => a.order - b.order).map((a) => (
-              <tr key={a.id}>
+              <tr key={a.id} className={sel.has(norm(a.name)) ? "rt-on" : ""}>
+                <td className="rt-pick">
+                  <input type="checkbox" checked={sel.has(norm(a.name))}
+                    aria-label={`Select ${a.name}`}
+                    onChange={() => toggleSel(norm(a.name))} />
+                </td>
                 <td>{a.name}</td>
                 <td>
                   <select value={a.roleId || ""} onChange={(e) => setRole(a.id, e.target.value)}>
@@ -20935,6 +21065,16 @@ function Style() {
       .req-row { display:flex; gap:9px; align-items:center; padding:5px 0; flex-wrap:wrap; }
 
       /* ---- tables ---- */
+      .bulk-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;
+        padding:10px 13px; border-radius:12px; background:rgba(42,94,155,.09);
+        border:1px solid rgba(42,94,155,.22); animation:detailIn .3s var(--ease-bloop) both; }
+      .bulk-n { font-weight:700; font-size:13.5px; margin-right:2px; }
+      .rt-pick { width:34px; }
+      .rt-pick input { width:17px; height:17px; accent-color:var(--blue); }
+      .assoc-pick { width:18px; height:18px; accent-color:var(--blue); flex:0 0 auto; margin-right:2px; }
+      .assoc-card.is-picked { background:rgba(42,94,155,.08); }
+      .board-pick { margin-bottom:12px; }
+      .roster-table tr.rt-on { background:rgba(42,94,155,.07); }
       .roster-table { width:100%; max-width:760px; border-collapse:collapse; }
       .roster-table.wide { max-width:1060px; }
       .roster-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3);
