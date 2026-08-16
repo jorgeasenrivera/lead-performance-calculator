@@ -12321,6 +12321,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
                 restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
                 focused={focusName === a.name}
                 thresholds={store.thresholds}
+                storeData={data}
                 rolled={!query && i >= ROLL_CAP && !rollOpen[role.id] && a.name !== focusName} />
             );
           })}
@@ -12431,7 +12432,7 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData }) {
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
   // Picked out of the hero shortlist or the podium: open the card and bring it
@@ -12541,7 +12542,8 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           {star ? "Blowing past every requirement. " : `Tier ${ev.tierIndex + 1} requirements met. `}Cleared up to {ev.nextCap} leads.
         </div>
       )}
-      {open && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds} />}
+      {open && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
+        data={storeData} associate={a} />}
     </div>
   );
 }
@@ -12566,6 +12568,12 @@ const DETAIL_CHANNELS = [
   { id: "showroom", pct: "showroomPct", units: "showroomUnits", label: "Showroom" },
 ];
 
+/* 14% stored as 0.14 and multiplied back out is 14.000000000000002, and a
+   target rendered to sixteen decimals reads as a bug in the standard rather
+   than a bug in binary floating point. Three decimals is finer than any
+   standard is ever set, and trailing zeros go. */
+const trim = (n) => String(Math.round(n * 1000) / 1000);
+
 function DetailBar({ label, value, target, kind }) {
   const has = value != null && target > 0;
   const of = has ? (value / target) * 100 : 0;
@@ -12582,22 +12590,34 @@ function DetailBar({ label, value, target, kind }) {
         <i className="dbar-fill" style={{ width: shown + "%" }} />
         <span className="dbar-tick" style={{ left: tick + "%" }} />
       </div>
-      <div className="dbar-foot">{target > 0 ? `target ${kind === "pct" ? target * 100 + "%" : target}` : "no target set"}</div>
+      <div className="dbar-foot">{target > 0 ? `target ${trim(kind === "pct" ? target * 100 : target)}${kind === "pct" ? "%" : ""}` : "no target set"}</div>
     </div>
   );
 }
 
-function AssociateDetail({ stats, ev, thresholds }) {
+function AssociateDetail({ stats, ev, thresholds, data, associate }) {
   const reqs = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
   const thr = normThresholds(thresholds);
 
   // metrics judged against this person's tier
   const graded = [...reqs.keys()].filter((k) => METRICS[k]);
-  const units = DETAIL_CHANNELS.map((c) => ({ ...c, n: stats[c.units] ?? 0 }));
-  const unitTotal = units.reduce((n, c) => n + c.n, 0);
-  const rates = DETAIL_CHANNELS.filter((c) => stats[c.pct] != null);
 
-  const shownKeys = new Set([...graded, ...DETAIL_CHANNELS.map((c) => c.pct), ...DETAIL_CHANNELS.map((c) => c.units)]);
+  /* Units, campaign units and the three channel counts are all the same thing —
+     where this person's deliveries came from — so they are one bar rather than
+     five chips. Campaign has no closing rate of its own (no lead count behind
+     it), which is exactly why it belongs here and nowhere else. */
+  const parts = [
+    ...DETAIL_CHANNELS.map((c) => ({ id: c.id, label: c.label, hue: CHANNEL_HUE[c.id], n: stats[c.units] ?? 0 })),
+    { id: "campaign", label: "Campaign", hue: "#8E9AA8", n: stats.campaignUnits ?? 0 },
+  ];
+  const partTotal = parts.reduce((n, c) => n + c.n, 0);
+  const total = stats.unitsDelivered ?? partTotal;
+
+  /* Sold % is dropped rather than shown: it is not a standard anywhere, it has
+     no target to be drawn against, and it duplicates delivery closely enough
+     that two numbers invited comparing them. */
+  const shownKeys = new Set([...graded, "soldPct", "unitsDelivered", "campaignUnits",
+    ...DETAIL_CHANNELS.map((c) => c.pct), ...DETAIL_CHANNELS.map((c) => c.units)]);
   const rest = Object.entries(METRICS).filter(([k]) => !shownKeys.has(k));
 
   return (
@@ -12615,33 +12635,13 @@ function AssociateDetail({ stats, ev, thresholds }) {
         </div>
       )}
 
-      {unitTotal > 0 && (
-        <div className="detail-block">
-          <div className="detail-cap">Where the units came from</div>
-          <div className="dsplit">
-            {units.filter((c) => c.n > 0).map((c) => (
-              <i key={c.id} style={{ width: (c.n / unitTotal) * 100 + "%", background: CHANNEL_HUE[c.id] }} />
-            ))}
-          </div>
-          <div className="dsplit-keys">
-            {units.map((c) => (
-              <span key={c.id} className={c.n > 0 ? "" : "dim"}>
-                <i style={{ background: CHANNEL_HUE[c.id] }} />{c.label} <b>{fmtNum(c.n)}</b>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {rates.length > 0 && (
+      {/* The same view the floor gets, for one person: every channel plotted
+          against its own target so the dashed rule holds still for all three.
+          It is the same component, given a roster of one. */}
+      {data && associate && (
         <div className="detail-block">
           <div className="detail-cap">Closing rate by channel</div>
-          <div className="dbars">
-            {rates.map((c) => (
-              <DetailBar key={c.id} label={c.label} value={stats[c.pct]}
-                target={(thr[c.id]?.green ?? 0) / 100} kind="pct" />
-            ))}
-          </div>
+          <DeliveryAll data={data} roster={[associate]} thr={thr} />
         </div>
       )}
 
@@ -12653,6 +12653,25 @@ function AssociateDetail({ stats, ev, thresholds }) {
               <b>{def.kind === "pct" ? fmtPct(stats[k]) : fmtNum(stats[k])}</b>
             </div>
           ))}
+        </div>
+      )}
+
+      {partTotal > 0 && (
+        <div className="detail-block">
+          <div className="detail-cap">Where the units came from</div>
+          <div className="dsplit">
+            {parts.filter((c) => c.n > 0).map((c) => (
+              <i key={c.id} style={{ width: (c.n / partTotal) * 100 + "%", background: c.hue }} />
+            ))}
+          </div>
+          <div className="dsplit-keys">
+            {parts.map((c) => (
+              <span key={c.id} className={c.n > 0 ? "" : "dim"}>
+                <i style={{ background: c.hue }} />{c.label} <b>{fmtNum(c.n)}</b>
+              </span>
+            ))}
+          </div>
+          <div className="dsplit-total"><b>{fmtNum(total)}</b> units delivered this month</div>
         </div>
       )}
     </div>
@@ -20520,6 +20539,9 @@ function Style() {
       .dsplit-keys span.dim { opacity:.45; }
       .dsplit-keys i { width:9px; height:9px; border-radius:3px; display:inline-block; }
       .dsplit-keys b { font-family:var(--font-display); color:var(--ink); }
+      .dsplit-total { font-size:12px; color:var(--ink-2); padding-top:8px;
+        border-top:1px solid rgba(16,40,68,.08); }
+      .dsplit-total b { font-family:var(--font-display); font-size:16px; color:var(--ink); }
 
       /* ---- badges ---- */
       .badge { font-size:11px; padding:3px 9px; border-radius:20px; font-weight:700; }
@@ -20860,18 +20882,25 @@ function Style() {
       /* The mark that says a card opens something. Touch has no hover, so
          without it nothing distinguishes a card you can press from one you
          cannot — and a word would cost a line on every card that has one. */
-      .tapmark { display:none; position:absolute; bottom:10px; right:12px; z-index:2;
-        opacity:.55; pointer-events:none; color:inherit; }
+      /* pointer-events:auto, and a padded box around the glyph. It was
+         unclickable twice over: the mark passed taps straight through, and on
+         the hero it sat outside its own block's box, so what was underneath was
+         the hero band rather than the health block the handler looks for. The
+         glyph is 16px; the target it sits in is 40. */
+      .tapmark { display:none; position:absolute; bottom:2px; right:2px; z-index:2;
+        opacity:.55; color:inherit; cursor:pointer;
+        padding:12px; margin:-12px; align-items:center; justify-content:center; }
       .is-touch .tapmark { display:flex; }
       /* The hero's health block is a bare flex column, not a card with padding,
          so its mark hangs off the corner it is meant to sit inside. */
-      .hero-health .tapmark { bottom:-2px; right:-2px; }
+      .hero-health .tapmark { bottom:0; right:0; }
       /* Once it is open the mark has done its job, and the block has grown to
          hold the panel — so it would otherwise drift down to sit beside it. */
       .is-touch .popped .tapmark { display:none; }
       /* The flow card's bottom-right corner is where its month labels sit, so it
          gets the room rather than the mark landing on top of them. */
       .is-touch .flowcard { padding-bottom:28px; }
+      .is-touch .tapmark:active { opacity:1; transform:scale(.86); }
 
       /* ---- a tapped popup opens in flow, under what was tapped ----
          Not floated: see the comment on the touch handler. Nothing here
