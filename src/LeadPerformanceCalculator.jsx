@@ -3408,7 +3408,7 @@ function WrongReportStop({ fileName, onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal guide-modal stop" onClick={(e) => e.stopPropagation()}>
         <div className="stop-head">
-          <div className="stop-badge">✕</div>
+          <div className="stop-badge"><PixIcon glyph="close" size={22} /></div>
           <div>
             <h2 className="stop-title">That's not the right report</h2>
             <p className="stop-sub"><span className="stop-file">{fileName}</span> looks like a single-channel report. The tool only takes the <strong>Delivery Summary</strong>, filtered by Source. Here's exactly how to pull it.</p>
@@ -3429,7 +3429,7 @@ function DeliveryGuideModal({ onClose }) {
       <div className="modal guide-modal" onClick={(e) => e.stopPropagation()}>
         <div className="guide-modal-head">
           <h2 className="guide-title">How to pull the Appointment and Video reports</h2>
-          <button className="btn-x" onClick={onClose}>✕</button>
+          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
         </div>
         <p className="guide-intro">Follow these steps every time. Two reports, uploaded together.</p>
         <AppointmentVideoGuideSteps />
@@ -6138,7 +6138,7 @@ function ImportBadge({ storeData, activity }) {
   const M = storeData.months[ym()];
   const t = M?.imports?.[today()] || {};
   if (activity) {
-    return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? "✓" : "0/1"}</span>;
+    return <span className={"badge " + (t.activity ? "badge-ok" : "badge-warn")}>{t.activity ? <PixIcon glyph="check" size={11} /> : "0/1"}</span>;
   }
   // Delivery Summaries arrive by email, so the manager only uploads two.
   const done = ["appointment", "video"].filter((k) => t[k]).length;
@@ -7486,7 +7486,7 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
               <div key={p.id} className="sa-mrow">
                 <div className="sa-nm">{name}</div>
                 <div className="sa-tags">
-                  {tagsOf(p.id).map((t) => <span key={t} className="sa-tag sa-tag-edit">{t}<button className="sa-tag-x" onClick={() => removeTag(p.id, t)}>×</button></span>)}
+                  {tagsOf(p.id).map((t) => <span key={t} className="sa-tag sa-tag-edit">{t}<button className="sa-tag-x" onClick={() => removeTag(p.id, t)} aria-label="Remove"><PixIcon glyph="close" size={11} /></button></span>)}
                 </div>
                 <div className="sa-add">
                   <input className="sa-input sa-add-in" value={tagInput[p.id] || ""} placeholder="Add a tag"
@@ -7767,7 +7767,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
                       <option value="customer">With customer</option>
                       <option value="away">Away</option>
                     </select>
-                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)}>✕</button>
+                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
                   </>
                 )}
               </div>
@@ -8900,7 +8900,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
                       <option value="lunch">Lunch</option>
                       <option value="away">Away</option>
                     </select>
-                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)}>✕</button>
+                    <button className="btn btn-sm q-rm" onClick={() => removePerson(p.id)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
                   </>
                 )}
               </div>
@@ -9031,7 +9031,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           ? <p className="muted">None linked yet — the board runs as a manual floor line until you add one.</p>
           : <div className="f-dealer-list">
               {(cfg.dealershipNorms || []).map((d) => (
-                <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" onClick={() => removeDealer(d)}>✕</button></span>
+                <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" onClick={() => removeDealer(d)} aria-label="Close"><PixIcon glyph="close" size={13} /></button></span>
               ))}
             </div>}
       </div>
@@ -9982,7 +9982,7 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
               {imgState === "working" ? "Building..." : imgState === "copied" ? "Copied" : "Copy as image"}
             </button>
             <button className="btn secondary" onClick={saveImage}>Save image</button>
-            <button className="btn-x" onClick={onClose}>✕</button>
+            <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
           </div>
         </div>
 
@@ -10858,7 +10858,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
             <h2 className="plate-hist-title">Upload monthly schedule</h2>
             <p className="plate-hist-sub">Applies days off and vacation for the month. Off-days are excluded from the point system and from days worked.</p>
           </div>
-          <button className="btn-x" onClick={onClose}>✕</button>
+          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
         </div>
 
         {sheetPick ? (
@@ -11447,7 +11447,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                   <td className="mono">{p.by || "-"}</td>
                   <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
                   <td>
-                    <button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? "✓ Returned" : "Mark returned"}</button>
+                    <button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? <><PixIcon glyph="check" size={11} /> Returned</> : "Mark returned"}</button>
                     <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
                   </td>
                 </tr>
@@ -11465,7 +11465,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                 <h2 className="plate-hist-title">Plate {openPlate.tag}</h2>
                 <p className="plate-hist-sub">Currently {openPlate.checkedIn ? "returned" : "out with " + (openPlate.assignee || "unassigned")}. Full custody trail below.</p>
               </div>
-              <button className="btn-x" onClick={() => setHistoryFor(null)}>✕</button>
+              <button className="btn-x" onClick={() => setHistoryFor(null)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
             </div>
             <ol className="plate-hist-list">
               {(openPlate.history || []).slice().reverse().map((h, i) => (
@@ -11601,8 +11601,8 @@ function ChecklistEditor({ config, storeId, onChange }) {
         {own.map((c, i) => (
           <div key={c.id} className="cl-row">
             <span className="cl-ord">
-              <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up">↑</button>
-              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down">↓</button>
+              <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" aria-label="Move up"><PixIcon glyph="arrowup" size={11} /></button>
+              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down" aria-label="Move down"><PixIcon glyph="arrowdown" size={11} /></button>
             </span>
             <span className="cl-fields">
               <input className="help-in" value={c.label} placeholder="What to do"
@@ -12134,7 +12134,7 @@ function AssocSearch({ value, onChange, store }) {
       <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
       <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
         placeholder="Search associates" />
-      {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
+      {value && <button className="search-clear" onClick={() => onChange("")} aria-label="Close"><PixIcon glyph="close" size={13} /></button>}
     </div>
   );
 }
@@ -12742,14 +12742,14 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
     <div className="board">
       <h2 className="section-title">BDC Oversight <span className="section-sub">{stores.map((s) => s.name).join(" · ")}</span></h2>
       <div className="combined-summary">
-        <span className="stat-pass">✓ {counts.cleared} cleared</span>
+        <span className="stat-pass"><PixIcon glyph="check" size={13} /> {counts.cleared} cleared</span>
         <span className="stat-fail">⚠︎ {counts.attention} need attention</span>
         <span className="stat-dim">● {counts.off} off leads</span>
       </div>
       <div className="search-wrap">
         <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search across all my stores" />
-        {query && <button className="search-clear" onClick={() => setQuery("")}>✕</button>}
+        {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Close"><PixIcon glyph="close" size={13} /></button>}
       </div>
       {byStore.map(({ store, people }) => (
         <section key={store.id} className="card combined-store">
@@ -12783,7 +12783,7 @@ function WelcomeCard({ store, onDismiss }) {
     <div className="card welcome">
       <div className="welcome-head">
         <h3>Welcome to the Lead Performance Tracker</h3>
-        <button className="btn-x" onClick={onDismiss}>Got it ✕</button>
+        <button className="btn-x" onClick={onDismiss} aria-label="Dismiss">Got it <PixIcon glyph="close" size={12} /></button>
       </div>
       <p className="welcome-lede">
         This is where {store?.name || "your store"} tracks who has earned the right to take more internet leads.
@@ -13097,7 +13097,7 @@ function ChannelPrompt({ pending, onCancel, onConfirm }) {
       <div className="wiz" style={{ maxWidth: 560 }}>
         <div className="wiz-head">
           <h3>Which delivery report is this?</h3>
-          <button className="btn-x" onClick={onCancel}>✕</button>
+          <button className="btn-x" onClick={onCancel} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
         </div>
         <div style={{ padding: "8px 24px 4px" }}>
           <p className="hint">
@@ -13171,7 +13171,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
       <div className="wiz">
         <div className="wiz-head">
           <h3>{editing ? `Customize ${store.name}` : "New Store"}</h3>
-          <button className="btn-x" onClick={onCancel}>✕</button>
+          <button className="btn-x" onClick={onCancel} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
         </div>
 
         <div className="wiz-body">
@@ -14851,7 +14851,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
                       {goal === 0 ? <span className="co-badge dim">no goal</span>
                         : stillNeeded === 0 ? <span className="co-badge yes">done</span>
                         : remaining === 0 ? <span className="co-badge dim">month over</span>
-                        : ok ? <span className="co-badge yes">✓ on pace</span>
+                        : ok ? <span className="co-badge yes"><PixIcon glyph="check" size={11} /> on pace</span>
                         : <span className="co-badge no">✗ behind</span>}
                     </td>
                   </tr>
@@ -15153,7 +15153,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
         <div className="ac-actions no-print">
           <button className={"btn-ghost " + (isStatsExcluded ? "on" : "")} onClick={toggleStatsExcluded}
             title={isStatsExcluded ? "This person is excluded from the store benchmark. Their card still works. Click to include them." : "Exclude this person's activity from the store benchmark averages (their own card is unaffected)."}>
-            {isStatsExcluded ? "✓ Out of store stats" : "Exclude from store stats"}
+            {isStatsExcluded ? <><PixIcon glyph="check" size={11} /> Out of store stats</> : "Exclude from store stats"}
           </button>
           <button className="btn-ghost" onClick={copy}>Copy summary</button>
           <button className="btn-ghost danger" onClick={() => {
@@ -15544,7 +15544,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
       <aside className="drawer" role="dialog" aria-label="Menu">
         <div className="drawer-head">
           {storeName ? <div className="drawer-store">{storeName}</div> : <div className="drawer-store">Menu</div>}
-          <button className="drawer-x" onClick={onClose} aria-label="Close menu">✕</button>
+          <button className="drawer-x" onClick={onClose} aria-label="Close menu"><PixIcon glyph="close" size={13} /></button>
         </div>
 
         <div className="drawer-scroll">
@@ -15558,7 +15558,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
                   <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
                     <span>{label}</span>
                     {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
-                    {value === id && <span className="drawer-tick">✓</span>}
+                    {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
                   </button>
                 ))}
               </nav>
@@ -15570,7 +15570,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
             {tools.map(([id, label]) => (
               <button key={id} className={"drawer-item " + (appModule === id ? "on" : "")} onClick={() => onToolChange(id)}>
                 <span>{label}</span>
-                {appModule === id && <span className="drawer-tick">✓</span>}
+                {appModule === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
               </button>
             ))}
           </nav>
@@ -16369,7 +16369,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
               <p className="hint act-backfill">Backfilling <strong>{dayLabel(aDay)}</strong>. The report will land on that date.</p>
             ) : null}
             <div className={"check " + ((monthMode ? monthHasTotal : already) ? "done" : "")}>
-              <span className="check-box">{(monthMode ? monthHasTotal : already) ? "✓" : ""}</span>Standard Daily Activity report
+              <span className="check-box">{(monthMode ? monthHasTotal : already) ? <PixIcon glyph="check" size={11} /> : ""}</span>Standard Daily Activity report
             </div>
             {monthMode
               ? (monthHasTotal
@@ -16394,7 +16394,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           </div>
         </div>
         <FlagBanner />
-        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}</div>}
+        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
         <UploadHistory data={data} onChange={onChange} />
         <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
@@ -16424,15 +16424,15 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
           )}
           <div className={"check " + (seedT.appointment ? "done" : "")}>
-            <span className="check-box">{seedT.appointment ? "✓" : ""}</span>Appointment report
+            <span className="check-box">{seedT.appointment ? <PixIcon glyph="check" size={11} /> : ""}</span>Appointment report
           </div>
           <div className={"check " + (seedT.video ? "done" : "")}>
-            <span className="check-box">{seedT.video ? "✓" : ""}</span>Video report
+            <span className="check-box">{seedT.video ? <PixIcon glyph="check" size={11} /> : ""}</span>Video report
           </div>
 
           <div className="check-group-label">Arriving automatically</div>
           <div className={"check readonly " + (seedT.delivery ? "done" : "")}>
-            <span className="check-box">{seedT.delivery ? "✓" : "·"}</span>
+            <span className="check-box">{seedT.delivery ? <PixIcon glyph="check" size={11} /> : "·"}</span>
             Delivery Summary
             <span className="check-note">
               {seedT.delivery
@@ -16447,7 +16447,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             </p>
           )}
           <div className={"check " + (seedT["delivery-campaign"] ? "done" : "")}>
-            <span className="check-box">{seedT["delivery-campaign"] ? "✓" : ""}</span>Campaign Delivery Summary
+            <span className="check-box">{seedT["delivery-campaign"] ? <PixIcon glyph="check" size={11} /> : ""}</span>Campaign Delivery Summary
             <span className="check-note">units only, no percentage</span>
           </div>
           {!(seedT.delivery && seedT.appointment && seedT.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
@@ -16467,7 +16467,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
       <FlagBanner />
       {log.length > 0 && (
         <div className="import-log">
-          {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}>{l.ok ? "✓" : "✕"} {l.msg}</div>)}
+          {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}
         </div>
       )}
       <UploadHistory data={data} onChange={onChange} />
@@ -17026,7 +17026,7 @@ function StandardsEditor({ config, storeId, onChange }) {
               <input type="number" defaultValue={req.min}
                 onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== req.min) update((s) => { s.tiers[ti].requirements[ri].min = v; }, `Tier ${ti + 1}: ${METRICS[req.metric].short} ${req.min} → ${v}`); }} />
               <span>{METRICS[req.metric].kind === "pct" ? "%" : "units"}</span>
-              <button className="btn-x" onClick={() => update((s) => s.tiers[ti].requirements.splice(ri, 1), `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)}>✕</button>
+              <button className="btn-x" onClick={() => update((s) => s.tiers[ti].requirements.splice(ri, 1), `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
             </div>
           ))}
           <button className="btn-ghost" onClick={() => update((s) => s.tiers[ti].requirements.push({ metric: "apptVideoDayPct", min: 50 }), `Tier ${ti + 1}: added requirement`)}>+ Add requirement</button>
@@ -17219,7 +17219,7 @@ function RosterEditor({ config, data, onChange, userName }) {
           <div className="domain-list">
             {(data.excluded || []).map((n) => (
               <span key={n} className="domain-chip">{n}
-                <button className="btn-x" onClick={() => removeExcluded(n)}>✕</button>
+                <button className="btn-x" onClick={() => removeExcluded(n)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
               </span>
             ))}
           </div>
@@ -17488,7 +17488,7 @@ function AccessPanel({ config, session, onChange }) {
           {(config.approvedDomains || []).length === 0
             ? <p className="hint">No domains yet, so account creation is closed.</p>
             : (config.approvedDomains || []).map((d) => (
-              <span key={d} className="domain-chip">@{d}<button className="btn-x" onClick={() => removeDomain(d)}>✕</button></span>
+              <span key={d} className="domain-chip">@{d}<button className="btn-x" onClick={() => removeDomain(d)} aria-label="Close"><PixIcon glyph="close" size={13} /></button></span>
             ))}
         </div>
         <label className="toggle-row">
@@ -17614,7 +17614,7 @@ function HolidayPanel({ config, onChange }) {
                 {new Date(h.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 {h.name && <em>{h.name}</em>}
                 <button title="Remove"
-                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)}>✕</button>
+                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
               </span>
             ))}
           </div>
@@ -17715,8 +17715,8 @@ function SettingsPanel({ config, onChange }) {
             <div key={s.id} className="store-item">
               <div className="store-item-main">
                 <div className="store-item-order">
-                  <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up">↑</button>
-                  <button className="btn-arrow" disabled={idx === config.stores.length - 1} onClick={() => moveStore(idx, 1)} title="Move down">↓</button>
+                  <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up" aria-label="Move up"><PixIcon glyph="arrowup" size={11} /></button>
+                  <button className="btn-arrow" disabled={idx === config.stores.length - 1} onClick={() => moveStore(idx, 1)} title="Move down" aria-label="Move down"><PixIcon glyph="arrowdown" size={11} /></button>
                 </div>
                 {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
                 <div className="store-item-name">
