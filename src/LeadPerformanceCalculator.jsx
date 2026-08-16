@@ -2181,7 +2181,7 @@ export default function LeadPerformanceCalculator() {
   const [storeLoadFailed, setStoreLoadFailed] = useState(false);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // drawerOpen now lives in AppShell, which is the only thing that opens it.
   const [adminTab, setAdminTab] = useState("overview");
   const [dropActive, setDropActive] = useState(false);
   const [importLog, setImportLog] = useState([]);
@@ -2999,24 +2999,18 @@ export default function LeadPerformanceCalculator() {
 
   if (appModule === "board") {
     return (
-      <Shell entering={entering}>
-        {/* solo-top for the same reason FloorModule needs it: this module renders
-            its own header, has no bottom bar, and this switcher is the only way
-            back to anything else. */}
-        <header className="topbar solo-top no-print">
-          <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} />
-          <div className="topbar-right">
-            <ToolSwitcher value="board" onChange={switchTool} />
-          </div>
-        </header>
+      <AppShell entering={entering}
+        session={session} isAdmin={isAdmin} isOverseer={isOverseer}
+        onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
+        appModule="board" onToolChange={switchTool}>
+        {/* The Board has no tabs of its own, so it gets no bottom bar and the
+            hamburger comes back for it. Switch tool lives in the drawer. */}
         <div className="page">
           <BoardLauncher config={config} session={session}
             onLaunch={(storeId) => openLeaderboard(config, storeId)}
             onBack={signOut} />
         </div>
-        <Style />
-      {helpNode}
-      </Shell>
+      </AppShell>
     );
   }
 
@@ -3031,8 +3025,12 @@ export default function LeadPerformanceCalculator() {
         currentStoreId={view !== "admin" && view !== "combined" ? view : null}
         isAdmin={isAdmin}
         onSaveConfig={persistConfig}
-        onSignOut={signOut}
-        onToolChange={switchTool} />
+        onToolChange={switchTool}
+        shell={{
+          entering, session, isAdmin, isOverseer,
+          onSignOut: signOut, onReplayIntro: replayIntro,
+          onHelp: () => setHelpOpen(true), help: helpNode,
+        }} />
     );
   }
 
@@ -3071,58 +3069,32 @@ export default function LeadPerformanceCalculator() {
   }
 
   return (
-    <Shell entering={entering}>
-      <header className="topbar no-print">
-        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} />
-        <div className="topbar-right">
-          {saving && <span className="save-dot">Saving…</span>}
-
-          <ToolSwitcher value={appModule} onChange={switchTool} />
-
-          {/* A picker with one entry is furniture. It only appears once there is
-              actually somewhere else to go. */}
-          {(() => {
-            const showAll = isAdmin && appModule !== "activity";
-            const showCombined = isOverseer && appModule !== "activity" && (session.stores || []).length > 1;
-            const choices = accessibleStores.length + (showAll ? 1 : 0) + (showCombined ? 1 : 0);
-            if (choices < 2) return null;
-            return (
-              <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
-                {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
-                {showAll && <option value="admin">All Stores</option>}
-                {showCombined && <option value="combined">Combined (my stores)</option>}
-                {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            );
-          })()}
-
-        </div>
-        {navItems && (
-          <button className="hamburger no-print" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
-            <span></span><span></span><span></span>
-          </button>
-        )}
-      </header>
-
-      {navItems && (
-        <BottomNav
-          items={navItems} value={navValue} onChange={navOnChange}
-          appModule={appModule} storeData={storeData}
-          onToolChange={switchTool}
-          onMore={() => setDrawerOpen(true)} />
-      )}
-      {navItems && (
-        <MobileDrawer
-          open={drawerOpen}
-          onClose={() => setDrawerOpen(false)}
-          items={navItems}
-          value={navValue}
-          onChange={navOnChange}
-          appModule={appModule}
-          storeData={storeData}
-          storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
-          onToolChange={(mod) => { switchTool(mod); setDrawerOpen(false); }} />
-      )}
+    <AppShell entering={entering}
+      session={session} isAdmin={isAdmin} isOverseer={isOverseer}
+      onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
+      appModule={appModule} onToolChange={switchTool}
+      navItems={navItems} navValue={navValue} navOnChange={navOnChange}
+      storeData={storeData}
+      storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
+      right={<>
+        {saving && <span className="save-dot">Saving…</span>}
+        {/* A picker with one entry is furniture. It only appears once there is
+            actually somewhere else to go. */}
+        {(() => {
+          const showAll = isAdmin && appModule !== "activity";
+          const showCombined = isOverseer && appModule !== "activity" && (session.stores || []).length > 1;
+          const choices = accessibleStores.length + (showAll ? 1 : 0) + (showCombined ? 1 : 0);
+          if (choices < 2) return null;
+          return (
+            <select className="view-select" value={view} onChange={(e) => setView(e.target.value)}>
+              {/* Daily Activity is recorded per store, so there is no all-stores view of it */}
+              {showAll && <option value="admin">All Stores</option>}
+              {showCombined && <option value="combined">Combined (my stores)</option>}
+              {accessibleStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          );
+        })()}
+      </>}>
 
       {view === "admin" && isAdmin ? (
         <>
@@ -3298,9 +3270,7 @@ export default function LeadPerformanceCalculator() {
             setIntroPlaying(false);
           }} />
       )}
-      <Style />
-    {helpNode}
-    </Shell>
+    </AppShell>
   );
 }
 
@@ -9018,7 +8988,10 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* =========================================================================
    FloorModule — the standalone module shell (its own tool, like The Board).
    ========================================================================= */
-function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onSignOut }) {
+/* `shell` is the chrome the app already has on hand — who is signed in, how to
+   sign out, the help node — passed as one object so this module doesn't grow
+   six props it only forwards. */
+function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, shell }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => {
     if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
@@ -9122,34 +9095,29 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   // The settings sub-tab only exists for Live Floor; The Line has no per-store settings here.
   const effSub = queue === "floor" ? subtab : "board";
 
-  return (
-    <Shell>
-      {/* solo-top marks a header with NO bottom bar under it. The mobile rules
-          hide the tool switcher because switching lives in the More drawer, and
-          that is true of the performance shell and false in every module that
-          returns before the shell is built. Those modules keep their switcher,
-          because it is the only way out of them. Two qualify today: this one and
-          The Board. Anything that grows its own topbar needs this class or it
-          strands whoever opens it. */}
-      <header className="topbar solo-top no-print">
-        <div className="brand">
-          <Logo size={36} />
-          <div><div className="brand-title">Lead Performance</div></div>
-        </div>
-        <div className="topbar-right">
-          {saving && <span className="save-dot">Saving…</span>}
-          <ToolSwitcher value={queue} onChange={onToolChange} />
-          {stores.length > 1 && (
-            <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
-              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
-          <span className="whoami">{session.name}</span>
-          <button className="btn-quiet" onClick={onSignOut}>Sign out</button>
-        </div>
-      </header>
+  /* Live Floor's only tabs, and only for an admin. They are named `floor` and
+     `settings` rather than `board` and `settings` because the bottom bar
+     shortens `board` to "Board", which is a different tool. */
+  const hasSub = queue === "floor" && isAdmin;
+  const navItems = hasSub ? [["floor", "Live Floor"], ["settings", "Settings"]] : null;
+  const navValue = subtab === "settings" ? "settings" : "floor";
+  const navOnChange = (id) => setSubtab(id === "settings" ? "settings" : "board");
 
-      {queue === "floor" && isAdmin && (
+  return (
+    <AppShell {...shell}
+      appModule={queue} onToolChange={onToolChange}
+      navItems={navItems} navValue={navValue} navOnChange={navOnChange}
+      storeName={store?.name || ""}
+      right={<>
+        {saving && <span className="save-dot">Saving…</span>}
+        {stores.length > 1 && (
+          <select className="view-select" value={storeId || ""} onChange={(e) => setStoreId(e.target.value)}>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
+      </>}>
+
+      {hasSub && (
         <nav className="seg-wrap no-print">
           <SegControl items={[["board", "Live Floor"], ["settings", "Settings"]]} value={subtab} onChange={setSubtab} />
         </nav>
@@ -9168,8 +9136,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
           <FloorBoard config={config} store={store} data={data} onData={persist} userName={session.name} />
         )}
       </div>
-      <Style />
-    </Shell>
+    </AppShell>
   );
 }
 
@@ -15086,6 +15053,7 @@ function BottomNav({ items, value, onChange, appModule, onToolChange, storeData,
      Stores     configuration                         gear                     */
 const NAV_ICON = {
   board: "chart", dashboard: "chart", import: "arrowup", gm: "doc", history: "clock",
+  floor: "users",   // Live Floor's own board: who is on the floor right now
   standards: "check", actstd: "check", roster: "users", checkout: "handshake",
   queue: "phone", coaching: "user", plates: "car", overview: "globe",
   access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
@@ -15105,6 +15073,7 @@ const NAV_SHORT = {
   plates: "Plates",                    // "License Plates"
   audit: "Audit",                      // "Audit Log"
   queue: "Line",                       // "The Line"
+  floor: "Floor",                      // "Live Floor"
 };
 
 function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeData, storeName, onToolChange }) {
@@ -15131,16 +15100,22 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
         </div>
 
         <div className="drawer-scroll">
-          <div className="drawer-section-label">Go to</div>
-          <nav className="drawer-nav">
-            {items.map(([id, label]) => (
-              <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
-                <span>{label}</span>
-                {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
-                {value === id && <span className="drawer-tick">✓</span>}
-              </button>
-            ))}
-          </nav>
+          {/* A module without tabs (The Board) opens the drawer for Switch tool
+              alone, so the "Go to" heading would sit over nothing. */}
+          {items && items.length > 0 && (
+            <>
+              <div className="drawer-section-label">Go to</div>
+              <nav className="drawer-nav">
+                {items.map(([id, label]) => (
+                  <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
+                    <span>{label}</span>
+                    {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+                    {value === id && <span className="drawer-tick">✓</span>}
+                  </button>
+                ))}
+              </nav>
+            </>
+          )}
 
           <div className="drawer-section-label">Switch tool</div>
           <nav className="drawer-nav">
@@ -17207,6 +17182,64 @@ function Shell({ children, entering }) {
       <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
+}
+
+/* One shell for every module.
+
+   There used to be three: the performance shell, The Board's, and Live Floor's.
+   Only the first rendered a bottom bar, so on a phone the other two were rooms
+   with no door — you could get into The Line but not out of it. The patch for
+   that was `solo-top`, a class that put a scrolling strip of tool buttons back
+   into those headers. It worked, but it meant "does this header have a bottom
+   bar" was a question the CSS had to answer, and every new module had to
+   remember to ask it.
+
+   AppShell removes the question. Every module renders through here, so every
+   module gets the same header, the same drawer and the same way out. What
+   differs between them is passed in: `right` for the bits that belong to one
+   module's header (a store picker, a saving dot), and the nav triple for the
+   tabs it has, if it has any.
+
+   A module with no tabs (The Board) simply gets no bottom bar, and the
+   hamburger comes back for it — see .topbar.no-botnav in the mobile rules. The
+   drawer behind it always carries Switch tool, which is the door that was
+   missing. */
+function AppShell({
+  entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
+  right, navItems, navValue, navOnChange, appModule, onToolChange, storeData, storeName,
+  children,
+}) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  return (
+    <Shell entering={entering}>
+      <header className={"topbar no-print" + (navItems ? "" : " no-botnav")}>
+        <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin}
+          onSignOut={onSignOut} onReplayIntro={onReplayIntro} onHelp={onHelp} />
+        <div className="topbar-right">
+          <ToolSwitcher value={appModule} onChange={onToolChange} />
+          {right}
+        </div>
+        <button className="hamburger no-print" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+      </header>
+
+      {children}
+
+      <BottomNav
+        items={navItems} value={navValue} onChange={navOnChange}
+        appModule={appModule} storeData={storeData}
+        onToolChange={onToolChange}
+        onMore={() => setDrawerOpen(true)} />
+      <MobileDrawer
+        open={drawerOpen} onClose={() => setDrawerOpen(false)}
+        items={navItems} value={navValue} onChange={navOnChange}
+        appModule={appModule} storeData={storeData} storeName={storeName}
+        onToolChange={(mod) => { onToolChange(mod); setDrawerOpen(false); }} />
+      <Style />
+      {help}
+    </Shell>
+  );
 }
 
 function Style() {
@@ -20069,22 +20102,12 @@ function Style() {
           justify-content:flex-end; gap:8px; }
         .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
         .hamburger { display:none !important; }                       /* replaced by the bottom bar */
-        /* ...except where there is no bottom bar to live in. Live Floor, The Line
-           and Online render their own header and never reach the drawer, so this
-           switcher is the only way out of them. It scrolls rather than wraps, so
-           six tools still fit across a phone. */
-        /* min-width:0 on both is what makes overflow-x actually clip: a flex item
-           defaults to min-width:auto and so refuses to shrink below its content,
-           and a nowrap strip of six tools then widens the whole page instead of
-           scrolling inside itself. */
-        .solo-top .tool-row { display:flex !important; width:100%; max-width:100%;
-          min-width:0; order:3; gap:8px;
-          flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
-          scrollbar-width:none; margin:0 -14px; padding:2px 14px 4px; }
-        .solo-top .topbar-right { min-width:0; flex-wrap:wrap; }
-        .solo-top .tool-row::-webkit-scrollbar { display:none; }
-        .solo-top .tool-switch, .solo-top .qsel { flex:0 0 auto; }
-        .solo-top .tool-btn { padding:6px 10px; font-size:12px; }
+        /* ...except in a module with no tabs, which therefore has no bottom bar
+           to hold a More button. The Board is the only one today. Without this
+           the drawer has no opener and the module is a room with no door — the
+           bug solo-top used to paper over with a scrolling strip of tool
+           buttons wedged into the header. One button instead of six. */
+        .topbar.no-botnav .hamburger { display:flex !important; }
         .brand-title { font-size:16px; }
         .view-select { max-width:62vw; font-size:13px; }
         /* the bar measures 55px before the home-indicator inset, so at bottom:18px
