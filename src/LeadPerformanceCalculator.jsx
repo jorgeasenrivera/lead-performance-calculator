@@ -9248,6 +9248,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const [day, setDay] = useState(today());
   const [showSchedule, setShowSchedule] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  useDailyReportOpener(useCallback(() => setShowReport(true), []));
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
   const outreach = showsOutreach(store);
   const activityDays = Object.keys(data.activity || {}).sort().reverse();
@@ -9372,8 +9373,12 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <select value={day} onChange={(e) => setDay(e.target.value)}>
           {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
         </select>
-        <button className="btn secondary" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
-        <button className="btn secondary" onClick={() => setShowReport(true)}>Daily report</button>
+        {/* Both of these leave the top row on a phone. The daily report is the
+            bar's centre button, and the schedule is a once-a-month job that was
+            taking the most valuable strip on the screen — it moves to the foot
+            of the page, where a monthly job belongs. */}
+        <button className="btn secondary co-sched" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
+        <button className="btn secondary co-report" onClick={() => setShowReport(true)}>Daily report</button>
 
         {/* When these numbers last moved. Without it a quiet sheet is ambiguous: it
             could be a slow morning or an import that never landed. */}
@@ -9504,6 +9509,13 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                 ])}
             </tbody>
           </table>
+          {/* The same job, at the end of the page, for a phone. Rendered rather
+              than reordered because CSS cannot move a control out of the toolbar
+              and into the page; only one of the two is ever displayed, so only
+              one is ever in the accessibility tree. */}
+          <button className="btn secondary co-sched-foot" onClick={() => setShowSchedule(true)}>
+            Upload monthly schedule
+          </button>
           <div className="co-legend">
             <span><b>{std.minCalls}</b> calls</span>
             <span><b>{std.minVideos}</b> videos</span>
@@ -11951,6 +11963,18 @@ const ruWritten = new Set();   // one write per store per day per session
    components and neither owns the other. */
 const ruOpen = { subs: new Set() };
 function openRoundUp() { ruOpen.subs.forEach((f) => f()); }
+
+/* The bar's centre button is the verb of whatever tool you are in. In Daily
+   Activity that verb is not Import — the numbers arrive by report, there is
+   nothing to upload from a phone — it is the daily report itself. */
+const drOpen = { subs: new Set() };
+function openDailyReport() { drOpen.subs.forEach((f) => f()); }
+function useDailyReportOpener(fn) {
+  useEffect(() => {
+    drOpen.subs.add(fn);
+    return () => { drOpen.subs.delete(fn); };
+  }, [fn]);
+}
 function useRoundUpOpener(fn) {
   useEffect(() => {
     ruOpen.subs.add(fn);
@@ -15371,6 +15395,14 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const R = 27, C = 2 * Math.PI * R;
   const ready = need > 0 && done >= need;
 
+  /* Daily Activity's numbers arrive by report — there is nothing to upload from
+     a phone — so its verb is the daily report, not Import. The ring still shows
+     whether today's report has landed, which is the same question either way. */
+  const verb = activity
+    ? { label: "Daily report", glyph: "doc", act: openDailyReport, aria: "Open the daily report" }
+    : { label: ready ? "Imported" : `Import ${done}/${need}`, glyph: ready ? "check" : "arrowup",
+        act: onImport, aria: ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today` };
+
   return (
     <nav className="botnav no-print" aria-label="Tools">
       <span className="botnav-notch" aria-hidden="true" />
@@ -15392,11 +15424,10 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
           <circle className="bh-arc" cx="31" cy="31" r={R} transform="rotate(-90 31 31)"
             strokeDasharray={C.toFixed(1)} strokeDashoffset={(C * (1 - done / need)).toFixed(1)} />
         </svg>
-        <button className={"botnav-fab" + (ready ? " ready" : "")} onClick={onImport}
-          aria-label={ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today`}>
-          <PixIcon glyph={ready ? "check" : "arrowup"} size={21} />
+        <button className={"botnav-fab" + (ready ? " ready" : "")} onClick={verb.act} aria-label={verb.aria}>
+          <PixIcon glyph={verb.glyph} size={21} />
         </button>
-        <span className="botnav-fablbl">{ready ? "Imported" : `Import ${done}/${need}`}</span>
+        <span className="botnav-fablbl">{verb.label}</span>
       </div>
 
       {BAR_TOOLS.slice(2).map(([id, label, glyph]) => (
@@ -20035,6 +20066,7 @@ function Style() {
       .dr-ok { font-size:12.5px; color:var(--ink-3); background:rgba(16,32,52,.05);
         padding:9px 13px; border-radius:11px; margin-bottom:10px; }
       .co-out { color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .co-sched-foot { display:none; }
       .co-legend { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;
         padding:14px 4px 2px; margin-top:6px; border-top:1px solid rgba(16,32,52,.08);
         font-size:12.5px; color:var(--ink-3); }
@@ -21238,8 +21270,11 @@ function Style() {
              tasks calls videos  ·  the three that are graded, side by side
              texts emails        ·  the two that are not
              rocked             ·  the one control, full width for a thumb   */
-        .checkout-table td[data-col="name"] { grid-column:1 / 3; grid-row:1; font-size:15px;
-          display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+        /* block, not flex: wrapping the button onto its own line depended on
+           flex-basis behaviour that did not survive contact with the real cell
+           (the name, a streak icon and one or two tags all live in here). A block
+           cell and a block button is one line each, every time. */
+        .checkout-table td[data-col="name"] { grid-column:1 / 3; grid-row:1; font-size:15px; }
         .checkout-table td[data-col="name"]::before { display:none; }
         .checkout-table td[data-col="points"] { grid-column:3; grid-row:1; justify-self:end; text-align:right; }
         .checkout-table td[data-col="points"]::before { text-align:right; }
@@ -21251,14 +21286,47 @@ function Style() {
         /* no explicit row: it lands under whatever the last row turned out to be,
            so a store without texts and emails simply has one row fewer */
         .checkout-table td[data-col="rocked"] { grid-column:1 / -1; }
-        .checkout-table td[data-col="rocked"] .qual-toggle { width:100%; justify-content:center; }
-        /* the section headers span the card grid rather than sitting in one third */
-        .checkout-table tr.co-sep { display:block; padding:0; margin:14px 0 9px;
+        /* The section header's tint band was sized to the table's columns, so
+           once the table stopped being a table the band stopped where the old
+           last column used to and read as chopped. As a block it simply runs the
+           width of the card. */
+        .checkout-table tr.co-sep { display:block; padding:0; margin:16px 0 10px;
           background:none; border:none; box-shadow:none; }
-        .checkout-table tr.co-sep td { padding:0; }
+        .checkout-table tr.co-sep td { display:block; padding:0; width:100%; }
+        .checkout-table tr.co-sep .co-sep-head { display:flex; width:100%; box-sizing:border-box;
+          align-items:center; gap:9px; border-radius:12px; padding:8px 12px; }
+
+        /* --- the toolbar --- */
+        /* One line: which day, and whether the numbers are current. Everything
+           else that was up here has somewhere better to be. */
+        .checkout .gm-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; }
+        .checkout .gm-toolbar select { flex:0 0 auto; }
+        .checkout .co-stamp { flex:1 1 auto; min-width:0; text-align:right; }
+        .checkout .co-report { display:none; }          /* it is the bar's centre button */
+        /* A monthly job does not need the most valuable strip on the screen, so it
+           waits at the foot of the page where the rest of the month's admin is. */
+        .checkout .gm-toolbar .co-sched { display:none; }   /* the foot copy takes over */
+        .co-sched-foot { display:block; width:100%; margin-top:18px; }
+
+        /* --- inside the card --- */
+        /* Mark off sat between the name and the points, reading as though it
+           belonged to neither. Its own line under the name, quiet, out of the way
+           of the two things actually being read. */
+        .checkout-table td[data-col="name"] .co-off-hover { display:block; width:fit-content;
+          margin:7px 0 0; font-size:11.5px; padding:3px 9px; }
+        /* The one thing on the card a manager actually presses, so it gets the
+           size of a control rather than the size of a label. */
+        .checkout-table td[data-col="rocked"] .qual-toggle { width:100%; justify-content:center;
+          padding:11px 14px; font-size:14px; border-radius:12px; gap:7px; }
         /* the off-day control is a hover affordance on a desktop and there is no
            hover here, so it becomes a plain button on the card */
-        .checkout-table .co-off-hover { opacity:1; position:static; margin-left:auto; }
+        /* The desktop version is a hover affordance parked with position:absolute
+           and translateY(-50%). Taking away the absolute is not enough — the
+           transform still lifts it half its own height, which is why it kept
+           landing back on top of the name. Both have to go, and so does the
+           pointer-events:none that hid it from taps. */
+        .checkout-table .co-off-hover { opacity:1; position:static; transform:none;
+          pointer-events:auto; margin-left:auto; }
         .std-people { gap:6px; }
 
         /* --- trends: chart stays readable, controls stack --- */
