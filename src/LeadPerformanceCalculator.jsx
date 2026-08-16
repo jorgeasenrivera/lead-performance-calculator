@@ -21251,6 +21251,11 @@ function Style() {
            get it too so nothing upstream re-imposes it. */
         .checkout-split > *, .checkout-card, .checkout-table { min-width:0; }
         .checkout-table { width:100%; }
+        /* The outer card was spending 24px a side on padding and the person card
+           inside it another 13, so every row was inset 37px from a 390px screen
+           before any content started. The outer one is the one to give up: it is
+           a container, and the cards inside it are the thing being read. */
+        .checkout-card { padding:14px 10px 16px; }
         .checkout-table, .checkout-table tbody, .checkout-table tr, .checkout-table td { display:block; }
         .checkout-table thead { display:none; }
         .checkout-table tr {
@@ -21281,11 +21286,19 @@ function Style() {
            the wider of the two. The cell shrinks to the pill and centres inside. */
         .checkout-table td[data-col="points"] { grid-column:3; grid-row:1; justify-self:end;
           width:fit-content; text-align:center; }
+        /* The five readings centre in their columns. Left-aligned they all sat
+           hard against the start of a column that is much wider than the number
+           in it, so the row read as drifting leftwards rather than as a set. */
         .checkout-table td[data-col="tasks"]  { grid-column:1; grid-row:2; }
         .checkout-table td[data-col="calls"]  { grid-column:2; grid-row:2; }
         .checkout-table td[data-col="videos"] { grid-column:3; grid-row:2; }
         .checkout-table td[data-col="text"]   { grid-column:1; grid-row:3; }
         .checkout-table td[data-col="email"]  { grid-column:2; grid-row:3; }
+        .checkout-table td[data-col="tasks"], .checkout-table td[data-col="calls"],
+        .checkout-table td[data-col="videos"], .checkout-table td[data-col="text"],
+        .checkout-table td[data-col="email"] { text-align:center; }
+        /* the dial is a block, so it needs the margins rather than the alignment */
+        .checkout-table td[data-col="tasks"] svg { display:block; margin-left:auto; margin-right:auto; }
         /* no explicit row: it lands under whatever the last row turned out to be,
            so a store without texts and emails simply has one row fewer */
         .checkout-table td[data-col="rocked"] { grid-column:1 / -1; }
