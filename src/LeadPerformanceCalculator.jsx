@@ -636,10 +636,11 @@ function PixIcon({ glyph, size = 20, className, style, title }) {
   const rows = PIX[glyph] || PIX.dot;
   const n = rows.length;
   const cell = size / n;
-  /* 0.52 of a cell, so dots overlap slightly and a run of them reads as one
-     stroke. Below about 0.46 the solid shapes come apart at 12px — the phone
-     stops closing and the person scatters. */
-  const r = +(cell * 0.52).toFixed(2);
+  /* 0.48 of a cell. Dots still touch, so a run of them reads as one stroke, but
+     they read as dots rather than as a filled shape. 0.52 overlapped enough to
+     lose the grain; below about 0.46 the solid shapes come apart at 12px — the
+     phone stops closing and the person scatters. */
+  const r = +(cell * 0.48).toFixed(2);
   const dots = [];
   for (let y = 0; y < n; y++) {
     const row = rows[y];
@@ -3973,7 +3974,7 @@ function LEADERBOARD_HTML(p) {
   function pix(g, cls, frac){
     var rows = PIXG[g] || PIXG.dot, out = '';
     var n = rows.length;
-    var r = 0.52;
+    var r = 0.48;   // same ratio as PixIcon, and for the same reason
     for (var y = 0; y < n; y++) {
       var row = rows[y];
       for (var x = 0; x < row.length; x++) {
@@ -14289,6 +14290,13 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 
         {openRow
           ? <div className="coach-detail coach-detail-open" key={openRow.a.id}>
+              {/* On a desktop this sits beside the list. On a phone the split
+                  stacks, so the card lands below whatever you tapped and you have
+                  to scroll to find it — there it becomes a sheet over the view
+                  instead, and this is how you get out of it. */}
+              <button className="coach-close" onClick={() => setOpenId(null)} aria-label="Close">
+                <PixIcon glyph="close" size={13} />
+              </button>
               <AssociateCard config={config} store={store} row={openRow} topAvg={topAvg} topCount={top.length} data={data} onChange={onChange} userName={userName} />
             </div>
           : <div className="coach-detail coach-empty">
@@ -19215,7 +19223,8 @@ function Style() {
       .coach-split.has-open .coach-role { grid-column:1; font-size:12px; }
       .coach-split.has-open .coach-units { grid-column:1; grid-row:3; }
       .coach-split.has-open .coach-days { grid-column:2; grid-row:3; text-align:right; }
-      .coach-detail { min-width:0; }
+      .coach-detail { min-width:0; position:relative; }
+      .coach-close { display:none; }
       .coach-detail-open { animation: cardOpen .42s cubic-bezier(.22,.61,.36,1) both; }
       @keyframes cardOpen {
         from { opacity:0; transform: translateY(10px) scale(.985); }
@@ -21438,6 +21447,25 @@ function Style() {
           border:1px dashed var(--line); border-radius:13px; padding:11px; margin-top:8px;
           transition:border-color .2s var(--ease), transform .25s var(--ease-bloop); }
         .roll-more:active { transform:scale(.98); }
+
+        /* --- coaching: the card comes to you --- */
+        /* The two-column split stacks on a phone, which put the card below the
+           list you tapped from — off screen, and you had to hunt for it. */
+        .coach-detail-open { position:fixed; inset:auto 0 0 0; top:56px; z-index:360;
+          background:var(--card); border-radius:18px 18px 0 0; overflow-y:auto;
+          overscroll-behavior:contain; padding:16px 14px calc(84px + env(safe-area-inset-bottom, 0px));
+          box-shadow:0 -8px 40px rgba(16,40,68,.28); animation:coachUp .38s var(--ease-bloop) both; }
+        @keyframes coachUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:none; } }
+        .coach-close { display:flex; position:sticky; top:0; margin-left:auto; z-index:2;
+          align-items:center; justify-content:center; width:32px; height:32px; border:none;
+          border-radius:50%; background:var(--line); color:var(--ink); cursor:pointer; }
+        .coach-empty { display:none; }                 /* nothing to sit beside on a phone */
+        /* The benchmark tiles are a grid that would stack five deep. One row that
+           scrolls keeps "what the strongest do" readable in a glance. */
+        .bench-grid { display:flex; gap:10px; overflow-x:auto; scrollbar-width:none;
+          margin:14px -14px 0; padding:0 14px 4px; scroll-snap-type:x proximity; }
+        .bench-grid::-webkit-scrollbar { display:none; }
+        .bench-tile { flex:0 0 46%; min-width:0; scroll-snap-align:start; }
 
         /* --- the sections, as a chip strip --- */
         /* These used to be the bottom bar. They sit under the header now, above
