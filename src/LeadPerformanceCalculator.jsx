@@ -15620,7 +15620,10 @@ const QUEUE_TAB = "queues";
 const BAR_TOOLS = [
   ["perf", "Performance", "chart"],
   ["activity", "Activity", "handshake"],
-  [QUEUE_TAB, "Up Next", "users"],
+  /* gear, not users: this tab is the only one in the bar that opens a set of
+     tools rather than going somewhere, and the cog reads as a hub. `users` also
+     belonged to Roster, so it said "people" twice for two different things. */
+  [QUEUE_TAB, "Up Next", "gear"],
 ];
 const inQueues = (mod) => QUEUE_TOOLS.some((q) => q.id === mod);
 
