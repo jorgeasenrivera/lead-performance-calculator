@@ -2275,6 +2275,7 @@ export default function LeadPerformanceCalculator() {
   const storeStampRef = useRef(null);
   const savingRef = useRef(false);
   const [storeLoadFailed, setStoreLoadFailed] = useState(false);
+  const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
   // drawerOpen now lives in AppShell, which is the only thing that opens it.
@@ -2425,6 +2426,13 @@ export default function LeadPerformanceCalculator() {
             if (!legacy.ok) { setLoadErr(true); return; }
             d = legacy.value || emptyStoreData();
           }
+          // Same check as the single-store load: a document that says it belongs
+          // to another store never enters the cache, because the cache is read
+          // straight onto the board without going through that path again.
+          if (d.__storeId && d.__storeId !== s.id) {
+            console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
+            continue;
+          }
           all[s.id] = d;
         }
         setAdminData(all);
@@ -2454,6 +2462,10 @@ export default function LeadPerformanceCalculator() {
         if (!r.ok) continue;
         let d = r.value;
         if (!d) { const legacy = await loadStrict(`lpc:store:${s.id}:v1`); d = (legacy.ok && legacy.value) || emptyStoreData(); }
+        if (d.__storeId && d.__storeId !== s.id) {
+          console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
+          continue;
+        }
         add[s.id] = d;
       }
       if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
@@ -2487,7 +2499,15 @@ export default function LeadPerformanceCalculator() {
     let dead = false;
     const want = view;
     (async () => {
-      if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
+      const cached = adminData[view];
+      if (cached) {
+        if (cached.__storeId && cached.__storeId !== view) {
+          setStoreMismatch({ want: view, claims: cached.__storeId });
+          setStoreData(null); setStoreLoadFailed(true);
+          return;
+        }
+        setStoreData(cached); setStoreLoadFailed(false); setStoreMismatch(null); setTab("board"); return;
+      }
       /* Drop the store we were showing BEFORE fetching the next one. Without this
          the board keeps rendering the previous store's roster under the new
          store's name for as long as the fetch takes — Driver's Mart's people
@@ -2496,13 +2516,29 @@ export default function LeadPerformanceCalculator() {
          The null state is already handled: it draws the loading screen. */
       setStoreData(null);
       setStoreLoadFailed(false);
+      setStoreMismatch(null);
       try {
         const d = await loadStore(view, emptyStoreData(), true); // throw on a real load error
         if (dead || want !== view) return;
         try { storeStampRef.current = await loadStoreStamp(storeKey(want)); } catch (e) { storeStampRef.current = null; }
         if (dead || want !== view) return;
-        // Stamp which store this document is, so a save can refuse to write it anywhere else.
-        d.__storeId = want;
+        /* The stamp is evidence, and this line used to destroy it.
+           A save writes __storeId onto the document. The load then overwrote it
+           with whatever key it had just read from — so a document belonging to
+           one store, sitting in another store's row, was silently relabelled on
+           the way in, and the save-side guard that exists to catch exactly this
+           saw two matching ids and let it through.
+           Check it instead. A document that says it belongs somewhere else is
+           never rendered as this store's, because showing one store's people
+           under another store's name is worse than showing nothing. */
+        if (d.__storeId && d.__storeId !== want) {
+          console.error("store document belongs to another store", { key: want, claims: d.__storeId });
+          setStoreMismatch({ want, claims: d.__storeId });
+          setStoreData(null); setStoreLoadFailed(true);
+          return;
+        }
+        setStoreMismatch(null);
+        d.__storeId = want;   // only ever stamps a document that arrived without one
         setStoreData(d); setStoreLoadFailed(false);
       } catch (e) {
         if (dead || want !== view) return;
@@ -3319,7 +3355,16 @@ export default function LeadPerformanceCalculator() {
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
           <div key={view + tab + appModule} className="page">
-            {storeLoadFailed && <div className="load-warn">This store's data didn't load fully, so changes are paused to protect your records. Reload the page, confirm everything is showing, then continue.</div>}
+            {storeMismatch ? (
+              /* Say exactly what is wrong. "Didn't load" would send somebody
+                 reloading forever at a problem a reload cannot touch. */
+              <div className="load-warn">
+                The record saved for {config.stores.find((x) => x.id === storeMismatch.want)?.name || storeMismatch.want} says
+                it belongs to {config.stores.find((x) => x.id === storeMismatch.claims)?.name || storeMismatch.claims}.
+                Nothing is shown and nothing can be saved here, because the alternative is one store's people under another
+                store's name. This needs the record repaired rather than a reload.
+              </div>
+            ) : storeLoadFailed && <div className="load-warn">This store's data didn't load fully, so changes are paused to protect your records. Reload the page, confirm everything is showing, then continue.</div>}
             {appModule === "activity" ? (
               <>
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} />}
