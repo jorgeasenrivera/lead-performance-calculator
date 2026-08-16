@@ -2951,6 +2951,34 @@ export default function LeadPerformanceCalculator() {
     setEntered(true);
   };
 
+  /* Switching tools was written out five times: once in each of the three
+     topbars, once in the drawer and once in the bottom bar. They had drifted only
+     in the ways you would expect (the board copy hardcoded its own value, the
+     drawer copy closed itself on every branch) and were otherwise the same twelve
+     lines. Five copies of a rule is five places for it to disagree, which is the
+     same shape as the bug that made two modules dead ends. One function decides
+     it now.
+
+     chooseModule, just above, is deliberately not folded in: it runs at sign-in,
+     sets `entered` and leaves the tab alone. Different job, similar shape.
+
+     This is the first step of collapsing the three shells into one: agree on the
+     behaviour before moving the markup. */
+  const switchTool = (mod) => {
+    if (mod === appModule) return;
+    // These four render their own shell and take no tab.
+    if (mod === "board" || mod === "floor" || mod === "line" || mod === "online") {
+      setAppModule(mod);
+      return;
+    }
+    if (mod === "activity" && view === "admin") {
+      const first = (isAdmin ? config.stores : accessibleStores)[0];
+      if (first) setView(first.id);
+    }
+    setAppModule(mod);
+    setTab(mod === "activity" ? "checkout" : "board");
+  };
+
   const isAdmin = session.role === "admin";
   const isOverseer = session.role === "overseer";
   const hasOverview = isAdmin || (isOverseer && (session.stores || []).length > 1);
@@ -2978,16 +3006,7 @@ export default function LeadPerformanceCalculator() {
         <header className="topbar solo-top no-print">
           <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin} onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} />
           <div className="topbar-right">
-            <ToolSwitcher value="board" onChange={(mod) => {
-              if (mod === "board") return;
-              if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
-              if (mod === "activity" && view === "admin") {
-                const first = (isAdmin ? config.stores : accessibleStores)[0];
-                if (first) setView(first.id);
-              }
-              setAppModule(mod);
-              setTab(mod === "activity" ? "checkout" : "board");
-            }} />
+            <ToolSwitcher value="board" onChange={switchTool} />
           </div>
         </header>
         <div className="page">
@@ -3013,17 +3032,7 @@ export default function LeadPerformanceCalculator() {
         isAdmin={isAdmin}
         onSaveConfig={persistConfig}
         onSignOut={signOut}
-        onToolChange={(mod) => {
-          if (mod === appModule) return;
-          if (mod === "board") { setAppModule("board"); return; }
-          if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
-          if (mod === "activity" && view === "admin") {
-            const first = (isAdmin ? config.stores : accessibleStores)[0];
-            if (first) setView(first.id);
-          }
-          setAppModule(mod);
-          setTab(mod === "activity" ? "checkout" : "board");
-        }} />
+        onToolChange={switchTool} />
     );
   }
 
@@ -3068,17 +3077,7 @@ export default function LeadPerformanceCalculator() {
         <div className="topbar-right">
           {saving && <span className="save-dot">Saving…</span>}
 
-          <ToolSwitcher value={appModule} onChange={(mod) => {
-            if (mod === appModule) return;
-            if (mod === "board") { setAppModule("board"); return; }
-            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
-            if (mod === "activity" && view === "admin") {
-              const first = (isAdmin ? config.stores : accessibleStores)[0];
-              if (first) setView(first.id);
-            }
-            setAppModule(mod);
-            setTab(mod === "activity" ? "checkout" : "board");
-          }} />
+          <ToolSwitcher value={appModule} onChange={switchTool} />
 
           {/* A picker with one entry is furniture. It only appears once there is
               actually somewhere else to go. */}
@@ -3109,17 +3108,7 @@ export default function LeadPerformanceCalculator() {
         <BottomNav
           items={navItems} value={navValue} onChange={navOnChange}
           appModule={appModule} storeData={storeData}
-          onToolChange={(mod) => {
-            if (mod === appModule) return;
-            if (mod === "board") { setAppModule("board"); return; }
-            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); return; }
-            if (mod === "activity" && view === "admin") {
-              const first = (isAdmin ? config.stores : accessibleStores)[0];
-              if (first) setView(first.id);
-            }
-            setAppModule(mod);
-            setTab(mod === "activity" ? "checkout" : "board");
-          }}
+          onToolChange={switchTool}
           onMore={() => setDrawerOpen(true)} />
       )}
       {navItems && (
@@ -3132,18 +3121,7 @@ export default function LeadPerformanceCalculator() {
           appModule={appModule}
           storeData={storeData}
           storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
-          onToolChange={(mod) => {
-            if (mod === appModule) { setDrawerOpen(false); return; }
-            if (mod === "board") { setAppModule("board"); setDrawerOpen(false); return; }
-            if (mod === "floor" || mod === "line" || mod === "online") { setAppModule(mod); setDrawerOpen(false); return; }
-            if (mod === "activity" && view === "admin") {
-              const first = (isAdmin ? config.stores : accessibleStores)[0];
-              if (first) setView(first.id);
-            }
-            setAppModule(mod);
-            setTab(mod === "activity" ? "checkout" : "board");
-            setDrawerOpen(false);
-          }} />
+          onToolChange={(mod) => { switchTool(mod); setDrawerOpen(false); }} />
       )}
 
       {view === "admin" && isAdmin ? (
