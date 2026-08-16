@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, useReducer } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
 import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
@@ -15625,6 +15625,30 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const R = 27, C = 2 * Math.PI * R;
   const ready = need > 0 && done >= need;
 
+  /* The pill that slides. The tabs are not evenly wide — "Live Floor" is a wider
+     word than "More", and the centre slot is a fixed 62px — so the pill cannot be
+     placed by index arithmetic. It is measured off the live button instead, which
+     also survives the label going from "Performance" to "Perf" at 360px. */
+  const barRef = useRef(null);
+  const tabRefs = useRef({});
+  const [pill, setPill] = useState(null);
+  useLayoutEffect(() => {
+    const bar = barRef.current, tab = tabRefs.current[appModule];
+    if (!bar || !tab) { setPill(null); return; }
+    const place = () => setPill({
+      x: tab.offsetLeft, y: tab.offsetTop,
+      w: tab.offsetWidth, h: tab.offsetHeight,
+    });
+    place();
+    /* Rotating the phone changes every offset at once. ResizeObserver on the bar
+       catches that, and the orientation change that comes with it, without a
+       resize listener that fires on every scroll-driven toolbar shift in Safari. */
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(place);
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [appModule]);
+
   /* Daily Activity's numbers arrive by report — there is nothing to upload from
      a phone — so its verb is the daily report, not Import. The ring still shows
      whether today's report has landed, which is the same question either way. */
@@ -15634,10 +15658,19 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         act: onImport, aria: ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today` };
 
   return (
-    <nav className="botnav no-print" aria-label="Tools">
+    <nav className="botnav no-print" aria-label="Tools" ref={barRef}>
       <span className="botnav-notch" aria-hidden="true" />
+      {/* Rendered even with no measurement yet, at opacity 0, so the first paint
+          after a tool change animates from where the pill was rather than
+          appearing under the new tab. */}
+      <span className="botnav-thumb" aria-hidden="true"
+        style={pill
+          ? { opacity: 1, width: pill.w + "px", height: pill.h + "px",
+              transform: `translate(${pill.x}px, ${pill.y}px)` }
+          : { opacity: 0 }} />
       {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => (
-        <button key={id} className={"botnav-btn" + (appModule === id ? " on" : "")}
+        <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
+          className={"botnav-btn" + (appModule === id ? " on" : "")}
           onClick={() => onToolChange(id)}>
           <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
           <span className="botnav-lbl">{label}</span>
@@ -15661,7 +15694,8 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
       </div>
 
       {BAR_TOOLS.slice(2).map(([id, label, glyph]) => (
-        <button key={id} className={"botnav-btn" + (appModule === id ? " on" : "")}
+        <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
+          className={"botnav-btn" + (appModule === id ? " on" : "")}
           onClick={() => onToolChange(id)}>
           <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
           <span className="botnav-lbl">{label}</span>
@@ -19037,10 +19071,37 @@ function Style() {
         .lpc {
           overflow-x: visible;          /* the clip was the jump */
           overflow-anchor: none;        /* stop Safari re-anchoring mid-scroll */
-          isolation: auto;
-          background: linear-gradient(180deg, #F7F8FA 0%, #EDF2F8 100%);
         }
         .lpc::before, .lpc::after { display: none !important; }
+
+        /* The phone keeps the desktop's colour.
+           None of the three problems above was the gradient — they were the clip,
+           the promoted layer and the looping animation — so the backdrop stays and
+           only its motion goes. Two details are load-bearing:
+             isolation stays isolate. .bg-live is z-index:-2, which paints behind
+             .lpc's own children but in FRONT of .lpc's background only while .lpc
+             is a stacking context. Setting isolation:auto here let the layer escape
+             to the root and hide under .lpc's own paint, which is why the phone
+             looked flat grey no matter what colour it was given.
+             transform goes to none. translate3d(0, var(--bgy), 0) is the parallax,
+             and a 3D transform permanently promotes a compositor layer that
+             repaints on every scroll frame — the same jitter will-change caused.
+             The parallax had nothing to grip on a phone anyway. */
+        .bg-live { transform: none !important; }
+        /* Held at bgMorph's 50% frame rather than its 0%: at 0% the blobs sit at
+           their tightest, and a phone viewport is narrow enough that half of them
+           fall off the sides. The mid frame is scaled 1.14 and nudged inward, so
+           the colour actually reaches the screen. Opacity comes up to compensate
+           for the animation never building — the desktop only looks as saturated
+           as it does because bgMorph carries it to .95 while you sit still. */
+        .bg-live-inner, .bg-idle .bg-live-inner {
+          animation: none !important;
+          opacity: 1;
+          /* 2D deliberately — translate3d on a static element still asks for a
+             compositor layer, which is the thing we removed from .bg-live above. */
+          transform: translate(-2%, 3%) scale(1.14) rotate(-6deg);
+          filter: saturate(1.25);   /* the rest of that same 50% frame */
+        }
 
         /* no promoted layers anywhere. This is what was jittering. */
         .lpc, .lpc * { will-change: auto !important; }
@@ -21540,6 +21601,21 @@ function Style() {
         .botnav-notch { position:absolute; left:50%; top:-1px; transform:translateX(-50%);
           width:78px; height:34px; background:var(--bg); border-radius:0 0 999px 999px;
           box-shadow:inset 0 1px 0 rgba(16,40,68,.10); pointer-events:none; }
+        /* the pill that slides between tabs. Sized and placed from JS off the live
+           button, so it tracks whatever the labels do at each width. It sits at
+           z-index 0 — under the buttons, over the bar — and takes no taps, so the
+           button it is currently sitting on still gets them. */
+        .botnav-thumb { position:absolute; left:0; top:0; z-index:0; border-radius:14px;
+          background:color-mix(in srgb, var(--sp, var(--blue)) 13%, transparent);
+          pointer-events:none;
+          transition:transform .48s var(--ease-bloop), width .48s var(--ease-bloop),
+            height .48s var(--ease-bloop), opacity .2s var(--ease); }
+        /* color-mix is Safari 16.2+. Older phones get the flat tint rather than
+           no pill at all, which would leave the active tab unmarked. */
+        @supports not (background: color-mix(in srgb, red 10%, transparent)) {
+          .botnav-thumb { background:rgba(16,40,68,.07); }
+        }
+        @media (prefers-reduced-motion: reduce) { .botnav-thumb { transition:opacity .2s linear; } }
         .botnav-btn { flex:1; min-width:0; position:relative; z-index:1; display:flex;
           flex-direction:column; align-items:center; gap:3px;
           border:none; background:none; font:inherit; cursor:pointer; padding:5px 1px; border-radius:12px;
@@ -21819,8 +21895,25 @@ function Style() {
         .roster-card { padding:4px 14px 16px; }
         .role-group::before { left:-8px; right:-8px; }
 
-        /* motion is costly on phones and the parallax has nothing to grip here */
-        .bg-live { opacity:.7; }
+        /* The parallax and the drift are both off on touch already. This used to
+           damp the whole backdrop to .7 alongside them, which left the phone
+           looking washed out next to the desktop — so the motion goes and the
+           colour stays.
+
+           The blobs are re-cut for the shape of the box, not restyled. Their radii
+           are percentages of .bg-live, which on a desktop is a wide landscape
+           rectangle and on a phone is a narrow portrait one — so 26% x 28% that
+           reads as a soft circle at 1200px becomes a thin vertical smear at 390,
+           with bare grey between. Same five colours, same five positions, widened
+           and shortened until they are round again at this aspect. */
+        .bg-live-inner {
+          background:
+            radial-gradient(52% 20% at 24% 22%, rgba(122,79,155,.26), transparent 70%),
+            radial-gradient(48% 19% at 78% 56%, rgba(0,168,150,.26), transparent 70%),
+            radial-gradient(44% 17% at 48% 92%, rgba(255,159,10,.20), transparent 72%),
+            radial-gradient(40% 16% at 88% 16%, rgba(42,94,155,.22), transparent 72%),
+            radial-gradient(36% 14% at 8% 70%, rgba(193,215,48,.18), transparent 74%);
+        }
       }
 
       @media (max-width: 400px) {
