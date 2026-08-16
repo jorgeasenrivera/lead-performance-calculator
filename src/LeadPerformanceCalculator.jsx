@@ -334,6 +334,45 @@ const DEFAULT_THRESHOLDS = {
 
 // Older stores saved a single flat { green, yellow }. Spread it across all three
 // channels so nothing breaks and the numbers carry over.
+/* The three channels rolled up for one month, shared by the hero's health popup
+   and the delivery chart. Two copies of this would eventually disagree about the
+   same month on the same screen, which is worse than either being wrong.
+
+   `roster` is always the CURRENT roster, in every month it is asked about. That
+   means a salesperson who has since left drops out of the history behind them,
+   which understates old months a little. The alternative — everyone who appears
+   in that month's stats — is truer month by month but makes the chart's newest
+   point disagree with the hero sitting above it, and two numbers for one thing
+   is the more expensive kind of wrong. */
+function channelRates(M, roster) {
+  const rate = (field) => {
+    let units = 0, leads = 0, seen = false;
+    for (const a of roster) {
+      const st = M?.stats?.[norm(a.name)];
+      const u = st?.[field + "Units"];
+      const pc = st?.[field + "Pct"];
+      if (u == null) continue;
+      seen = true; units += u;
+      const real = st?.[field + "Leads"] ?? (field === "internet" ? st?.opps : null);
+      if (real != null) leads += real;
+      else if (pc != null && pc > 0) leads += u / pc;   // older rows, before leads were stored
+    }
+    return { units, leads, pct: leads > 0 ? units / leads : null, seen };
+  };
+  return CHANNEL_LIST.map((c) => ({ id: c.id, label: c.label, ...rate(c.id) }));
+}
+
+/* Three lines on one chart is the first thing in the app that genuinely needs
+   distinct hues rather than one brand colour at three strengths. These were
+   validated rather than picked: worst colour-blind separation across all pairs
+   is ΔE 9.2, worst normal-vision 24.0, both clear of the floors. Every line is
+   also directly labelled, so identity never rests on colour alone.
+
+   Status green/amber/red stay reserved and separate. They appear on pills with a
+   word beside them and never on a line, so "orange" never has to mean both
+   "Phone" and "nearing the limit" on the same screen. */
+const CHANNEL_HUE = { internet: "#2a78d6", phone: "#eb6834", showroom: "#1baf7a" };
+
 function normThresholds(t) {
   if (!t) return JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
   if (t.green !== undefined || t.yellow !== undefined) {
@@ -2979,6 +3018,16 @@ export default function LeadPerformanceCalculator() {
     setTab(mod === "activity" ? "checkout" : "board");
   };
 
+  /* The bar's centre button. Importing is the same act in every tool, so the
+     button is always there and always means the same thing — but only two
+     modules actually own an import screen. From the other four it lands on
+     Performance's, which is where the files it wants would go anyway. */
+  const goImport = () => {
+    if (appModule === "perf" || appModule === "activity") { setTab("import"); return; }
+    setAppModule("perf");
+    setTab("import");
+  };
+
   const isAdmin = session.role === "admin";
   const isOverseer = session.role === "overseer";
   const hasOverview = isAdmin || (isOverseer && (session.stores || []).length > 1);
@@ -3002,9 +3051,7 @@ export default function LeadPerformanceCalculator() {
       <AppShell entering={entering}
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
-        appModule="board" onToolChange={switchTool}>
-        {/* The Board has no tabs of its own, so it gets no bottom bar and the
-            hamburger comes back for it. Switch tool lives in the drawer. */}
+        appModule="board" onToolChange={switchTool} onImport={goImport}>
         <div className="page">
           <BoardLauncher config={config} session={session}
             onLaunch={(storeId) => openLeaderboard(config, storeId)}
@@ -3026,6 +3073,7 @@ export default function LeadPerformanceCalculator() {
         isAdmin={isAdmin}
         onSaveConfig={persistConfig}
         onToolChange={switchTool}
+        onImport={goImport}
         shell={{
           entering, session, isAdmin, isOverseer,
           onSignOut: signOut, onReplayIntro: replayIntro,
@@ -3072,7 +3120,8 @@ export default function LeadPerformanceCalculator() {
     <AppShell entering={entering}
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
-      appModule={appModule} onToolChange={switchTool}
+      appModule={appModule} onToolChange={switchTool} onImport={goImport}
+      brand={currentStore?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeData={storeData}
       storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
@@ -3227,6 +3276,7 @@ export default function LeadPerformanceCalculator() {
                     )}
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
                       filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc} />
+                    <DeliveryCard config={config} store={currentStore} data={storeData} />
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
                       filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
@@ -8991,7 +9041,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* `shell` is the chrome the app already has on hand — who is signed in, how to
    sign out, the help node — passed as one object so this module doesn't grow
    six props it only forwards. */
-function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, shell }) {
+function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onImport, shell }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => {
     if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
@@ -9105,7 +9155,8 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
 
   return (
     <AppShell {...shell}
-      appModule={queue} onToolChange={onToolChange}
+      appModule={queue} onToolChange={onToolChange} onImport={onImport}
+      brand={store?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeName={store?.name || ""}
       right={<>
@@ -11951,7 +12002,12 @@ function AssocSearch({ value, onChange, store }) {
   );
 }
 
+/* How many of a role's people a phone shows before asking. Five is what fits
+   above the fold next to the hero without the board turning into a scroll. */
+const ROLL_CAP = 5;
+
 function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus }) {
+  const [rollOpen, setRollOpen] = useState({});
   const M = data.months?.[ym()];
   const names = M?.names || {};
   // An associate is only "incomplete" if they're missing one of the three REQUIRED
@@ -12129,7 +12185,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         <section key={role.id} className="role-group" style={{ "--role": role.color }}>
           <h3 className="role-header"><span className="role-swatch" />{role.name} <span className="role-count">{people.length}</span></h3>
           {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : "No associates in this section"}</div>}
-          {people.map((a) => {
+          {people.map((a, i) => {
             const stats = M?.stats?.[norm(a.name)];
             const ev = evaluateAssociate(stats, config.standards?.[store.id]?.[role.id]?.tiers);
             const missing = importedTypes.length ? missingReports(norm(a.name)) : [];
@@ -12139,9 +12195,25 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
               <AssociateRow key={a.id} a={a} stats={stats} ev={ev} missing={missing} incomplete={incomplete}
                 grace={inGrace} rank={rankOf[norm(a.name)]} star={stars.has(norm(a.name))} readOnly={readOnly}
                 restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
-                focused={focusName === a.name} />
+                focused={focusName === a.name}
+                rolled={!query && i >= ROLL_CAP && !rollOpen[role.id]} />
             );
           })}
+          {/* A phone shows the first five, ranked by leads held, and a button for
+              the rest. The cap is CSS rather than a slice so a desktop still gets
+              the whole board with no second code path and no viewport guessing —
+              .rolled only hides below 760px. The class goes on the card itself
+              rather than a wrapper, because a wrapper would make every card the
+              only child of its own parent and .assoc-card:last-child — the rule
+              that drops the final divider — would then match all of them.
+              Search results are never capped:
+              hiding the person somebody just typed the name of is absurd. */}
+          {!query && people.length > ROLL_CAP && (
+            <button className={"roll-more" + (rollOpen[role.id] ? " open" : "")}
+              onClick={() => setRollOpen((o) => ({ ...o, [role.id]: !o[role.id] }))}>
+              {rollOpen[role.id] ? "Show fewer" : `Show the other ${people.length - ROLL_CAP}`}
+            </button>
+          )}
         </section>
       ))}
       {unassigned.length > 0 && (
@@ -12234,7 +12306,7 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled }) {
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
   // Picked out of the hero shortlist or the podium: open the card and bring it
@@ -12271,7 +12343,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
 
   return (
     <div ref={cardRef}
-      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "")}>
+      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "")}>
       <div className="assoc-row" onClick={() => setOpen(!open)}>
         {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
         <span className="assoc-name">{a.name}</span>
@@ -15011,25 +15083,112 @@ function ToolSwitcher({ value, onChange }) {
 /* Native-style bottom bar. Up to four primary destinations plus tool-switch live
    inline; anything past that folds into a More sheet. Same nav model the drawer
    used, so nothing about the desktop paths changes. */
-function BottomNav({ items, value, onChange, appModule, onToolChange, storeData, onMore }) {
-  if (!items || !items.length) return null;
-  const primary = items.slice(0, 4);
-  const overflow = items.slice(4);
-  const activeInOverflow = overflow.some(([id]) => id === value);
+/* The bar carries TOOLS, not sections.
+
+   It used to carry sections, which put it in competition with the drawer and
+   left switching tools two taps deep in a menu — the thing that made Live Floor
+   and The Line feel like dead ends even after they could be reached. Sections
+   moved up to the chip strip under the header, where there is room for six of
+   them and where they belong: they are where you are inside a tool, not which
+   tool you are in.
+
+   The centre is a verb rather than a destination. Import is the one thing a
+   manager does on a phone rather than reads, it is the same act in every tool,
+   and the ring around it is how much of today's importing is done — so the bar
+   answers "is my data in yet" without opening anything. */
+const BAR_TOOLS = [
+  ["perf", "Performance", "chart"],
+  ["activity", "Activity", "handshake"],
+  ["floor", "Live Floor", "users"],
+];
+
+/* Today's imports, as a fraction. Delivery Summaries arrive by email, so the
+   manager only ever uploads two on the performance side and one on activity —
+   the same counts the Import badge shows, read the same way. */
+function importProgress(storeData, activity) {
+  if (!storeData) return { done: 0, need: 1 };
+  const t = storeData.months?.[ym()]?.imports?.[today()] || {};
+  if (activity) return { done: t.activity ? 1 : 0, need: 1 };
+  return { done: ["appointment", "video"].filter((k) => t[k]).length, need: 2 };
+}
+
+function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
+  const activity = appModule === "activity";
+  const { done, need } = importProgress(storeData, activity);
+  const R = 27, C = 2 * Math.PI * R;
+  const ready = need > 0 && done >= need;
+
   return (
-    <nav className="botnav no-print" aria-label="Sections">
-      {primary.map(([id, label]) => (
-        <button key={id} className={"botnav-btn" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
-          <span className="botnav-ico"><PixIcon glyph={NAV_ICON[id] || "dot"} size={21} fine /></span>
-          <span className="botnav-lbl">{NAV_SHORT[id] || label}</span>
-          {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+    <nav className="botnav no-print" aria-label="Tools">
+      <span className="botnav-notch" aria-hidden="true" />
+      {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => (
+        <button key={id} className={"botnav-btn" + (appModule === id ? " on" : "")}
+          onClick={() => onToolChange(id)}>
+          <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
+          <span className="botnav-lbl">{label}</span>
         </button>
       ))}
-      <button className={"botnav-btn" + (activeInOverflow ? " on" : "")} onClick={onMore}>
+
+      {/* align-self:stretch is load-bearing. Under align-items:flex-end the slot
+          collapses to height 0, and a negative `top` on the button then measures
+          from the bar's BOTTOM edge — which is how the centre button ended up
+          off the bottom of the screen in the drafts. */}
+      <div className="botnav-slot">
+        <svg className="botnav-halo" viewBox="0 0 62 62" aria-hidden="true">
+          <circle className="bh-trk" cx="31" cy="31" r={R} />
+          <circle className="bh-arc" cx="31" cy="31" r={R} transform="rotate(-90 31 31)"
+            strokeDasharray={C.toFixed(1)} strokeDashoffset={(C * (1 - done / need)).toFixed(1)} />
+        </svg>
+        <button className={"botnav-fab" + (ready ? " ready" : "")} onClick={onImport}
+          aria-label={ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today`}>
+          <PixIcon glyph={ready ? "check" : "arrowup"} size={21} />
+        </button>
+        <span className="botnav-fablbl">{ready ? "Imported" : `Import ${done}/${need}`}</span>
+      </div>
+
+      {BAR_TOOLS.slice(2).map(([id, label, glyph]) => (
+        <button key={id} className={"botnav-btn" + (appModule === id ? " on" : "")}
+          onClick={() => onToolChange(id)}>
+          <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
+          <span className="botnav-lbl">{label}</span>
+        </button>
+      ))}
+      <button className="botnav-btn" onClick={onMore}>
         <span className="botnav-ico"><PixIcon glyph="more" size={21} /></span>
         <span className="botnav-lbl">More</span>
       </button>
     </nav>
+  );
+}
+
+/* The sections, as a scrolling strip of chips under the header. This is what the
+   bottom bar used to hold. A strip takes every section a tool has rather than
+   the first four plus an overflow menu, so nothing is hidden behind "More". */
+function SectionStrip({ items, value, onChange, appModule, storeData }) {
+  const ref = useRef(null);
+  // Keep the active chip in view when the section changes from somewhere else
+  // (the drawer, a card that jumps to Import). scrollIntoView's "nearest" scrolls
+  // every ancestor including the document, which is what moved the page 407px on
+  // mount before — so this scrolls the strip itself and nothing else.
+  useEffect(() => {
+    const strip = ref.current;
+    if (!strip) return;
+    const on = strip.querySelector(".sect-chip.on");
+    if (!on) return;
+    const want = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
+  }, [value]);
+
+  if (!items || items.length < 2) return null;
+  return (
+    <div className="sect-strip no-print" ref={ref}>
+      {items.map(([id, label]) => (
+        <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
+          {NAV_SHORT[id] || label}
+          {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -15254,6 +15413,270 @@ function useParallax(ref) {
 }
 
 /* ---------------- Store hero (manager landing) ---------------- */
+/* ---------------- Delivery, flowing ----------------
+
+   One card that cycles Internet → Phone → Showroom, morphing between them rather
+   than cutting.
+
+   Every channel is plotted as a percent of ITS OWN target, which is what makes
+   the morph readable: the dashed rule sits in the same place for all three, so
+   the reference holds still and only the shape moves. You are watching one floor
+   from three angles rather than three unrelated charts. It is also the honest
+   answer to "spread it from 0 to the store standard" — Internet at 6% and
+   Showroom at 38% cannot share a raw axis, but 0-to-target they can.
+
+   The series is month over month, off data.months, because that is history the
+   app already has. A daily series would need a per-day channel roll-up that
+   nothing writes today. */
+const FLOW_W = 292, FLOW_H = 104, FLOW_PL = 4, FLOW_PR = 10, FLOW_PT = 14, FLOW_PB = 17;
+const FLOW_TOP = 125;                       // 100 = the store's standard for that channel
+const flowY = (p) => FLOW_PT + (1 - Math.max(0, Math.min(FLOW_TOP, p)) / FLOW_TOP) * (FLOW_H - FLOW_PT - FLOW_PB);
+const flowX = (i, n) => FLOW_PL + (n <= 1 ? (FLOW_W - FLOW_PL - FLOW_PR) : i * (FLOW_W - FLOW_PL - FLOW_PR) / (n - 1));
+/* A null is a month with no numbers for this channel, not a month of zero. The
+   x positions still come from the month's index, so a gap keeps its place and the
+   three channels in the all-view stay aligned month for month — the line simply
+   connects across it instead of diving to the floor and inventing a collapse. */
+const flowPath = (ps) => {
+  let d = "", started = false;
+  ps.forEach((p, i) => {
+    if (p == null) return;
+    d += (started ? " L" : "M") + flowX(i, ps.length).toFixed(1) + " " + flowY(p).toFixed(1);
+    started = true;
+  });
+  return d;
+};
+const flowFirst = (ps) => ps.findIndex((p) => p != null);
+const flowLast = (ps) => { for (let i = ps.length - 1; i >= 0; i--) if (ps[i] != null) return i; return -1; };
+
+/* The months that actually carry delivery numbers, oldest first, at most six.
+   A month with no imports is not a month the floor delivered nothing in — it is
+   a month nobody uploaded, and plotting it as zero would invent a collapse. */
+function deliverySeries(data, roster, thr) {
+  const months = Object.keys(data.months || {}).sort();
+  const rows = [];
+  for (const key of months) {
+    const rates = channelRates(data.months[key], roster);
+    if (!rates.some((r) => r.seen && r.pct != null)) continue;
+    rows.push({ key, rates });
+  }
+  const tail = rows.slice(-6);
+  return CHANNEL_LIST.map((c) => {
+    const target = thr[c.id].green;
+    const pts = tail.map((r) => {
+      const hit = r.rates.find((x) => x.id === c.id);
+      return { key: r.key, pct: hit && hit.pct != null ? hit.pct * 100 : null };
+    });
+    return { id: c.id, label: c.label, target, hue: CHANNEL_HUE[c.id], pts };
+  });
+}
+/* The axis wants "Aug"; the app's monthLabel is the long "August 2026" used in
+   headings. Different job, so a different name rather than a second opinion. */
+const flowMonth = (key) => new Date(key + "-02T12:00").toLocaleDateString("en-US", { month: "short" });
+
+function DeliveryFlow({ data, roster, thr, onOpen }) {
+  const series = useMemo(() => deliverySeries(data, roster, thr), [data, roster, thr]);
+  const [idx, setIdx] = useState(0);
+  const [morph, setMorph] = useState(null);   // 0..1 while crossing between channels
+  const raf = useRef(0), timer = useRef(0);
+
+  const usable = series.filter((s) => s.pts.some((p) => p.pct != null));
+  const live = usable.length > 0 ? usable : series;
+  const cur = live[idx % live.length];
+  const nxt = live[(idx + 1) % live.length];
+
+  useEffect(() => {
+    if (live.length < 2) return;
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const step = () => {
+      const t0 = performance.now(), dur = 780;
+      const tick = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const e = p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+        setMorph(e);
+        if (p < 1) raf.current = requestAnimationFrame(tick);
+        else { setMorph(null); setIdx((i) => (i + 1) % live.length); timer.current = setTimeout(step, 2600); }
+      };
+      raf.current = requestAnimationFrame(tick);
+    };
+    timer.current = setTimeout(step, 2600);
+    return () => { clearTimeout(timer.current); cancelAnimationFrame(raf.current); };
+  }, [live.length, idx]);
+
+  if (!cur || cur.pts.length === 0) return null;
+
+  /* The colour and the readout have to change on the SAME frame. Swapping the
+     line at the halfway point while the text waited for the end left the card
+     reading "Phone 19.0%" over a green Showroom line for a third of a second. */
+  const past = morph != null && morph >= .5;
+  const shown = past ? nxt : cur;
+  const at = (s) => s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
+  const av = at(cur), bv = at(nxt);
+  // Where one channel has a month the other doesn't, there is nothing to cross
+  // between, so the side that has a number holds it rather than sliding to zero.
+  const pts = morph == null ? av
+    : av.map((v, i) => (v == null ? bv[i] : bv[i] == null ? v : v + (bv[i] - v) * morph));
+
+  const lastI = flowLast(shown.pts.map((p) => (p.pct == null ? null : p.pct)));
+  const lastPct = lastI < 0 ? null : shown.pts[lastI].pct;
+  const above = lastPct != null && lastPct / shown.target * 100 > 100;
+  const d = flowPath(pts);
+  const y100 = flowY(100).toFixed(1);
+  const base = flowY(0).toFixed(1);
+  const eI = flowLast(pts), sI = flowFirst(pts);
+  const endX = eI < 0 ? FLOW_PL : flowX(eI, pts.length);
+  const endY = eI < 0 ? +base : flowY(pts[eI]);
+  const area = eI < 0 ? "" :
+    `${d} L ${endX.toFixed(1)} ${base} L ${flowX(sI, pts.length).toFixed(1)} ${base} Z`;
+
+  return (
+    <button className="flowcard" onClick={onOpen}>
+      <div className="flow-head">
+        <h5>Delivery against target</h5>
+        <span className="flow-pips">
+          {live.map((s) => <i key={s.id} className={s.id === shown.id ? "on" : ""} />)}
+        </span>
+      </div>
+      <div className="flow-read">
+        <div>
+          <div className="flow-name" style={{ color: shown.hue }}>
+            <span className="flow-dot" style={{ background: shown.hue }} />{shown.label}
+          </div>
+          <div className="flow-val" style={{ color: shown.hue }}>
+            {lastPct == null ? "—" : lastPct.toFixed(1) + "%"}
+          </div>
+          <div className="flow-tar">
+            {lastPct == null ? `target ${shown.target}%`
+              : above ? `${(lastPct - shown.target).toFixed(1)} over target ${shown.target}%`
+              : `${(shown.target - lastPct).toFixed(1)} to target ${shown.target}%`}
+          </div>
+        </div>
+        {above && (
+          <span className="flow-above"><PixIcon glyph="check" size={11} />Above target</span>
+        )}
+      </div>
+      <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H}`} role="img"
+        aria-label={`${shown.label} delivery against its ${shown.target}% target, by month`}>
+        <defs>
+          {/* only the part of the fill that sits over the rule gets the green */}
+          <clipPath id="flow-above"><rect x="0" y="0" width={FLOW_W} height={y100} /></clipPath>
+        </defs>
+        <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
+        <line className="flow-rule" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={y100} y2={y100} />
+        <text className="flow-rulelbl" x={FLOW_W - FLOW_PR} y={+y100 - 4} textAnchor="end">
+          TARGET {shown.target}%
+        </text>
+        {area && <path d={area} fill={shown.hue} opacity=".10" />}
+        {area && <path d={area} fill="#1E8F45" opacity=".20" clipPath="url(#flow-above)" />}
+        <path d={d} fill="none" stroke={shown.hue} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        {eI >= 0 && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill={shown.hue} stroke="#FFF" strokeWidth="2.5" />}
+        {eI >= 0 && above && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="9" fill="none" stroke="#1E8F45" strokeWidth="2" opacity=".9" />}
+        {shown.pts.length > 1 && <>
+          <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowMonth(shown.pts[0].key)}</text>
+          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
+            {flowMonth(shown.pts[shown.pts.length - 1].key)}
+          </text>
+        </>}
+        <text className="flow-axis" x={FLOW_PL} y={+base - 3}>0</text>
+      </svg>
+      {shown.pts.length < 2 && (
+        <div className="flow-note">One month on file so far. The line fills in as months land.</div>
+      )}
+    </button>
+  );
+}
+
+/* All three at once, for the sheet the card opens. The flow stops and every line
+   draws in together, each direct-labelled. */
+function DeliveryAll({ data, roster, thr }) {
+  const series = useMemo(() => deliverySeries(data, roster, thr), [data, roster, thr]);
+  const y100 = flowY(100).toFixed(1);
+  const base = flowY(0).toFixed(1);
+  const any = series.find((s) => s.pts.length > 0);
+  if (!any) return null;
+  return (
+    <>
+      <div className="flow-legend">
+        {series.map((s) => (
+          <b key={s.id}><i style={{ background: s.hue }} />{s.label} · target {s.target}%</b>
+        ))}
+      </div>
+      <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H + 8}`} role="img"
+        aria-label="All three channels against their targets, by month">
+        <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
+        <line className="flow-rule" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={y100} y2={y100} />
+        <text className="flow-rulelbl" x={FLOW_W - FLOW_PR} y={+y100 - 4} textAnchor="end">TARGET</text>
+        {series.map((s, k) => {
+          const ps = s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
+          const li = flowLast(ps);
+          if (li < 0) return null;
+          const lx = flowX(li, ps.length), ly = flowY(ps[li]);
+          return (
+            <g key={s.id}>
+              <path className="flow-draw" d={flowPath(ps)} fill="none" stroke={s.hue} strokeWidth="2.2"
+                strokeLinecap="round" strokeLinejoin="round" style={{ animationDelay: k * 180 + "ms" }} />
+              <circle cx={lx.toFixed(1)} cy={ly.toFixed(1)} r="3.6" fill={s.hue} stroke="#FFF" strokeWidth="2" />
+              <text x={(lx - 6).toFixed(1)} y={(ly - 8).toFixed(1)} textAnchor="end"
+                fontSize="8.5" fontWeight="700" fill={s.hue}>{s.label}</text>
+            </g>
+          );
+        })}
+        {any.pts.length > 1 && <>
+          <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowMonth(any.pts[0].key)}</text>
+          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
+            {flowMonth(any.pts[any.pts.length - 1].key)}
+          </text>
+        </>}
+      </svg>
+    </>
+  );
+}
+
+/* The card and the sheet it opens. Pressing a card that bloops up a modal is the
+   whole interaction — there is no "Dive" button, because a button that says
+   "there is more here" is a worse version of the card just being pressable. */
+function DeliveryCard({ config, store, data }) {
+  const [open, setOpen] = useState(false);
+  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && boardRoleIds.has(a.roleId));
+  const thr = normThresholds(store.thresholds);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  return (
+    <>
+      <DeliveryFlow data={data} roster={roster} thr={thr} onOpen={() => setOpen(true)} />
+      {open && (
+        <Overlay>
+          <div className="bsheet-root" role="dialog" aria-label="Delivery, all channels">
+            <div className="bsheet-scrim" onClick={() => setOpen(false)} />
+            <div className="bsheet">
+              <div className="bsheet-head">
+                <div>
+                  <h4>Delivery, all channels</h4>
+                  <div className="bsheet-sub">Each plotted against its own target, by month</div>
+                </div>
+                <button className="bsheet-x" onClick={() => setOpen(false)} aria-label="Close">
+                  <PixIcon glyph="close" size={13} />
+                </button>
+              </div>
+              <div className="bsheet-body">
+                <DeliveryAll data={data} roster={roster} thr={thr} />
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+    </>
+  );
+}
+
 function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
   const M = data.months?.[ym()];
   const restrictions = data.restrictions || {};
@@ -15390,25 +15813,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   // which is why the popup read roughly double the Delivery Summary's own totals.
   const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
   const closingRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
-  const chanRate = (field) => {
-    let units = 0, leads = 0, seen = false;
-    for (const a of closingRoster) {
-      const st = M?.stats?.[norm(a.name)];
-      const u = st?.[field + "Units"];
-      const pc = st?.[field + "Pct"];
-      if (u == null) continue;
-      seen = true; units += u;
-      const real = st?.[field + "Leads"] ?? (field === "internet" ? st?.opps : null);
-      if (real != null) leads += real;
-      else if (pc != null && pc > 0) leads += u / pc;   // older rows, before leads were stored
-    }
-    return { units, leads, pct: leads > 0 ? units / leads : null, seen };
-  };
-  const closing = [
-    { id: "internet", label: "Internet", ...chanRate("internet") },
-    { id: "phone", label: "Phone", ...chanRate("phone") },
-    { id: "showroom", label: "Showroom", ...chanRate("showroom") },
-  ];
+  const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
 
@@ -17177,8 +17582,8 @@ function LogoCropper({ src, onCancel, onSave }) {
 }
 
 /* ---------------- Shell + styles ---------------- */
-function Shell({ children, entering }) {
-  return <div className={"lpc" + (entering ? " is-entering" : "")}>
+function Shell({ children, entering, style }) {
+  return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
@@ -17200,19 +17605,30 @@ function Shell({ children, entering }) {
    module's header (a store picker, a saving dot), and the nav triple for the
    tabs it has, if it has any.
 
-   A module with no tabs (The Board) simply gets no bottom bar, and the
-   hamburger comes back for it — see .topbar.no-botnav in the mobile rules. The
-   drawer behind it always carries Switch tool, which is the door that was
-   missing. */
+   Every module gets the bar, because the bar carries tools rather than sections.
+   A module with no sections simply has no chip strip. That is what finally
+   closes the dead-end bug: the way out of a tool is a fixture of the shell, not
+   something a module has to supply. */
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
-  right, navItems, navValue, navOnChange, appModule, onToolChange, storeData, storeName,
-  children,
+  right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
+  storeData, storeName, brand, children,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /* The store's palette, hoisted to the shell root so the chrome can use it. The
+     hero has always set these on itself; the bar and the strip are the store's
+     surfaces too, and a bar that stays app-blue on a Honda-red board reads as
+     belonging to a different product. */
+  const b = brand || DEFAULT_BRAND;
   return (
-    <Shell entering={entering}>
-      <header className={"topbar no-print" + (navItems ? "" : " no-botnav")}>
+    <Shell entering={entering} style={{ "--sp": b.primary, "--sd": b.deep, "--sa": b.accent }}>
+      {/* The header and the section strip stick as one block. A sticky element
+          can only move inside its own containing block, so the wrapper is what
+          sticks and the two rows inside it are static — otherwise the strip needs
+          a hardcoded `top` equal to the header's height, and that number is
+          different at 320 and at 430. */}
+      <div className="topstack no-print">
+      <header className="topbar no-print">
         <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin}
           onSignOut={onSignOut} onReplayIntro={onReplayIntro} onHelp={onHelp} />
         <div className="topbar-right">
@@ -17224,12 +17640,16 @@ function AppShell({
         </button>
       </header>
 
+      <SectionStrip items={navItems} value={navValue} onChange={navOnChange}
+        appModule={appModule} storeData={storeData} />
+      </div>
+
       {children}
 
       <BottomNav
-        items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData}
         onToolChange={onToolChange}
+        onImport={onImport}
         onMore={() => setDrawerOpen(true)} />
       <MobileDrawer
         open={drawerOpen} onClose={() => setDrawerOpen(false)}
@@ -18283,7 +18703,9 @@ function Style() {
            punching through and making every step obvious.
          - A gradient fade below the bar (::after) so elements ease out from under it
            instead of popping across a hard edge. */
-      .topbar { position: sticky; top: 0; z-index: 300; display:flex; align-items:center; justify-content:space-between;
+      /* .topstack is what sticks; the header inside it is static. See AppShell. */
+      .topstack { position: sticky; top: 0; z-index: 300; }
+      .topbar { display:flex; align-items:center; justify-content:space-between;
         padding:12px 24px; background: rgba(255,255,255,.9); backdrop-filter: saturate(170%) blur(16px);
         -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(16,32,52,.07);
         box-shadow: 0 1px 0 rgba(16,32,52,.02), 0 8px 24px -18px rgba(16,32,52,.16);
@@ -19169,7 +19591,11 @@ function Style() {
         color: color-mix(in srgb, var(--role) 72%, #12212F); }
       .role-empty { padding:16px; border:1.5px dashed var(--line); border-radius:12px; color:var(--ink-3); text-align:center; }
       .assoc-card { border-bottom:1px solid rgba(0,0,0,.05); padding:10px 0 12px; transition: background .2s; border-radius:10px; }
-      .assoc-card:last-child { border-bottom:none; }
+      /* :last-of-type, not :last-child — the "show the other N" button now sits
+         after the cards, so no card is the last child any more and every divider
+         came back. The button is a <button>, so the last div is still the last
+         card. */
+      .assoc-card:last-of-type { border-bottom:none; }
       .assoc-row { display:flex; align-items:center; gap:10px; cursor:grab; flex-wrap:wrap; }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
@@ -20043,6 +20469,67 @@ function Style() {
 
       @media (max-width: 700px) { .assoc-name { flex:1 1 auto; } }
 
+      /* the roll-up cap is desktop-inert: see the mobile block for .rolled */
+      .roll-more { display:none; }
+
+      /* ---------------- Delivery, flowing ---------------- */
+      .flowcard { display:block; width:100%; text-align:left; font:inherit; cursor:pointer;
+        background:var(--card); border:1px solid var(--line); border-radius:16px;
+        padding:14px 15px; margin:14px 0 0; box-shadow:var(--shadow-1);
+        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease); }
+      .flowcard:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:rgba(16,32,52,.2); }
+      .flowcard:active { transform:scale(.985); }
+      .flowcard:focus-visible { outline:2px solid var(--sp, var(--blue)); outline-offset:2px; }
+      .flow-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .flow-head h5 { margin:0; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+        color:var(--ink-2); font-weight:800; }
+      .flow-pips { display:flex; gap:4px; }
+      .flow-pips i { width:5px; height:5px; border-radius:50%; background:var(--line);
+        transition:background .35s var(--ease), width .35s var(--ease); }
+      .flow-pips i.on { width:15px; border-radius:999px; background:var(--ink-3); }
+      .flow-read { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:8px; }
+      .flow-name { display:flex; align-items:center; gap:7px; font-family:var(--font-display);
+        font-size:15px; font-weight:700; transition:color .28s var(--ease); }
+      .flow-dot { width:10px; height:10px; border-radius:3px; flex:0 0 auto; transition:background .28s var(--ease); }
+      .flow-val { font-family:var(--font-display); font-size:29px; font-weight:700; line-height:1;
+        font-variant-numeric:tabular-nums; transition:color .28s var(--ease); }
+      .flow-tar { font-size:11px; color:var(--ink-2); margin-top:2px; }
+      .flow-above { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:800;
+        padding:3px 8px; border-radius:999px; background:rgba(48,177,85,.16); color:#1E8F45;
+        animation:flowPop .55s var(--ease-bloop) both; }
+      @keyframes flowPop { from { opacity:0; transform:scale(.4) rotate(-8deg); } to { opacity:1; transform:none; } }
+      .flow-plot { width:100%; display:block; overflow:visible; margin-top:6px; }
+      .flow-axis { font-size:8.5px; fill:var(--ink-2); }
+      .flow-rule { stroke:var(--ink-2); stroke-width:1; stroke-dasharray:4 4; opacity:.55; }
+      .flow-rulelbl { font-size:8px; fill:var(--ink-2); font-weight:700; }
+      .flow-zero { stroke:rgba(16,32,52,.16); stroke-width:1; }
+      .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
+      .flow-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:10.5px; color:var(--ink-2); }
+      .flow-legend b { display:inline-flex; align-items:center; gap:5px; font-weight:650; color:var(--ink); }
+      .flow-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
+      .flow-draw { stroke-dasharray:600; stroke-dashoffset:600; animation:flowDraw 1.15s var(--ease) both; }
+      @keyframes flowDraw { to { stroke-dashoffset:0; } }
+
+      /* the sheet a card bloops up */
+      .bsheet-root { position:fixed; inset:0; z-index:365; display:flex; align-items:center; justify-content:center; }
+      .bsheet-scrim { position:absolute; inset:0; background:rgba(16,32,52,.45); animation:bsFade .3s var(--ease) both; }
+      .bsheet { position:relative; width:min(460px, calc(100vw - 28px)); max-height:82vh;
+        display:flex; flex-direction:column; overflow:hidden;
+        background:var(--card); border-radius:20px; box-shadow:0 24px 60px -18px rgba(16,32,52,.55);
+        animation:bsPop .42s var(--ease-bloop) both; }
+      @keyframes bsFade { from { opacity:0; } to { opacity:1; } }
+      @keyframes bsPop { from { opacity:0; transform:scale(.86); } to { opacity:1; transform:none; } }
+      .bsheet-head { padding:15px 16px 10px; border-bottom:1px solid var(--line);
+        display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+      .bsheet-head h4 { margin:0; font-size:15.5px; font-weight:700; letter-spacing:-.01em; }
+      .bsheet-sub { font-size:11.5px; color:var(--ink-2); margin-top:2px; }
+      .bsheet-x { border:none; background:var(--line); width:28px; height:28px; border-radius:50%;
+        cursor:pointer; color:var(--ink); display:flex; align-items:center; justify-content:center;
+        flex:0 0 auto; transition:transform .25s var(--ease-bloop), background .2s var(--ease); }
+      .bsheet-x:active { transform:scale(.88); }
+      .bsheet-body { overflow-y:auto; overscroll-behavior:contain; padding:14px 16px 18px;
+        display:flex; flex-direction:column; gap:11px; }
+
       /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
       @media (prefers-reduced-motion: reduce) {
         .lpc *, .lpc *::before, .lpc *::after {
@@ -20062,6 +20549,10 @@ function Style() {
         .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
         .chip-warn .chip-dot, .leader-crown { animation: none !important; }
         .logo-loading .logo-spin, .logo-loading .logo-trail, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
+        /* the flow already refuses to cycle under reduce-motion; this is the
+           draw-in and the pop that are pure decoration */
+        .flow-draw { animation:none !important; stroke-dashoffset:0 !important; }
+        .flow-above, .bsheet, .bsheet-scrim { animation:none !important; transform:none !important; }
       }
 
       @media print {
@@ -20082,7 +20573,7 @@ function Style() {
          per-widget breakpoints. Phones get a native-style bottom bar, the hero
          reflows to a single column, tables stack, and popups tap open.
          ===================================================================== */
-      .botnav { display:none; }
+      .botnav, .sect-strip { display:none; }
       @media (max-width: 760px) {
         /* --- chrome --- */
         /* z-index stays at the desktop value. At 40 the hero (220), the hero band
@@ -20090,7 +20581,7 @@ function Style() {
            so the store name and the greeting card collided while scrolling. It has
            to sit above page content but below the bottom bar (340), the help
            button (350) and every sheet (360+). */
-        .topbar { position:sticky; top:0; z-index:300; padding:10px 14px; gap:10px;
+        .topbar { padding:10px 14px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
         /* The <=720px block above still forces topbar-right onto its own
@@ -20098,55 +20589,119 @@ function Style() {
            controls lived there, but the bottom bar replaced all of it and the
            row now holds only the store selector — so it cost a second header
            row, and every page started ~50px further down. One row again. */
+        /* ...and the <=720px block also sets flex-wrap:wrap on the header itself,
+           which is the other half of it: the store picker is capped at 62vw, so
+           brand + picker overflowed one line and the picker dropped to a second
+           row. Measured 85px of header at 320/360/390 against 56px at 430. One
+           row, and the picker shrinks with an ellipsis instead of wrapping. */
+        .topbar { flex-wrap:nowrap; }
         .topbar-right { width:auto; order:0; flex:1 1 auto; min-width:0;
           justify-content:flex-end; gap:8px; }
-        .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
-        .hamburger { display:none !important; }                       /* replaced by the bottom bar */
-        /* ...except in a module with no tabs, which therefore has no bottom bar
-           to hold a More button. The Board is the only one today. Without this
-           the drawer has no opener and the module is a room with no door — the
-           bug solo-top used to paper over with a scrolling strip of tool
-           buttons wedged into the header. One button instead of six. */
-        .topbar.no-botnav .hamburger { display:flex !important; }
+        .topbar-right .view-select { flex:0 1 auto; min-width:0; text-overflow:ellipsis; }
+        .topbar .tool-row, .whoami, .role-tag { display:none; }   /* the tools live in the bar */
+        /* The bar carries tools now, so every module has one and there is never a
+           header without a way out. This used to need a class and a second rule. */
+        .hamburger { display:none !important; }
         .brand-title { font-size:16px; }
         .view-select { max-width:62vw; font-size:13px; }
         /* the bar measures 55px before the home-indicator inset, so at bottom:18px
            the help button sat on top of the More tab and swallowed its taps */
         .help-fab:not(.inline) { bottom:calc(67px + env(safe-area-inset-bottom, 0px)); }
         .btn-quiet { padding:7px 10px; }
-        .seg-wrap { display:none; }                                   /* the desktop tab strip */
+        /* The sections moved to the chip strip, so the desktop tab control goes —
+           but the associate search lives in this same row, and hiding the whole
+           row took the only way to find a salesperson by name on a phone with it.
+           Hide the control, keep the row, give the field the full width. */
+        .seg-wrap .seg { display:none; }
+        /* padding lives on the field, not the row, so the rows that hold only a
+           hidden tab control (admin, Live Floor) collapse to nothing */
+        .seg-wrap { padding:0; }
+        .seg-wrap .search-top { margin:10px 14px 0; max-width:none; flex:1 1 auto; min-width:0; }
 
         /* --- page gets out of the way of the bar --- */
         .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
         .settings, .checkout, .coaching, .plates {
           padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
 
-        /* --- bottom bar --- */
+        /* --- the first five, then the rest on request --- */
+        .assoc-card.rolled { display:none; }
+        .roll-more { display:block; width:100%; font:inherit; font-size:12.5px; font-weight:700;
+          color:var(--sp, var(--blue)); cursor:pointer; background:var(--card);
+          border:1px dashed var(--line); border-radius:13px; padding:11px; margin-top:8px;
+          transition:border-color .2s var(--ease), transform .25s var(--ease-bloop); }
+        .roll-more:active { transform:scale(.98); }
+
+        /* --- the sections, as a chip strip --- */
+        /* These used to be the bottom bar. They sit under the header now, above
+           the page, and scroll rather than hide the fifth one behind "More". */
+        .sect-strip { display:flex; gap:7px;
+          padding:9px 14px 8px; overflow-x:auto; scrollbar-width:none;
+          background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
+          -webkit-backdrop-filter:blur(18px) saturate(160%);
+          box-shadow:0 1px 0 rgba(16,40,68,.07); }
+        .sect-strip::-webkit-scrollbar { display:none; }
+        .sect-chip { flex:0 0 auto; position:relative; border:1px solid var(--line);
+          background:var(--card); border-radius:999px; padding:5px 13px; font:inherit;
+          font-size:12.5px; font-weight:650; color:var(--ink-2); cursor:pointer;
+          white-space:nowrap; transition:color .22s var(--ease), background .22s var(--ease),
+          border-color .22s var(--ease), transform .25s var(--ease-bloop); }
+        .sect-chip.on { color:#fff; background:var(--ink); border-color:var(--ink); }
+        .sect-chip:active { transform:scale(.94); }
+        .sect-chip .badge { margin-left:6px; font-size:9px; font-weight:800; padding:0.5px 4px;
+          line-height:1.6; border-radius:999px; vertical-align:1px; }
+
+        /* --- bottom bar: the tools --- */
         .botnav { position:fixed; left:0; right:0; bottom:0; z-index:340; display:flex;
-          padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+          align-items:flex-end;
+          padding:6px 2px calc(7px + env(safe-area-inset-bottom, 0px));
           background:rgba(255,255,255,.9); backdrop-filter:blur(20px) saturate(180%);
           -webkit-backdrop-filter:blur(20px) saturate(180%);
           box-shadow:0 -1px 0 rgba(16,40,68,.10), 0 -8px 24px rgba(16,40,68,.06); }
-        .botnav-btn { flex:1; position:relative; display:flex; flex-direction:column; align-items:center; gap:3px;
-          border:none; background:none; font:inherit; cursor:pointer; padding:5px 2px; border-radius:12px;
-          color:var(--ink-3); transition:color .2s var(--ease), transform .2s var(--ease-bloop); }
-        .botnav-btn.on { color:var(--blue); }
+        /* the bite the centre button sits in, so it reads as part of the bar
+           rather than a disc floating over it */
+        .botnav-notch { position:absolute; left:50%; top:-1px; transform:translateX(-50%);
+          width:78px; height:34px; background:var(--bg); border-radius:0 0 999px 999px;
+          box-shadow:inset 0 1px 0 rgba(16,40,68,.10); pointer-events:none; }
+        .botnav-btn { flex:1; min-width:0; position:relative; z-index:1; display:flex;
+          flex-direction:column; align-items:center; gap:3px;
+          border:none; background:none; font:inherit; cursor:pointer; padding:5px 1px; border-radius:12px;
+          color:var(--ink-3); transition:color .22s var(--ease), transform .2s var(--ease-bloop); }
+        .botnav-btn.on { color:var(--sp, var(--blue)); }
         .botnav-btn:active { transform:scale(.9); }
         /* holds an SVG now, not a character, so it needs a box rather than a
            font size or the row height drifts between glyphs */
         .botnav-ico { display:flex; align-items:center; justify-content:center;
-          width:21px; height:21px; line-height:0; }
+          width:21px; height:21px; line-height:0;
+          transition:transform .42s var(--ease-bloop); }
         .botnav-ico .pix { display:block; }
-        .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
-        .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
-        /* The import count sat squarely on top of its glyph, so the badge and the
-           arrow smeared into each other and neither read. It now hangs off the
-           icon's top-right corner, clear of it, with a ring to lift it off the
-           bar. Scaling a padded pill was also why its text looked soft — it is
-           drawn at its real size now instead of being shrunk with a transform. */
-        .botnav-btn .badge { position:absolute; top:-1px; left:calc(50% + 11px); right:auto;
-          transform:none; font-size:9px; font-weight:800; padding:0.5px 4px; line-height:1.6;
-          border-radius:999px; white-space:nowrap; box-shadow:0 0 0 1.5px rgba(255,255,255,.95); }
+        .botnav-lbl { font-size:9.5px; font-weight:700; letter-spacing:-.01em;
+          white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+        .botnav-btn.on .botnav-ico { transform:translateY(-2px); }
+
+        /* --- the centre verb --- */
+        /* align-self:stretch is load-bearing: under align-items:flex-end the slot
+           would collapse to height 0 and every negative top offset below would measure
+           from the bar's BOTTOM edge, putting the button off the screen. */
+        .botnav-slot { flex:0 0 62px; position:relative; align-self:stretch; z-index:2; }
+        .botnav-halo { position:absolute; left:50%; top:-27px; transform:translateX(-50%);
+          width:62px; height:62px; pointer-events:none; }
+        .botnav-halo circle { fill:none; stroke-width:3.5; stroke-linecap:round; }
+        .botnav-halo .bh-trk { stroke:rgba(16,40,68,.12); }
+        .botnav-halo .bh-arc { stroke:var(--sa, var(--lime)); transition:stroke-dashoffset 1s var(--ease); }
+        .botnav-fab { position:absolute; left:50%; top:-22px; width:52px; height:52px;
+          border-radius:50%; border:none; cursor:pointer; color:#fff;
+          background:linear-gradient(145deg, var(--sp, var(--blue)), var(--sd, #16324f));
+          transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
+          box-shadow:0 10px 24px -8px rgba(16,40,68,.5);
+          transition:transform .4s var(--ease-bloop); }
+        .botnav-fab:active { transform:translateX(-50%) scale(.9); }
+        .botnav-fab.ready { background:linear-gradient(145deg, var(--green), #1E8F45); }
+        /* wider than the slot so "Imported" fits, which means it overhangs the
+           buttons either side by ~6px — pointer-events:none keeps it from eating
+           taps meant for Activity and Live Floor. */
+        .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:6px; text-align:center;
+          font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
+          pointer-events:none; }
 
         /* --- hero reflows to one column --- */
         .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
@@ -20239,8 +20794,16 @@ function Style() {
 
       @media (max-width: 400px) {
         .botnav-lbl { font-size:9px; }
+        .sect-chip { font-size:12px; padding:5px 11px; }
         .mdial { width:calc(50% - 7px); }
         .hero-store { font-size:20px; }
+      }
+      /* "Performance" is the longest tool name and the only one that runs out of
+         room: it needs 64px in a 62px button at 320. Nothing here is renamed to
+         make it fit — the label just gets smaller on the narrowest phones. */
+      @media (max-width: 340px) {
+        .botnav-lbl { font-size:8.5px; }
+        .botnav-slot { flex:0 0 56px; }
       }
 /* ================= Phone line — salesperson page ================= */
 .q-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;
