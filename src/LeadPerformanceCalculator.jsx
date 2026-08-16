@@ -2979,6 +2979,16 @@ export default function LeadPerformanceCalculator() {
     setTab(mod === "activity" ? "checkout" : "board");
   };
 
+  /* The bar's centre button. Importing is the same act in every tool, so the
+     button is always there and always means the same thing — but only two
+     modules actually own an import screen. From the other four it lands on
+     Performance's, which is where the files it wants would go anyway. */
+  const goImport = () => {
+    if (appModule === "perf" || appModule === "activity") { setTab("import"); return; }
+    setAppModule("perf");
+    setTab("import");
+  };
+
   const isAdmin = session.role === "admin";
   const isOverseer = session.role === "overseer";
   const hasOverview = isAdmin || (isOverseer && (session.stores || []).length > 1);
@@ -3002,9 +3012,7 @@ export default function LeadPerformanceCalculator() {
       <AppShell entering={entering}
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
-        appModule="board" onToolChange={switchTool}>
-        {/* The Board has no tabs of its own, so it gets no bottom bar and the
-            hamburger comes back for it. Switch tool lives in the drawer. */}
+        appModule="board" onToolChange={switchTool} onImport={goImport}>
         <div className="page">
           <BoardLauncher config={config} session={session}
             onLaunch={(storeId) => openLeaderboard(config, storeId)}
@@ -3026,6 +3034,7 @@ export default function LeadPerformanceCalculator() {
         isAdmin={isAdmin}
         onSaveConfig={persistConfig}
         onToolChange={switchTool}
+        onImport={goImport}
         shell={{
           entering, session, isAdmin, isOverseer,
           onSignOut: signOut, onReplayIntro: replayIntro,
@@ -3072,7 +3081,8 @@ export default function LeadPerformanceCalculator() {
     <AppShell entering={entering}
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
-      appModule={appModule} onToolChange={switchTool}
+      appModule={appModule} onToolChange={switchTool} onImport={goImport}
+      brand={currentStore?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeData={storeData}
       storeName={currentStore?.name || (view === "admin" ? "All Stores" : view === "combined" ? "Combined" : "")}
@@ -8991,7 +9001,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* `shell` is the chrome the app already has on hand — who is signed in, how to
    sign out, the help node — passed as one object so this module doesn't grow
    six props it only forwards. */
-function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, shell }) {
+function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onImport, shell }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => {
     if (currentStoreId && stores.some((s) => s.id === currentStoreId)) return currentStoreId;
@@ -9105,7 +9115,8 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
 
   return (
     <AppShell {...shell}
-      appModule={queue} onToolChange={onToolChange}
+      appModule={queue} onToolChange={onToolChange} onImport={onImport}
+      brand={store?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeName={store?.name || ""}
       right={<>
@@ -15011,25 +15022,112 @@ function ToolSwitcher({ value, onChange }) {
 /* Native-style bottom bar. Up to four primary destinations plus tool-switch live
    inline; anything past that folds into a More sheet. Same nav model the drawer
    used, so nothing about the desktop paths changes. */
-function BottomNav({ items, value, onChange, appModule, onToolChange, storeData, onMore }) {
-  if (!items || !items.length) return null;
-  const primary = items.slice(0, 4);
-  const overflow = items.slice(4);
-  const activeInOverflow = overflow.some(([id]) => id === value);
+/* The bar carries TOOLS, not sections.
+
+   It used to carry sections, which put it in competition with the drawer and
+   left switching tools two taps deep in a menu — the thing that made Live Floor
+   and The Line feel like dead ends even after they could be reached. Sections
+   moved up to the chip strip under the header, where there is room for six of
+   them and where they belong: they are where you are inside a tool, not which
+   tool you are in.
+
+   The centre is a verb rather than a destination. Import is the one thing a
+   manager does on a phone rather than reads, it is the same act in every tool,
+   and the ring around it is how much of today's importing is done — so the bar
+   answers "is my data in yet" without opening anything. */
+const BAR_TOOLS = [
+  ["perf", "Performance", "chart"],
+  ["activity", "Activity", "handshake"],
+  ["floor", "Live Floor", "users"],
+];
+
+/* Today's imports, as a fraction. Delivery Summaries arrive by email, so the
+   manager only ever uploads two on the performance side and one on activity —
+   the same counts the Import badge shows, read the same way. */
+function importProgress(storeData, activity) {
+  if (!storeData) return { done: 0, need: 1 };
+  const t = storeData.months?.[ym()]?.imports?.[today()] || {};
+  if (activity) return { done: t.activity ? 1 : 0, need: 1 };
+  return { done: ["appointment", "video"].filter((k) => t[k]).length, need: 2 };
+}
+
+function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
+  const activity = appModule === "activity";
+  const { done, need } = importProgress(storeData, activity);
+  const R = 27, C = 2 * Math.PI * R;
+  const ready = need > 0 && done >= need;
+
   return (
-    <nav className="botnav no-print" aria-label="Sections">
-      {primary.map(([id, label]) => (
-        <button key={id} className={"botnav-btn" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
-          <span className="botnav-ico"><PixIcon glyph={NAV_ICON[id] || "dot"} size={21} fine /></span>
-          <span className="botnav-lbl">{NAV_SHORT[id] || label}</span>
-          {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+    <nav className="botnav no-print" aria-label="Tools">
+      <span className="botnav-notch" aria-hidden="true" />
+      {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => (
+        <button key={id} className={"botnav-btn" + (appModule === id ? " on" : "")}
+          onClick={() => onToolChange(id)}>
+          <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
+          <span className="botnav-lbl">{label}</span>
         </button>
       ))}
-      <button className={"botnav-btn" + (activeInOverflow ? " on" : "")} onClick={onMore}>
+
+      {/* align-self:stretch is load-bearing. Under align-items:flex-end the slot
+          collapses to height 0, and a negative `top` on the button then measures
+          from the bar's BOTTOM edge — which is how the centre button ended up
+          off the bottom of the screen in the drafts. */}
+      <div className="botnav-slot">
+        <svg className="botnav-halo" viewBox="0 0 62 62" aria-hidden="true">
+          <circle className="bh-trk" cx="31" cy="31" r={R} />
+          <circle className="bh-arc" cx="31" cy="31" r={R} transform="rotate(-90 31 31)"
+            strokeDasharray={C.toFixed(1)} strokeDashoffset={(C * (1 - done / need)).toFixed(1)} />
+        </svg>
+        <button className={"botnav-fab" + (ready ? " ready" : "")} onClick={onImport}
+          aria-label={ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today`}>
+          <PixIcon glyph={ready ? "check" : "arrowup"} size={21} />
+        </button>
+        <span className="botnav-fablbl">{ready ? "Imported" : `Import ${done}/${need}`}</span>
+      </div>
+
+      {BAR_TOOLS.slice(2).map(([id, label, glyph]) => (
+        <button key={id} className={"botnav-btn" + (appModule === id ? " on" : "")}
+          onClick={() => onToolChange(id)}>
+          <span className="botnav-ico"><PixIcon glyph={glyph} size={21} /></span>
+          <span className="botnav-lbl">{label}</span>
+        </button>
+      ))}
+      <button className="botnav-btn" onClick={onMore}>
         <span className="botnav-ico"><PixIcon glyph="more" size={21} /></span>
         <span className="botnav-lbl">More</span>
       </button>
     </nav>
+  );
+}
+
+/* The sections, as a scrolling strip of chips under the header. This is what the
+   bottom bar used to hold. A strip takes every section a tool has rather than
+   the first four plus an overflow menu, so nothing is hidden behind "More". */
+function SectionStrip({ items, value, onChange, appModule, storeData }) {
+  const ref = useRef(null);
+  // Keep the active chip in view when the section changes from somewhere else
+  // (the drawer, a card that jumps to Import). scrollIntoView's "nearest" scrolls
+  // every ancestor including the document, which is what moved the page 407px on
+  // mount before — so this scrolls the strip itself and nothing else.
+  useEffect(() => {
+    const strip = ref.current;
+    if (!strip) return;
+    const on = strip.querySelector(".sect-chip.on");
+    if (!on) return;
+    const want = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
+  }, [value]);
+
+  if (!items || items.length < 2) return null;
+  return (
+    <div className="sect-strip no-print" ref={ref}>
+      {items.map(([id, label]) => (
+        <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
+          {NAV_SHORT[id] || label}
+          {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -17177,8 +17275,8 @@ function LogoCropper({ src, onCancel, onSave }) {
 }
 
 /* ---------------- Shell + styles ---------------- */
-function Shell({ children, entering }) {
-  return <div className={"lpc" + (entering ? " is-entering" : "")}>
+function Shell({ children, entering, style }) {
+  return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
@@ -17200,19 +17298,30 @@ function Shell({ children, entering }) {
    module's header (a store picker, a saving dot), and the nav triple for the
    tabs it has, if it has any.
 
-   A module with no tabs (The Board) simply gets no bottom bar, and the
-   hamburger comes back for it — see .topbar.no-botnav in the mobile rules. The
-   drawer behind it always carries Switch tool, which is the door that was
-   missing. */
+   Every module gets the bar, because the bar carries tools rather than sections.
+   A module with no sections simply has no chip strip. That is what finally
+   closes the dead-end bug: the way out of a tool is a fixture of the shell, not
+   something a module has to supply. */
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
-  right, navItems, navValue, navOnChange, appModule, onToolChange, storeData, storeName,
-  children,
+  right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
+  storeData, storeName, brand, children,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /* The store's palette, hoisted to the shell root so the chrome can use it. The
+     hero has always set these on itself; the bar and the strip are the store's
+     surfaces too, and a bar that stays app-blue on a Honda-red board reads as
+     belonging to a different product. */
+  const b = brand || DEFAULT_BRAND;
   return (
-    <Shell entering={entering}>
-      <header className={"topbar no-print" + (navItems ? "" : " no-botnav")}>
+    <Shell entering={entering} style={{ "--sp": b.primary, "--sd": b.deep, "--sa": b.accent }}>
+      {/* The header and the section strip stick as one block. A sticky element
+          can only move inside its own containing block, so the wrapper is what
+          sticks and the two rows inside it are static — otherwise the strip needs
+          a hardcoded `top` equal to the header's height, and that number is
+          different at 320 and at 430. */}
+      <div className="topstack no-print">
+      <header className="topbar no-print">
         <BrandMenu session={session} isOverseer={isOverseer} isAdmin={isAdmin}
           onSignOut={onSignOut} onReplayIntro={onReplayIntro} onHelp={onHelp} />
         <div className="topbar-right">
@@ -17224,12 +17333,16 @@ function AppShell({
         </button>
       </header>
 
+      <SectionStrip items={navItems} value={navValue} onChange={navOnChange}
+        appModule={appModule} storeData={storeData} />
+      </div>
+
       {children}
 
       <BottomNav
-        items={navItems} value={navValue} onChange={navOnChange}
         appModule={appModule} storeData={storeData}
         onToolChange={onToolChange}
+        onImport={onImport}
         onMore={() => setDrawerOpen(true)} />
       <MobileDrawer
         open={drawerOpen} onClose={() => setDrawerOpen(false)}
@@ -18283,7 +18396,9 @@ function Style() {
            punching through and making every step obvious.
          - A gradient fade below the bar (::after) so elements ease out from under it
            instead of popping across a hard edge. */
-      .topbar { position: sticky; top: 0; z-index: 300; display:flex; align-items:center; justify-content:space-between;
+      /* .topstack is what sticks; the header inside it is static. See AppShell. */
+      .topstack { position: sticky; top: 0; z-index: 300; }
+      .topbar { display:flex; align-items:center; justify-content:space-between;
         padding:12px 24px; background: rgba(255,255,255,.9); backdrop-filter: saturate(170%) blur(16px);
         -webkit-backdrop-filter: saturate(170%) blur(16px); border-bottom: 1px solid rgba(16,32,52,.07);
         box-shadow: 0 1px 0 rgba(16,32,52,.02), 0 8px 24px -18px rgba(16,32,52,.16);
@@ -20082,7 +20197,7 @@ function Style() {
          per-widget breakpoints. Phones get a native-style bottom bar, the hero
          reflows to a single column, tables stack, and popups tap open.
          ===================================================================== */
-      .botnav { display:none; }
+      .botnav, .sect-strip { display:none; }
       @media (max-width: 760px) {
         /* --- chrome --- */
         /* z-index stays at the desktop value. At 40 the hero (220), the hero band
@@ -20090,7 +20205,7 @@ function Style() {
            so the store name and the greeting card collided while scrolling. It has
            to sit above page content but below the bottom bar (340), the help
            button (350) and every sheet (360+). */
-        .topbar { position:sticky; top:0; z-index:300; padding:10px 14px; gap:10px;
+        .topbar { padding:10px 14px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
         /* The <=720px block above still forces topbar-right onto its own
@@ -20098,16 +20213,19 @@ function Style() {
            controls lived there, but the bottom bar replaced all of it and the
            row now holds only the store selector — so it cost a second header
            row, and every page started ~50px further down. One row again. */
+        /* ...and the <=720px block also sets flex-wrap:wrap on the header itself,
+           which is the other half of it: the store picker is capped at 62vw, so
+           brand + picker overflowed one line and the picker dropped to a second
+           row. Measured 85px of header at 320/360/390 against 56px at 430. One
+           row, and the picker shrinks with an ellipsis instead of wrapping. */
+        .topbar { flex-wrap:nowrap; }
         .topbar-right { width:auto; order:0; flex:1 1 auto; min-width:0;
           justify-content:flex-end; gap:8px; }
-        .topbar .tool-row, .whoami, .role-tag { display:none; }   /* tool-switch lives in More */
-        .hamburger { display:none !important; }                       /* replaced by the bottom bar */
-        /* ...except in a module with no tabs, which therefore has no bottom bar
-           to hold a More button. The Board is the only one today. Without this
-           the drawer has no opener and the module is a room with no door — the
-           bug solo-top used to paper over with a scrolling strip of tool
-           buttons wedged into the header. One button instead of six. */
-        .topbar.no-botnav .hamburger { display:flex !important; }
+        .topbar-right .view-select { flex:0 1 auto; min-width:0; text-overflow:ellipsis; }
+        .topbar .tool-row, .whoami, .role-tag { display:none; }   /* the tools live in the bar */
+        /* The bar carries tools now, so every module has one and there is never a
+           header without a way out. This used to need a class and a second rule. */
+        .hamburger { display:none !important; }
         .brand-title { font-size:16px; }
         .view-select { max-width:62vw; font-size:13px; }
         /* the bar measures 55px before the home-indicator inset, so at bottom:18px
@@ -20121,32 +20239,77 @@ function Style() {
         .settings, .checkout, .coaching, .plates {
           padding:16px 14px calc(78px + env(safe-area-inset-bottom, 0px)); }
 
-        /* --- bottom bar --- */
+        /* --- the sections, as a chip strip --- */
+        /* These used to be the bottom bar. They sit under the header now, above
+           the page, and scroll rather than hide the fifth one behind "More". */
+        .sect-strip { display:flex; gap:7px;
+          padding:9px 14px 8px; overflow-x:auto; scrollbar-width:none;
+          background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
+          -webkit-backdrop-filter:blur(18px) saturate(160%);
+          box-shadow:0 1px 0 rgba(16,40,68,.07); }
+        .sect-strip::-webkit-scrollbar { display:none; }
+        .sect-chip { flex:0 0 auto; position:relative; border:1px solid var(--line);
+          background:var(--card); border-radius:999px; padding:5px 13px; font:inherit;
+          font-size:12.5px; font-weight:650; color:var(--ink-2); cursor:pointer;
+          white-space:nowrap; transition:color .22s var(--ease), background .22s var(--ease),
+          border-color .22s var(--ease), transform .25s var(--ease-bloop); }
+        .sect-chip.on { color:#fff; background:var(--ink); border-color:var(--ink); }
+        .sect-chip:active { transform:scale(.94); }
+        .sect-chip .badge { margin-left:6px; font-size:9px; font-weight:800; padding:0.5px 4px;
+          line-height:1.6; border-radius:999px; vertical-align:1px; }
+
+        /* --- bottom bar: the tools --- */
         .botnav { position:fixed; left:0; right:0; bottom:0; z-index:340; display:flex;
-          padding:6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+          align-items:flex-end;
+          padding:6px 2px calc(7px + env(safe-area-inset-bottom, 0px));
           background:rgba(255,255,255,.9); backdrop-filter:blur(20px) saturate(180%);
           -webkit-backdrop-filter:blur(20px) saturate(180%);
           box-shadow:0 -1px 0 rgba(16,40,68,.10), 0 -8px 24px rgba(16,40,68,.06); }
-        .botnav-btn { flex:1; position:relative; display:flex; flex-direction:column; align-items:center; gap:3px;
-          border:none; background:none; font:inherit; cursor:pointer; padding:5px 2px; border-radius:12px;
-          color:var(--ink-3); transition:color .2s var(--ease), transform .2s var(--ease-bloop); }
-        .botnav-btn.on { color:var(--blue); }
+        /* the bite the centre button sits in, so it reads as part of the bar
+           rather than a disc floating over it */
+        .botnav-notch { position:absolute; left:50%; top:-1px; transform:translateX(-50%);
+          width:78px; height:34px; background:var(--bg); border-radius:0 0 999px 999px;
+          box-shadow:inset 0 1px 0 rgba(16,40,68,.10); pointer-events:none; }
+        .botnav-btn { flex:1; min-width:0; position:relative; z-index:1; display:flex;
+          flex-direction:column; align-items:center; gap:3px;
+          border:none; background:none; font:inherit; cursor:pointer; padding:5px 1px; border-radius:12px;
+          color:var(--ink-3); transition:color .22s var(--ease), transform .2s var(--ease-bloop); }
+        .botnav-btn.on { color:var(--sp, var(--blue)); }
         .botnav-btn:active { transform:scale(.9); }
         /* holds an SVG now, not a character, so it needs a box rather than a
            font size or the row height drifts between glyphs */
         .botnav-ico { display:flex; align-items:center; justify-content:center;
-          width:21px; height:21px; line-height:0; }
+          width:21px; height:21px; line-height:0;
+          transition:transform .42s var(--ease-bloop); }
         .botnav-ico .pix { display:block; }
-        .botnav-lbl { font-size:10px; font-weight:700; letter-spacing:.01em; }
-        .botnav-btn.on .botnav-ico { transform:translateY(-1px); filter:drop-shadow(0 2px 5px rgba(42,94,155,.35)); }
-        /* The import count sat squarely on top of its glyph, so the badge and the
-           arrow smeared into each other and neither read. It now hangs off the
-           icon's top-right corner, clear of it, with a ring to lift it off the
-           bar. Scaling a padded pill was also why its text looked soft — it is
-           drawn at its real size now instead of being shrunk with a transform. */
-        .botnav-btn .badge { position:absolute; top:-1px; left:calc(50% + 11px); right:auto;
-          transform:none; font-size:9px; font-weight:800; padding:0.5px 4px; line-height:1.6;
-          border-radius:999px; white-space:nowrap; box-shadow:0 0 0 1.5px rgba(255,255,255,.95); }
+        .botnav-lbl { font-size:9.5px; font-weight:700; letter-spacing:-.01em;
+          white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+        .botnav-btn.on .botnav-ico { transform:translateY(-2px); }
+
+        /* --- the centre verb --- */
+        /* align-self:stretch is load-bearing: under align-items:flex-end the slot
+           would collapse to height 0 and every negative top offset below would measure
+           from the bar's BOTTOM edge, putting the button off the screen. */
+        .botnav-slot { flex:0 0 62px; position:relative; align-self:stretch; z-index:2; }
+        .botnav-halo { position:absolute; left:50%; top:-27px; transform:translateX(-50%);
+          width:62px; height:62px; pointer-events:none; }
+        .botnav-halo circle { fill:none; stroke-width:3.5; stroke-linecap:round; }
+        .botnav-halo .bh-trk { stroke:rgba(16,40,68,.12); }
+        .botnav-halo .bh-arc { stroke:var(--sa, var(--lime)); transition:stroke-dashoffset 1s var(--ease); }
+        .botnav-fab { position:absolute; left:50%; top:-22px; width:52px; height:52px;
+          border-radius:50%; border:none; cursor:pointer; color:#fff;
+          background:linear-gradient(145deg, var(--sp, var(--blue)), var(--sd, #16324f));
+          transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
+          box-shadow:0 10px 24px -8px rgba(16,40,68,.5);
+          transition:transform .4s var(--ease-bloop); }
+        .botnav-fab:active { transform:translateX(-50%) scale(.9); }
+        .botnav-fab.ready { background:linear-gradient(145deg, var(--green), #1E8F45); }
+        /* wider than the slot so "Imported" fits, which means it overhangs the
+           buttons either side by ~6px — pointer-events:none keeps it from eating
+           taps meant for Activity and Live Floor. */
+        .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:6px; text-align:center;
+          font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
+          pointer-events:none; }
 
         /* --- hero reflows to one column --- */
         .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
@@ -20239,8 +20402,16 @@ function Style() {
 
       @media (max-width: 400px) {
         .botnav-lbl { font-size:9px; }
+        .sect-chip { font-size:12px; padding:5px 11px; }
         .mdial { width:calc(50% - 7px); }
         .hero-store { font-size:20px; }
+      }
+      /* "Performance" is the longest tool name and the only one that runs out of
+         room: it needs 64px in a 62px button at 320. Nothing here is renamed to
+         make it fit — the label just gets smaller on the narrowest phones. */
+      @media (max-width: 340px) {
+        .botnav-lbl { font-size:8.5px; }
+        .botnav-slot { flex:0 0 56px; }
       }
 /* ================= Phone line — salesperson page ================= */
 .q-page{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;
