@@ -557,83 +557,89 @@ function currentStreak(data, a, std) {
    with currentColor so it inherits text color and scales via CSS. This is the
    salesperson dot-matrix language carried across the whole app.
    ========================================================================= */
+/* One grid. Every mark in the app is 5x5 — 25 cells — and there is no second
+   table to disagree with this one.
+
+   There used to be two, a 9x9 and a 5x5, with six marks defined at both. A mark
+   drawn two ways reads as two different marks, and the mismatch is noticeable
+   without being nameable, so PixIcon grew a rule about which grid won for which
+   glyph. The rule is gone because the choice is gone.
+
+   Four things fell out of drawing the whole set at once, none of which the old
+   table enforced:
+     - the four arrows are ONE shape at four rotations, computed rather than
+       drawn, so they cannot drift apart
+     - nothing collides: no two glyphs share a bit pattern
+     - the seven pairs that sit within two cells were each rendered and looked
+       at, because counting cells finds collisions and nothing else. An arrowhead
+       against a flat bar is two cells and unmistakable; a blob with a hole in it
+       counted as perfectly distinct and read as neither a flame nor a gear.
+     - `plus` is unused today and is two cells from all four arrows. If it comes
+       into use, it must not sit beside one.
+
+   Some marks stopped being pictures at this size — handshake, users, car and
+   phone are shapes now, and the label beside them carries the meaning. That was
+   the deliberate trade for having one grid. */
 const PIX = {
-  chart:    ["000000000","000000110","000000110","000110110","000110110","110110110","110110110","110110110","000000000"],
-  calendar: ["010000010","111111111","100000001","101101101","100000001","101101101","100000001","111111111","000000000"],
-  clipboard:["000111000","011111110","010000010","010111010","010000010","010111010","010000010","011111110","000000000"],
-  gear:     ["001010100","011111110","111000111","010000010","110000011","010000010","111000111","011111110","001010100"],
-  user:     ["000111000","001111100","001111100","000111000","000000000","011111110","111111111","111111111","000000000"],
-  users:    ["010001000","111011100","111011100","010001000","000000000","110111011","111111111","111111111","000000000"],
-  check:    ["000000000","000000011","000000110","000001100","010011000","011110000","001100000","000000000","000000000"],
-  close:    ["000000000","011000110","011000110","001101100","000111000","001101100","011000110","011000110","000000000"],
-  arrow:    ["000000000","000010000","000011000","111111100","111111110","111111100","000011000","000010000","000000000"],
-  arrowup:  ["000010000","000111000","001111100","011111110","111111111","000111000","000111000","000111000","000000000"],
-  arrowdown:[["000111000","000111000","000111000","111111111","011111110","001111100","000111000","000010000","000000000"]][0],
-  triup:    ["000000000","000010000","000111000","001111100","011111110","111111111","000000000","000000000","000000000"],
-  tridown:  ["000000000","000000000","000000000","111111111","011111110","001111100","000111000","000010000","000000000"],
-  clock:    ["001111100","011000110","110010011","100010001","100011111","100000001","110000011","011000110","001111100"],
-  phone:    ["001111100","011111110","011000110","011000110","011000110","011000110","011111110","011011110","001111100"],
-  globe:    ["001111100","011000110","110101011","101010101","111111111","101010101","110101011","011000110","001111100"],
-  search:   ["0011111000000","0111111100000","1110001110000","1100000110000","1100000110000","1100000110000","1110001110000","0111111100000","0011111011000","0000000111000","0000000011100","0000000001110","0000000000110"],
-  plus:     ["000000000","000010000","000010000","000010000","011111110","000010000","000010000","000010000","000000000"],
-  trophy:   ["011111110","011111110","110111011","110111011","011111110","000111000","000111000","001111100","011111110"],
-  flame:    ["000010000","000110000","001110000","001111000","011011100","110001110","110000110","011001100","001111000"],
-  lunch:    ["000101000","001010000","000101000","111111100","100000100","100000110","100000100","111111000","000000000"],
-  away:     ["011111100","010000100","010000100","010011100","010011110","010011100","010000100","010000100","011111100"],
-  door:     ["011111100","010000110","010000010","010001010","010000010","010000010","010000010","010000010","011111110"],
-  handshake:["000000000","000011000","011011110","111111111","011111110","111111111","011011110","000011000","000000000"],
-  doc:      ["011111000","010000100","010000110","010111110","010000010","010111010","010000010","011111110","000000000"],
-  star:     ["000010000","000111000","000111000","111111111","011111110","001111100","011111110","010001000","100000001"],
-  bolt:     ["000011100","000111000","001110000","011111100","000011100","000111000","001110000","011100000","000000000"],
-  /* A touch target: a ring with a pressed point at its centre. Said in dots,
-     because every other mark in the app is. */
-  tap:      ["000000000","001111100","010000010","100011001","100111001","100011001","010000010","001111100","000000000"],
-  dot:      ["000000000","000000000","000111000","001111100","001111100","001111100","000111000","000000000","000000000"],
-  warn:     ["000010000","000111000","001101100","011101110","011101110","111111111","111101111","111111111","000000000"],
-  car:      ["000000000","000000000","000111100","001111110","011111111","111111111","111111111","011000110","000000000"],
+  check:     ["00000","00001","00010","10100","01000"],
+  close:     ["10001","01010","00100","01010","10001"],
+  warn:      ["00100","00100","01110","01110","11111"],
+  triup:     ["00100","01110","11111","00000","00000"],
+  tridown:   ["00000","00000","11111","01110","00100"],
+  dot:       ["00000","00000","00100","00000","00000"],
+  more:      ["00000","00000","10101","00000","00000"],
+  /* Never existed. The help button has been asking for it since the button was
+     built, falling through to the dot, so the one control whose whole job is to
+     say "ask a question" has been a featureless blob. */
+  question:  ["01110","10001","00110","00000","00100"],
+  plus:      ["00100","00100","11111","00100","00100"],
+  arrowup:   ["00100","01110","11111","00100","00100"],
+  arrowdown: ["00100","00100","11111","01110","00100"],
+  arrow:     ["00100","00110","11111","00110","00100"],
+  arrowleft: ["00100","01100","11111","01100","00100"],
+  chart:     ["00001","00001","00101","10101","10101"],
+  doc:       ["11110","10011","10101","10101","11111"],
+  door:      ["11111","10001","10011","10001","10001"],
+  clock:     ["01110","10011","10101","10001","01110"],
+  tap:       ["00100","01010","10101","01010","00100"],
+  calendar:  ["01010","11111","10001","10101","11111"],
+  clipboard: ["00100","11111","10001","10101","11111"],
+  gear:      ["10101","01110","11011","01110","10101"],
+  user:      ["01110","01110","00100","11111","11111"],
+  users:     ["10101","10101","00000","11111","11111"],
+  globe:     ["01110","11011","11011","11011","01110"],
+  search:    ["11100","10100","11100","00010","00001"],
+  trophy:    ["11111","11111","01110","00100","01110"],
+  star:      ["00100","00100","11111","01110","10001"],
+  bolt:      ["00110","01100","11111","00110","01100"],
+  flame:     ["00100","01100","11110","11111","01110"],
+  car:       ["00000","01110","11111","11111","01010"],
+  phone:     ["01110","01010","01010","01010","01110"],
+  handshake: ["00000","11000","01110","00011","00000"],
+  lunch:     ["10101","10101","01001","01001","01001"],
+  away:      ["00000","01110","10001","01110","00000"],
+  swap:      ["00100","01110","00000","01110","00100"],
 };
-/* The same marks on a coarse grid. A 9x9 check at the size it renders beside a
-   percentage puts every dot under a pixel or two on a TV, which reads as fuzz. Five
-   fat dots hold their shape at any distance. Cars stay on the 9x9 grid: they are
-   drawn large enough for the detail to survive. */
-const PIX5 = {
-  check:    ["00000","00001","00010","10100","01000"],
-  close:    ["10001","01010","00100","01010","10001"],
-  warn:     ["00100","00100","01110","01110","11111"],
-  triup:    ["00100","01110","11111","00000","00000"],
-  tridown:  ["00000","00000","11111","01110","00100"],
-  dot:      ["00000","00000","00100","00000","00000"],
-  // The bottom bar's overflow button. An ellipsis is only ever three dots, so
-  // on the fine grid it renders a third the weight of the glyphs beside it and
-  // the bar looks unevenly inked. It belongs on the coarse grid for the same
-  // reason the tick does.
-  more:     ["00000","00000","10101","00000","00000"],
-};
-// A question mark, on the fine grid: it needs the counter and the gap under the
+// A question mark, on the grid: it needs the counter and the gap under the
 // hook to read as a question rather than a smudge.
 PIX.question = ["001111000","011001100","110000110","000000110","000011100","000111000","000000000","000111000","000111000"];
 // board statuses
 PIX.cup   = ["000000000","111111000","111111100","111111010","111111010","111111100","011111000","000000000","000000000"];
 PIX.walk  = ["000110000","000110000","001111000","011111100","001111000","001111000","011001100","110000110","000000000"];
 
-function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
-  // Six glyphs exist at both grids: check, close, warn, triup, tridown and dot.
-  // They are marks rather than pictures, they always appear at text size, and the
-  // coarse grid is what makes them hold their shape - a tick beside a number as fat
-  // dots rather than twenty the size of a pixel.
-  //
-  // `fine` used to be able to override that, and the override was reachable from
-  // every call site. It got used: the bottom bar drew the Standards tick and the
-  // Tickets warning at 9x9 while the same two marks were 5x5 everywhere else, and
-  // the mismatch is noticeable without being nameable. So `fine` no longer applies
-  // to a glyph that exists at the coarse grid. A mark can be drawn one way only,
-  // and nobody has to remember which. It still works for everything else, where
-  // there is only one drawing and the flag is a no-op anyway.
-  const rows = PIX5[glyph] || PIX[glyph] || PIX.dot;
+/* There is no `fine` prop any more. It chose between two grids; there is one.
+   Every previous attempt to keep the two honest was a rule somebody had to
+   remember, and the last one was still being got wrong — the bar drew the
+   Standards tick and the Tickets warning at 9x9 while the same two marks were
+   5x5 everywhere else. Deleting the choice is what finally fixes that. */
+function PixIcon({ glyph, size = 20, className, style, title }) {
+  const rows = PIX[glyph] || PIX.dot;
   const n = rows.length;
   const cell = size / n;
-  // Finer grids need proportionally fatter dots or the shape dissolves into grey.
-  const r = +(cell * (n <= 5 ? 0.46 : n >= 13 ? 0.46 : 0.40)).toFixed(2);
+  /* 0.52 of a cell, so dots overlap slightly and a run of them reads as one
+     stroke. Below about 0.46 the solid shapes come apart at 12px — the phone
+     stops closing and the person scatters. */
+  const r = +(cell * 0.52).toFixed(2);
   const dots = [];
   for (let y = 0; y < n; y++) {
     const row = rows[y];
@@ -835,6 +841,21 @@ if (typeof document !== "undefined") document.documentElement.classList.add("js-
    There is nothing to place, nothing to clip it, and no stacking context to
    escape, because it is not overlapping anything. The hover card on a desktop
    is unchanged. */
+/* Pages kept opening a little way down, and the first fix for it did not work.
+
+   The browser restores the previous scroll offset on reload, and it does that
+   as soon as it has enough document to scroll — long before this app has
+   rendered anything. Setting scrollRestoration from a component effect was
+   therefore always too late: AppShell does not mount until Supabase auth and
+   the config have come back, by which point the restore has already happened
+   and the page is sitting where it was left.
+
+   At module scope it runs as the bundle parses, which is early enough. The
+   scroll-to-top on navigation stays in the shell, where it belongs. */
+if (typeof history !== "undefined" && "scrollRestoration" in history) {
+  try { history.scrollRestoration = "manual"; } catch { /* older Safari */ }
+}
+
 if (typeof document !== "undefined" && typeof window !== "undefined") {
   const isTouch = window.matchMedia && window.matchMedia("(hover: none)").matches;
   if (isTouch) {
@@ -3833,16 +3854,14 @@ function LEADERBOARD_HTML(p) {
 </div>
 <script>
   var CFG = ${JSON.stringify(p)};
-  // Same dot-matrix language as the rest of the tool. Drawn on a 9x9 grid at 1em so
-  // every mark scales with the row text instead of being pinned to a pixel size.
-  var PIXG = ${JSON.stringify({ car: PIX.car, dot: PIX.dot })};
-  // The small marks use the coarse grid so they stay crisp beside the numbers.
-  var PIX5 = ${JSON.stringify(PIX5)};
+  // The same one grid as the rest of the tool, sent whole rather than as two
+  // tables the board then has to choose between. Drawn at 1em so every mark
+  // scales with the row text instead of being pinned to a pixel size.
+  var PIXG = ${JSON.stringify(PIX)};
   function pix(g, cls, frac){
-    var rows = PIX5[g] || PIXG[g] || PIX5.dot, out = '';
+    var rows = PIXG[g] || PIXG.dot, out = '';
     var n = rows.length;
-    // Fatter dots on the coarse grid: fewer of them, so each one can carry more.
-    var r = n <= 5 ? 0.46 : 0.38;
+    var r = 0.52;
     for (var y = 0; y < n; y++) {
       var row = rows[y];
       for (var x = 0; x < row.length; x++) {
@@ -4889,7 +4908,7 @@ function QueueBoard({ storeId, kind }) {
     };
     pull();
 
-    /* A five second poll is fine for a phone in a pocket and wrong for a wall: a
+    /* A five second poll is for a phone in a pocket and wrong for a wall: a
        manager assigns somebody and the screen argues with the room for a few
        seconds. Postgres pushes the change instead, so the board turns over as the
        click happens. The poll stays underneath as a safety net, slowed right down,
@@ -5008,7 +5027,7 @@ function QueueBoard({ storeId, kind }) {
   return (
     <div className="qb" style={{ "--a": variant.accent }}>
       <div className="qb-hd">
-        <span className="qb-tag"><span className="qb-live" /><PixIcon glyph={variant.glyph} size={22} fine /> {variant.label}</span>
+        <span className="qb-tag"><span className="qb-live" /><PixIcon glyph={variant.glyph} size={22} /> {variant.label}</span>
         <span className="qb-store">{(row && row.storeName) || ""}</span>
         <span className="qb-hd-right">
           <span className="qb-pill"><b>{waiting.length}</b> {variant.count}</span>
@@ -5083,7 +5102,7 @@ function QueueBoard({ storeId, kind }) {
           <span className="qb-busy-lbl">Not available</span>
           {busy.slice(0, 8).map((p) => (
             <span key={p.id} className="qb-chip">
-              <PixIcon glyph={p.status === "customer" ? "car" : p.status === "lunch" ? "cup" : "walk"} size={15} fine />
+              <PixIcon glyph={p.status === "customer" ? "car" : p.status === "lunch" ? "lunch" : "away"} size={15} />
               {nameOf(p.id)}<i>{p.status === "customer" ? "with a customer" : p.status === "lunch" ? "lunch" : "away"}</i>
             </span>
           ))}
@@ -5522,7 +5541,7 @@ function HelpButton({ config, who, store, context, floating = true }) {
     <>
       <button className={"help-fab" + (floating ? "" : " inline")} onClick={() => setOpen(true)}
         title="Get help" aria-label="Get help">
-        <PixIcon glyph="question" size={floating ? 20 : 15} fine />
+        <PixIcon glyph="question" size={floating ? 20 : 15} />
         {!floating && <span>Help</span>}
       </button>
       {open && <HelpPanel config={config} who={who} store={store} context={context} onClose={() => setOpen(false)} />}
@@ -6839,7 +6858,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
           <span className="q-mark q-mark-live"><span className="sf-live-dot" />
-            <PixIcon glyph={variant.bannerGlyph} size={18} fine /><span>{variant.label}</span></span>
+            <PixIcon glyph={variant.bannerGlyph} size={18} /><span>{variant.label}</span></span>
         </div>
         <div className="sf-poswrap">
           <div className="sf-aura" />
@@ -6890,7 +6909,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
           <h2>Is this you?</h2>
         </div>
         <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
@@ -6905,7 +6924,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
           <p className="q-kicker">{selected.label}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
           {pinMode === "create" && <p className="q-muted">4 to 6 digits. You will use it to sign in.</p>}
@@ -6935,7 +6954,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
           <h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p>
         </div>
         <div className="q-roster">
@@ -6952,7 +6971,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
           <h2>Did you mean…</h2>
         </div>
         <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
@@ -6966,7 +6985,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} fine /><span>{variant.label}</span></div>
+          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
           <p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p>
         </div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
@@ -8387,7 +8406,7 @@ function FloorSignIn({ store, date, token, test = false }) {
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
           <span className="q-mark q-mark-live"><span className="sf-live-dot" />
-            <PixIcon glyph="door" size={18} fine /><span>Live Floor</span></span>
+            <PixIcon glyph="door" size={18} /><span>Live Floor</span></span>
         </div>
         {/* The ring carries the position, and around it the two facts that belonged to
             it anyway: how long you have been on, and how many are on with you. Said
@@ -8439,7 +8458,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
           <h2>Is this you?</h2>
         </div>
         <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
@@ -8454,7 +8473,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
           <p className="q-kicker">{selected.label}</p>
           <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
           {pinMode === "create" && <p className="q-muted">4 to 6 digits. The same PIN as the phone line.</p>}
@@ -8484,7 +8503,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
           <h2>Which one is you?</h2><p className="q-muted">A few names are close to "{typed}".</p>
         </div>
         <div className="q-roster">
@@ -8501,7 +8520,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
           <h2>Did you mean…</h2>
         </div>
         <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
@@ -8515,7 +8534,7 @@ function FloorSignIn({ store, date, token, test = false }) {
     content = (
       <div className="q-card">
         <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} fine /><span>Live Floor</span></div>
+          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
           <p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to log in and start getting in line.</p>
         </div>
         <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
@@ -11940,7 +11959,7 @@ const RU_SECTIONS = [
 function RuFinding({ item, tone, delay }) {
   return (
     <div className="ru-find" style={{ animationDelay: delay + "ms" }}>
-      <span className={"ru-find-ico ru-" + tone}><PixIcon glyph={tone === "up" ? "triup" : tone === "down" ? "tridown" : "warn"} size={15} fine /></span>
+      <span className={"ru-find-ico ru-" + tone}><PixIcon glyph={tone === "up" ? "triup" : tone === "down" ? "tridown" : "warn"} size={15} /></span>
       <span className="ru-find-body">
         <span className="ru-find-t">{item.t}</span>
         <span className="ru-find-d">{item.d}</span>
@@ -12131,7 +12150,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
 function AssocSearch({ value, onChange, store }) {
   return (
     <div className="search-wrap search-top">
-      <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
+      <span className="search-icon"><PixIcon glyph="search" size={17} /></span>
       <input className="search-input" value={value} onChange={(e) => onChange(e.target.value)}
         placeholder="Search associates" />
       {value && <button className="search-clear" onClick={() => onChange("")} aria-label="Close"><PixIcon glyph="close" size={13} /></button>}
@@ -12747,7 +12766,7 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
         <span className="stat-dim">● {counts.off} off leads</span>
       </div>
       <div className="search-wrap">
-        <span className="search-icon"><PixIcon glyph="search" size={17} fine /></span>
+        <span className="search-icon"><PixIcon glyph="search" size={17} /></span>
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search across all my stores" />
         {query && <button className="search-clear" onClick={() => setQuery("")} aria-label="Close"><PixIcon glyph="close" size={13} /></button>}
       </div>
@@ -17925,15 +17944,8 @@ function AppShell({
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  /* Pages kept opening a little way down. Two causes, both outside the layout:
-     the browser restores the previous scroll offset on reload, and moving between
-     sections keeps whatever offset the last one had. Neither is something the CSS
-     can answer, so the shell says where the top is. */
-  useEffect(() => {
-    if (typeof history !== "undefined" && "scrollRestoration" in history) {
-      history.scrollRestoration = "manual";
-    }
-  }, []);
+  // Moving between tools or sections keeps whatever offset the last one had.
+  // (Restoring on reload is handled at module scope — see the note there.)
   useEffect(() => { window.scrollTo(0, 0); }, [appModule, navValue]);
 
   /* The store's palette, hoisted to the shell root so the chrome can use it. The
