@@ -1743,6 +1743,25 @@ async function saveActivityDays(storeId, next, prev) {
 const digestKey = (storeId, day) => `lpc:store:${storeId}:digest:${day}`;
 const DIGEST_KEEP = 30;
 
+/* The round-up and both delivery charts all want the same rows. One promise per
+   store, so opening a board does not fetch them three times. */
+const digestCache = new Map();
+function digestsFor(storeId) {
+  const key = storeId + ":" + today();
+  if (!digestCache.has(key)) digestCache.set(key, loadDigests(storeId).catch(() => ({})));
+  return digestCache.get(key);
+}
+function useDigests(storeId) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    let live = true;
+    if (!storeId) { setRows(null); return; }
+    digestsFor(storeId).then((d) => { if (live) setRows(d); });
+    return () => { live = false; };
+  }, [storeId]);
+  return rows;
+}
+
 async function loadDigests(storeId) {
   if (!supabase) return {};
   const prefix = `lpc:store:${storeId}:digest:`;
@@ -2469,6 +2488,14 @@ export default function LeadPerformanceCalculator() {
     const want = view;
     (async () => {
       if (adminData[view]) { setStoreData(adminData[view]); setStoreLoadFailed(false); setTab("board"); return; }
+      /* Drop the store we were showing BEFORE fetching the next one. Without this
+         the board keeps rendering the previous store's roster under the new
+         store's name for as long as the fetch takes — Driver's Mart's people
+         under a Holler Honda header. It was invisible on a desk connection and
+         plainly wrong on a phone, which is the only reason it survived this long.
+         The null state is already handled: it draws the loading screen. */
+      setStoreData(null);
+      setStoreLoadFailed(false);
       try {
         const d = await loadStore(view, emptyStoreData(), true); // throw on a real load error
         if (dead || want !== view) return;
@@ -11805,9 +11832,25 @@ function ruEvaluate({ config, store, data, M }) {
 }
 
 // Counts only. Nothing here is not already on a wall the floor walks past.
+/* The daily row. It carries the standings for the round-up, and now the three
+   channels as raw units and leads so the delivery charts have a per-day series.
+
+   Units and leads rather than the percentage, because a percentage cannot be
+   re-aggregated: the chart recomputes the rate from the two numbers, and can
+   still do so if the roster or the roll-up rule changes later. `data.months`
+   only ever holds a month-to-date total, so this row is the ONLY place a
+   day-by-day delivery figure will ever exist. Thirty days are kept, which is
+   exactly the window the charts draw. */
 function buildDigest(args) {
   const e = ruEvaluate(args);
-  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy };
+  const { config, store, data, M } = args;
+  const onBoard = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && onBoard.has(a.roleId));
+  const ch = {};
+  for (const c of channelRates(M, roster)) {
+    if (c.seen) ch[c.id] = { u: +c.units.toFixed(3), l: Math.round(c.leads) };
+  }
+  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch };
 }
 
 /* The digest closest to `back` days ago, so a missed day degrades to the
@@ -15780,9 +15823,60 @@ function deliverySeries(data, roster, thr) {
 /* The axis wants "Aug"; the app's monthLabel is the long "August 2026" used in
    headings. Different job, so a different name rather than a second opinion. */
 const flowMonth = (key) => new Date(key + "-02T12:00").toLocaleDateString("en-US", { month: "short" });
+const flowDay = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-function DeliveryFlow({ data, roster, thr, onOpen }) {
-  const series = useMemo(() => deliverySeries(data, roster, thr), [data, roster, thr]);
+/* The last 30 days, one point per day, off the digest rows. Days with no row are
+   holes rather than zeros — a store that did not import on a Sunday did not
+   deliver nothing — and the line connects across them, same as the monthly view.
+
+   Nothing wrote channel figures into a digest before this change, so this is
+   empty on the day it ships and fills in a day at a time. The monthly series is
+   what shows until there are at least two days to draw. */
+const DAILY_WINDOW = 30;
+function dailySeries(digests, thr) {
+  const days = [];
+  const end = new Date(today() + "T12:00");
+  for (let i = DAILY_WINDOW - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString("en-CA"));
+  }
+  /* Two days that can actually produce a rate, not two days that merely carry a
+     ch object: a row with units but no leads divides by zero and is a hole, and
+     a window of nothing but holes is an empty chart rather than a daily one. */
+  const usable = days.filter((d) => {
+    const ch = digests?.[d]?.ch;
+    return ch && Object.values(ch).some((r) => r && r.l > 0);
+  });
+  if (usable.length < 2) return null;
+  return CHANNEL_LIST.map((c) => ({
+    id: c.id, label: c.label, target: thr[c.id].green, hue: CHANNEL_HUE[c.id],
+    days,
+    pts: days.map((key) => {
+      const row = digests?.[key]?.ch?.[c.id];
+      return { key, pct: row && row.l > 0 ? (row.u / row.l) * 100 : null };
+    }),
+  }));
+}
+
+/* Where the week and month lines fall inside the window. A 30-day strip with no
+   marks is a smear; Mondays give it a rhythm and the 1st says which month you
+   are looking at. */
+function flowMarks(days) {
+  const out = [];
+  days.forEach((key, i) => {
+    const dt = new Date(key + "T12:00");
+    if (dt.getDate() === 1) out.push({ i, kind: "month", label: flowMonth(key.slice(0, 7)) });
+    else if (dt.getDay() === 1) out.push({ i, kind: "week" });
+  });
+  return out;
+}
+
+function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
+  /* Daily when there is enough of it, month over month until then. */
+  const series = useMemo(() => dailySeries(digests, thr) || deliverySeries(data, roster, thr),
+    [data, roster, thr, digests]);
+  const daily = !!(series && series[0] && series[0].days);
   const [idx, setIdx] = useState(0);
   const [morph, setMorph] = useState(null);   // 0..1 while crossing between channels
   const raf = useRef(0), timer = useRef(0);
@@ -15879,7 +15973,21 @@ function DeliveryFlow({ data, roster, thr, onOpen }) {
         <path d={d} fill="none" stroke={shown.hue} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         {eI >= 0 && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill={shown.hue} stroke="#FFF" strokeWidth="2.5" />}
         {eI >= 0 && above && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="9" fill="none" stroke="#1E8F45" strokeWidth="2" opacity=".9" />}
-        {shown.pts.length > 1 && <>
+        {daily && flowMarks(shown.days).map((m) => (
+          <line key={"m" + m.i} className={m.kind === "month" ? "flow-month" : "flow-week"}
+            x1={flowX(m.i, shown.days.length)} x2={flowX(m.i, shown.days.length)}
+            y1={FLOW_PT - 4} y2={base} />
+        ))}
+        {daily ? <>
+          <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowDay(shown.days[0])}</text>
+          {flowMarks(shown.days).filter((m) => m.kind === "month").map((m) => (
+            <text key={"ml" + m.i} className="flow-axis flow-monthlbl"
+              x={flowX(m.i, shown.days.length) + 3} y={FLOW_PT + 4}>{m.label}</text>
+          ))}
+          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
+            {flowDay(shown.days[shown.days.length - 1])}
+          </text>
+        </> : shown.pts.length > 1 && <>
           <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowMonth(shown.pts[0].key)}</text>
           <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
             {flowMonth(shown.pts[shown.pts.length - 1].key)}
@@ -15887,17 +15995,21 @@ function DeliveryFlow({ data, roster, thr, onOpen }) {
         </>}
         <text className="flow-axis" x={FLOW_PL} y={+base - 3}>0</text>
       </svg>
-      {shown.pts.length < 2 && (
-        <div className="flow-note">One month on file so far. The line fills in as months land.</div>
-      )}
+      <div className="flow-note">
+        {daily ? "Day by day, last 30 days. Ticks are Mondays; the taller line is the 1st."
+          : shown.pts.length < 2 ? "One month on file so far. The line fills in as months land."
+          : "Month by month. A daily line starts once two days of figures are on file."}
+      </div>
     </button>
   );
 }
 
 /* All three at once, for the sheet the card opens. The flow stops and every line
    draws in together, each direct-labelled. */
-function DeliveryAll({ data, roster, thr }) {
-  const series = useMemo(() => deliverySeries(data, roster, thr), [data, roster, thr]);
+function DeliveryAll({ data, roster, thr, digests }) {
+  const series = useMemo(() => dailySeries(digests, thr) || deliverySeries(data, roster, thr),
+    [data, roster, thr, digests]);
+  const daily = !!(series && series[0] && series[0].days);
   const y100 = flowY(100).toFixed(1);
   const base = flowY(0).toFixed(1);
   const any = series.find((s) => s.pts.length > 0);
@@ -15909,6 +16021,9 @@ function DeliveryAll({ data, roster, thr }) {
           <b key={s.id}><i style={{ background: s.hue }} />{s.label} · target {s.target}%</b>
         ))}
       </div>
+      {daily && (
+        <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} 1`} aria-hidden="true" style={{ height: 0 }} />
+      )}
       <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H + 8}`} role="img"
         aria-label="All three channels against their targets, by month">
         <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
@@ -15929,7 +16044,12 @@ function DeliveryAll({ data, roster, thr }) {
             </g>
           );
         })}
-        {any.pts.length > 1 && <>
+        {daily ? <>
+          <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowDay(any.days[0])}</text>
+          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
+            {flowDay(any.days[any.days.length - 1])}
+          </text>
+        </> : any.pts.length > 1 && <>
           <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowMonth(any.pts[0].key)}</text>
           <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
             {flowMonth(any.pts[any.pts.length - 1].key)}
@@ -15948,6 +16068,7 @@ function DeliveryCard({ config, store, data }) {
   const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
   const roster = (data.roster || []).filter((a) => a.roleId && boardRoleIds.has(a.roleId));
   const thr = normThresholds(store.thresholds);
+  const digests = useDigests(store.id);
 
   useEffect(() => {
     if (!open) return;
@@ -15960,7 +16081,7 @@ function DeliveryCard({ config, store, data }) {
 
   return (
     <>
-      <DeliveryFlow data={data} roster={roster} thr={thr} onOpen={() => setOpen(true)} />
+      <DeliveryFlow data={data} roster={roster} thr={thr} digests={digests} onOpen={() => setOpen(true)} />
       {open && (
         <Overlay>
           <div className="bsheet-root" role="dialog" aria-label="Delivery, all channels">
@@ -15976,7 +16097,7 @@ function DeliveryCard({ config, store, data }) {
                 </button>
               </div>
               <div className="bsheet-body">
-                <DeliveryAll data={data} roster={roster} thr={thr} />
+                <DeliveryAll data={data} roster={roster} thr={thr} digests={digests} />
               </div>
             </div>
           </div>
@@ -20891,6 +21012,11 @@ function Style() {
       .flow-rule { stroke:var(--ink-2); stroke-width:1; stroke-dasharray:4 4; opacity:.55; }
       .flow-rulelbl { font-size:8px; fill:var(--ink-2); font-weight:700; }
       .flow-zero { stroke:rgba(16,32,52,.16); stroke-width:1; }
+      /* Mondays, and the taller line for the 1st. Behind the data, quiet enough
+         to give the strip a rhythm without competing with it. */
+      .flow-week { stroke:rgba(16,32,52,.09); stroke-width:1; }
+      .flow-month { stroke:rgba(16,32,52,.22); stroke-width:1; stroke-dasharray:2 2; }
+      .flow-monthlbl { font-size:7.5px; font-weight:700; fill:var(--ink-3); }
       .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
       .flow-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:10.5px; color:var(--ink-2); }
       .flow-legend b { display:inline-flex; align-items:center; gap:5px; font-weight:650; color:var(--ink); }
