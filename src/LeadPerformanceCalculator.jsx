@@ -5039,17 +5039,24 @@ async function openLeaderboard(config, storeId) {
 
    Deliberately not the leaderboard. That board is about the month; this is about
    the next ten minutes, so it says one thing large: who is next. */
+/* The three queues, in one table. All three answer the same question — who is
+   next — over a different channel, and each carries its own colour and glyph
+   everywhere it appears: this board, and the picker in the bottom bar. It was
+   written out twice before, which is how a colour drifts. */
+const QUEUE_TOOLS = [
+  { id: "floor",  label: "Live Floor", glyph: "door",  accent: "#10B981", count: "on the floor" },
+  { id: "line",   label: "The Line",   glyph: "phone", accent: "#5566F0", count: "in line" },
+  { id: "online", label: "Online",     glyph: "globe", accent: "#8B5CF6", count: "in the queue" },
+];
+const queueTool = (id) => QUEUE_TOOLS.find((q) => q.id === id) || QUEUE_TOOLS[1];
+
 function QueueBoard({ storeId, kind }) {
   const [row, setRow] = useState(null);
   const [board, setBoard] = useState(null);   // the published board row: names, month units
   const [err, setErr] = useState(false);
   useBuildWatchdog();
 
-  const variant = kind === "floor"
-    ? { label: "Live Floor", accent: "#10B981", glyph: "door", count: "on the floor" }
-    : kind === "online"
-      ? { label: "Online", accent: "#8B5CF6", glyph: "globe", count: "in the queue" }
-      : { label: "The Line", accent: "#5566F0", glyph: "phone", count: "in line" };
+  const variant = queueTool(kind);
 
   useEffect(() => {
     let dead = false;
@@ -15603,11 +15610,19 @@ function ToolSwitcher({ value, onChange }) {
    manager does on a phone rather than reads, it is the same act in every tool,
    and the ring around it is how much of today's importing is done — so the bar
    answers "is my data in yet" without opening anything. */
+/* The third tab is a group, not a destination. Live Floor, The Line and Online
+   are three tools, and the bar only had room to name one of them — so the other
+   two were reachable only from the drawer, two taps down, which is where nobody
+   found them. "Up Next" is what all three actually answer, and tapping it opens
+   the three. The id is its own, not `floor`, so the tab is never confused with
+   the tool it used to be. */
+const QUEUE_TAB = "queues";
 const BAR_TOOLS = [
   ["perf", "Performance", "chart"],
   ["activity", "Activity", "handshake"],
-  ["floor", "Live Floor", "users"],
+  [QUEUE_TAB, "Up Next", "users"],
 ];
+const inQueues = (mod) => QUEUE_TOOLS.some((q) => q.id === mod);
 
 /* Today's imports, as a fraction. Delivery Summaries arrive by email, so the
    manager only ever uploads two on the performance side and one on activity —
@@ -15628,6 +15643,22 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const { done, need } = importProgress(storeData, activity);
   const R = 27, C = 2 * Math.PI * R;
   const ready = need > 0 && done >= need;
+
+  /* Three of the six tools live behind one tab, so the tab the bar highlights is
+     not always the module you are in. Everything below — the pill, the glyph,
+     the on state — works off this, not off appModule. */
+  const queueOn = inQueues(appModule);
+  const activeTab = queueOn ? QUEUE_TAB : appModule;
+  const [picking, setPicking] = useState(false);
+  // Close it on the way out of the group, so coming back never opens to a
+  // menu left standing from last time.
+  useEffect(() => { setPicking(false); }, [appModule]);
+  useEffect(() => {
+    if (!picking) return;
+    const onKey = (e) => { if (e.key === "Escape") setPicking(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picking]);
 
   /* The pill that slides. The tabs are not evenly wide — "Live Floor" is a wider
      word than "More", and the centre slot is a fixed 62px — so the pill cannot be
@@ -15652,8 +15683,8 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         x: tab.offsetLeft + ico.offsetLeft + (ico.offsetWidth - w) / 2,
         y: tab.offsetTop + ico.offsetTop + (ico.offsetHeight - h) / 2 };
     };
-    const to = box(appModule);
-    if (!to) { setPill(null); lastBarTool = appModule; return; }
+    const to = box(activeTab);
+    if (!to) { setPill(null); lastBarTool = activeTab; return; }
 
     /* Live Floor is a different component tree from Performance and Activity, so
        switching between them unmounts one bar and mounts another. The pill in the
@@ -15662,10 +15693,10 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
        Performance. lastBarTool lives outside the component so it survives that
        remount: a fresh bar is drawn once at the OLD tab with the transition off,
        and only then released to glide to the new one. */
-    const from = !mounted.current && lastBarTool && lastBarTool !== appModule
+    const from = !mounted.current && lastBarTool && lastBarTool !== activeTab
       ? box(lastBarTool) : null;
     mounted.current = true;
-    lastBarTool = appModule;
+    lastBarTool = activeTab;
 
     let raf = 0;
     if (from) {
@@ -15685,13 +15716,13 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
     let ro = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(() => {
-        const b = box(appModule);
+        const b = box(activeTab);
         if (b) setPill({ ...b, glide: true });
       });
       ro.observe(bar);
     }
     return () => { if (raf) cancelAnimationFrame(raf); if (ro) ro.disconnect(); };
-  }, [appModule]);
+  }, [activeTab]);
 
   /* Daily Activity's numbers arrive by report — there is nothing to upload from
      a phone — so its verb is the daily report, not Import. The ring still shows
@@ -15701,7 +15732,15 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
     : { label: ready ? "Imported" : `Import ${done}/${need}`, glyph: ready ? "check" : "arrowup",
         act: onImport, aria: ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today` };
 
+  const [, queueLabel, queueGlyph] = BAR_TOOLS[2];
+  const here = queueOn ? queueTool(appModule) : null;
+
   return (
+   <>
+    {/* Outside the <nav> on purpose. The bar carries backdrop-filter, which makes
+        it a containing block for fixed descendants — a scrim rendered inside it
+        would be the size of the bar, not the screen. */}
+    {picking && <div className="botnav-scrim" onClick={() => setPicking(false)} aria-hidden="true" />}
     <nav className="botnav no-print" aria-label="Tools" ref={barRef}>
       {/* Rendered even with no measurement yet, at opacity 0, so the first paint
           after a tool change animates from where the pill was rather than
@@ -15737,19 +15776,42 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         <span className="botnav-fablbl">{verb.label}</span>
       </div>
 
-      {BAR_TOOLS.slice(2).map(([id, label, glyph]) => (
-        <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
-          className={"botnav-btn" + (appModule === id ? " on" : "")}
-          onClick={() => onToolChange(id)}>
-          <span className="botnav-ico"><PixIcon glyph={glyph} size={17} /></span>
-          <span className="botnav-lbl">{label}</span>
-        </button>
-      ))}
+      {/* The group tab. It opens a menu rather than going anywhere, so it takes
+          aria-expanded and a popup role — and it wears the glyph and the colour
+          of whichever queue you are actually in, which is the only thing the
+          fixed "Up Next" label cannot tell you. */}
+      <button ref={(el) => { tabRefs.current[QUEUE_TAB] = el; }}
+        className={"botnav-btn" + (queueOn ? " on" : "") + (picking ? " open" : "")}
+        style={here ? { "--sp": here.accent } : null}
+        aria-haspopup="true" aria-expanded={picking}
+        onClick={() => setPicking((v) => !v)}>
+        <span className="botnav-ico"><PixIcon glyph={here ? here.glyph : queueGlyph} size={17} /></span>
+        <span className="botnav-lbl">{queueLabel}</span>
+      </button>
+
+      {/* A sibling of the tab, not a child of it: a button inside a button is
+          invalid, and every tap on the menu would bubble back out and reopen the
+          thing it just closed. It spans the bar and blooms from the tab's corner
+          instead, which transform-origin handles. */}
+      {picking && (
+        <div className="qpick" role="menu">
+          {QUEUE_TOOLS.map((q) => (
+            <button key={q.id} role="menuitem" style={{ "--qa": q.accent }}
+              className={"qpick-btn" + (appModule === q.id ? " on" : "")}
+              onClick={() => { setPicking(false); if (appModule !== q.id) onToolChange(q.id); }}>
+              <span className="qpick-ico"><PixIcon glyph={q.glyph} size={20} /></span>
+              <span className="qpick-lbl">{q.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <button className="botnav-btn" onClick={onMore}>
         <span className="botnav-ico"><PixIcon glyph="more" size={17} /></span>
         <span className="botnav-lbl">More</span>
       </button>
     </nav>
+   </>
   );
 }
 
@@ -21733,6 +21795,58 @@ function Style() {
         .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:4px; text-align:center;
           font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
           pointer-events:none; }
+
+        /* --- Up Next: three tools behind one tab ---
+           Live Floor, The Line and Online are one question asked over three
+           channels, and the bar had room to name only one of them. The tab opens
+           the three instead of going anywhere, and each keeps the colour it wears
+           on its own board — which is the whole reason they are worth telling
+           apart at a glance. */
+        .botnav-scrim { position:fixed; inset:0; z-index:335;
+          background:rgba(16,40,68,.07); animation:fadeIn .2s var(--ease) both; }
+        /* 30px, not 8: the centre button and its halo stand ~28px proud of the
+           bar's top edge, and at 8 the menu was laid straight over them — the
+           navy disc showing through the white card looked like a mistake rather
+           than a stack. This clears it, so the button sits in the gap. */
+        .qpick { position:absolute; left:6px; right:6px; bottom:calc(100% + 30px); z-index:3;
+          display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; padding:7px;
+          border-radius:22px; background:rgba(255,255,255,.94);
+          backdrop-filter:blur(22px) saturate(180%);
+          -webkit-backdrop-filter:blur(22px) saturate(180%);
+          border:1px solid rgba(255,255,255,.8);
+          box-shadow:0 14px 40px -10px rgba(16,40,68,.30), 0 2px 10px rgba(16,40,68,.08);
+          /* it blooms from the tab it belongs to, not from its own middle */
+          transform-origin:78% 100%;
+          animation:qpickIn .42s var(--ease-bloop) both; }
+        @keyframes qpickIn {
+          from { opacity:0; transform:translateY(10px) scale(.86); }
+          to   { opacity:1; transform:none; }
+        }
+        .qpick-btn { display:flex; flex-direction:column; align-items:center; gap:7px;
+          border:none; background:none; font:inherit; cursor:pointer;
+          padding:11px 4px 9px; border-radius:17px; color:var(--ink-2);
+          transition:transform .25s var(--ease-bloop), color .2s var(--ease); }
+        .qpick-btn:active { transform:scale(.94); }
+        .qpick-ico { display:flex; align-items:center; justify-content:center;
+          width:40px; height:40px; border-radius:14px; line-height:0;
+          color:var(--qa); background:color-mix(in srgb, var(--qa) 14%, transparent);
+          transition:background .22s var(--ease), color .22s var(--ease),
+            box-shadow .22s var(--ease); }
+        @supports not (background: color-mix(in srgb, red 10%, transparent)) {
+          .qpick-ico { background:rgba(16,40,68,.07); }
+        }
+        .qpick-lbl { font-size:11px; font-weight:750; letter-spacing:-.01em; white-space:nowrap; }
+        .qpick-btn.on { color:var(--qa); }
+        .qpick-btn.on .qpick-ico { color:#fff; background:var(--qa);
+          box-shadow:0 7px 16px -5px var(--qa); }
+        /* the tab reads as pressed for as long as its menu is standing */
+        .botnav-btn.open { color:var(--sp, var(--blue)); }
+        /* The help button is z-index 350 — above the bar — so it would float over
+           the open menu. :has is already load-bearing elsewhere in this sheet. */
+        .lpc:has(.botnav-scrim) .help-fab:not(.inline) { opacity:0; pointer-events:none; }
+        @media (prefers-reduced-motion: reduce) {
+          .qpick, .botnav-scrim { animation:none; }
+        }
 
         /* --- rhythm between the board's blocks ---
            Each of these carried its own desktop margin, and stacked on a phone
