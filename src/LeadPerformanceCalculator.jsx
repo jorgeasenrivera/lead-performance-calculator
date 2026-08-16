@@ -9434,7 +9434,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                      different section treatments in one tool made the tracker feel
                      like a different product one tab across. */
                   <tr key={"h-" + which} className={"co-sep co-sep-" + which}>
-                    <td colSpan={outreach ? 8 : 6}>
+                    <td colSpan={outreach ? 8 : 6} data-col="sep">
                       <span className="co-sep-head">
                         <span className="co-sep-swatch" />
                         {which === "on" ? "On today" : "Off today"}
@@ -9444,7 +9444,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                   </tr>,
                   ...list.map((r) => (
                 <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
-                  <td className="co-namecell"><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
+                  <td className="co-namecell" data-col="name"><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
                     {r.off && <span className="co-off-tag">Off</span>}
                     {/* Kept out of the row until it is wanted: a column of buttons the
                         eye has to skip past on every row, for something used once or
@@ -9461,25 +9461,27 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                   </td>
                   {/* Tasks first: it is the pile they arrive to, and it frames whether
                       the rest of the day was ever going to happen. */}
-                  <td className="co-tasks">
+                  <td className="co-tasks" data-col="tasks" data-label="Tasks">
                     <TaskDial done={r.tasks} posted={r.tasksPosted} />
                   </td>
-                  <td className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
+                  <td data-col="calls" data-label="Calls"
+                    className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark"><PixIcon glyph={r.callsMet ? "check" : "close"} size={13} /></span>}
                     {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
                   </td>
-                  <td className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
+                  <td data-col="videos" data-label="Videos"
+                    className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
                     {r.hasData && <span className="cell-mark"><PixIcon glyph={r.videoMet ? "check" : "close"} size={13} /></span>}
                     {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
                   </td>
                   {/* Not graded and deliberately unmarked: no tick, no cross, no target.
                       A number the manager can see and ask about, nothing more. */}
                   {outreach && <>
-                    <td className="co-out">{r.hasData ? (r.text ?? "-") : "-"}</td>
-                    <td className="co-out">{r.hasData ? (r.email ?? "-") : "-"}</td>
+                    <td className="co-out" data-col="text" data-label="Texts">{r.hasData ? (r.text ?? "-") : "-"}</td>
+                    <td className="co-out" data-col="email" data-label="Emails">{r.hasData ? (r.email ?? "-") : "-"}</td>
                   </>}
                   {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
-                  <td>
+                  <td data-col="rocked" data-label="RockEd">
                     <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : "no")}
                       disabled={r.off} onClick={() => cycleQualified(norm(r.a.name))}
                       title="RockEd: tap to mark Qualified, tap again for Not yet.">
@@ -9489,7 +9491,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                         : <><PixIcon glyph="close" size={12} /> Not yet</>}
                     </button>
                   </td>
-                  <td>
+                  <td data-col="points" data-label="Points">
                     {r.off ? <span className="pt-badge off">—</span>
                       : !r.hasData ? <span className="pt-badge dim">no data</span>
                       : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>
@@ -21194,8 +21196,69 @@ function Style() {
           align-self:center; white-space:nowrap; }
 
         /* --- tables scroll rather than crush --- */
-        .gm-table, .checkout-table, .history-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
+        .gm-table, .history-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
           white-space:nowrap; }
+
+        /* --- the checkout tracker stops being a table --- */
+        /* Eight columns on a 390px phone is not a narrow table, it is the wrong
+           shape. Scrolling it sideways only hides the spill: the whole point of
+           this screen is comparing people down a column, and you cannot compare
+           what you have to swipe to reach. Each person becomes a card, which is
+           the language the roster over in Performance already speaks.
+
+           Done in CSS on the same markup rather than a second render tree, so
+           there is one table to keep correct. Each cell carries the column name
+           it lost when the header went. */
+        /* min-width:0 on the grid item, or the card refuses to shrink below the
+           table's min-content and quietly overflows its own column — the spill
+           survives turning the table into cards otherwise. */
+        /* .checkout-card lays its children out as a grid, so the table is a grid
+           ITEM and carries min-width:auto — it refused to go below its own
+           min-content (measured 520px inside a 362px card) and overflowed. This
+           one declaration is what actually stops the spill; the card and split
+           get it too so nothing upstream re-imposes it. */
+        .checkout-split > *, .checkout-card, .checkout-table { min-width:0; }
+        .checkout-table { width:100%; }
+        .checkout-table, .checkout-table tbody, .checkout-table tr, .checkout-table td { display:block; }
+        .checkout-table thead { display:none; }
+        .checkout-table tr {
+          display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px 10px;
+          padding:12px 13px; margin-bottom:9px; border-radius:15px;
+          background:var(--card); border:1px solid var(--line); box-shadow:var(--shadow-1); }
+        .checkout-table td { padding:0; border:none; text-align:left; min-width:0;
+          overflow-wrap:anywhere; }
+        /* the label the column header used to carry */
+        .checkout-table td[data-label]::before { content:attr(data-label); display:block;
+          font-size:9.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase;
+          color:var(--ink-3); margin-bottom:3px; }
+        /* Placed, not auto-flowed. Left to itself the grid put Points last and
+           pushed Texts and Emails onto separate rows, so the card read in an
+           order nobody chose:
+             name  ·  who it is, with the off-day control
+             tasks calls videos  ·  the three that are graded, side by side
+             texts emails        ·  the two that are not
+             rocked             ·  the one control, full width for a thumb   */
+        .checkout-table td[data-col="name"] { grid-column:1 / 3; grid-row:1; font-size:15px;
+          display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+        .checkout-table td[data-col="name"]::before { display:none; }
+        .checkout-table td[data-col="points"] { grid-column:3; grid-row:1; justify-self:end; text-align:right; }
+        .checkout-table td[data-col="points"]::before { text-align:right; }
+        .checkout-table td[data-col="tasks"]  { grid-column:1; grid-row:2; }
+        .checkout-table td[data-col="calls"]  { grid-column:2; grid-row:2; }
+        .checkout-table td[data-col="videos"] { grid-column:3; grid-row:2; }
+        .checkout-table td[data-col="text"]   { grid-column:1; grid-row:3; }
+        .checkout-table td[data-col="email"]  { grid-column:2; grid-row:3; }
+        /* no explicit row: it lands under whatever the last row turned out to be,
+           so a store without texts and emails simply has one row fewer */
+        .checkout-table td[data-col="rocked"] { grid-column:1 / -1; }
+        .checkout-table td[data-col="rocked"] .qual-toggle { width:100%; justify-content:center; }
+        /* the section headers span the card grid rather than sitting in one third */
+        .checkout-table tr.co-sep { display:block; padding:0; margin:14px 0 9px;
+          background:none; border:none; box-shadow:none; }
+        .checkout-table tr.co-sep td { padding:0; }
+        /* the off-day control is a hover affordance on a desktop and there is no
+           hover here, so it becomes a plain button on the card */
+        .checkout-table .co-off-hover { opacity:1; position:static; margin-left:auto; }
         .std-people { gap:6px; }
 
         /* --- trends: chart stays readable, controls stack --- */
