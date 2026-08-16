@@ -123,34 +123,54 @@ Every one confirmed by rendering in Chromium and measuring, not by eye. Reuse th
 
 ---
 
-## 4. THE THREE SHELLS: THE ACTUAL ARCHITECTURAL PROBLEM
+## 4. THE THREE SHELLS: DONE, AND WHAT IT COST
 
-**This is the most important thing in this document.** It caused two production bugs this session
-and will cause more.
+This was the most important open item in the previous handoff. It is closed.
 
-There are **three separate topbars**, and only one of them renders the bottom bar:
+There used to be **three separate topbars**, and only one rendered the bottom bar: The Board's, the
+performance shell's, and `FloorModule`'s. The mobile rules hid the tool switcher because "switching
+lives in the More drawer" — true of the performance shell, false of every module that returned
+before that shell was built, because those modules could not reach the drawer at all. Both
+self-contained modules were dead ends on a phone: open Live Floor or The Board and there was no way
+back. The patch was `solo-top`, a class meaning *this header has no bottom bar under it*, whose CSS
+wedged a horizontally scrolling strip of six tool buttons into those headers.
 
-| Line | Module | Renders `BottomNav`? |
-|---|---|---|
-| ~2969 | The Board (`appModule === "board"`) | **no** |
-| ~3057 | the performance shell | **yes** |
-| ~9147 | `FloorModule` (floor / line / online) | **no** |
+**`AppShell`** (~17205) is now the only shell. All three call sites render through it, so every
+module gets the same header, drawer and way out by construction rather than by remembering. What
+differs is passed in: `right` for a module's own header bits (store picker, saving dot), and
+`navItems` / `navValue` / `navOnChange` for whatever tabs it has, if any.
 
-The mobile rules hide the tool switcher because "switching lives in the More drawer". That is true
-of the performance shell and **false in every module that returns before that shell is built**,
-because those modules cannot reach the drawer at all. So both self-contained modules were dead ends on a
-phone: pick Live Floor or The Board and there was no way back.
+Two commits, in this order, and the order mattered:
 
-Fixed for now by `solo-top`, a class meaning *this header has no bottom bar under it*. Both carry
-it; the performance shell deliberately does not. See the comments at ~2966 and ~9140.
+1. **`switchTool`** — the tool-switch rule existed in **five** copies (three topbars, the drawer,
+   the bottom bar). They had drifted only cosmetically, but five copies is five places to disagree,
+   and that is exactly how Live Floor / The Line / Online became dead ends: a module was added to
+   one copy and not the others. Agreeing the behaviour first is what made moving the markup safe.
+   `chooseModule` is deliberately *not* folded in — it runs at sign-in, sets `entered`, leaves the
+   tab alone.
+2. **`AppShell`** — the markup.
 
-**`solo-top` is a patch over the seam, not the seam.** The real fix is one shell for every module:
-lift the topbar, drawer and bottom bar into a single component, compute `navItems` per module, and
-have each module return only its page content. Then "does this header have a bottom bar" stops
-being a question that can be answered wrong.
+What fell out:
 
-Do this before adding another module. Anything that grows its own topbar today needs `solo-top` or
-it strands whoever opens it.
+- `solo-top` and its eight mobile rules are gone. One rule replaces them: `.topbar.no-botnav
+  .hamburger { display:flex !important; }`, which brings the hamburger back for a module with no
+  tabs. The Board is the only one today.
+- Those headers are **one row** on a phone instead of two, which was part of the "page starts
+  halfway down" complaint.
+- Live Floor gained a bottom bar for its Live Floor / Settings tabs. Its subtab is named `floor`,
+  not `board`, in that bar — `NAV_SHORT` shortens `board` to "Board", which is a different tool.
+  See §2: NAV_SHORT shortens, it must never rename.
+- Live Floor's header gained `BrandMenu`, so sign out, help and replay-intro work there like
+  everywhere else. It previously had a bare logo and a loose Sign out button.
+- `MobileDrawer` no longer prints a "Go to" heading over an empty list.
+- `drawerOpen` moved out of the app component into `AppShell`, the only thing that opens it.
+
+**A new module now needs nothing.** Render `<AppShell>` and pass what differs. There is no class to
+remember and no question about whether the header has a bottom bar.
+
+Caveat on verification: Supabase is unreachable from the build container, so this was verified by
+build, by static structure, and by a console-error check on the sign-in screen — not by driving a
+signed-in phone viewport. Check the three modules on the preview before trusting it.
 
 ---
 
@@ -239,17 +259,19 @@ anonymous queue sign-in rate limiting.
 
 New from this session:
 
-1. **The shell merge** (section 4). The next piece of work, and everything in section 5 assumes it.
-3. **Board vs Dashboard.** The bar says "Board" for a tab the drawer calls Dashboard, while **The
+1. **The shell merge is done** (section 4). Section 5 assumed it and can now be built. It has not
+   been checked on a real phone against a live Supabase — do that first.
+2. **Board vs Dashboard.** The bar says "Board" for a tab the drawer calls Dashboard, while **The
    Board is a separate tool in the switcher**. It also has to cover "Combined Board" in the group
    view. Deliberately left for Jorge to name.
-4. **Rate trends need a second day.** The digest started writing when PR #2 merged, so the first
+3. **Rate trends need a second day.** The digest started writing when PR #2 merged, so the first
    day showed only activity trends. It should be filling in now; worth confirming.
 
 ---
 
 ## 8. FIRST FIVE MINUTES OF THE NEXT SESSION
 
-1. Read section 4. It is the cause of the last two production bugs.
+1. Open the preview on a phone and check all three modules: The Board, Live Floor, The Line. Each
+   should have one header row and a way out — a bottom bar, or the hamburger on The Board.
 2. Confirm the round-up's rate trends have started appearing now that digests exist.
-3. Start the shell merge, building toward section 5.
+3. Build section 5 on top of AppShell.
