@@ -11770,12 +11770,22 @@ const RU_TRENDS = [
   { key: "calls", label: "Calls made" },
   { key: "contacted", label: "Customers reached" },
 ];
-/* One day per side: the round-up answers "what changed since yesterday", not
-   "since last week". Note this counts DAYS WITH DATA, not calendar days — a
-   store that does not import on a Sunday has not had a bad Sunday, and the
-   comparison would otherwise be against an empty one. */
-const RU_WINDOW = 1;
-const RU_FLOOR = 5;       // below this the day before is too small to call a trend
+/* Two windows, and every finding carries both.
+
+   Yesterday is what a manager walks in asking about, so it leads. But a single
+   day is noisy: a quiet Tuesday can swing 40% on four calls, and a real slide
+   can hide behind one good morning. The week is the ballast — it says whether
+   yesterday was a blip or the shape of things.
+
+   When yesterday has nothing worth saying, the week can still lead on its own,
+   which is what stops a slow day from producing an empty round-up.
+
+   Both count DAYS WITH DATA, not calendar days: a store that does not import on
+   a Sunday has not had a bad Sunday, and padding with zeros would invent one. */
+const RU_DAY = 1;
+const RU_WEEK = 7;
+const RU_WEEK_MIN = 3;    // days each side before a week is worth calling a trend
+const RU_FLOOR = 5;       // below this the comparison base is too small to trust
 const RU_NOISE = 0.10;    // moves smaller than this are not worth anyone's morning
 
 /* "Sat 15 Aug" rather than "2026-08-15", which nobody reads as a day. */
@@ -11795,6 +11805,19 @@ function ruDays(data, n, skip = 0) {
     .sort().reverse();
   return all.slice(skip, skip + n);
 }
+/* One metric over one window, or null when there is not enough to say anything.
+   Returns the raw sides too, because the copy quotes them. */
+function ruMove(data, t, win, minDays) {
+  const cur = ruDays(data, win), prev = ruDays(data, win, win);
+  if (cur.length < minDays || prev.length < minDays) return null;
+  const a = ruSum(data, cur, t), b = ruSum(data, prev, t);
+  if (b < RU_FLOOR) return null;
+  return { a, b, pct: (a - b) / b, cur, prev };
+}
+const ruSays = (m) => m && Math.abs(m.pct) >= RU_NOISE;
+const ruPct = (m) => Math.round(Math.abs(m.pct) * 100);
+const ruDir = (m) => (m.pct > 0 ? "up" : "down");
+
 function ruSum(data, days, t) {
   let n = 0;
   for (const d of days) for (const row of Object.values(data.activity[d] || {})) n += ruVal(row, t);
@@ -11857,28 +11880,41 @@ function nearestDigest(digests, back) {
 function buildRoundUp({ config, store, data, M, digests }) {
   const improved = [], worsened = [], work = [], aware = [];
 
+  const allDays = ruDays(data, 999);
+  const daysOnFile = { n: allDays.length, enough: allDays.length >= RU_DAY * 2 };
+
   /* ---- what improved / what worsened ---- */
-  const cur = ruDays(data, RU_WINDOW), prev = ruDays(data, RU_WINDOW, RU_WINDOW);
-  const trendable = cur.length >= RU_WINDOW && prev.length >= RU_WINDOW;
-  if (trendable) {
-    for (const t of RU_TRENDS) {
-      const a = ruSum(data, cur, t), b = ruSum(data, prev, t);
-      if (b < RU_FLOOR) continue;
-      const pct = (a - b) / b;
-      if (Math.abs(pct) < RU_NOISE) continue;
-      const n = Math.round(Math.abs(pct) * 100);
-      (pct > 0 ? improved : worsened).push({
-        weight: Math.abs(pct),
-        t: `${t.label} ${pct > 0 ? "up" : "down"} ${n}%`,
-        d: cur.length === 1
-          ? `${fmtNum(a)} on ${ruDayName(cur[0])}, against ${fmtNum(b)} on ${ruDayName(prev[0])}.`
-          : `${fmtNum(a)} over the last ${cur.length} days with data, against ${fmtNum(b)} the ${prev.length} before.`,
-        v: (pct > 0 ? "+" : "−") + n + "%",
+  /* Yesterday leads; the week rides along as context. When yesterday is quiet
+     the week leads instead, so a slow day still has something to say. */
+  for (const t of RU_TRENDS) {
+    const day = ruMove(data, t, RU_DAY, RU_DAY);
+    const week = ruMove(data, t, RU_WEEK, RU_WEEK_MIN);
+    const weekTail = !week ? ""
+      : Math.abs(week.pct) < RU_NOISE ? " Level on the week."
+      : ` ${ruDir(week) === "up" ? "Up" : "Down"} ${ruPct(week)}% on the week.`;
+
+    if (ruSays(day)) {
+      (day.pct > 0 ? improved : worsened).push({
+        weight: Math.abs(day.pct),
+        t: `${t.label} ${ruDir(day)} ${ruPct(day)}%`,
+        d: `${fmtNum(day.a)} on ${ruDayName(day.cur[0])}, against ${fmtNum(day.b)} on ${ruDayName(day.prev[0])}.${weekTail}`,
+        v: (day.pct > 0 ? "+" : "−") + ruPct(day) + "%",
+      });
+      continue;
+    }
+    if (ruSays(week)) {
+      const dayTail = day ? " Yesterday was level." : "";
+      (week.pct > 0 ? improved : worsened).push({
+        // A week move is real but slower news than the same move in a day.
+        weight: Math.abs(week.pct) * 0.8,
+        t: `${t.label} ${ruDir(week)} ${ruPct(week)}% on the week`,
+        d: `${fmtNum(week.a)} over the last ${week.cur.length} days with data, against ${fmtNum(week.b)} the ${week.prev.length} before.${dayTail}`,
+        v: (week.pct > 0 ? "+" : "−") + ruPct(week) + "%",
       });
     }
-    improved.sort((x, y) => y.weight - x.weight);
-    worsened.sort((x, y) => y.weight - x.weight);
   }
+  improved.sort((x, y) => y.weight - x.weight);
+  worsened.sort((x, y) => y.weight - x.weight);
 
   /* ---- standards, from the one shared pass ---- */
   const { evaluated, restricted, failBy, verdicts, nearing } = ruEvaluate({ config, store, data, M });
@@ -11886,19 +11922,25 @@ function buildRoundUp({ config, store, data, M, digests }) {
   /* ---- what the digest adds: the rates, which have no other past ----
      Everything above trends activity, which is stored per day anyway. These are
      the numbers that only exist because yesterday's row was kept. */
-  const was = nearestDigest(digests, RU_WINDOW);
+  const was = nearestDigest(digests, RU_DAY);
+  const wasWeek = nearestDigest(digests, RU_WEEK);
   if (was) {
     /* Say which day it actually was. nearestDigest tolerates a few days either
        side, so "yesterday" has to be checked against the real date rather than
        assumed from the window — and never "against 2 on 2026-08-15", two numbers
        running together is unreadable. */
     const ago = was.day === dayIn(new Date(Date.now() - 86400000)) ? "yesterday" : `on ${ruDayName(was.day)}`;
+    const clearedWeek = wasWeek && wasWeek.day !== was.day
+      ? (verdicts.cleared || 0) - (wasWeek.val.v?.cleared || 0) : null;
+    const weekTail = clearedWeek == null ? ""
+      : clearedWeek === 0 ? ` Same as ${ruDayName(wasWeek.day)}.`
+      : ` ${clearedWeek > 0 ? "Up" : "Down"} ${Math.abs(clearedWeek)} on ${ruDayName(wasWeek.day)}.`;
     const cleared = (verdicts.cleared || 0) - (was.val.v?.cleared || 0);
     if (Math.abs(cleared) >= 1)
       (cleared > 0 ? improved : worsened).push({
         weight: Math.abs(cleared) / Math.max(1, evaluated),
         t: `${Math.abs(cleared)} ${cleared > 0 ? "more" : "fewer"} ${Math.abs(cleared) === 1 ? "person is" : "people are"} cleared to grab leads`,
-        d: `${verdicts.cleared || 0} of ${evaluated} clear now, against ${was.val.v?.cleared || 0} ${ago}.`,
+        d: `${verdicts.cleared || 0} of ${evaluated} clear now, against ${was.val.v?.cleared || 0} ${ago}.${weekTail}`,
         v: (cleared > 0 ? "+" : "−") + Math.abs(cleared),
       });
     for (const [label, n] of Object.entries(failBy)) {
@@ -11942,20 +11984,20 @@ function buildRoundUp({ config, store, data, M, digests }) {
       t: `${restricted} ${restricted === 1 ? "person is" : "people are"} restricted`,
       d: "They keep their leads but cannot take another until a standard clears.",
     });
-  if (!trendable)
+  if (!daysOnFile.enough)
     aware.push({
-      t: "Not enough history to compare weeks yet",
-      d: `${cur.length} day${cur.length === 1 ? "" : "s"} of activity on file. Two weeks of imports and the activity trends fill in on their own.`,
+      t: "Not enough history to compare days yet",
+      d: `${daysOnFile.n} day${daysOnFile.n === 1 ? "" : "s"} of activity on file. Two days of imports and yesterday's comparison starts; two weeks and the weekly one joins it.`,
     });
   else if (!was)
     aware.push({
       t: "Standards aren't being compared yet",
       d: Object.keys(digests || {}).length
-        ? "Nothing close enough to a week ago is on file, so who cleared and who slipped is being left out rather than measured against the wrong day."
+        ? "Nothing close enough to yesterday is on file, so who cleared and who slipped is being left out rather than measured against the wrong day."
         : "Today is the first day the floor's standing was written down. From tomorrow this also shows who cleared and who slipped.",
     });
 
-  return { improved, worsened, work, aware, trendable, days: cur.length, rated: !!was,
+  return { improved, worsened, work, aware, trendable: daysOnFile.enough, days: daysOnFile.n, rated: !!was,
     any: improved.length + worsened.length + work.length + aware.length > 0 };
 }
 
