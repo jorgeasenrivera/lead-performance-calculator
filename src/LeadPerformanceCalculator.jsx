@@ -12220,6 +12220,19 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
     role,
     people: (data.roster || []).filter((a) => a.roleId === role.id && matches(a) && inFilter(a)).sort(byLeads),
   }));
+
+  /* Picking a top performer has to land on them, and the top three by units are
+     very often not the top five by leads held — which is the order the roster is
+     capped in. So the role they are in opens first, then the card scrolls itself
+     into view. Without this, tapping the podium scrolled to a person who was
+     display:none and nothing appeared to happen. */
+  useEffect(() => {
+    if (!focusName) return;
+    for (const { role, people } of sections) {
+      const at = people.findIndex((a) => a.name === focusName);
+      if (at >= ROLL_CAP) setRollOpen((o) => (o[role.id] ? o : { ...o, [role.id]: true }));
+    }
+  }, [focusName]); // eslint-disable-line
   // unassigned people have no standards to be judged by, so a bucket filter hides them
   const unassigned = filter ? [] : (data.roster || []).filter((a) => !a.roleId && matches(a)).sort((a, b) => a.order - b.order);
   const totalMatches = sections.reduce((n, s) => n + s.people.length, 0) + unassigned.length;
@@ -12307,7 +12320,8 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
                 grace={inGrace} rank={rankOf[norm(a.name)]} star={stars.has(norm(a.name))} readOnly={readOnly}
                 restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
                 focused={focusName === a.name}
-                rolled={!query && i >= ROLL_CAP && !rollOpen[role.id]} />
+                thresholds={store.thresholds}
+                rolled={!query && i >= ROLL_CAP && !rollOpen[role.id] && a.name !== focusName} />
             );
           })}
           {/* A phone shows the first five, ranked by leads held, and a button for
@@ -12417,7 +12431,7 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds }) {
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
   // Picked out of the hero shortlist or the podium: open the card and bring it
@@ -12527,10 +12541,117 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           {star ? "Blowing past every requirement. " : `Tier ${ev.tierIndex + 1} requirements met. `}Cleared up to {ev.nextCap} leads.
         </div>
       )}
-      {open && stats && (
-        <div className="detail">
-          {Object.entries(METRICS).map(([k, def]) => (
-            <div key={k} className={"detail-cell" + (stats[k] == null ? " blank" : "")}><span>{def.short}</span><b>{def.kind === "pct" ? fmtPct(stats[k]) : fmtNum(stats[k])}</b></div>
+      {open && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds} />}
+    </div>
+  );
+}
+
+/* What opens under a person. It used to be every metric as a flat chip, which
+   read as a spreadsheet cell dropped into a card: fourteen numbers with no sense
+   of which were good.
+
+   Three blocks now, and each one earns its shape:
+     against standard  a bar per metric, 0 to the target, same as the floor's
+                       delivery card — so "76.7% against 60" looks like clearing
+                       it rather than needing to be read
+     where units came  one stacked bar in the channel hues, because the split is
+                       a proportion and a proportion is a bar, not three numbers
+     closing by channel  small bars against the store's own channel targets
+
+   Anything left over stays a chip. A number with no target and no siblings has
+   nothing to be drawn against, and inventing a scale for it would be a lie. */
+const DETAIL_CHANNELS = [
+  { id: "internet", pct: "internetPct", units: "internetUnits", label: "Internet" },
+  { id: "phone", pct: "phonePct", units: "phoneUnits", label: "Phone" },
+  { id: "showroom", pct: "showroomPct", units: "showroomUnits", label: "Showroom" },
+];
+
+function DetailBar({ label, value, target, kind }) {
+  const has = value != null && target > 0;
+  const of = has ? (value / target) * 100 : 0;
+  const state = !has ? "dim" : of >= 100 ? "ok" : of >= 75 ? "near" : "stop";
+  const shown = Math.min(100, (of / 125) * 100);        // 125% of target is the full width
+  const tick = (100 / 125) * 100;                        // where the target sits
+  return (
+    <div className={"dbar dbar-" + state}>
+      <div className="dbar-head">
+        <span className="dbar-lbl">{label}</span>
+        <b className="dbar-val">{value == null ? "—" : kind === "pct" ? fmtPct(value) : fmtNum(value)}</b>
+      </div>
+      <div className="dbar-track">
+        <i className="dbar-fill" style={{ width: shown + "%" }} />
+        <span className="dbar-tick" style={{ left: tick + "%" }} />
+      </div>
+      <div className="dbar-foot">{target > 0 ? `target ${kind === "pct" ? target * 100 + "%" : target}` : "no target set"}</div>
+    </div>
+  );
+}
+
+function AssociateDetail({ stats, ev, thresholds }) {
+  const reqs = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
+  const thr = normThresholds(thresholds);
+
+  // metrics judged against this person's tier
+  const graded = [...reqs.keys()].filter((k) => METRICS[k]);
+  const units = DETAIL_CHANNELS.map((c) => ({ ...c, n: stats[c.units] ?? 0 }));
+  const unitTotal = units.reduce((n, c) => n + c.n, 0);
+  const rates = DETAIL_CHANNELS.filter((c) => stats[c.pct] != null);
+
+  const shownKeys = new Set([...graded, ...DETAIL_CHANNELS.map((c) => c.pct), ...DETAIL_CHANNELS.map((c) => c.units)]);
+  const rest = Object.entries(METRICS).filter(([k]) => !shownKeys.has(k));
+
+  return (
+    <div className="detail">
+      {graded.length > 0 && (
+        <div className="detail-block">
+          <div className="detail-cap">Against standard</div>
+          <div className="dbars">
+            {graded.map((k) => (
+              <DetailBar key={k} label={METRICS[k].short} value={stats[k]}
+                target={METRICS[k].kind === "pct" ? reqs.get(k) / 100 : reqs.get(k)}
+                kind={METRICS[k].kind} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {unitTotal > 0 && (
+        <div className="detail-block">
+          <div className="detail-cap">Where the units came from</div>
+          <div className="dsplit">
+            {units.filter((c) => c.n > 0).map((c) => (
+              <i key={c.id} style={{ width: (c.n / unitTotal) * 100 + "%", background: CHANNEL_HUE[c.id] }} />
+            ))}
+          </div>
+          <div className="dsplit-keys">
+            {units.map((c) => (
+              <span key={c.id} className={c.n > 0 ? "" : "dim"}>
+                <i style={{ background: CHANNEL_HUE[c.id] }} />{c.label} <b>{fmtNum(c.n)}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rates.length > 0 && (
+        <div className="detail-block">
+          <div className="detail-cap">Closing rate by channel</div>
+          <div className="dbars">
+            {rates.map((c) => (
+              <DetailBar key={c.id} label={c.label} value={stats[c.pct]}
+                target={(thr[c.id]?.green ?? 0) / 100} kind="pct" />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rest.length > 0 && (
+        <div className="detail-cells">
+          {rest.map(([k, def]) => (
+            <div key={k} className={"detail-cell" + (stats[k] == null ? " blank" : "")}>
+              <span>{def.short}</span>
+              <b>{def.kind === "pct" ? fmtPct(stats[k]) : fmtNum(stats[k])}</b>
+            </div>
           ))}
         </div>
       )}
@@ -20018,6 +20139,7 @@ function Style() {
       .flag-gray { color:var(--ink-2); background:rgba(118,118,128,.16); }
       .gray-note { color:var(--ink-2); }
       .detail-cell.blank { opacity:.45; }
+      @media (prefers-reduced-motion: reduce) { .detail { animation:none !important; } }
       .assoc-card.is-restricted { opacity:1; filter:none; }
       .verdict-off { background:rgba(118,118,128,.2); color:var(--ink); }
       .off-note { color:var(--ink-2); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
@@ -20356,9 +20478,48 @@ function Style() {
       .crop-canvas:active { cursor:grabbing; }
       .crop-zoom { width:88%; accent-color:var(--blue); margin:4px 0 12px; }
       .crop-actions { display:flex; gap:10px; justify-content:center; }
-      .detail { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 0 23px; animation: pageIn .3s var(--spring); }
+      .detail { display:flex; flex-direction:column; gap:16px; margin:14px 0 0 23px;
+        animation: detailIn .42s var(--ease-bloop) both; }
+      @keyframes detailIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+      .detail-block { display:flex; flex-direction:column; gap:9px; }
+      .detail-cap { font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+        color:var(--ink-3); }
+      .detail-cells { display:flex; flex-wrap:wrap; gap:8px; }
       .detail-cell { background:rgba(255,255,255,.55); border:1px solid rgba(255,255,255,.6); border-radius:12px; padding:6px 12px; font-size:12px; display:flex; gap:8px; }
       .detail-cell span { color:var(--ink-2); }
+
+      /* one bar per metric, 0 to target, the same language as the floor's
+         delivery card so the two read as the same idea at two scales */
+      /* 132, not 148: at 390 the roster card leaves ~309px inside its padding, and
+         two 148s plus the gap wanted 310 — one pixel short, so every bar dropped
+         to its own row and four metrics became four rows of scrolling. */
+      .dbars { display:grid; grid-template-columns:repeat(auto-fit, minmax(132px, 1fr)); gap:11px 14px; }
+      .dbar-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+      .dbar-lbl { font-size:11.5px; color:var(--ink-2); font-weight:600; overflow:hidden;
+        text-overflow:ellipsis; white-space:nowrap; }
+      .dbar-val { font-family:var(--font-display); font-size:14px; font-variant-numeric:tabular-nums; }
+      .dbar-track { position:relative; height:7px; border-radius:999px; background:rgba(16,40,68,.10);
+        margin-top:5px; overflow:hidden; }
+      .dbar-fill { display:block; height:100%; border-radius:999px; width:0;
+        transition:width .85s var(--ease); transition-delay:.1s; }
+      /* the target, drawn ON the track so clearing it is visible rather than arithmetic */
+      .dbar-tick { position:absolute; top:-2px; bottom:-2px; width:2px; border-radius:2px;
+        background:rgba(16,40,68,.45); }
+      .dbar-foot { font-size:10px; color:var(--ink-3); margin-top:4px; }
+      .dbar-ok .dbar-fill { background:linear-gradient(90deg, #34C264, #1E8F45); }
+      .dbar-near .dbar-fill { background:linear-gradient(90deg, #E8A33C, #C77800); }
+      .dbar-stop .dbar-fill { background:linear-gradient(90deg, #F0705F, #D8382C); }
+      .dbar-dim .dbar-fill { background:var(--ink-3); }
+
+      /* the unit split: a proportion, so a bar rather than three numbers */
+      .dsplit { display:flex; height:11px; border-radius:999px; overflow:hidden; gap:2px;
+        background:rgba(16,40,68,.08); }
+      .dsplit i { display:block; transition:width .85s var(--ease); }
+      .dsplit-keys { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11px; color:var(--ink-2); }
+      .dsplit-keys span { display:inline-flex; align-items:center; gap:5px; }
+      .dsplit-keys span.dim { opacity:.45; }
+      .dsplit-keys i { width:9px; height:9px; border-radius:3px; display:inline-block; }
+      .dsplit-keys b { font-family:var(--font-display); color:var(--ink); }
 
       /* ---- badges ---- */
       .badge { font-size:11px; padding:3px 9px; border-radius:20px; font-weight:700; }
@@ -20722,14 +20883,30 @@ function Style() {
         animation:popOpen .34s var(--ease-bloop) both; }
       .is-touch .popped .health-pop::after, .is-touch .popped .hf-pop::after,
       .is-touch .popped .mdial-pop::after { display:none; }
-      @keyframes popOpen { from { opacity:0; transform:translateY(-6px) scale(.97); } to { opacity:1; transform:none; } }
-      /* .mstrip wraps, so a full-width popup drops onto its own line under the dials */
+      /* Two motions, on purpose. The panel arrives with the bloop everything
+         else in the app uses, and the card it hangs off settles at the same
+         time — so the growth reads as one movement rather than content
+         appearing and the layout jumping to catch up afterwards. */
+      @keyframes popOpen {
+        from { opacity:0; transform:translateY(-10px) scale(.96); }
+        60%  { opacity:1; }
+        to   { opacity:1; transform:none; }
+      }
+      .is-touch .popped { transition:box-shadow .4s var(--ease); }
+      .is-touch .hero-health.popped, .is-touch .hf-fix.popped { animation:cardSettle .46s var(--ease-bloop) both; }
+      @keyframes cardSettle { from { transform:scale(.985); } to { transform:none; } }
+      /* A dial is half the row, so its panel inherited half the row and the
+         explanation came out as a narrow column that shoved the card sideways.
+         The dial takes the full width while it is open — which is also the
+         growth the card should have — and the gauge holds its own size inside. */
+      .is-touch .mdial.popped { width:100%; transition:width .4s var(--ease-bloop); }
+      .is-touch .mdial.popped svg { max-width:172px; margin-left:auto; margin-right:auto; }
       .is-touch .mdial.popped .mdial-pop { margin-top:10px; }
 
       /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
       @media (prefers-reduced-motion: reduce) {
         .is-touch .popped .health-pop, .is-touch .popped .hf-pop,
-        .is-touch .popped .mdial-pop { animation:none !important; }
+        .is-touch .popped .mdial-pop, .is-touch .popped { animation:none !important; }
         .lpc *, .lpc *::before, .lpc *::after {
           animation-duration: .001ms !important;
           animation-iteration-count: 1 !important;
