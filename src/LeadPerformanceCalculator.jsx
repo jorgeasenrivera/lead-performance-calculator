@@ -2898,12 +2898,31 @@ export default function LeadPerformanceCalculator() {
       importedFiles.push(`${label} (${count})`);
       log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated${skipped ? `, ${skipped} excluded row${skipped === 1 ? "" : "s"} skipped` : ""}.` });
 
+      /* Anyone in a report who is not on the roster gets added, which is what
+         makes a new store fill itself in from its first import. It is also how a
+         group-wide export puts every rooftop's people into whichever store
+         happened to be selected: the file carries no dealership column, so every
+         row looks like it belongs here.
+
+         A file that belongs to this store will recognise somebody in it. If a
+         store with a roster recognises NOBODY, the file is for somewhere else,
+         and adding forty strangers is worse than importing nothing. */
       const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
-      for (const [key, rec] of Object.entries(parsed)) {
-        if (excluded.has(key)) continue;
-        if (!rosterKeys.has(key)) {
-          next.roster.push({ id: uid(), name: rec.displayName, roleId: null, order: next.roster.length });
-          rosterKeys.add(key);
+      const incoming = Object.keys(parsed).filter((k) => !excluded.has(k));
+      const known = incoming.filter((k) => rosterKeys.has(k)).length;
+      const fresh = incoming.length - known;
+      const foreign = next.roster.length > 0 && known === 0 && fresh >= 5;
+
+      if (foreign) {
+        log.push({ ok: false, msg: `${fileName} → ${fresh} names, not one of them on ${
+          currentStore?.name || "this store"}'s roster. Nobody was added. This looks like another store's report, or a group-wide export — check which store is selected before importing it.` });
+      } else {
+        for (const [key, rec] of Object.entries(parsed)) {
+          if (excluded.has(key)) continue;
+          if (!rosterKeys.has(key)) {
+            next.roster.push({ id: uid(), name: rec.displayName, roleId: null, order: next.roster.length });
+            rosterKeys.add(key);
+          }
         }
       }
     }
@@ -18903,7 +18922,14 @@ function Style() {
 
         /* only cards that actually hold a wide table become scroll containers */
         .card:has(table) { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-        .checkout-table, .roster-table, .gm-table { min-width:520px; }
+        .checkout-table, .gm-table { min-width:520px; }
+        /* The roster's Tags cell holds a chip per skill. At 520px that column is
+           about 120px wide, so eight chips stack eight deep and a row runs 450px
+           tall. The table already scrolls sideways in its card — give it the room
+           to do so, and keep the chips on one line. */
+        .roster-table { min-width:820px; }
+        .roster-table .skill-set { flex-wrap:nowrap; }
+        .roster-table td { vertical-align:middle; }
 
         /* store rows stack; every action stays on screen, no sideways swipe */
         .store-item { flex-direction:column; align-items:stretch; }
