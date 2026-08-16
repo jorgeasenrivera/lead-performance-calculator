@@ -15970,7 +15970,17 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
         </text>
         {area && <path d={area} fill={shown.hue} opacity=".10" />}
         {area && <path d={area} fill="#1E8F45" opacity=".20" clipPath="url(#flow-above)" />}
-        <path d={d} fill="none" stroke={shown.hue} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Solid only when every day between the ends was actually measured. Two
+            monthly readings joined by a confident line assert a path the floor
+            never took — the rate moves every day. Dashed, with a dot on each
+            reading, says "these two are measured, the bit between is not". */}
+        <path d={d} fill="none" stroke={shown.hue} strokeWidth="2.4"
+          strokeLinecap="round" strokeLinejoin="round"
+          strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8} />
+        {!daily && pts.map((v, i) => v == null ? null : (
+          <circle key={"p" + i} cx={flowX(i, pts.length).toFixed(1)} cy={flowY(v).toFixed(1)}
+            r="3" fill={shown.hue} stroke="#FFF" strokeWidth="1.5" />
+        ))}
         {eI >= 0 && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill={shown.hue} stroke="#FFF" strokeWidth="2.5" />}
         {eI >= 0 && above && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="9" fill="none" stroke="#1E8F45" strokeWidth="2" opacity=".9" />}
         {daily && flowMarks(shown.days).map((m) => (
@@ -15997,8 +16007,8 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
       </svg>
       <div className="flow-note">
         {daily ? "Day by day, last 30 days. Ticks are Mondays; the taller line is the 1st."
-          : shown.pts.length < 2 ? "One month on file so far. The line fills in as months land."
-          : "Month by month. A daily line starts once two days of figures are on file."}
+          : shown.pts.length < 2 ? "One month on file so far."
+          : "Two monthly readings, dashed because the days between them were never measured. The daily line starts once two days of figures are on file."}
       </div>
     </button>
   );
@@ -16037,7 +16047,13 @@ function DeliveryAll({ data, roster, thr, digests }) {
           return (
             <g key={s.id}>
               <path className="flow-draw" d={flowPath(ps)} fill="none" stroke={s.hue} strokeWidth="2.2"
-                strokeLinecap="round" strokeLinejoin="round" style={{ animationDelay: k * 180 + "ms" }} />
+                strokeLinecap="round" strokeLinejoin="round"
+                strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8}
+                style={{ animationDelay: k * 180 + "ms" }} />
+              {!daily && ps.map((v, i) => v == null ? null : (
+                <circle key={"p" + i} cx={flowX(i, ps.length).toFixed(1)} cy={flowY(v).toFixed(1)}
+                  r="2.6" fill={s.hue} stroke="#FFF" strokeWidth="1.4" />
+              ))}
               <circle cx={lx.toFixed(1)} cy={ly.toFixed(1)} r="3.6" fill={s.hue} stroke="#FFF" strokeWidth="2" />
               <text x={(lx - 6).toFixed(1)} y={(ly - 8).toFixed(1)} textAnchor="end"
                 fontSize="8.5" fontWeight="700" fill={s.hue}>{s.label}</text>
@@ -21059,13 +21075,18 @@ function Style() {
          the hero it sat outside its own block's box, so what was underneath was
          the hero band rather than the health block the handler looks for. The
          glyph is 16px; the target it sits in is 40. */
-      .tapmark { display:none; position:absolute; bottom:2px; right:2px; z-index:2;
+      /* The 40px box comes from padding on an absolutely positioned element, so
+         it costs no layout — but the negative margin that used to go with it
+         dragged the whole box 12px outside the card, which put the glyph hard
+         into the corner and half off it. No margin: the box sits inside, and the
+         glyph lands 14px in from the right and 12px up from the bottom. */
+      .tapmark { display:none; position:absolute; bottom:0; right:2px; z-index:2;
         opacity:.55; color:inherit; cursor:pointer;
-        padding:12px; margin:-12px; align-items:center; justify-content:center; }
+        padding:12px; align-items:center; justify-content:center; }
       .is-touch .tapmark { display:flex; }
       /* The hero's health block is a bare flex column, not a card with padding,
          so its mark hangs off the corner it is meant to sit inside. */
-      .hero-health .tapmark { bottom:0; right:0; }
+      .hero-health .tapmark { bottom:-4px; right:-6px; }
       /* Once it is open the mark has done its job, and the block has grown to
          hold the panel — so it would otherwise drift down to sit beside it. */
       .is-touch .popped .tapmark { display:none; }
