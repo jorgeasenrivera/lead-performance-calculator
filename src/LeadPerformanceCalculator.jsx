@@ -575,10 +575,19 @@ PIX.cup   = ["000000000","111111000","111111100","111111010","111111010","111111
 PIX.walk  = ["000110000","000110000","001111000","011111100","001111000","001111000","011001100","110000110","000000000"];
 
 function PixIcon({ glyph, size = 20, className, style, title, fine = false }) {
-  // The marks that appear at text size come off the coarse grid, the same as The
-  // Board, so a tick beside a number is fat dots that hold their shape rather than
-  // twenty dots the size of a pixel. Pass fine to force the detailed grid.
-  const rows = (!fine && PIX5[glyph]) || PIX[glyph] || PIX.dot;
+  // Six glyphs exist at both grids: check, close, warn, triup, tridown and dot.
+  // They are marks rather than pictures, they always appear at text size, and the
+  // coarse grid is what makes them hold their shape - a tick beside a number as fat
+  // dots rather than twenty the size of a pixel.
+  //
+  // `fine` used to be able to override that, and the override was reachable from
+  // every call site. It got used: the bottom bar drew the Standards tick and the
+  // Tickets warning at 9x9 while the same two marks were 5x5 everywhere else, and
+  // the mismatch is noticeable without being nameable. So `fine` no longer applies
+  // to a glyph that exists at the coarse grid. A mark can be drawn one way only,
+  // and nobody has to remember which. It still works for everything else, where
+  // there is only one drawing and the flag is a no-op anyway.
+  const rows = PIX5[glyph] || PIX[glyph] || PIX.dot;
   const n = rows.length;
   const cell = size / n;
   // Finer grids need proportionally fatter dots or the shape dissolves into grey.
