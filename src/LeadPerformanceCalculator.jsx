@@ -585,6 +585,9 @@ const PIX = {
   doc:      ["011111000","010000100","010000110","010111110","010000010","010111010","010000010","011111110","000000000"],
   star:     ["000010000","000111000","000111000","111111111","011111110","001111100","011111110","010001000","100000001"],
   bolt:     ["000011100","000111000","001110000","011111100","000011100","000111000","001110000","011100000","000000000"],
+  /* A touch target: a ring with a pressed point at its centre. Said in dots,
+     because every other mark in the app is. */
+  tap:      ["000000000","001111100","010000010","100011001","100111001","100011001","010000010","001111100","000000000"],
   dot:      ["000000000","000000000","000111000","001111100","001111100","001111100","000111000","000000000","000000000"],
   warn:     ["000010000","000111000","001101100","011101110","011101110","111111111","111101111","111111111","000000000"],
   car:      ["000000000","000000000","000111100","001111110","011111111","111111111","111111111","011000110","000000000"],
@@ -825,16 +828,23 @@ if (typeof document !== "undefined") document.documentElement.classList.add("js-
    card instead just moves the problem: then the card paints over the sticky
    header and the bottom bar.
 
-   So on touch the popup leaves the page. The content is cloned into a sheet
+   So on touch the popup leaves the page. The content is cloned into a card
    portaled to document.body, where there is no ancestor to be trapped by. One
-   sheet exists at a time, so opening a second closes the first for free, and
+   card exists at a time, so opening a second closes the first for free, and
    nothing on the page changes depth at all.
+
+   It stays a small card anchored to what was tapped rather than a full-screen
+   modal: the modal answered the stacking problem but took over the whole screen
+   to show three lines, and the point of these is to be glanceable. It is placed
+   above the tapped element when there is room and below when there is not, and
+   clamped so it never leaves the viewport.
 
    The clone is a DOM node, not innerHTML: React already rendered and escaped it,
    and these blocks are read-only text, so a copy behaves identically. */
-const tapSheet = { node: null, subs: new Set() };
-function openTapSheet(node) {
+const tapSheet = { node: null, at: null, subs: new Set() };
+function openTapSheet(node, at) {
   tapSheet.node = node;
+  tapSheet.at = at || null;
   tapSheet.subs.forEach((f) => f());
 }
 function useTapSheet() {
@@ -847,13 +857,42 @@ function useTapSheet() {
   return tapSheet.node;
 }
 
+const TAP_W = 300, TAP_GAP = 10, TAP_EDGE = 12;
+
+/* Where the card goes: above what was tapped if it fits, below if not, and
+   pinned inside the viewport if neither. Pure, because "the popup went off the
+   screen" is the bug this whole feature keeps producing and arithmetic that
+   cannot be run on its own cannot be checked. */
+function tapPlacement(at, h, vw, vh) {
+  const w = Math.min(TAP_W, vw - TAP_EDGE * 2);
+  const above = at.top - TAP_GAP - h;
+  const below = at.bottom + TAP_GAP;
+  const top = above >= TAP_EDGE ? above
+    : below + h <= vh - TAP_EDGE ? below
+    : Math.max(TAP_EDGE, Math.min(vh - TAP_EDGE - h, at.top - h / 2));
+  const want = at.left + at.width / 2 - w / 2;
+  const left = Math.max(TAP_EDGE, Math.min(vw - TAP_EDGE - w, want));
+  return { top, left, width: w };
+}
+
 function TapSheetHost() {
   const node = useTapSheet();
+  const at = tapSheet.at;
   const slot = useRef(null);
+  const card = useRef(null);
+  const [pos, setPos] = useState(null);
+
   useEffect(() => {
     if (!node || !slot.current) return;
     slot.current.replaceChildren(node);
   }, [node]);
+
+  /* Measured after the content is in, because how tall it is decides whether
+     there is room above. Falls back to below, then to whichever side has more. */
+  useEffect(() => {
+    if (!node || !at || !card.current) { setPos(null); return; }
+    setPos(tapPlacement(at, card.current.offsetHeight, window.innerWidth, window.innerHeight));
+  }, [node, at]);
   useEffect(() => {
     if (!node) return;
     const prev = document.body.style.overflow;
@@ -865,13 +904,16 @@ function TapSheetHost() {
   if (!node) return null;
   return (
     <Overlay>
-      <div className="bsheet-root tap-sheet" role="dialog" aria-label="Details">
-        <div className="bsheet-scrim" onClick={() => openTapSheet(null)} />
-        <div className="bsheet">
-          <button className="bsheet-x tap-sheet-x" onClick={() => openTapSheet(null)} aria-label="Close">
-            <PixIcon glyph="close" size={13} />
+      <div className="tapcard-root" role="dialog" aria-label="Details">
+        {/* a catcher, not a scrim: tapping away closes it without dimming the
+            page, which is what made the modal feel like an interruption */}
+        <div className="tapcard-catch" onClick={() => openTapSheet(null)} />
+        <div className="tapcard" ref={card}
+          style={pos ? { top: pos.top, left: pos.left, width: pos.width } : { visibility: "hidden" }}>
+          <button className="tapcard-x" onClick={() => openTapSheet(null)} aria-label="Close">
+            <PixIcon glyph="close" size={11} />
           </button>
-          <div className="bsheet-body" ref={slot} />
+          <div className="tapcard-body" ref={slot} />
         </div>
       </div>
     </Overlay>
@@ -887,7 +929,9 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
       const pop = host && host.querySelector(".mdial-pop, .hf-pop, .health-pop");
       if (!pop) return;
       e.preventDefault();
-      openTapSheet(pop.cloneNode(true));
+      const r = host.getBoundingClientRect();
+      openTapSheet(pop.cloneNode(true),
+        { top: r.top, bottom: r.bottom, left: r.left, width: r.width });
     }, true);
   }
 }
@@ -4567,14 +4611,17 @@ function inkOn(bg) {
 
 /* A translucent plate on the store's own colour, and the ink that reads on it.
 
-   Picking the ink alone is not enough. The date chip started as white text on a
-   22%-white plate, which lightens the plate TOWARD the text: on Driver's Mart
-   teal that measured 2.36:1, below even the 3:1 large-text floor. The plate has
-   to tint AWAY from the ink, and which direction wins depends on the brand — so
-   both are computed and the better one is used.
+   The chip belongs to the hero, and everything else on the hero is white, so
+   white is what it should be too — a lone black label on a wall of white text
+   reads as a mistake even when it is legible.
 
-   Measured across the brands in play: Driver's Mart 11.8, Honda 9.4,
-   Chevrolet 11.8, Mazda 12.4, and a pale or yellow brand 15+. */
+   The first version was white on a 22%-WHITE plate, which lightens the plate
+   toward the text and measured 2.36:1 on the Driver's Mart teal. The second
+   picked whichever direction scored highest, which took that store to black.
+   Both were wrong in the same way: the plate is the thing to move, not the ink.
+   Darkening it 36% carries white on every brand in play — Driver's Mart 6.3,
+   Honda 10.7, Chevrolet 12.9, Mazda 13.4 — and only a genuinely pale brand
+   (2.9) or a yellow one (3.9) fails, which is where the ink does flip. */
 function chipOn(bg) {
   const raw = String(bg || "").trim().replace("#", "");
   // #0A9 and #00AA99 are the same colour; only one of them survives a /../ split
@@ -4593,10 +4640,9 @@ function chipOn(bg) {
     const x = lum(a), y = lum(b);
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
   };
-  const dark = over([0, 0, 0], 0.28), light = over([255, 255, 255], 0.62);
-  return ratio("#FFFFFF", dark) >= ratio("#101820", light)
-    ? { ink: "#FFFFFF", plate: dark }
-    : { ink: "#101820", plate: light };
+  const dark = over([0, 0, 0], 0.36);
+  if (ratio("#FFFFFF", dark) >= 4.5) return { ink: "#FFFFFF", plate: dark };
+  return { ink: "#101820", plate: over([255, 255, 255], 0.62) };
 }
 
 function brandFontFor(name) {
@@ -11724,9 +11770,16 @@ const RU_TRENDS = [
   { key: "calls", label: "Calls made" },
   { key: "contacted", label: "Customers reached" },
 ];
-const RU_WINDOW = 7;      // days per side of the comparison
-const RU_FLOOR = 5;       // below this the prior week is too small to call a trend
+/* One day per side: the round-up answers "what changed since yesterday", not
+   "since last week". Note this counts DAYS WITH DATA, not calendar days — a
+   store that does not import on a Sunday has not had a bad Sunday, and the
+   comparison would otherwise be against an empty one. */
+const RU_WINDOW = 1;
+const RU_FLOOR = 5;       // below this the day before is too small to call a trend
 const RU_NOISE = 0.10;    // moves smaller than this are not worth anyone's morning
+
+/* "Sat 15 Aug" rather than "2026-08-15", which nobody reads as a day. */
+const ruDayName = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 
 const ruVal = (row, t) => {
   if (!row) return 0;
@@ -11806,7 +11859,7 @@ function buildRoundUp({ config, store, data, M, digests }) {
 
   /* ---- what improved / what worsened ---- */
   const cur = ruDays(data, RU_WINDOW), prev = ruDays(data, RU_WINDOW, RU_WINDOW);
-  const trendable = cur.length >= 3 && prev.length >= 3;
+  const trendable = cur.length >= RU_WINDOW && prev.length >= RU_WINDOW;
   if (trendable) {
     for (const t of RU_TRENDS) {
       const a = ruSum(data, cur, t), b = ruSum(data, prev, t);
@@ -11817,7 +11870,9 @@ function buildRoundUp({ config, store, data, M, digests }) {
       (pct > 0 ? improved : worsened).push({
         weight: Math.abs(pct),
         t: `${t.label} ${pct > 0 ? "up" : "down"} ${n}%`,
-        d: `${fmtNum(a)} over the last ${cur.length} days with data, against ${fmtNum(b)} the ${prev.length} before.`,
+        d: cur.length === 1
+          ? `${fmtNum(a)} on ${ruDayName(cur[0])}, against ${fmtNum(b)} on ${ruDayName(prev[0])}.`
+          : `${fmtNum(a)} over the last ${cur.length} days with data, against ${fmtNum(b)} the ${prev.length} before.`,
         v: (pct > 0 ? "+" : "−") + n + "%",
       });
     }
@@ -11833,8 +11888,11 @@ function buildRoundUp({ config, store, data, M, digests }) {
      the numbers that only exist because yesterday's row was kept. */
   const was = nearestDigest(digests, RU_WINDOW);
   if (was) {
-    // Never "against 2 7 days ago" — two numbers running together is unreadable.
-    const ago = was.gap <= 1 ? "a week ago" : `on ${was.day}`;
+    /* Say which day it actually was. nearestDigest tolerates a few days either
+       side, so "yesterday" has to be checked against the real date rather than
+       assumed from the window — and never "against 2 on 2026-08-15", two numbers
+       running together is unreadable. */
+    const ago = was.day === dayIn(new Date(Date.now() - 86400000)) ? "yesterday" : `on ${ruDayName(was.day)}`;
     const cleared = (verdicts.cleared || 0) - (was.val.v?.cleared || 0);
     if (Math.abs(cleared) >= 1)
       (cleared > 0 ? improved : worsened).push({
@@ -11927,6 +11985,20 @@ function RuFinding({ item, tone, delay }) {
    scope: it is about this person's morning, not the store's. */
 const ruWritten = new Set();   // one write per store per day per session
 
+/* The date chip in the hero opens the round-up. The two belong together — the
+   chip says which day it is, the round-up says what that day has done so far —
+   and it saves the board a card that was only ever a door. Same tiny pubsub as
+   the tap card, for the same reason: the opener and the panel are in different
+   components and neither owns the other. */
+const ruOpen = { subs: new Set() };
+function openRoundUp() { ruOpen.subs.forEach((f) => f()); }
+function useRoundUpOpener(fn) {
+  useEffect(() => {
+    ruOpen.subs.add(fn);
+    return () => { ruOpen.subs.delete(fn); };
+  }, [fn]);
+}
+
 function RoundUp({ config, store, data, M }) {
   const [digests, setDigests] = useState(null);
   const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
@@ -11935,6 +12007,7 @@ function RoundUp({ config, store, data, M }) {
   const [full, setFull] = useState(() => {
     try { return !localStorage.getItem(seenKey); } catch { return false; }
   });
+  useRoundUpOpener(useCallback(() => setFull(true), []));
   const close = () => {
     try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it shows again, which is survivable */ }
     setFull(false);
@@ -12009,21 +12082,10 @@ function RoundUp({ config, store, data, M }) {
     );
   }
 
-  /* Once it has been read, all that is left is the way back into it. The sheet
-     is the round-up; this is a door handle, not a second version of it. */
-  return (
-    <button className="ru-reopen" onClick={() => setFull(true)}>
-      <span className="ru-reopen-t">Your round-up</span>
-      <span className="ru-reopen-tally">
-        {RU_SECTIONS.filter((s) => ru[s.key].length).map((s) => (
-          <span key={s.key} className={"ru-tally ru-" + s.tone}>
-            <PixIcon glyph={s.glyph} size={12} fine />{ru[s.key].length}
-          </span>
-        ))}
-      </span>
-      <span className="ru-reopen-go">Open</span>
-    </button>
-  );
+  /* Once it has been read, the way back in is the hero's date chip — the chip
+     says which day it is and the round-up says what that day has done, so the
+     board does not also need a card whose only job was to be a door. */
+  return null;
 }
 
 /* ---------------- Admin overview ---------------- */
@@ -15627,6 +15689,7 @@ function DeliveryFlow({ data, roster, thr, onOpen }) {
 
   return (
     <button className="flowcard" onClick={onOpen}>
+      <TapMark />
       <div className="flow-head">
         <h5>Delivery against target</h5>
         <span className="flow-pips">
@@ -15772,6 +15835,12 @@ function DeliveryCard({ config, store, data }) {
       )}
     </>
   );
+}
+
+/* Marks a card that opens something. Only rendered on touch — a pointer gets
+   the same answer from hover, and the mark would be noise. */
+function TapMark() {
+  return <span className="tapmark" aria-hidden="true"><PixIcon glyph="tap" size={13} /></span>;
 }
 
 function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
@@ -15954,16 +16023,19 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             {/* The chip is a translucent plate on the store's own gradient, so it
                 cannot assume white text — see chipOn, which computes both
                 directions and takes the one that actually reads. */}
-            <div className="hero-datechip" style={{ color: dateChip.ink, background: dateChip.plate }}>
+            <button className="hero-datechip" style={{ color: dateChip.ink, background: dateChip.plate }}
+              onClick={openRoundUp}>
               <PixIcon glyph="calendar" size={11} />
               {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-            </div>
+              <PixIcon glyph="tap" size={11} className="datechip-tap" />
+            </button>
             <div className="hero-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
             <h1 className="hero-store">{store.name}</h1>
           </div>
         </div>
 
         <div className="hero-health">
+          <TapMark />
           <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
             <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
               <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
@@ -16057,6 +16129,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         <div className="hero-focus">
           {weakest && (
             <div className="hf-block hf-fix">
+              <TapMark />
               <div className="hf-cap">Weakest standard</div>
               <div className="hf-metric">{METRICS[weakest.metric].label}</div>
               <div className="hf-bar"><div className="hf-fill" style={{ width: Math.round(weakest.mean * 100) + "%" }} /></div>
@@ -17944,8 +18017,13 @@ function Style() {
       .hh-meta span { color:rgba(255,255,255,.5); }
       /* Closing rates on hover, same bloop as the dials. */
       .hero-datechip { display:inline-flex; align-items:center; gap:5px; align-self:flex-start;
+        border:none; font-family:inherit; cursor:pointer;
+        transition:transform .25s var(--ease-bloop), filter .2s var(--ease);
         font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
-        padding:3px 8px; border-radius:999px; margin-bottom:7px; }
+        padding:4px 9px; border-radius:999px; margin-bottom:7px; }
+      .hero-datechip:active { transform:scale(.94); }
+      .hero-datechip:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
+      .datechip-tap { opacity:.65; margin-left:1px; }
       .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
@@ -17994,7 +18072,7 @@ function Style() {
       /* ---- the "why, and who" row ---- */
       .hero-focus { position:relative; z-index:200; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
         animation: tileIn .5s var(--spring) .32s both; }
-      .hf-block { background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+      .hf-block { position:relative; background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
         padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07); }
       .hf-cap { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.11em; color:var(--ink-3); }
@@ -20598,7 +20676,7 @@ function Style() {
       .roll-more { display:none; }
 
       /* ---------------- Delivery, flowing ---------------- */
-      .flowcard { display:block; width:100%; text-align:left; font:inherit; cursor:pointer;
+      .flowcard { position:relative; display:block; width:100%; text-align:left; font:inherit; cursor:pointer;
         background:var(--card); border:1px solid var(--line); border-radius:16px;
         padding:14px 15px; margin:14px 0 0; box-shadow:var(--shadow-1);
         transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease); }
@@ -20662,20 +20740,42 @@ function Style() {
       .bsheet-body { overflow-y:auto; overscroll-behavior:contain; padding:14px 16px 18px;
         display:flex; flex-direction:column; gap:11px; }
 
-      /* A popup cloned into the sheet arrives still wearing the CSS that hid it
-         and floated it next to its card. Inside the sheet it is just content. */
-      .tap-sheet .health-pop, .tap-sheet .hf-pop, .tap-sheet .mdial-pop {
+      /* The tapped popup, portaled out of its card and anchored back to it. */
+      .tapcard-root { position:fixed; inset:0; z-index:365;
+        font-family:var(--font-ui); color:var(--ink); font-size:16px; line-height:1.55;
+        -webkit-font-smoothing:antialiased; }
+      .tapcard-root h4, .tapcard-root .mp-title { font-family:var(--font-display); }
+      .tapcard-root text { font-family:var(--font-ui); }
+      .tapcard-catch { position:absolute; inset:0; }
+      .tapcard { position:absolute; background:var(--card); border:1px solid rgba(16,40,68,.08);
+        border-radius:16px; box-shadow:0 18px 44px -12px rgba(16,40,68,.34), 0 2px 8px rgba(16,40,68,.10);
+        padding:13px 15px 12px; max-height:74vh; overflow-y:auto; overscroll-behavior:contain;
+        animation:tapPop .34s var(--ease-bloop) both; }
+      @keyframes tapPop { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:none; } }
+      .tapcard-x { position:absolute; top:9px; right:9px; border:none; background:var(--line);
+        width:22px; height:22px; border-radius:50%; cursor:pointer; color:var(--ink);
+        display:flex; align-items:center; justify-content:center; }
+      .tapcard-x:active { transform:scale(.88); }
+      .tapcard .mp-title, .tapcard h4 { padding-right:26px; }
+      /* A cloned popup arrives still wearing the CSS that hid it and floated it
+         beside its card. Inside the tapcard it is just content. */
+      .tapcard .health-pop, .tapcard .hf-pop, .tapcard .mdial-pop {
         position:static; opacity:1; pointer-events:auto; transform:none;
         width:auto; max-width:none; min-width:0; border:none; box-shadow:none;
         background:none; padding:0; z-index:auto; }
-      .tap-sheet .health-pop::after, .tap-sheet .hf-pop::after, .tap-sheet .mdial-pop::after { display:none; }
-      .tap-sheet .bsheet { padding-top:6px; }
-      .tap-sheet-x { position:absolute; top:12px; right:12px; z-index:2; }
-      .tap-sheet .bsheet-body { padding:18px 16px 18px; }
-      .tap-sheet .mp-title { padding-right:34px; }
+      .tapcard .health-pop::after, .tapcard .hf-pop::after, .tapcard .mdial-pop::after { display:none; }
+
+      /* The mark that says a card opens something. Touch has no hover, so
+         without it nothing distinguishes a card you can press from one you
+         cannot — and a word would cost a line on every card that has one. */
+      .tapmark { display:none; position:absolute; top:10px; right:11px; z-index:2;
+        opacity:.5; pointer-events:none; color:inherit; }
+      .is-touch .tapmark { display:flex; }
+      .hero-health .tapmark { top:0; right:0; }
 
       /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
       @media (prefers-reduced-motion: reduce) {
+        .tapcard { animation:none !important; }
         .lpc *, .lpc *::before, .lpc *::after {
           animation-duration: .001ms !important;
           animation-iteration-count: 1 !important;
