@@ -15179,10 +15179,15 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
     strip.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
   }, [value]);
 
-  if (!items || items.length < 2) return null;
+  /* Import is the bar's centre button. A destination that is already a
+     permanent, badge-carrying fixture two rows below does not need a chip here
+     as well — two controls for one place is how the bar and the drawer ended up
+     competing in the first place. */
+  const shown = (items || []).filter(([id]) => id !== "import");
+  if (shown.length < 2) return null;
   return (
     <div className="sect-strip no-print" ref={ref}>
-      {items.map(([id, label]) => (
+      {shown.map(([id, label]) => (
         <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
           {NAV_SHORT[id] || label}
           {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
@@ -15851,9 +15856,14 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             {store.icon ? <img src={store.icon} alt="" /> : <Logo size={54} animated />}
           </div>
           <div className="hero-text">
+            {/* The date reads as a stamp on the card rather than a third line of
+                prose under the store name — asked for, and it buys back the line. */}
+            <div className="hero-datechip">
+              <PixIcon glyph="calendar" size={11} />
+              {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            </div>
             <div className="hero-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
             <h1 className="hero-store">{store.name}</h1>
-            <div className="hero-date">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
           </div>
         </div>
 
@@ -17615,6 +17625,18 @@ function AppShell({
   storeData, storeName, brand, children,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  /* Pages kept opening a little way down. Two causes, both outside the layout:
+     the browser restores the previous scroll offset on reload, and moving between
+     sections keeps whatever offset the last one had. Neither is something the CSS
+     can answer, so the shell says where the top is. */
+  useEffect(() => {
+    if (typeof history !== "undefined" && "scrollRestoration" in history) {
+      history.scrollRestoration = "manual";
+    }
+  }, []);
+  useEffect(() => { window.scrollTo(0, 0); }, [appModule, navValue]);
+
   /* The store's palette, hoisted to the shell root so the chrome can use it. The
      hero has always set these on itself; the bar and the strip are the store's
      surfaces too, and a bar that stays app-blue on a Honda-red board reads as
@@ -17824,6 +17846,10 @@ function Style() {
       .hh-meta b { color:#fff; font-family:var(--font-display); font-size:13px; }
       .hh-meta span { color:rgba(255,255,255,.5); }
       /* Closing rates on hover, same bloop as the dials. */
+      .hero-datechip { display:inline-flex; align-items:center; gap:5px; align-self:flex-start;
+        font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+        padding:3px 8px; border-radius:999px; background:rgba(255,255,255,.20);
+        margin-bottom:7px; color:inherit; }
       .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
@@ -17926,7 +17952,10 @@ function Style() {
         margin-bottom:9px; }
       .podium-cap span { font-weight:500; color:var(--ink-3); font-size:11.5px; margin-left:8px; letter-spacing:0; }
       .podium-row { display:flex; flex-wrap:wrap; gap:10px; }
-      .pod { flex:1 1 240px; display:flex; align-items:center; gap:11px; padding:11px 14px; border-radius:14px;
+      /* min-width:0 is what actually stops the overflow: a flex item defaults to
+         min-width:auto and refuses to shrink below its content, so a long name
+         pushed the whole card past the right edge instead of ellipsing. */
+      .pod { flex:1 1 240px; min-width:0; display:flex; align-items:center; gap:11px; padding:11px 14px; border-radius:14px;
         background:rgba(255,255,255,.7); border:1px solid rgba(16,40,68,.06);
         transition: transform .35s var(--ease), box-shadow .35s var(--ease); }
       .pod:hover { transform:translateY(-2px); }
@@ -20511,7 +20540,14 @@ function Style() {
       @keyframes flowDraw { to { stroke-dashoffset:0; } }
 
       /* the sheet a card bloops up */
-      .bsheet-root { position:fixed; inset:0; z-index:365; display:flex; align-items:center; justify-content:center; }
+      /* Portaled to document.body, which is OUTSIDE .lpc — so it inherits the
+         browser default serif instead of the app's face. Everything the shell
+         normally provides has to be restated here. */
+      .bsheet-root { position:fixed; inset:0; z-index:365; display:flex; align-items:center; justify-content:center;
+        font-family:var(--font-ui); color:var(--ink); font-size:16px; line-height:1.55;
+        -webkit-font-smoothing:antialiased; }
+      .bsheet-root h4 { font-family:var(--font-display); }
+      .bsheet-root text { font-family:var(--font-ui); }
       .bsheet-scrim { position:absolute; inset:0; background:rgba(16,32,52,.45); animation:bsFade .3s var(--ease) both; }
       .bsheet { position:relative; width:min(460px, calc(100vw - 28px)); max-height:82vh;
         display:flex; flex-direction:column; overflow:hidden;
@@ -20683,12 +20719,15 @@ function Style() {
            would collapse to height 0 and every negative top offset below would measure
            from the bar's BOTTOM edge, putting the button off the screen. */
         .botnav-slot { flex:0 0 62px; position:relative; align-self:stretch; z-index:2; }
-        .botnav-halo { position:absolute; left:50%; top:-27px; transform:translateX(-50%);
+        .botnav-halo { position:absolute; left:50%; top:-35px; transform:translateX(-50%);
           width:62px; height:62px; pointer-events:none; }
         .botnav-halo circle { fill:none; stroke-width:3.5; stroke-linecap:round; }
         .botnav-halo .bh-trk { stroke:rgba(16,40,68,.12); }
         .botnav-halo .bh-arc { stroke:var(--sa, var(--lime)); transition:stroke-dashoffset 1s var(--ease); }
-        .botnav-fab { position:absolute; left:50%; top:-22px; width:52px; height:52px;
+        /* At -22 the 52px button ended at +30 inside a ~45px slot, and the label
+           starts at +28 — so the circle and its shadow sat on the word. Lifted
+           until there is real air between them. */
+        .botnav-fab { position:absolute; left:50%; top:-30px; width:52px; height:52px;
           border-radius:50%; border:none; cursor:pointer; color:#fff;
           background:linear-gradient(145deg, var(--sp, var(--blue)), var(--sd, #16324f));
           transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
@@ -20699,12 +20738,34 @@ function Style() {
         /* wider than the slot so "Imported" fits, which means it overhangs the
            buttons either side by ~6px — pointer-events:none keeps it from eating
            taps meant for Activity and Live Floor. */
-        .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:6px; text-align:center;
+        .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:4px; text-align:center;
           font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
           pointer-events:none; }
 
+        /* --- a tapped popup has to clear the chrome ---
+           .hero sets z-index:220, which makes it a stacking context: nothing
+           inside it can paint above the sticky header (300) or the bar (340) no
+           matter what z-index the popup itself carries. So the popup was opening
+           behind the app. The fix has to lift the whole hero, and only while
+           something is actually open — a permanently raised hero would paint over
+           the header on every scroll. Same for an associate card holding an open
+           dial. */
+        .hero:has(.popped), .assoc-card:has(.popped) { z-index:355; }
+        .assoc-card:has(.popped) { position:relative; }
+        .health-pop, .hf-pop, .mdial-pop { z-index:356; }
+
+        /* --- rhythm between the board's blocks ---
+           Each of these carried its own desktop margin, and stacked on a phone
+           they ended up shoulder to shoulder. One spacing rule for the lot. */
+        .board > .hero { margin-bottom:18px; }
+        .board > .flowcard { margin-top:0; }
+        .board > .ru-reopen, .board > .podium, .board > .roster-card, .board > .flowcard,
+        .board > .filter-bar, .board > .recap { margin-top:18px; }
+        .board > .podium { margin-bottom:0; }
+        .podium-cap { margin-bottom:10px; }
+
         /* --- hero reflows to one column --- */
-        .hero-band { flex-direction:column; align-items:stretch; gap:18px; padding:20px 18px; overflow:hidden; }
+        .hero-band { flex-direction:column; align-items:stretch; gap:16px; padding:18px 16px; overflow:hidden; }
         .hero-id { flex-direction:row; gap:14px; transform:none !important; opacity:1 !important; }
         .hero-store { font-size:23px; }
         .hero-health { flex-direction:column; align-items:stretch; gap:16px; transform:none !important; opacity:1 !important; }
@@ -20724,6 +20785,9 @@ function Style() {
         .mstrip { gap:14px 12px; }
         .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
         .mdial { width:calc(33.333% - 8px); }
+        /* The cap sentence is what the bar and the pill under it already say. On a
+           phone, where reading is the expensive part, the visual carries it. */
+        .reason-lead { display:none; }
         /* Centring a 262px card on a dial whose own centre is ~86px from the
            left edge put a third of it off-screen. On a phone it anchors to the
            strip instead of the dial, so it spans the row and cannot leave the
@@ -20795,8 +20859,15 @@ function Style() {
       @media (max-width: 400px) {
         .botnav-lbl { font-size:9px; }
         .sect-chip { font-size:12px; padding:5px 11px; }
-        .mdial { width:calc(50% - 7px); }
         .hero-store { font-size:20px; }
+      }
+      /* Two dials across, not three. There was already a rule for this at <=400,
+         but it sat EARLIER in the sheet than the <=760 block that sets three, so
+         it lost on source order at equal specificity — and a 430px phone never
+         matched it in the first place. 520 covers every phone; a tablet between
+         520 and 760 still gets three. */
+      @media (max-width: 520px) {
+        .mdial { width:calc(50% - 7px); }
       }
       /* "Performance" is the longest tool name and the only one that runs out of
          room: it needs 64px in a 62px button at 320. Nothing here is renamed to
