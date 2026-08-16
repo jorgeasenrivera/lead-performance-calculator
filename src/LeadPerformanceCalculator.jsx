@@ -3920,6 +3920,48 @@ function LEADERBOARD_HTML(p) {
     background:rgba(255,255,255,.06); color:#EAF1F8; font-size:1.5vh; font-weight:700; cursor:pointer; }
   .tuner-btn.primary { background:#C1D730; color:#1F2A00; border-color:#C1D730; }
   .tuner-msg { color:#69E08A; font-size:1.35vh; margin-top:.8vh; min-height:1.6vh; }
+
+  /* ---- on a phone ----
+     This board is laid out for a television: seven columns, everything sized in
+     vh so it fills a wall. On a 390px screen the columns run off the right and
+     the units bar lands on top of the Delivered figure.
+
+     Same board, made to fit. Each person becomes a card — rank and name on top
+     with the units figure, the three channel rates on their own row, the bar
+     underneath — and vh gives way to px, because a phone's viewport height has
+     nothing to do with how big text should be in the hand. Nothing is dropped:
+     it is the same seven cells, stacked. */
+  @media (max-width: 700px) {
+    body { overflow-y:auto; }
+    .wrap, .panel { height:auto; min-height:0; padding:10px 12px 28px; }
+    .head { flex-wrap:wrap; gap:8px 14px; padding:12px; }
+    .head h1, .store { font-size:22px; line-height:1.1; }
+    .kpi { font-size:30px; }
+    .clock, .sub, .kpi-lbl { font-size:12px; }
+    .scroller { overflow:visible; }
+    .gear { width:34px; height:34px; font-size:15px; opacity:.5; right:10px; bottom:10px; }
+
+    .lb, .lb2 { display:block; table-layout:auto; }
+    .lb thead, .lb2 thead { display:none; }          /* each cell carries its own label */
+    .lb tbody, .lb2 tbody, .lb tr, .lb2 tr, .lb td, .lb2 td { display:block; }
+    .lb tr, .lb2 tr {
+      display:grid; grid-template-columns:34px 1fr auto; gap:4px 10px; align-items:center;
+      margin-bottom:8px; padding:10px 12px; border-radius:14px;
+      background:rgba(255,255,255,.06) !important; }
+    .lb td, .lb2 td { padding:0; font-size:15px; }
+    .lb .rank, .lb2 .rank { grid-column:1; grid-row:1; width:auto; font-size:15px; }
+    .lb .nm, .lb2 .nm { grid-column:2; grid-row:1; width:auto; font-size:17px; }
+    .lb .sold, .lb2 .sold2 { grid-column:3; grid-row:1; width:auto; text-align:right;
+      font-size:20px; padding-right:0; }
+    /* the three rates share one row, evenly, with their names back on them */
+    .lb .pcell, .lb2 .pcell2 { grid-row:2; width:auto; text-align:center; font-size:13px; }
+    .lb .pcell:nth-of-type(4), .lb2 .pcell2:nth-of-type(3) { grid-column:1 / 2; }
+    .lb .pcell:nth-of-type(5), .lb2 .pcell2:nth-of-type(4) { grid-column:2 / 3; }
+    .lb .pcell:nth-of-type(6), .lb2 .pcell2:nth-of-type(5) { grid-column:3 / 4; }
+    .lb2 .carcell { grid-column:1 / -1; grid-row:3; padding-left:0 !important; text-align:left; }
+    .lb2 .carcell svg, .lb2 .carcell .pix { max-width:100%; }
+    .crown { font-size:13px; }
+  }
 </style></head>
 <body>
 <div class="stale-note" id="stale-note">Holding the last board — the newest report looked incomplete. Updating on the next cycle.</div>
