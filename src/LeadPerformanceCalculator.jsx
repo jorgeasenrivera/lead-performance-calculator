@@ -15619,6 +15619,10 @@ function importProgress(storeData, activity) {
   return { done: ["appointment", "video"].filter((k) => t[k]).length, need: 2 };
 }
 
+/* Which tool the bar was showing last, kept outside the component on purpose so
+   it outlives a remount. See the pill placement below. */
+let lastBarTool = null;
+
 function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const activity = appModule === "activity";
   const { done, need } = importProgress(storeData, activity);
@@ -15632,30 +15636,61 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const barRef = useRef(null);
   const tabRefs = useRef({});
   const [pill, setPill] = useState(null);
+  const mounted = useRef(false);
   useLayoutEffect(() => {
-    const bar = barRef.current, tab = tabRefs.current[appModule];
-    if (!bar || !tab) { setPill(null); return; }
-    const place = () => {
-      const ico = tab.querySelector(".botnav-ico");
-      if (!ico) return;
-      /* padded out from the glyph rather than sized to the tab. The glyph box is
-         square and the same in every tab, so the pill is one constant shape that
-         only ever moves — which is what makes the slide read as one object. */
+    const bar = barRef.current;
+    if (!bar) { setPill(null); return; }
+    /* padded out from the glyph rather than sized to the tab. The glyph box is
+       square and the same in every tab, so the pill is one constant shape that
+       only ever moves — which is what makes the slide read as one object. */
+    const box = (id) => {
+      const tab = tabRefs.current[id];
+      const ico = tab && tab.querySelector(".botnav-ico");
+      if (!ico) return null;
       const w = ico.offsetWidth + 26, h = ico.offsetHeight + 13;
-      setPill({
-        w, h,
+      return { w, h,
         x: tab.offsetLeft + ico.offsetLeft + (ico.offsetWidth - w) / 2,
-        y: tab.offsetTop + ico.offsetTop + (ico.offsetHeight - h) / 2,
-      });
+        y: tab.offsetTop + ico.offsetTop + (ico.offsetHeight - h) / 2 };
     };
-    place();
+    const to = box(appModule);
+    if (!to) { setPill(null); lastBarTool = appModule; return; }
+
+    /* Live Floor is a different component tree from Performance and Activity, so
+       switching between them unmounts one bar and mounts another. The pill in the
+       new bar has no history to move from and simply appears under the tab you
+       picked — which is the "it doesn't follow" you see going back to
+       Performance. lastBarTool lives outside the component so it survives that
+       remount: a fresh bar is drawn once at the OLD tab with the transition off,
+       and only then released to glide to the new one. */
+    const from = !mounted.current && lastBarTool && lastBarTool !== appModule
+      ? box(lastBarTool) : null;
+    mounted.current = true;
+    lastBarTool = appModule;
+
+    let raf = 0;
+    if (from) {
+      setPill({ ...from, glide: false });
+      // two frames: one to paint the old position, one to start the transition.
+      // A single frame lands in the same style recalculation and animates nothing.
+      raf = requestAnimationFrame(() => {
+        raf = requestAnimationFrame(() => setPill({ ...to, glide: true }));
+      });
+    } else {
+      setPill({ ...to, glide: true });
+    }
+
     /* Rotating the phone changes every offset at once. ResizeObserver on the bar
        catches that, and the orientation change that comes with it, without a
        resize listener that fires on every scroll-driven toolbar shift in Safari. */
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(place);
-    ro.observe(bar);
-    return () => ro.disconnect();
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        const b = box(appModule);
+        if (b) setPill({ ...b, glide: true });
+      });
+      ro.observe(bar);
+    }
+    return () => { if (raf) cancelAnimationFrame(raf); if (ro) ro.disconnect(); };
   }, [appModule]);
 
   /* Daily Activity's numbers arrive by report — there is nothing to upload from
@@ -15674,7 +15709,8 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
       <span className="botnav-thumb" aria-hidden="true"
         style={pill
           ? { opacity: 1, width: pill.w + "px", height: pill.h + "px",
-              transform: `translate(${pill.x}px, ${pill.y}px)` }
+              transform: `translate(${pill.x}px, ${pill.y}px)`,
+              ...(pill.glide ? null : { transition: "none" }) }
           : { opacity: 0 }} />
       {BAR_TOOLS.slice(0, 2).map(([id, label, glyph]) => (
         <button key={id} ref={(el) => { tabRefs.current[id] = el; }}
@@ -18456,7 +18492,14 @@ function Style() {
       .lpc :focus:not(:focus-visible) { outline:none; }
       /* The browser's default body margin was leaving a strip down both sides, so
          the top bar stopped short of the corners. */
-      html, body { margin:0; padding:0; }
+      /* The safe areas above the status bar and below the home indicator are not
+         part of the page's viewport, so Safari fills them with whatever colour
+         the root element carries — white by default. Against a tinted page that
+         read as a hard band cut across the top and bottom of the screen. Giving
+         the root the app's own base colour makes the join disappear: the backdrop
+         fades into --bg at its own edges anyway, so the bands now continue it.
+         The theme-color meta in index.html does the same for Safari's own bar. */
+      html, body { margin:0; padding:0; background:var(--bg); }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: var(--font-ui);
         font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
@@ -21588,6 +21631,16 @@ function Style() {
           -webkit-backdrop-filter:blur(18px) saturate(160%);
           box-shadow:0 1px 0 rgba(16,40,68,.07); }
         .sect-strip::-webkit-scrollbar { display:none; }
+        /* The header stack is an opaque white slab — it has to be, because it
+           sticks and the page scrolls underneath it, and the blur that used to
+           hide that is off on touch. Ending it on a straight edge cut a hard line
+           across the top of a coloured page. This carries its white down another
+           20px and fades it out, so the backdrop arrives gradually instead. */
+        /* no position declaration here — .topstack is sticky, which is already a
+           positioned ancestor, and re-declaring it relative would unstick it. */
+        .topstack::after { content:""; position:absolute; left:0; right:0; top:100%;
+          height:20px; pointer-events:none;
+          background:linear-gradient(180deg, rgba(255,255,255,.86), rgba(255,255,255,0)); }
         .sect-chip { flex:0 0 auto; position:relative; border:1px solid var(--line);
           background:var(--card); border-radius:999px; padding:5px 13px; font:inherit;
           font-size:12.5px; font-weight:650; color:var(--ink-2); cursor:pointer;
