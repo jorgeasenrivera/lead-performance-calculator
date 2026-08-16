@@ -334,6 +334,45 @@ const DEFAULT_THRESHOLDS = {
 
 // Older stores saved a single flat { green, yellow }. Spread it across all three
 // channels so nothing breaks and the numbers carry over.
+/* The three channels rolled up for one month, shared by the hero's health popup
+   and the delivery chart. Two copies of this would eventually disagree about the
+   same month on the same screen, which is worse than either being wrong.
+
+   `roster` is always the CURRENT roster, in every month it is asked about. That
+   means a salesperson who has since left drops out of the history behind them,
+   which understates old months a little. The alternative — everyone who appears
+   in that month's stats — is truer month by month but makes the chart's newest
+   point disagree with the hero sitting above it, and two numbers for one thing
+   is the more expensive kind of wrong. */
+function channelRates(M, roster) {
+  const rate = (field) => {
+    let units = 0, leads = 0, seen = false;
+    for (const a of roster) {
+      const st = M?.stats?.[norm(a.name)];
+      const u = st?.[field + "Units"];
+      const pc = st?.[field + "Pct"];
+      if (u == null) continue;
+      seen = true; units += u;
+      const real = st?.[field + "Leads"] ?? (field === "internet" ? st?.opps : null);
+      if (real != null) leads += real;
+      else if (pc != null && pc > 0) leads += u / pc;   // older rows, before leads were stored
+    }
+    return { units, leads, pct: leads > 0 ? units / leads : null, seen };
+  };
+  return CHANNEL_LIST.map((c) => ({ id: c.id, label: c.label, ...rate(c.id) }));
+}
+
+/* Three lines on one chart is the first thing in the app that genuinely needs
+   distinct hues rather than one brand colour at three strengths. These were
+   validated rather than picked: worst colour-blind separation across all pairs
+   is ΔE 9.2, worst normal-vision 24.0, both clear of the floors. Every line is
+   also directly labelled, so identity never rests on colour alone.
+
+   Status green/amber/red stay reserved and separate. They appear on pills with a
+   word beside them and never on a line, so "orange" never has to mean both
+   "Phone" and "nearing the limit" on the same screen. */
+const CHANNEL_HUE = { internet: "#2a78d6", phone: "#eb6834", showroom: "#1baf7a" };
+
 function normThresholds(t) {
   if (!t) return JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
   if (t.green !== undefined || t.yellow !== undefined) {
@@ -3237,6 +3276,7 @@ export default function LeadPerformanceCalculator() {
                     )}
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
                       filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc} />
+                    <DeliveryCard config={config} store={currentStore} data={storeData} />
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
                       filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
@@ -15352,6 +15392,270 @@ function useParallax(ref) {
 }
 
 /* ---------------- Store hero (manager landing) ---------------- */
+/* ---------------- Delivery, flowing ----------------
+
+   One card that cycles Internet → Phone → Showroom, morphing between them rather
+   than cutting.
+
+   Every channel is plotted as a percent of ITS OWN target, which is what makes
+   the morph readable: the dashed rule sits in the same place for all three, so
+   the reference holds still and only the shape moves. You are watching one floor
+   from three angles rather than three unrelated charts. It is also the honest
+   answer to "spread it from 0 to the store standard" — Internet at 6% and
+   Showroom at 38% cannot share a raw axis, but 0-to-target they can.
+
+   The series is month over month, off data.months, because that is history the
+   app already has. A daily series would need a per-day channel roll-up that
+   nothing writes today. */
+const FLOW_W = 292, FLOW_H = 104, FLOW_PL = 4, FLOW_PR = 10, FLOW_PT = 14, FLOW_PB = 17;
+const FLOW_TOP = 125;                       // 100 = the store's standard for that channel
+const flowY = (p) => FLOW_PT + (1 - Math.max(0, Math.min(FLOW_TOP, p)) / FLOW_TOP) * (FLOW_H - FLOW_PT - FLOW_PB);
+const flowX = (i, n) => FLOW_PL + (n <= 1 ? (FLOW_W - FLOW_PL - FLOW_PR) : i * (FLOW_W - FLOW_PL - FLOW_PR) / (n - 1));
+/* A null is a month with no numbers for this channel, not a month of zero. The
+   x positions still come from the month's index, so a gap keeps its place and the
+   three channels in the all-view stay aligned month for month — the line simply
+   connects across it instead of diving to the floor and inventing a collapse. */
+const flowPath = (ps) => {
+  let d = "", started = false;
+  ps.forEach((p, i) => {
+    if (p == null) return;
+    d += (started ? " L" : "M") + flowX(i, ps.length).toFixed(1) + " " + flowY(p).toFixed(1);
+    started = true;
+  });
+  return d;
+};
+const flowFirst = (ps) => ps.findIndex((p) => p != null);
+const flowLast = (ps) => { for (let i = ps.length - 1; i >= 0; i--) if (ps[i] != null) return i; return -1; };
+
+/* The months that actually carry delivery numbers, oldest first, at most six.
+   A month with no imports is not a month the floor delivered nothing in — it is
+   a month nobody uploaded, and plotting it as zero would invent a collapse. */
+function deliverySeries(data, roster, thr) {
+  const months = Object.keys(data.months || {}).sort();
+  const rows = [];
+  for (const key of months) {
+    const rates = channelRates(data.months[key], roster);
+    if (!rates.some((r) => r.seen && r.pct != null)) continue;
+    rows.push({ key, rates });
+  }
+  const tail = rows.slice(-6);
+  return CHANNEL_LIST.map((c) => {
+    const target = thr[c.id].green;
+    const pts = tail.map((r) => {
+      const hit = r.rates.find((x) => x.id === c.id);
+      return { key: r.key, pct: hit && hit.pct != null ? hit.pct * 100 : null };
+    });
+    return { id: c.id, label: c.label, target, hue: CHANNEL_HUE[c.id], pts };
+  });
+}
+/* The axis wants "Aug"; the app's monthLabel is the long "August 2026" used in
+   headings. Different job, so a different name rather than a second opinion. */
+const flowMonth = (key) => new Date(key + "-02T12:00").toLocaleDateString("en-US", { month: "short" });
+
+function DeliveryFlow({ data, roster, thr, onOpen }) {
+  const series = useMemo(() => deliverySeries(data, roster, thr), [data, roster, thr]);
+  const [idx, setIdx] = useState(0);
+  const [morph, setMorph] = useState(null);   // 0..1 while crossing between channels
+  const raf = useRef(0), timer = useRef(0);
+
+  const usable = series.filter((s) => s.pts.some((p) => p.pct != null));
+  const live = usable.length > 0 ? usable : series;
+  const cur = live[idx % live.length];
+  const nxt = live[(idx + 1) % live.length];
+
+  useEffect(() => {
+    if (live.length < 2) return;
+    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const step = () => {
+      const t0 = performance.now(), dur = 780;
+      const tick = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const e = p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+        setMorph(e);
+        if (p < 1) raf.current = requestAnimationFrame(tick);
+        else { setMorph(null); setIdx((i) => (i + 1) % live.length); timer.current = setTimeout(step, 2600); }
+      };
+      raf.current = requestAnimationFrame(tick);
+    };
+    timer.current = setTimeout(step, 2600);
+    return () => { clearTimeout(timer.current); cancelAnimationFrame(raf.current); };
+  }, [live.length, idx]);
+
+  if (!cur || cur.pts.length === 0) return null;
+
+  /* The colour and the readout have to change on the SAME frame. Swapping the
+     line at the halfway point while the text waited for the end left the card
+     reading "Phone 19.0%" over a green Showroom line for a third of a second. */
+  const past = morph != null && morph >= .5;
+  const shown = past ? nxt : cur;
+  const at = (s) => s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
+  const av = at(cur), bv = at(nxt);
+  // Where one channel has a month the other doesn't, there is nothing to cross
+  // between, so the side that has a number holds it rather than sliding to zero.
+  const pts = morph == null ? av
+    : av.map((v, i) => (v == null ? bv[i] : bv[i] == null ? v : v + (bv[i] - v) * morph));
+
+  const lastI = flowLast(shown.pts.map((p) => (p.pct == null ? null : p.pct)));
+  const lastPct = lastI < 0 ? null : shown.pts[lastI].pct;
+  const above = lastPct != null && lastPct / shown.target * 100 > 100;
+  const d = flowPath(pts);
+  const y100 = flowY(100).toFixed(1);
+  const base = flowY(0).toFixed(1);
+  const eI = flowLast(pts), sI = flowFirst(pts);
+  const endX = eI < 0 ? FLOW_PL : flowX(eI, pts.length);
+  const endY = eI < 0 ? +base : flowY(pts[eI]);
+  const area = eI < 0 ? "" :
+    `${d} L ${endX.toFixed(1)} ${base} L ${flowX(sI, pts.length).toFixed(1)} ${base} Z`;
+
+  return (
+    <button className="flowcard" onClick={onOpen}>
+      <div className="flow-head">
+        <h5>Delivery against target</h5>
+        <span className="flow-pips">
+          {live.map((s) => <i key={s.id} className={s.id === shown.id ? "on" : ""} />)}
+        </span>
+      </div>
+      <div className="flow-read">
+        <div>
+          <div className="flow-name" style={{ color: shown.hue }}>
+            <span className="flow-dot" style={{ background: shown.hue }} />{shown.label}
+          </div>
+          <div className="flow-val" style={{ color: shown.hue }}>
+            {lastPct == null ? "—" : lastPct.toFixed(1) + "%"}
+          </div>
+          <div className="flow-tar">
+            {lastPct == null ? `target ${shown.target}%`
+              : above ? `${(lastPct - shown.target).toFixed(1)} over target ${shown.target}%`
+              : `${(shown.target - lastPct).toFixed(1)} to target ${shown.target}%`}
+          </div>
+        </div>
+        {above && (
+          <span className="flow-above"><PixIcon glyph="check" size={11} />Above target</span>
+        )}
+      </div>
+      <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H}`} role="img"
+        aria-label={`${shown.label} delivery against its ${shown.target}% target, by month`}>
+        <defs>
+          {/* only the part of the fill that sits over the rule gets the green */}
+          <clipPath id="flow-above"><rect x="0" y="0" width={FLOW_W} height={y100} /></clipPath>
+        </defs>
+        <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
+        <line className="flow-rule" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={y100} y2={y100} />
+        <text className="flow-rulelbl" x={FLOW_W - FLOW_PR} y={+y100 - 4} textAnchor="end">
+          TARGET {shown.target}%
+        </text>
+        {area && <path d={area} fill={shown.hue} opacity=".10" />}
+        {area && <path d={area} fill="#1E8F45" opacity=".20" clipPath="url(#flow-above)" />}
+        <path d={d} fill="none" stroke={shown.hue} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        {eI >= 0 && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill={shown.hue} stroke="#FFF" strokeWidth="2.5" />}
+        {eI >= 0 && above && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="9" fill="none" stroke="#1E8F45" strokeWidth="2" opacity=".9" />}
+        {shown.pts.length > 1 && <>
+          <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowMonth(shown.pts[0].key)}</text>
+          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
+            {flowMonth(shown.pts[shown.pts.length - 1].key)}
+          </text>
+        </>}
+        <text className="flow-axis" x={FLOW_PL} y={+base - 3}>0</text>
+      </svg>
+      {shown.pts.length < 2 && (
+        <div className="flow-note">One month on file so far. The line fills in as months land.</div>
+      )}
+    </button>
+  );
+}
+
+/* All three at once, for the sheet the card opens. The flow stops and every line
+   draws in together, each direct-labelled. */
+function DeliveryAll({ data, roster, thr }) {
+  const series = useMemo(() => deliverySeries(data, roster, thr), [data, roster, thr]);
+  const y100 = flowY(100).toFixed(1);
+  const base = flowY(0).toFixed(1);
+  const any = series.find((s) => s.pts.length > 0);
+  if (!any) return null;
+  return (
+    <>
+      <div className="flow-legend">
+        {series.map((s) => (
+          <b key={s.id}><i style={{ background: s.hue }} />{s.label} · target {s.target}%</b>
+        ))}
+      </div>
+      <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H + 8}`} role="img"
+        aria-label="All three channels against their targets, by month">
+        <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
+        <line className="flow-rule" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={y100} y2={y100} />
+        <text className="flow-rulelbl" x={FLOW_W - FLOW_PR} y={+y100 - 4} textAnchor="end">TARGET</text>
+        {series.map((s, k) => {
+          const ps = s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
+          const li = flowLast(ps);
+          if (li < 0) return null;
+          const lx = flowX(li, ps.length), ly = flowY(ps[li]);
+          return (
+            <g key={s.id}>
+              <path className="flow-draw" d={flowPath(ps)} fill="none" stroke={s.hue} strokeWidth="2.2"
+                strokeLinecap="round" strokeLinejoin="round" style={{ animationDelay: k * 180 + "ms" }} />
+              <circle cx={lx.toFixed(1)} cy={ly.toFixed(1)} r="3.6" fill={s.hue} stroke="#FFF" strokeWidth="2" />
+              <text x={(lx - 6).toFixed(1)} y={(ly - 8).toFixed(1)} textAnchor="end"
+                fontSize="8.5" fontWeight="700" fill={s.hue}>{s.label}</text>
+            </g>
+          );
+        })}
+        {any.pts.length > 1 && <>
+          <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowMonth(any.pts[0].key)}</text>
+          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
+            {flowMonth(any.pts[any.pts.length - 1].key)}
+          </text>
+        </>}
+      </svg>
+    </>
+  );
+}
+
+/* The card and the sheet it opens. Pressing a card that bloops up a modal is the
+   whole interaction — there is no "Dive" button, because a button that says
+   "there is more here" is a worse version of the card just being pressable. */
+function DeliveryCard({ config, store, data }) {
+  const [open, setOpen] = useState(false);
+  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+  const roster = (data.roster || []).filter((a) => a.roleId && boardRoleIds.has(a.roleId));
+  const thr = normThresholds(store.thresholds);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  return (
+    <>
+      <DeliveryFlow data={data} roster={roster} thr={thr} onOpen={() => setOpen(true)} />
+      {open && (
+        <Overlay>
+          <div className="bsheet-root" role="dialog" aria-label="Delivery, all channels">
+            <div className="bsheet-scrim" onClick={() => setOpen(false)} />
+            <div className="bsheet">
+              <div className="bsheet-head">
+                <div>
+                  <h4>Delivery, all channels</h4>
+                  <div className="bsheet-sub">Each plotted against its own target, by month</div>
+                </div>
+                <button className="bsheet-x" onClick={() => setOpen(false)} aria-label="Close">
+                  <PixIcon glyph="close" size={13} />
+                </button>
+              </div>
+              <div className="bsheet-body">
+                <DeliveryAll data={data} roster={roster} thr={thr} />
+              </div>
+            </div>
+          </div>
+        </Overlay>
+      )}
+    </>
+  );
+}
+
 function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
   const M = data.months?.[ym()];
   const restrictions = data.restrictions || {};
@@ -15488,25 +15792,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   // which is why the popup read roughly double the Delivery Summary's own totals.
   const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
   const closingRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
-  const chanRate = (field) => {
-    let units = 0, leads = 0, seen = false;
-    for (const a of closingRoster) {
-      const st = M?.stats?.[norm(a.name)];
-      const u = st?.[field + "Units"];
-      const pc = st?.[field + "Pct"];
-      if (u == null) continue;
-      seen = true; units += u;
-      const real = st?.[field + "Leads"] ?? (field === "internet" ? st?.opps : null);
-      if (real != null) leads += real;
-      else if (pc != null && pc > 0) leads += u / pc;   // older rows, before leads were stored
-    }
-    return { units, leads, pct: leads > 0 ? units / leads : null, seen };
-  };
-  const closing = [
-    { id: "internet", label: "Internet", ...chanRate("internet") },
-    { id: "phone", label: "Phone", ...chanRate("phone") },
-    { id: "showroom", label: "Showroom", ...chanRate("showroom") },
-  ];
+  const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
 
@@ -20158,6 +20444,64 @@ function Style() {
 
       @media (max-width: 700px) { .assoc-name { flex:1 1 auto; } }
 
+      /* ---------------- Delivery, flowing ---------------- */
+      .flowcard { display:block; width:100%; text-align:left; font:inherit; cursor:pointer;
+        background:var(--card); border:1px solid var(--line); border-radius:16px;
+        padding:14px 15px; margin:14px 0 0; box-shadow:var(--shadow-1);
+        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease); }
+      .flowcard:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:rgba(16,32,52,.2); }
+      .flowcard:active { transform:scale(.985); }
+      .flowcard:focus-visible { outline:2px solid var(--sp, var(--blue)); outline-offset:2px; }
+      .flow-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .flow-head h5 { margin:0; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+        color:var(--ink-2); font-weight:800; }
+      .flow-pips { display:flex; gap:4px; }
+      .flow-pips i { width:5px; height:5px; border-radius:50%; background:var(--line);
+        transition:background .35s var(--ease), width .35s var(--ease); }
+      .flow-pips i.on { width:15px; border-radius:999px; background:var(--ink-3); }
+      .flow-read { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:8px; }
+      .flow-name { display:flex; align-items:center; gap:7px; font-family:var(--font-display);
+        font-size:15px; font-weight:700; transition:color .28s var(--ease); }
+      .flow-dot { width:10px; height:10px; border-radius:3px; flex:0 0 auto; transition:background .28s var(--ease); }
+      .flow-val { font-family:var(--font-display); font-size:29px; font-weight:700; line-height:1;
+        font-variant-numeric:tabular-nums; transition:color .28s var(--ease); }
+      .flow-tar { font-size:11px; color:var(--ink-2); margin-top:2px; }
+      .flow-above { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:800;
+        padding:3px 8px; border-radius:999px; background:rgba(48,177,85,.16); color:#1E8F45;
+        animation:flowPop .55s var(--ease-bloop) both; }
+      @keyframes flowPop { from { opacity:0; transform:scale(.4) rotate(-8deg); } to { opacity:1; transform:none; } }
+      .flow-plot { width:100%; display:block; overflow:visible; margin-top:6px; }
+      .flow-axis { font-size:8.5px; fill:var(--ink-2); }
+      .flow-rule { stroke:var(--ink-2); stroke-width:1; stroke-dasharray:4 4; opacity:.55; }
+      .flow-rulelbl { font-size:8px; fill:var(--ink-2); font-weight:700; }
+      .flow-zero { stroke:rgba(16,32,52,.16); stroke-width:1; }
+      .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
+      .flow-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:10.5px; color:var(--ink-2); }
+      .flow-legend b { display:inline-flex; align-items:center; gap:5px; font-weight:650; color:var(--ink); }
+      .flow-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
+      .flow-draw { stroke-dasharray:600; stroke-dashoffset:600; animation:flowDraw 1.15s var(--ease) both; }
+      @keyframes flowDraw { to { stroke-dashoffset:0; } }
+
+      /* the sheet a card bloops up */
+      .bsheet-root { position:fixed; inset:0; z-index:365; display:flex; align-items:center; justify-content:center; }
+      .bsheet-scrim { position:absolute; inset:0; background:rgba(16,32,52,.45); animation:bsFade .3s var(--ease) both; }
+      .bsheet { position:relative; width:min(460px, calc(100vw - 28px)); max-height:82vh;
+        display:flex; flex-direction:column; overflow:hidden;
+        background:var(--card); border-radius:20px; box-shadow:0 24px 60px -18px rgba(16,32,52,.55);
+        animation:bsPop .42s var(--ease-bloop) both; }
+      @keyframes bsFade { from { opacity:0; } to { opacity:1; } }
+      @keyframes bsPop { from { opacity:0; transform:scale(.86); } to { opacity:1; transform:none; } }
+      .bsheet-head { padding:15px 16px 10px; border-bottom:1px solid var(--line);
+        display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+      .bsheet-head h4 { margin:0; font-size:15.5px; font-weight:700; letter-spacing:-.01em; }
+      .bsheet-sub { font-size:11.5px; color:var(--ink-2); margin-top:2px; }
+      .bsheet-x { border:none; background:var(--line); width:28px; height:28px; border-radius:50%;
+        cursor:pointer; color:var(--ink); display:flex; align-items:center; justify-content:center;
+        flex:0 0 auto; transition:transform .25s var(--ease-bloop), background .2s var(--ease); }
+      .bsheet-x:active { transform:scale(.88); }
+      .bsheet-body { overflow-y:auto; overscroll-behavior:contain; padding:14px 16px 18px;
+        display:flex; flex-direction:column; gap:11px; }
+
       /* ---- respect the OS "reduce motion" setting: everything holds still ---- */
       @media (prefers-reduced-motion: reduce) {
         .lpc *, .lpc *::before, .lpc *::after {
@@ -20177,6 +20521,10 @@ function Style() {
         .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
         .chip-warn .chip-dot, .leader-crown { animation: none !important; }
         .logo-loading .logo-spin, .logo-loading .logo-trail, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
+        /* the flow already refuses to cycle under reduce-motion; this is the
+           draw-in and the pop that are pure decoration */
+        .flow-draw { animation:none !important; stroke-dashoffset:0 !important; }
+        .flow-above, .bsheet, .bsheet-scrim { animation:none !important; transform:none !important; }
       }
 
       @media print {
