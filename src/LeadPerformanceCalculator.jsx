@@ -1825,7 +1825,7 @@ async function saveShared(key, value) {
 
    Returns { ok, rev, conflictsResolved } so a caller can tell a genuine failure
    from a save that simply took two goes. */
-async function saveStoreCAS(key, build, tries = 5) {
+async function saveStoreCAS(key, build, tries = 8) {
   if (!supabase) { lastSaveError = "No database client"; return { ok: false, rev: null }; }
   let conflicts = 0;
   for (let attempt = 0; attempt < tries; attempt++) {
@@ -1876,6 +1876,83 @@ async function saveStoreCAS(key, build, tries = 5) {
   lastSaveError = `Could not save after ${tries} attempts. Someone else may be saving this store at the same moment, or the row is being rejected by a database rule. Nothing was overwritten.`;
   console.error("save gave up after conflicts", key);
   return { ok: false, rev: null, conflictsResolved: conflicts };
+}
+
+/* ---- Merging the plate log ----
+   The plate log is the most contended thing in the document: several managers work
+   one shared day at once, and unlike the month figures there is no import to arrive
+   later and put it right. These four helpers are what let two people log a plate in
+   the same minute without either one disappearing.
+
+   Deletions are tombstones — { id: when } — for the same reason a departure is a
+   record rather than a gap. A browser that never knew about a plate and a browser
+   that deleted it look identical if all you compare is presence, and the merge has
+   to be able to tell them apart or every delete comes back. They are pruned at
+   ninety days, by which point no tab is old enough to re-add anything. */
+const TOMB_DAYS = 90;
+function mergeTombstones(mine, theirs) {
+  const out = { ...(mine || {}) };
+  for (const [id, t] of Object.entries(theirs || {})) if (!out[id] || t > out[id]) out[id] = t;
+  const cutoff = new Date(Date.now() - TOMB_DAYS * 864e5).toISOString();
+  for (const id of Object.keys(out)) if (!out[id] || out[id] < cutoff) delete out[id];
+  return out;
+}
+// The last thing that happened to this plate. History is append-only, so the copy
+// with more events has seen everything the other one has, and then some.
+function plateTouch(p) {
+  let t = (p && p.takenAt) || "";
+  for (const e of (p && p.history) || []) if (e && e.t && e.t > t) t = e.t;
+  return t;
+}
+function newerPlate(a, b) {
+  const ha = ((a && a.history) || []).length, hb = ((b && b.history) || []).length;
+  if (ha !== hb) return ha > hb ? a : b;
+  return plateTouch(b) > plateTouch(a) ? b : a;
+}
+function mergePlateDays(next, serverCopy) {
+  const mine = next.plates || {}, srv = serverCopy.plates || {};
+  const dead = mergeTombstones(next.plateGone, serverCopy.plateGone);
+  const out = {};
+  for (const day of new Set([...Object.keys(mine), ...Object.keys(srv)])) {
+    const byId = new Map();
+    for (const p of mine[day] || []) if (p && p.id) byId.set(p.id, p);
+    for (const p of srv[day] || []) {
+      if (!p || !p.id) continue;
+      const have = byId.get(p.id);
+      byId.set(p.id, have ? newerPlate(have, p) : p);
+    }
+    const list = [...byId.values()].filter((p) => !dead[p.id]);
+    if (list.length) out[day] = list;
+  }
+  return out;
+}
+/* The master list was not merged at all: the client's array replaced the server's
+   outright, so a manager adding the plate drawer in one store while another manager
+   saved anything at all in the same store lost the lot. Union by id, and settle a
+   collision the same way — whoever touched it last. */
+function mergePlateRegistry(next, serverCopy) {
+  const dead = mergeTombstones(next.plateRegGone, serverCopy.plateRegGone);
+  const at = (r) => (r && (r.updatedAt || r.addedAt)) || "";
+  const byId = new Map();
+  for (const r of next.plateRegistry || []) if (r && r.id) byId.set(r.id, r);
+  for (const r of serverCopy.plateRegistry || []) {
+    if (!r || !r.id) continue;
+    const have = byId.get(r.id);
+    byId.set(r.id, have ? (at(r) > at(have) ? r : have) : r);
+  }
+  const all = [...byId.values()].filter((r) => !dead[r.id])
+    .sort((a, b) => String(a.addedAt || "").localeCompare(String(b.addedAt || "")));
+  /* Two managers adding the same plate in the same minute made two entries with two
+     ids. One plate, one row: keep the older, because its id is the one any records
+     already written point at. */
+  const out = [], tags = new Set();
+  for (const r of all) {
+    const T = normTag(r.tag);
+    if (T && tags.has(T)) continue;
+    if (T) tags.add(T);
+    out.push(r);
+  }
+  return out;
 }
 
 /* Fold this browser's pending document into whatever the server currently holds.
@@ -1962,9 +2039,22 @@ function mergeAgainstServer(next, serverCopy) {
           // Anyone gone or ignored comes out, whichever copy they arrived from.
           next.roster = roster.filter((a) => !gone.has(norm(a.name)) && !ignored.has(norm(a.name)));
         }
-        // Same protection for the plate log: a day another manager started while this
-        // browser sat open is kept rather than dropped on save.
-        next.plates = mergeField("plates");
+        /* ---- The plate log ----
+           This used to be mergeField("plates"), which fills in whole DAYS the client
+           is missing. That is no protection at all for the way the log is actually
+           worked: every manager on the floor is writing to the same day — today —
+           so their day keys always collide, the client's array wins whole, and the
+           plate somebody logged out thirty seconds ago is gone. Retrying does not
+           help either, because the retry re-runs the same merge.
+
+           So merge the ENTRIES, and settle a collision with the entry's own history:
+           it is append-only, so more events means later. Removals are recorded as
+           tombstones rather than as an absence, because an absence is exactly what
+           a browser that has never heard of the plate also looks like. */
+        next.plates = mergePlateDays(next, serverCopy);
+        next.plateRegistry = mergePlateRegistry(next, serverCopy);
+        next.plateGone = mergeTombstones(next.plateGone, serverCopy.plateGone);
+        next.plateRegGone = mergeTombstones(next.plateRegGone, serverCopy.plateRegGone);
         // The schedule was the worst case of this. A browser that had been open since
         // before an upload carried an empty daysOff, and saving anything at all wiped
         // the month for everybody. Each person now carries the time their off-days
@@ -2622,7 +2712,22 @@ export default function LeadPerformanceCalculator() {
     if (audit) await appendAudit({ user: session?.name, ...audit });
     setSaving(false);
   };
-  const persistStore = async (storeId, next, audit) => {
+  /* ---- One save at a time from this tab ----
+     Every save is read-merge-write against a revision, which is the right way to
+     handle other people. It is the wrong way to handle YOURSELF: tick two boxes in
+     quick succession and this browser fires two of them at once, they collide on the
+     revision, and the retries are spent racing a save this same tab is still making.
+     That is the "someone else is saving this store" message appearing when nobody
+     else is there. Queue them instead — the second waits for the first, sees its
+     result, and lands first time. */
+  const saveChain = useRef(Promise.resolve());
+  const persistStore = (storeId, next, audit) => {
+    const run = () => persistStoreNow(storeId, next, audit);
+    const p = saveChain.current.then(run, run);
+    saveChain.current = p.catch(() => {});
+    return p;
+  };
+  const persistStoreNow = async (storeId, next, audit) => {
     if (storeLoadFailed) {
       alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
       return;
@@ -2691,12 +2796,22 @@ export default function LeadPerformanceCalculator() {
   const adoptRemotePlates = useCallback((storeId, plates, plateRegistry) => {
     const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
     setStoreData((prev) => {
-      if (!prev || (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry))) return prev;
+      if (!prev) return prev;
+      /* The tracker's poller is keyed to the store that is SELECTED, and that changes
+         the instant somebody picks another store — a second or more before the new
+         document has finished loading. Until this check existed, the plates that
+         arrived in that window were written straight onto the store still on screen:
+         one dealership's plates showing under another dealership's name, and saved
+         there by the next thing anybody touched. The document says which store it
+         is; anything else is not ours to write to. */
+      if (prev.__storeId && prev.__storeId !== storeId) return prev;
+      if (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry)) return prev;
       return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
     });
     setAdminData((p) => {
       const cur = p[storeId];
-      if (!cur || (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry))) return p;
+      if (!cur || (cur.__storeId && cur.__storeId !== storeId)) return p;
+      if (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry)) return p;
       return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
     });
   }, []);
@@ -3327,6 +3442,15 @@ export default function LeadPerformanceCalculator() {
                       ...(current.snapshots || []),
                     ].slice(0, 8),
                   };
+                  /* A rollback has to be able to undo a deletion, and the plate log
+                     records deletions as tombstones — which would otherwise filter
+                     the restored plates straight back out on the next merge. Lift the
+                     mark from anything this restore point actually contains. */
+                  restored.plateGone = { ...(current.plateGone || {}) };
+                  restored.plateRegGone = { ...(current.plateRegGone || {}) };
+                  for (const list of Object.values(snap.data?.plates || {}))
+                    for (const p of list || []) if (p && p.id) delete restored.plateGone[p.id];
+                  for (const r of snap.data?.plateRegistry || []) if (r && r.id) delete restored.plateRegGone[r.id];
                   await persistStore(storeId, restored, { action: "Rolled back store", detail: `${config.stores.find((s) => s.id === storeId)?.name} → ${new Date(snap.t).toLocaleString()}` });
                 }} />
             )}
@@ -6522,10 +6646,23 @@ function RepairPanel({ config }) {
         for (const day of Object.keys(out.activity || {})) {
           for (const k of Object.keys(out.activity[day] || {})) if (go.roster.has(k)) delete out.activity[day][k];
         }
+        /* Tombstoned as well as filtered. Every manager with this store open still
+           holds the foreign plates in their tab, and the plate merge treats a plate
+           it has not seen before as news — so without a record of the removal the
+           next save anywhere on the floor puts them all back. */
+        const t = new Date().toISOString();
+        out.plateGone = { ...(out.plateGone || {}) };
+        out.plateRegGone = { ...(out.plateRegGone || {}) };
         for (const day of Object.keys(out.plates || {})) {
+          for (const p of out.plates[day] || []) {
+            if (p && p.id && goPlates.has(day + "|" + (p.id || normTag(p.tag)))) out.plateGone[p.id] = t;
+          }
           out.plates[day] = (out.plates[day] || []).filter((p) =>
             !goPlates.has(day + "|" + (p.id || normTag(p.tag))));
           if (!out.plates[day].length) delete out.plates[day];
+        }
+        for (const r of out.plateRegistry || []) {
+          if (r && r.id && goPlateReg.has(normTag(r.tag))) out.plateRegGone[r.id] = t;
         }
         out.plateRegistry = (out.plateRegistry || []).filter((r) => !goPlateReg.has(normTag(r.tag)));
         out.__storeId = target;
@@ -12114,7 +12251,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     }
     const old = entry.tag;
     const next = JSON.parse(JSON.stringify(data));
-    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, tag: nt } : r);
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, tag: nt, updatedAt: new Date().toISOString() } : r);
     for (const d of Object.keys(next.plates || {})) {
       next.plates[d] = next.plates[d].map((p) => p.tag === old
         ? { ...p, tag: nt, history: [...(p.history || []), { t: new Date().toISOString(), by: userName, action: "Plate renumbered", detail: `${old} is ${nt}; records relinked` }] }
@@ -12127,7 +12264,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const setRegistryFlag = (id, field, value, label) => {
     const entry = registry.find((r) => r.id === id); if (!entry) return;
     const next = JSON.parse(JSON.stringify(data));
-    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, [field]: value } : r);
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, [field]: value, updatedAt: new Date().toISOString() } : r);
     onChange(next, { action: label, detail: entry.tag });
   };
 
@@ -12139,6 +12276,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     } else if (!window.confirm(`Remove ${entry.tag} from the master plate list?`)) return;
     const next = JSON.parse(JSON.stringify(data));
     next.plateRegistry = (next.plateRegistry || []).filter((r) => r.id !== id);
+    next.plateRegGone = { ...(next.plateRegGone || {}), [id]: new Date().toISOString() };
     onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
   };
   const addPlate = () => {
@@ -12155,7 +12293,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         t = hit.fuller;
         enteredAs = null;
         registryMutate = (next) => {
-          next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === hit.entry.id ? { ...r, tag: hit.fuller } : r);
+          next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === hit.entry.id ? { ...r, tag: hit.fuller, updatedAt: new Date().toISOString() } : r);
           // relink history: the shorthand records were always this plate
           for (const d of Object.keys(next.plates || {})) {
             next.plates[d] = next.plates[d].map((p) => p.tag === oldTag
@@ -12244,7 +12382,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   };
   const remove = (id) => {
     const p = dayPlates.find((x) => x.id === id);
-    save(dayPlates.filter((x) => x.id !== id), { action: "Removed plate", detail: `${p?.tag} (was ${p?.assignee || "unassigned"})` });
+    /* Deleting has to leave a mark. Another manager's browser still holds this plate,
+       and on their next save the merge would read their copy as news rather than as
+       the record somebody deliberately took off. */
+    save(dayPlates.filter((x) => x.id !== id),
+      { action: "Removed plate", detail: `${p?.tag} (was ${p?.assignee || "unassigned"})` },
+      (next) => { next.plateGone = { ...(next.plateGone || {}), [id]: new Date().toISOString() }; });
   };
   const carryForward = () => {
     const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
