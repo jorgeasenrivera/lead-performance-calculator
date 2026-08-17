@@ -5484,7 +5484,75 @@ function Overlay({ children }) {
    rename "Calls" but it still reads the calls column. */
 const AUTO_TONE = { calls: "a", video: "b", tasks: "c" };
 
-function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, thresholds, list, onClose }) {
+/* ---- Floorside helpers ------------------------------------------------- */
+/* Which field on the activity row each of the day's five numbers reads. Named
+   here rather than inline so the one-number screen and the bands can never
+   disagree about which figure they are drawing. */
+const STAT_FIELD = {
+  calls: "calls", video: "video", tasks: "tasks",
+  appt: "apptScheduled", shown: "apptShow",
+};
+const shortDay = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  return `${d.getDate()} ${d.toLocaleDateString([], { month: "short" }).toUpperCase()}`;
+};
+const longDay = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso + "T12:00:00");
+  return d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
+};
+
+/* Three things worth knowing about the fortnight, worked out rather than
+   written: the best run against the bar, the weakest weekday, and the days
+   nothing was logged at all. Every one of them is silent when it has nothing
+   true to say — a read-out that invents a finding stops being read. */
+function SfWorthKnowing({ values, days, target }) {
+  const rows = [];
+  if (target > 0) {
+    let run = 0, best = 0;
+    for (const v of values) { if (v >= target) { run++; best = Math.max(best, run); } else run = 0; }
+    if (best > 0) rows.push({ tone: "g", label: "Best run", text: `${best} day${best === 1 ? "" : "s"} straight at or over ${target}` });
+  }
+  // weakest weekday, only once a day of the week has turned up twice
+  const byDow = {};
+  values.forEach((v, i) => {
+    const d = new Date(days[i] + "T12:00:00").getDay();
+    (byDow[d] = byDow[d] || []).push(v);
+  });
+  const dowNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  let worst = null;
+  for (const d of Object.keys(byDow)) {
+    if (byDow[d].length < 2) continue;
+    const avg = byDow[d].reduce((x, y) => x + y, 0) / byDow[d].length;
+    if (!worst || avg < worst.avg) worst = { d: +d, avg };
+  }
+  if (worst) rows.push({ tone: "y", label: "Quietest", text: `${dowNames[worst.d]}s, ${Math.round(worst.avg)} on average` });
+
+  const blanks = values.map((v, i) => (v <= 0 ? days[i] : null)).filter(Boolean);
+  if (blanks.length === 1) rows.push({ tone: "r", label: "Nothing logged", text: shortDay(blanks[0]) });
+  else if (blanks.length > 1) rows.push({ tone: "r", label: "Nothing logged", text: `${blanks.length} days` });
+
+  if (!rows.length) return null;
+  return (
+    <div className="sf-worth">
+      <div className="sf-worth-h">
+        <h4>Worth knowing</h4>
+        <span>last {values.length} days</span>
+      </div>
+      <div className="sf-worth-rows">
+        {rows.map((r, i) => (
+          <div key={i} className="sf-worth-row">
+            <span className={"sf-worth-dot t-" + r.tone} />
+            <span><b>{r.label}</b> &mdash; {r.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, thresholds, list, variant, onClose }) {
   const LIST = (Array.isArray(list) && list.length) ? list : DEFAULT_CHECKLIST;
   /* Three of these tick themselves. If the report says the calls were made, asking
      someone to also tell us they were made is busywork, and worse, it invites a tick
@@ -5609,147 +5677,224 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     { k: "shown", label: "Appts shown", v: a.apptShow || 0, target: null, tone: "e" },
   ];
 
-  return (
-    <Overlay>
-    <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="help-sheet myday" role="dialog" aria-label="My day">
-        <div className="help-head">
-          <h3>{meName ? meName.split(" ")[0] + "'s day" : "My day"}</h3>
-          {/* The one mark in this panel that was still a typed character. Everything
-              else the floor sees is drawn on the dot grid, so this is too. */}
-          <button className="btn-x md-x" onClick={onClose} aria-label="Close">
-            <PixIcon glyph="close" size={19} />
+  /* Three screens, not one long scroll: where you are today, that same day as a
+     list, and — new — any one of those five numbers on its own with its last ten
+     days beside it. They share the frame the way in uses, so crossing from the
+     queue into your day is a change of subject rather than a change of app. */
+  const [view, setView] = useState("day");
+  const [openK, setOpenK] = useState("calls");
+
+  /* The activity rows are already one per store per day, so a fortnight of one
+     person's numbers is a single query against keys we can name in advance. */
+  const [series, setSeries] = useState(null);
+  useEffect(() => {
+    if (view !== "one" || !meName) return;
+    let dead = false;
+    loadMyDays(store, date, [norm(meName)]).then((d) => { if (!dead) setSeries(d); });
+    return () => { dead = true; };
+  }, [view, store, date, meName]);
+
+  const spineItems = LIST.map((c) => {
+    const auto = autoFor(c);
+    return auto ? { got: auto.got, need: auto.need } : { got: 0, need: 0, done: isDone(c) };
+  });
+  const spine = (
+    <SfSpine mode="day" items={spineItems} cap={`${doneCount} of ${LIST.length} done`} />
+  );
+
+  const openTile = tiles.find((t) => t.k === openK) || tiles[0];
+  const dayValues = series ? series.map((d) => (d.row ? (d.row[STAT_FIELD[openK]] || 0) : 0)) : null;
+
+  const bands = (
+    <div className="sf-bands">
+      {tiles.map((t) => {
+        const p = t.target ? Math.min(100, Math.round(((t.v || 0) / t.target) * 100)) : null;
+        const made = t.target ? t.v >= t.target : false;
+        return (
+          <button key={t.k} type="button" className="sf-band"
+            onClick={() => { buzz(8); setOpenK(t.k); setSeries(null); setView("one"); }}>
+            <span className="sf-band-fig">
+              <span className={"sf-band-dm" + (made ? " made" : "")}><DmNumber value={t.v} /></span>
+            </span>
+            <span className="sf-band-txt">
+              <span className="sf-band-lbl">{t.label}</span>
+              <span className="sf-band-of">
+                {made ? <b>made it</b> : t.target ? `of ${t.target} · ${t.target - t.v} to go` : "no bar set"}
+              </span>
+              {p != null && <span className={"sf-meter" + (made ? " done" : "")}><i style={{ width: p + "%" }} /></span>}
+            </span>
+            <span className="sf-band-go"><PixIcon glyph="arrow" size={12} /></span>
           </button>
+        );
+      })}
+    </div>
+  );
+
+  let inner;
+  if (view === "one") {
+    const peak = dayValues ? Math.max(...dayValues, 1) : 1;
+    const CELLS = 7;
+    const topIx = dayValues ? dayValues.indexOf(Math.max(...dayValues)) : -1;
+    const pct = openTile.target ? Math.min(100, Math.round((openTile.v / openTile.target) * 100)) : null;
+    inner = (
+      <SfScreen spine={spine} className="sf-v-one">
+        <button type="button" className="sf-back" onClick={() => setView("day")}>
+          <PixIcon glyph="arrowleft" size={12} /><span>My day</span>
+        </button>
+        <p className="sf-kicker">{openTile.label} · last {SF_DAYS} days</p>
+        <SfDisplay small a="Where the" b={openTile.label.toLowerCase() + " went"} />
+
+        <div className="sf-one">
+          <div className="sf-one-head">
+            <span className="sf-one-v">
+              {openTile.v}
+              {openTile.target ? <small> / {openTile.target} today</small> : <small> today</small>}
+            </span>
+            {pct != null && <span className="sf-one-p">{pct}%</span>}
+          </div>
+          {pct != null && (
+            <div className="sf-one-track">
+              {Array.from({ length: 10 }, (_, i) => (
+                <i key={i} className={i < Math.round(pct / 10) ? "on" : ""} />
+              ))}
+            </div>
+          )}
+          {!dayValues ? (
+            <p className="sf-one-wait">Reading the last {SF_DAYS} days&hellip;</p>
+          ) : (
+            <>
+              <div className="sf-cols">
+                {dayValues.map((v, i) => {
+                  const filled = v <= 0 ? 0 : Math.max(1, Math.round((v / peak) * CELLS));
+                  return (
+                    <span key={i} className={"sf-col" + (i === topIx && v > 0 ? " top" : "")}>
+                      {i === topIx && v > 0 && (
+                        <span className="sf-col-call"><b>{v}</b>best day</span>
+                      )}
+                      {Array.from({ length: CELLS }, (_, r) => (
+                        <span key={r} className={"sf-sq" + (r < filled ? "" : " off")} />
+                      ))}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="sf-axis">
+                <span>{shortDay(series[0].day)}</span>
+                <span>{shortDay(series[Math.floor(SF_DAYS / 2)].day)}</span>
+                <span>{shortDay(series[SF_DAYS - 1].day)}</span>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="help-body">
-          <div className="md-cap">Where you are today</div>
-          {!stats ? (
-            <p className="hint">Today's numbers have not landed yet. They come in through the day.</p>
-          ) : (
-            <div className="md-stats">
-              {tiles.map((t) => {
-                const p = t.target ? Math.min(100, Math.round(((t.v || 0) / t.target) * 100)) : null;
+        {dayValues && <SfWorthKnowing values={dayValues} days={series.map((d) => d.day)} target={openTile.target} />}
+      </SfScreen>
+    );
+  } else if (view === "list") {
+    inner = (
+      <SfScreen spine={spine} className="sf-v-list">
+        <button type="button" className="sf-back" onClick={() => setView("day")}>
+          <PixIcon glyph="arrowleft" size={12} /><span>My day</span>
+        </button>
+        <p className="sf-kicker">{longDay(date)}</p>
+        <SfDisplay a="Today's" b="list" />
+        <p className="sf-sub">The top three tick themselves off the reports. The rest are yours, and nobody is graded on them.</p>
+        <div className="sf-tasks">
+          {LIST.map((c) => {
+            const auto = autoFor(c);
+            const done = isDone(c);
+            return (
+              <button key={c.id} type="button"
+                className={"sf-task" + (done ? " on" : "") + (c.from ? " auto" : "") + (pop === c.id ? " pop" : "")}
+                onClick={() => toggle(c)} aria-disabled={!!c.from}>
+                <span className="sf-task-top">
+                  <span className="sf-task-l">{c.label}</span>
+                  <span className={"sf-task-c" + (done ? " good" : "")}>
+                    {auto
+                      ? (stats ? `${auto.got}/${auto.need}` : "waiting")
+                      : (done ? <PixIcon glyph="check" size={13} /> : "tap")}
+                  </span>
+                </span>
+                <span className="sf-task-h">{c.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+      </SfScreen>
+    );
+  } else {
+    inner = (
+      <SfScreen spine={spine} className="sf-v-day">
+        <button type="button" className="sf-back" onClick={onClose}>
+          <PixIcon glyph="arrowleft" size={12} /><span>Back to the line</span>
+        </button>
+        <p className="sf-kicker">{longDay(date)}</p>
+        <SfDisplay a={meName ? meName.split(" ")[0] + "'s" : "My"} b="day" />
+
+        <div className="sf-cap">
+          <span>Today&rsquo;s work</span>
+          <b>{tiles.filter((t) => t.target && t.v >= t.target).length} of {tiles.filter((t) => t.target).length} at the bar</b>
+        </div>
+        {!stats
+          ? <p className="sf-sub">Today&rsquo;s numbers have not landed yet. They come in through the day.</p>
+          : bands}
+
+        {closers.length > 0 && (
+          <>
+            <div className="sf-cap"><span>Closing this month</span></div>
+            <div className="sf-rates">
+              {closers.map((c) => {
+                const tn = toneOf(c.pct, c.k);
+                const mv = moveOf(c.pct, c.prev);
                 return (
-                  <div key={t.k} className={"md-stat md-t" + t.tone + (p >= 100 ? " md-hit" : "")}>
-                    <span className="md-stat-top"><b>{t.v}</b>{t.target ? <i>of {t.target}</i> : null}</span>
-                    <span className="md-stat-lbl">{t.label}</span>
-                    {p != null && <span className="md-bar"><i style={{ width: p + "%" }} /></span>}
+                  <div key={c.k} className={"sf-rate sf-tone-" + tn}>
+                    <span className="sf-rate-v">{c.pct == null ? "–" : Math.round(c.pct * 100) + "%"}</span>
+                    <span className="sf-rate-l">
+                      {c.label}<PixIcon className="sf-rate-mark" glyph={TONE_MARK[tn]} size={10} />
+                    </span>
+                    <span className="sf-rate-g">goal {(thr[c.k] || {}).green}%</span>
+                    <span className={"sf-rate-m " + mv.dir}>
+                      <PixIcon glyph={mv.dir === "up" ? "triup" : mv.dir === "down" ? "tridown" : "dot"} size={9} />
+                      {mv.delta ? <i>{mv.delta}</i> : null}
+                    </span>
                   </div>
                 );
               })}
             </div>
-          )}
+          </>
+        )}
 
-          {/* Closing rates. Month to date, because a single day of them says nothing:
-              one showroom lead and one sale is not a hundred per cent. */}
-          {closers.length > 0 && (
-            <>
-              <div className="md-cap md-cap2">Closing this month</div>
-              <div className="md-close">
-                {closers.map((c) => {
-                  const tn = toneOf(c.pct, c.k);
-                  const mv = moveOf(c.pct, c.prev);
-                  return (
-                    <div key={c.k} className={"md-cl md-tone-" + tn}>
-                      <span className="md-cl-top">
-                        <span className="md-cl-v">{c.pct == null ? "-" : Math.round(c.pct * 100) + "%"}</span>
-                        {/* Colour is never the only channel here, exactly as on the
-                            board: the mark says green, amber or red on its own. */}
-                        <PixIcon className="md-cl-mark" glyph={TONE_MARK[tn]} size={11} />
-                        <span className={"md-cl-move " + mv.dir}>
-                          <PixIcon glyph={mv.dir === "up" ? "triup" : mv.dir === "down" ? "tridown" : "dot"} size={9} />
-                          {mv.delta ? <i>{mv.delta}</i> : null}
-                        </span>
-                      </span>
-                      <span className="md-cl-l">{c.label}</span>
-                      {/* What good looks like, from the same per channel thresholds
-                          the coaching sheet and the wall grade against. A rate with
-                          no bar beside it cannot tell anyone whether to act. */}
-                      <span className="md-cl-goal">
-                        {tn === "g" ? "at or over " : "goal "}{(thr[c.k] || {}).green}%
-                      </span>
-                      <span className="md-cl-s">
-                        {c.units == null ? "nothing yet"
-                          : c.leads == null || c.leads === 0
-                            ? `${fmtNum(c.units)} delivered`
-                            : `${fmtNum(c.units)} of ${fmtNum(c.leads)}`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+        {focus && (
+          <>
+            <div className="sf-cap"><span>Start here</span></div>
+            <div className={"sf-focus sf-tone-" + focus.tone}>
+              <h4>{focus.label}</h4>
+              <div className="sf-focus-n">{Math.round(focus.pct * 100)}% against a bar of {focus.green}%</div>
+              <p>{focus.play}</p>
+            </div>
+          </>
+        )}
 
-          {/* Coaching, on the phone, every day rather than once a month on a printed
-              sheet. This page is anonymous, so it only ever holds the board row: no
-              baselines, no top performer averages. What it CAN work out honestly is
-              which channel sits furthest under this store's own bar, which is the
-              same call the coaching sheet's alert makes. One thing, never a list. */}
-          {focus && (
-            <>
-              <div className="md-cap md-cap2">Start here</div>
-              <div className={"md-focus md-tone-" + focus.tone}>
-                <div className="md-focus-h">
-                  <b>{focus.label}</b>
-                  <span>{Math.round(focus.pct * 100)}% against a bar of {focus.green}%</span>
-                </div>
-                <div className="md-focus-bar">
-                  <i style={{ width: Math.max(4, Math.min(100, (focus.pct / (focus.green / 100)) * 70)) + "%" }} />
-                  <u />
-                </div>
-                <p>{focus.play}</p>
-              </div>
-            </>
-          )}
+        <button type="button" className="sf-jump" onClick={() => setView("list")}>
+          Today&rsquo;s list<span>{doneCount} of {LIST.length}</span>
+          <PixIcon glyph="arrow" size={13} />
+        </button>
 
-          <div className="md-cap md-cap2">Today's list <span>{doneCount} of {LIST.length}</span></div>
-          <div className="md-list">
-            {LIST.map((c) => {
-              const auto = autoFor(c);
-              const done = isDone(c);
-              // The three automatic items wear the same colour as their tile above, so
-              // the eye ties "Calls" on the list to the Calls figure without reading.
-              const tone = AUTO_TONE[c.from] || "";
-              // How far along, for the bar under an automatic item. A run at the number
-              // is worth seeing; the tick alone only ever says yes or no.
-              const p = auto && auto.need > 0 ? Math.min(100, Math.round((auto.got / auto.need) * 100)) : null;
-              return (
-                <button key={c.id}
-                  className={"md-item" + (done ? " on" : "") + (c.from ? " md-auto" : "") + (tone ? " md-i" + tone : "") + (pop === c.id ? " md-pop" : "")}
-                  onClick={() => toggle(c)}
-                  aria-disabled={!!c.from}>
-                  <span className="md-box">{done && <PixIcon glyph="check" size={17} />}</span>
-                  <span className="md-text">
-                    <b>{c.label}</b>
-                    <span>{c.hint}</span>
-                    {p != null && stats && <span className="md-prog"><i style={{ width: p + "%" }} /></span>}
-                  </span>
-                  {auto
-                    ? (stats
-                        ? <span className="md-count">{auto.got}{auto.need > 1 ? <i>/{auto.need}</i> : null}</span>
-                        : <span className="md-hand">Waiting</span>)
-                    : <span className="md-hand">{done ? "Done" : "Tap"}</span>}
-                </button>
-              );
-            })}
-          </div>
-          <p className="hint">The top three tick themselves. The rest are yours and nobody is graded on them.</p>
-          {/* The same stamp the daily tracker carries. Without it a quiet morning and
-              an import that never landed look identical, and the first thing anyone
-              does with a number they distrust is stop reading it. */}
-          <div className={"md-stamp" + (stamp ? "" : " md-stamp-none")}>
-            {stamp
-              ? `Numbers as of ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-              : "No activity report has landed for today yet"}
-          </div>
-
-          <HelpButton config={config} who={meName} store={store}
-            context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
+        <div className={"sf-stamp" + (stamp ? "" : " none")}>
+          {stamp
+            ? `Numbers as of ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+            : "No activity report has landed for today yet"}
         </div>
-      </div>
-    </div>
+        <HelpButton config={config} who={meName} store={store}
+          context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
+      </SfScreen>
+    );
+  }
+
+  return (
+    <Overlay>
+      <div className={"q-page sf sf-day-root " + ((variant && variant.sf) || "")}
+        role="dialog" aria-label="My day">{inner}</div>
     </Overlay>
   );
 }
@@ -6476,6 +6621,7 @@ const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
 const LEAD_VARIANTS = {
   line: {
     kind: "line", dataKey: "queue", param: "q", label: "The Line", count: "in line",
+    title1: "Get in", title2: "line",
     channel: "close_phone", closeLabel: "phone close", sf: "sf-line", mf: "mf-line", accent: "#5566F0",
     joinTitle: "Get in line", joinSub: "Type your name to log in and start getting in line.",
     ready1: "You're in line", wait: "In line", aheadSub: "ahead of you for the next call",
@@ -6484,12 +6630,28 @@ const LEAD_VARIANTS = {
   },
   online: {
     kind: "online", dataKey: "queueOnline", param: "o", label: "Online", count: "in the queue",
+    title1: "Get in", title2: "the queue",
     channel: "close_internet", closeLabel: "online close", sf: "sf-online", mf: "mf-online", accent: "#8B5CF6",
     joinTitle: "Get in the queue", joinSub: "Type your name to log in and start getting in line.",
     ready1: "You're in the queue", wait: "In the queue", aheadSub: "ahead of you for the next lead",
     upSub: "The next online lead is yours.", custTitle: "On a lead", custSub: "Back in the queue when you wrap up.",
     custFlag: "On a lead", joinBtn: "Join the queue", bannerLabel: "Internet Lead Opportunities", bannerGlyph: "globe", leave: "Leave the queue", empty: "Nobody's in the queue yet. Post the code, or add someone below.",
   },
+};
+
+/* Live Floor is not a lead queue — it has its own row, its own history and its
+   own wording — but from the salesperson's side it is the same act, so it needs
+   the same shape to hand to the shared screens. */
+const FLOOR_VARIANT = {
+  kind: "floor", label: "Live Floor", count: "on the floor",
+  title1: "Step onto", title2: "the floor",
+  joinSub: "Type your name to log in and take your place on the floor.",
+  joinBtn: "Join the floor", bannerGlyph: "door",
+  ready1: "You're on the floor", aheadSub: "ahead of you for the next up",
+  upSub: "The next customer through the door is yours.",
+  custTitle: "With a customer", custSub: "Back on the floor when you are done.",
+  custFlag: "With customer", leave: "Leave the floor",
+  empty: "Nobody's on the floor yet. Post the code, or add someone below.",
 };
 
 /* ---- hand-drawn line icons (currentColor, no emoji) ---- */
@@ -6810,6 +6972,279 @@ function RingTimer({ mins, cap = 60 }) {
   );
 }
 
+/* ==========================================================================
+   FLOORSIDE — the salesperson's screens
+   ==========================================================================
+   The way in used to be the manager app's card chrome dropped onto a dark
+   background: a titled panel, a text input, a submit button. It worked and it
+   looked like every other form anyone has ever filled in.
+
+   These screens are built around the one thing a person standing on a
+   showroom floor is actually doing, which is waiting for their turn. So the
+   queue itself is drawn — a spine of nodes down the right edge, one per
+   person, theirs lit at their position — and the queue's own colour bleeds up
+   from the floor of the screen, the same three pairs the manager's board and
+   the bottom bar already use. Nothing here is tinted by two things at once.
+
+   Both sign-in components (The Line / Online, and Live Floor) render these,
+   so the layout exists once rather than twice.
+   ========================================================================== */
+
+/* The spine. Two meanings, one shape:
+     queue mode — one node per person waiting, yours lit and larger
+     day mode   — one node per checklist item, and the three that count
+                  themselves draw a ring filled to how far along they are,
+                  because a tick can only ever say yes or no.
+   Both are real readings of real data. There is no decorative mode. */
+function SfSpine({ mode = "queue", count = 0, pos = 0, items = null, cap = "" }) {
+  let nodes;
+  if (mode === "day" && items) {
+    nodes = items.map((it, i) => {
+      const frac = it.need > 0 ? Math.min(1, it.got / it.need) : (it.done ? 1 : 0);
+      if (frac >= 1) return <span key={i} className="sfn done" />;
+      if (frac <= 0) return <span key={i} className="sfn" />;
+      const C = 2 * Math.PI * 5;
+      return (
+        <span key={i} className="sfn ring">
+          <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+            <circle cx="6.5" cy="6.5" r="5" fill="none" stroke="rgba(255,255,255,.14)" strokeWidth="2" />
+            <circle cx="6.5" cy="6.5" r="5" fill="none" stroke="var(--a2)" strokeWidth="2"
+              strokeLinecap="round" transform="rotate(-90 6.5 6.5)"
+              strokeDasharray={C.toFixed(1)} strokeDashoffset={(C * (1 - frac)).toFixed(1)} />
+          </svg>
+        </span>
+      );
+    });
+  } else {
+    /* A very long queue would draw a node every couple of pixels, so past 14 the
+       spine shows the run you are in rather than every person in the building. */
+    const n = Math.min(count, 14);
+    const from = pos > n ? pos - n + 1 : 1;
+    nodes = [];
+    for (let i = 0; i < n; i++) {
+      const at = from + i;
+      nodes.push(<span key={at}
+        className={"sfn" + (at === pos ? " mine" : at < pos ? " past" : "")} />);
+    }
+  }
+  return (
+    <div className="sf-spine" aria-hidden="true">
+      {cap ? <span className="sf-spine-cap">{cap}</span> : null}
+      <div className="sf-spine-track">{nodes}</div>
+    </div>
+  );
+}
+
+/* The screen frame every one of these shares: body on the left, spine on the
+   right. The body scrolls; the spine does not. */
+function SfScreen({ children, spine, className = "" }) {
+  return (
+    <div className={"sf-view " + className}>
+      <div className="sf-body">{children}</div>
+      {spine}
+    </div>
+  );
+}
+
+function SfMark({ variant }) {
+  return (
+    <span className="sf-mark">
+      <PixIcon glyph={variant.bannerGlyph} size={13} /><span>{variant.label}</span>
+    </span>
+  );
+}
+
+/* A heading in two lines, the second one dimmed. Two words carry further than
+   a sentence on a screen read at arm's length between customers. */
+function SfDisplay({ a, b, small }) {
+  return <h2 className={"sf-display" + (small ? " sm" : "")}>{a}<span className="sf-dim">{b}</span></h2>;
+}
+
+/* The PIN pad, on the screen.
+   It used to be a text input, which means iOS throws its keyboard up, the page
+   shifts under your thumb, and someone with a customer three feet away is
+   aiming at a 9mm key. These are 44pt targets that never move, the field is
+   readOnly so the OS keyboard stays down, and the digits land in cells drawn on
+   the same dot grid as the rest of the app. */
+function SfPad({ value, onChange, onSubmit, busy, max = 6, cells = 4, goGlyph = "check" }) {
+  const push = (d) => { if (value.length < max) { onChange(value + d); buzz(8); } };
+  const del = () => { if (value.length) { onChange(value.slice(0, -1)); buzz(8); } };
+  const shown = Math.max(cells, value.length);
+  return (
+    <>
+      <div className="sf-pin-cells">
+        {Array.from({ length: shown }, (_, i) => (
+          <span key={i} className={"sf-pin-cell" + (i < value.length ? " on" : "")}>
+            {i < value.length ? <PixIcon glyph="dot" size={13} /> : null}
+          </span>
+        ))}
+      </div>
+      <div className="sf-pad">
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+          <button key={d} type="button" className="sf-key" disabled={busy}
+            onClick={() => push(d)}>{d}</button>
+        ))}
+        <button type="button" className="sf-key sf-key-word" disabled={busy || !value.length}
+          onClick={del} aria-label="Delete a digit">Delete</button>
+        <button type="button" className="sf-key" disabled={busy} onClick={() => push("0")}>0</button>
+        <button type="button" className="sf-key sf-key-go" disabled={busy || value.length < 4}
+          onClick={onSubmit} aria-label={goGlyph === "arrow" ? "Next" : "Done"}>
+          <PixIcon glyph={goGlyph} size={18} />
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* ---- ten days of one person's numbers -----------------------------------
+   The activity rows are already one per day per store, keyed by date, so a
+   fortnight is one query rather than a new table. This is the same row the
+   panel already reads for today; it just reads nine more of them. */
+const SF_DAYS = 10;
+function lastDays(n, endISO) {
+  const out = [];
+  const d = endISO ? new Date(endISO + "T12:00:00") : new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const x = new Date(d); x.setDate(d.getDate() - i);
+    out.push(x.toISOString().slice(0, 10));
+  }
+  return out;
+}
+/* ---- the four ways in -------------------------------------------------- */
+/* Name, then one of: straight through, "did you mean", "which one of these",
+   or "that PIN belongs to someone else". All four are the same screen with a
+   different question, so they share the frame and differ only in the middle. */
+function SfName({ variant, storeName, typed, setTyped, submit, msg, suggestions, onPick, spine }) {
+  return (
+    <SfScreen spine={spine} className="sf-v-name">
+      <SfMark variant={variant} />
+      <p className="sf-kicker">{storeName}</p>
+      <SfDisplay a={variant.title1} b={variant.title2} />
+      <p className="sf-sub">{variant.joinSub}</p>
+      {msg ? <p className="sf-err">{msg}</p> : null}
+      {suggestions && suggestions.length > 0 && (
+        <div className="sf-names">
+          <p className="sf-names-cap">Did you mean</p>
+          {suggestions.map((p) => (
+            <button key={p.id} type="button" className="sf-name" onClick={() => onPick(p)}>
+              {p.label}{p.role ? <i>{p.role}</i> : null}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="sf-field">
+        <input className="sf-input" autoFocus placeholder="Your name" value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
+        <button type="button" className="sf-cta" disabled={!typed.trim()} onClick={submit}>Continue</button>
+      </div>
+    </SfScreen>
+  );
+}
+
+function SfPin({ variant, who, pinMode, pin, setPin, pin2, setPin2, submitPin, msg, busy, onNotMe, spine }) {
+  /* Creating a PIN needs it twice. One pad fills the first row, then the second.
+     The stage is held rather than derived from pin.length: derived, it flipped to
+     "again" the moment a fourth digit landed, which made a five or six digit PIN
+     impossible to type. */
+  const [stage, setStage] = useState(1);
+  const creating = pinMode === "create";
+  const val = stage === 2 ? pin2 : pin;
+  const set = stage === 2 ? setPin2 : setPin;
+  const go = () => {
+    if (creating && stage === 1) { if (pin.length >= 4) { setStage(2); buzz(12); } return; }
+    submitPin();
+  };
+  /* A hardware keyboard still works — a manager checking this on a laptop, and
+     anyone using a Bluetooth keyboard, would otherwise have no way in. */
+  useEffect(() => {
+    const onKey = (e) => {
+      if (busy) return;
+      if (/^[0-9]$/.test(e.key)) { if (val.length < 6) set(val + e.key); }
+      else if (e.key === "Backspace") { set(val.slice(0, -1)); }
+      else if (e.key === "Enter" && val.length >= 4) { go(); }
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  return (
+    <SfScreen spine={spine} className="sf-v-pin">
+      <button type="button" className="sf-back" disabled={busy} onClick={onNotMe}>
+        <PixIcon glyph="arrowleft" size={12} /><span>That&rsquo;s not me</span>
+      </button>
+      <p className="sf-kicker">{who} · {variant.label}</p>
+      <SfDisplay
+        a={creating ? "Set your" : "Enter your"}
+        b={creating && stage === 2 ? "PIN again" : "PIN"} />
+      {creating && stage === 1
+        ? <p className="sf-sub">Four to six digits. You will use it every day.</p> : null}
+      {msg ? <p className="sf-err">{msg}</p> : null}
+      <SfPad value={val} onChange={set} busy={busy} onSubmit={go}
+        goGlyph={creating && stage === 1 ? "arrow" : "check"} />
+    </SfScreen>
+  );
+}
+
+function SfAsk({ variant, question, lead, yes, no, yesLabel = "Yes, that's me", noLabel = "No", busy, spine, note }) {
+  return (
+    <SfScreen spine={spine} className="sf-v-ask">
+      <SfMark variant={variant} />
+      <p className="sf-kicker">{lead}</p>
+      <SfDisplay a={question[0]} b={question[1]} />
+      {note ? <p className="sf-sub">{note}</p> : null}
+      <div className="sf-field">
+        <button type="button" className="sf-cta" disabled={busy} onClick={yes}>{yesLabel}</button>
+        <button type="button" className="sf-cta sf-cta-quiet" disabled={busy} onClick={no}>{noLabel}</button>
+      </div>
+    </SfScreen>
+  );
+}
+
+function SfPickList({ variant, people, taken, countLabel, onPick, onBack, typed, spine }) {
+  return (
+    <SfScreen spine={spine} className="sf-v-pick">
+      <button type="button" className="sf-back" onClick={onBack}>
+        <PixIcon glyph="arrowleft" size={12} /><span>Back</span>
+      </button>
+      <SfDisplay a="Which one" b="is you?" />
+      <p className="sf-sub">A few names are close to &ldquo;{typed}&rdquo;.</p>
+      <div className="sf-names sf-names-tall">
+        {people.map((p) => {
+          const isIn = taken(p.id);
+          return (
+            <button key={p.id} type="button" className="sf-name" disabled={isIn} onClick={() => onPick(p)}>
+              {p.label}
+              {p.role ? <i>{p.role}</i> : null}
+              {isIn ? <em>{countLabel}</em> : null}
+            </button>
+          );
+        })}
+      </div>
+    </SfScreen>
+  );
+}
+
+async function loadMyDays(store, endDay, nameKeys) {
+  const days = lastDays(SF_DAYS, endDay);
+  if (!supabase) return null;
+  const keys = days.map((d) => floorStatsKey(store, d));
+  try {
+    const { data } = await supabase.from("app_data").select("key,value").in("key", keys);
+    if (!data) return null;
+    const byKey = {};
+    for (const r of data) byKey[r.key] = r.value;
+    return days.map((d) => {
+      const v = byKey[floorStatsKey(store, d)];
+      if (!v) return { day: d, row: null };
+      let row = null;
+      for (const k of nameKeys) { if (k && v[k]) { row = v[k]; break; } }
+      return { day: d, row };
+    });
+  } catch (e) { return null; }
+}
+
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
@@ -7056,17 +7491,30 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   // content is chosen by `shown`, which lags `screen` and swaps behind the curtain
   const eff = (shown === "done" && !me) ? "name" : shown;
+
+  /* One spine for every screen on the way in: the queue as it stands right now,
+     which is the thing the person is actually here to find out. */
+  const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
+  const queueSpine = (
+    <SfSpine mode="queue" count={Math.max(line.length, 1)} pos={spinePos}
+      cap={line.length ? `${line.length} ${variant.count}` : "nobody yet"} />
+  );
+
   let content;
 
   if (eff === "loading") {
-    content = <div className="q-card q-center"><div className="spin-logo" /><p className="q-muted">Loading…</p></div>;
+    content = (
+      <SfScreen spine={queueSpine} className="sf-v-wait">
+        <div className="sf-wait"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
+      </SfScreen>
+    );
   } else if (eff === "invalid") {
     content = (
-      <div className="q-card q-center">
-        <QClockIcon className="q-x-ico" />
-        <h2>This sign-in code isn't for today</h2>
-        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
-      </div>
+      <SfScreen spine={queueSpine} className="sf-v-stale">
+        <SfMark variant={variant} />
+        <SfDisplay small a="This code" b="isn't for today" />
+        <p className="sf-sub">Ask a manager to show today&rsquo;s code, and scan it again.</p>
+      </SfScreen>
     );
   } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
@@ -7130,102 +7578,44 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     );
   } else if (eff === "switch" && selected && switchTo) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
-          <h2>Is this you?</h2>
-        </div>
-        <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
-        <p className="q-big-q">Are you {switchTo.label}?</p>
-        <div className="q-flags">
-          <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
-          <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
-        </div>
-      </div>
+      <SfAsk variant={variant} spine={queueSpine}
+        lead={`That PIN is on ${switchTo.label}'s file`}
+        question={["Are you", switchTo.label + "?"]}
+        note={`You picked ${selected.label}.`}
+        busy={busy}
+        yes={() => joinAs({ id: switchTo.id, label: switchTo.label })}
+        no={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}
+        noLabel="No, try again" />
     );
   } else if (eff === "pin" && selected) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
-          <p className="q-kicker">{selected.label}</p>
-          <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
-          {pinMode === "create" && <p className="q-muted">4 to 6 digits. You will use it to sign in.</p>}
-        </div>
-        <div className="q-pin-field">
-          {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
-          <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
-            placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
-        </div>
-        {pinMode === "create" && (
-          <div className="q-pin-field">
-            <label className="q-pin-lbl">Confirm PIN</label>
-            <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
-              placeholder="••••" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
-          </div>
-        )}
-        {msg && <p className="q-err">{msg}</p>}
-        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : variant.joinBtn}</button>
-        <button className="q-notme" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>
-          <DmIcon name="back" cell={3} /><span>That's not me</span>
-        </button>
-      </div>
+      <SfPin variant={variant} spine={queueSpine} who={selected.label}
+        pinMode={pinMode} pin={pin} setPin={setPin} pin2={pin2} setPin2={setPin2}
+        submitPin={submitPin} msg={msg} busy={busy}
+        onNotMe={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }} />
     );
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
-          <h2>Which one is you?</h2><p className="q-muted">A few names are close to “{typed}”.</p>
-        </div>
-        <div className="q-roster">
-          {resolved.people.map((p) => (
-            <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
-              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">{variant.count}</span> : null}
-            </button>
-          ))}
-        </div>
-        <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
-      </div>
+      <SfPickList variant={variant} spine={queueSpine} typed={typed}
+        people={resolved.people} countLabel={variant.count}
+        taken={(id) => line.some((x) => x.id === id)}
+        onPick={pickPerson}
+        onBack={() => { setStep("name"); setMsg(""); }} />
     );
   } else if (eff === "confirm" && resolved && resolved.person) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
-          <h2>Did you mean…</h2>
-        </div>
-        <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
-        <div className="q-flags">
-          <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
-          <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
-        </div>
-      </div>
+      <SfAsk variant={variant} spine={queueSpine} lead="Did you mean"
+        question={[resolved.person.label, resolved.person.role || "\u00a0"]}
+        busy={busy}
+        yes={() => pickPerson(resolved.person)}
+        no={() => { setStep("name"); setMsg(""); }} />
     );
   } else {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph={variant.bannerGlyph} size={26} /><span>{variant.label}</span></div>
-          <p className="q-kicker">{storeName}</p><h2>{variant.joinTitle}</h2><p className="q-muted">{variant.joinSub}</p>
-        </div>
-        <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
-          onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
-        {msg && <p className="q-err">{msg}</p>}
-        <button className="q-btn q-primary q-wide" disabled={!typed.trim()} onClick={submitName}>Continue</button>
-        {resolved && resolved.kind === "none" && resolved.suggestions && resolved.suggestions.length > 0 && (
-          <div className="q-suggest">
-            <p className="q-muted">Did you mean:</p>
-            <div className="q-roster">
-              {resolved.suggestions.map((p) => (
-                <button key={p.id} className="q-name" onClick={() => pickPerson(p)}>{p.label}{p.role ? <span className="q-role">{p.role}</span> : null}</button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <SfName variant={variant} spine={queueSpine} storeName={storeName}
+        typed={typed} setTyped={setTyped} submit={submitName} msg={msg}
+        suggestions={resolved && resolved.kind === "none" ? resolved.suggestions : null}
+        onPick={pickPerson} />
     );
   }
 
@@ -7236,7 +7626,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
       {myDay && (
-        <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
+        <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std} variant={variant}
           config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
           list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
@@ -8408,7 +8798,7 @@ function FloorSignIn({ store, date, token, test = false }) {
   // Filtered out entirely unless the address asked for it, so it cannot be picked
   // by accident by somebody scrolling the name list.
   const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
-  const variant = { label: "Live Floor" };
+  const variant = FLOOR_VARIANT;
   const meEntry = ((row && row.roster) || []).find((r) => r.id === meId) || null;
   const meLabel = (meEntry && meEntry.label) || "";
   // Reports are keyed by the full name, never the short label.
@@ -8603,17 +8993,30 @@ function FloorSignIn({ store, date, token, test = false }) {
 
   const storeName = (row && row.storeName) || "Live Floor";
   const eff = (shown === "done" && !me) ? "name" : shown;
+
+  /* One spine for every screen on the way in: the queue as it stands right now,
+     which is the thing the person is actually here to find out. */
+  const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
+  const queueSpine = (
+    <SfSpine mode="queue" count={Math.max(line.length, 1)} pos={spinePos}
+      cap={line.length ? `${line.length} ${variant.count}` : "nobody yet"} />
+  );
+
   let content;
 
   if (eff === "loading") {
-    content = <div className="q-card q-center"><div className="spin-logo" /><p className="q-muted">Loading…</p></div>;
+    content = (
+      <SfScreen spine={queueSpine} className="sf-v-wait">
+        <div className="sf-wait"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
+      </SfScreen>
+    );
   } else if (eff === "invalid") {
     content = (
-      <div className="q-card q-center">
-        <QClockIcon className="q-x-ico" />
-        <h2>This sign-in code isn't for today</h2>
-        <p className="q-muted">Ask a manager to show today's code and scan it again.</p>
-      </div>
+      <SfScreen spine={queueSpine} className="sf-v-stale">
+        <SfMark variant={variant} />
+        <SfDisplay small a="This code" b="isn't for today" />
+        <p className="sf-sub">Ask a manager to show today&rsquo;s code, and scan it again.</p>
+      </SfScreen>
     );
   } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
@@ -8679,102 +9082,44 @@ function FloorSignIn({ store, date, token, test = false }) {
     );
   } else if (eff === "switch" && selected && switchTo) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
-          <h2>Is this you?</h2>
-        </div>
-        <p className="q-muted">You picked <strong>{selected.label}</strong>, but that PIN is on <strong>{switchTo.label}</strong>'s file.</p>
-        <p className="q-big-q">Are you {switchTo.label}?</p>
-        <div className="q-flags">
-          <button className="q-btn q-back q-wide" disabled={busy} onClick={() => joinAs({ id: switchTo.id, label: switchTo.label })}>Yes, that's me</button>
-          <button className="q-btn q-wide" disabled={busy} onClick={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}>No, try again</button>
-        </div>
-      </div>
+      <SfAsk variant={variant} spine={queueSpine}
+        lead={`That PIN is on ${switchTo.label}'s file`}
+        question={["Are you", switchTo.label + "?"]}
+        note={`You picked ${selected.label}.`}
+        busy={busy}
+        yes={() => joinAs({ id: switchTo.id, label: switchTo.label })}
+        no={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}
+        noLabel="No, try again" />
     );
   } else if (eff === "pin" && selected) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
-          <p className="q-kicker">{selected.label}</p>
-          <h2>{pinMode === "create" ? "Set your PIN" : "Enter your PIN"}</h2>
-          {pinMode === "create" && <p className="q-muted">4 to 6 digits. The same PIN as the phone line.</p>}
-        </div>
-        <div className="q-pin-field">
-          {pinMode === "create" && <label className="q-pin-lbl">PIN</label>}
-          <input className="q-pin-in" inputMode="numeric" pattern="\d*" autoFocus maxLength={6}
-            placeholder="••••" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            onKeyDown={(e) => { if (e.key === "Enter" && pinMode === "verify") submitPin(); }} />
-        </div>
-        {pinMode === "create" && (
-          <div className="q-pin-field">
-            <label className="q-pin-lbl">Confirm PIN</label>
-            <input className="q-pin-in" inputMode="numeric" pattern="\d*" maxLength={6}
-              placeholder="••••" value={pin2} onChange={(e) => setPin2(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => { if (e.key === "Enter") submitPin(); }} />
-          </div>
-        )}
-        {msg && <p className="q-err">{msg}</p>}
-        <button className="q-btn q-primary q-wide" disabled={busy} onClick={submitPin}>{pinMode === "create" ? "Set PIN & join" : "Join the floor"}</button>
-        <button className="q-notme" disabled={busy} onClick={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }}>
-          <DmIcon name="back" cell={3} /><span>That's not me</span>
-        </button>
-      </div>
+      <SfPin variant={variant} spine={queueSpine} who={selected.label}
+        pinMode={pinMode} pin={pin} setPin={setPin} pin2={pin2} setPin2={setPin2}
+        submitPin={submitPin} msg={msg} busy={busy}
+        onNotMe={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }} />
     );
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
-          <h2>Which one is you?</h2><p className="q-muted">A few names are close to "{typed}".</p>
-        </div>
-        <div className="q-roster">
-          {resolved.people.map((p) => (
-            <button key={p.id} className="q-name" disabled={line.some((x) => x.id === p.id)} onClick={() => pickPerson(p)}>
-              {p.label}{p.role ? <span className="q-role">{p.role}</span> : null}{line.some((x) => x.id === p.id) ? <span className="q-in">on floor</span> : null}
-            </button>
-          ))}
-        </div>
-        <button className="q-leave" onClick={() => { setStep("name"); setMsg(""); }}>← Back</button>
-      </div>
+      <SfPickList variant={variant} spine={queueSpine} typed={typed}
+        people={resolved.people} countLabel={variant.count}
+        taken={(id) => line.some((x) => x.id === id)}
+        onPick={pickPerson}
+        onBack={() => { setStep("name"); setMsg(""); }} />
     );
   } else if (eff === "confirm" && resolved && resolved.person) {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
-          <h2>Did you mean…</h2>
-        </div>
-        <p className="q-big-q">{resolved.person.label}{resolved.person.role ? <span className="q-role"> · {resolved.person.role}</span> : ""}?</p>
-        <div className="q-flags">
-          <button className="q-btn q-back q-wide" onClick={() => pickPerson(resolved.person)}>Yes, that's me</button>
-          <button className="q-btn q-wide" onClick={() => { setStep("name"); setMsg(""); }}>No</button>
-        </div>
-      </div>
+      <SfAsk variant={variant} spine={queueSpine} lead="Did you mean"
+        question={[resolved.person.label, resolved.person.role || "\u00a0"]}
+        busy={busy}
+        yes={() => pickPerson(resolved.person)}
+        no={() => { setStep("name"); setMsg(""); }} />
     );
   } else {
     content = (
-      <div className="q-card">
-        <div className="q-head">
-          <div className="q-mark"><PixIcon glyph="door" size={26} /><span>Live Floor</span></div>
-          <p className="q-kicker">{storeName}</p><h2>Get on the floor</h2><p className="q-muted">Type your name to log in and start getting in line.</p>
-        </div>
-        <input className="q-name-in" autoFocus placeholder="Your name" value={typed}
-          onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submitName(); }} />
-        {msg && <p className="q-err">{msg}</p>}
-        <button className="q-btn q-primary q-wide" disabled={!typed.trim()} onClick={submitName}>Continue</button>
-        {resolved && resolved.kind === "none" && resolved.suggestions && resolved.suggestions.length > 0 && (
-          <div className="q-suggest">
-            <p className="q-muted">Did you mean:</p>
-            <div className="q-roster">
-              {resolved.suggestions.map((p) => (
-                <button key={p.id} className="q-name" onClick={() => pickPerson(p)}>{p.label}{p.role ? <span className="q-role">{p.role}</span> : null}</button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <SfName variant={variant} spine={queueSpine} storeName={storeName}
+        typed={typed} setTyped={setTyped} submit={submitName} msg={msg}
+        suggestions={resolved && resolved.kind === "none" ? resolved.suggestions : null}
+        onPick={pickPerson} />
     );
   }
 
@@ -8785,7 +9130,7 @@ function FloorSignIn({ store, date, token, test = false }) {
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
       {myDay && (
-        <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std}
+        <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std} variant={variant}
           config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
           list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
       )}
@@ -22719,6 +23064,362 @@ function Style() {
 .q-page.sf.sf-line{ --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --glow:rgba(85,102,240,.5); --ld-off:rgba(157,195,255,.14); }
 .q-page.sf.sf-online{ --a1:#8B5CF6; --a2:#C05CF0; --led:#D8B4FE; --glow:rgba(139,92,246,.5); --ld-off:rgba(216,180,254,.16); }
 
+/* ============================================================
+   FLOORSIDE — the way in, and the day
+   ============================================================
+   Full-bleed rather than a card on a background. The queue's accent bleeds up
+   from the floor of the screen so a salesperson can tell which of the three
+   they are standing in without reading the label, and the spine down the right
+   edge draws the queue itself. */
+/* The main stylesheet has no global border-box, so every width:100% below would
+   otherwise add its own padding and border on top and run past the edge — which
+   is exactly what the task list did, by 10px. Scoped to this subtree so nothing
+   in the manager app moves. */
+.q-page.sf, .q-page.sf *, .q-page.sf *::before, .q-page.sf *::after{ box-sizing:border-box; }
+
+.q-page.sf::before{
+  content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(96% 52% at 18% 100%, color-mix(in srgb, var(--a1) 88%, transparent), transparent 70%),
+    radial-gradient(84% 44% at 92% 88%,  color-mix(in srgb, var(--a2) 66%, transparent), transparent 72%),
+    radial-gradient(70% 34% at 52% 114%, color-mix(in srgb, var(--led) 40%, transparent), transparent 68%);
+}
+/* Safari 15 and older have no color-mix. A flat wash beats no ground at all. */
+@supports not (background: color-mix(in srgb, red 10%, transparent)){
+  .q-page.sf::before{ background:linear-gradient(0deg, var(--a1), transparent 62%); opacity:.5; }
+}
+.sf .q-stage{ align-items:stretch; min-height:100dvh; }
+
+/* the frame: body left, spine right */
+.sf-view{ display:flex; width:100%; min-height:100dvh; align-items:stretch; }
+.sf-body{
+  flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
+  padding:calc(18px + env(safe-area-inset-top,0px)) 6px calc(26px + env(safe-area-inset-bottom,0px)) 22px;
+}
+/* .sf-body is a column flex container, so every child is shrinkable by default
+   and a tall child gets squeezed instead of scrolling. Nothing in here shrinks. */
+.sf-body > *{ flex:0 0 auto; }
+
+/* ---- the spine ---- */
+.sf-spine{
+  flex:0 0 46px; display:flex; flex-direction:column; align-items:center;
+  padding:calc(20px + env(safe-area-inset-top,0px)) 0 calc(26px + env(safe-area-inset-bottom,0px));
+}
+.sf-spine-cap{
+  font-family:var(--sfmono); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--sfink3); writing-mode:vertical-rl; margin-bottom:12px; white-space:nowrap;
+}
+.sf-spine-track{
+  flex:1 1 auto; width:1px; background:rgba(255,255,255,.09);
+  display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:4px 0;
+}
+.sfn{
+  width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.09); flex:0 0 auto; display:grid; place-items:center;
+  transition:background .4s var(--ease), box-shadow .4s var(--ease), width .4s var(--ease-bloop), height .4s var(--ease-bloop);
+}
+.sfn.past, .sfn.done{ background:color-mix(in srgb, var(--a2) 45%, transparent); border-color:transparent; }
+.sfn.ring{ width:13px; height:13px; background:transparent; border-color:transparent; }
+.sfn.mine{
+  width:15px; height:15px; background:var(--a2); border-color:transparent;
+  box-shadow:0 0 0 4px color-mix(in srgb, var(--a2) 20%, transparent), 0 0 18px var(--a2);
+}
+
+/* ---- type ---- */
+.sf-mark{
+  display:inline-flex; align-items:center; gap:8px; align-self:flex-start;
+  font-family:var(--sfmono); font-size:10px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--led); padding:6px 11px 6px 8px; border-radius:999px;
+  background:color-mix(in srgb, var(--a1) 16%, transparent);
+  border:1px solid color-mix(in srgb, var(--a2) 26%, transparent);
+}
+.sf-kicker{
+  font-family:var(--sfmono); font-size:10px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--sfink3); margin:26px 0 0;
+}
+.sf-display{
+  font-family:var(--sffont); font-size:clamp(32px,10vw,44px); line-height:.97;
+  letter-spacing:-.045em; font-weight:660; margin:10px 0 0; color:var(--sfink);
+}
+.sf-display.sm{ font-size:clamp(27px,8vw,34px); }
+.sf-display .sf-dim{ color:var(--sfink3); display:block; }
+.sf-sub{ color:var(--sfink2); font-size:14px; margin:14px 0 0; max-width:28ch; }
+.sf-err{
+  color:#FFB4AE; font-size:13px; margin:14px 0 0; max-width:30ch;
+  padding:10px 12px; border-radius:12px;
+  background:rgba(239,106,114,.12); border:1px solid rgba(239,106,114,.28);
+}
+
+/* ---- the field at the foot ---- */
+.sf-field{ margin-top:auto; padding-top:26px; padding-right:16px; display:flex; flex-direction:column; gap:10px; }
+.sf-input{
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09);
+  border-radius:16px; padding:15px 17px; font-family:var(--sffont); font-size:17px;
+  color:var(--sfink); width:100%; outline:none;
+  transition:border-color .2s var(--ease), box-shadow .2s var(--ease);
+}
+.sf-input::placeholder{ color:var(--sfink3); }
+.sf-input:focus{ border-color:var(--a2); box-shadow:0 0 0 4px color-mix(in srgb, var(--a2) 18%, transparent); }
+.sf-cta{
+  font-family:var(--sffont); font-size:16px; font-weight:650; letter-spacing:-.01em;
+  color:#08101B; background:linear-gradient(140deg, var(--led), var(--a2));
+  border:0; border-radius:16px; padding:16px; cursor:pointer; width:100%;
+  transition:transform .3s var(--ease-bloop), opacity .2s var(--ease);
+}
+.sf-cta:active{ transform:scale(.97); }
+.sf-cta:disabled{ opacity:.45; }
+.sf-cta-quiet{
+  background:rgba(255,255,255,.06); color:var(--sfink);
+  border:1px solid rgba(255,255,255,.1);
+}
+.sf-back{
+  align-self:flex-start; display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--sffont); font-size:13px; font-weight:600; color:var(--sfink3);
+  background:none; border:0; cursor:pointer; padding:6px 8px 6px 0;
+}
+.sf-back:active{ color:var(--sfink2); }
+
+/* ---- a list of names ---- */
+.sf-names{ margin-top:20px; padding-right:16px; display:flex; flex-direction:column; gap:8px; }
+.sf-names-tall{ margin-top:22px; }
+.sf-names-cap{
+  font-family:var(--sfmono); font-size:9.5px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--sfink3); margin:0 0 4px;
+}
+.sf-name{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  font-family:var(--sffont); font-size:15.5px; font-weight:600; color:var(--sfink);
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07);
+  border-radius:15px; padding:14px 15px; cursor:pointer;
+  transition:transform .3s var(--ease-bloop), border-color .2s var(--ease);
+}
+.sf-name:active{ transform:scale(.98); }
+.sf-name:disabled{ opacity:.42; }
+.sf-name i{ font-style:normal; font-size:11.5px; font-weight:600; color:var(--sfink3); }
+.sf-name em{
+  font-style:normal; margin-left:auto; font-family:var(--sfmono); font-size:9px;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--led);
+}
+
+/* ---- the PIN pad ----
+   Four cells that light as digits land, and a pad that owns the bottom third.
+   The field is gone entirely, so iOS never puts its keyboard up and the layout
+   never moves under a thumb. */
+.sf-pin-cells{ display:flex; gap:10px; margin:26px 0 0; padding-right:16px; }
+.sf-pin-cell{
+  flex:0 0 auto; width:46px; height:58px; border-radius:14px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
+  display:grid; place-items:center; color:var(--led);
+  transition:border-color .3s var(--ease), background .3s var(--ease);
+}
+.sf-pin-cell.on{
+  border-color:color-mix(in srgb, var(--a2) 60%, transparent);
+  background:color-mix(in srgb, var(--a1) 14%, transparent);
+}
+.sf-pad{
+  margin-top:auto; padding-top:24px; padding-right:16px;
+  display:grid; grid-template-columns:repeat(3,1fr); gap:9px;
+}
+.sf-key{
+  font-family:var(--sfmono); font-size:22px; font-weight:500; color:var(--sfink);
+  background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.05);
+  border-radius:16px; min-height:52px; cursor:pointer; display:grid; place-items:center;
+  transition:transform .26s var(--ease-bloop), background .16s var(--ease);
+}
+.sf-key:active{ transform:scale(.93); background:color-mix(in srgb, var(--a1) 26%, transparent); }
+.sf-key:disabled{ opacity:.4; }
+.sf-key-word{ font-family:var(--sffont); font-size:12.5px; font-weight:650; letter-spacing:.02em; }
+.sf-key-go{ color:#08101B; background:linear-gradient(140deg, var(--led), var(--a2)); border-color:transparent; }
+
+/* ---- the day, the list, and one number ----
+   The day screen is the same frame as the way in: body left, spine right, the
+   queue's colour bleeding up from the floor. It arrives over the live screen as
+   its own surface rather than as a sheet, because it is a place rather than a
+   panel. */
+.sf-day-root{ z-index:200; }
+.sf-day-root .sf-view{ position:relative; z-index:1; }
+
+.sf-cap{
+  display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+  margin:28px 0 12px; padding-right:16px;
+  font-family:var(--sfmono); font-size:9.5px; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--sfink3);
+}
+.sf-cap b{ color:var(--sfink2); font-weight:600; letter-spacing:.1em; }
+
+/* one band per number: the figure on the dot grid, the label, how far along */
+.sf-bands{ padding-right:16px; }
+.sf-band{
+  display:flex; align-items:center; gap:14px; width:100%; text-align:left;
+  padding:14px 0; background:none; border:0;
+  border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; color:inherit;
+  font-family:var(--sffont); transition:transform .3s var(--ease-bloop);
+}
+.sf-band:last-child{ border-bottom:0; }
+.sf-band:active{ transform:scale(.985); }
+.sf-band-fig{ flex:0 0 auto; }
+.sf-band-dm{ --cell:5px; display:block; }
+.sf-band-dm .ld{ background:var(--ld-off); }
+.sf-band-dm .ld.on{ background:var(--led); box-shadow:none; }
+.sf-band-dm.made .ld.on{ background:#3ECF6E; }
+/* the digits animate in on the live screen, which is right there and wrong in a
+   list of five that is read at a glance */
+.sf-band-dm .dm-digit{ animation:none; }
+.sf-band-txt{ flex:1 1 auto; min-width:0; }
+.sf-band-lbl{ display:block; font-size:15px; font-weight:640; letter-spacing:-.015em; color:var(--sfink); }
+.sf-band-of{
+  display:block; font-family:var(--sfmono); font-size:10.5px; letter-spacing:.06em;
+  color:var(--sfink3); margin-top:4px; text-transform:uppercase;
+}
+.sf-band-of b{ color:#4FD98A; font-weight:600; }
+.sf-band-go{ flex:0 0 auto; opacity:.3; color:var(--sfink2); }
+.sf-meter{ display:block; height:3px; border-radius:2px; background:rgba(255,255,255,.08); margin-top:10px; overflow:hidden; }
+.sf-meter i{ display:block; height:100%; border-radius:2px; background:linear-gradient(90deg, var(--a1), var(--led)); }
+.sf-meter.done i{ background:#3ECF6E; }
+
+/* closing rates: three across, because comparing them is the point of them */
+.sf-rates{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding-right:16px; }
+.sf-rate{
+  background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.06);
+  border-radius:15px; padding:13px 11px; position:relative; overflow:hidden;
+  display:flex; flex-direction:column;
+}
+.sf-rate::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--tone); }
+.sf-tone-g{ --tone:#3ECF6E; } .sf-tone-y{ --tone:#EFD75A; }
+.sf-tone-r{ --tone:#EF6A72; } .sf-tone-dim{ --tone:rgba(255,255,255,.14); }
+.sf-rate-v{ font-size:23px; font-weight:680; letter-spacing:-.04em; line-height:1; color:var(--tone); }
+.sf-rate-l{ display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:620; color:var(--sfink); margin-top:8px; }
+.sf-rate-mark{ opacity:.85; }
+.sf-rate-g{ font-family:var(--sfmono); font-size:9px; letter-spacing:.06em; color:var(--sfink3); margin-top:3px; text-transform:uppercase; }
+.sf-rate-m{ font-family:var(--sfmono); font-size:9.5px; margin-top:7px; display:flex; align-items:center; gap:3px; }
+.sf-rate-m.up{ color:#4FD98A; } .sf-rate-m.down{ color:#FF8A80; } .sf-rate-m.flat{ color:var(--sfink3); }
+.sf-rate-m i{ font-style:normal; }
+
+.sf-focus{
+  margin-right:16px; border-radius:18px; padding:16px;
+  background:linear-gradient(150deg, color-mix(in srgb, var(--tone) 17%, transparent), rgba(255,255,255,.03));
+  border:1px solid color-mix(in srgb, var(--tone) 26%, transparent);
+}
+.sf-focus h4{ margin:0; font-size:16px; letter-spacing:-.025em; font-weight:650; color:var(--sfink); }
+.sf-focus-n{ font-family:var(--sfmono); font-size:10.5px; letter-spacing:.06em; color:var(--sfink2); margin-top:5px; text-transform:uppercase; }
+.sf-focus p{ margin:11px 0 0; font-size:13px; color:var(--sfink2); line-height:1.5; }
+
+.sf-jump{
+  display:flex; align-items:center; gap:10px; width:100%; margin:22px 16px 0 0;
+  font-family:var(--sffont); font-size:15px; font-weight:640; letter-spacing:-.015em;
+  color:var(--sfink); background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:15px 16px; cursor:pointer;
+  transition:transform .3s var(--ease-bloop);
+}
+.sf-jump:active{ transform:scale(.98); }
+.sf-jump span{
+  margin-left:auto; font-family:var(--sfmono); font-size:10px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--sfink3);
+}
+.sf-stamp{
+  font-family:var(--sfmono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--sfink3); margin:22px 16px 0 0; padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.05);
+}
+.sf-stamp.none{ color:#C79A5A; }
+
+/* ---- the list ---- */
+.sf-tasks{ margin-top:20px; padding-right:16px; display:flex; flex-direction:column; gap:8px; }
+.sf-task{
+  display:block; width:100%; text-align:left; font-family:var(--sffont);
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.06);
+  border-radius:15px; padding:13px 15px; cursor:pointer; color:inherit;
+  transition:background .2s var(--ease), transform .3s var(--ease-bloop);
+}
+.sf-task:active{ transform:scale(.98); }
+.sf-task.auto{ cursor:default; }
+.sf-task.on{
+  background:color-mix(in srgb, var(--a1) 13%, transparent);
+  border-color:color-mix(in srgb, var(--a2) 24%, transparent);
+}
+.sf-task-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.sf-task-l{ font-size:14.5px; font-weight:630; letter-spacing:-.015em; color:var(--sfink); }
+.sf-task.on .sf-task-l{ color:var(--led); }
+.sf-task-h{ display:block; font-size:12px; color:var(--sfink3); margin-top:4px; }
+.sf-task-c{
+  flex:0 0 auto; font-family:var(--sfmono); font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--sfink3); display:inline-flex; align-items:center;
+}
+.sf-task-c.good{ color:#4FD98A; }
+.sf-task.pop{ animation:sfPop .5s var(--ease-bloop); }
+@keyframes sfPop{ 0%{ transform:scale(1); } 45%{ transform:scale(1.03); } 100%{ transform:scale(1); } }
+
+/* ---- one number ----
+   The single flooded surface in the whole flow, and it takes the QUEUE's colour
+   rather than one of its own, so nothing here is ever tinted by two things at
+   once. The chart is the dot grid again: a column per day, lit from the floor. */
+.sf-one{
+  margin:20px 16px 0 0; border-radius:24px; padding:16px 16px 18px;
+  background:linear-gradient(158deg, var(--led), var(--a1));
+  color:#070C13; overflow:hidden;
+}
+.sf-one-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.sf-one-v{ font-family:var(--sffont); font-size:26px; font-weight:700; letter-spacing:-.04em; line-height:1; }
+.sf-one-v small{ font-size:13px; font-weight:600; opacity:.58; letter-spacing:-.01em; }
+.sf-one-p{ font-family:var(--sffont); font-size:19px; font-weight:700; letter-spacing:-.03em; }
+.sf-one-track{ display:flex; gap:4px; margin-top:11px; }
+.sf-one-track i{ flex:1 1 0; height:3px; border-radius:2px; background:rgba(0,0,0,.19); }
+.sf-one-track i.on{ background:#FFFFFF; }
+.sf-one-wait{
+  margin:20px 0 4px; font-family:var(--sfmono); font-size:10.5px;
+  letter-spacing:.1em; text-transform:uppercase; color:rgba(0,0,0,.5);
+}
+/* height comes from the columns, not a fixed box: on a fixed height the columns
+   sat on the floor of it and the callout, pinned above its column, floated clear
+   of the tallest bar and landed on the progress track. */
+.sf-cols{ display:flex; align-items:flex-end; gap:6px; margin-top:54px; }
+.sf-col{
+  flex:1 1 0; display:flex; flex-direction:column-reverse; gap:4px;
+  align-items:center; position:relative;
+}
+/* a class, not a bare element selector: the callout lives inside the column too
+   and would otherwise pick up the square's fill and 1:1 aspect ratio. */
+.sf-sq{ width:100%; aspect-ratio:1; border-radius:5px; background:rgba(255,255,255,.52); }
+.sf-sq.off{ background:rgba(0,0,0,.15); }
+.sf-col.top .sf-sq{ background:#FFFFFF; }
+.sf-col.top .sf-sq.off{ background:rgba(0,0,0,.15); }
+.sf-col-call{
+  position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
+  background:#070C13; color:#FFFFFF; border-radius:11px; padding:5px 9px; white-space:nowrap;
+  font-family:var(--sfmono); font-size:9px; letter-spacing:.06em; line-height:1.3; text-align:center;
+}
+.sf-col-call b{ display:block; font-family:var(--sffont); font-size:12px; letter-spacing:-.01em; }
+.sf-axis{
+  display:flex; justify-content:space-between; margin-top:10px;
+  font-family:var(--sfmono); font-size:8.5px; letter-spacing:.06em; color:rgba(0,0,0,.52);
+}
+
+.sf-worth{
+  margin:9px 16px 0 0; border-radius:18px; padding:15px 16px 16px;
+  background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.06);
+}
+.sf-worth-h{ display:flex; flex-direction:column; align-items:flex-start; gap:1px; }
+.sf-worth-h h4{ margin:0; font-size:15px; font-weight:650; letter-spacing:-.025em; color:var(--sfink); white-space:nowrap; }
+.sf-worth-h span{ font-family:var(--sfmono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--sfink3); }
+.sf-worth-rows{ margin-top:13px; display:flex; flex-direction:column; gap:10px; }
+.sf-worth-row{ display:flex; align-items:flex-start; gap:9px; font-size:12.5px; color:var(--sfink2); line-height:1.4; }
+.sf-worth-row b{ font-weight:650; color:var(--sfink); }
+.sf-worth-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; margin-top:5px; }
+.sf-worth-dot.t-g{ background:#3ECF6E; }
+.sf-worth-dot.t-y{ background:#EFD75A; }
+.sf-worth-dot.t-r{ background:#EF6A72; }
+
+.sf-wait{ margin:auto; text-align:center; color:var(--sfink2); }
+.sf-wait p{ margin-top:14px; font-family:var(--sfmono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; }
+
+/* very short screens: the pad keeps its targets, the heading gives way */
+@media (max-height: 680px){
+  .sf-display{ font-size:clamp(26px,7.5vw,32px); }
+  .sf-pin-cell{ width:40px; height:50px; }
+  .sf-key{ min-height:46px; font-size:20px; }
+  .sf-kicker{ margin-top:16px; }
+}
+
 /* restyle the shared sign-in surfaces (name / pin / pick / confirm) */
 .sf .q-card{ background:transparent; border:none; box-shadow:none; color:var(--sfink); width:100%; max-width:440px; padding:clamp(20px,6vw,30px); }
 .sf .q-head h2{ font-family:var(--sffont); font-weight:600; letter-spacing:-.03em; font-size:clamp(24px,7vw,30px); color:var(--sfink); }
@@ -22853,6 +23554,10 @@ function Style() {
 
 /* PIN screen — its own "something else fun" entrance (a spring pop, no curtain) */
 .q-stage-pin{animation:qpinpop .58s cubic-bezier(.2,.9,.25,1.35) both;transform-origin:center 40%;}
+/* The pop was written for a card sitting in the middle of a page. The PIN screen
+   is the whole screen now, so scaling it scales the layout — the cells lighting
+   as digits land is the feedback that matters here. */
+.sf .q-stage-pin{ animation:none; }
 @keyframes qpinpop{
   0%{opacity:0;transform:scale(.72) translateY(14px) rotate(-1.2deg);}
   55%{opacity:1;transform:scale(1.04) translateY(0) rotate(.4deg);}
