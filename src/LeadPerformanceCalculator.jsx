@@ -4396,11 +4396,25 @@ function LEADERBOARD_HTML(p) {
     // read enormous, and a big team should still be as large as it possibly can be.
     var n = Math.max(people.length, 1);
     var AVAIL = 80;                                   // vh the table body gets
-    var rowH  = Math.min(8.5, AVAIL / (n + 1));
+    /* The ceiling is what a rota exposed: a fifteen-person store fills the wall,
+       then hands over to a three-person store that stopped growing at the old cap
+       and sat in the top third of an empty screen. Both boards are sized from the
+       screen, so both should reach the bottom of it — a small team is not a small
+       board, it is a board with enormous rows. */
+    var rowH  = Math.min(20, AVAIL / (n + 1));
+    /* Six columns have to fit across as well, and type is sized in vh — so the real
+       ceiling on a short list is the WIDTH of the screen, not its height. 3.15% of
+       the width is the size the columns stop colliding at; on a 16:9 TV that is the
+       5.6vh this board has always used, and a wider wall gets the benefit. */
+    var wideCap = 3.15 * (window.innerWidth / window.innerHeight);         // vh
     // Never shrink below what is readable from across a floor. If the team does not
     // fit at that size, the board scrolls instead of squinting.
-    var rowFs = Math.max(2.2, Math.min(5.6, rowH * 0.62)) * DISP.tscale;   // vh — higher ceiling so a short list on a wide TV fills the height
-    var rowPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;                // vh
+    var rowFs = Math.max(2.2, Math.min(wideCap, rowH * 0.62)) * DISP.tscale;   // vh
+    /* Whatever height the type could not take, the row takes: a three-person store
+       reaching the bottom of the wall in tall bands beats the same three rows
+       stacked in the top third with the rest of the screen empty. */
+    var tightPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;
+    var rowPad = Math.max(tightPad, (rowH - rowFs * 1.35) / 2 * DISP.tscale);
 
     function cell(pct, prevVal, ch){
       if (pct == null) return '<td class="pcell"><span class="pcell-in"><span class="pill dim">-</span><span class="move"></span></span></td>';
@@ -4537,7 +4551,27 @@ function LEADERBOARD_HTML(p) {
           '</div>');
     tick();
     countUp();
+    trimFill(tightPad, rowPad);
     startScroll();
+  }
+
+  /* The padding above is arithmetic against an ASSUMED 80vh of panel; the real
+     panel is whatever the header, the footer and the ticker leave behind. When the
+     guess overshoots, a list that fits on the screen would start scrolling for the
+     sake of white space it never needed — so hand the height back until it fits,
+     down to the tight padding a full board uses and no further. */
+  function trimFill(tight, pad){
+    var sc = document.getElementById('scroller');
+    var panel = document.querySelector('.panel');
+    if (!sc || !panel || pad <= tight) return;
+    var vh = window.innerHeight / 100;
+    for (var i = 0; i < 8 && pad > tight; i++) {
+      var over = sc.scrollHeight - sc.clientHeight;
+      if (over <= 4) return;
+      var rows = document.querySelectorAll('.panel tbody tr').length + 1;   // + the header row
+      pad = Math.max(tight, pad - (over / (2 * rows)) / vh);
+      panel.style.setProperty('--rowpad', pad + 'vh');
+    }
   }
 
   // If the whole team cannot fit at a readable size, the board walks slowly down the
@@ -4545,13 +4579,27 @@ function LEADERBOARD_HTML(p) {
   // the bottom of the board should be invisible all day.
   var scrollRAF = null;
   var idleRefill = null;   // refill timer for boards small enough not to scroll
+  var settleTimer = null;  // the measure-after-layout delay
+  var dwellTimer = null;   // hand-over clock for a board too short to scroll
+  /* Every render starts a scroll cycle, and a hand-over renders — so without a
+     generation stamp each rotation leaves its predecessor's frame loop alive on a
+     detached element, still counting down to a hand-over of its own. Two boards
+     become four clocks, then eight, and the room sees the store change every few
+     seconds. A cycle checks its stamp before it does anything; only the newest
+     one is still the current cycle. */
+  var scrollGen = 0;
   function startScroll(){
+    var gen = ++scrollGen;
     if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
+    if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+    if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
     var el = document.getElementById('scroller');
     if (!el) return;
 
     // let layout settle before measuring
-    setTimeout(function(){
+    settleTimer = setTimeout(function(){
+      settleTimer = null;
+      if (gen !== scrollGen) return;
       var over = el.scrollHeight - el.clientHeight;
       if (over <= 4) {
         // Everyone fits, so there's no scroll cycle to trigger the bar refill.
@@ -4560,7 +4608,10 @@ function LEADERBOARD_HTML(p) {
         idleRefill = setInterval(replayBars, 2 * 60 * 1000);
         /* A short list has no cycle to end, so the hand-over needs its own clock —
            otherwise a rotation that reaches a small store stops there for the day. */
-        if (rotates()) setTimeout(nextStore, 22000);
+        if (rotates()) dwellTimer = setTimeout(function(){
+          dwellTimer = null;
+          if (gen === scrollGen) nextStore();
+        }, Math.max(3000, MIN_STORE_MS - (Date.now() - storeShownAt)));
         return;
       }
       if (idleRefill) { clearInterval(idleRefill); idleRefill = null; }
@@ -4579,6 +4630,7 @@ function LEADERBOARD_HTML(p) {
       }
 
       function frame(ts){
+        if (gen !== scrollGen) return;   // a newer cycle owns the board now
         if (t0 === null) t0 = ts;
         var dt = ts - t0;
 
@@ -4600,9 +4652,15 @@ function LEADERBOARD_HTML(p) {
                than on a timer so a screen never changes store mid-scroll — you
                always see a board from its leader to its last name before it moves
                on. The frame loop is left running: the new render calls startScroll
-               again, which cancels it, and if the hand-over fails there is still a
-               board scrolling rather than a frozen one. */
-            if (rotates()) nextStore();
+               again, which retires this cycle by stamp, and if the hand-over fails
+               there is still a board scrolling rather than a frozen one.
+
+               A pass is the earliest a store may leave, not the moment it must:
+               a board with barely more than a screenful scrolls a few pixels and
+               springs straight back, and rotating on that is a store every ten
+               seconds. It stays until it has had its minute, then leaves at the
+               end of the next pass. */
+            if (rotates() && Date.now() - storeShownAt >= MIN_STORE_MS) nextStore();
           }
         }
         scrollRAF = requestAnimationFrame(frame);
@@ -4770,6 +4828,12 @@ function LEADERBOARD_HTML(p) {
                icon: CFG.icon, brand: CFG.brand, thresholds: CFG.thresholds };
   var ROT_I = 0;
 
+  /* How long a store is entitled to the wall before the rota may move on. The
+     scroll cycle decides WHEN it leaves — always at the end of a pass, never
+     mid-list — and this decides how soon that is allowed to be. */
+  var MIN_STORE_MS = 45000;
+  var storeShownAt = Date.now();
+
   /* True for exactly one pass of loop(), because the two guards in it compare the
      board on screen with the one arriving — which is the right thing to do for a
      refresh of the same store and completely wrong across a hand-over. */
@@ -4824,7 +4888,7 @@ function LEADERBOARD_HTML(p) {
       /* That store has never been published, or the network blinked. Stay where we
          are and let the next pass try the one after it, rather than driving the
          room to an empty board. */
-      HANDING = false; ROT_I = at; startScroll();
+      HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
       return;
     }
     ROT_I = at;
@@ -4833,6 +4897,7 @@ function LEADERBOARD_HTML(p) {
     var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
     var name = s.storeName || (id === HOME.id ? HOME.name : (known && known.name)) || 'Next store';
     driveTo(name, function(){
+      storeShownAt = Date.now();
       SWITCHING = true;
       renderStore(s);
     });
