@@ -3709,6 +3709,72 @@ function LEADERBOARD_HTML(p) {
     100% { box-shadow:0 0 0 0 rgba(105,224,138,0); }
   }
 
+  /* ---- the hand-over ----
+     The board's unit mark is a car, so a screen changing store is those cars
+     making the trip: the outgoing board slides away, a convoy crosses carrying
+     the next store's name, and the new board slides in behind it.
+
+     The veil FADES rather than wipes. A wedge wide enough to cover a screen has
+     its leading edge off the other side of it while it covers, which takes the
+     convoy riding that edge off screen with it — the cars were invisible for
+     exactly the part of the move they exist for. A fade lets the convoy cross the
+     middle of the screen where it can be seen, and a fade is not a cut. */
+  .handoff { position:fixed; inset:0; z-index:60; pointer-events:none; overflow:hidden; }
+  .ho-veil {
+    position:absolute; inset:0; background:rgba(9,20,34,.93);
+    animation:hoVeil 1.6s linear both;
+  }
+  @keyframes hoVeil { 0% { opacity:0 } 20%, 66% { opacity:1 } 100% { opacity:0 } }
+  /* a low band of light the convoy travels along, so it reads as a road rather
+     than as icons floating on a dark screen */
+  .ho-road {
+    position:absolute; left:0; right:0; top:0; bottom:0;
+    background:linear-gradient(180deg, transparent 6%, rgba(193,215,48,.05) 34%,
+      rgba(193,215,48,.09) 50%, rgba(193,215,48,.05) 66%, transparent 94%);
+    animation:hoVeil 1.6s linear both;
+  }
+  .ho-car {
+    position:absolute; top:var(--lane); left:-22vw; width:var(--sz); height:var(--sz);
+    color:#C1D730;
+    filter:drop-shadow(0 0 1.2vh rgba(193,215,48,.55)) drop-shadow(0 0 4vh rgba(193,215,48,.22));
+    animation:hoDrive 1.6s linear var(--dly) both;
+  }
+  /* .pix9 sets width:1em and is defined later in this sheet, so the car needs a
+     selector that outranks it rather than a bare class of its own. */
+  .ho-car > svg { width:100%; height:100%; display:block; }
+  @keyframes hoDrive { from { transform:translateX(0) } to { transform:translateX(148vw) } }
+  .ho-name {
+    position:absolute; top:50%; left:50%; width:76vw; margin-left:-38vw;
+    text-align:center; white-space:nowrap;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+    /* --tscale lives on .wrap and this layer is a sibling of it on the body, so
+       without the fallback the whole calc is invalid and the text collapses to
+       whatever it happens to inherit. */
+    font-size:calc(5.6vh * var(--tscale, 1)); color:#F4F9FF;
+    text-shadow:0 .4vh 3.4vh rgba(0,0,0,.85);
+    animation:hoName 1.6s cubic-bezier(.34,0,.34,1) both;
+  }
+  .ho-name .ho-to {
+    display:block; font-size:calc(1.5vh * var(--tscale, 1)); letter-spacing:.18em;
+    text-transform:uppercase; color:#C1D730; margin-bottom:.8vh; font-weight:700;
+  }
+  @keyframes hoName {
+    0%       { transform:translate(-46vw,-50%); opacity:0 }
+    28%, 64% { transform:translate(0,-50%);     opacity:1 }
+    100%     { transform:translate(46vw,-50%);  opacity:0 }
+  }
+  /* the board steps aside and comes back from the other side, under the veil */
+  #root.drive-out { animation:boardOut .6s cubic-bezier(.5,0,.85,.4) both; }
+  #root.drive-in  { animation:boardIn .75s cubic-bezier(.16,.72,.28,1) both; }
+  @keyframes boardOut { to { transform:translateX(-7vw); opacity:0; } }
+  @keyframes boardIn { from { transform:translateX(7vw); opacity:0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .ho-car, .ho-road { display:none }
+    #root.drive-out, #root.drive-in { animation-duration:.35s }
+    @keyframes boardOut { to { opacity:0 } }
+    @keyframes boardIn { from { opacity:0 } }
+  }
+
   /* one panel, one table, everybody visible without scrolling */
   .panel { flex:1; position:relative; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
     border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden;
@@ -3835,8 +3901,9 @@ function LEADERBOARD_HTML(p) {
   .lb2 tbody tr td:last-child { border-radius:0 1vh 1vh 0; }
   .lb2 .rank { width:5%; text-align:center; }
   .lb2 .nm { width:12%; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lb2 .sold2 { width:10%; text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
-    font-size:calc(var(--rowfs) * 1.1); padding-right:1vw; }
+  .lb2 .sold2 { width:10%; text-align:center; padding-right:1vw; }
+  .lb2 td.sold2 { font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+    font-size:calc(var(--rowfs) * 1.1); }
   /* Each % column is a fixed width and its contents are centred, so every pill is
      the same size across the whole board. The pill has a fixed width too (all
      percentages read identically), and the arrow lives in a reserved lane to the
@@ -3851,7 +3918,8 @@ function LEADERBOARD_HTML(p) {
   .lb2 .move2 { width:2.6em; min-width:2.6em; margin-left:.4em; justify-content:flex-start; }
   .lb2 .move2 .delta { font-size:calc(var(--rowfs) * .66); }
   .lb2 .move2 .trend { font-size:calc(var(--rowfs) * .95); }
-  .lb2 .sold2 { width:10%; text-align:center; padding:0; font-size:calc(var(--rowfs) * 1.15); }
+  .lb2 .sold2 { width:10%; text-align:center; }
+  .lb2 td.sold2 { padding:0; font-size:calc(var(--rowfs) * 1.15); }
   .lb2 .sold2 .soldnum { display:inline-block; }
   .lb2 .carcell { width:26%; padding-left:.6vw; }
   /* soft "holding the last board" banner when a refresh is distrusted */
@@ -3901,7 +3969,7 @@ function LEADERBOARD_HTML(p) {
   .cars.g { --carfill:#3ECf6E; } .cars.y { --carfill:#EFD75A; } .cars.r { --carfill:#EF6A72; }
   /* the delivered number sits right of the % pills now, with its trend beside it */
   .lb2 .sold2 .move { min-width:0; margin-left:.3vw; }
-  .lb2 .sold2 { line-height:1.05; }
+  .lb2 td.sold2 { line-height:1.05; }
   .lb2 tbody tr.leader .nm { color:var(--lime); }
 
   /* bottom ticker, bars style only: streaks and callouts drift by like a news crawl */
@@ -4158,9 +4226,10 @@ function LEADERBOARD_HTML(p) {
     } catch (e) { return false; }
   }
 
-  async function getStore(){
+  function getStore(){ return getStoreByKey(CFG.storeKey); }
+  async function getStoreByKey(storeKey){
     if (!DB) return { __err: 'This board has no database details. Open it again from the tool.' };
-    var url = DB.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(CFG.storeKey) + '&select=value';
+    var url = DB.url + '/rest/v1/app_data?key=eq.' + encodeURIComponent(storeKey) + '&select=value';
     function headers(){
       return { apikey: DB.anonKey, Authorization: 'Bearer ' + (TOK ? TOK.access : DB.anonKey) };
     }
@@ -4530,8 +4599,10 @@ function LEADERBOARD_HTML(p) {
             /* One full pass, then the next store. The hand-over happens here rather
                than on a timer so a screen never changes store mid-scroll — you
                always see a board from its leader to its last name before it moves
-               on. */
-            if (rotates()) { nextStore(); return; }
+               on. The frame loop is left running: the new render calls startScroll
+               again, which cancels it, and if the hand-over fails there is still a
+               board scrolling rather than a frozen one. */
+            if (rotates()) nextStore();
           }
         }
         scrollRAF = requestAnimationFrame(frame);
@@ -4676,19 +4747,10 @@ function LEADERBOARD_HTML(p) {
       DISP.pad     = pick('pad', 0);
       DISP.rotate  = pick('rotate', []) || [];
     }
-    if (switched && s && !s.__err) {
-      /* Its own row is the authority on who it is: the sibling list only carries
-         a name, and brand, icon and thresholds all differ per store. */
-      if (s.storeName) CFG.storeName = s.storeName;
-      if (s.icon !== undefined) CFG.icon = s.icon;
-      if (s.brand) CFG.brand = s.brand;
-      if (s.thresholds) CFG.thresholds = s.thresholds;
-    }
-    if (s && !s.__err) LAST = s;
-    applyDisp();
-    render(s);
-    wireTuner();
-    applyDisp();
+    /* Its own row is the authority on who a store is: the sibling list only
+       carries a name, and brand, icon and thresholds all differ per store. */
+    SWITCHING = switched;
+    renderStore(s);
     var warn = document.getElementById('stale-note');
     if (warn) warn.classList.remove('on');
     if (wsold.length) congratulate(wsold);
@@ -4708,25 +4770,90 @@ function LEADERBOARD_HTML(p) {
                icon: CFG.icon, brand: CFG.brand, thresholds: CFG.thresholds };
   var ROT_I = 0;
 
-  function nextStore(){
-    var list = rotaList();
-    if (list.length < 2) return;
-    ROT_I = (ROT_I + 1) % list.length;
-    var id = list[ROT_I];
-    CFG.storeId = id;
-    CFG.storeKey = 'lpc:board:' + id + ':v1';
-    /* The name shown while the next row is in flight is the one we already know
-       for that store, so the header never sits on the wrong dealership. */
-    var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
-    CFG.storeName = id === HOME.id ? HOME.name : ((known && known.name) || CFG.storeName);
-    if (id === HOME.id) { CFG.icon = HOME.icon; CFG.brand = HOME.brand; CFG.thresholds = HOME.thresholds; }
-    SWITCHING = true;
-    loop();
-  }
-  /* True for exactly one pass of loop(), because the two guards below compare the
+  /* True for exactly one pass of loop(), because the two guards in it compare the
      board on screen with the one arriving — which is the right thing to do for a
      refresh of the same store and completely wrong across a hand-over. */
   var SWITCHING = false;
+  var HANDING = false;      // one hand-over at a time
+
+  /* The convoy.
+     The board's own unit mark is a car, so the hand-over is that car making the
+     trip: a few of them drive across the screen carrying the next store's name,
+     and the board changes underneath while they cover it. No cut, and the room
+     can see where the screen is going before it gets there.
+
+     The next store's row is fetched BEFORE anything moves, so the new board is
+     already in hand when the convoy reaches the middle. A hand-over that had to
+     wait on the network would show an empty screen behind the cars. */
+  function driveTo(label, swap){
+    var lane = document.createElement('div');
+    lane.className = 'handoff';
+    /* Lane, size and a small head start each: five cars leaving together on one
+       timing reads as a graphic, five leaving a beat apart reads as traffic. */
+    var lanes = [[13, 6.4, 0], [29, 8.2, .09], [46, 5.6, .04], [63, 7.4, .13], [80, 6.0, .07]];
+    var cars = lanes.map(function(l){
+      return '<span class="ho-car" style="--lane:' + l[0] + 'vh; --sz:' + l[1] + 'vh; --dly:' + l[2] + 's">'
+        + pix('car', '', 1) + '</span>';
+    }).join('');
+    lane.innerHTML = '<div class="ho-veil"></div><div class="ho-road"></div>' + cars
+      + '<div class="ho-name"><span class="ho-to">Now showing</span>' + label + '</div>';
+    document.body.appendChild(lane);
+
+    var root = document.getElementById('root');
+    if (root) root.classList.add('drive-out');
+    /* Swapped behind the convoy, not before it: at 560ms the cars and their glow
+       are across the middle of the screen, which is what hides the change. */
+    setTimeout(function(){
+      swap();
+      var r = document.getElementById('root');
+      if (r) { r.classList.remove('drive-out'); r.classList.add('drive-in');
+        setTimeout(function(){ r.classList.remove('drive-in'); }, 720); }
+    }, 620);
+    setTimeout(function(){ lane.remove(); HANDING = false; }, 1750);
+  }
+
+  async function nextStore(){
+    var list = rotaList();
+    if (list.length < 2 || HANDING) return;
+    HANDING = true;
+    var at = (ROT_I + 1) % list.length;
+    var id = list[at];
+    var key = 'lpc:board:' + id + ':v1';
+    var s = await getStoreByKey(key);
+    if (!s || s.__err) {
+      /* That store has never been published, or the network blinked. Stay where we
+         are and let the next pass try the one after it, rather than driving the
+         room to an empty board. */
+      HANDING = false; ROT_I = at; startScroll();
+      return;
+    }
+    ROT_I = at;
+    CFG.storeId = id;
+    CFG.storeKey = key;
+    var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
+    var name = s.storeName || (id === HOME.id ? HOME.name : (known && known.name)) || 'Next store';
+    driveTo(name, function(){
+      SWITCHING = true;
+      renderStore(s);
+    });
+  }
+
+  /* The tail of loop(), reusable: the hand-over already has the row in hand and
+     must not fetch it a second time. */
+  function renderStore(s){
+    var switched = SWITCHING; SWITCHING = false;
+    if (switched && s && !s.__err) {
+      if (s.storeName) CFG.storeName = s.storeName;
+      if (s.icon !== undefined) CFG.icon = s.icon;
+      if (s.brand) CFG.brand = s.brand;
+      if (s.thresholds) CFG.thresholds = s.thresholds;
+    }
+    if (s && !s.__err) LAST = s;
+    applyDisp();
+    render(s);
+    wireTuner();
+    applyDisp();
+  }
 
   /* ---------- display tuning ---------- */
   // Read whatever was saved for this store, and let the person at the TV change it.
