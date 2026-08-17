@@ -6903,15 +6903,10 @@ async function printQueueSignIn({ store, url, date, by }) {
    QueueSignIn — salesperson phone page (curtain wipe between screens)
    ========================================================================= */
 /* ---- salesperson-view dot-matrix atoms (shared by The Line + Live Floor) ----
-   Same dot language as the position numeral. Icons are hand-built bitmaps, not SVG. */
-const SF_ICONS = {
-  customer: ["0011100","0111110","0111110","0011100","0000000","0011100","0111110"],
-  lunch:    ["0000000","1111010","1111011","1111011","1111010","0000000","1111110"],
-  away:     ["0000000","0001000","0000100","1111110","0000100","0001000","0000000"],
-  back:     ["0000000","0110000","0111000","0111100","0111000","0110000","0000000"],
-  // an open doorway with the handle side toward the exit
-  door:     ["1111100","1000110","1000010","1000010","1001010","1000010","1111110"],
-};
+   The status glyphs used to live here as a second, 7x7 bitmap table. They are
+   drawn from the app's own 5x5 set now (see SF_GLYPH), so there is one grid in
+   the app rather than two that drift. The LED numeral below stays 3x5, because a
+   numeral is a typeface rather than an icon. */
 // analog LED numeral: each digit is keyed by its value so it remounts and "flips" on change
 // light haptic feedback where supported (no-op elsewhere)
 function buzz(pattern) { try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
@@ -6935,16 +6930,6 @@ function DmNumber({ value, up }) {
         </span>
       ))}
     </div>
-  );
-}
-function DmIcon({ name, cell = 4 }) {
-  const rows = SF_ICONS[name];
-  if (!rows) return null;
-  return (
-    <span className="dm-ico" style={{ gridTemplateColumns: `repeat(${rows[0].length}, ${cell}px)`, gap: Math.max(1, cell * 0.34) }}>
-      {rows.flatMap((r, ri) => r.split("").map((b, ci) =>
-        <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} style={{ width: cell, height: cell }} />))}
-    </span>
   );
 }
 
@@ -6989,6 +6974,52 @@ function RingTimer({ mins, cap = 60 }) {
    Both sign-in components (The Line / Online, and Live Floor) render these,
    so the layout exists once rather than twice.
    ========================================================================== */
+
+/* How much of the screen the on-screen keyboard is covering, as a CSS variable.
+   iOS does not shrink 100dvh when the keyboard opens — the fixed layer keeps its
+   full height and the keyboard is drawn over the bottom of it — so a field
+   anchored to the foot ends up underneath it, and the strip the fixed layer no
+   longer covers shows through. visualViewport is the only thing that knows.
+   Written to the element rather than held in state: this fires on every frame of
+   the keyboard animation, and a re-render per frame would be the jank we are
+   trying to avoid. */
+function useKeyboardInset(ref) {
+  useEffect(() => {
+    const vv = typeof window !== "undefined" && window.visualViewport;
+    if (!vv) return;
+    let raf = 0;
+    const apply = () => {
+      raf = 0;
+      const el = ref.current;
+      if (!el) return;
+      const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+      // under ~80px it is Safari's own toolbar moving, not a keyboard
+      el.style.setProperty("--kb", (kb > 80 ? kb : 0) + "px");
+    };
+    const onChange = () => { if (!raf) raf = requestAnimationFrame(apply); };
+    vv.addEventListener("resize", onChange);
+    vv.addEventListener("scroll", onChange);
+    apply();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      vv.removeEventListener("resize", onChange);
+      vv.removeEventListener("scroll", onChange);
+    };
+  }, [ref]);
+}
+
+/* The status glyphs, on the same 5x5 grid as every other icon in the app. They
+   were the last 7x7 table left. */
+/* The three statuses take the same glyphs the manager's board shows for them, so
+   a rep and a manager looking at the same person see the same mark. "Back in" is
+   a return to the rotation rather than a step forward, so it takes the swap. */
+const SF_GLYPH = {
+  customer: "user", lunch: "lunch", away: "away",
+  back: "swap", mine: "arrow", door: "door",
+};
+function SfIcon({ name, size = 26 }) {
+  return <PixIcon glyph={SF_GLYPH[name] || "dot"} size={size} className="sf-ico" />;
+}
 
 /* The spine. Two meanings, one shape:
      queue mode — one node per person waiting, yours lit and larger
@@ -7494,6 +7525,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
+  const pageRef = useRef(null);
+  useKeyboardInset(pageRef);
+
   const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
   const queueSpine = (
     <SfSpine mode="queue" count={Math.max(line.length, 1)} pos={spinePos}
@@ -7538,7 +7572,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
               underneath already says whether it is a wait or a customer. */}
           <div className="sf-ringwrap">
           <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
-          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <SfIcon name={st} size={74} />}</div></div>
           </div>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
@@ -7548,19 +7582,19 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         <div className="sf-actions">
           <div className="sf-status-row">
             {st !== "waiting"
-              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><SfIcon name="back" /><span>Back in</span></button>
               : QUEUE_SELF_FLAGS.map((f) => (
                   <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
-                    <DmIcon name={f} cell={4} /><span>{f === "customer" ? variant.custFlag : f === "lunch" ? "Lunch" : "Away"}</span>
+                    <SfIcon name={f} /><span>{f === "customer" ? variant.custFlag : f === "lunch" ? "Lunch" : "Away"}</span>
                   </button>
                 ))}
           </div>
           <div className="sf-extra">
             <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
-              <DmIcon name="back" cell={4} /><span>My day</span>
+              <SfIcon name="mine" /><span>My day</span>
             </button>
             <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
-              <span className="sf-door"><DmIcon name="door" cell={4} /></span>
+              <span className="sf-door"><SfIcon name="door" /></span>
               <span>{variant.leave}</span>
             </button>
           </div>
@@ -7620,7 +7654,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   }
 
   return (
-    <div className={`q-page sf ${variant.sf}`}>
+    <div className={`q-page sf ${variant.sf}`} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
       {/* Everyone gets a way out of a problem, including the people with no account. */}
@@ -8996,6 +9030,9 @@ function FloorSignIn({ store, date, token, test = false }) {
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
+  const pageRef = useRef(null);
+  useKeyboardInset(pageRef);
+
   const spinePos = meId ? line.findIndex((p) => p.id === meId) + 1 : 0;
   const queueSpine = (
     <SfSpine mode="queue" count={Math.max(line.length, 1)} pos={spinePos}
@@ -9041,7 +9078,7 @@ function FloorSignIn({ store, date, token, test = false }) {
           <div className="sf-aura" />
           <div className="sf-ringwrap">
           <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
-          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <DmIcon name={st} cell={11} />}</div></div>
+          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <SfIcon name={st} size={74} />}</div></div>
           </div>
           <div className="sf-meta">
             <div className="sf-line-1">{title}</div>
@@ -9052,19 +9089,19 @@ function FloorSignIn({ store, date, token, test = false }) {
           {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           <div className="sf-status-row">
             {st !== "waiting"
-              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><DmIcon name="back" cell={4} /><span>Back in</span></button>
+              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><SfIcon name="back" /><span>Back in</span></button>
               : FLOOR_SELF_FLAGS.map((f) => (
                   <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
-                    <DmIcon name={f} cell={4} /><span>{f === "lunch" ? "Lunch" : "Away"}</span>
+                    <SfIcon name={f} /><span>{f === "lunch" ? "Lunch" : "Away"}</span>
                   </button>
                 ))}
           </div>
           <div className="sf-extra">
             <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
-              <DmIcon name="back" cell={4} /><span>My day</span>
+              <SfIcon name="mine" /><span>My day</span>
             </button>
             <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
-              <span className="sf-door"><DmIcon name="door" cell={4} /></span>
+              <span className="sf-door"><SfIcon name="door" /></span>
               <span>Leave the floor</span>
             </button>
           </div>
@@ -9124,7 +9161,7 @@ function FloorSignIn({ store, date, token, test = false }) {
   }
 
   return (
-    <div className="q-page f-page sf sf-floor">
+    <div className="q-page f-page sf sf-floor" ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
       {/* Everyone gets a way out of a problem, including the people with no account. */}
@@ -18971,6 +19008,14 @@ function Style() {
          fades into --bg at its own edges anyway, so the bands now continue it.
          The theme-color meta in index.html does the same for Safari's own bar. */
       html, body { margin:0; padding:0; background:var(--bg); }
+      /* Portalled overlays — the help sheet, the day screen — sit outside .lpc,
+         which is where the app's face is set, so they were rendering in the
+         browser's default serif. */
+      body { font-family: var(--font-ui); }
+      /* The salesperson screens are dark and fixed. Anything the fixed layer
+         does not cover — and iOS uncovers a strip below it the moment the
+         keyboard opens — showed the light --bg underneath as a white band. */
+      html:has(.q-page.sf), body:has(.q-page.sf) { background:#06090F; }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: var(--font-ui);
         font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
@@ -20519,7 +20564,10 @@ function Style() {
       .help-fab.inline:hover { background:rgba(42,94,155,.18); transform:none; }
       /* The sign-in pages are a single column with the controls at the foot, so the
          floating button is lifted clear of them rather than sitting on top. */
-      .q-page .help-fab:not(.inline) { bottom:auto; top:18px; right:18px; width:40px; height:40px;
+      /* Clear of the spine. The salesperson screens draw the queue down a 46px
+         column on the right edge, and at right:18px the button landed on its
+         label. */
+      .q-page .help-fab:not(.inline) { bottom:auto; top:18px; right:58px; width:40px; height:40px;
         background:rgba(255,255,255,.12); box-shadow:0 6px 18px -8px rgba(0,0,0,.5);
         backdrop-filter:blur(6px); }
       .q-page .help-fab:hover { background:rgba(255,255,255,.2); }
@@ -23114,7 +23162,12 @@ function Style() {
 .sf-view{ display:flex; width:100%; min-height:100dvh; align-items:stretch; }
 .sf-body{
   flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
-  padding:calc(18px + env(safe-area-inset-top,0px)) 6px calc(26px + env(safe-area-inset-bottom,0px)) 22px;
+  padding:calc(18px + env(safe-area-inset-top,0px)) 6px
+          calc(26px + env(safe-area-inset-bottom,0px) + var(--kb,0px)) 22px;
+  /* --kb is the keyboard's height, measured off visualViewport. Growing the
+     bottom padding lifts the field, and the transition is what makes it rise
+     into place instead of jumping as the keyboard lands. */
+  transition:padding-bottom .26s var(--ease);
 }
 /* .sf-body is a column flex container, so every child is shrinkable by default
    and a tall child gets squeezed instead of scrolling. Nothing in here shrinks. */
@@ -23123,8 +23176,12 @@ function Style() {
 /* ---- the spine ---- */
 .sf-spine{
   flex:0 0 46px; display:flex; flex-direction:column; align-items:center;
-  padding:calc(20px + env(safe-area-inset-top,0px)) 0 calc(26px + env(safe-area-inset-bottom,0px));
+  padding:calc(20px + env(safe-area-inset-top,0px)) 0
+          calc(26px + env(safe-area-inset-bottom,0px) + var(--kb,0px));
+  transition:padding-bottom .26s var(--ease);
 }
+/* the spine's label starts below the help button, which shares this corner */
+.sf-spine-cap{ margin-top:46px; }
 .sf-spine-cap{
   font-family:var(--sfmono); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
   color:var(--sfink3); writing-mode:vertical-rl; margin-bottom:12px; white-space:nowrap;
@@ -23173,13 +23230,30 @@ function Style() {
 /* ---- the field at the foot ---- */
 .sf-field{ margin-top:auto; padding-top:26px; padding-right:16px; display:flex; flex-direction:column; gap:10px; }
 .sf-input{
+  -webkit-appearance:none; appearance:none;
   background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09);
   border-radius:16px; padding:15px 17px; font-family:var(--sffont); font-size:17px;
   color:var(--sfink); width:100%; outline:none;
   transition:border-color .2s var(--ease), box-shadow .2s var(--ease);
 }
 .sf-input::placeholder{ color:var(--sfink3); }
-.sf-input:focus{ border-color:var(--a2); box-shadow:0 0 0 4px color-mix(in srgb, var(--a2) 18%, transparent); }
+/* The background is declared on all three states on purpose. The manager
+   sheet carries input:hover and input:focus rules that set a white
+   background, and a type-plus-pseudo-class selector outranks a bare class —
+   so leaving any state's background unstated let the white through. */
+.sf-input:hover{ background:rgba(255,255,255,.07); }
+.sf-input:focus, .sf-input:focus-visible{
+  background:rgba(255,255,255,.07); color:var(--sfink);
+  border-color:var(--a2); box-shadow:0 0 0 4px color-mix(in srgb, var(--a2) 18%, transparent);
+}
+/* iOS paints its own yellow-white over an autofilled field, and there is no way
+   to set the background of one — an inset shadow the full height of the box is
+   the only thing that covers it. */
+.sf-input:-webkit-autofill, .sf-input:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--sfink);
+  -webkit-box-shadow:0 0 0 60px #101722 inset;
+  caret-color:var(--sfink);
+}
 .sf-cta{
   font-family:var(--sffont); font-size:16px; font-weight:650; letter-spacing:-.01em;
   color:#08101B; background:linear-gradient(140deg, var(--led), var(--a2));
@@ -23483,8 +23557,9 @@ function Style() {
 @keyframes sfflip{ 0%{ transform:rotateX(90deg); opacity:.25; filter:brightness(2.2); } 55%{ transform:rotateX(-9deg); } 100%{ transform:rotateX(0); opacity:1; filter:none; } }
 .sf .ld{ width:var(--cell,12px); height:var(--cell,12px); border-radius:50%; background:transparent; }
 .sf .ld.on{ background:var(--led); box-shadow:0 0 calc(var(--cell,12px)*.85) var(--led); }
-.sf .dm-ico{ display:inline-grid; }
-.sf .dm-ico .ld.on{ box-shadow:0 0 3px var(--led); }
+/* the status glyphs are SVG on the 5x5 grid now, not a CSS grid of dots */
+.sf .sf-ico{ display:block; color:var(--led); filter:drop-shadow(0 0 3px color-mix(in srgb, var(--led) 55%, transparent)); }
+.sf-sbtn.active .sf-ico{ color:#03130d; filter:none; }
 
 /* the hero "you're on the floor / in line" screen */
 .sf-live{ width:100%; max-width:460px; display:flex; flex-direction:column; min-height:100dvh; padding:clamp(52px,8vh,70px) clamp(20px,6vw,26px) clamp(24px,5vh,34px); }
