@@ -3941,25 +3941,73 @@ function LEADERBOARD_HTML(p) {
     .scroller { overflow:visible; }
     .gear { width:34px; height:34px; font-size:15px; opacity:.5; right:10px; bottom:10px; }
 
+    /* Almost every size on this board is calc(var(--rowfs) * n), and --rowfs is
+       set inline in vh so the rows fill a wall. On a phone that makes the badge,
+       the pills, the arrows and the deltas all read the viewport HEIGHT, which is
+       why they came out at wildly different weights from the px sizes below them.
+       Pinning --rowfs to px here re-bases the whole sheet in one line. It needs
+       !important only because the vh value is an inline style on .panel. */
+    .panel { --rowfs:12px !important; --rowpad:5px !important; }
+
     .lb, .lb2 { display:block; table-layout:auto; }
     .lb thead, .lb2 thead { display:none; }          /* each cell carries its own label */
     .lb tbody, .lb2 tbody, .lb tr, .lb2 tr, .lb td, .lb2 td { display:block; }
+    /* Three equal columns, not 34px | 1fr | auto. The old tracks were cut for
+       row 1 and row 2 had to live in them too — so the first rate was squeezed
+       into a 34px track and the third pushed its delta off the side of the card.
+       That is the "spread out weirdly". Row 1 keeps its narrow badge by letting
+       the name SHARE the badge's column and step past it with padding; grid items
+       are allowed to overlap, and it is what lets both rows use one set of
+       tracks. */
     .lb tr, .lb2 tr {
-      display:grid; grid-template-columns:34px 1fr auto; gap:4px 10px; align-items:center;
+      display:grid; grid-template-columns:repeat(3, 1fr); gap:6px 10px; align-items:center;
       margin-bottom:8px; padding:10px 12px; border-radius:14px;
       background:rgba(255,255,255,.06) !important; }
     .lb td, .lb2 td { padding:0; font-size:15px; }
-    .lb .rank, .lb2 .rank { grid-column:1; grid-row:1; width:auto; font-size:15px; }
-    .lb .nm, .lb2 .nm { grid-column:2; grid-row:1; width:auto; font-size:17px; }
+    .lb .rank, .lb2 .rank { grid-column:1; grid-row:1; width:auto; font-size:15px;
+      justify-self:start; z-index:1; }
+    .badge { width:28px; height:28px; font-size:13px; }
+    .lb .nm, .lb2 .nm { grid-column:1 / 3; grid-row:1; width:auto; font-size:17px;
+      padding-left:36px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .lb .sold, .lb2 .sold2 { grid-column:3; grid-row:1; width:auto; text-align:right;
       font-size:20px; padding-right:0; }
-    /* the three rates share one row, evenly, with their names back on them */
-    .lb .pcell, .lb2 .pcell2 { grid-row:2; width:auto; text-align:center; font-size:13px; }
-    .lb .pcell:nth-of-type(4), .lb2 .pcell2:nth-of-type(3) { grid-column:1 / 2; }
-    .lb .pcell:nth-of-type(5), .lb2 .pcell2:nth-of-type(4) { grid-column:2 / 3; }
-    .lb .pcell:nth-of-type(6), .lb2 .pcell2:nth-of-type(5) { grid-column:3 / 4; }
-    .lb2 .carcell { grid-column:1 / -1; grid-row:3; padding-left:0 !important; text-align:left; }
+    .lb .sold .soldnum, .lb2 .sold2 .soldnum { font-size:20px; }
+
+    /* the three rates share one row, evenly */
+    .lb .pcell, .lb2 .pcell2 { grid-row:2; width:auto; text-align:center; font-size:12px; }
+    .lb .pcell:nth-of-type(4), .lb2 .pcell2:nth-of-type(3) { grid-column:1; }
+    .lb .pcell:nth-of-type(5), .lb2 .pcell2:nth-of-type(4) { grid-column:2; }
+    .lb .pcell:nth-of-type(6), .lb2 .pcell2:nth-of-type(5) { grid-column:3; }
+    /* The pill is 5.6em wide and its arrow another 2.6em on a TV, where the
+       column is a fixed 15% of a very wide table. In a third of a phone card
+       those add up to more than the column holds, and the overflow is what ran
+       off the right. Both size to their content here. */
+    /* This is the one that actually caused it. On a TV the trend is pinned
+       OUTSIDE its pill — position:absolute, left:100% — so the pills stay on a
+       shared grid no matter who has a delta. Hung off the end of a third of a
+       phone card, each arrow landed on top of the next pill along and the last
+       one hung off the edge of the card entirely. Back in flow here, and under
+       the pill rather than beside it, because side by side the pair is wider
+       than the column. */
+    .lb .pcell-in, .lb2 .pcell-in { display:flex; flex-direction:column;
+      align-items:center; justify-content:center; gap:2px; min-width:0; }
+    .lb .pcell .move, .lb2 .pcell2 .move { position:static; transform:none;
+      margin-left:0; width:auto; min-width:0; justify-content:center; }
+    .lb2 .pcell2 .pill { width:auto; min-width:0; padding:.3em .5em; }
+    .lb2 .move2 { width:auto; min-width:0; margin-left:0; }
+
+    /* width:auto matters as much as the grid placement. The desktop rule sets
+       .carcell to 26% for a seven-column table, and 26% of a phone card is 82px
+       — so the units row was folding onto three lines inside a strip a quarter
+       of the card wide while the rest of the row sat empty. */
+    .lb2 .carcell { grid-column:1 / -1; grid-row:3; width:auto;
+      padding-left:0 !important; text-align:left; }
     .lb2 .carcell svg, .lb2 .carcell .pix { max-width:100%; }
+    /* One glyph is one unit, so a phone must wrap them rather than clip them —
+       nowrap plus overflow:hidden silently cut a big month down to whatever fit
+       the width, which is the one thing this row must never do. */
+    .cars, .cars-inner { flex-wrap:wrap; overflow:visible; row-gap:2px; }
+    .cars { height:auto; }
     .crown { font-size:13px; }
   }
 </style></head>
