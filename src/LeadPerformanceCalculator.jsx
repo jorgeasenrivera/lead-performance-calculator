@@ -2055,6 +2055,14 @@ function mergeAgainstServer(next, serverCopy) {
         next.plateRegistry = mergePlateRegistry(next, serverCopy);
         next.plateGone = mergeTombstones(next.plateGone, serverCopy.plateGone);
         next.plateRegGone = mergeTombstones(next.plateRegGone, serverCopy.plateRegGone);
+        /* How the store runs plates is one setting for the whole floor, so it is the
+           one thing here that cannot be merged — somebody has to win. Whoever set it
+           last does, which means a tab that has been open since before the change
+           cannot quietly put the store back on the old footing. */
+        if ((serverCopy.plateModeAt || "") > (next.plateModeAt || "")) {
+          next.plateMode = serverCopy.plateMode;
+          next.plateModeAt = serverCopy.plateModeAt;
+        }
         // The schedule was the worst case of this. A browser that had been open since
         // before an upload carried an empty daysOff, and saving anything at all wiped
         // the month for everybody. Each person now carries the time their off-days
@@ -12152,12 +12160,47 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
   const fmtTimeShort = (iso) => iso ? new Date(iso).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
 
-  const save = (nextDayPlates, audit, mutate) => {
+  /* ---- How this store runs plates ----
+     Two dealerships, two different jobs. One hands a plate to whoever is taking a
+     car out and wants it back by close: the log is a day at a time, a plate still
+     out in the morning is missing, and yesterday's tags get carried forward. The
+     other gives a salesperson a plate and they keep it for weeks: a day is the
+     wrong unit entirely, nothing is missing for being out overnight, and the only
+     question on the screen is who is holding what and for how long.
+
+     One set of records underneath either way — a standing assignment is simply a
+     plate that has not been returned yet — so a store can change its mind and keep
+     every trip it has ever logged. */
+  const standing = data.plateMode === "standing";
+  const setMode = (m) => {
+    if (standing === (m === "standing")) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateMode = m;
+    next.plateModeAt = new Date().toISOString();
+    onChange(next, { action: "Changed how plates are run",
+      detail: m === "standing" ? "Plates stay with a salesperson until returned" : "Plates taken and returned daily" });
+  };
+
+  /* A record belongs to the day it went out on, and in standing mode the plate in
+     somebody's glovebox went out three weeks ago — so every edit finds the day it
+     lives on rather than assuming it is the one on screen. */
+  const saveDay = (d, list, audit, mutate) => {
     const next = JSON.parse(JSON.stringify(data));
     next.plates = next.plates || {};
-    next.plates[day] = nextDayPlates;
+    next.plates[d] = list;
     if (mutate) mutate(next);          // registry updates ride in the same write
     onChange(next, audit);
+  };
+  const save = (nextDayPlates, audit, mutate) => saveDay(day, nextDayPlates, audit, mutate);
+  const dayOf = (id) => Object.keys(plates).find((d) => (plates[d] || []).some((p) => p.id === id));
+  const recordById = (id) => {
+    const d = dayOf(id);
+    return d ? { d, p: (plates[d] || []).find((x) => x.id === id) } : null;
+  };
+  const editRecord = (id, fn, audit, mutate) => {
+    const hit = recordById(id);
+    if (!hit) return;
+    saveDay(hit.d, (plates[hit.d] || []).map((p) => (p.id === id ? fn(p) : p)), audit, mutate);
   };
 
   /* ---- Plate registry ----
@@ -12217,6 +12260,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
 
   const [plateErr, setPlateErr] = useState("");
   const [masterOpen, setMasterOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [pastOpen, setPastOpen] = useState(false);
+  const [handing, setHanding] = useState(null);   // record id being handed to someone else
   const [bulk, setBulk] = useState("");
 
   /* ---- Master plate list ----
@@ -12328,7 +12374,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     }
     const now = new Date().toISOString();
     const who = assignee.trim();
-    const stillOut = dayPlates.find((p) => p.tag === t && !p.checkedIn);
+    const stillOut = standing
+      ? heldNow.find((p) => normTag(p.tag) === normTag(t))
+      : dayPlates.find((p) => p.tag === t && !p.checkedIn);
     if (stillOut) {
       // Hard stop: a plate that hasn't been marked back in can't be re-issued. Its
       // return has to be logged first, which puts the unlogged hand-back on record.
@@ -12347,16 +12395,17 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   };
   const toggleIn = (id) => {
     setPlateErr("");
-    save(dayPlates.map((p) => {
-      if (p.id !== id) return p;
-      const nowIn = !p.checkedIn;
-      const stamp = nowIn ? new Date().toISOString() : null;
-      const ev = withEvent({ ...p, checkedIn: nowIn, returnedAt: stamp }, nowIn ? "Returned" : "Marked out again", nowIn ? `${p.tag} returned at ${fmtTimeShort(stamp)}` : `${p.tag} re-opened`);
-      return ev;
-    }), { action: "Plate check-in", detail: `${dayPlates.find((p) => p.id === id)?.tag}` });
+    const hit = recordById(id);
+    if (!hit) return;
+    const nowIn = !hit.p.checkedIn;
+    const stamp = nowIn ? new Date().toISOString() : null;
+    editRecord(id, (p) => withEvent({ ...p, checkedIn: nowIn, returnedAt: stamp },
+      nowIn ? "Returned" : "Marked out again",
+      nowIn ? `${p.tag} returned at ${fmtTimeShort(stamp)}` : `${p.tag} re-opened`),
+      { action: "Plate check-in", detail: hit.p.tag });
   };
   const setPlateAssignee = (id, name) => {
-    const p0 = dayPlates.find((p) => p.id === id);
+    const p0 = (recordById(id) || {}).p;
     if (!p0) return;
     // Hard stop: a still-out plate can't be handed to someone else. It has to be
     // marked returned first — if it's physically back, the previous holder returned
@@ -12366,27 +12415,52 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         `Mark it returned before assigning it to ${name}. If it's physically back, that means ${p0.assignee} returned it without letting a manager know.`);
       return;
     }
-    save(dayPlates.map((p) => p.id === id
-      ? withEvent({ ...p, assignee: name }, "Reassigned", `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`)
-      : p),
-      { action: "Reassigned plate", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${name || "unassigned"}` });
+    editRecord(id, (p) => withEvent({ ...p, assignee: name }, "Reassigned",
+      `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`),
+      { action: "Reassigned plate", detail: `${p0.tag} → ${name || "unassigned"}` });
+  };
+
+  /* A plate moving straight from one salesperson to another, which is the normal
+     way a standing plate changes hands. Two records rather than an edit: the person
+     who had it is marked returned at this moment and the new holder starts a fresh
+     trip today. Renaming in place would leave a log claiming the new person had it
+     since the day the old one took it. */
+  const handOver = (id, rawName) => {
+    const who = String(rawName || "").trim();
+    const hit = recordById(id);
+    if (!hit || !who || who === (hit.p.assignee || "")) return;
+    const now = new Date().toISOString();
+    const t2 = today();
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[hit.d] = (next.plates[hit.d] || []).map((p) => p.id === id
+      ? { ...p, checkedIn: true, returnedAt: now,
+          history: [...(p.history || []), { t: now, by: userName, action: "Handed over",
+            detail: `${p.tag} from ${p.assignee || "unassigned"} to ${who}` }] }
+      : p);
+    next.plates[t2] = [...(next.plates[t2] || []), {
+      id: uid(), tag: hit.p.tag, assignee: who, checkedOut: true, checkedIn: false, by: userName, takenAt: now,
+      history: [{ t: now, by: userName, action: "Taken out",
+        detail: `${hit.p.tag} → ${who} (handed over from ${hit.p.assignee || "unassigned"})` }],
+    }];
+    setPlateErr("");
+    onChange(next, { action: "Handed plate over", detail: `${hit.p.tag}: ${hit.p.assignee || "unassigned"} → ${who}` });
   };
   const setTakenTime = (id, iso) => {
     if (!iso) return;
-    save(dayPlates.map((p) => {
-      if (p.id !== id) return p;
-      const old = fmtTime(p.takenAt);
-      return withEvent({ ...p, takenAt: iso }, "Time edited", `${p.tag} taken-out time changed from ${old} to ${fmtTime(iso)}`);
-    }), { action: "Edited plate time", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${fmtTime(iso)}` });
+    editRecord(id, (p) => withEvent({ ...p, takenAt: iso }, "Time edited",
+      `${p.tag} taken-out time changed from ${fmtTime(p.takenAt)} to ${fmtTime(iso)}`),
+      { action: "Edited plate time", detail: `${(recordById(id) || {}).p?.tag} → ${fmtTime(iso)}` });
     setEditingTime(null);
   };
   const remove = (id) => {
-    const p = dayPlates.find((x) => x.id === id);
+    const hit = recordById(id);
+    if (!hit) return;
     /* Deleting has to leave a mark. Another manager's browser still holds this plate,
        and on their next save the merge would read their copy as news rather than as
        the record somebody deliberately took off. */
-    save(dayPlates.filter((x) => x.id !== id),
-      { action: "Removed plate", detail: `${p?.tag} (was ${p?.assignee || "unassigned"})` },
+    saveDay(hit.d, (plates[hit.d] || []).filter((x) => x.id !== id),
+      { action: "Removed plate", detail: `${hit.p.tag} (was ${hit.p.assignee || "unassigned"})` },
       (next) => { next.plateGone = { ...(next.plateGone || {}), [id]: new Date().toISOString() }; });
   };
   const carryForward = () => {
@@ -12405,12 +12479,37 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   };
 
   const plateDays = Object.keys(plates).sort().reverse();
-  const openPlate = historyFor ? dayPlates.find((p) => p.id === historyFor) : null;
+  // The custody log opens from any list, and in standing mode the record being
+  // opened went out weeks ago — so find it by id wherever it lives.
+  const openPlate = historyFor ? (recordById(historyFor) || {}).p : null;
 
   /* A plate that never came back. The most recent record per tag across all days
      decides its status: if that record is from an earlier day and still not checked
      in, the plate is missing — it can't go out today until it's marked returned. */
-  const missing = (() => {
+  /* Every record, whichever day it was issued on, and the latest one per plate.
+     In standing mode this is the whole view: the plates that have not come back are
+     the assignments, and how long they have been out is the thing worth seeing. */
+  const allRecords = [];
+  for (const [d, list] of Object.entries(plates)) for (const p of list || []) allRecords.push({ ...p, __day: d });
+  const latestPerTag = new Map();
+  for (const r of allRecords) {
+    const k = normTag(r.tag);
+    const cur = latestPerTag.get(k);
+    if (!cur || (r.takenAt || r.__day) > (cur.takenAt || cur.__day)) latestPerTag.set(k, r);
+  }
+  const heldNow = [...latestPerTag.values()].filter((r) => !r.checkedIn)
+    .sort((a, b) => String(a.takenAt || a.__day).localeCompare(String(b.takenAt || b.__day)));
+  const returnedRecent = allRecords.filter((r) => r.checkedIn && r.returnedAt)
+    .sort((a, b) => String(b.returnedAt).localeCompare(String(a.returnedAt))).slice(0, 25);
+  const daysOut = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso || "")) / 864e5));
+  const sinceLabel = (r) => {
+    const n = daysOut(r.takenAt || r.__day + "T12:00");
+    return n === 0 ? "today" : n === 1 ? "1 day" : `${n} days`;
+  };
+
+  /* A plate that never came back means nothing in standing mode: that IS the
+     arrangement. The banner belongs to a store that expects them back by close. */
+  const missing = standing ? [] : (() => {
     const latest = {};
     for (const [d, list] of Object.entries(plates)) {
       for (const p of list) {
@@ -12425,7 +12524,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const missingTags = new Set(missing.map((x) => x.plate.tag));
   // Tags nobody is holding. A plate that is still out cannot go out again, so
   // offering it would only produce the error message a moment later.
-  const outNow = new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
+  const outNow = standing
+    ? new Set(heldNow.map((p) => p.tag))
+    : new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
   const freeTags = registry.filter((r) => !r.retired).map((r) => r.tag)
     .filter((t) => !outNow.has(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
@@ -12454,6 +12555,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     next.plates = next.plates || {};
     next.plates[d] = (next.plates[d] || []).filter((x) => x.id !== id);
     if (!next.plates[d].length) delete next.plates[d];
+    next.plateGone = { ...(next.plateGone || {}), [id]: new Date().toISOString() };
     onChange(next, { action: "Removed a plate record that was not this store's", detail: `${p.tag} (${p.assignee || "unassigned"}, ${d})` });
   };
 
@@ -12475,16 +12577,39 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       )}
       {plateErr && <div className="plate-err">{plateErr}</div>}
       <div className="gm-toolbar">
-        <select value={day} onChange={(e) => setDay(e.target.value)}>
-          <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
-          {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
-        </select>
-        <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
+        {!standing && (
+          <select value={day} onChange={(e) => setDay(e.target.value)}>
+            <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
+            {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+          </select>
+        )}
+        {!standing && <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>}
         <button className="btn secondary" onClick={() => setMasterOpen((v) => !v)}>
           {masterOpen ? "Hide master plate list" : `Master plate list (${registry.filter((r) => !r.retired).length})`}
         </button>
-        <span className="hint">Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when.</span>
+        <button className="btn secondary" onClick={() => setSetupOpen((v) => !v)}>
+          {setupOpen ? "Hide setup" : "How this store runs plates"}
+        </button>
+        <span className="hint">
+          {standing
+            ? "Plates stay with whoever is holding them until they are handed back. Every trip keeps its time and a full custody log, so you can always see who has had a plate and for how long."
+            : "Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when."}
+        </span>
       </div>
+      {setupOpen && (
+        <div className="card">
+          <h3>How this store runs plates</h3>
+          <SegControl
+            items={[["daily", "Taken and returned daily"], ["standing", "Held until returned"]]}
+            value={standing ? "standing" : "daily"} onChange={setMode} />
+          <p className="hint">
+            {standing
+              ? "This store gives a salesperson a plate and they keep it. There is no day to work through and nothing is overdue for being out overnight — the screen shows who is holding what and since when. Changing this back to daily does not touch a single record."
+              : "This store hands plates out and wants them back by close, so the log runs a day at a time and a plate that did not come back is flagged. Switch to held-until-returned if your salespeople keep a plate for weeks at a time."}
+          </p>
+          <p className="hint">This is set per store, and it changes nothing about the records themselves — the same trips, times and custody logs are underneath either way.</p>
+        </div>
+      )}
       {masterOpen && (
         <div className="card">
           <h3>Master plate list</h3>
@@ -12558,8 +12683,85 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
           </div>
         )}
-        <p className="hint">The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.</p>
+        <p className="hint">
+          The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
+          {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
+        </p>
       </div>
+      {standing && (
+        <div className="card">
+          <h3>Out now{heldNow.length ? ` (${heldNow.length})` : ""}</h3>
+          {heldNow.length === 0 ? (
+            <p className="hint">Nobody is holding a plate. Assign one above and it stays on this list until it comes back.</p>
+          ) : (
+            <table className="roster-table wide">
+              <thead><tr><th>Tag</th><th>Held by</th><th>Since</th><th>Logged by</th><th>History</th><th /></tr></thead>
+              <tbody>
+                {heldNow.map((p) => (
+                  <tr key={p.id} className="plate-out">
+                    <td><b>{p.tag}</b></td>
+                    <td>
+                      {handing === p.id ? (
+                        <span className="plate-time-edit">
+                          <input className="plate-assignee-in" autoFocus defaultValue="" placeholder="Hand to"
+                            list="plate-assignees" autoComplete="off" id={"ho-" + p.id}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { handOver(p.id, e.currentTarget.value); setHanding(null); }
+                              if (e.key === "Escape") setHanding(null);
+                            }} />
+                          <button className="plate-check in" onClick={() => { handOver(p.id, document.getElementById("ho-" + p.id).value); setHanding(null); }}>Save</button>
+                          <button className="btn-x" onClick={() => setHanding(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <span className="plate-holder">{p.assignee || "Unassigned"}</span>
+                      )}
+                    </td>
+                    <td>
+                      {fmtTime(p.takenAt)}
+                      <span className={"plate-days" + (daysOut(p.takenAt) >= 30 ? " long" : "")}>{sinceLabel(p)}</span>
+                    </td>
+                    <td className="mono">{p.by || "-"}</td>
+                    <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
+                    <td>
+                      {handing !== p.id && <button className="btn-quiet" onClick={() => { setPlateErr(""); setHanding(p.id); }}>Hand over</button>}
+                      <button className="plate-check out" onClick={() => toggleIn(p.id)}>Mark returned</button>
+                      <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="hint">Handing a plate straight to somebody else closes the current trip and opens a new one, so the log never says the wrong person had it.</p>
+        </div>
+      )}
+      {standing && (
+        <div className="card">
+          <div className="inline-form">
+            <button className="btn secondary" onClick={() => setPastOpen((v) => !v)}>
+              {pastOpen ? "Hide plates already back" : `Plates already back (${returnedRecent.length})`}
+            </button>
+          </div>
+          {pastOpen && (returnedRecent.length === 0
+            ? <p className="hint">Nothing has been handed back yet.</p>
+            : <table className="roster-table wide">
+                <thead><tr><th>Tag</th><th>Was with</th><th>Taken</th><th>Returned</th><th>History</th><th /></tr></thead>
+                <tbody>
+                  {returnedRecent.map((p) => (
+                    <tr key={p.id}>
+                      <td><b>{p.tag}</b></td>
+                      <td>{p.assignee || "Unassigned"}</td>
+                      <td>{fmtTime(p.takenAt)}</td>
+                      <td><span className="plate-returned">{fmtTime(p.returnedAt)}</span></td>
+                      <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
+                      <td><button className="btn-quiet" onClick={() => toggleIn(p.id)}>Mark out again</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>)}
+        </div>
+      )}
+      {!standing && (
       <div className="card">
         {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
           <table className="roster-table wide">
@@ -12602,6 +12804,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           </table>
         )}
       </div>
+      )}
 
       {openPlate && (
         <div className="modal-backdrop" onClick={() => setHistoryFor(null)}>
@@ -21990,6 +22193,14 @@ function Style() {
       .plate-time-edit input { font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--line); border-radius:7px; }
       .plate-returned { color:#1E7A3C; font-weight:600; font-size:13px; }
       .plate-out-tag { color:var(--amber); font-weight:600; font-size:13px; }
+      .plate-holder { font-weight:600; font-size:13.5px; }
+      /* How long a standing plate has been out. It is the number a manager is
+         actually scanning this column for, so it gets its own weight rather than
+         being read off the date. */
+      .plate-days { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px;
+        background:rgba(42,94,155,.10); color:var(--ink-2); font-size:11.5px; font-weight:700;
+        font-variant-numeric:tabular-nums; }
+      .plate-days.long { background:rgba(229,71,60,.12); color:#C13529; }
       .plate-missing-banner { background:rgba(229,71,60,.09); border:1px solid rgba(229,71,60,.35);
         border-radius:14px; padding:12px 16px; margin-bottom:14px; }
       .plate-missing-banner > b { display:block; color:#C13529; font-size:14px; margin-bottom:6px; }
