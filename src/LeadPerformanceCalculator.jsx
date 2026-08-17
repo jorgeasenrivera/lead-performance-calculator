@@ -6621,7 +6621,7 @@ const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
 const LEAD_VARIANTS = {
   line: {
     kind: "line", dataKey: "queue", param: "q", label: "The Line", count: "in line",
-    title1: "Get in", title2: "line",
+    title1: "Get in", title2: "line", segFlag: "On a call",
     channel: "close_phone", closeLabel: "phone close", sf: "sf-line", mf: "mf-line", accent: "#5566F0",
     joinTitle: "Get in line", joinSub: "Type your name to log in and start getting in line.",
     ready1: "You're in line", wait: "In line", aheadSub: "ahead of you for the next call",
@@ -6630,7 +6630,7 @@ const LEAD_VARIANTS = {
   },
   online: {
     kind: "online", dataKey: "queueOnline", param: "o", label: "Online", count: "in the queue",
-    title1: "Get in", title2: "the queue",
+    title1: "Get in", title2: "the queue", segFlag: "On a lead",
     channel: "close_internet", closeLabel: "online close", sf: "sf-online", mf: "mf-online", accent: "#8B5CF6",
     joinTitle: "Get in the queue", joinSub: "Type your name to log in and start getting in line.",
     ready1: "You're in the queue", wait: "In the queue", aheadSub: "ahead of you for the next lead",
@@ -6650,7 +6650,7 @@ const FLOOR_VARIANT = {
   ready1: "You're on the floor", aheadSub: "ahead of you for the next up",
   upSub: "The next customer through the door is yours.",
   custTitle: "With a customer", custSub: "Back on the floor when you are done.",
-  custFlag: "With customer", leave: "Leave the floor",
+  custFlag: "With customer", segFlag: "Customer", leave: "Leave the floor",
   empty: "Nobody's on the floor yet. Post the code, or add someone below.",
 };
 
@@ -7014,11 +7014,71 @@ function useKeyboardInset(ref) {
    a rep and a manager looking at the same person see the same mark. "Back in" is
    a return to the rotation rather than a step forward, so it takes the swap. */
 const SF_GLYPH = {
-  customer: "user", lunch: "lunch", away: "away",
+  /* waiting takes the dot, which is what the spine lights at your position — the
+     same mark for the same idea in two places on one screen. */
+  waiting: "dot", customer: "user", lunch: "lunch", away: "away",
   back: "swap", mine: "arrow", door: "door",
 };
 function SfIcon({ name, size = 26 }) {
   return <PixIcon glyph={SF_GLYPH[name] || "dot"} size={size} className="sf-ico" />;
+}
+
+/* The status selector.
+   Where you stand is one of four mutually exclusive things, so it is one track
+   with one indicator rather than a grid of tiles — five big buttons for four
+   states read as a phone app from 2010, and "Back in" appearing and
+   disappearing meant the row changed shape depending on where you already
+   were. Here the shape never changes and the pill simply moves.
+
+   Same mechanic as the bottom bar on the manager side: measured off the live
+   segment rather than placed by index, because "On a call" is a wider word than
+   "Away" and the labels differ per queue. */
+function SfStatusSelect({ value, variant, flags, busy, onPick }) {
+  /* "Here" is always the first segment; the rest are whichever ways this queue
+     lets you stand down. Live Floor has no "with customer" state of its own, so
+     its track is three wide, not four. */
+  const states = ["waiting", ...flags];
+  const trackRef = useRef(null);
+  const segRefs = useRef({});
+  const [pill, setPill] = useState(null);
+
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track) { setPill(null); return; }
+    const place = () => {
+      const seg = segRefs.current[value];
+      if (!seg) return;
+      setPill({ x: seg.offsetLeft, w: seg.offsetWidth });
+    };
+    place();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(place);
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [value, flags.length]);
+
+  const label = (st) =>
+    st === "waiting" ? "Here"
+    : st === "lunch" ? "Lunch"
+    : st === "away" ? "Away"
+    : (variant.segFlag || variant.custFlag || "Busy");
+
+  return (
+    <div className="sf-seg" ref={trackRef} role="radiogroup" aria-label="Where you are">
+      <span className="sf-seg-pill" aria-hidden="true"
+        style={pill ? { opacity: 1, width: pill.w + "px", transform: `translateX(${pill.x}px)` } : { opacity: 0 }} />
+      {states.map((st) => (
+        <button key={st} type="button" role="radio" aria-checked={st === value}
+          ref={(el) => { segRefs.current[st] = el; }}
+          className={"sf-seg-btn" + (st === value ? " on" : "")}
+          disabled={busy}
+          onClick={() => { if (st !== value) { buzz(12); onPick(st); } }}>
+          <SfIcon name={st} size={22} />
+          <span>{label(st)}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /* The spine. Two meanings, one shape:
@@ -7580,22 +7640,13 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
           </div>
         </div>
         <div className="sf-actions">
-          <div className="sf-status-row">
-            {st !== "waiting"
-              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><SfIcon name="back" /><span>Back in</span></button>
-              : QUEUE_SELF_FLAGS.map((f) => (
-                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
-                    <SfIcon name={f} /><span>{f === "customer" ? variant.custFlag : f === "lunch" ? "Lunch" : "Away"}</span>
-                  </button>
-                ))}
-          </div>
-          <div className="sf-extra">
-            <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
-              <SfIcon name="mine" /><span>My day</span>
+          <SfStatusSelect value={st} variant={variant} flags={QUEUE_SELF_FLAGS} busy={busy} onPick={setFlag} />
+          <div className="sf-links">
+            <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
+              <SfIcon name="mine" size={14} /><span>My day</span>
             </button>
-            <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
-              <span className="sf-door"><SfIcon name="door" /></span>
-              <span>{variant.leave}</span>
+            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={leave}>
+              <SfIcon name="door" size={14} /><span>{variant.leave}</span>
             </button>
           </div>
         </div>
@@ -9087,22 +9138,13 @@ function FloorSignIn({ store, date, token, test = false }) {
         </div>
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
-          <div className="sf-status-row">
-            {st !== "waiting"
-              ? <button className="sf-sbtn active" disabled={busy} onClick={() => { buzz(12); setFlag("waiting"); }}><SfIcon name="back" /><span>Back in</span></button>
-              : FLOOR_SELF_FLAGS.map((f) => (
-                  <button key={f} className="sf-sbtn" disabled={busy} onClick={() => { buzz(12); setFlag(f); }}>
-                    <SfIcon name={f} /><span>{f === "lunch" ? "Lunch" : "Away"}</span>
-                  </button>
-                ))}
-          </div>
-          <div className="sf-extra">
-            <button className="sf-mine" onClick={() => { buzz(10); setMyDay(true); }}>
-              <SfIcon name="mine" /><span>My day</span>
+          <SfStatusSelect value={st} variant={variant} flags={FLOOR_SELF_FLAGS} busy={busy} onPick={setFlag} />
+          <div className="sf-links">
+            <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
+              <SfIcon name="mine" size={14} /><span>My day</span>
             </button>
-            <button className="sf-leave sf-leave-door" disabled={busy} onClick={leave}>
-              <span className="sf-door"><SfIcon name="door" /></span>
-              <span>Leave the floor</span>
+            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={leave}>
+              <SfIcon name="door" size={14} /><span>Leave the floor</span>
             </button>
           </div>
         </div>
@@ -23559,7 +23601,6 @@ function Style() {
 .sf .ld.on{ background:var(--led); box-shadow:0 0 calc(var(--cell,12px)*.85) var(--led); }
 /* the status glyphs are SVG on the 5x5 grid now, not a CSS grid of dots */
 .sf .sf-ico{ display:block; color:var(--led); filter:drop-shadow(0 0 3px color-mix(in srgb, var(--led) 55%, transparent)); }
-.sf-sbtn.active .sf-ico{ color:#03130d; filter:none; }
 
 /* the hero "you're on the floor / in line" screen */
 .sf-live{ width:100%; max-width:460px; display:flex; flex-direction:column; min-height:100dvh; padding:clamp(52px,8vh,70px) clamp(20px,6vw,26px) clamp(24px,5vh,34px); }
@@ -23590,8 +23631,7 @@ function Style() {
    goes on the second line rather than declaring it locally, where the sweep
    would silently win. q-notme, q-kicker, q-muted, q-orbit and q-pin-in came off
    the list with the old sign-in markup they belonged to. */
-.sf, .sf button, .sf input, .sf .q-mark, .sf-mine, .sf-leave, .sf-sbtn,
-.sf-line-1, .sf-line-2{ font-family:var(--sffont); }
+.sf, .sf button, .sf input, .sf .q-mark, .sf-line-1, .sf-line-2{ font-family:var(--sffont); }
 .sf-timer b, .sf .dm{ font-family:var(--sfmono); }
 
 /* The queue's own mark, in the queue's own colour, on every screen. */
@@ -23625,31 +23665,60 @@ function Style() {
   color:#fff; white-space:nowrap; }
 .sf-off .sf-timer-fg{ stroke:var(--sfink3); filter:none; }
 .sf-dot{ color:var(--sfink3); padding:0 .35em; }
-.sf-actions{ display:flex; flex-direction:column; gap:10px; }
-.sf-status-row{ display:flex; gap:8px; }
-.sf-sbtn{ flex:1; appearance:none; cursor:pointer; font-family:var(--sffont); font-weight:500; font-size:clamp(12px,3.4vw,13px); color:var(--sfink2);
-  background:var(--sfcard); border:1px solid var(--sfstroke); border-radius:14px; padding:12px 6px 10px; display:flex; flex-direction:column; align-items:center; gap:7px; transition:.16s; }
-.sf-sbtn:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
-.sf-sbtn:disabled{ opacity:.55; }
-.sf-sbtn.active{ color:#03130d; background:linear-gradient(90deg,var(--a1),var(--a2)); border-color:transparent; }
-.sf-extra{ display:flex; align-items:stretch; gap:10px; width:100%; }
-/* Same shape, same height, same icon size as the status buttons above. */
-.sf-mine, .sf-leave-door{ flex:1; appearance:none; cursor:pointer; font-family:var(--sffont); font-weight:500;
-  font-size:clamp(12px,3.4vw,13px); color:var(--sfink2); background:var(--sfcard);
-  border:1px solid var(--sfstroke); border-radius:14px; padding:12px 6px 10px;
-  display:flex; flex-direction:column; align-items:center; gap:7px; transition:.16s; }
-.sf-mine:hover{ color:var(--sfink); border-color:rgba(255,255,255,.16); }
+.sf-actions{ display:flex; flex-direction:column; gap:2px; }
 .q-page.sf{ padding-bottom:34px; }
-.sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono); font-size:13px; cursor:pointer; padding:12px; transition:.2s; }
+
+/* ---- the status selector ----
+   Four states, one track, one indicator. The grid of chunky tiles it replaces
+   also changed shape depending on where you already stood — "Back in" swapped
+   in for three buttons — so the controls moved under your thumb between
+   glances. Nothing moves here except the pill. */
+.sf-seg{
+  position:relative; display:flex; width:100%; padding:4px; border-radius:17px;
+  background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07);
+}
+.sf-seg-pill{
+  position:absolute; left:0; top:4px; bottom:4px; border-radius:13px;
+  background:linear-gradient(135deg, var(--a1), var(--a2));
+  box-shadow:0 8px 20px -10px var(--a1);
+  pointer-events:none;
+  transition:transform .42s var(--ease-bloop), width .42s var(--ease-bloop), opacity .2s var(--ease);
+}
+@media (prefers-reduced-motion: reduce){ .sf-seg-pill{ transition:opacity .2s linear; } }
+.sf-seg-btn{
+  flex:1 1 0; min-width:0; position:relative; z-index:1;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  padding:11px 3px 9px; border:0; background:none; cursor:pointer;
+  color:var(--sfink2); font-size:10.5px; font-weight:640; letter-spacing:-.01em;
+  transition:color .25s var(--ease), transform .28s var(--ease-bloop);
+}
+.sf-seg-btn:active:not(:disabled){ transform:scale(.94); }
+.sf-seg-btn:disabled{ opacity:.6; }
+.sf-seg-btn.on{ color:#04121C; }
+.sf-seg-btn > span{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* the glyph follows the segment, not the queue's LED colour, and drops the glow
+   it wears elsewhere — on a filled pill it would smear */
+.sf-seg-btn .sf-ico{ color:currentColor; filter:none; }
+
+/* ---- the two places left to go ----
+   My day and leaving are not states, so they are not on the track. They read as
+   links rather than as two more buttons the size of a status. */
+.sf-links{ display:flex; gap:6px; margin-top:10px; }
+.sf-link{
+  flex:1 1 0; display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  background:none; border:0; cursor:pointer; padding:12px 8px; border-radius:13px;
+  font-family:var(--sffont); font-size:13px; font-weight:620; color:var(--sfink2);
+  transition:color .2s var(--ease), background .2s var(--ease), transform .28s var(--ease-bloop);
+}
+.sf-link:active:not(:disabled){ transform:scale(.96); }
+.sf-link:hover:not(:disabled){ color:var(--sfink); background:rgba(255,255,255,.05); }
+.sf-link .sf-ico{ color:currentColor; filter:none; }
+.sf-link-quiet{ color:var(--sfink3); }
+.sf-link-quiet:hover:not(:disabled){ color:#FFC9C4; background:rgba(255,120,110,.1); }
+/* the undo line on Live Floor, which is a sentence rather than a control */
+.sf-leave{ background:none; border:none; color:var(--sfink3); font-family:var(--sfmono);
+  font-size:12.5px; line-height:1.4; cursor:pointer; padding:10px 4px; transition:color .2s; }
 .sf-leave:hover{ color:var(--sfink2); }
-/* Leaving should feel like leaving: the door lights and the label steps toward it,
-   so the action reads before the words are. */
-.sf-leave-door:hover:not(:disabled){ background:rgba(255,120,110,.1); border-color:rgba(255,120,110,.32); color:#ffc9c4; }
-.sf-door{ display:inline-flex; opacity:.7; transition:opacity .2s, transform .26s cubic-bezier(.34,1.4,.64,1); }
-.sf-leave-door:hover:not(:disabled) .sf-door{ opacity:1; transform:translateY(-2px); }
-.sf-leave-door span:last-child{ transition:transform .26s cubic-bezier(.34,1.4,.64,1); }
-.sf-leave-door:active:not(:disabled){ transform:scale(.985); }
-@media (prefers-reduced-motion: reduce){ .sf-door, .sf-leave-door span:last-child{ transition:none; } }
 
 /* full-screen "you're up" takeover */
 .sf-uptake{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
