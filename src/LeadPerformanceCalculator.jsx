@@ -21868,7 +21868,13 @@ function Style() {
         padding:3px 8px; border-radius:999px; background:rgba(48,177,85,.16); color:#1E8F45;
         animation:flowPop .55s var(--ease-bloop) both; }
       @keyframes flowPop { from { opacity:0; transform:scale(.4) rotate(-8deg); } to { opacity:1; transform:none; } }
-      .flow-plot { width:100%; display:block; overflow:visible; margin-top:6px; }
+      /* The plot is drawn in a 292-unit-wide viewBox, so its own width sets the
+         scale for everything inside it — strokes, dashes, dot radii and label
+         font sizes are all in user units. At full desktop card width that is a
+         5.8x blow-up: a 570px-tall chart with 47px axis labels and 14px dashes,
+         which is exactly where "oversized and laggy" came from. Capped at the
+         width it was drawn for, so a desktop reads like a phone. */
+      .flow-plot { width:100%; max-width:440px; display:block; overflow:visible; margin-top:6px; }
       .flow-axis { font-size:8.5px; fill:var(--ink-2); }
       .flow-rule { stroke:var(--ink-2); stroke-width:1; stroke-dasharray:4 4; opacity:.55; }
       .flow-rulelbl { font-size:8px; fill:var(--ink-2); font-weight:700; }
@@ -21879,6 +21885,20 @@ function Style() {
       .flow-month { stroke:rgba(16,32,52,.22); stroke-width:1; stroke-dasharray:2 2; }
       .flow-monthlbl { font-size:7.5px; font-weight:700; fill:var(--ink-3); }
       .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
+      /* Once the card is wider than the chart wants to be, the chart moves beside
+         the read-out rather than under it — otherwise capping its width leaves a
+         card that is mostly empty on the right. */
+      @media (min-width: 780px) {
+        .flowcard {
+          display:grid; column-gap:28px; align-items:start;
+          grid-template-columns:minmax(0,1fr) minmax(0,400px);
+          grid-template-areas:"head plot" "read plot" "note note";
+        }
+        .flow-head { grid-area:head; }
+        .flow-read { grid-area:read; }
+        .flow-plot { grid-area:plot; max-width:400px; margin:0 0 0 auto; align-self:center; }
+        .flow-note { grid-area:note; }
+      }
       .flow-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:10.5px; color:var(--ink-2); }
       .flow-legend b { display:inline-flex; align-items:center; gap:5px; font-weight:650; color:var(--ink); }
       .flow-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
