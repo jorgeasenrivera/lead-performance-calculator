@@ -3934,10 +3934,23 @@ function LEADERBOARD_HTML(p) {
   @media (max-width: 700px) {
     body { overflow-y:auto; }
     .wrap, .panel { height:auto; min-height:0; padding:10px 12px 28px; }
-    .head { flex-wrap:wrap; gap:8px 14px; padding:12px; }
-    .head h1, .store { font-size:22px; line-height:1.1; }
-    .kpi { font-size:30px; }
-    .clock, .sub, .kpi-lbl { font-size:12px; }
+    /* The header rules here used to name .head h1, .store, .kpi, .sub and
+       .kpi-lbl — none of which this board has. They matched nothing, so the
+       header kept its wall sizes: a 45px store name over a 70px logo. These are
+       the real class names. */
+    .head { flex-wrap:wrap; gap:10px 14px; padding:12px; }
+    .head-l { flex:1 1 100%; gap:10px; min-width:0; }
+    .head-logo { width:40px; height:40px; border-radius:9px; flex:0 0 auto; }
+    .head-title { font-size:22px; line-height:1.1; letter-spacing:0; }
+    .head-sub { font-size:10.5px; }
+    /* The units figure and the clock keep the right-hand side they hold on a
+       TV. Wrapping put them on their own line but left them hard against the
+       left edge, under the store name, reading as two more lines of the title
+       block rather than as the day's number. */
+    .head-r { flex:1 1 100%; justify-content:flex-end; align-items:flex-end; gap:18px; }
+    .total-num { font-size:30px; }
+    .total-cap, .clock-date { font-size:10px; }
+    .clock-time { font-size:18px; }
     .scroller { overflow:visible; }
     .gear { width:34px; height:34px; font-size:15px; opacity:.5; right:10px; bottom:10px; }
 
