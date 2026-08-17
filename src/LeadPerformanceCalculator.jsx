@@ -3711,14 +3711,30 @@ function LEADERBOARD_HTML(p) {
 
   /* one panel, one table, everybody visible without scrolling */
   .panel { flex:1; position:relative; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
-    border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden; }
-  .scroller { height:100%; overflow:hidden; }
+    border-radius:1.4vh; padding:1.2vh 1.2vw; min-height:0; overflow:hidden;
+    display:flex; flex-direction:column; }
+  .scroller { flex:1 1 auto; min-height:0; overflow:hidden; }
+  /* The podium stays on screen while the rest of the list walks past it.
+     Its own table above the scroller, rather than three sticky rows inside it.
+     Sticky was the obvious way and it does not survive this board: every row
+     carries the rowIn entrance, whose filled end state leaves an identity
+     transform behind, so each row is permanently its own stacking context and a
+     z-index on a pinned cell can never lift it above a row that comes later in
+     the document. Lifting the three out of the scroll container removes the
+     question entirely — nothing overlaps because nothing shares a scrollport.
+     Both tables are width:100% with table-layout:fixed and the same column
+     classes, which is what keeps the columns lined up across the join. */
+  .podium-tbl { flex:0 0 auto; }
+  .podium-tbl tbody tr > td { background:rgba(255,255,255,.05); }
+  .podium-tbl tbody tr:nth-child(even) > td { background:rgba(255,255,255,.025); }
+  /* one hairline where the fixed three meet the moving list */
+  .podium-edge { flex:0 0 auto; height:1px; background:rgba(255,255,255,.14); margin:.5vh 0 .4vh; }
   /* soft fade at the bottom edge so a row cut mid-scroll reads as intentional */
   .panel::after { content:''; position:absolute; left:0; right:0; bottom:0; height:5vh; pointer-events:none;
     background:linear-gradient(180deg, transparent, rgba(14,32,51,.75)); border-radius:0 0 1.4vh 1.4vh; }
   /* The table is capped and centred. Stretched across a 65in screen the columns drifted
      so far apart the eye lost the row on the way across. */
-  .lb { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
+  .lb { width:100%; max-width:1500px; margin:0 auto; border-collapse:separate; border-spacing:0; table-layout:fixed; }
   .lb th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.10em; color:#A8CBEA;
     font-weight:700; padding:0 .5vw 1.2vh; text-align:center; }
   .lb th.nm { text-align:left; padding-left:1vw; }
@@ -3809,7 +3825,7 @@ function LEADERBOARD_HTML(p) {
     font-size:2.2vh; cursor:pointer; opacity:.16; transition:opacity .25s, background .25s; }
   .gear:hover { opacity:1; background:rgba(255,255,255,.14); }
   /* ---- Bars style (Digital-Dealership-System look): one huge striped bar per person ---- */
-  .lb2 { width:100%; max-width:1500px; margin:0 auto; border-collapse:collapse; table-layout:fixed; }
+  .lb2 { width:100%; max-width:1500px; margin:0 auto; border-collapse:separate; border-spacing:0; table-layout:fixed; }
   .lb2 th { font-size:calc(1.7vh * var(--tscale)); text-transform:uppercase; letter-spacing:.04em; color:#A8CBEA;
     padding:.6vh .4vw; border-bottom:1px solid rgba(255,255,255,.14); text-align:left;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -3914,6 +3930,15 @@ function LEADERBOARD_HTML(p) {
   .tuner-row span { display:flex; justify-content:space-between; color:#BFD9F0; margin-bottom:.5vh; }
   .tuner-row b { color:#fff; }
   .tuner-row input[type=range] { width:100%; accent-color:#C1D730; }
+  .tuner-rota { display:flex; flex-direction:column; gap:.5vh; margin:.6vh 0 .2vh; max-height:22vh; overflow-y:auto; }
+  .tuner-rota button { display:flex; align-items:center; gap:.7vw; width:100%; text-align:left;
+    font:inherit; font-size:1.5vh; color:#DCE9F6; background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.12); border-radius:.8vh; padding:.7vh .9vw; cursor:pointer; }
+  .tuner-rota button.on { background:rgba(193,215,48,.16); border-color:rgba(193,215,48,.5); color:#F2F7DC; }
+  .tuner-rota .tick { flex:0 0 auto; width:1.6vh; height:1.6vh; border-radius:.4vh;
+    border:1px solid rgba(255,255,255,.3); display:grid; place-items:center; font-size:1.1vh; }
+  .tuner-rota button.on .tick { background:#C1D730; border-color:#C1D730; color:#26301A; }
+  .tuner-rota .none { color:#8FB3D6; font-size:1.4vh; padding:.4vh 0; }
   .tuner-hint { color:#7FA8D4; font-size:1.35vh; margin:-.3vh 0 1.2vh; line-height:1.45; }
   .tuner-foot { display:flex; gap:.6vw; margin-top:1.4vh; }
   .tuner-btn { flex:1; padding:.9vh .6vw; border-radius:.9vh; border:1px solid rgba(255,255,255,.18);
@@ -4061,6 +4086,10 @@ function LEADERBOARD_HTML(p) {
     <input id="s-p" type="range" min="0" max="8" step="0.5" value="0">
   </label>
   <p class="tuner-hint">For screens that crop the edges.</p>
+
+  <label class="tuner-row"><span>Also show</span></label>
+  <div class="tuner-rota" id="rot-list"></div>
+  <p class="tuner-hint">Tick a store and this screen will show its board too, handing over each time the list has scrolled all the way down.</p>
 
   <div class="tuner-foot">
     <button class="tuner-btn" id="treset">Reset</button>
@@ -4320,7 +4349,7 @@ function LEADERBOARD_HTML(p) {
     var rows = people.map(function(x,i){
       var medal = i < 3 ? ' m' + (i+1) : '';
       var barw = Math.round((x.sold / maxSold) * 100);
-      return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
+      return '<tr class="row' + (i === 0 ? ' leader' : '') + (i < 3 ? ' pin' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         '<td class="sold"><span class="bar"></span><span class="soldnum" data-to="' + x.sold + '">0</span>' +
@@ -4330,9 +4359,9 @@ function LEADERBOARD_HTML(p) {
         cell(x.phonePct,    x.prev.phone,    'phone') +
         cell(x.showroomPct, x.prev.showroom, 'showroom') +
       '</tr>';
-    }).join('');
+    });
 
-    if (!rows) rows = '<tr><td colspan="6" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
+    if (!rows.length) rows = ['<tr><td colspan="6" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>'];
 
     // ---- Bars style: rank, name, units, one huge striped bar sized against the leader ----
     var bars = DISP.style === 'bars';
@@ -4354,7 +4383,7 @@ function LEADERBOARD_HTML(p) {
       // The podium is always green — top three have earned it no matter the spread.
       var t2 = i < 3 ? 'g' : ratio >= 0.75 ? 'g' : ratio >= 0.4 ? 'y' : 'r';
       var barw = Math.max(2, Math.round(ratio * 100));
-      return '<tr class="row' + (i === 0 ? ' leader' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
+      return '<tr class="row' + (i === 0 ? ' leader' : '') + (i < 3 ? ' pin' : '') + '" style="--i:' + i + '; --barw:' + barw + '%">' +
         '<td class="rank"><span class="badge' + medal + '">' + (i+1) + '</span></td>' +
         '<td class="nm">' + x.disp + (x.haveAll ? '' : ' <span class="flag" title="A delivery report is missing for this person, so their total may be incomplete.">&#9873;</span>') + '</td>' +
         cell2(x.internetPct, 'internet', x.prev.internet) +
@@ -4363,8 +4392,14 @@ function LEADERBOARD_HTML(p) {
         '<td class="sold2"><span class="soldnum" data-to="' + x.sold + '">0</span>' + soldMove(x.sold, x.prevSold) + '</td>' +
         '<td class="carcell"><div class="cars ' + t2 + '">' + cars(x.sold, maxSold) + '</div></td>' +
       '</tr>';
-    }).join('');
-    if (!rows2) rows2 = '<tr><td colspan="7" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>';
+    });
+    if (!rows2.length) rows2 = ['<tr><td colspan="7" class="empty">No sales associates on the board yet. Give them a position in the tool.</td></tr>'];
+
+    /* The top three come out of the scroll container and sit in their own table
+       above it, so they stay on screen for the whole pass. */
+    var PIN = 3;
+    var pin  = function(a){ return a.slice(0, PIN).join(''); };
+    var rest = function(a){ return a.length > PIN ? a.slice(PIN).join('') : ''; };
 
     // ticker items: leader + best of each channel, plus the streaks passed from the tool
     var tickerItems = [];
@@ -4389,9 +4424,11 @@ function LEADERBOARD_HTML(p) {
         '<div class="clock"><div class="clock-time" id="clk"></div><div class="clock-date" id="dat"><span class="live"></span><span id="datt"></span></div></div>'+
       '</div></div>'+
       '<div class="panel" style="--rowfs:'+rowFs+'vh; --rowpad:'+rowPad+'vh;">'+
-        '<div class="scroller" id="scroller">'+
+        /* The header and the top three, fixed. Then the rest, scrolling. Both
+           tables carry the same classes and table-layout:fixed, which is what
+           keeps the columns aligned across the join. */
         (bars
-          ? '<table class="lb2">'+
+          ? '<table class="lb2 podium-tbl">'+
               '<thead><tr>'+
                 '<th class="rank">#</th>'+
                 '<th class="nm">Associate</th>'+
@@ -4401,9 +4438,9 @@ function LEADERBOARD_HTML(p) {
                 '<th class="sold2" style="text-align:center">Delivered</th>'+
                 '<th class="carcell" style="text-align:left; padding-left:.6vw">units</th>'+
               '</tr></thead>'+
-              '<tbody>'+rows2+'</tbody>'+
+              '<tbody>'+pin(rows2)+'</tbody>'+
             '</table>'
-          : '<table class="lb">'+
+          : '<table class="lb podium-tbl">'+
               '<thead><tr>'+
                 '<th class="rank">#</th>'+
                 '<th class="nm">Associate</th>'+
@@ -4412,8 +4449,13 @@ function LEADERBOARD_HTML(p) {
                 '<th class="pcell">Phone %</th>'+
                 '<th class="pcell">Showroom %</th>'+
               '</tr></thead>'+
-              '<tbody>'+rows+'</tbody>'+
+              '<tbody>'+pin(rows)+'</tbody>'+
             '</table>')+
+        (((bars ? rows2 : rows).length > 3) ? '<div class="podium-edge"></div>' : '')+
+        '<div class="scroller" id="scroller">'+
+        (bars
+          ? '<table class="lb2"><tbody>'+rest(rows2)+'</tbody></table>'
+          : '<table class="lb"><tbody>'+rest(rows)+'</tbody></table>')+
         '</div>'+
       '</div>'+
       (bars
@@ -4447,6 +4489,9 @@ function LEADERBOARD_HTML(p) {
         // Give a non-scrolling board the same flourish on a gentle idle timer.
         if (idleRefill) clearInterval(idleRefill);
         idleRefill = setInterval(replayBars, 2 * 60 * 1000);
+        /* A short list has no cycle to end, so the hand-over needs its own clock —
+           otherwise a rotation that reaches a small store stops there for the day. */
+        if (rotates()) setTimeout(nextStore, 22000);
         return;
       }
       if (idleRefill) { clearInterval(idleRefill); idleRefill = null; }
@@ -4480,7 +4525,14 @@ function LEADERBOARD_HTML(p) {
         } else if (phase === 'bloop') {
           var p = Math.min(1, dt / BLOOP);
           el.scrollTop = Math.max(0, from * (1 - bloopEase(p)));
-          if (p >= 1) { el.scrollTop = 0; phase = 'holdTop'; t0 = ts; replayBars(); }
+          if (p >= 1) {
+            el.scrollTop = 0; phase = 'holdTop'; t0 = ts; replayBars();
+            /* One full pass, then the next store. The hand-over happens here rather
+               than on a timer so a screen never changes store mid-scroll — you
+               always see a board from its leader to its last name before it moves
+               on. */
+            if (rotates()) { nextStore(); return; }
+          }
         }
         scrollRAF = requestAnimationFrame(frame);
       }
@@ -4592,13 +4644,18 @@ function LEADERBOARD_HTML(p) {
 
   async function loop(){
     var s = await getStore();
+    var switched = SWITCHING; SWITCHING = false;
     // Failsafe: a good previous board plus a suspicious new one = keep the old one.
-    if (LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
+    // Skipped across a hand-over: two different dealerships are supposed to look
+    // nothing like each other, and this check would refuse every rotation.
+    if (!switched && LAST && !LAST.__err && s && !s.__err && tooDifferent(LAST, s)) {
       var warn = document.getElementById('stale-note');
       if (warn) warn.classList.add('on');
       return;                                        // skip this render entirely
     }
-    var wsold = (LAST && !LAST.__err && s && !s.__err) ? newlySold(LAST, s) : [];
+    /* Nobody "just delivered" anything because the screen changed store, so the
+       congratulations are held across a hand-over too. */
+    var wsold = (!switched && LAST && !LAST.__err && s && !s.__err) ? newlySold(LAST, s) : [];
     if (!LAST) {
       // First load only, so a live adjustment is never stamped over on refresh.
       // The store's published setting is the starting point; anything set on this
@@ -4617,6 +4674,15 @@ function LEADERBOARD_HTML(p) {
       DISP.bg      = pick('bg', DISP.bg);
       DISP.squeeze = pick('squeeze', 1);
       DISP.pad     = pick('pad', 0);
+      DISP.rotate  = pick('rotate', []) || [];
+    }
+    if (switched && s && !s.__err) {
+      /* Its own row is the authority on who it is: the sibling list only carries
+         a name, and brand, icon and thresholds all differ per store. */
+      if (s.storeName) CFG.storeName = s.storeName;
+      if (s.icon !== undefined) CFG.icon = s.icon;
+      if (s.brand) CFG.brand = s.brand;
+      if (s.thresholds) CFG.thresholds = s.thresholds;
     }
     if (s && !s.__err) LAST = s;
     applyDisp();
@@ -4627,9 +4693,44 @@ function LEADERBOARD_HTML(p) {
     if (warn) warn.classList.remove('on');
     if (wsold.length) congratulate(wsold);
   }
+  /* ---------- rotating through more than one store ----------
+     A screen in a shared hallway shows one store's board, walks it top to bottom,
+     then hands over to the next one on the list. The list is a display setting on
+     the board it was opened for, so it is set standing at the TV like everything
+     else here, and it saves to that store rather than to the screen.
+
+     Every store publishes its whole board row — name, brand, icon, thresholds and
+     all — so switching is a matter of pointing at another key and re-reading. No
+     new data has to be written for this to work. */
+  function rotates(){ return (DISP.rotate || []).length > 0; }
+  function rotaList(){ return [HOME.id].concat(DISP.rotate || []); }
+  var HOME = { id: CFG.storeId, key: CFG.storeKey, name: CFG.storeName,
+               icon: CFG.icon, brand: CFG.brand, thresholds: CFG.thresholds };
+  var ROT_I = 0;
+
+  function nextStore(){
+    var list = rotaList();
+    if (list.length < 2) return;
+    ROT_I = (ROT_I + 1) % list.length;
+    var id = list[ROT_I];
+    CFG.storeId = id;
+    CFG.storeKey = 'lpc:board:' + id + ':v1';
+    /* The name shown while the next row is in flight is the one we already know
+       for that store, so the header never sits on the wrong dealership. */
+    var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
+    CFG.storeName = id === HOME.id ? HOME.name : ((known && known.name) || CFG.storeName);
+    if (id === HOME.id) { CFG.icon = HOME.icon; CFG.brand = HOME.brand; CFG.thresholds = HOME.thresholds; }
+    SWITCHING = true;
+    loop();
+  }
+  /* True for exactly one pass of loop(), because the two guards below compare the
+     board on screen with the one arriving — which is the right thing to do for a
+     refresh of the same store and completely wrong across a hand-over. */
+  var SWITCHING = false;
+
   /* ---------- display tuning ---------- */
   // Read whatever was saved for this store, and let the person at the TV change it.
-  var DISP = { tscale: 1, squeeze: 1, pad: 0, style: 'classic', bg: 'navy' };
+  var DISP = { tscale: 1, squeeze: 1, pad: 0, style: 'classic', bg: 'navy', rotate: [] };
   var DKEY = 'lpc:disp:' + (CFG.storeId || 'board');
 
   function applyDisp(){
@@ -4676,6 +4777,38 @@ function LEADERBOARD_HTML(p) {
     document.getElementById('bg-store').onclick = function(){ DISP.bg='store'; paintBgSeg(); applyDisp(); };
     document.getElementById('tclose').onclick = function(){ tun.classList.remove('on'); };
 
+    /* The rota list. Rebuilt on every open so a ticked store that has since been
+       removed from the group does not linger as a dead row. */
+    var rl = document.getElementById('rot-list');
+    if (rl) {
+      var sibs = CFG.siblings || [];
+      if (!sibs.length) rl.innerHTML = '<div class="none">This is the only store on this account.</div>';
+      else {
+        DISP.rotate = (DISP.rotate || []).filter(function(id){
+          return sibs.some(function(x){ return x.id === id; }); });
+        rl.innerHTML = sibs.map(function(x){
+          var on = (DISP.rotate || []).indexOf(x.id) >= 0;
+          return '<button data-rot="' + x.id + '" class="' + (on ? 'on' : '') + '">'
+            + '<span class="tick">' + (on ? '&#10003;' : '') + '</span>'
+            + '<span>' + x.name + '</span></button>';
+        }).join('');
+        rl.querySelectorAll('[data-rot]').forEach(function(b){
+          b.onclick = function(){
+            var id = b.getAttribute('data-rot');
+            var at = (DISP.rotate || []).indexOf(id);
+            if (at >= 0) DISP.rotate.splice(at, 1); else (DISP.rotate = DISP.rotate || []).push(id);
+            /* Back to the home board whenever the list changes, so what is on
+               screen always matches what is ticked. */
+            ROT_I = 0;
+            if (CFG.storeId !== HOME.id) { CFG.storeId = HOME.id; CFG.storeKey = HOME.key;
+              CFG.storeName = HOME.name; CFG.icon = HOME.icon; CFG.brand = HOME.brand;
+              CFG.thresholds = HOME.thresholds; SWITCHING = true; loop(); }
+            wireTuner();
+          };
+        });
+      }
+    }
+
     st.value = Math.round(DISP.tscale * 100);
     ss.value = Math.round(DISP.squeeze * 100);
     sp.value = DISP.pad;
@@ -4686,7 +4819,9 @@ function LEADERBOARD_HTML(p) {
     sp.oninput = function(){ DISP.pad = parseFloat(sp.value); applyDisp(); };
 
     document.getElementById('treset').onclick = function(){
-      DISP = { tscale: 1, squeeze: 1, pad: 0, style: DISP.style, bg: DISP.bg };
+      /* Reset is for the look of the board. The rota is what this screen is FOR,
+         so it survives — losing it to a stray tap on Reset would be baffling. */
+      DISP = { tscale: 1, squeeze: 1, pad: 0, style: DISP.style, bg: DISP.bg, rotate: DISP.rotate || [] };
       st.value = 100; ss.value = 100; sp.value = 0;
       applyDisp(); if (LAST) render(LAST);
     };
@@ -4700,7 +4835,11 @@ function LEADERBOARD_HTML(p) {
         try { localStorage.setItem(DKEY, JSON.stringify(DISP)); kept = true; } catch (e) {}
         var op = window.opener || (window.parent !== window ? window.parent : null);
         if (op && op.__lpcSaveBoardDisplay) {
-          var ok = await op.__lpcSaveBoardDisplay(CFG.storeId, DISP);
+          /* HOME.id, not CFG.storeId: the tuner can be opened while the screen is
+             part-way round its rota, and CFG.storeId is whichever store is on the
+             wall at that moment. These settings belong to the board this screen
+             was opened for. */
+          var ok = await op.__lpcSaveBoardDisplay(HOME.id, DISP);
           msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
         } else {
           msg.textContent = kept ? 'Saved on this screen. Save from the tool to set it everywhere.' : 'Could not save.';
@@ -5084,6 +5223,12 @@ async function openLeaderboard(config, storeId) {
   const payload = {
     ...board,
     storeKey: boardKey(storeId),
+    /* The other stores this screen could hand over to. On the window payload
+       rather than in the published row: the row goes in the database and every
+       board would then carry a copy of the group's store list for no reason. */
+    siblings: (config?.stores || [])
+      .filter((x) => x.id !== storeId)
+      .map((x) => ({ id: x.id, name: x.name })),
     db: { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY },
     tokens: null,
   };
