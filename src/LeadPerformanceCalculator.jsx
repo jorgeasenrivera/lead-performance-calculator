@@ -19330,6 +19330,12 @@ function Style() {
          does not cover — and iOS uncovers a strip below it the moment the
          keyboard opens — showed the light --bg underneath as a white band. */
       html:has(.q-page.sf), body:has(.q-page.sf) { background:#06090F; }
+      /* A page whose content is a full-screen fixed layer has nothing to scroll,
+         but .lpc underneath is min-height:100vh with a bottom padding on top of
+         it — there is no global border-box here — so the document scrolled by
+         exactly that padding and drew a bar for it. */
+      html:has(.q-page.sf), body:has(.q-page.sf),
+      html:has(.qb), body:has(.qb) { height:100%; overflow:hidden; }
       .lpc { min-height: 100vh; background: var(--bg); color: var(--ink);
         font-family: var(--font-ui);
         font-size: 14px; padding-bottom: 72px; -webkit-font-smoothing: antialiased; position:relative; isolation:isolate;
@@ -23441,8 +23447,11 @@ function Style() {
   --sfmono:var(--font-mono);
   font-family:var(--sffont); color:var(--sfink); letter-spacing:-.005em; padding:0;
   background:radial-gradient(1000px 680px at 15% -10%, rgba(11,197,197,.05), transparent 60%), #06090F;
-  position:fixed; inset:0; width:100%; height:100dvh; min-height:100dvh; overflow-y:auto; border-radius:0; z-index:100;
+  position:fixed; inset:0; width:100%; height:100dvh; min-height:100dvh; border-radius:0; z-index:100;
+  overflow-y:auto; overscroll-behavior:contain;
+  scrollbar-width:none; -ms-overflow-style:none;
 }
+.q-page.sf::-webkit-scrollbar{ width:0; height:0; }
 .q-page.sf.sf-line{ --a1:#5566F0; --a2:#37B6F0; --led:#9DC3FF; --glow:rgba(85,102,240,.5); --ld-off:rgba(157,195,255,.14); }
 .q-page.sf.sf-online{ --a1:#8B5CF6; --a2:#C05CF0; --led:#D8B4FE; --glow:rgba(139,92,246,.5); --ld-off:rgba(216,180,254,.16); }
 
@@ -23938,7 +23947,6 @@ function Style() {
 .sf-off .sf-timer-fg{ stroke:var(--sfink3); filter:none; }
 .sf-dot{ color:var(--sfink3); padding:0 .35em; }
 .sf-actions{ display:flex; flex-direction:column; gap:2px; }
-.q-page.sf{ padding-bottom:34px; }
 
 /* ---- the status selector ----
    Four states, one track, one indicator. The grid of chunky tiles it replaces
