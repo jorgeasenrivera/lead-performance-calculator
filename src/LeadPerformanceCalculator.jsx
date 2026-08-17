@@ -7505,7 +7505,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   if (eff === "loading") {
     content = (
       <SfScreen spine={queueSpine} className="sf-v-wait">
-        <div className="sf-wait"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
+        <div className="sf-loading"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
       </SfScreen>
     );
   } else if (eff === "invalid") {
@@ -9007,7 +9007,7 @@ function FloorSignIn({ store, date, token, test = false }) {
   if (eff === "loading") {
     content = (
       <SfScreen spine={queueSpine} className="sf-v-wait">
-        <div className="sf-wait"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
+        <div className="sf-loading"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
       </SfScreen>
     );
   } else if (eff === "invalid") {
@@ -23220,15 +23220,19 @@ function Style() {
   margin-top:auto; padding-top:24px; padding-right:16px;
   display:grid; grid-template-columns:repeat(3,1fr); gap:9px;
 }
+/* Geist, like every other button in the app — the sweep rule above owns this and
+   a local font-family here would be dead code. tabular-nums is what a keypad
+   actually needs from its digits: without it the 1 is narrower than the 8 and
+   the pad reads as slightly crooked. */
 .sf-key{
-  font-family:var(--sfmono); font-size:22px; font-weight:500; color:var(--sfink);
+  font-size:22px; font-weight:500; color:var(--sfink); font-variant-numeric:tabular-nums;
   background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.05);
   border-radius:16px; min-height:52px; cursor:pointer; display:grid; place-items:center;
   transition:transform .26s var(--ease-bloop), background .16s var(--ease);
 }
 .sf-key:active{ transform:scale(.93); background:color-mix(in srgb, var(--a1) 26%, transparent); }
 .sf-key:disabled{ opacity:.4; }
-.sf-key-word{ font-family:var(--sffont); font-size:12.5px; font-weight:650; letter-spacing:.02em; }
+.sf-key-word{ font-size:12.5px; font-weight:650; letter-spacing:.02em; }
 .sf-key-go{ color:#08101B; background:linear-gradient(140deg, var(--led), var(--a2)); border-color:transparent; }
 
 /* ---- the day, the list, and one number ----
@@ -23269,6 +23273,7 @@ function Style() {
 .sf-band-lbl{ display:block; font-size:15px; font-weight:640; letter-spacing:-.015em; color:var(--sfink); }
 .sf-band-of{
   display:block; font-family:var(--sfmono); font-size:10.5px; letter-spacing:.06em;
+  font-variant-numeric:tabular-nums;
   color:var(--sfink3); margin-top:4px; text-transform:uppercase;
 }
 .sf-band-of b{ color:#4FD98A; font-weight:600; }
@@ -23287,7 +23292,8 @@ function Style() {
 .sf-rate::after{ content:""; position:absolute; left:0; right:0; bottom:0; height:2px; background:var(--tone); }
 .sf-tone-g{ --tone:#3ECF6E; } .sf-tone-y{ --tone:#EFD75A; }
 .sf-tone-r{ --tone:#EF6A72; } .sf-tone-dim{ --tone:rgba(255,255,255,.14); }
-.sf-rate-v{ font-size:23px; font-weight:680; letter-spacing:-.04em; line-height:1; color:var(--tone); }
+.sf-rate-v{ font-size:23px; font-weight:680; letter-spacing:-.04em; line-height:1; color:var(--tone);
+  font-variant-numeric:tabular-nums; }
 .sf-rate-l{ display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:620; color:var(--sfink); margin-top:8px; }
 .sf-rate-mark{ opacity:.85; }
 .sf-rate-g{ font-family:var(--sfmono); font-size:9px; letter-spacing:.06em; color:var(--sfink3); margin-top:3px; text-transform:uppercase; }
@@ -23343,6 +23349,7 @@ function Style() {
 .sf-task-h{ display:block; font-size:12px; color:var(--sfink3); margin-top:4px; }
 .sf-task-c{
   flex:0 0 auto; font-family:var(--sfmono); font-size:10px; letter-spacing:.08em;
+  font-variant-numeric:tabular-nums;
   text-transform:uppercase; color:var(--sfink3); display:inline-flex; align-items:center;
 }
 .sf-task-c.good{ color:#4FD98A; }
@@ -23359,9 +23366,10 @@ function Style() {
   color:#070C13; overflow:hidden;
 }
 .sf-one-head{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
-.sf-one-v{ font-family:var(--sffont); font-size:26px; font-weight:700; letter-spacing:-.04em; line-height:1; }
+.sf-one-v{ font-size:26px; font-weight:700; letter-spacing:-.04em; line-height:1;
+  font-variant-numeric:tabular-nums; }
 .sf-one-v small{ font-size:13px; font-weight:600; opacity:.58; letter-spacing:-.01em; }
-.sf-one-p{ font-family:var(--sffont); font-size:19px; font-weight:700; letter-spacing:-.03em; }
+.sf-one-p{ font-size:19px; font-weight:700; letter-spacing:-.03em; font-variant-numeric:tabular-nums; }
 .sf-one-track{ display:flex; gap:4px; margin-top:11px; }
 .sf-one-track i{ flex:1 1 0; height:3px; border-radius:2px; background:rgba(0,0,0,.19); }
 .sf-one-track i.on{ background:#FFFFFF; }
@@ -23388,10 +23396,12 @@ function Style() {
   background:#070C13; color:#FFFFFF; border-radius:11px; padding:5px 9px; white-space:nowrap;
   font-family:var(--sfmono); font-size:9px; letter-spacing:.06em; line-height:1.3; text-align:center;
 }
-.sf-col-call b{ display:block; font-family:var(--sffont); font-size:12px; letter-spacing:-.01em; }
+.sf-col-call b{ display:block; font-family:var(--sffont); font-size:12px; letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums; }
 .sf-axis{
   display:flex; justify-content:space-between; margin-top:10px;
   font-family:var(--sfmono); font-size:8.5px; letter-spacing:.06em; color:rgba(0,0,0,.52);
+  font-variant-numeric:tabular-nums;
 }
 
 .sf-worth{
@@ -23409,8 +23419,10 @@ function Style() {
 .sf-worth-dot.t-y{ background:#EFD75A; }
 .sf-worth-dot.t-r{ background:#EF6A72; }
 
-.sf-wait{ margin:auto; text-align:center; color:var(--sfink2); }
-.sf-wait p{ margin-top:14px; font-family:var(--sfmono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; }
+/* .sf-loading, not .sf-wait: the live screen already owns .sf-wait for the label
+   under its ring, and two rules for one name is how one of them quietly wins. */
+.sf-loading{ margin:auto; text-align:center; color:var(--sfink2); }
+.sf-loading p{ margin-top:14px; font-family:var(--sfmono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; }
 
 /* very short screens: the pad keeps its targets, the heading gives way */
 @media (max-height: 680px){
@@ -23477,9 +23489,15 @@ function Style() {
 /* One face for the whole salesperson view. The mono was meant for figures only and
    had crept onto labels and buttons, which is why the screens read as three
    different apps stitched together. */
-.sf, .sf button, .sf input, .sf .q-mark, .sf .q-notme, .sf-mine, .sf-leave, .sf-sbtn,
-.sf-orbit, .sf-line-1, .sf-line-2, .sf .q-kicker, .sf .q-muted{ font-family:var(--sffont); }
-.sf-timer b, .sf .dm, .sf .q-pin-in{ font-family:var(--sfmono); }
+/* This is the authority on faces in here, and it beats anything a component
+   sets on a button or an input: .sf button is more specific than a class on
+   its own, and it sits later in the sheet. Anything that needs the mono face
+   goes on the second line rather than declaring it locally, where the sweep
+   would silently win. q-notme, q-kicker, q-muted, q-orbit and q-pin-in came off
+   the list with the old sign-in markup they belonged to. */
+.sf, .sf button, .sf input, .sf .q-mark, .sf-mine, .sf-leave, .sf-sbtn,
+.sf-line-1, .sf-line-2{ font-family:var(--sffont); }
+.sf-timer b, .sf .dm{ font-family:var(--sfmono); }
 
 /* The queue's own mark, in the queue's own colour, on every screen. */
 .q-mark{ display:inline-flex; align-items:center; gap:9px; margin-bottom:16px;
