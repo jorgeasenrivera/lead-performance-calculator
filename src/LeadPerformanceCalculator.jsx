@@ -344,6 +344,67 @@ const DEFAULT_THRESHOLDS = {
    in that month's stats — is truer month by month but makes the chart's newest
    point disagree with the hero sitting above it, and two numbers for one thing
    is the more expensive kind of wrong. */
+/* ---- Whose numbers belong to a month ----
+   The roster as it stands, plus anyone who has since left but was selling during
+   that month. Somebody who leaves on the 20th sold what they sold, and dropping
+   them the moment they are marked departed takes their cars out of a month that
+   has already happened — the store's total shrinks retroactively for a reason
+   that has nothing to do with the store's month.
+
+   It is also where a half comes from. A split deal is credited in halves, so two
+   people each carry .5 of the same car; drop one of them and the other half is
+   orphaned, and the store total reads 84.5 where it should read 85.
+
+   Ignored names stay out, and that is deliberate rather than an oversight: those
+   are roll-up rows like "Team A" and house accounts, and their units are the SAME
+   units the real salespeople are already credited with. Counting them would
+   double the floor. When one of them has figures, the app says so instead. */
+function monthRoster(data, M, roster) {
+  const out = [...(roster || [])];
+  const have = new Set(out.map((a) => norm(a.name)));
+  const ignored = new Set(((data && data.excluded) || []).map(norm));
+  for (const d of (data && data.departed) || []) {
+    const k = norm(d && d.name);
+    if (!k || have.has(k) || ignored.has(k)) continue;
+    if (!(M && M.stats && M.stats[k])) continue;      // nothing that month: nothing to add
+    out.push({ id: d.id || k, name: d.name, roleId: d.roleId || null, hasLeft: true });
+    have.add(k);
+  }
+  return out;
+}
+
+/* Units a person is credited with in one month, across every channel. */
+const personUnits = (M, name) => {
+  const st = M && M.stats && M.stats[norm(name)];
+  if (!st) return 0;
+  return (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+};
+
+/* ---- Why the total ends in a half ----
+   A half is never a rounding error: it is one side of a split deal. Two partners
+   carry .5 each, so a store's own halves always pair up to whole cars — unless a
+   side is missing, and then the total ends in .5 and nobody can tell why.
+
+   This works out which it is rather than hanging a flag on the number. */
+function halfStory(data, M, roster) {
+  const holders = [];
+  for (const a of roster) {
+    const u = personUnits(M, a.name);
+    if (Math.abs(u - Math.round(u)) > 0.01) holders.push({ name: a.name, units: u, hasLeft: !!a.hasLeft });
+  }
+  // Anyone on the ignore list who nonetheless has figures this month.
+  const counted = new Set(roster.map((a) => norm(a.name)));
+  const ignoredWithUnits = [];
+  for (const n of (data && data.excluded) || []) {
+    if (counted.has(norm(n))) continue;
+    const u = personUnits(M, n);
+    if (u > 0) ignoredWithUnits.push({ name: n, units: u });
+  }
+  const total = roster.reduce((n, a) => n + personUnits(M, a.name), 0);
+  const odd = Math.abs(total - Math.round(total)) > 0.01;
+  return { holders, ignoredWithUnits, odd, total };
+}
+
 function channelRates(M, roster) {
   const rate = (field) => {
     let units = 0, leads = 0, seen = false;
@@ -13104,9 +13165,15 @@ const ruVal = (row, t) => {
 };
 /* Only days that actually carry rows. A store that does not import on a Sunday
    has not had a bad Sunday, and padding the window with zeros would invent one. */
+/* Days with data, newest first — and never TODAY. A round-up read at ten in the
+   morning was comparing a couple of hours of activity against a whole finished
+   day and calling it a collapse; read at six it said something different again.
+   The day of is always partial, so it is never news. Everything here is the story
+   up to the end of yesterday. */
 function ruDays(data, n, skip = 0) {
+  const t = today();
   const all = Object.keys(data.activity || {})
-    .filter((d) => data.activity[d] && Object.keys(data.activity[d]).length > 0)
+    .filter((d) => d < t && data.activity[d] && Object.keys(data.activity[d]).length > 0)
     .sort().reverse();
   return all.slice(skip, skip + n);
 }
@@ -13175,7 +13242,7 @@ function buildDigest(args) {
   const e = ruEvaluate(args);
   const { config, store, data, M } = args;
   const onBoard = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-  const roster = (data.roster || []).filter((a) => a.roleId && onBoard.has(a.roleId));
+  const roster = monthRoster(data, M, (data.roster || []).filter((a) => a.roleId && onBoard.has(a.roleId)));
   const ch = {};
   for (const c of channelRates(M, roster)) {
     if (c.seen) ch[c.id] = { u: +c.units.toFixed(3), l: Math.round(c.leads) };
@@ -13432,7 +13499,13 @@ function RoundUp({ config, store, data, M }) {
               <div className="ru-sheet-head">
                 <p className="ru-eyebrow">Your round-up</p>
                 <div className="ru-sheet-store">{store.name}</div>
-                <div className="ru-sheet-date">{new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}</div>
+                {/* The date the round-up COVERS, not the date it is being read on.
+                    Everything in it stops at the end of yesterday, and a sheet
+                    headed with today's date while reporting yesterday's numbers is
+                    the kind of small lie that costs trust in all the others. */}
+                <div className="ru-sheet-date">
+                  Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+                </div>
               </div>
               {RU_SECTIONS.map((s) => {
                 const items = ru[s.key];
@@ -15250,6 +15323,17 @@ function workingDaysInMonth(monthKey) {
   const cap = (monthKey === t.slice(0, 7)) ? Number(t.slice(8, 10)) : lastDay;
   let n = 0;
   for (let d = 1; d <= cap; d++) if (new Date(y, m - 1, d).getDay() !== 0) n++;
+  return n;
+}
+
+/* Every working day in the month, whether it has happened yet or not. The one
+   above deliberately stops at today, which is right for an average and wrong for
+   a projection — pacing needs the whole month in the denominator. */
+function workingDaysWholeMonth(monthKey) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  let n = 0;
+  for (let d = 1; d <= lastDay; d++) if (new Date(y, m - 1, d).getDay() !== 0) n++;
   return n;
 }
 
@@ -17287,6 +17371,13 @@ function useParallax(ref) {
    nothing writes today. */
 const FLOW_W = 292, FLOW_H = 104, FLOW_PL = 4, FLOW_PR = 10, FLOW_PT = 14, FLOW_PB = 17;
 const FLOW_TOP = 125;                       // 100 = the store's standard for that channel
+/* The scale the all-channel view is read against. 100 is every channel's own
+   target, so the gridlines are shares of it rather than raw percentages. */
+const FLOW_GRID = [
+  { v: 125, label: "125% of target" },
+  { v: 100, label: "TARGET" },
+  { v: 50, label: "half" },
+];
 const flowY = (p) => FLOW_PT + (1 - Math.max(0, Math.min(FLOW_TOP, p)) / FLOW_TOP) * (FLOW_H - FLOW_PT - FLOW_PB);
 const flowX = (i, n, W = FLOW_W) => FLOW_PL + (n <= 1 ? (W - FLOW_PL - FLOW_PR) : i * (W - FLOW_PL - FLOW_PR) / (n - 1));
 
@@ -17340,7 +17431,7 @@ function deliverySeries(data, roster, thr) {
   const months = Object.keys(data.months || {}).sort();
   const rows = [];
   for (const key of months) {
-    const rates = channelRates(data.months[key], roster);
+    const rates = channelRates(data.months[key], monthRoster(data, data.months[key], roster));
     if (!rates.some((r) => r.seen && r.pct != null)) continue;
     rows.push({ key, rates });
   }
@@ -17554,6 +17645,7 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
 /* All three at once, for the sheet the card opens. The flow stops and every line
    draws in together, each direct-labelled. */
 function DeliveryAll({ data, roster, thr, digests }) {
+  const W = useFlowWidth();
   const series = useMemo(() => dailySeries(digests, thr) || deliverySeries(data, roster, thr),
     [data, roster, thr, digests]);
   const daily = !!(series && series[0] && series[0].days);
@@ -17561,6 +17653,26 @@ function DeliveryAll({ data, roster, thr, digests }) {
   const base = flowY(0).toFixed(1);
   const any = series.find((s) => s.pts.length > 0);
   if (!any) return null;
+  /* Two channels running the same share of their targets put their end labels in
+     exactly the same place, and "Showroom 15.5%" printed over "Phone 9.3%" is
+     worse than no label at all. Lay them out top down and push each one clear of
+     the last; a leader line keeps it attached to the point it belongs to. */
+  const LBL_GAP = 11;
+  const ends = [];
+  for (const s of series) {
+    const ps = s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
+    const li = flowLast(ps);
+    if (li < 0) continue;
+    ends.push({ id: s.id, label: s.label, hue: s.hue, ps,
+      lx: flowX(li, ps.length, W), ly: +flowY(ps[li]), pct: s.pts[li].pct });
+  }
+  ends.sort((a2, b2) => a2.ly - b2.ly);
+  let floorY = -Infinity;
+  for (const e of ends) {
+    e.labelY = Math.max(e.ly - 8, floorY + LBL_GAP);
+    floorY = e.labelY;
+  }
+
   return (
     <>
       <div className="flow-legend">
@@ -17569,46 +17681,73 @@ function DeliveryAll({ data, roster, thr, digests }) {
         ))}
       </div>
       {daily && (
-        <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} 1`} aria-hidden="true" style={{ height: 0 }} />
+        <svg className="flow-plot" viewBox={`0 0 ${W} 1`} aria-hidden="true" style={{ height: 0 }} />
       )}
-      <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H + 8}`} role="img"
-        aria-label="All three channels against their targets, by month">
-        <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
-        <line className="flow-rule" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={y100} y2={y100} />
-        <text className="flow-rulelbl" x={FLOW_W - FLOW_PR} y={+y100 - 4} textAnchor="end">TARGET</text>
-        {series.map((s, k) => {
-          const ps = s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
-          const li = flowLast(ps);
-          if (li < 0) return null;
-          const lx = flowX(li, ps.length), ly = flowY(ps[li]);
-          return (
-            <g key={s.id}>
-              <path className="flow-draw" d={flowPath(ps)} fill="none" stroke={s.hue} strokeWidth="2.2"
-                strokeLinecap="round" strokeLinejoin="round"
-                strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8}
-                style={{ animationDelay: k * 180 + "ms" }} />
-              {!daily && ps.map((v, i) => v == null ? null : (
-                <circle key={"p" + i} cx={flowX(i, ps.length).toFixed(1)} cy={flowY(v).toFixed(1)}
-                  r="2.6" fill={s.hue} stroke="#FFF" strokeWidth="1.4" />
-              ))}
-              <circle cx={lx.toFixed(1)} cy={ly.toFixed(1)} r="3.6" fill={s.hue} stroke="#FFF" strokeWidth="2" />
-              <text x={(lx - 6).toFixed(1)} y={(ly - 8).toFixed(1)} textAnchor="end"
-                fontSize="8.5" fontWeight="700" fill={s.hue}>{s.label}</text>
-            </g>
-          );
-        })}
+      <svg className="flow-plot" viewBox={`0 0 ${W} ${FLOW_H + 8}`} role="img"
+        aria-label="All three channels against their own targets, by month">
+        {/* ---- something to read the lines against ----
+            Three channels with three different targets can only share a plot if
+            each is drawn against ITS OWN target, which is what this does: the rule
+            is 100 for all of them, and internet at 20% sits exactly where showroom
+            at 30% does when both are on their number. That is the honest way to
+            put them together, but the chart never said so — one dashed line in an
+            empty field reads as a single shared standard. The scale is now drawn
+            and labelled, so the empty space has meaning. */}
+        {FLOW_GRID.map((g) => (
+          <line key={g.v} className={g.v === 100 ? "flow-rule" : "flow-grid"}
+            x1={FLOW_PL} x2={W - FLOW_PR} y1={flowY(g.v)} y2={flowY(g.v)} />
+        ))}
+        <line className="flow-zero" x1={FLOW_PL} x2={W - FLOW_PR} y1={base} y2={base} />
+        {ends.map((e, k) => (
+          <g key={e.id}>
+            <path className="flow-draw" d={flowPath(e.ps, W)} fill="none" stroke={e.hue} strokeWidth="2.2"
+              strokeLinecap="round" strokeLinejoin="round"
+              strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8}
+              style={{ animationDelay: k * 180 + "ms" }} />
+            {!daily && e.ps.map((v, i) => v == null ? null : (
+              <circle key={"p" + i} cx={flowX(i, e.ps.length, W).toFixed(1)} cy={flowY(v).toFixed(1)}
+                r="2.6" fill={e.hue} stroke="#FFF" strokeWidth="1.4" />
+            ))}
+            <circle cx={e.lx.toFixed(1)} cy={e.ly.toFixed(1)} r="3.6" fill={e.hue} stroke="#FFF" strokeWidth="2" />
+            {/* A leader from the point to its label, because two channels running
+                the same share of their targets sit on top of each other and the
+                labels have had to be pushed apart to stay readable. */}
+            {Math.abs(e.labelY - e.ly) > 1.5 && (
+              <line className="flow-leader" x1={e.lx - 2} y1={e.ly} x2={e.lx - 5} y2={e.labelY - 2.5} stroke={e.hue} />
+            )}
+          </g>
+        ))}
+        {/* Every label paints last, over the lines rather than under them. A halo
+            alone cannot save a label that a line is drawn on top of. */}
+        {FLOW_GRID.map((g) => (
+          <text key={g.v} className="flow-gridlbl" x={FLOW_PL + 1} y={+flowY(g.v) - 2.5}>{g.label}</text>
+        ))}
+        {/* The channel AND the rate it is actually running. Without the real number
+            the line's height is the only thing on offer, and its height is a ratio
+            — "95% of target" is not an answer to "what is internet doing". */}
+        {ends.map((e) => (
+          <text key={e.id} className="flow-endlbl" x={(e.lx - 6).toFixed(1)} y={e.labelY.toFixed(1)}
+            textAnchor="end" fill={e.hue}>
+            {e.label} {e.pct.toFixed(1)}%
+          </text>
+        ))}
         {daily ? <>
           <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowDay(any.days[0])}</text>
-          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
+          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
             {flowDay(any.days[any.days.length - 1])}
           </text>
         </> : any.pts.length > 1 && <>
           <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowMonth(any.pts[0].key)}</text>
-          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
+          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
             {flowMonth(any.pts[any.pts.length - 1].key)}
           </text>
         </>}
       </svg>
+      <p className="flow-scale-note">
+        Height is each channel against <b>its own</b> target, so all three can share one chart —
+        the line marked TARGET is 20% for internet and 30% for showroom alike. The figure on the end
+        of each line is the rate it is actually running.
+      </p>
     </>
   );
 }
@@ -17801,10 +17940,18 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   // pulled in BDC, Service-to-Sales and managers, who also carry delivery stats,
   // which is why the popup read roughly double the Delivery Summary's own totals.
   const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-  const closingRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
+  const closingRoster = monthRoster(data, M, roster.filter((a) => boardRoleIds.has(a.roleId)));
   const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
+  const halves = halfStory(data, M, closingRoster);
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  /* Where the month lands if the rest of it goes like the part that has happened.
+     Held back for the first few working days, when one good or bad morning swings
+     the projection by twenty cars and the number is worse than nothing. */
+  const paceDaysGone = workingDaysElapsed();
+  const paceDaysAll = workingDaysWholeMonth(ym());
+  const pacingUnits = paceDaysGone >= 3 && totalUnits > 0
+    ? (totalUnits / paceDaysGone) * paceDaysAll : null;
 
   /* New against used, off the Delivery Summary's vehicle rows. Those rows were
      discarded by the parser until now, so a month imported before that change has
@@ -17919,6 +18066,40 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               )}
             </div>
             <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
+            {pacingUnits != null && (
+              <div className="hp-pace">
+                Pacing <b>{Math.round(pacingUnits)}</b> for the month
+                <span className="hp-pace-sub">
+                  {fmtNum(totalUnits)} in {paceDaysGone} working {paceDaysGone === 1 ? "day" : "days"}, across {paceDaysAll}
+                </span>
+              </div>
+            )}
+
+            {/* A half is one side of a split deal, never a rounding error — so say
+                which side and whose, rather than hanging a flag on the number and
+                leaving a manager to work it out. */}
+            {(halves.odd || halves.ignoredWithUnits.length > 0) && (
+              <div className="hp-why">
+                {halves.odd && (
+                  <div className="hp-why-line">
+                    <b>The .5 is half of a split deal.</b>{" "}
+                    {halves.holders.length === 0
+                      ? "No one here is carrying a half, so the other side of it belongs to a name this store is not counting."
+                      : <>Carried by {halves.holders.map((h) => h.name + (h.hasLeft ? " (left)" : "")).join(", ")}
+                        {halves.holders.length % 2 === 1
+                          ? ". An odd number of halves means one side of a split is not counted here — the partner is either on the ignore list below or works at another store."
+                          : ". Those pair up, so the odd half is on a name this store is not counting."}</>}
+                  </div>
+                )}
+                {halves.ignoredWithUnits.map((x) => (
+                  <div className="hp-why-line" key={x.name}>
+                    <b>{x.name}</b> has {fmtNum(x.units)} {x.units === 1 ? "unit" : "units"} this month and is on the
+                    ignore list, so they are not in the total. If that is a person rather than a roll-up row, mark them
+                    departed instead and their figures come back.
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* New against used. Sits under the channel rows because it cuts the same
                 units a second way rather than adding more of them. */}
@@ -19966,6 +20147,16 @@ function Style() {
         font-size:11.5px; color:var(--ink-2); }
       .hp-total b { font-family:var(--font-display); font-size:15px; color:var(--ink);
         letter-spacing:-.02em; margin-right:4px; }
+      /* Where the month lands, directly under where it stands. Quieter than the
+         total: it is a projection, and it should not read like a fact. */
+      .hp-pace { margin-top:5px; font-size:11.5px; color:var(--ink-2); }
+      .hp-pace b { font-family:var(--font-display); font-size:14px; color:var(--ink);
+        letter-spacing:-.02em; margin:0 3px; }
+      .hp-pace-sub { display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px; }
+      .hp-why { margin-top:8px; padding-top:8px; border-top:1px solid rgba(0,0,0,.07);
+        display:flex; flex-direction:column; gap:6px; }
+      .hp-why-line { font-size:10.5px; line-height:1.45; color:var(--ink-2); }
+      .hp-why-line b { color:var(--ink); font-weight:700; }
       /* new vs used: one bar, because the two halves are shares of the same total
          and reading them as a split is the whole point of showing them */
       .hp-mix { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
@@ -22764,6 +22955,18 @@ function Style() {
       .flow-week { stroke:rgba(16,32,52,.09); stroke-width:1; }
       .flow-month { stroke:rgba(16,32,52,.22); stroke-width:1; stroke-dasharray:2 2; }
       .flow-monthlbl { font-size:7.5px; font-weight:700; fill:var(--ink-3); }
+      /* The all-channel view's scale. Quiet enough to sit behind three lines, present
+         enough that the space between them means something. */
+      .flow-grid { stroke:rgba(16,32,52,.10); stroke-width:1; stroke-dasharray:2 3; }
+      /* The halo is what lets a scale label sit at the left edge, where the lines
+         also start, without either one becoming unreadable. */
+      .flow-gridlbl { font-size:6.5px; font-weight:700; fill:var(--ink-3); letter-spacing:.04em;
+        stroke:var(--card, #fff); stroke-width:2.4; paint-order:stroke fill; }
+      .flow-endlbl { font-size:8.5px; font-weight:700;
+        stroke:var(--card, #fff); stroke-width:2.6; paint-order:stroke fill; }
+      .flow-leader { stroke-width:1; opacity:.55; }
+      .flow-scale-note { font-size:11px; line-height:1.5; color:var(--ink-2); margin-top:8px; }
+      .flow-scale-note b { color:var(--ink); font-weight:700; }
       .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
       /* Once the card is wider than the chart wants to be, the chart moves beside
          the read-out rather than under it — otherwise capping its width leaves a
