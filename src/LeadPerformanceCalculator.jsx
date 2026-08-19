@@ -17288,16 +17288,44 @@ function useParallax(ref) {
 const FLOW_W = 292, FLOW_H = 104, FLOW_PL = 4, FLOW_PR = 10, FLOW_PT = 14, FLOW_PB = 17;
 const FLOW_TOP = 125;                       // 100 = the store's standard for that channel
 const flowY = (p) => FLOW_PT + (1 - Math.max(0, Math.min(FLOW_TOP, p)) / FLOW_TOP) * (FLOW_H - FLOW_PT - FLOW_PB);
-const flowX = (i, n) => FLOW_PL + (n <= 1 ? (FLOW_W - FLOW_PL - FLOW_PR) : i * (FLOW_W - FLOW_PL - FLOW_PR) / (n - 1));
+const flowX = (i, n, W = FLOW_W) => FLOW_PL + (n <= 1 ? (W - FLOW_PL - FLOW_PR) : i * (W - FLOW_PL - FLOW_PR) / (n - 1));
+
+/* ---- How wide the chart is DRAWN ----
+   Everything inside this plot is measured in the viewBox's own units — strokes,
+   dashes, dot radii, label type — so its on-screen size is the user unit times
+   (rendered width / viewBox width), and nothing else. Which means the plot cannot
+   simply be made wider on a desktop: at a fixed 292-unit box, a wider render
+   inflates the type and the linework by exactly the same factor, which is where
+   "oversized and laggy" came from the first time.
+
+   So a desktop draws a WIDER BOX at the same density instead: more chart, same
+   sized labels. A phone keeps the box it was designed at, which is the size it
+   already reads perfectly at. */
+const FLOW_W_WIDE = 430;
+function useFlowWidth() {
+  const [wide, setWide] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia
+      ? window.matchMedia("(min-width: 780px)").matches : false);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(min-width: 780px)");
+    const on = (e) => setWide(e.matches);
+    setWide(mq.matches);
+    // addListener is the old spelling; still the only one on older iOS Safari.
+    if (mq.addEventListener) { mq.addEventListener("change", on); return () => mq.removeEventListener("change", on); }
+    mq.addListener(on); return () => mq.removeListener(on);
+  }, []);
+  return wide ? FLOW_W_WIDE : FLOW_W;
+}
 /* A null is a month with no numbers for this channel, not a month of zero. The
    x positions still come from the month's index, so a gap keeps its place and the
    three channels in the all-view stay aligned month for month — the line simply
    connects across it instead of diving to the floor and inventing a collapse. */
-const flowPath = (ps) => {
+const flowPath = (ps, W = FLOW_W) => {
   let d = "", started = false;
   ps.forEach((p, i) => {
     if (p == null) return;
-    d += (started ? " L" : "M") + flowX(i, ps.length).toFixed(1) + " " + flowY(p).toFixed(1);
+    d += (started ? " L" : "M") + flowX(i, ps.length, W).toFixed(1) + " " + flowY(p).toFixed(1);
     started = true;
   });
   return d;
@@ -17410,6 +17438,9 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
     return () => { clearTimeout(timer.current); cancelAnimationFrame(raf.current); };
   }, [live.length, idx]);
 
+  // Called before the early return below, so the hook order never changes.
+  const W = useFlowWidth();
+
   if (!cur || cur.pts.length === 0) return null;
 
   /* The colour and the readout have to change on the SAME frame. Swapping the
@@ -17427,14 +17458,14 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
   const lastI = flowLast(shown.pts.map((p) => (p.pct == null ? null : p.pct)));
   const lastPct = lastI < 0 ? null : shown.pts[lastI].pct;
   const above = lastPct != null && lastPct / shown.target * 100 > 100;
-  const d = flowPath(pts);
+  const d = flowPath(pts, W);
   const y100 = flowY(100).toFixed(1);
   const base = flowY(0).toFixed(1);
   const eI = flowLast(pts), sI = flowFirst(pts);
-  const endX = eI < 0 ? FLOW_PL : flowX(eI, pts.length);
+  const endX = eI < 0 ? FLOW_PL : flowX(eI, pts.length, W);
   const endY = eI < 0 ? +base : flowY(pts[eI]);
   const area = eI < 0 ? "" :
-    `${d} L ${endX.toFixed(1)} ${base} L ${flowX(sI, pts.length).toFixed(1)} ${base} Z`;
+    `${d} L ${endX.toFixed(1)} ${base} L ${flowX(sI, pts.length, W).toFixed(1)} ${base} Z`;
 
   return (
     <button className="flowcard" onClick={onOpen}>
@@ -17463,15 +17494,15 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
           <span className="flow-above"><PixIcon glyph="check" size={11} />Above target</span>
         )}
       </div>
-      <svg className="flow-plot" viewBox={`0 0 ${FLOW_W} ${FLOW_H}`} role="img"
+      <svg className="flow-plot" viewBox={`0 0 ${W} ${FLOW_H}`} role="img"
         aria-label={`${shown.label} delivery against its ${shown.target}% target, by month`}>
         <defs>
           {/* only the part of the fill that sits over the rule gets the green */}
-          <clipPath id="flow-above"><rect x="0" y="0" width={FLOW_W} height={y100} /></clipPath>
+          <clipPath id="flow-above"><rect x="0" y="0" width={W} height={y100} /></clipPath>
         </defs>
-        <line className="flow-zero" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={base} y2={base} />
-        <line className="flow-rule" x1={FLOW_PL} x2={FLOW_W - FLOW_PR} y1={y100} y2={y100} />
-        <text className="flow-rulelbl" x={FLOW_W - FLOW_PR} y={+y100 - 4} textAnchor="end">
+        <line className="flow-zero" x1={FLOW_PL} x2={W - FLOW_PR} y1={base} y2={base} />
+        <line className="flow-rule" x1={FLOW_PL} x2={W - FLOW_PR} y1={y100} y2={y100} />
+        <text className="flow-rulelbl" x={W - FLOW_PR} y={+y100 - 4} textAnchor="end">
           TARGET {shown.target}%
         </text>
         {area && <path d={area} fill={shown.hue} opacity=".10" />}
@@ -17484,28 +17515,28 @@ function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
           strokeLinecap="round" strokeLinejoin="round"
           strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8} />
         {!daily && pts.map((v, i) => v == null ? null : (
-          <circle key={"p" + i} cx={flowX(i, pts.length).toFixed(1)} cy={flowY(v).toFixed(1)}
+          <circle key={"p" + i} cx={flowX(i, pts.length, W).toFixed(1)} cy={flowY(v).toFixed(1)}
             r="3" fill={shown.hue} stroke="#FFF" strokeWidth="1.5" />
         ))}
         {eI >= 0 && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill={shown.hue} stroke="#FFF" strokeWidth="2.5" />}
         {eI >= 0 && above && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="9" fill="none" stroke="#1E8F45" strokeWidth="2" opacity=".9" />}
         {daily && flowMarks(shown.days).map((m) => (
           <line key={"m" + m.i} className={m.kind === "month" ? "flow-month" : "flow-week"}
-            x1={flowX(m.i, shown.days.length)} x2={flowX(m.i, shown.days.length)}
+            x1={flowX(m.i, shown.days.length, W)} x2={flowX(m.i, shown.days.length, W)}
             y1={FLOW_PT - 4} y2={base} />
         ))}
         {daily ? <>
           <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowDay(shown.days[0])}</text>
           {flowMarks(shown.days).filter((m) => m.kind === "month").map((m) => (
             <text key={"ml" + m.i} className="flow-axis flow-monthlbl"
-              x={flowX(m.i, shown.days.length) + 3} y={FLOW_PT + 4}>{m.label}</text>
+              x={flowX(m.i, shown.days.length, W) + 3} y={FLOW_PT + 4}>{m.label}</text>
           ))}
-          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
+          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
             {flowDay(shown.days[shown.days.length - 1])}
           </text>
         </> : shown.pts.length > 1 && <>
           <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowMonth(shown.pts[0].key)}</text>
-          <text className="flow-axis" x={FLOW_W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
+          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
             {flowMonth(shown.pts[shown.pts.length - 1].key)}
           </text>
         </>}
@@ -22740,12 +22771,15 @@ function Style() {
       @media (min-width: 780px) {
         .flowcard {
           display:grid; column-gap:28px; align-items:start;
-          grid-template-columns:minmax(0,1fr) minmax(0,400px);
+          grid-template-columns:minmax(0,1fr) minmax(0,590px);
           grid-template-areas:"head plot" "read plot" "note note";
         }
         .flow-head { grid-area:head; }
         .flow-read { grid-area:read; }
-        .flow-plot { grid-area:plot; max-width:400px; margin:0 0 0 auto; align-self:center; }
+        /* 430 units rendered at up to 590px is the same density the phone reads at
+           (292 units at ~330px), so this is a bigger chart rather than a magnified
+           one — the labels and linework stay the size they already were. */
+        .flow-plot { grid-area:plot; max-width:590px; margin:0 0 0 auto; align-self:center; }
         .flow-note { grid-area:note; }
       }
       .flow-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:10.5px; color:var(--ink-2); }
