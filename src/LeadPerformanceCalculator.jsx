@@ -2017,19 +2017,43 @@ function mergeAgainstServer(next, serverCopy) {
            is a decision somebody made, and no stale copy should be able to reverse
            it by simply not knowing about it. */
         {
+          /* Bringing somebody back was the same trap as un-ignoring a name: the
+             union re-added them from the server copy, they came off the roster
+             again on the next merge, and no amount of clicking could reverse it.
+             A return to the floor is a decision with a time on it. */
+          next.returned = mergeTombstones(next.returned, serverCopy.returned);
           const byName = new Map();
           for (const d of [...(serverCopy.departed || []), ...(next.departed || [])]) {
-            if (d && d.name) byName.set(norm(d.name), d);
+            // Same rule, and the departure record already carries its own time: they
+            // are gone unless they were brought back after they left.
+            if (d && d.name && !((next.returned[norm(d.name)] || "") > (d.at || ""))) byName.set(norm(d.name), d);
           }
           next.departed = [...byName.values()];
           const gone = new Set(byName.keys());
 
           /* Ignored names are a decision too, and they are a union for the same
              reason departures are: an older tab that has never heard of the
-             decision must not be able to reverse it by simply not knowing. */
-          const ignored = new Set([...(next.excluded || []), ...(serverCopy.excluded || [])].map(norm));
-          next.excluded = [...new Set([...(next.excluded || []), ...(serverCopy.excluded || [])]
-            .filter((x, i, arr) => arr.findIndex((y) => norm(y) === norm(x)) === i))];
+             decision must not be able to reverse it by simply not knowing.
+
+             But a union alone can only ever ADD, which made taking a name back off
+             the ignore list impossible: the save arrived without the name, the
+             server copy still had it, and the union put it straight back — every
+             time, on every browser. Undoing is a decision as well, so it is
+             recorded as one and the union subtracts it. Re-ignoring the same name
+             lifts the mark, which is what makes the pair work in both directions
+             however many times somebody changes their mind. */
+          next.ignoredAt = mergeTombstones(next.ignoredAt, serverCopy.ignoredAt);
+          next.unignored = mergeTombstones(next.unignored, serverCopy.unignored);
+          /* Which of the two decisions was made last. Deleting the other one instead
+             would not survive its own merge — the other browser still holds it and
+             the union puts it back, which is the same trap one level up. A name with
+             no stamps at all predates this and stays ignored, which is what it has
+             always done. */
+          const onList = (n) => !((next.unignored[norm(n)] || "") > (next.ignoredAt[norm(n)] || ""));
+          next.excluded = [...(next.excluded || []), ...(serverCopy.excluded || [])]
+            .filter((x, i, arr) => arr.findIndex((y) => norm(y) === norm(x)) === i)
+            .filter(onList);
+          const ignored = new Set(next.excluded.map(norm));
 
           const roster = [...(next.roster || [])];
           const have = new Set(roster.map((a) => norm(a.name)));
@@ -2307,6 +2331,9 @@ function undoDeparted(data, name) {
   const next = JSON.parse(JSON.stringify(data));
   const rec = (next.departed || []).find((x) => norm(x.name) === norm(name));
   next.departed = (next.departed || []).filter((x) => norm(x.name) !== norm(name));
+  // Recorded, for the same reason a removal from the ignore list is: every other
+  // browser still has them on the departed list.
+  next.returned = { ...(next.returned || {}), [norm(name)]: new Date().toISOString() };
   if (rec && !(next.roster || []).some((x) => norm(x.name) === norm(name))) {
     next.roster = [...(next.roster || []), { id: rec.id || uid(), name: rec.name, roleId: rec.roleId || null, order: (next.roster || []).length }];
   }
@@ -18740,13 +18767,20 @@ function RosterEditor({ config, data, onChange, userName }) {
     const next = JSON.parse(JSON.stringify(data));
     next.excluded = [...(next.excluded || [])];
     if (!next.excluded.some((x) => norm(x) === norm(n))) next.excluded.push(n);
+    // Stamped, so ignoring a name again outranks any earlier decision to free it.
+    // Deleting that earlier record instead would not survive the merge.
+    next.ignoredAt = { ...(next.ignoredAt || {}), [norm(n)]: new Date().toISOString() };
     next.roster = (next.roster || []).filter((a) => norm(a.name) !== norm(n));
     setExcl("");
     onChange(next, { action: "Excluded name from imports", detail: n });
   };
   const removeExcluded = (n) => {
     const next = JSON.parse(JSON.stringify(data));
-    next.excluded = (next.excluded || []).filter((x) => x !== n);
+    next.excluded = (next.excluded || []).filter((x) => norm(x) !== norm(n));
+    /* Taking a name off this list has to be recorded, not just left absent. Every
+       other browser still holds it, and an absence is indistinguishable from never
+       having heard of it — which is why the name always came back. */
+    next.unignored = { ...(next.unignored || {}), [norm(n)]: new Date().toISOString() };
     onChange(next, { action: "Stopped excluding name", detail: n });
   };
 
@@ -19926,8 +19960,8 @@ function Style() {
       /* ---- the "why, and who" row ---- */
       .hero-focus { position:relative; z-index:200; display:grid; grid-template-columns: minmax(250px, 330px) 1fr; gap:18px; margin-top:18px;
         animation: tileIn .5s var(--spring) .32s both; }
-      .hf-block { position:relative; background:rgba(255,255,255,.62); border:1px solid rgba(255,255,255,.75); border-radius:16px;
-        padding:19px 22px; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
+      .hf-block { position:relative; background:rgba(255,255,255,.74); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+        padding:19px 22px;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07); }
       .hf-cap { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:.11em; color:var(--ink-3); }
       .hf-metric { font-family:var(--font-display); font-size:15px; font-weight:700; letter-spacing:-.02em; margin-top:6px; }
@@ -20028,29 +20062,42 @@ function Style() {
       /* ---- the living backdrop ---- */
       .bg-live { position:fixed; inset:-25%; z-index:-2; pointer-events:none;
         transform: translate3d(0, var(--bgy, 0px), 0); }
+      /* The colours carry their own saturation rather than a filter doing it. Even a
+         STATIC filter on this layer costs a full re-filter on every raster, because
+         the layer is being transformed every frame — measured, it halves the frame
+         rate on its own. */
       .bg-live-inner { position:absolute; inset:0;
         background:
-          radial-gradient(26% 28% at 24% 22%, rgba(122,79,155,.26), transparent 70%),
-          radial-gradient(24% 26% at 78% 56%, rgba(0,168,150,.26), transparent 70%),
-          radial-gradient(22% 24% at 48% 92%, rgba(255,159,10,.20), transparent 72%),
-          radial-gradient(20% 22% at 88% 16%, rgba(42,94,155,.22), transparent 72%),
-          radial-gradient(18% 20% at 8% 70%, rgba(193,215,48,.18), transparent 74%);
-        opacity:.5; animation: bgMorph 26s ease-in-out infinite alternate;
+          radial-gradient(26% 28% at 24% 22%, rgba(122,79,155,.31), transparent 70%),
+          radial-gradient(24% 26% at 78% 56%, rgba(0,168,150,.31), transparent 70%),
+          radial-gradient(22% 24% at 48% 92%, rgba(255,159,10,.24), transparent 72%),
+          radial-gradient(20% 22% at 88% 16%, rgba(42,94,155,.26), transparent 72%),
+          radial-gradient(18% 20% at 8% 70%, rgba(193,215,48,.22), transparent 74%);
+        opacity:.5; animation: bgMorph 16s ease-in-out infinite alternate;
         transition: opacity 1.4s var(--ease); }
-      /* Sitting on one view lets the colours travel much further and faster;
-         scrolling already supplies plenty of motion on its own. */
-      .bg-idle .bg-live-inner { animation-duration: 7s; opacity:.95; }
+      /* Sitting on one view brings the colour up. It used to change the animation's
+         DURATION as well, and that is what made the backdrop visibly CLICK every
+         time you stopped scrolling: a running animation keeps its elapsed time, not
+         its position, so cutting 26s to 7s teleports it to wherever 7s-worth of
+         elapsed time lands — sometimes most of a cycle backwards, mid-scale and
+         mid-rotation. Opacity is the one thing that can change here, because it
+         transitions from where it actually is. */
+      .bg-idle .bg-live-inner { opacity:.95; }
+      /* Transform only. This layer covers the whole viewport, so an animated
+         hue-rotate/saturate on it is a per-pixel shader pass over every frame the
+         app ever draws — with the frosted surfaces on top re-blurring against a
+         backdrop that never holds still, it was costing roughly two thirds of the
+         frame budget on its own. The saturation is now a constant on the layer. */
       @keyframes bgMorph {
-        0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); filter:hue-rotate(0deg) saturate(1); }
-        50%  { transform: translate3d(-2%,3%,0) scale(1.14) rotate(-6deg); filter:hue-rotate(120deg) saturate(1.25); }
-        100% { transform: translate3d(4%,-5%,0) scale(1.28) rotate(11deg); filter:hue-rotate(255deg) saturate(1.1); }
+        0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); }
+        50%  { transform: translate3d(-2%,3%,0) scale(1.14) rotate(-6deg); }
+        100% { transform: translate3d(4%,-5%,0) scale(1.28) rotate(11deg); }
       }
 
       .hero-tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(134px, 1fr)); gap:14px; margin-top:16px; }
       .tile { position:relative; overflow:hidden;
-        background: rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.75); border-radius:16px;
+        background: rgba(255,255,255,.74); border:1px solid rgba(255,255,255,.75); border-radius:16px;
         padding:17px 19px 17px 22px;
-        backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%);
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 6px 18px rgba(31,54,86,.07);
         transition: transform .3s var(--spring), box-shadow .3s var(--spring);
         animation: tileIn .5s var(--spring) both;
@@ -21614,7 +21661,9 @@ function Style() {
 
       /* No backdrop-filter here. A fixed, blurred element is a permanently compositing
          layer, which is a lot to pay for a version badge, and it fed the scroll shift. */
-      .version-stamp { position:fixed; right:14px; bottom:12px; z-index:20; pointer-events:none;
+      /* Left of the help button, not under it: the button is fixed at right:18px and
+         46px wide, so a stamp in the same corner sat behind it. */
+      .version-stamp { position:fixed; right:74px; bottom:16px; z-index:20; pointer-events:none;
         font-size:10.5px; font-weight:600; letter-spacing:.06em; color:var(--ink-3);
         background:#F0F2F5; border:1px solid rgba(0,0,0,.06);
         padding:4px 9px; border-radius:20px;
@@ -21634,8 +21683,21 @@ function Style() {
         background:rgba(0,0,0,.05); padding:1px 6px; border-radius:99px; font-family:var(--font-mono); }
       .dupe-tag { display:inline-block; margin-left:8px; font-size:10px; font-weight:800; text-transform:uppercase;
         letter-spacing:.04em; background:rgba(229,71,60,.13); color:#C13529; padding:1px 7px; border-radius:99px; }
-      .card { background: rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
-        padding:22px 24px; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+      /* ---- Frosting, and where it is worth paying for ----
+         backdrop-filter re-blurs whatever is behind an element every time either
+         one moves, and the living backdrop behind these never stops moving — so the
+         blur can never be cached, and a page carrying two dozen cards was re-running
+         it two dozen times a frame. Measured on this stylesheet, the repeated
+         content surfaces alone were most of the cost of a scroll.
+
+         What is behind them is a soft gradient, and the blur of a soft gradient is
+         very nearly the gradient — so these keep the translucency, lose the blur,
+         and carry a little more white to land in the same place. The frosted chrome
+         (top bar, bottom bar, modals, drawers) keeps its real blur: there are only
+         ever a few of those on screen, and they sit over CONTENT, where the blur is
+         doing visible work. */
+      .card { background: rgba(255,255,255,.72); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
+        padding:22px 24px;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
         margin-bottom:20px;
         transition: opacity .8s var(--ease), transform .8s var(--ease), box-shadow .4s var(--ease); }
@@ -21655,8 +21717,8 @@ function Style() {
 
       /* ---- login ---- */
       .login { display:flex; justify-content:center; padding:80px 20px; }
-      .login-card { background:rgba(255,255,255,.6); border:1px solid rgba(255,255,255,.75); border-radius:24px; padding:36px 32px; width:360px;
-        text-align:center; backdrop-filter: blur(30px) saturate(170%); -webkit-backdrop-filter: blur(30px) saturate(170%);
+      .login-card { background:rgba(255,255,255,.74); border:1px solid rgba(255,255,255,.75); border-radius:24px; padding:36px 32px; width:360px;
+        text-align:center;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.9), var(--shadow-2); animation: loginIn .5s var(--spring); }
       @keyframes loginIn { from { opacity:0; transform: translateY(16px) scale(.97); } to { opacity:1; transform:none; } }
       /* Signing in: the form and the card chrome gracefully fade out, leaving just the
@@ -21888,7 +21950,7 @@ function Style() {
       .search-input { text-align:center; }
       .search-input::placeholder { text-align:center; }
       .search-input { width:100%; padding:11px 38px; border-radius:12px; background:rgba(255,255,255,.7);
-        border:1px solid rgba(255,255,255,.8); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+        border:1px solid rgba(255,255,255,.8); }
       .search-clear { position:absolute; right:10px; top:50%; transform:translateY(-50%); border:none; background:rgba(118,118,128,.2);
         color:var(--ink-2); width:22px; height:22px; border-radius:50%; cursor:pointer; font-size:11px; }
       .search-count { margin:-8px 0 12px 4px; }
@@ -22587,8 +22649,8 @@ function Style() {
 
       /* ---- admin ---- */
       .store-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; margin-bottom:28px; }
-      .store-card { text-align:left; background:rgba(255,255,255,.58); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
-        padding:18px; cursor:pointer; backdrop-filter: blur(26px) saturate(170%); -webkit-backdrop-filter: blur(26px) saturate(170%);
+      .store-card { text-align:left; background:rgba(255,255,255,.72); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
+        padding:18px; cursor:pointer;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), var(--shadow-1); transition: box-shadow .3s var(--spring), transform .3s var(--spring); }
       .store-card:hover { box-shadow:var(--shadow-2); transform: translateY(-3px); }
       .store-card:active { transform: translateY(-1px) scale(.99); }
