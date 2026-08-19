@@ -3940,29 +3940,42 @@ function LEADERBOARD_HTML(p) {
      exactly the part of the move they exist for. A fade lets the convoy cross the
      middle of the screen where it can be seen, and a fade is not a cut. */
   .handoff { position:fixed; inset:0; z-index:60; pointer-events:none; overflow:hidden; }
+  /* ---- The convoy's clock ----
+     One variable so the veil, the road, the name and the cars can never drift out
+     of step with each other, and so the whole hand-over can be lengthened by
+     changing a single number. Slow on purpose: this is the one moment the board
+     asks to be watched, and at 1.6s it was over before anybody looked up. */
+  .handoff { --ho: 3.4s; }
   .ho-veil {
     position:absolute; inset:0; background:rgba(9,20,34,.93);
-    animation:hoVeil 1.6s linear both;
+    animation:hoVeil var(--ho) linear both;
   }
-  @keyframes hoVeil { 0% { opacity:0 } 20%, 66% { opacity:1 } 100% { opacity:0 } }
+  /* Longer at full strength than before, and eased in and out rather than cut in
+     at a fixed frame — the veil is what hides the swap, so the moment it covers is
+     the moment there is room to work in. */
+  @keyframes hoVeil { 0% { opacity:0 } 14%, 74% { opacity:1 } 100% { opacity:0 } }
   /* a low band of light the convoy travels along, so it reads as a road rather
      than as icons floating on a dark screen */
   .ho-road {
     position:absolute; left:0; right:0; top:0; bottom:0;
     background:linear-gradient(180deg, transparent 6%, rgba(193,215,48,.05) 34%,
       rgba(193,215,48,.09) 50%, rgba(193,215,48,.05) 66%, transparent 94%);
-    animation:hoVeil 1.6s linear both;
+    animation:hoVeil var(--ho) linear both;
   }
+  /* Each car carries its own duration: the big ones in the near lanes cross
+     faster than the small ones further off, which is what a road actually looks
+     like from the side. All of them stay linear — a car that eases into and out
+     of its own speed reads as a slide, not as traffic. */
   .ho-car {
-    position:absolute; top:var(--lane); left:-22vw; width:var(--sz); height:var(--sz);
-    color:#C1D730;
+    position:absolute; top:var(--lane); left:-24vw; width:var(--sz); height:var(--sz);
+    color:#C1D730; opacity:var(--fade, 1);
     filter:drop-shadow(0 0 1.2vh rgba(193,215,48,.55)) drop-shadow(0 0 4vh rgba(193,215,48,.22));
-    animation:hoDrive 1.6s linear var(--dly) both;
+    animation:hoDrive var(--dur, 3s) linear var(--dly) both;
   }
   /* .pix9 sets width:1em and is defined later in this sheet, so the car needs a
      selector that outranks it rather than a bare class of its own. */
   .ho-car > svg { width:100%; height:100%; display:block; }
-  @keyframes hoDrive { from { transform:translateX(0) } to { transform:translateX(148vw) } }
+  @keyframes hoDrive { from { transform:translateX(0) } to { transform:translateX(152vw) } }
   .ho-name {
     position:absolute; top:50%; left:50%; width:76vw; margin-left:-38vw;
     text-align:center; white-space:nowrap;
@@ -3972,22 +3985,25 @@ function LEADERBOARD_HTML(p) {
        whatever it happens to inherit. */
     font-size:calc(5.6vh * var(--tscale, 1)); color:#F4F9FF;
     text-shadow:0 .4vh 3.4vh rgba(0,0,0,.85);
-    animation:hoName 1.6s cubic-bezier(.34,0,.34,1) both;
+    animation:hoName var(--ho) cubic-bezier(.32,0,.30,1) both;
   }
   .ho-name .ho-to {
     display:block; font-size:calc(1.5vh * var(--tscale, 1)); letter-spacing:.18em;
     text-transform:uppercase; color:#C1D730; margin-bottom:.8vh; font-weight:700;
   }
+  /* The name rides in with the convoy, then holds still in the middle for a beat
+     — long enough to actually be read, which is the point of putting it there. */
   @keyframes hoName {
-    0%       { transform:translate(-46vw,-50%); opacity:0 }
-    28%, 64% { transform:translate(0,-50%);     opacity:1 }
-    100%     { transform:translate(46vw,-50%);  opacity:0 }
+    0%       { transform:translate(-46vw,-50%) scale(.94); opacity:0 }
+    26%      { transform:translate(0,-50%)     scale(1);   opacity:1 }
+    68%      { transform:translate(0,-50%)     scale(1);   opacity:1 }
+    100%     { transform:translate(46vw,-50%)  scale(.96); opacity:0 }
   }
   /* the board steps aside and comes back from the other side, under the veil */
-  #root.drive-out { animation:boardOut .6s cubic-bezier(.5,0,.85,.4) both; }
-  #root.drive-in  { animation:boardIn .75s cubic-bezier(.16,.72,.28,1) both; }
-  @keyframes boardOut { to { transform:translateX(-7vw); opacity:0; } }
-  @keyframes boardIn { from { transform:translateX(7vw); opacity:0; } }
+  #root.drive-out { animation:boardOut 1s cubic-bezier(.5,0,.85,.4) both; }
+  #root.drive-in  { animation:boardIn 1.15s cubic-bezier(.16,.72,.28,1) both; }
+  @keyframes boardOut { to { transform:translateX(-8vw); opacity:0; } }
+  @keyframes boardIn { from { transform:translateX(8vw); opacity:0; } }
   @media (prefers-reduced-motion: reduce) {
     .ho-car, .ho-road { display:none }
     #root.drive-out, #root.drive-in { animation-duration:.35s }
@@ -5072,12 +5088,24 @@ function LEADERBOARD_HTML(p) {
   function driveTo(label, swap){
     var lane = document.createElement('div');
     lane.className = 'handoff';
-    /* Lane, size and a small head start each: five cars leaving together on one
-       timing reads as a graphic, five leaving a beat apart reads as traffic. */
-    var lanes = [[13, 6.4, 0], [29, 8.2, .09], [46, 5.6, .04], [63, 7.4, .13], [80, 6.0, .07]];
+    /* Lane, size, head start, speed and weight: cars leaving together on one
+       timing read as a graphic, cars leaving a beat apart read as traffic — and
+       cars crossing at DIFFERENT speeds read as distance. The near lanes are big,
+       bright and quick; the far ones are small, dimmer and slower, which is what
+       gives the hand-over depth rather than a row of icons sliding past.
+       [ lane vh, size vh, delay s, duration s, opacity ] */
+    var lanes = [
+      [10, 5.2, .10, 3.5, .55],
+      [21, 7.0, .02, 3.0, .80],
+      [33, 9.2, .16, 2.5, 1],
+      [45, 5.8, .30, 3.3, .62],
+      [57, 8.2, .08, 2.7, .95],
+      [70, 6.2, .22, 3.2, .70],
+      [82, 9.6, .00, 2.4, 1],
+    ];
     var cars = lanes.map(function(l){
-      return '<span class="ho-car" style="--lane:' + l[0] + 'vh; --sz:' + l[1] + 'vh; --dly:' + l[2] + 's">'
-        + pix('car', '', 1) + '</span>';
+      return '<span class="ho-car" style="--lane:' + l[0] + 'vh; --sz:' + l[1] + 'vh; --dly:' + l[2]
+        + 's; --dur:' + l[3] + 's; --fade:' + l[4] + '">' + pix('car', '', 1) + '</span>';
     }).join('');
     lane.innerHTML = '<div class="ho-veil"></div><div class="ho-road"></div>' + cars
       + '<div class="ho-name"><span class="ho-to">Now showing</span>' + label + '</div>';
@@ -5085,15 +5113,17 @@ function LEADERBOARD_HTML(p) {
 
     var root = document.getElementById('root');
     if (root) root.classList.add('drive-out');
-    /* Swapped behind the convoy, not before it: at 560ms the cars and their glow
-       are across the middle of the screen, which is what hides the change. */
+    /* Swapped behind the convoy, not before it: the veil is at full strength from
+       roughly 480ms to 2.5s of a 3.4s hand-over, and the swap sits in the middle of
+       that window with room on both sides. These three numbers are the CSS clock
+       read back — if --ho changes, they change with it. */
     setTimeout(function(){
       swap();
       var r = document.getElementById('root');
       if (r) { r.classList.remove('drive-out'); r.classList.add('drive-in');
-        setTimeout(function(){ r.classList.remove('drive-in'); }, 720); }
-    }, 620);
-    setTimeout(function(){ lane.remove(); HANDING = false; }, 1750);
+        setTimeout(function(){ r.classList.remove('drive-in'); }, 1150); }
+    }, 1250);
+    setTimeout(function(){ lane.remove(); HANDING = false; }, 3600);
   }
 
   async function nextStore(){
@@ -17944,6 +17974,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const halves = halfStory(data, M, closingRoster);
+
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
   /* Where the month lands if the rest of it goes like the part that has happened.
      Held back for the first few working days, when one good or bad morning swings
@@ -17973,6 +18004,31 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const thr = normThresholds(store.thresholds);
   const chanTone = (id, v) => v == null ? "dim"
     : v * 100 >= thr[id].green ? "g" : v * 100 >= thr[id].yellow ? "y" : "r";
+  /* ---- The store's own closing rate ----
+     Every opportunity the floor worked, against every car it delivered from them.
+     Pooled rather than averaged: the mean of three percentages would let a channel
+     with nine leads count as much as one with four hundred, so a store with one
+     lucky phone lead could read as if the whole floor were closing at fifty.
+
+     Campaign units are left out on purpose — they arrive with no leads attached,
+     so they have no rate to contribute and adding them to the top of the fraction
+     alone would flatter every store that runs a campaign.
+
+     The benchmark is blended the same way: each channel's target weighted by the
+     leads it actually saw, which is the number this store would have closed at if
+     every channel had hit exactly its own standard. That makes the comparison fair
+     to a month whose lead mix was unusual, rather than judging a phone-heavy month
+     against an internet-heavy target. */
+  const storeClose = (() => {
+    let units = 0, leads = 0, want = 0;
+    for (const c of closing) {
+      if (!c.seen || !(c.leads > 0)) continue;
+      units += c.units; leads += c.leads;
+      want += c.leads * (thr[c.id].green / 100);
+    }
+    if (!(leads > 0)) return null;
+    return { pct: units / leads, units, leads, target: want / leads };
+  })();
 
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
@@ -18065,6 +18121,26 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 </div>
               )}
             </div>
+            {/* The floor's own rate, under the three it is made of. Some stores run
+                on the store number rather than the channel ones, and working it out
+                by hand from three rows and three lead counts is not something
+                anybody does standing at a screen. */}
+            {storeClose && (
+              <div className="hp-store">
+                <div className="hp-store-head">
+                  <span className="hp-store-cap">Store closing rate</span>
+                  <span className={"hp-store-pct hp-" +
+                    (storeClose.pct >= storeClose.target ? "g"
+                      : storeClose.pct >= storeClose.target * 0.75 ? "y" : "r")}>
+                    {fmtPct(storeClose.pct)}
+                  </span>
+                </div>
+                <div className="hp-store-sub">
+                  {fmtNum(storeClose.units)} from {Math.round(storeClose.leads)} opportunities across all three channels
+                  {" · "}blended target {fmtPct(storeClose.target)}
+                </div>
+              </div>
+            )}
             <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
             {pacingUnits != null && (
               <div className="hp-pace">
@@ -20143,6 +20219,15 @@ function Style() {
       .hp-sub { grid-column:1 / -1; font-size:10.5px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
       .hp-g { color:#1E7A3C; } .hp-y { color:#95600A; } .hp-r { color:#C13529; }
       .hp-dim { color:var(--ink-3); font-size:11px; font-weight:600; }
+      /* The store's own rate reads as a conclusion drawn from the rows above it,
+         so it gets the rule and the weight rather than being a fourth row. */
+      .hp-store { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
+      .hp-store-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+      .hp-store-cap { font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+        color:var(--ink-2); }
+      .hp-store-pct { font-family:var(--font-display); font-size:17px; font-weight:700; letter-spacing:-.02em;
+        font-variant-numeric:tabular-nums; }
+      .hp-store-sub { font-size:10.5px; color:var(--ink-3); margin-top:2px; line-height:1.4; }
       .hp-total { margin-top:9px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07);
         font-size:11.5px; color:var(--ink-2); }
       .hp-total b { font-family:var(--font-display); font-size:15px; color:var(--ink);
