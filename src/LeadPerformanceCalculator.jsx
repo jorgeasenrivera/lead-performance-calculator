@@ -6836,7 +6836,8 @@ function RepairPanel({ config }) {
           ) : (
             <>
               <p className="hint">
-                <b>{plan.store}</b> has {plan.total} on its roster. {plan.rows.length} names are shared with another
+                <b>{plan.store}</b> has {plan.total} on its roster.{" "}
+                {plan.rows.length === 1 ? "One entry is" : `${plan.rows.length} entries are`} shared with another
                 store. <b>{chosen.length} ticked</b> for removal.
               </p>
               {groups.filter(([k]) => plan.rows.some((r) => r.kind === k)).map(([k, label]) => (
