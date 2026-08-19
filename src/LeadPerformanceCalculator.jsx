@@ -1825,7 +1825,7 @@ async function saveShared(key, value) {
 
    Returns { ok, rev, conflictsResolved } so a caller can tell a genuine failure
    from a save that simply took two goes. */
-async function saveStoreCAS(key, build, tries = 5) {
+async function saveStoreCAS(key, build, tries = 8) {
   if (!supabase) { lastSaveError = "No database client"; return { ok: false, rev: null }; }
   let conflicts = 0;
   for (let attempt = 0; attempt < tries; attempt++) {
@@ -1876,6 +1876,83 @@ async function saveStoreCAS(key, build, tries = 5) {
   lastSaveError = `Could not save after ${tries} attempts. Someone else may be saving this store at the same moment, or the row is being rejected by a database rule. Nothing was overwritten.`;
   console.error("save gave up after conflicts", key);
   return { ok: false, rev: null, conflictsResolved: conflicts };
+}
+
+/* ---- Merging the plate log ----
+   The plate log is the most contended thing in the document: several managers work
+   one shared day at once, and unlike the month figures there is no import to arrive
+   later and put it right. These four helpers are what let two people log a plate in
+   the same minute without either one disappearing.
+
+   Deletions are tombstones — { id: when } — for the same reason a departure is a
+   record rather than a gap. A browser that never knew about a plate and a browser
+   that deleted it look identical if all you compare is presence, and the merge has
+   to be able to tell them apart or every delete comes back. They are pruned at
+   ninety days, by which point no tab is old enough to re-add anything. */
+const TOMB_DAYS = 90;
+function mergeTombstones(mine, theirs) {
+  const out = { ...(mine || {}) };
+  for (const [id, t] of Object.entries(theirs || {})) if (!out[id] || t > out[id]) out[id] = t;
+  const cutoff = new Date(Date.now() - TOMB_DAYS * 864e5).toISOString();
+  for (const id of Object.keys(out)) if (!out[id] || out[id] < cutoff) delete out[id];
+  return out;
+}
+// The last thing that happened to this plate. History is append-only, so the copy
+// with more events has seen everything the other one has, and then some.
+function plateTouch(p) {
+  let t = (p && p.takenAt) || "";
+  for (const e of (p && p.history) || []) if (e && e.t && e.t > t) t = e.t;
+  return t;
+}
+function newerPlate(a, b) {
+  const ha = ((a && a.history) || []).length, hb = ((b && b.history) || []).length;
+  if (ha !== hb) return ha > hb ? a : b;
+  return plateTouch(b) > plateTouch(a) ? b : a;
+}
+function mergePlateDays(next, serverCopy) {
+  const mine = next.plates || {}, srv = serverCopy.plates || {};
+  const dead = mergeTombstones(next.plateGone, serverCopy.plateGone);
+  const out = {};
+  for (const day of new Set([...Object.keys(mine), ...Object.keys(srv)])) {
+    const byId = new Map();
+    for (const p of mine[day] || []) if (p && p.id) byId.set(p.id, p);
+    for (const p of srv[day] || []) {
+      if (!p || !p.id) continue;
+      const have = byId.get(p.id);
+      byId.set(p.id, have ? newerPlate(have, p) : p);
+    }
+    const list = [...byId.values()].filter((p) => !dead[p.id]);
+    if (list.length) out[day] = list;
+  }
+  return out;
+}
+/* The master list was not merged at all: the client's array replaced the server's
+   outright, so a manager adding the plate drawer in one store while another manager
+   saved anything at all in the same store lost the lot. Union by id, and settle a
+   collision the same way — whoever touched it last. */
+function mergePlateRegistry(next, serverCopy) {
+  const dead = mergeTombstones(next.plateRegGone, serverCopy.plateRegGone);
+  const at = (r) => (r && (r.updatedAt || r.addedAt)) || "";
+  const byId = new Map();
+  for (const r of next.plateRegistry || []) if (r && r.id) byId.set(r.id, r);
+  for (const r of serverCopy.plateRegistry || []) {
+    if (!r || !r.id) continue;
+    const have = byId.get(r.id);
+    byId.set(r.id, have ? (at(r) > at(have) ? r : have) : r);
+  }
+  const all = [...byId.values()].filter((r) => !dead[r.id])
+    .sort((a, b) => String(a.addedAt || "").localeCompare(String(b.addedAt || "")));
+  /* Two managers adding the same plate in the same minute made two entries with two
+     ids. One plate, one row: keep the older, because its id is the one any records
+     already written point at. */
+  const out = [], tags = new Set();
+  for (const r of all) {
+    const T = normTag(r.tag);
+    if (T && tags.has(T)) continue;
+    if (T) tags.add(T);
+    out.push(r);
+  }
+  return out;
 }
 
 /* Fold this browser's pending document into whatever the server currently holds.
@@ -1962,9 +2039,30 @@ function mergeAgainstServer(next, serverCopy) {
           // Anyone gone or ignored comes out, whichever copy they arrived from.
           next.roster = roster.filter((a) => !gone.has(norm(a.name)) && !ignored.has(norm(a.name)));
         }
-        // Same protection for the plate log: a day another manager started while this
-        // browser sat open is kept rather than dropped on save.
-        next.plates = mergeField("plates");
+        /* ---- The plate log ----
+           This used to be mergeField("plates"), which fills in whole DAYS the client
+           is missing. That is no protection at all for the way the log is actually
+           worked: every manager on the floor is writing to the same day — today —
+           so their day keys always collide, the client's array wins whole, and the
+           plate somebody logged out thirty seconds ago is gone. Retrying does not
+           help either, because the retry re-runs the same merge.
+
+           So merge the ENTRIES, and settle a collision with the entry's own history:
+           it is append-only, so more events means later. Removals are recorded as
+           tombstones rather than as an absence, because an absence is exactly what
+           a browser that has never heard of the plate also looks like. */
+        next.plates = mergePlateDays(next, serverCopy);
+        next.plateRegistry = mergePlateRegistry(next, serverCopy);
+        next.plateGone = mergeTombstones(next.plateGone, serverCopy.plateGone);
+        next.plateRegGone = mergeTombstones(next.plateRegGone, serverCopy.plateRegGone);
+        /* How the store runs plates is one setting for the whole floor, so it is the
+           one thing here that cannot be merged — somebody has to win. Whoever set it
+           last does, which means a tab that has been open since before the change
+           cannot quietly put the store back on the old footing. */
+        if ((serverCopy.plateModeAt || "") > (next.plateModeAt || "")) {
+          next.plateMode = serverCopy.plateMode;
+          next.plateModeAt = serverCopy.plateModeAt;
+        }
         // The schedule was the worst case of this. A browser that had been open since
         // before an upload carried an empty daysOff, and saving anything at all wiped
         // the month for everybody. Each person now carries the time their off-days
@@ -2622,7 +2720,22 @@ export default function LeadPerformanceCalculator() {
     if (audit) await appendAudit({ user: session?.name, ...audit });
     setSaving(false);
   };
-  const persistStore = async (storeId, next, audit) => {
+  /* ---- One save at a time from this tab ----
+     Every save is read-merge-write against a revision, which is the right way to
+     handle other people. It is the wrong way to handle YOURSELF: tick two boxes in
+     quick succession and this browser fires two of them at once, they collide on the
+     revision, and the retries are spent racing a save this same tab is still making.
+     That is the "someone else is saving this store" message appearing when nobody
+     else is there. Queue them instead — the second waits for the first, sees its
+     result, and lands first time. */
+  const saveChain = useRef(Promise.resolve());
+  const persistStore = (storeId, next, audit) => {
+    const run = () => persistStoreNow(storeId, next, audit);
+    const p = saveChain.current.then(run, run);
+    saveChain.current = p.catch(() => {});
+    return p;
+  };
+  const persistStoreNow = async (storeId, next, audit) => {
     if (storeLoadFailed) {
       alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
       return;
@@ -2691,12 +2804,22 @@ export default function LeadPerformanceCalculator() {
   const adoptRemotePlates = useCallback((storeId, plates, plateRegistry) => {
     const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
     setStoreData((prev) => {
-      if (!prev || (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry))) return prev;
+      if (!prev) return prev;
+      /* The tracker's poller is keyed to the store that is SELECTED, and that changes
+         the instant somebody picks another store — a second or more before the new
+         document has finished loading. Until this check existed, the plates that
+         arrived in that window were written straight onto the store still on screen:
+         one dealership's plates showing under another dealership's name, and saved
+         there by the next thing anybody touched. The document says which store it
+         is; anything else is not ours to write to. */
+      if (prev.__storeId && prev.__storeId !== storeId) return prev;
+      if (same(prev.plates, plates) && same(prev.plateRegistry, plateRegistry)) return prev;
       return { ...prev, plates: plates || {}, plateRegistry: plateRegistry || [] };
     });
     setAdminData((p) => {
       const cur = p[storeId];
-      if (!cur || (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry))) return p;
+      if (!cur || (cur.__storeId && cur.__storeId !== storeId)) return p;
+      if (same(cur.plates, plates) && same(cur.plateRegistry, plateRegistry)) return p;
       return { ...p, [storeId]: { ...cur, plates: plates || {}, plateRegistry: plateRegistry || [] } };
     });
   }, []);
@@ -3327,6 +3450,15 @@ export default function LeadPerformanceCalculator() {
                       ...(current.snapshots || []),
                     ].slice(0, 8),
                   };
+                  /* A rollback has to be able to undo a deletion, and the plate log
+                     records deletions as tombstones — which would otherwise filter
+                     the restored plates straight back out on the next merge. Lift the
+                     mark from anything this restore point actually contains. */
+                  restored.plateGone = { ...(current.plateGone || {}) };
+                  restored.plateRegGone = { ...(current.plateRegGone || {}) };
+                  for (const list of Object.values(snap.data?.plates || {}))
+                    for (const p of list || []) if (p && p.id) delete restored.plateGone[p.id];
+                  for (const r of snap.data?.plateRegistry || []) if (r && r.id) delete restored.plateRegGone[r.id];
                   await persistStore(storeId, restored, { action: "Rolled back store", detail: `${config.stores.find((s) => s.id === storeId)?.name} → ${new Date(snap.t).toLocaleString()}` });
                 }} />
             )}
@@ -4396,11 +4528,25 @@ function LEADERBOARD_HTML(p) {
     // read enormous, and a big team should still be as large as it possibly can be.
     var n = Math.max(people.length, 1);
     var AVAIL = 80;                                   // vh the table body gets
-    var rowH  = Math.min(8.5, AVAIL / (n + 1));
+    /* The ceiling is what a rota exposed: a fifteen-person store fills the wall,
+       then hands over to a three-person store that stopped growing at the old cap
+       and sat in the top third of an empty screen. Both boards are sized from the
+       screen, so both should reach the bottom of it — a small team is not a small
+       board, it is a board with enormous rows. */
+    var rowH  = Math.min(20, AVAIL / (n + 1));
+    /* Six columns have to fit across as well, and type is sized in vh — so the real
+       ceiling on a short list is the WIDTH of the screen, not its height. 3.15% of
+       the width is the size the columns stop colliding at; on a 16:9 TV that is the
+       5.6vh this board has always used, and a wider wall gets the benefit. */
+    var wideCap = 3.15 * (window.innerWidth / window.innerHeight);         // vh
     // Never shrink below what is readable from across a floor. If the team does not
     // fit at that size, the board scrolls instead of squinting.
-    var rowFs = Math.max(2.2, Math.min(5.6, rowH * 0.62)) * DISP.tscale;   // vh — higher ceiling so a short list on a wide TV fills the height
-    var rowPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;                // vh
+    var rowFs = Math.max(2.2, Math.min(wideCap, rowH * 0.62)) * DISP.tscale;   // vh
+    /* Whatever height the type could not take, the row takes: a three-person store
+       reaching the bottom of the wall in tall bands beats the same three rows
+       stacked in the top third with the rest of the screen empty. */
+    var tightPad = Math.max(0.35, rowH * 0.10) * DISP.tscale;
+    var rowPad = Math.max(tightPad, (rowH - rowFs * 1.35) / 2 * DISP.tscale);
 
     function cell(pct, prevVal, ch){
       if (pct == null) return '<td class="pcell"><span class="pcell-in"><span class="pill dim">-</span><span class="move"></span></span></td>';
@@ -4537,7 +4683,27 @@ function LEADERBOARD_HTML(p) {
           '</div>');
     tick();
     countUp();
+    trimFill(tightPad, rowPad);
     startScroll();
+  }
+
+  /* The padding above is arithmetic against an ASSUMED 80vh of panel; the real
+     panel is whatever the header, the footer and the ticker leave behind. When the
+     guess overshoots, a list that fits on the screen would start scrolling for the
+     sake of white space it never needed — so hand the height back until it fits,
+     down to the tight padding a full board uses and no further. */
+  function trimFill(tight, pad){
+    var sc = document.getElementById('scroller');
+    var panel = document.querySelector('.panel');
+    if (!sc || !panel || pad <= tight) return;
+    var vh = window.innerHeight / 100;
+    for (var i = 0; i < 8 && pad > tight; i++) {
+      var over = sc.scrollHeight - sc.clientHeight;
+      if (over <= 4) return;
+      var rows = document.querySelectorAll('.panel tbody tr').length + 1;   // + the header row
+      pad = Math.max(tight, pad - (over / (2 * rows)) / vh);
+      panel.style.setProperty('--rowpad', pad + 'vh');
+    }
   }
 
   // If the whole team cannot fit at a readable size, the board walks slowly down the
@@ -4545,13 +4711,27 @@ function LEADERBOARD_HTML(p) {
   // the bottom of the board should be invisible all day.
   var scrollRAF = null;
   var idleRefill = null;   // refill timer for boards small enough not to scroll
+  var settleTimer = null;  // the measure-after-layout delay
+  var dwellTimer = null;   // hand-over clock for a board too short to scroll
+  /* Every render starts a scroll cycle, and a hand-over renders — so without a
+     generation stamp each rotation leaves its predecessor's frame loop alive on a
+     detached element, still counting down to a hand-over of its own. Two boards
+     become four clocks, then eight, and the room sees the store change every few
+     seconds. A cycle checks its stamp before it does anything; only the newest
+     one is still the current cycle. */
+  var scrollGen = 0;
   function startScroll(){
+    var gen = ++scrollGen;
     if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = null; }
+    if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+    if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
     var el = document.getElementById('scroller');
     if (!el) return;
 
     // let layout settle before measuring
-    setTimeout(function(){
+    settleTimer = setTimeout(function(){
+      settleTimer = null;
+      if (gen !== scrollGen) return;
       var over = el.scrollHeight - el.clientHeight;
       if (over <= 4) {
         // Everyone fits, so there's no scroll cycle to trigger the bar refill.
@@ -4560,7 +4740,10 @@ function LEADERBOARD_HTML(p) {
         idleRefill = setInterval(replayBars, 2 * 60 * 1000);
         /* A short list has no cycle to end, so the hand-over needs its own clock —
            otherwise a rotation that reaches a small store stops there for the day. */
-        if (rotates()) setTimeout(nextStore, 22000);
+        if (rotates()) dwellTimer = setTimeout(function(){
+          dwellTimer = null;
+          if (gen === scrollGen) nextStore();
+        }, Math.max(3000, MIN_STORE_MS - (Date.now() - storeShownAt)));
         return;
       }
       if (idleRefill) { clearInterval(idleRefill); idleRefill = null; }
@@ -4579,6 +4762,7 @@ function LEADERBOARD_HTML(p) {
       }
 
       function frame(ts){
+        if (gen !== scrollGen) return;   // a newer cycle owns the board now
         if (t0 === null) t0 = ts;
         var dt = ts - t0;
 
@@ -4600,9 +4784,15 @@ function LEADERBOARD_HTML(p) {
                than on a timer so a screen never changes store mid-scroll — you
                always see a board from its leader to its last name before it moves
                on. The frame loop is left running: the new render calls startScroll
-               again, which cancels it, and if the hand-over fails there is still a
-               board scrolling rather than a frozen one. */
-            if (rotates()) nextStore();
+               again, which retires this cycle by stamp, and if the hand-over fails
+               there is still a board scrolling rather than a frozen one.
+
+               A pass is the earliest a store may leave, not the moment it must:
+               a board with barely more than a screenful scrolls a few pixels and
+               springs straight back, and rotating on that is a store every ten
+               seconds. It stays until it has had its minute, then leaves at the
+               end of the next pass. */
+            if (rotates() && Date.now() - storeShownAt >= MIN_STORE_MS) nextStore();
           }
         }
         scrollRAF = requestAnimationFrame(frame);
@@ -4770,6 +4960,12 @@ function LEADERBOARD_HTML(p) {
                icon: CFG.icon, brand: CFG.brand, thresholds: CFG.thresholds };
   var ROT_I = 0;
 
+  /* How long a store is entitled to the wall before the rota may move on. The
+     scroll cycle decides WHEN it leaves — always at the end of a pass, never
+     mid-list — and this decides how soon that is allowed to be. */
+  var MIN_STORE_MS = 45000;
+  var storeShownAt = Date.now();
+
   /* True for exactly one pass of loop(), because the two guards in it compare the
      board on screen with the one arriving — which is the right thing to do for a
      refresh of the same store and completely wrong across a hand-over. */
@@ -4824,7 +5020,7 @@ function LEADERBOARD_HTML(p) {
       /* That store has never been published, or the network blinked. Stay where we
          are and let the next pass try the one after it, rather than driving the
          room to an empty board. */
-      HANDING = false; ROT_I = at; startScroll();
+      HANDING = false; ROT_I = at; storeShownAt = Date.now(); startScroll();
       return;
     }
     ROT_I = at;
@@ -4833,6 +5029,7 @@ function LEADERBOARD_HTML(p) {
     var known = (CFG.siblings || []).filter(function(x){ return x.id === id; })[0];
     var name = s.storeName || (id === HOME.id ? HOME.name : (known && known.name)) || 'Next store';
     driveTo(name, function(){
+      storeShownAt = Date.now();
       SWITCHING = true;
       renderStore(s);
     });
@@ -6457,10 +6654,23 @@ function RepairPanel({ config }) {
         for (const day of Object.keys(out.activity || {})) {
           for (const k of Object.keys(out.activity[day] || {})) if (go.roster.has(k)) delete out.activity[day][k];
         }
+        /* Tombstoned as well as filtered. Every manager with this store open still
+           holds the foreign plates in their tab, and the plate merge treats a plate
+           it has not seen before as news — so without a record of the removal the
+           next save anywhere on the floor puts them all back. */
+        const t = new Date().toISOString();
+        out.plateGone = { ...(out.plateGone || {}) };
+        out.plateRegGone = { ...(out.plateRegGone || {}) };
         for (const day of Object.keys(out.plates || {})) {
+          for (const p of out.plates[day] || []) {
+            if (p && p.id && goPlates.has(day + "|" + (p.id || normTag(p.tag)))) out.plateGone[p.id] = t;
+          }
           out.plates[day] = (out.plates[day] || []).filter((p) =>
             !goPlates.has(day + "|" + (p.id || normTag(p.tag))));
           if (!out.plates[day].length) delete out.plates[day];
+        }
+        for (const r of out.plateRegistry || []) {
+          if (r && r.id && goPlateReg.has(normTag(r.tag))) out.plateRegGone[r.id] = t;
         }
         out.plateRegistry = (out.plateRegistry || []).filter((r) => !goPlateReg.has(normTag(r.tag)));
         out.__storeId = target;
@@ -11950,12 +12160,47 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
   const fmtTimeShort = (iso) => iso ? new Date(iso).toLocaleString("en-US", { hour: "numeric", minute: "2-digit" }) : "—";
 
-  const save = (nextDayPlates, audit, mutate) => {
+  /* ---- How this store runs plates ----
+     Two dealerships, two different jobs. One hands a plate to whoever is taking a
+     car out and wants it back by close: the log is a day at a time, a plate still
+     out in the morning is missing, and yesterday's tags get carried forward. The
+     other gives a salesperson a plate and they keep it for weeks: a day is the
+     wrong unit entirely, nothing is missing for being out overnight, and the only
+     question on the screen is who is holding what and for how long.
+
+     One set of records underneath either way — a standing assignment is simply a
+     plate that has not been returned yet — so a store can change its mind and keep
+     every trip it has ever logged. */
+  const standing = data.plateMode === "standing";
+  const setMode = (m) => {
+    if (standing === (m === "standing")) return;
+    const next = JSON.parse(JSON.stringify(data));
+    next.plateMode = m;
+    next.plateModeAt = new Date().toISOString();
+    onChange(next, { action: "Changed how plates are run",
+      detail: m === "standing" ? "Plates stay with a salesperson until returned" : "Plates taken and returned daily" });
+  };
+
+  /* A record belongs to the day it went out on, and in standing mode the plate in
+     somebody's glovebox went out three weeks ago — so every edit finds the day it
+     lives on rather than assuming it is the one on screen. */
+  const saveDay = (d, list, audit, mutate) => {
     const next = JSON.parse(JSON.stringify(data));
     next.plates = next.plates || {};
-    next.plates[day] = nextDayPlates;
+    next.plates[d] = list;
     if (mutate) mutate(next);          // registry updates ride in the same write
     onChange(next, audit);
+  };
+  const save = (nextDayPlates, audit, mutate) => saveDay(day, nextDayPlates, audit, mutate);
+  const dayOf = (id) => Object.keys(plates).find((d) => (plates[d] || []).some((p) => p.id === id));
+  const recordById = (id) => {
+    const d = dayOf(id);
+    return d ? { d, p: (plates[d] || []).find((x) => x.id === id) } : null;
+  };
+  const editRecord = (id, fn, audit, mutate) => {
+    const hit = recordById(id);
+    if (!hit) return;
+    saveDay(hit.d, (plates[hit.d] || []).map((p) => (p.id === id ? fn(p) : p)), audit, mutate);
   };
 
   /* ---- Plate registry ----
@@ -12015,6 +12260,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
 
   const [plateErr, setPlateErr] = useState("");
   const [masterOpen, setMasterOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [pastOpen, setPastOpen] = useState(false);
+  const [handing, setHanding] = useState(null);   // record id being handed to someone else
   const [bulk, setBulk] = useState("");
 
   /* ---- Master plate list ----
@@ -12049,7 +12297,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     }
     const old = entry.tag;
     const next = JSON.parse(JSON.stringify(data));
-    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, tag: nt } : r);
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, tag: nt, updatedAt: new Date().toISOString() } : r);
     for (const d of Object.keys(next.plates || {})) {
       next.plates[d] = next.plates[d].map((p) => p.tag === old
         ? { ...p, tag: nt, history: [...(p.history || []), { t: new Date().toISOString(), by: userName, action: "Plate renumbered", detail: `${old} is ${nt}; records relinked` }] }
@@ -12062,7 +12310,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const setRegistryFlag = (id, field, value, label) => {
     const entry = registry.find((r) => r.id === id); if (!entry) return;
     const next = JSON.parse(JSON.stringify(data));
-    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, [field]: value } : r);
+    next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === id ? { ...r, [field]: value, updatedAt: new Date().toISOString() } : r);
     onChange(next, { action: label, detail: entry.tag });
   };
 
@@ -12074,6 +12322,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     } else if (!window.confirm(`Remove ${entry.tag} from the master plate list?`)) return;
     const next = JSON.parse(JSON.stringify(data));
     next.plateRegistry = (next.plateRegistry || []).filter((r) => r.id !== id);
+    next.plateRegGone = { ...(next.plateRegGone || {}), [id]: new Date().toISOString() };
     onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
   };
   const addPlate = () => {
@@ -12090,7 +12339,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         t = hit.fuller;
         enteredAs = null;
         registryMutate = (next) => {
-          next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === hit.entry.id ? { ...r, tag: hit.fuller } : r);
+          next.plateRegistry = (next.plateRegistry || []).map((r) => r.id === hit.entry.id ? { ...r, tag: hit.fuller, updatedAt: new Date().toISOString() } : r);
           // relink history: the shorthand records were always this plate
           for (const d of Object.keys(next.plates || {})) {
             next.plates[d] = next.plates[d].map((p) => p.tag === oldTag
@@ -12125,7 +12374,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     }
     const now = new Date().toISOString();
     const who = assignee.trim();
-    const stillOut = dayPlates.find((p) => p.tag === t && !p.checkedIn);
+    const stillOut = standing
+      ? heldNow.find((p) => normTag(p.tag) === normTag(t))
+      : dayPlates.find((p) => p.tag === t && !p.checkedIn);
     if (stillOut) {
       // Hard stop: a plate that hasn't been marked back in can't be re-issued. Its
       // return has to be logged first, which puts the unlogged hand-back on record.
@@ -12144,16 +12395,17 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   };
   const toggleIn = (id) => {
     setPlateErr("");
-    save(dayPlates.map((p) => {
-      if (p.id !== id) return p;
-      const nowIn = !p.checkedIn;
-      const stamp = nowIn ? new Date().toISOString() : null;
-      const ev = withEvent({ ...p, checkedIn: nowIn, returnedAt: stamp }, nowIn ? "Returned" : "Marked out again", nowIn ? `${p.tag} returned at ${fmtTimeShort(stamp)}` : `${p.tag} re-opened`);
-      return ev;
-    }), { action: "Plate check-in", detail: `${dayPlates.find((p) => p.id === id)?.tag}` });
+    const hit = recordById(id);
+    if (!hit) return;
+    const nowIn = !hit.p.checkedIn;
+    const stamp = nowIn ? new Date().toISOString() : null;
+    editRecord(id, (p) => withEvent({ ...p, checkedIn: nowIn, returnedAt: stamp },
+      nowIn ? "Returned" : "Marked out again",
+      nowIn ? `${p.tag} returned at ${fmtTimeShort(stamp)}` : `${p.tag} re-opened`),
+      { action: "Plate check-in", detail: hit.p.tag });
   };
   const setPlateAssignee = (id, name) => {
-    const p0 = dayPlates.find((p) => p.id === id);
+    const p0 = (recordById(id) || {}).p;
     if (!p0) return;
     // Hard stop: a still-out plate can't be handed to someone else. It has to be
     // marked returned first — if it's physically back, the previous holder returned
@@ -12163,23 +12415,53 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
         `Mark it returned before assigning it to ${name}. If it's physically back, that means ${p0.assignee} returned it without letting a manager know.`);
       return;
     }
-    save(dayPlates.map((p) => p.id === id
-      ? withEvent({ ...p, assignee: name }, "Reassigned", `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`)
-      : p),
-      { action: "Reassigned plate", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${name || "unassigned"}` });
+    editRecord(id, (p) => withEvent({ ...p, assignee: name }, "Reassigned",
+      `${p.tag} → ${name || "unassigned"} (was ${p.assignee || "unassigned"})`),
+      { action: "Reassigned plate", detail: `${p0.tag} → ${name || "unassigned"}` });
+  };
+
+  /* A plate moving straight from one salesperson to another, which is the normal
+     way a standing plate changes hands. Two records rather than an edit: the person
+     who had it is marked returned at this moment and the new holder starts a fresh
+     trip today. Renaming in place would leave a log claiming the new person had it
+     since the day the old one took it. */
+  const handOver = (id, rawName) => {
+    const who = String(rawName || "").trim();
+    const hit = recordById(id);
+    if (!hit || !who || who === (hit.p.assignee || "")) return;
+    const now = new Date().toISOString();
+    const t2 = today();
+    const next = JSON.parse(JSON.stringify(data));
+    next.plates = next.plates || {};
+    next.plates[hit.d] = (next.plates[hit.d] || []).map((p) => p.id === id
+      ? { ...p, checkedIn: true, returnedAt: now,
+          history: [...(p.history || []), { t: now, by: userName, action: "Handed over",
+            detail: `${p.tag} from ${p.assignee || "unassigned"} to ${who}` }] }
+      : p);
+    next.plates[t2] = [...(next.plates[t2] || []), {
+      id: uid(), tag: hit.p.tag, assignee: who, checkedOut: true, checkedIn: false, by: userName, takenAt: now,
+      history: [{ t: now, by: userName, action: "Taken out",
+        detail: `${hit.p.tag} → ${who} (handed over from ${hit.p.assignee || "unassigned"})` }],
+    }];
+    setPlateErr("");
+    onChange(next, { action: "Handed plate over", detail: `${hit.p.tag}: ${hit.p.assignee || "unassigned"} → ${who}` });
   };
   const setTakenTime = (id, iso) => {
     if (!iso) return;
-    save(dayPlates.map((p) => {
-      if (p.id !== id) return p;
-      const old = fmtTime(p.takenAt);
-      return withEvent({ ...p, takenAt: iso }, "Time edited", `${p.tag} taken-out time changed from ${old} to ${fmtTime(iso)}`);
-    }), { action: "Edited plate time", detail: `${dayPlates.find((p) => p.id === id)?.tag} → ${fmtTime(iso)}` });
+    editRecord(id, (p) => withEvent({ ...p, takenAt: iso }, "Time edited",
+      `${p.tag} taken-out time changed from ${fmtTime(p.takenAt)} to ${fmtTime(iso)}`),
+      { action: "Edited plate time", detail: `${(recordById(id) || {}).p?.tag} → ${fmtTime(iso)}` });
     setEditingTime(null);
   };
   const remove = (id) => {
-    const p = dayPlates.find((x) => x.id === id);
-    save(dayPlates.filter((x) => x.id !== id), { action: "Removed plate", detail: `${p?.tag} (was ${p?.assignee || "unassigned"})` });
+    const hit = recordById(id);
+    if (!hit) return;
+    /* Deleting has to leave a mark. Another manager's browser still holds this plate,
+       and on their next save the merge would read their copy as news rather than as
+       the record somebody deliberately took off. */
+    saveDay(hit.d, (plates[hit.d] || []).filter((x) => x.id !== id),
+      { action: "Removed plate", detail: `${hit.p.tag} (was ${hit.p.assignee || "unassigned"})` },
+      (next) => { next.plateGone = { ...(next.plateGone || {}), [id]: new Date().toISOString() }; });
   };
   const carryForward = () => {
     const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
@@ -12197,12 +12479,37 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   };
 
   const plateDays = Object.keys(plates).sort().reverse();
-  const openPlate = historyFor ? dayPlates.find((p) => p.id === historyFor) : null;
+  // The custody log opens from any list, and in standing mode the record being
+  // opened went out weeks ago — so find it by id wherever it lives.
+  const openPlate = historyFor ? (recordById(historyFor) || {}).p : null;
 
   /* A plate that never came back. The most recent record per tag across all days
      decides its status: if that record is from an earlier day and still not checked
      in, the plate is missing — it can't go out today until it's marked returned. */
-  const missing = (() => {
+  /* Every record, whichever day it was issued on, and the latest one per plate.
+     In standing mode this is the whole view: the plates that have not come back are
+     the assignments, and how long they have been out is the thing worth seeing. */
+  const allRecords = [];
+  for (const [d, list] of Object.entries(plates)) for (const p of list || []) allRecords.push({ ...p, __day: d });
+  const latestPerTag = new Map();
+  for (const r of allRecords) {
+    const k = normTag(r.tag);
+    const cur = latestPerTag.get(k);
+    if (!cur || (r.takenAt || r.__day) > (cur.takenAt || cur.__day)) latestPerTag.set(k, r);
+  }
+  const heldNow = [...latestPerTag.values()].filter((r) => !r.checkedIn)
+    .sort((a, b) => String(a.takenAt || a.__day).localeCompare(String(b.takenAt || b.__day)));
+  const returnedRecent = allRecords.filter((r) => r.checkedIn && r.returnedAt)
+    .sort((a, b) => String(b.returnedAt).localeCompare(String(a.returnedAt))).slice(0, 25);
+  const daysOut = (iso) => Math.max(0, Math.floor((Date.now() - Date.parse(iso || "")) / 864e5));
+  const sinceLabel = (r) => {
+    const n = daysOut(r.takenAt || r.__day + "T12:00");
+    return n === 0 ? "today" : n === 1 ? "1 day" : `${n} days`;
+  };
+
+  /* A plate that never came back means nothing in standing mode: that IS the
+     arrangement. The banner belongs to a store that expects them back by close. */
+  const missing = standing ? [] : (() => {
     const latest = {};
     for (const [d, list] of Object.entries(plates)) {
       for (const p of list) {
@@ -12217,7 +12524,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const missingTags = new Set(missing.map((x) => x.plate.tag));
   // Tags nobody is holding. A plate that is still out cannot go out again, so
   // offering it would only produce the error message a moment later.
-  const outNow = new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
+  const outNow = standing
+    ? new Set(heldNow.map((p) => p.tag))
+    : new Set([...dayPlates.filter((p) => !p.checkedIn).map((p) => p.tag), ...missingTags]);
   const freeTags = registry.filter((r) => !r.retired).map((r) => r.tag)
     .filter((t) => !outNow.has(t)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
@@ -12246,6 +12555,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     next.plates = next.plates || {};
     next.plates[d] = (next.plates[d] || []).filter((x) => x.id !== id);
     if (!next.plates[d].length) delete next.plates[d];
+    next.plateGone = { ...(next.plateGone || {}), [id]: new Date().toISOString() };
     onChange(next, { action: "Removed a plate record that was not this store's", detail: `${p.tag} (${p.assignee || "unassigned"}, ${d})` });
   };
 
@@ -12267,16 +12577,39 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       )}
       {plateErr && <div className="plate-err">{plateErr}</div>}
       <div className="gm-toolbar">
-        <select value={day} onChange={(e) => setDay(e.target.value)}>
-          <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
-          {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
-        </select>
-        <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>
+        {!standing && (
+          <select value={day} onChange={(e) => setDay(e.target.value)}>
+            <option value={today()}>Today · {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })}</option>
+            {plateDays.filter((d) => d !== today()).map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+          </select>
+        )}
+        {!standing && <button className="btn secondary" onClick={carryForward}>Carry forward last day's tags</button>}
         <button className="btn secondary" onClick={() => setMasterOpen((v) => !v)}>
           {masterOpen ? "Hide master plate list" : `Master plate list (${registry.filter((r) => !r.retired).length})`}
         </button>
-        <span className="hint">Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when.</span>
+        <button className="btn secondary" onClick={() => setSetupOpen((v) => !v)}>
+          {setupOpen ? "Hide setup" : "How this store runs plates"}
+        </button>
+        <span className="hint">
+          {standing
+            ? "Plates stay with whoever is holding them until they are handed back. Every trip keeps its time and a full custody log, so you can always see who has had a plate and for how long."
+            : "Assignments are saved per day with the time taken and a full custody log, so if a plate goes missing you can see exactly who had it and when."}
+        </span>
       </div>
+      {setupOpen && (
+        <div className="card">
+          <h3>How this store runs plates</h3>
+          <SegControl
+            items={[["daily", "Taken and returned daily"], ["standing", "Held until returned"]]}
+            value={standing ? "standing" : "daily"} onChange={setMode} />
+          <p className="hint">
+            {standing
+              ? "This store gives a salesperson a plate and they keep it. There is no day to work through and nothing is overdue for being out overnight — the screen shows who is holding what and since when. Changing this back to daily does not touch a single record."
+              : "This store hands plates out and wants them back by close, so the log runs a day at a time and a plate that did not come back is flagged. Switch to held-until-returned if your salespeople keep a plate for weeks at a time."}
+          </p>
+          <p className="hint">This is set per store, and it changes nothing about the records themselves — the same trips, times and custody logs are underneath either way.</p>
+        </div>
+      )}
       {masterOpen && (
         <div className="card">
           <h3>Master plate list</h3>
@@ -12350,8 +12683,85 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
           </div>
         )}
-        <p className="hint">The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.</p>
+        <p className="hint">
+          The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
+          {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
+        </p>
       </div>
+      {standing && (
+        <div className="card">
+          <h3>Out now{heldNow.length ? ` (${heldNow.length})` : ""}</h3>
+          {heldNow.length === 0 ? (
+            <p className="hint">Nobody is holding a plate. Assign one above and it stays on this list until it comes back.</p>
+          ) : (
+            <table className="roster-table wide">
+              <thead><tr><th>Tag</th><th>Held by</th><th>Since</th><th>Logged by</th><th>History</th><th /></tr></thead>
+              <tbody>
+                {heldNow.map((p) => (
+                  <tr key={p.id} className="plate-out">
+                    <td><b>{p.tag}</b></td>
+                    <td>
+                      {handing === p.id ? (
+                        <span className="plate-time-edit">
+                          <input className="plate-assignee-in" autoFocus defaultValue="" placeholder="Hand to"
+                            list="plate-assignees" autoComplete="off" id={"ho-" + p.id}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") { handOver(p.id, e.currentTarget.value); setHanding(null); }
+                              if (e.key === "Escape") setHanding(null);
+                            }} />
+                          <button className="plate-check in" onClick={() => { handOver(p.id, document.getElementById("ho-" + p.id).value); setHanding(null); }}>Save</button>
+                          <button className="btn-x" onClick={() => setHanding(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <span className="plate-holder">{p.assignee || "Unassigned"}</span>
+                      )}
+                    </td>
+                    <td>
+                      {fmtTime(p.takenAt)}
+                      <span className={"plate-days" + (daysOut(p.takenAt) >= 30 ? " long" : "")}>{sinceLabel(p)}</span>
+                    </td>
+                    <td className="mono">{p.by || "-"}</td>
+                    <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
+                    <td>
+                      {handing !== p.id && <button className="btn-quiet" onClick={() => { setPlateErr(""); setHanding(p.id); }}>Hand over</button>}
+                      <button className="plate-check out" onClick={() => toggleIn(p.id)}>Mark returned</button>
+                      <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="hint">Handing a plate straight to somebody else closes the current trip and opens a new one, so the log never says the wrong person had it.</p>
+        </div>
+      )}
+      {standing && (
+        <div className="card">
+          <div className="inline-form">
+            <button className="btn secondary" onClick={() => setPastOpen((v) => !v)}>
+              {pastOpen ? "Hide plates already back" : `Plates already back (${returnedRecent.length})`}
+            </button>
+          </div>
+          {pastOpen && (returnedRecent.length === 0
+            ? <p className="hint">Nothing has been handed back yet.</p>
+            : <table className="roster-table wide">
+                <thead><tr><th>Tag</th><th>Was with</th><th>Taken</th><th>Returned</th><th>History</th><th /></tr></thead>
+                <tbody>
+                  {returnedRecent.map((p) => (
+                    <tr key={p.id}>
+                      <td><b>{p.tag}</b></td>
+                      <td>{p.assignee || "Unassigned"}</td>
+                      <td>{fmtTime(p.takenAt)}</td>
+                      <td><span className="plate-returned">{fmtTime(p.returnedAt)}</span></td>
+                      <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
+                      <td><button className="btn-quiet" onClick={() => toggleIn(p.id)}>Mark out again</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>)}
+        </div>
+      )}
+      {!standing && (
       <div className="card">
         {dayPlates.length === 0 ? <p className="hint">No plates logged for this day yet. Add one above, or carry forward the last day's tags.</p> : (
           <table className="roster-table wide">
@@ -12394,6 +12804,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           </table>
         )}
       </div>
+      )}
 
       {openPlate && (
         <div className="modal-backdrop" onClick={() => setHistoryFor(null)}>
@@ -21782,6 +22193,14 @@ function Style() {
       .plate-time-edit input { font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--line); border-radius:7px; }
       .plate-returned { color:#1E7A3C; font-weight:600; font-size:13px; }
       .plate-out-tag { color:var(--amber); font-weight:600; font-size:13px; }
+      .plate-holder { font-weight:600; font-size:13.5px; }
+      /* How long a standing plate has been out. It is the number a manager is
+         actually scanning this column for, so it gets its own weight rather than
+         being read off the date. */
+      .plate-days { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px;
+        background:rgba(42,94,155,.10); color:var(--ink-2); font-size:11.5px; font-weight:700;
+        font-variant-numeric:tabular-nums; }
+      .plate-days.long { background:rgba(229,71,60,.12); color:#C13529; }
       .plate-missing-banner { background:rgba(229,71,60,.09); border:1px solid rgba(229,71,60,.35);
         border-radius:14px; padding:12px 16px; margin-bottom:14px; }
       .plate-missing-banner > b { display:block; color:#C13529; font-size:14px; margin-bottom:6px; }
