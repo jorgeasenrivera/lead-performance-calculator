@@ -102,10 +102,23 @@ export function skipSet(presence, now) {
 /**
  * The reckoning, run once the day is done.
  *
- * `customerActions` is the day's queue history filtered to the customer flag —
- * the record of somebody actually checking a customer in. A claim of "test
- * drive" with nothing on the record all day is what a manager is asked to look
- * at. Everything else is left alone.
+ * Two independent records can back a claim up, and it takes only one:
+ *
+ *   customerActions  the day's queue history filtered to the customer flag —
+ *                    somebody marking themselves with a customer at the time
+ *
+ *   visits           the Visit column on the daily activity report, which is the
+ *                    count of customers that person was credited with seeing
+ *
+ * The second matters more than it looks. DriveCentric's deal notification names
+ * the PRIMARY salesperson and nobody else, so a second salesperson who checked
+ * the customer in leaves no trace in any notification we receive — the Visit
+ * column is the only place their up shows up at all. Reconciling on the queue
+ * history alone would flag a co-sold walk-in as an unbacked claim, which is the
+ * exact honest case this is not supposed to punish.
+ *
+ * A claim with nothing behind it in EITHER record is what a manager is asked to
+ * look at. Everything else is left alone.
  */
 export function reconcile(presence, customerActions, opts = {}) {
   const windowMs = opts.windowMs ?? 4 * 60 * 60 * 1000;   // a check-in either side of the trip
@@ -130,8 +143,13 @@ export function reconcile(presence, customerActions, opts = {}) {
     if (!claimedCustomer && !saidNothing) continue;
 
     const times = hadCustomer.get(e.personId) || [];
-    const backed = times.some((t) => Math.abs(t - e.at) <= windowMs);
-    if (backed) continue;
+    const backedByQueue = times.some((t) => Math.abs(t - e.at) <= windowMs);
+    /* A visit is a whole-day figure with no clock on it, so it cannot be matched
+       to the hour the person left — which is the right amount of doubt to give
+       somebody. If the report credits them with seeing anybody that day, the
+       claim stands. */
+    const visits = (opts.visits && opts.visits[e.personId]) || 0;
+    if (backedByQueue || visits > 0) continue;
 
     flags.push({
       id: e.id,
@@ -142,8 +160,8 @@ export function reconcile(presence, customerActions, opts = {}) {
       /* The wording a manager reads. It states what happened and stops there —
          the conclusion is theirs to draw, and they know things this does not. */
       reason: claimedCustomer
-        ? "Left the lot in line, said it was a customer, and no customer was checked in that day."
-        : "Left the lot in line and never answered, and no customer was checked in that day.",
+        ? "Left the lot in line, said it was a customer, and neither the line nor the day's visit count shows one."
+        : "Left the lot in line and never answered, and neither the line nor the day's visit count shows a customer.",
       status: "unverified",
     });
   }
