@@ -24,7 +24,7 @@ import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-mon
    quietly broken in the same way. */
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
-  packUp, transferIn, transferOut, priorFor } from "../api/_people-status.mjs";
+  packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn } from "../api/_people-status.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -585,6 +585,11 @@ function activityLandedOn(data, d) {
 
 /* Scheduled to work, the report ran, and still no sign of them. */
 function looksAbsent(data, aId, d) {
+  /* A day before somebody started is not a day they failed to turn up on, and
+     the overnight close-out reads this — so without it a new hire's first
+     morning came with a fortnight of days off already written against them. */
+  const who = ((data && data.roster) || []).find((a) => a.id === aId);
+  if (who && !servedOn(who, d, departedOnFor(data, who))) return false;
   if (!isScheduled(data, aId, d)) return false;
   if (data.daysOff?.[aId]?.includes(d)) return false;   // already off
   if (!activityLandedOn(data, d)) return false;
@@ -764,14 +769,30 @@ function StreakIcon({ data, a, std, min = 3 }) {
     </span>
   );
 }
+/* Somebody's days so far this month, which is the denominator under every
+   average they are judged by.
+
+   A day before they started is not a day they failed to work. Somebody hired on
+   the 18th used to be measured against the whole month, so their first week read
+   as three weeks of doing nothing, and the one person on the floor least able to
+   argue with a screen was the one it was hardest on. Same at the other end: a
+   leaver is not still missing calls in the fortnight after they went.
+
+   Both bounds are inclusive of the day itself — you worked the day you started. */
+function departedOnFor(data, a) {
+  const rec = ((data && data.departed) || []).find((d) => d && a && norm(d.name) === norm(a.name));
+  return rec ? rec.at : null;
+}
 function daysWorkedThisMonth(data, a) {
   const t = today(); const [y, m, dd] = t.split("-").map(Number);
+  const left = departedOnFor(data, a);
   let n = 0;
   for (let day = 1; day <= dd; day++) {
     const dt = new Date(y, m - 1, day);
     if (dt.getDay() === 0) continue;               // skip Sundays
     const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     if (isHoliday(ds)) continue;                   // the group was closed
+    if (!servedOn(a, ds, left)) continue;          // before they started, or after they left
     if (isOff(data, a.id, ds)) continue;           // skip their days off
     n++;
   }
@@ -19809,6 +19830,40 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   onChange(dropPending(data, [w.name], { by: userName }),
                     { action: "Rejected a name from a report", detail: w.name });
                 }}>Not ours</button>
+                {/* ---- or they are somebody you already have ----
+                    A report that spells a hyphen differently, or carries a suffix
+                    one month and not the next, arrives as a stranger. Answering
+                    "no, that is Karina" once folds the figures onto her and
+                    teaches the spelling, so it never asks again.
+
+                    Suggested, never decided: a near-miss and two different people
+                    with the same first name look identical to any measure, and
+                    merging the wrong pair puts one person's month onto another's,
+                    which is worse than a duplicate row. Nicknames are the common
+                    case that no measure can safely offer, so the list is not
+                    limited to the suggestions. */}
+                <select className="q-flag-sel pp-same" value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    onChange(sameAs(data, w.name, e.target.value, { by: userName }),
+                      { action: "Folded a spelling into a person", detail: `${w.name} → ${e.target.value}` });
+                  }}>
+                  {(() => {
+                    const hits = likelyMatches(data, w.name);
+                    const best = hits.find((h) => h.confident);
+                    const rest = people.filter((x) => x.status !== "ignored" && !hits.some((h) => h.key === x.key));
+                    return (
+                      <>
+                        <option value="">{best ? `Same as ${best.name}?` : "Same as someone…"}</option>
+                        {hits.map((h) => (
+                          <option key={h.key} value={h.name}>{h.name}{h.confident ? " — looks like a match" : ""}</option>
+                        ))}
+                        {rest.length > 0 && hits.length > 0 && <option disabled>──────────</option>}
+                        {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
+                      </>
+                    );
+                  })()}
+                </select>
               </div>
             ))}
           </div>
@@ -19941,7 +19996,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 {p.status !== "ignored" && <button className="btn btn-sm pp-danger" onClick={() => move(p.name, "ignored")}>Not ours</button>}
                 {storeId && p.id && p.status !== "ignored" && (
                   <button className="btn btn-sm" onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
-                    {openAcct === p.key ? "Close" : "Account"}
+                    {openAcct === p.key ? "Close" : "Details"}
                   </button>
                 )}
               </div>
@@ -19954,6 +20009,30 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 .slice().sort((x, y) => String(x.email || x.name).localeCompare(String(y.email || y.name)));
               return (
                 <div className="pp-acctbox">
+                  {/* ---- when they started ----
+                      The denominator under every average they are judged by. A day
+                      before somebody started is not a day they failed to work, and
+                      without this a hire on the 18th was measured against the whole
+                      month — their first week reading as three weeks of doing
+                      nothing, to the one person on the floor least able to argue
+                      with a screen. Blank means the whole month, which is what it
+                      has always meant, so nothing changes for anybody already on. */}
+                  <div className="pp-move-row pp-startrow">
+                    <label className="pp-date">Started here
+                      <input type="date" className="help-in" value={p.hiredAt || ""}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          const next = JSON.parse(JSON.stringify(data));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, hiredAt: v } : x));
+                          onChange(next, { action: "Set a start date", detail: `${p.name}: ${v || "cleared"}` });
+                        }} />
+                    </label>
+                    <span className="hint pp-startnote">
+                      {p.hiredAt
+                        ? "Days before this are left out of their averages, and out of the days-off close-out."
+                        : "Blank counts the whole month, as it always has."}
+                    </span>
+                  </div>
                   {!l ? (
                     <>
                       <p className="hint">
@@ -22829,6 +22908,8 @@ function Style() {
       .pp-acct-line { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; margin-bottom:9px; }
       .pp-acct-line b { font-size:13.5px; }
       .pp-acct-line span { font-size:11.5px; color:var(--ink-3); }
+      .pp-startrow { padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid rgba(16,32,52,.08); }
+      .pp-startnote { margin:0 !important; flex:1; min-width:180px; }
       .pp-move { margin-top:12px; padding:12px 14px; border-radius:13px;
         background:rgba(42,94,155,.07); border:1px solid rgba(42,94,155,.2); }
       .pp-move-head { font-size:14px; margin-bottom:4px; }
