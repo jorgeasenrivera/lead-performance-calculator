@@ -23,6 +23,7 @@ import { createClient } from "@supabase/supabase-js";
 import { decide, contentState } from "./_queue-notify.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
+import { sendAlert } from "./_report-alert.mjs";
 
 const ACTIVITY_TYPE = "QueueAttributes";     // must match the Swift struct's name
 
@@ -42,6 +43,27 @@ export default async function handler(req, res) {
   const after = body.record || null;
   const before = body.old_record || null;
   if (!after) return res.status(200).json({ ok: true, sent: 0, note: "nothing to compare" });
+
+  /* Reports ride in this same table, so they arrive here too. They are not a
+     queue change and there is nobody in a line to tell — but they are the one
+     thing in the table somebody is waiting on, so they get carried on. Without
+     this branch the row fell through partsOf() as a store called "ticket",
+     matched no devices, and quietly went nowhere. */
+  if (String(after.id || "").startsWith("ticket:")) {
+    const t = after.data || {};
+    if (t.kind !== "figures" || (t.status && t.status !== "open")) {
+      return res.status(200).json({ ok: true, sent: 0, note: "not a new wrong-number report" });
+    }
+    const db0 = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false } });
+    let hook = "";
+    try {
+      const { data } = await db0.from("app_data").select("value").eq("key", "lpc:config:v2").maybeSingle();
+      hook = (data && data.value && data.value.support && data.value.support.alertWebhook) || "";
+    } catch { /* the report is saved either way; this only ever adds */ }
+    const out = await sendAlert(hook, t);
+    return res.status(200).json({ ok: true, sent: out.sent ? 1 : 0, note: out.why || "alerted" });
+  }
 
   const { store, date, kind } = partsOf(after.id);
   const plan = decide(before && before.data, after.data);
