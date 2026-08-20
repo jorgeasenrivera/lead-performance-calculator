@@ -3858,7 +3858,11 @@ function LEADERBOARD_HTML(p) {
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
     --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
-  html,body { height:100%; }
+  /* Same guard as the app: plenty of these screens are driven by an Android stick
+     or an Android TV, and every size on this board is computed from the height of
+     the screen. Chrome deciding a column should be bigger than the arithmetic said
+     is the one thing that can throw the whole layout out. */
+  html,body { height:100%; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   body { font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
     font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
     background:#0E2033; overflow:hidden; }
@@ -20029,7 +20033,16 @@ function Style() {
         --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
       }
 
-      html { scroll-behavior: smooth; }
+      /* ---- Android's own idea of how big your text should be ----
+         Chrome on Android inflates the type in blocks it decides are wide for the
+         viewport — "font boosting". It is well meant and it is invisible during
+         development, because it does not happen on a desktop at all: the first
+         anybody knows is a salesperson holding a phone where one column of a card
+         is a size nobody chose. 100% turns the boosting off while still honouring
+         the text-size slider in the phone's own settings, which is the half of it
+         worth keeping. Setting it to none would take that away too, and somebody who has
+         turned their text up has a reason. */
+      html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
       /* Display face on anything that carries hierarchy or a number worth reading
          across a room. Everything else stays on Inter, which holds up better in
@@ -24815,8 +24828,28 @@ function Style() {
 @keyframes sfThrob{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
 .sf-uptake h2{ font-size:clamp(40px,13vw,54px); font-weight:700; letter-spacing:-.04em; color:#04140f; line-height:.95; }
 .sf-uptake p{ margin-top:12px; font-size:clamp(15px,4.4vw,17px); font-weight:500; color:rgba(4,20,15,.78); max-width:340px; }
-.sf-go{ margin-top:32px; background:#04140f; color:#fff; border:none; border-radius:16px; padding:15px 32px; font-family:var(--sffont); font-weight:600; font-size:16px; cursor:pointer; }
-.sf-go:active{ transform:translateY(1px); }
+/* ---- The one tap that matters ----
+   This screen exists to be tapped, once, by somebody who has just been told a
+   customer is theirs and is already walking. It was a 110px pill in the middle of
+   a full-screen panel: fine to aim at sitting down, mean at arm's length on the
+   move. It now runs the width of the panel and stands 68px tall, which is a
+   target a thumb finds without being aimed.
+
+   The padding above it is part of the same idea. A finger that lands slightly
+   high on a small button hits nothing at all and the screen just sits there;
+   here the whole foot of the panel is the button. */
+.sf-go{
+  margin-top:32px; width:100%; max-width:420px; min-height:68px;
+  background:#04140f; color:#fff; border:none; border-radius:18px;
+  padding:20px 32px; font-family:var(--sffont); font-weight:700; font-size:18px;
+  letter-spacing:-.01em; cursor:pointer; touch-action:manipulation;
+  box-shadow:0 10px 28px -12px rgba(4,20,15,.75);
+  transition:transform .12s var(--ease), box-shadow .18s var(--ease);
+}
+/* The press has to be felt as well as heard — a button this size with no travel
+   reads as unresponsive on a phone that has not caught up yet. */
+.sf-go:active{ transform:translateY(2px) scale(.985); box-shadow:0 4px 14px -8px rgba(4,20,15,.7); }
+.sf-go:disabled{ opacity:.6; }
 
 /* PIN screen — its own "something else fun" entrance (a spring pop, no curtain) */
 .q-stage-pin{animation:qpinpop .58s cubic-bezier(.2,.9,.25,1.35) both;transform-origin:center 40%;}
