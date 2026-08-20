@@ -115,6 +115,12 @@ function parseReport(rows, type) {
       rec.actApptScheduled = toNum(row[idx("Scheduled")]);
       rec.actApptConfirmed = toNum(row[idx("Confirmed")]);
       rec.actApptNoShow    = toNum(row[idx("No Show")]);
+      /* How many customers the report credits somebody with seeing that day.
+         Both spellings, because the column is headed "Visit" on the PDF and
+         "Visits" on at least one CSV export. Null when the report has no such
+         column at all — a store still on the older export has said nothing about
+         visits, which is not the same as saying nobody walked in. */
+      rec.actVisits = toNum(row[idx("Visit")]) ?? toNum(row[idx("Visits")]);
     }
     out[key] = rec;
   }
@@ -218,13 +224,30 @@ const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone"
   "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
   "created","scheduled","confirmed","show","callsmade","calls","made","connects","texts",
   "text","emails","email","videos","video","opentasks","open","tasks","completedtasks",
-  "completed","totaldelivered","totalclosing","total","delivered","closing"]);
+  "completed","totaldelivered","totalclosing","total","delivered","closing",
+  /* Added to the export later, and the reason two weeks of reports came in
+     addressed to a dealership that does not exist. A name here is whatever is
+     LEFT of a header line once the column vocabulary has been struck out, so a
+     column word missing from this list does not go missing — it becomes part of
+     somebody's name. "Drivers Mart Winter Visit Park" matched no store and the
+     whole file was refused; every salesperson on the activity report arrived as
+     "Chase Cabney Visit". */
+  "visit","visits"]);
 
 function mapDailyActivityGrid(lines) {
-  // Same decimal fix as the Delivery Summary: Units Delivered carries half
-  // credit on split deals, and one dropped token knocks the whole row out.
-  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
-  const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
+  /* Same decimal fix as the Delivery Summary: Units Delivered carries half
+     credit on split deals, and one dropped token knocks the whole row out.
+
+     "?" belongs in here for a harder reason. DriveCentric prints it in App
+     Confirmed wherever the figure is not applicable, and the STORE row carries
+     one on most days. Without it that row falls a token short, is skipped, and
+     the first salesperson's row is taken for the store instead — so the store
+     arrives named "Holler Ford Fin Smith", Fin vanishes from the report, and
+     every later person carrying a "?" is dropped in a way that welds their name
+     onto the next one: "Luke Pancake Mike Ganus", one person, nobody's numbers.
+     All of it silent. */
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "?" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
+  const val = (t) => (t === "-" || t === "?" || t === "∞" || t == null) ? null : toNum(t);
 
   let storeName = null, sawHeaderSig = false;
   let nameParts = [];
@@ -248,7 +271,10 @@ function mapDailyActivityGrid(lines) {
       const parts = nameParts.slice();
       let nm = dedupeName(parts.join(" "));
       nameParts = [];
-      const v = nums.slice(0, 19).map(val);
+      /* Twenty since Visit was added to the export, nineteen before it. Both are
+         read rather than one being demanded, so a store still on the older
+         report keeps importing exactly as it did. */
+      const v = nums.slice(0, 20).map(val);
       if (!storeName) {
         if (!nm) continue;
         storeName = nm;
@@ -279,12 +305,16 @@ function mapDailyActivityGrid(lines) {
 
   const header = ["Name","Total","Showroom","Phone","Internet","Campaign",
     "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
-    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered","Visit"];
   const rows = [["Daily Activity"], header];
   for (const p of Object.values(people)) {
     const c = p.cols;
     rows.push([p.displayName, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
-      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17]]);
+      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17],
+      /* Visit sits past Total Closing %, so it is only there on the newer
+         export. Absent, it stays null rather than becoming a zero — nobody
+         logged no visits, the report simply did not say. */
+      c.length > 19 ? c[19] : null]);
   }
   return { storeName, rows };
 }
@@ -558,8 +588,12 @@ async function sbPutActivityDay(storeId, day, rows) {
    the store rows require a signed-in session and a sign-in page has none. Counts
    only, one day, for the people on the floor. */
 const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
+/* The floor reads its own narrow copy of the day rather than the whole import.
+   "visits" belongs in it: it is what the Live Floor shows next to each person,
+   and the only record a second salesperson on a deal ever appears in — the deal
+   notification names the primary rep and nobody else. */
 const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email", "tasks", "tasksPosted",
-  "apptScheduled", "apptConfirmed", "apptShow", "units", "uploadedAt"];
+  "apptScheduled", "apptConfirmed", "apptShow", "units", "visits", "uploadedAt"];
 async function sbPutFloorStats(storeId, day, rows) {
   const out = {};
   for (const [k, r] of Object.entries(rows || {})) {
@@ -697,6 +731,7 @@ function applyToStore(data, entries, sourceLabel) {
           oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
           apptScheduled: rec.actApptScheduled, apptConfirmed: rec.actApptConfirmed,
           apptNoShow: rec.actApptNoShow,
+          visits: rec.actVisits,
           uploadedAt: new Date().toISOString(),
         };
         count++;
