@@ -2,6 +2,10 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
+/* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
+   salesperson's phone, the TV board, and every manager who never opens the lot
+   editor would otherwise carry on every single load. */
+const FenceEditor = React.lazy(() => import("./FenceEditor.jsx"));
 
 /* ============================================================
    LEAD PERFORMANCE CALCULATOR v3
@@ -3033,7 +3037,7 @@ export default function LeadPerformanceCalculator() {
               apptConfirmed: rec.actApptConfirmed, apptShow: rec.actApptShow,
               oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
               oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
-              tasks: rec.actCompletedTasks,
+              tasks: rec.actCompletedTasks, visits: rec.actVisits,
               uploadedAt: new Date().toISOString(),
             },
           };
@@ -3063,6 +3067,10 @@ export default function LeadPerformanceCalculator() {
             oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
             apptScheduled: rec.actApptScheduled, apptConfirmed: rec.actApptConfirmed,
             apptNoShow: rec.actApptNoShow,
+            /* Customers this person was credited with seeing. The only figure in
+               any export that credits a SECOND salesperson on a walk-in, so it is
+               kept per day rather than only rolled into the month. */
+            visits: rec.actVisits,
             uploadedAt: new Date().toISOString(),
           };
           // Deliberately NOT stamped onto the month totals. A day file only holds one
@@ -9906,6 +9914,19 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const line = (row && row.line) || [];
   const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
 
+  /* How many customers the report credits this person with today.
+     It answers the one question this board could not: has this person actually
+     had a shot yet. A floor can look busy while somebody has stood there all
+     morning without an up, and nothing else on this screen says so.
+
+     It comes from the day's activity import, so it is as fresh as the last report
+     rather than live — and a dash means no report has landed yet, which is not
+     the same as nobody. */
+  const visitsToday = (id) => {
+    const rec = (data.activity?.[date] || {})[norm(realName(id))];
+    return rec && rec.visits != null ? rec.visits : null;
+  };
+
   // ---- the engine tick: pull new deal_events, apply, and run the timer ----
   const engineTick = useCallback(async () => {
     if (!row) return;
@@ -10175,6 +10196,18 @@ function FloorBoard({ config, store, data, onData, userName }) {
                 <div className="q-meta">
                   <span className={`q-chip ${FLOOR_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <FFlagIcon status={p.status} className="q-chip-ico" />}{FLOOR_FLAGS[p.status]?.label || p.status}</span>
                   <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
+                  {(() => {
+                    const v = visitsToday(p.id);
+                    if (v == null) return null;
+                    return (
+                      <span className={"f-ups" + (v === 0 ? " none" : "")}
+                        title={v === 0
+                          ? "No customers credited to them on today's activity report yet"
+                          : `${v} customer${v === 1 ? "" : "s"} credited on today's activity report`}>
+                        {v} up{v === 1 ? "" : "s"}
+                      </span>
+                    );
+                  })()}
                   {p.autoFlip && <span className="f-auto">auto</span>}
                 </div>
               </div>
@@ -10258,6 +10291,22 @@ function FloorConfigEditor({ config, storeId, onChange }) {
   const [dealerInput, setDealerInput] = useState("");
   const [evEvent, setEvEvent] = useState("");
   const [evAction, setEvAction] = useState("checkin");
+  const [drawing, setDrawing] = useState(false);
+
+  /* The lot lives on the store's config rather than in its data document, for one
+     practical reason: every phone already loads the config, and none of them
+     should have to pull a whole store document to find out where the property
+     ends. */
+  const fence = (store && store.fence) || null;
+  const saveFence = (next) => {
+    const cfgNext = JSON.parse(JSON.stringify(config));
+    const s = cfgNext.stores.find((x) => x.id === storeId);
+    if (next) s.fence = { ...next, updatedAt: new Date().toISOString() };
+    else delete s.fence;
+    setDrawing(false);
+    onChange(cfgNext, { store: storeId, action: next ? "Drew the lot boundary" : "Removed the lot boundary",
+      detail: next ? `${store.name}: ${next.ring.length} corners` : store.name });
+  };
 
   const save = (patch, audit) => {
     const next = JSON.parse(JSON.stringify(config));
@@ -10348,6 +10397,33 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           <div className="stepper-row">
             <Stepper label="Timer minutes" field="timerMins" value={cfg.timerMins} hint="before the leader is passed" min={1} />
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>The lot</h3>
+        <p className="hint">
+          Where this store's property ends. A phone can only tell that somebody has left the lot if
+          it knows where the lot is — and it never records where anybody goes, only whether they are
+          on it or off it.
+        </p>
+        {fence && fence.ring && fence.ring.length >= 3 && !drawing && (
+          <p className="hint">
+            <b>{fence.ring.length} corners</b> drawn
+            {fence.updatedAt ? ` · last changed ${new Date(fence.updatedAt).toLocaleDateString()}` : ""}.
+          </p>
+        )}
+        {!drawing ? (
+          <div className="inline-form">
+            <button className="btn" onClick={() => setDrawing(true)}>
+              {fence ? "Redraw the lot" : "Draw the lot"}
+            </button>
+            {!fence && <span className="hint">Nothing is drawn yet, so nobody is ever marked off the lot.</span>}
+          </div>
+        ) : (
+          <React.Suspense fallback={<p className="hint">Loading the map…</p>}>
+            <FenceEditor store={store} fence={fence} onSave={saveFence} onCancel={() => setDrawing(false)} />
+          </React.Suspense>
         )}
       </div>
 
@@ -23095,6 +23171,23 @@ function Style() {
       .flow-leader { stroke-width:1; opacity:.55; }
       .flow-scale-note { font-size:11px; line-height:1.5; color:var(--ink-2); margin-top:8px; }
       .flow-scale-note b { color:var(--ink); font-weight:700; }
+      /* ---- Drawing the lot ---- */
+      .fence { margin-top:12px; }
+      .fence-head h3 { margin:0 0 4px; }
+      /* Tall enough to see a whole dealership at the zoom a manager traces at.
+         Leaflet measures its container on creation, so this has to be a real
+         height rather than something that resolves later. */
+      .fence-map { height:min(58vh, 460px); border-radius:14px; overflow:hidden;
+        border:1px solid var(--line); margin:12px 0; background:#E8EDF2; }
+      .fence-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .fence-count { font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+      .fence-warn { margin-top:10px; font-size:12.5px; line-height:1.5; color:#7C4A03;
+        background:rgba(245,158,11,.09); border:1px solid rgba(217,119,6,.32);
+        border-radius:12px; padding:10px 12px; }
+      .fence-acts { display:flex; align-items:center; gap:10px; margin-top:14px; }
+      /* Leaflet draws its own controls and credit; keep them in this app's type. */
+      .fence-map .leaflet-container { font-family:var(--font-ui); font-size:11px; }
+      .fence-map .leaflet-control-attribution { font-size:10px; }
       .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
       /* Once the card is wider than the chart wants to be, the chart moves beside
          the read-out rather than under it — otherwise capping its width leaves a
@@ -24909,6 +25002,11 @@ function Style() {
 .q-chip.f-away{background:rgba(255,110,110,.18);color:#ffb0b0;}
 .f-row-cust{border-color:rgba(120,150,255,.35);box-shadow:0 0 0 1px rgba(120,150,255,.20) inset;}
 .f-auto{font-size:9px;font-weight:800;letter-spacing:.6px;color:#9fe7cd;background:rgba(15,157,118,.18);padding:1px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
+/* Ups so far today. Quiet when somebody has had one, and quieter still when they
+   have not — nobody should read this as an accusation, only as the fact a manager
+   is currently having to guess at. */
+.f-ups{font-size:9px;font-weight:800;letter-spacing:.6px;color:#b9c9ff;background:rgba(120,150,255,.16);padding:1px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
+.f-ups.none{color:var(--sfink3);background:rgba(255,255,255,.06);}
 .f-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:1px 7px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
 .f-tag-ico{width:11px;height:11px;}
 .f-tag-appt{background:rgba(120,150,255,.20);color:#b9c9ff;}
