@@ -41,8 +41,14 @@ create policy floor_people_read_own on public.floor_people
 revoke insert, update, delete on public.floor_people from anon, authenticated;
 
 -- HOW AN ACCOUNT COMES INTO EXISTENCE
--- Invite from the Supabase dashboard (Authentication, Invite user) or with the
--- admin API. The salesperson sets a password once, and the session persists on
--- their phone from then on, so day to day they never sign in again. The PIN on
--- the podium screen is unaffected and stays as it is: it is for a shared device,
--- where a persistent session belonging to one person would be wrong.
+-- The salesperson signs up on the site like anybody else, with a dealership
+-- address on the approved-domains list. A manager then leaves them with no
+-- stores ticked, which keeps them off the dashboard entirely while the account
+-- still exists to be linked — and linking is done on the Live Floor board, under
+-- Phones. Inviting from the Supabase dashboard (Authentication, Invite user)
+-- also works and skips the approval step.
+--
+-- They set a password once, and the session persists on their phone from then
+-- on, so day to day they never sign in again. The PIN on the podium screen is
+-- unaffected and stays as it is: it is for a shared device, where a persistent
+-- session belonging to one person would be wrong.
