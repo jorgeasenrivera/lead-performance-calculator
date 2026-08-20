@@ -19,6 +19,10 @@ import {
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
+/* A person's standing at a store, and every list and stamp a change to it
+   implies. One place, because three screens used to do this and two of them were
+   quietly broken in the same way. */
+import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed } from "../api/_people-status.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -2762,15 +2766,11 @@ export default function LeadPerformanceCalculator() {
      import cannot put them back. One path, so the two cannot drift. */
   const ignoreNames = (keys) => {
     if (!keys || !keys.length || !storeData) return;
-    const next = JSON.parse(JSON.stringify(storeData));
-    const picked = (next.roster || []).filter((a) => keys.includes(norm(a.name)));
-    const names = picked.map((a) => a.name);
+    const names = (storeData.roster || []).filter((a) => keys.includes(norm(a.name))).map((a) => a.name);
     if (!names.length) return;
-    next.excluded = [...(next.excluded || [])];
-    for (const nm of names) {
-      if (!next.excluded.some((x) => norm(x) === norm(nm))) next.excluded.push(nm);
-    }
-    stripPeople(next, new Set(keys));
+    // The one function that owns a standing. Doing it by hand here was the
+    // fourth copy, and like two of the others it never wrote the stamp.
+    const next = setPersonStatus(storeData, names, "ignored", { by: session?.name });
     persistStore(view, next, {
       action: "Ignored names from imports",
       detail: `${names.length}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? `, +${names.length - 8} more` : ""}`,
@@ -3104,8 +3104,8 @@ export default function LeadPerformanceCalculator() {
       navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
     } else {
       navItems = isAdmin
-        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
-        : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]];
+        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "People"]]
+        : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]];
       navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
     }
     navOnChange = setTab;
@@ -3243,8 +3243,8 @@ export default function LeadPerformanceCalculator() {
             ) : (
               <SegControl
                 items={isAdmin
-                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "Roster"]]
-                  : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "Roster"]]}
+                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "People"]]
+                  : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]]}
                 value={(isAdmin
                   ? ["board", "import", "gm", "history", "standards", "roster"]
                   : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board"}
@@ -3301,7 +3301,13 @@ export default function LeadPerformanceCalculator() {
                 {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
                 {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
-                {tab === "roster" && <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
+                {tab === "roster" && (
+                  <>
+                    <StorePeoplePanel config={config} data={storeData} storeName={currentStore?.name}
+                      onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
+                    <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
+                  </>
+                )}
               </>
             )}
           </div>
@@ -6662,7 +6668,7 @@ function RepairPanel({ config }) {
     finally { setBusy(false); }
   };
 
-  const groups = [["roster", "Roster"], ["excluded", "Ignored names"], ["departed", "Marked as departed"],
+  const groups = [["roster", "People"], ["excluded", "Ignored names"], ["departed", "Marked as departed"],
     ["plate", "Plates logged out"], ["plateReg", "Plates on the master list"]];
 
   return (
@@ -19546,17 +19552,205 @@ function StandardsEditor({ config, storeId, onChange }) {
    month's totals and the store's closing rates still carry their numbers. The
    purge tool has always done both; this is the same three loops, lifted out so
    the roster's bulk actions cannot quietly do half the job. */
-function stripPeople(doc, keys) {
-  const go = new Set([...keys]);
-  doc.roster = (doc.roster || []).filter((a) => !go.has(norm(a.name)));
-  for (const m of Object.values(doc.months || {})) {
-    if (!m || !m.stats) continue;
-    for (const k of Object.keys(m.stats)) if (go.has(k)) delete m.stats[k];
-  }
-  for (const day of Object.keys(doc.activity || {})) {
-    for (const k of Object.keys(doc.activity[day] || {})) if (go.has(k)) delete doc.activity[day][k];
-  }
-  return doc;
+/* =========================================================================
+   StorePeoplePanel — who works here, and who does not.
+
+   A store's roster used to be a by-product of its imports: anybody named in a
+   report who was not already on it got added. That is convenient for a new store
+   and it is also the reason a single misfiled report could put another
+   dealership's entire floor onto this one, complete with cars, and leave it
+   there for a fortnight with nothing on any screen looking wrong.
+
+   This is the other way round. A store says who its people are, and the figures
+   are checked against that. It does not stop a bad import on its own — that is
+   the next piece — but it gives the tool something to check against, and it puts
+   the one question that catches every mix-up at the top of the screen: is this
+   store's book crediting anybody it has never employed?
+
+   ---- three standings, and why the middle one matters ----
+   Somebody who LEAVES keeps their cars in the month they sold them, because the
+   store did sell them. Somebody who was never here loses theirs, because it
+   never earned them. Collapsing those two into "remove" is how a month that
+   delivered 85 came to read 84.5.
+   ========================================================================= */
+function StorePeoplePanel({ config, data, storeName, onChange, userName }) {
+  const [q, setQ] = useState("");
+  const [only, setOnly] = useState("all");
+  const [sel, setSel] = useState(() => new Set());
+  const [adding, setAdding] = useState(false);
+  const [nu, setNu] = useState({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
+  const [showLog, setShowLog] = useState(false);
+
+  const people = useMemo(() => everyPerson(data), [data]);
+  const strangers = useMemo(() => unclaimed(data), [data]);
+  const roleName = (id) => (config.roles || []).find((r) => r.id === id)?.name || "";
+
+  const counts = useMemo(() => {
+    const c = { active: 0, departed: 0, ignored: 0 };
+    for (const p of people) if (c[p.status] != null) c[p.status]++;
+    return c;
+  }, [people]);
+
+  const shown = people.filter((p) => (only === "all" || p.status === only)
+    && (!q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())));
+
+  const move = (names, status, note) => {
+    const list = Array.isArray(names) ? names : [names];
+    if (!list.length) return;
+    const next = setPersonStatus(data, list, status, { by: userName, note: note || "" });
+    setSel(new Set());
+    onChange(next, {
+      action: status === "active" ? "Put back on the floor"
+        : status === "departed" ? "Marked as departed" : "Marked as not this store's",
+      detail: `${list.length === 1 ? list[0] : list.length + " people"}${storeName ? " · " + storeName : ""}`,
+    });
+  };
+
+  const hire = () => {
+    const nm = nu.name.trim();
+    if (!nm) return;
+    const next = setPersonStatus(data, [nm], "active",
+      { by: userName, roleId: nu.roleId, hiredAt: nu.hiredAt || null, newId: uid(), note: "hired" });
+    setAdding(false); setNu({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
+    onChange(next, { action: "Added a person", detail: nm + (storeName ? " · " + storeName : "") });
+  };
+
+  const picked = [...sel];
+
+  return (
+    <>
+      {/* ---- the question that catches every mix-up ---- */}
+      {strangers.length > 0 && (
+        <div className="card pp-alert">
+          <h3>
+            {strangers.length === 1
+              ? "One name has figures here but is not one of your people"
+              : `${strangers.length} names have figures here but are not your people`}
+          </h3>
+          <p className="hint">
+            Something credited these with work at {storeName || "this store"} and they are on none of your
+            lists. That is what another dealership's report looks like after it has been filed in the wrong
+            place, and it is also what a heading looks like when the reader mistook it for a person. Say
+            which each one is. <b>Not ours</b> takes their figures out of this store's totals; <b>they work
+            here</b> puts them on the floor and leaves the figures alone.
+          </p>
+          <div className="pp-strangers">
+            {strangers.map((sname) => (
+              <div key={sname.key} className="pp-stranger">
+                <span className="pp-nm">{sname.name}</span>
+                <span className="pp-ev">
+                  {sname.units > 0 ? <><b>{fmtNum(Math.round(sname.units * 10) / 10)}</b> cars</> : "no cars"}
+                  {sname.days > 0 ? ` · ${sname.days} ${sname.days === 1 ? "day" : "days"}` : ""}
+                  {sname.months.length ? ` · ${sname.months.join(", ")}` : ""}
+                </span>
+                <button className="btn btn-sm" onClick={() => move(sname.name, "active", "claimed from unmatched figures")}>They work here</button>
+                <button className="btn btn-sm pp-danger" onClick={() => move(sname.name, "ignored", "figures belonged to another store")}>Not ours</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="pp-head">
+          <h3>People at {storeName || "this store"}</h3>
+          <div className="pp-counts">
+            <span className="pp-count on">{counts.active} on the floor</span>
+            <span className="pp-count">{counts.departed} left</span>
+            <span className="pp-count">{counts.ignored} not ours</span>
+          </div>
+        </div>
+        <p className="hint">
+          Who this store employs, whatever has happened to them. Somebody who leaves keeps the cars they
+          sold in the month they sold them — the store did sell those. Somebody who was never here loses
+          theirs, because it never earned them. That difference is why both exist.
+        </p>
+
+        <div className="pp-bar">
+          <input className="help-in pp-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a name…" />
+          <div className="seg-small">
+            {[["all", "Everyone"], ["active", "On the floor"], ["departed", "Left"], ["ignored", "Not ours"]].map(([id, lbl]) => (
+              <button key={id} className={"seg-opt " + (only === id ? "on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
+            ))}
+          </div>
+          <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>{adding ? "Cancel" : "Add a person"}</button>
+        </div>
+
+        {adding && (
+          <div className="pp-add">
+            <input className="help-in" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })}
+              placeholder="Their name, spelled as the reports spell it" />
+            <select className="q-flag-sel" value={nu.roleId || ""} onChange={(e) => setNu({ ...nu, roleId: e.target.value || null })}>
+              {(config.roles || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+            <label className="pp-date">Started
+              <input type="date" className="help-in" value={nu.hiredAt || ""} onChange={(e) => setNu({ ...nu, hiredAt: e.target.value })} />
+            </label>
+            <button className="btn btn-sm" disabled={!nu.name.trim()} onClick={hire}>Add them</button>
+          </div>
+        )}
+
+        {picked.length > 0 && (
+          <div className="pp-bulk">
+            <span>{picked.length} selected</span>
+            <button className="btn btn-sm" onClick={() => move(picked, "active")}>On the floor</button>
+            <button className="btn btn-sm" onClick={() => move(picked, "departed")}>They left</button>
+            <button className="btn btn-sm pp-danger" onClick={() => move(picked, "ignored")}>Not ours</button>
+            <button className="btn-quiet" onClick={() => setSel(new Set())}>Clear</button>
+          </div>
+        )}
+
+        <div className="pp-list">
+          {shown.length === 0 && <p className="hint">Nobody matches that.</p>}
+          {shown.map((p) => (
+            <div key={p.key} className={"pp-row pp-" + p.status + (sel.has(p.name) ? " on" : "")}>
+              <button className="pp-tick" onClick={() => setSel((s) => {
+                const n = new Set(s); if (n.has(p.name)) n.delete(p.name); else n.add(p.name); return n;
+              })} aria-label={`Select ${p.name}`}>
+                <span className="md-box">{sel.has(p.name) && <PixIcon glyph="check" size={13} />}</span>
+              </button>
+              <span className="mf-av" style={{ background: `hsl(${hueFromName(p.name)} 52% 42%)` }}>{initialsOf(p.name)}</span>
+              <div className="pp-who">
+                <div className="pp-nm">{p.name}</div>
+                <div className="pp-sub">
+                  <span className={"pp-pill pp-pill-" + p.status}>
+                    {p.status === "active" ? "on the floor" : p.status === "departed" ? "left" : "not ours"}
+                  </span>
+                  {p.roleId && <span>{roleName(p.roleId)}</span>}
+                  {p.hiredAt && <span>started {p.hiredAt}</span>}
+                  {p.departedAt && <span>left {String(p.departedAt).slice(0, 10)}</span>}
+                </div>
+              </div>
+              <div className="pp-acts">
+                {p.status !== "active" && <button className="btn btn-sm" onClick={() => move(p.name, "active")}>On the floor</button>}
+                {p.status !== "departed" && <button className="btn btn-sm" onClick={() => move(p.name, "departed")}>They left</button>}
+                {p.status !== "ignored" && <button className="btn btn-sm pp-danger" onClick={() => move(p.name, "ignored")}>Not ours</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {(data.peopleLog || []).length > 0 && (
+          <div className="pp-logwrap">
+            <button className="btn-quiet" onClick={() => setShowLog((v) => !v)}>
+              {showLog ? "Hide what has changed" : `What has changed (${data.peopleLog.length})`}
+            </button>
+            {showLog && (
+              <div className="pp-log">
+                {data.peopleLog.slice(0, 60).map((e, i) => (
+                  <div key={i} className="pp-log-row">
+                    <span className="pp-log-when">{new Date(e.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                    <span><b>{e.name}</b> {e.from} → {e.to}{e.note ? ` · ${e.note}` : ""}</span>
+                    <span className="pp-log-by">{e.by || ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 /* ---------------- Roster editor ---------------- */
@@ -19581,22 +19775,23 @@ function RosterEditor({ config, data, onChange, userName }) {
      does not put them straight back. That last part is what makes this the right
      tool for a report that was run against the wrong store — Remove alone would
      hold until the file landed again. */
+  /* Both of these used to edit the lists by hand here, and both were wrong in
+     the way that is hardest to see: Remove filtered the roster and wrote nothing
+     down, so the union merge handed everybody back on the next save from any
+     other tab, and Ignore added to the list without stamping it, so an older
+     note that somebody had been let back in could quietly reverse it.
+
+     They go through the one function that owns a standing now, which is the same
+     one the People panel above uses. Two screens cannot disagree about what
+     "ignored" does if there is only one of it. */
   const bulk = (mode) => {
     if (!sel.size) return;
-    const next = JSON.parse(JSON.stringify(data));
-    const picked = (next.roster || []).filter((a) => sel.has(norm(a.name)));
-    const names = picked.map((a) => a.name);
+    const names = (data.roster || []).filter((a) => sel.has(norm(a.name))).map((a) => a.name);
     if (!names.length) { setSel(new Set()); return; }
-    if (mode === "ignore") {
-      next.excluded = [...(next.excluded || [])];
-      for (const nm of names) {
-        if (!next.excluded.some((x) => norm(x) === norm(nm))) next.excluded.push(nm);
-      }
-    }
-    stripPeople(next, sel);
+    const next = setPersonStatus(data, names, mode === "ignore" ? "ignored" : "departed", { by: userName });
     setSel(new Set());
     onChange(next, {
-      action: mode === "ignore" ? "Ignored names from imports" : "Removed from roster",
+      action: mode === "ignore" ? "Ignored names from imports" : "Marked as departed",
       detail: `${names.length}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? `, +${names.length - 8} more` : ""}`,
     });
   };
@@ -22258,6 +22453,57 @@ function Style() {
       .tk-reach { font-size:12.5px; color:var(--blue); text-decoration:none; }
       .tk-when { margin-left:auto; font-size:12px; color:var(--ink-3); }
       /* ---- a report that a number is wrong ---- */
+      /* ---- who works here ---- */
+      .pp-alert { border:1px solid rgba(229,83,63,.35); background:linear-gradient(180deg,rgba(229,83,63,.05),transparent); }
+      .pp-alert h3 { color:#C13529; }
+      .pp-strangers { display:grid; gap:6px; margin-top:10px; }
+      .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
+        border-radius:12px; background:rgba(16,32,52,.04); }
+      .pp-stranger .pp-nm { font-weight:700; font-size:14px; }
+      .pp-ev { font-size:12px; color:var(--ink-3); flex:1; min-width:150px; }
+      .pp-ev b { font-family:var(--font-display); color:var(--ink); letter-spacing:-.02em; }
+      .pp-danger { border-color:rgba(229,83,63,.5); color:#C13529; }
+
+      .pp-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:10px; }
+      .pp-counts { display:flex; gap:7px; }
+      .pp-count { font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+        color:var(--ink-3); background:rgba(16,32,52,.05); padding:3px 8px; border-radius:999px; }
+      .pp-count.on { color:#0E7C55; background:rgba(15,179,126,.13); }
+      .pp-bar { display:flex; flex-wrap:wrap; gap:9px; align-items:center; margin:12px 0 4px; }
+      .pp-q { flex:1; min-width:170px; }
+      .pp-add { display:flex; flex-wrap:wrap; gap:9px; align-items:center; margin:10px 0;
+        padding:11px 13px; border-radius:12px; background:rgba(16,32,52,.04); }
+      .pp-add .help-in { flex:1; min-width:170px; }
+      .pp-date { display:flex; gap:7px; align-items:center; font-size:12px; color:var(--ink-2); }
+      .pp-date input { width:auto; }
+      .pp-bulk { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0;
+        padding:9px 12px; border-radius:12px; background:rgba(42,94,155,.08); font-size:12.5px; font-weight:600; }
+
+      .pp-list { display:grid; gap:5px; margin-top:10px; }
+      .pp-row { display:flex; gap:10px; align-items:center; padding:8px 11px; border-radius:12px;
+        background:rgba(16,32,52,.035); }
+      .pp-row.on { background:rgba(42,94,155,.12); }
+      .pp-row.pp-ignored { opacity:.62; }
+      .pp-tick { background:none; border:0; padding:0; cursor:pointer; display:flex; }
+      .pp-who { flex:1; min-width:0; }
+      .pp-who .pp-nm { font-weight:700; font-size:14px; }
+      .pp-sub { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:11.5px; color:var(--ink-3); margin-top:2px; }
+      .pp-pill { font-size:9px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+        padding:2px 7px; border-radius:999px; }
+      .pp-pill-active { color:#0E7C55; background:rgba(15,179,126,.14); }
+      .pp-pill-departed { color:#95600A; background:rgba(240,180,41,.16); }
+      .pp-pill-ignored { color:#C13529; background:rgba(229,83,63,.13); }
+      .pp-acts { display:flex; flex-wrap:wrap; gap:6px; }
+      .pp-logwrap { margin-top:12px; }
+      .pp-log { margin-top:8px; display:grid; gap:3px; }
+      .pp-log-row { display:flex; gap:10px; align-items:baseline; font-size:12px; color:var(--ink-2);
+        padding:3px 0; border-bottom:1px dotted rgba(16,32,52,.09); }
+      .pp-log-when { font-size:10.5px; color:var(--ink-3); min-width:52px; }
+      .pp-log-by { margin-left:auto; font-size:10.5px; color:var(--ink-3); }
+      @media (max-width:640px) {
+        .pp-row { flex-wrap:wrap; }
+        .pp-acts { width:100%; }
+      }
       .tk-wrong { border-left:3px solid #E5533F; padding-left:11px; }
       .tk-wrong.tk-closed { border-left-color:rgba(16,32,52,.15); }
       .tk-kind { font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
