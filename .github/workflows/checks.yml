@@ -1,0 +1,28 @@
+# Every push and every pull request.
+#
+# The reason this exists: three separate faults reached production in one week,
+# all of them found by somebody noticing a wrong number on a screen days later.
+# Every one of them was catchable in milliseconds. Checks that live on a laptop
+# are checks that do not run.
+name: checks
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      # The tests need no dependencies at all — they run against the shared
+      # modules with Node's own test runner — but the build does, and a build
+      # that fails is as broken as a test that fails.
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
