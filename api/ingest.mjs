@@ -816,6 +816,19 @@ const squash = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
    was thrown away. A configured store name that the parsed heading BEGINS with is
    a match, longest name winning so "Driver's Mart Winter Park" is never beaten by
    a shorter store that happens to share a prefix. */
+/* One group per store, in the order the stores were first seen. Every entry has
+   to carry its own store by the time it gets here — an entry that does not know
+   where it belongs has no safe place to go. */
+function groupByStore(entries) {
+  const byStore = new Map();
+  for (const e of entries || []) {
+    if (!e || !e.store || !e.store.id) continue;
+    if (!byStore.has(e.store.id)) byStore.set(e.store.id, { store: e.store, entries: [] });
+    byStore.get(e.store.id).entries.push(e);
+  }
+  return byStore;
+}
+
 function matchStoreByName(stores, parsedName) {
   const P = squash(parsedName);
   if (!P) return null;
@@ -865,7 +878,10 @@ export default async function handler(req, res) {
     const local = to.split("@")[0] || "";
     const slug = squash(local.replace(/^lpc-?/, ""));
     const cfg = await sbGet("lpc:config:v2");
-    let store = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug) || null;
+    /* The store the ADDRESS names, and nothing else may change it. It used to be
+       the same variable the PDF loop assigned to, so the last PDF in a message
+       silently became the store for everything in that message. */
+    const addressStore = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug) || null;
 
     const atts = mail.attachments || [];
     const csvs = atts.filter((a) => /csv$/i.test(a.filename || "") || /text\/csv/i.test(a.mimeType || ""));
@@ -892,7 +908,18 @@ export default async function handler(req, res) {
         type = "delivery-" + ch;
       }
       if (!type) { skippedFiles.push({ file: a.filename, why: "unrecognized report" }); continue; }
-      entries.push({ rows, type, fileName: a.filename || "email.csv",
+      /* A CSV names no store anywhere inside it, so the only thing that can place
+         it is the address it was sent to. It used to be placed by whichever PDF
+         happened to be read after it, which is how one store's figures ended up
+         filed under another's name. Unplaceable is now refused rather than
+         guessed: a report in the wrong store is worse than a report nowhere. */
+      if (!addressStore) {
+        const why = "a CSV names no store, and this address names no store either — send it to that store's own address";
+        skippedFiles.push({ file: a.filename, why });
+        failures.push({ file: a.filename, why });
+        continue;
+      }
+      entries.push({ store: addressStore, rows, type, fileName: a.filename || "email.csv",
         actDay: activityDateFrom(a.filename) });
     }
 
@@ -922,8 +949,7 @@ export default async function handler(req, res) {
             failures.push({ file: a.filename, why: note });
             continue;
           }
-          store = hit.store;
-          entries.push({ rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
+          entries.push({ store: hit.store, rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
             actDay: kind === "activity"
               ? (activityDateFrom(a.filename) || activityDateFrom(subject))
               : null });
@@ -993,76 +1019,94 @@ export default async function handler(req, res) {
     // From here on, every exit that writes nothing answers with a failing status
     // and ok:false, so the Cloudflare worker records an error and the run shows
     // up red instead of blending into the successes.
-    if (!store) {
-      const why = `no store matches address "${to}" or any PDF header`;
-      console.error("ingest:", why);
-      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
-    }
     if (!entries.length) {
-      const why = "nothing in this message could be read as a report";
+      const why = failures.length
+        ? "nothing in this message could be filed"
+        : `no store matches address "${to}" or any PDF header`;
       console.error("ingest:", why, JSON.stringify(skippedFiles));
       return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
     }
 
-    const key = `lpc:store:${store.id}:v2`;
-    const data = await sbGet(key);
-    if (!data) {
-      const why = `store ${store.id} has no data document yet`;
-      console.error("ingest:", why);
-      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
-    }
-    // Apply inside the swap, so a retry re-applies to whatever the row now holds
-    // rather than replaying against the copy we first read.
-    let next = null, lastResults = [];
-    const swap = await sbSwap(key, (cur) => {
-      const out = applyToStore(cur, entries, "Auto-import (email)");
-      next = out.next; lastResults = out.results;
-      return out.next;
-    });
-    if (!swap.ok) {
-      const why = `could not write ${store.id}: ${swap.why}`;
-      console.error("ingest:", why);
-      return res.status(409).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
-    }
+    /* Each attachment is filed under the store IT names, and a message carrying
+       two stores' reports writes to both.
 
-    // Declared before it is used. The swap callback fills this in, and the loop
-    // below reads it, so the order matters.
-    const results = lastResults;
+       This used to be one store and one list. Every attachment's rows went into
+       the same list, and whichever PDF was read last decided where the whole lot
+       went — so a message with two dealerships in it put both under one name, and
+       a CSV (which names no store anywhere inside it) followed whatever PDF
+       happened to come after it. The figures were real, complete and filed under
+       somebody else's dealership, which is the worst shape a wrong number can
+       take: nothing about it looks wrong. */
+    const byStore = groupByStore(entries);
 
-    // The day rows the import just touched, each written on its own. A failure here
-    // is worth reporting but not worth failing the import: the same data is in the
-    // document that was just written successfully.
-    const dayWrites = [];
-    for (const r of results) {
-      if (r.type !== "activity" || !r.day) continue;
-      const rows = next && next.activity && next.activity[r.day];
-      if (!rows) continue;
+    const stores = [];
+    for (const { store: st, entries: mine } of byStore.values()) {
+      const key = `lpc:store:${st.id}:v2`;
+      const data = await sbGet(key);
+      if (!data) {
+        const why = `store ${st.id} has no data document yet`;
+        console.error("ingest:", why);
+        failures.push({ file: mine.map((e) => e.fileName).join(", "), why });
+        continue;
+      }
+      // Apply inside the swap, so a retry re-applies to whatever the row now holds
+      // rather than replaying against the copy we first read.
+      let next = null, lastResults = [];
+      const swap = await sbSwap(key, (cur) => {
+        const out = applyToStore(cur, mine, "Auto-import (email)");
+        next = out.next; lastResults = out.results;
+        return out.next;
+      });
+      if (!swap.ok) {
+        const why = `could not write ${st.id}: ${swap.why}`;
+        console.error("ingest:", why);
+        failures.push({ file: mine.map((e) => e.fileName).join(", "), why });
+        continue;
+      }
+      const results = lastResults;
+
+      // The day rows the import just touched, each written on its own. A failure here
+      // is worth reporting but not worth failing the import: the same data is in the
+      // document that was just written successfully.
+      const dayWrites = [];
+      for (const r of results) {
+        if (r.type !== "activity" || !r.day) continue;
+        const rows = next && next.activity && next.activity[r.day];
+        if (!rows) continue;
+        try {
+          await sbPutActivityDay(st.id, r.day, rows);
+          await sbPutFloorStats(st.id, r.day, rows);
+          dayWrites.push(r.day);
+        } catch (e) { console.error("ingest: day row write failed", st.id, r.day, String(e.message || e)); }
+      }
+
+      // Push the fresh figures to the wall. A board that cannot be refreshed must
+      // not sink the import that already succeeded, so this is reported, not thrown.
+      let board;
       try {
-        await sbPutActivityDay(store.id, r.day, rows);
-        await sbPutFloorStats(store.id, r.day, rows);
-        dayWrites.push(r.day);
-      } catch (e) { console.error("ingest: day row write failed", store.id, r.day, String(e.message || e)); }
+        board = await refreshBoardRow(st.id, next);
+      } catch (e) {
+        board = { published: false, why: String(e.message || e) };
+        console.error("ingest: board refresh failed for", st.id, board.why);
+      }
+      stores.push({ store: st.id, results, board, dayWrites });
     }
 
-    // Push the fresh figures to the wall. A board that cannot be refreshed must
-    // not sink the import that already succeeded, so this is reported, not thrown.
-    let board;
-    try {
-      board = await refreshBoardRow(store.id, next);
-    } catch (e) {
-      board = { published: false, why: String(e.message || e) };
-      console.error("ingest: board refresh failed for", store.id, board.why);
+    if (!stores.length) {
+      const why = "every attachment was refused; nothing was written";
+      console.error("ingest:", why, JSON.stringify(failures));
+      return res.status(422).json({ ok: false, error: why, stores, failures, skippedFiles, pdfReads });
     }
 
     // Some files landed and others did not. The import stands, but the message
     // says so out loud rather than reporting a clean success.
     if (failures.length) {
-      console.error("ingest: partial success for", store.id, JSON.stringify(failures));
+      console.error("ingest: partial success", JSON.stringify(failures));
       return res.status(422).json({ ok: false, error: "some attachments could not be filed",
-        store: store.id, results, board, failures, skippedFiles, pdfReads });
+        stores, failures, skippedFiles, pdfReads });
     }
 
-    return res.status(200).json({ ok: true, store: store.id, results, board, dayWrites, skippedFiles, pdfReads });
+    return res.status(200).json({ ok: true, stores, skippedFiles, pdfReads });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: String(e.message || e) });
