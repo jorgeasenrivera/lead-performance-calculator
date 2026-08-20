@@ -7,6 +7,14 @@
 import PostalMime from "postal-mime";
 import Papa from "papaparse";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
+/* The reader for the scheduled reports. Shared verbatim with the app, which
+   reads the same PDFs when a manager drops one in by hand — see the note at the
+   top of that file for what living as two copies cost. */
+import {
+  norm, toNum,
+  detectReportType, parseReport, parseDeliverySummaryRows,
+  mapDailyActivityGrid, mapDeliverySummaryGrid,
+} from "./_report-parsers.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 try {
@@ -15,118 +23,10 @@ try {
 
 export const config = { api: { bodyParser: false } };
 
-/* ---------- helpers copied from the app so behaviour matches ---------- */
-const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
-const toNum = (v) => {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (s === "" || s === "-") return null;
-  const n = parseFloat(s.replace(/[$,%]/g, ""));
-  return isNaN(n) ? null : n;
-};
 const uid = () => Math.random().toString(36).slice(2, 10);
 const TZ = "America/New_York";
 const todayET = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
 const ymET = () => todayET().slice(0, 7);
-
-/* ---------- BEGIN code extracted verbatim from the app ---------- */
-function detectReportType(rows, filename = "") {
-  const h2 = (rows[1] || []).join("|").toLowerCase();
-  const h1 = (rows[0] || []).join("|").toLowerCase();
-  const fn = filename.toLowerCase();
-  if (h2.includes("call contacted") && h2.includes("personalized video")) return "activity";
-  if (h2.includes("units delivered")) {
-    const namesChannel = /\b(internet|phone|showroom|show-room|floor|campaign|web)\b/.test(fn);
-    const namesDelivery = fn.includes("delivery");
-    if (namesChannel && !namesDelivery) return "wrong-channel-report";
-    return "delivery";
-  }
-  if (h2.includes("video day of appt")) return "appointment";
-  if (h1.includes("bh lead") && h1.includes("engaged")) return "video";
-  return null;
-}
-
-function parseReport(rows, type) {
-  const header = rows[1] || [];
-  const idx = (label) => header.findIndex((h) => norm(h) === norm(label));
-  const out = {};
-  const channel = type.startsWith("delivery-") ? type.split("-")[1] : null;
-  for (let r = 2; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row || !row[0] || !String(row[0]).trim()) continue;
-    const name = String(row[0]).trim();
-    const key = norm(name);
-    const rec = { displayName: name };
-    if (type === "delivery" || channel) {
-      const units = toNum(row[idx("Units Delivered")]);
-      const dpct = toNum(row[idx("Delivered %")]);
-      if (type === "delivery") {
-        rec.opps = toNum(row[idx("Opportunities")]);
-        rec.sold = toNum(row[idx("Sold")]);
-        rec.soldPct = toNum(row[idx("Sold %")]);
-        rec.unitsDelivered = units; rec.deliveredPct = dpct;
-        rec.internetUnits = units; rec.internetPct = dpct;
-      } else if (channel === "campaign") {
-        rec.campaignUnits = units;
-      } else {
-        rec[channel + "Units"] = units;
-        rec[channel + "Pct"] = dpct;
-        if (channel === "internet") {
-          rec.opps = toNum(row[idx("Opportunities")]);
-          rec.sold = toNum(row[idx("Sold")]);
-          rec.soldPct = toNum(row[idx("Sold %")]);
-          rec.unitsDelivered = units; rec.deliveredPct = dpct;
-        }
-      }
-    } else if (type === "appointment") {
-      rec.apptVideoDayPct = toNum(row[idx("Video Day of Appt %")]);
-      rec.apptTotalCreated = toNum(row[idx("Total Created")]);
-      rec.apptTotalScheduled = toNum(row[idx("Total Scheduled")]);
-      rec.apptTotalShow = toNum(row[idx("Total Show")]);
-      rec.apptShowPct = (() => {
-        const raw = toNum(row[idx("Total Show %")]);
-        if (raw == null) return null;
-        return raw > 1 ? raw / 100 : raw;
-      })();
-    } else if (type === "video") {
-      const pctCols = header
-        .map((h, i) => (norm(h) === norm("Personalized Video %") ? i : -1))
-        .filter((i) => i >= 0);
-      rec.bhVideoPct = toNum(row[pctCols[0]]);
-      rec.engagedVideoPct = toNum(row[pctCols[1]]);
-    } else if (type === "activity") {
-      rec.actCalls = toNum(row[idx("Calls")]);
-      rec.actCallContacted = toNum(row[idx("Call Contacted")]);
-      rec.actVideo = toNum(row[idx("Personalized Video")]);
-      rec.actText = toNum(row[idx("Text")]);
-      rec.actEmail = toNum(row[idx("Email")]);
-      rec.actApptCreated = toNum(row[idx("Created")]);
-      rec.actApptShow = toNum(row[idx("Show")]);
-      rec.actOppsTotal = toNum(row[idx("Total")]);
-      rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
-      rec.actOpenTasks = toNum(row[idx("Open Tasks")]) ?? toNum(row[idx("Total Tasks")]) ??
-        toNum(row[idx("Tasks Due")]) ?? toNum(row[idx("Assigned Tasks")]);
-      rec.actSold = toNum(row[idx("Sold")]);
-      rec.actUnits = toNum(row[idx("Units Delivered")]);
-      rec.actOppShowroom = toNum(row[idx("Showroom")]);
-      rec.actOppPhone    = toNum(row[idx("Phone")]);
-      rec.actOppInternet = toNum(row[idx("Internet")]);
-      rec.actOppCampaign = toNum(row[idx("Campaign")]);
-      rec.actApptScheduled = toNum(row[idx("Scheduled")]);
-      rec.actApptConfirmed = toNum(row[idx("Confirmed")]);
-      rec.actApptNoShow    = toNum(row[idx("No Show")]);
-      /* How many customers the report credits somebody with seeing that day.
-         Both spellings, because the column is headed "Visit" on the PDF and
-         "Visits" on at least one CSV export. Null when the report has no such
-         column at all — a store still on the older export has said nothing about
-         visits, which is not the same as saying nobody walked in. */
-      rec.actVisits = toNum(row[idx("Visit")]) ?? toNum(row[idx("Visits")]);
-    }
-    out[key] = rec;
-  }
-  return out;
-}
-/* ---------- END extracted code ---------- */
 
 /* ---------- shared PDF line extraction ---------- */
 async function extractPdfLines(buffer) {
@@ -164,160 +64,18 @@ async function extractPdfLines(buffer) {
   return lines;
 }
 
-const squashT = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /* Some rows print the name twice, so the pieces assemble into "Peter Tran Peter
    Tran". The key built from that matches nobody on the roster and the person shows
    up with no data at all. If the second half of a name is the first half repeated,
    it is one name that was printed twice, not two people. */
-function dedupeName(s) {
-  const t = String(s || "").trim().replace(/\s+/g, " ");
-  if (!t) return t;
-  const w = t.split(" ");
-  if (w.length >= 2 && w.length % 2 === 0) {
-    const half = w.length / 2;
-    if (w.slice(0, half).join(" ").toLowerCase() === w.slice(half).join(" ").toLowerCase()) {
-      return w.slice(0, half).join(" ");
-    }
-  }
-  // also catches a single word doubled with no space, e.g. "LetitiaLetitia"
-  const m = t.match(/^(.{3,})\1$/i);
-  return m ? m[1].trim() : t;
-}
 
-function stripVocabWith(vocab, tokens) {
-  const kept = [];
-  let i = 0;
-  while (i < tokens.length) {
-    let consumed = 0;
-    for (let len = 4; len >= 1; len--) {
-      if (i + len > tokens.length) continue;
-      const glued = squashT(tokens.slice(i, i + len).join(""));
-      if (glued && vocab.has(glued)) { consumed = len; break; }
-    }
-    if (consumed) { i += consumed; continue; }
-    const t = tokens[i];
-    if (squashT(t)) kept.push(t);
-    i++;
-  }
-  return kept;
-}
 
-function vocabCountWith(vocab, tokens) {
-  let n = 0, i = 0;
-  while (i < tokens.length) {
-    let consumed = 0;
-    for (let len = 4; len >= 1; len--) {
-      if (i + len > tokens.length) continue;
-      const glued = squashT(tokens.slice(i, i + len).join(""));
-      if (glued && vocab.has(glued)) { consumed = len; break; }
-    }
-    if (consumed) { n++; i += consumed; } else i++;
-  }
-  return n;
-}
 
 /* =========================================================================
    PDF #1: Daily Activity grid.
    ========================================================================= */
-const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone","ups",
-  "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
-  "created","scheduled","confirmed","show","callsmade","calls","made","connects","texts",
-  "text","emails","email","videos","video","opentasks","open","tasks","completedtasks",
-  "completed","totaldelivered","totalclosing","total","delivered","closing",
-  /* Added to the export later, and the reason two weeks of reports came in
-     addressed to a dealership that does not exist. A name here is whatever is
-     LEFT of a header line once the column vocabulary has been struck out, so a
-     column word missing from this list does not go missing — it becomes part of
-     somebody's name. "Drivers Mart Winter Visit Park" matched no store and the
-     whole file was refused; every salesperson on the activity report arrived as
-     "Chase Cabney Visit". */
-  "visit","visits"]);
 
-function mapDailyActivityGrid(lines) {
-  /* Same decimal fix as the Delivery Summary: Units Delivered carries half
-     credit on split deals, and one dropped token knocks the whole row out.
-
-     "?" belongs in here for a harder reason. DriveCentric prints it in App
-     Confirmed wherever the figure is not applicable, and the STORE row carries
-     one on most days. Without it that row falls a token short, is skipped, and
-     the first salesperson's row is taken for the store instead — so the store
-     arrives named "Holler Ford Fin Smith", Fin vanishes from the report, and
-     every later person carrying a "?" is dropped in a way that welds their name
-     onto the next one: "Luke Pancake Mike Ganus", one person, nobody's numbers.
-     All of it silent. */
-  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "?" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
-  const val = (t) => (t === "-" || t === "?" || t === "∞" || t == null) ? null : toNum(t);
-
-  let storeName = null, sawHeaderSig = false;
-  let nameParts = [];
-  // Some exports print the first person's name in the same block as the store
-  // heading. Those fragments are carried to the next data row instead of being
-  // swallowed, which is what used to drop that person from the whole report AND
-  // corrupt the store name so nothing could be routed.
-  let storeParts = null, pendingName = null;
-  const people = {};
-
-  for (const L of lines) {
-    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
-    if (!texts.length) continue;
-    if (squashT(texts.join("")).includes("netleads")) sawHeaderSig = true;
-    const rowTag = texts[0];
-
-    if (rowTag === "New" || rowTag === "Used" || rowTag === "All") {
-      if (rowTag !== "All") continue;
-      const nums = texts.slice(1).filter(isNum);
-      if (nums.length < 19) continue;
-      const parts = nameParts.slice();
-      let nm = dedupeName(parts.join(" "));
-      nameParts = [];
-      /* Twenty since Visit was added to the export, nineteen before it. Both are
-         read rather than one being demanded, so a store still on the older
-         report keeps importing exactly as it did. */
-      const v = nums.slice(0, 20).map(val);
-      if (!storeName) {
-        if (!nm) continue;
-        storeName = nm;
-        storeParts = parts;
-        // anything past the first fragment may belong to a person, not the store
-        if (parts.length > 1) pendingName = dedupeName(parts.slice(1).join(" "));
-        continue;
-      }
-      // A data row with no name of its own is the tell: its name was absorbed
-      // into the store heading above. Give it back, and trim the store name.
-      if (!nm && pendingName) {
-        nm = pendingName;
-        storeName = (storeParts && storeParts[0]) ? storeParts[0].trim() : storeName;
-      }
-      pendingName = null;
-      if (!nm) continue;
-      people[norm(nm)] = { displayName: nm, cols: v };
-      continue;
-    }
-
-    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
-    if (vocabCountWith(DA_VOCAB, nonNum) >= 3) {
-      const frag = stripVocabWith(DA_VOCAB, nonNum);
-      if (frag.length) nameParts.push(frag.join(" "));
-    }
-  }
-  if (!sawHeaderSig || Object.keys(people).length < 3) return null;
-
-  const header = ["Name","Total","Showroom","Phone","Internet","Campaign",
-    "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
-    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered","Visit"];
-  const rows = [["Daily Activity"], header];
-  for (const p of Object.values(people)) {
-    const c = p.cols;
-    rows.push([p.displayName, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
-      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17],
-      /* Visit sits past Total Closing %, so it is only there on the newer
-         export. Absent, it stays null rather than becoming a zero — nobody
-         logged no visits, the report simply did not say. */
-      c.length > 19 ? c[19] : null]);
-  }
-  return { storeName, rows };
-}
 
 /* =========================================================================
    PDF #2: Delivery Summary grid.
@@ -338,178 +96,10 @@ function mapDailyActivityGrid(lines) {
    Verified: Jason Campion Internet 110 leads / 5 delivered / 4.5% matches the
    old Delivery Summary CSV (110 net opportunities, 5 deals, 4.5% delivered).
    ========================================================================= */
-const DS_VOCAB = new Set(["total","leads","totalleads","ups","totalups","showroom",
-  "unsold","in","unsoldin","unsoldinshowroom","be","backs","bebacks","delivered",
-  "f","i","fi","f&i","delivered/f&i","totaldelivered","closing","closing%","%"]);
 
-const DS_SOURCES = ["Showroom", "Phone", "Internet", "Campaign"];
-const DS_VEHICLE = ["New", "Used", "Other", "Total"];
 
-function mapDeliverySummaryGrid(lines) {
-  // Split deals are credited in halves, so the Delivered column legitimately
-  // reads 3.5 or 13.5. The old pattern had no decimal point, so those tokens
-  // failed isNum, got filtered out of the row, and the row then fell one value
-  // short of six and was dropped whole. That is why people with split deals
-  // came back with null internet numbers while their all-integer channels
-  // survived. Anyone who splits a deal must not vanish from the board.
-  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || /^\d+(?:\.\d+)?%$/.test(t);
-  // A "%" token is a percentage no matter its size. Deciding by magnitude
-  // (v > 1) would silently turn a real 0.9% into 90%.
-  const val = (t) => {
-    if (t === "-" || t == null) return null;
-    if (/%$/.test(String(t))) {
-      const n = parseFloat(String(t));
-      return Number.isFinite(n) ? n / 100 : null;
-    }
-    return toNum(t);
-  };
-
-  let sawHeaderSig = false;
-  let storeName = null;
-  let curName = null;
-  let pendingFrags = [];
-  const people = {};       // norm(name) -> { displayName, sources }
-  const order = [];
-  const pairings = [];
-
-  const commitName = () => {
-    if (!pendingFrags.length) return;
-    const nm = dedupeName(pendingFrags.join(" "));
-    pendingFrags = [];
-    if (!nm) return;
-    if (!storeName) { storeName = nm; curName = null; return; }
-    curName = nm;
-    const k = norm(nm);
-    if (!people[k]) { people[k] = { displayName: nm, sources: {}, vehicles: {} }; order.push(k); }
-  };
-
-  for (const L of lines) {
-    const texts = L.parts.map((p) => p.str.split(/\s+/)).flat().filter(Boolean);
-    if (!texts.length) continue;
-    const joined = squashT(texts.join(""));
-    if (joined.includes("unsoldin") || joined.includes("bebacks")) sawHeaderSig = true;
-    const rowTag = texts[0];
-
-    // A data row ends the header block, so commit whatever name accumulated.
-    if (DS_SOURCES.includes(rowTag) || DS_VEHICLE.includes(rowTag)) {
-      commitName();
-      const nums = texts.slice(1).filter(isNum);
-      if (nums.length < 6) continue;
-      if (!curName) continue;                             // store block: not a person
-      const k = norm(curName);
-      if (!people[k]) { people[k] = { displayName: curName, sources: {}, vehicles: {} }; order.push(k); }
-      people[k].vehicles = people[k].vehicles || {};
-      const vals = nums.slice(0, 6).map(val);
-      /* The New/Used/Other/Total rows carry the same six columns cut by vehicle type
-         rather than by source. They used to be thrown away at this line, which is why
-         nothing in the tool could say how much of a month was new against used.
-         Only the delivered column is read off them: the lead counts on these rows are
-         the same leads already counted under the source rows, so keeping those would
-         double count every opportunity. */
-      if (DS_VEHICLE.includes(rowTag)) { people[k].vehicles[rowTag.toLowerCase()] = vals; continue; }
-      people[k].sources[rowTag.toLowerCase()] = vals;
-      continue;
-    }
-
-    // Header line: strip the column vocabulary, whatever survives is a name
-    // fragment. The name spans up to three lines, so fragments accumulate.
-    // Lines BEFORE the first header block (report title, date range) carry no
-    // column vocabulary at all — skip them, or they glue onto the store name.
-    const nonNum = texts.filter((t) => !isNum(t) && t !== "%");
-    if (!nonNum.length) continue;
-    const hasVocab = vocabCountWith(DS_VOCAB, nonNum) >= 1;
-    if (!hasVocab && !sawHeaderSig) continue;             // pre-header preamble
-    const frag = stripVocabWith(DS_VOCAB, nonNum);
-    if (frag.length) pendingFrags.push(frag.join(" "));
-  }
-  commitName();
-
-  if (!sawHeaderSig || order.length < 3) return null;
-
-  const header = ["Name","Opportunities","Units Delivered","Delivered %",
-    "internetUnits","internetPct","phoneUnits","phonePct",
-    "showroomUnits","showroomPct","campaignUnits",
-    "internetLeads","phoneLeads","showroomLeads",
-    "showroomUps","showroomUnsold","showroomBeBacks",
-    "newUnits","usedUnits","otherUnits"];
-  const rows = [["Delivery Summary"], header];
-
-  for (const k of order) {
-    const p = people[k];
-    const s = p.sources;
-    const veh = p.vehicles || {};
-    const pick = (src, i) => (s[src] ? s[src][i] : null);
-    // index 4 is Total Delivered/F&I, the same column read off the source rows
-    const pickV = (t) => (veh[t] ? veh[t][4] : null);
-    // val() already returns percentages as a fraction, matching what the old
-    // CSV stored with Round % switched off.
-    const pctOf = (src) => pick(src, 5);
-    const internetLeads = pick("internet", 0);
-    const internetDel   = pick("internet", 4);
-    rows.push([
-      p.displayName,
-      internetLeads,                   // Opportunities (drives lead standards)
-      internetDel,                     // Units Delivered
-      pctOf("internet"),               // Delivered %
-      internetDel,  pctOf("internet"),
-      pick("phone", 4),    pctOf("phone"),
-      pick("showroom", 4), pctOf("showroom"),
-      pick("campaign", 4),             // campaign: units only, never graded
-      internetLeads,                   // internetLeads  (Net Opportunities per channel)
-      pick("phone", 0),                // phoneLeads
-      pick("showroom", 0),             // showroomLeads
-      pick("showroom", 1),             // Total Ups          (showroom-only)
-      pick("showroom", 2),             // Unsold In Showroom (showroom-only)
-      pick("showroom", 3),             // Be Backs           (showroom-only)
-      pickV("new"), pickV("used"), pickV("other"),   // the vehicle split
-    ]);
-    pairings.push({
-      name: p.displayName,
-      internet: s.internet
-        ? `${pick("internet",0)} leads / ${internetDel} delivered / ${
-            pctOf("internet") == null ? "-" : (pctOf("internet") * 100).toFixed(1) + "%"}`
-        : "-",
-      showroom: s.showroom
-        ? `${pick("showroom",0)} leads / ${pick("showroom",4)} delivered`
-        : "-",
-    });
-  }
-  return { storeName, rows, pairings };
-}
 
 /* Delivery Summary rows are pre-shaped, so they bypass parseReport(). */
-function parseDeliverySummaryRows(rows) {
-  const header = rows[1] || [];
-  const idx = (label) => header.indexOf(label);
-  const out = {};
-  for (let r = 2; r < rows.length; r++) {
-    const row = rows[r];
-    if (!row || !row[0]) continue;
-    const name = String(row[0]).trim();
-    out[norm(name)] = {
-      displayName: name,
-      opps: row[idx("Opportunities")],
-      unitsDelivered: row[idx("Units Delivered")],
-      deliveredPct: row[idx("Delivered %")],
-      internetUnits: row[idx("internetUnits")],
-      internetPct: row[idx("internetPct")],
-      phoneUnits: row[idx("phoneUnits")],
-      phonePct: row[idx("phonePct")],
-      showroomUnits: row[idx("showroomUnits")],
-      showroomPct: row[idx("showroomPct")],
-      campaignUnits: row[idx("campaignUnits")],
-      showroomUps: row[idx("showroomUps")],
-      showroomUnsold: row[idx("showroomUnsold")],
-      showroomBeBacks: row[idx("showroomBeBacks")],
-      // Absent on every month imported before the vehicle split was read, so
-      // anything showing these has to treat null as "not known" and say so.
-      newUnits: row[idx("newUnits")],
-      usedUnits: row[idx("usedUnits")],
-      otherUnits: row[idx("otherUnits")],
-    };
-  }
-  return out;
-}
 
 function activityDateFrom(name) {
   const s = String(name || "");
@@ -816,6 +406,19 @@ const squash = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
    was thrown away. A configured store name that the parsed heading BEGINS with is
    a match, longest name winning so "Driver's Mart Winter Park" is never beaten by
    a shorter store that happens to share a prefix. */
+/* One group per store, in the order the stores were first seen. Every entry has
+   to carry its own store by the time it gets here — an entry that does not know
+   where it belongs has no safe place to go. */
+function groupByStore(entries) {
+  const byStore = new Map();
+  for (const e of entries || []) {
+    if (!e || !e.store || !e.store.id) continue;
+    if (!byStore.has(e.store.id)) byStore.set(e.store.id, { store: e.store, entries: [] });
+    byStore.get(e.store.id).entries.push(e);
+  }
+  return byStore;
+}
+
 function matchStoreByName(stores, parsedName) {
   const P = squash(parsedName);
   if (!P) return null;
@@ -865,7 +468,10 @@ export default async function handler(req, res) {
     const local = to.split("@")[0] || "";
     const slug = squash(local.replace(/^lpc-?/, ""));
     const cfg = await sbGet("lpc:config:v2");
-    let store = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug) || null;
+    /* The store the ADDRESS names, and nothing else may change it. It used to be
+       the same variable the PDF loop assigned to, so the last PDF in a message
+       silently became the store for everything in that message. */
+    const addressStore = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug) || null;
 
     const atts = mail.attachments || [];
     const csvs = atts.filter((a) => /csv$/i.test(a.filename || "") || /text\/csv/i.test(a.mimeType || ""));
@@ -892,7 +498,18 @@ export default async function handler(req, res) {
         type = "delivery-" + ch;
       }
       if (!type) { skippedFiles.push({ file: a.filename, why: "unrecognized report" }); continue; }
-      entries.push({ rows, type, fileName: a.filename || "email.csv",
+      /* A CSV names no store anywhere inside it, so the only thing that can place
+         it is the address it was sent to. It used to be placed by whichever PDF
+         happened to be read after it, which is how one store's figures ended up
+         filed under another's name. Unplaceable is now refused rather than
+         guessed: a report in the wrong store is worse than a report nowhere. */
+      if (!addressStore) {
+        const why = "a CSV names no store, and this address names no store either — send it to that store's own address";
+        skippedFiles.push({ file: a.filename, why });
+        failures.push({ file: a.filename, why });
+        continue;
+      }
+      entries.push({ store: addressStore, rows, type, fileName: a.filename || "email.csv",
         actDay: activityDateFrom(a.filename) });
     }
 
@@ -922,8 +539,7 @@ export default async function handler(req, res) {
             failures.push({ file: a.filename, why: note });
             continue;
           }
-          store = hit.store;
-          entries.push({ rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
+          entries.push({ store: hit.store, rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
             actDay: kind === "activity"
               ? (activityDateFrom(a.filename) || activityDateFrom(subject))
               : null });
@@ -993,76 +609,94 @@ export default async function handler(req, res) {
     // From here on, every exit that writes nothing answers with a failing status
     // and ok:false, so the Cloudflare worker records an error and the run shows
     // up red instead of blending into the successes.
-    if (!store) {
-      const why = `no store matches address "${to}" or any PDF header`;
-      console.error("ingest:", why);
-      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
-    }
     if (!entries.length) {
-      const why = "nothing in this message could be read as a report";
+      const why = failures.length
+        ? "nothing in this message could be filed"
+        : `no store matches address "${to}" or any PDF header`;
       console.error("ingest:", why, JSON.stringify(skippedFiles));
       return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
     }
 
-    const key = `lpc:store:${store.id}:v2`;
-    const data = await sbGet(key);
-    if (!data) {
-      const why = `store ${store.id} has no data document yet`;
-      console.error("ingest:", why);
-      return res.status(422).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
-    }
-    // Apply inside the swap, so a retry re-applies to whatever the row now holds
-    // rather than replaying against the copy we first read.
-    let next = null, lastResults = [];
-    const swap = await sbSwap(key, (cur) => {
-      const out = applyToStore(cur, entries, "Auto-import (email)");
-      next = out.next; lastResults = out.results;
-      return out.next;
-    });
-    if (!swap.ok) {
-      const why = `could not write ${store.id}: ${swap.why}`;
-      console.error("ingest:", why);
-      return res.status(409).json({ ok: false, error: why, failures, skippedFiles, pdfReads });
-    }
+    /* Each attachment is filed under the store IT names, and a message carrying
+       two stores' reports writes to both.
 
-    // Declared before it is used. The swap callback fills this in, and the loop
-    // below reads it, so the order matters.
-    const results = lastResults;
+       This used to be one store and one list. Every attachment's rows went into
+       the same list, and whichever PDF was read last decided where the whole lot
+       went — so a message with two dealerships in it put both under one name, and
+       a CSV (which names no store anywhere inside it) followed whatever PDF
+       happened to come after it. The figures were real, complete and filed under
+       somebody else's dealership, which is the worst shape a wrong number can
+       take: nothing about it looks wrong. */
+    const byStore = groupByStore(entries);
 
-    // The day rows the import just touched, each written on its own. A failure here
-    // is worth reporting but not worth failing the import: the same data is in the
-    // document that was just written successfully.
-    const dayWrites = [];
-    for (const r of results) {
-      if (r.type !== "activity" || !r.day) continue;
-      const rows = next && next.activity && next.activity[r.day];
-      if (!rows) continue;
+    const stores = [];
+    for (const { store: st, entries: mine } of byStore.values()) {
+      const key = `lpc:store:${st.id}:v2`;
+      const data = await sbGet(key);
+      if (!data) {
+        const why = `store ${st.id} has no data document yet`;
+        console.error("ingest:", why);
+        failures.push({ file: mine.map((e) => e.fileName).join(", "), why });
+        continue;
+      }
+      // Apply inside the swap, so a retry re-applies to whatever the row now holds
+      // rather than replaying against the copy we first read.
+      let next = null, lastResults = [];
+      const swap = await sbSwap(key, (cur) => {
+        const out = applyToStore(cur, mine, "Auto-import (email)");
+        next = out.next; lastResults = out.results;
+        return out.next;
+      });
+      if (!swap.ok) {
+        const why = `could not write ${st.id}: ${swap.why}`;
+        console.error("ingest:", why);
+        failures.push({ file: mine.map((e) => e.fileName).join(", "), why });
+        continue;
+      }
+      const results = lastResults;
+
+      // The day rows the import just touched, each written on its own. A failure here
+      // is worth reporting but not worth failing the import: the same data is in the
+      // document that was just written successfully.
+      const dayWrites = [];
+      for (const r of results) {
+        if (r.type !== "activity" || !r.day) continue;
+        const rows = next && next.activity && next.activity[r.day];
+        if (!rows) continue;
+        try {
+          await sbPutActivityDay(st.id, r.day, rows);
+          await sbPutFloorStats(st.id, r.day, rows);
+          dayWrites.push(r.day);
+        } catch (e) { console.error("ingest: day row write failed", st.id, r.day, String(e.message || e)); }
+      }
+
+      // Push the fresh figures to the wall. A board that cannot be refreshed must
+      // not sink the import that already succeeded, so this is reported, not thrown.
+      let board;
       try {
-        await sbPutActivityDay(store.id, r.day, rows);
-        await sbPutFloorStats(store.id, r.day, rows);
-        dayWrites.push(r.day);
-      } catch (e) { console.error("ingest: day row write failed", store.id, r.day, String(e.message || e)); }
+        board = await refreshBoardRow(st.id, next);
+      } catch (e) {
+        board = { published: false, why: String(e.message || e) };
+        console.error("ingest: board refresh failed for", st.id, board.why);
+      }
+      stores.push({ store: st.id, results, board, dayWrites });
     }
 
-    // Push the fresh figures to the wall. A board that cannot be refreshed must
-    // not sink the import that already succeeded, so this is reported, not thrown.
-    let board;
-    try {
-      board = await refreshBoardRow(store.id, next);
-    } catch (e) {
-      board = { published: false, why: String(e.message || e) };
-      console.error("ingest: board refresh failed for", store.id, board.why);
+    if (!stores.length) {
+      const why = "every attachment was refused; nothing was written";
+      console.error("ingest:", why, JSON.stringify(failures));
+      return res.status(422).json({ ok: false, error: why, stores, failures, skippedFiles, pdfReads });
     }
 
     // Some files landed and others did not. The import stands, but the message
     // says so out loud rather than reporting a clean success.
     if (failures.length) {
-      console.error("ingest: partial success for", store.id, JSON.stringify(failures));
+      console.error("ingest: partial success", JSON.stringify(failures));
       return res.status(422).json({ ok: false, error: "some attachments could not be filed",
-        store: store.id, results, board, failures, skippedFiles, pdfReads });
+        stores, failures, skippedFiles, pdfReads });
     }
 
-    return res.status(200).json({ ok: true, store: store.id, results, board, dayWrites, skippedFiles, pdfReads });
+    return res.status(200).json({ ok: true, stores, skippedFiles, pdfReads });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ ok: false, error: String(e.message || e) });
