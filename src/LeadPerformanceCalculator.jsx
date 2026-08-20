@@ -9,8 +9,12 @@ import { createClient } from "@supabase/supabase-js";
 import {
   norm, toNum,
   detectReportType, parseReport, parseDeliverySummaryRows,
-  mapDailyActivityGrid, mapDeliverySummaryGrid,
+  mapDailyActivityGrid, mapDeliverySummaryGrid, reportBelongsElsewhere,
 } from "../api/_report-parsers.mjs";
+import {
+  storeKey, actKey, floorStatsKey, boardKey,
+  BOARD_STAT_FIELDS, slimFloorStats,
+} from "../api/_store-keys.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -37,11 +41,11 @@ const GUIDE_IMG_VIDEO_REPORT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAS
 
 const CONFIG_KEY = "lpc:config:v2";
 const AUDIT_KEY = "lpc:audit:v2";
-const storeKey = (id) => `lpc:store:${id}:v2`;
 // A TV runs the board with nobody signed in, so it must never be able to read the
-// full store blob. This row holds only what the screen actually draws: names, the
-// month's channel figures, and the look. No goals, no PINs, no notes, no history.
-const boardKey = (id) => `lpc:board:${id}:v1`;
+// full store blob. The board row holds only what the screen actually draws: names,
+// the month's channel figures, and the look. No goals, no PINs, no notes, no
+// history. Both keys and both field lists live in api/_store-keys.mjs, because the
+// email pipeline writes these same rows.
 const boardTvUrl = (id) => window.location.origin + window.location.pathname + "?board=" + encodeURIComponent(id);
 
 const METRICS = {
@@ -1263,7 +1267,7 @@ async function loadShared(key, fallback, throwOnError) {
      - writes go to both places for now, so an older tab still works
      - the embedded copy is dropped only once every store has moved
    ======================================================================= */
-const actKey = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
+
 /* A salesperson on a sign-in page has no account, and the store rows are gated on
    having one. So their own numbers were unreadable to them: the query returned
    nothing and the panel simply stayed empty.
@@ -1272,19 +1276,7 @@ const actKey = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
    figures get a slim copy under that prefix. It carries counts only, for the people
    on the floor, for one day. No goals, no money, nothing that is not already on the
    wall in front of them. */
-const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
-const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email", "tasks", "tasksPosted",
-  "apptScheduled", "apptConfirmed", "apptShow", "units", "uploadedAt"];
-function slimFloorStats(dayRows) {
-  const out = {};
-  for (const [k, r] of Object.entries(dayRows || {})) {
-    if (!r) continue;
-    const keep = {};
-    for (const f of FLOOR_STAT_FIELDS) if (r[f] !== undefined) keep[f] = r[f];
-    out[k] = keep;
-  }
-  return out;
-}
+
 // Only recent days are worth splitting out: they are the ones being written. Older
 // days are read constantly and never change, so they stay in the main document.
 const SPLIT_ACT_DAYS = 45;
@@ -2792,10 +2784,37 @@ export default function LeadPerformanceCalculator() {
       if (/\.pdf$/i.test(file.name)) {
         try {
           const lines = await extractPdfLinesInBrowser(file);
+          /* Every one of these PDFs prints the dealership it belongs to at the
+             top, and until now that was read and thrown away — the file went
+             into whichever store the manager happened to be looking at. Drop a
+             batch of reports in with one store's file among them and its people
+             and figures land under another store's name, silently, looking
+             exactly like a normal import. The email pipeline had the same fault
+             from the other direction and it is what put Drivers Mart Winter
+             Park's salespeople on Classic Mazda's dashboard.
+
+             A heading naming no store at all is allowed through: a store may
+             have been renamed, or not added yet, and the manager did choose this
+             store deliberately. A heading naming a DIFFERENT store is refused,
+             because there is no reading of that where they meant it. */
+          const wrongStore = (parsedName) => {
+            const other = reportBelongsElsewhere(config?.stores, parsedName, view);
+            if (!other) return false;
+            log.push({ ok: false, msg: `${file.name} is ${other.name}'s report, and you're in ${
+              (config?.stores || []).find((x) => x.id === view)?.name || "another store"
+            }. It was skipped — switch stores and drop it there.` });
+            return true;
+          };
           const da = mapDailyActivityGrid(lines);
-          if (da) { ready.push({ rows: da.rows, type: "activity", fileName: file.name }); continue; }
+          if (da) {
+            if (wrongStore(da.storeName)) continue;
+            ready.push({ rows: da.rows, type: "activity", fileName: file.name }); continue;
+          }
           const ds = mapDeliverySummaryGrid(lines);
-          if (ds) { ready.push({ rows: ds.rows, type: "delivery-summary", fileName: file.name }); continue; }
+          if (ds) {
+            if (wrongStore(ds.storeName)) continue;
+            ready.push({ rows: ds.rows, type: "delivery-summary", fileName: file.name }); continue;
+          }
           log.push({ ok: false, msg: `${file.name} is a PDF, but its layout isn't a Daily Activity or Delivery Summary report, so it was skipped.` });
         } catch (e) {
           log.push({ ok: false, msg: `${file.name} couldn't be read. If it's a scan or a photo rather than a report exported from DriveCentric, there is no text in it to read.` });
@@ -2824,7 +2843,7 @@ export default function LeadPerformanceCalculator() {
     if (log.length) setImportLog(log);
     if (ambiguous.length) setPendingChannels({ ambiguous, ready });
     else if (ready.length) await applyEntries(ready);
-  }, [storeData, view, session, activityDay]); // eslint-disable-line
+  }, [storeData, view, session, activityDay, config]); // eslint-disable-line
 
 
   const moveAssociate = async (name, targetName, roleId) => {
@@ -5179,10 +5198,6 @@ function CastLink({ storeId, label, config }) {
 
 // The only fields the board draws. Anything not on this list never leaves the
 // private store row, which is the whole point of publishing a separate one.
-const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
-  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits",
-  // the lead counts too, so a salesperson can see what the percentage is out of
-  "internetLeads", "phoneLeads", "showroomLeads"];
 
 function buildBoardPayload(config, storeId, sdata) {
   const store = (config?.stores || []).find((s) => s.id === storeId);

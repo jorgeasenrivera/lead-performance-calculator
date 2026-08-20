@@ -13,8 +13,16 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
 import {
   norm, toNum,
   detectReportType, parseReport, parseDeliverySummaryRows,
-  mapDailyActivityGrid, mapDeliverySummaryGrid,
+  mapDailyActivityGrid, mapDeliverySummaryGrid, matchStoreByName,
 } from "./_report-parsers.mjs";
+/* Where a store's figures live and which of them travel, shared with the app for
+   the same reason the reader is: both sides write these rows, and a field list
+   that drifts writes a row of the right shape in the right place with one column
+   missing, and says nothing at all. */
+import {
+  storeKey, actKey, floorStatsKey, boardKey,
+  BOARD_STAT_FIELDS, slimFloorStats,
+} from "./_store-keys.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 try {
@@ -167,7 +175,6 @@ async function sbSwap(key, apply, tries = 5) {
    managers for a single document. The import touches today only, so it writes one
    small row instead of rewriting an entire store. The embedded copy is kept in step
    as well, until every browser is reading split rows. */
-const actKey = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
 
 async function sbPutActivityDay(storeId, day, rows) {
   await sbPut(actKey(storeId, day), rows);
@@ -177,22 +184,8 @@ async function sbPutActivityDay(storeId, day, rows) {
    with no account can read. Without this a salesperson can never see their own day:
    the store rows require a signed-in session and a sign-in page has none. Counts
    only, one day, for the people on the floor. */
-const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
-/* The floor reads its own narrow copy of the day rather than the whole import.
-   "visits" belongs in it: it is what the Live Floor shows next to each person,
-   and the only record a second salesperson on a deal ever appears in — the deal
-   notification names the primary rep and nobody else. */
-const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email", "tasks", "tasksPosted",
-  "apptScheduled", "apptConfirmed", "apptShow", "units", "visits", "uploadedAt"];
 async function sbPutFloorStats(storeId, day, rows) {
-  const out = {};
-  for (const [k, r] of Object.entries(rows || {})) {
-    if (!r) continue;
-    const keep = {};
-    for (const f of FLOOR_STAT_FIELDS) if (r[f] !== undefined) keep[f] = r[f];
-    out[k] = keep;
-  }
-  await sbPut(floorStatsKey(storeId, day), out);
+  await sbPut(floorStatsKey(storeId, day), slimFloorStats(rows));
 }
 
 /* ---------- the TV board row ----------
@@ -204,12 +197,8 @@ async function sbPutFloorStats(storeId, day, rows) {
    Branding, thresholds and display tuning are left exactly as the app
    published them: this only replaces the parts that come from the data, so
    there is no second copy of the app's styling rules to drift out of step. */
-const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
-  "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits"];
-
 async function refreshBoardRow(storeId, sdata) {
-  const boardKey = `lpc:board:${storeId}:v1`;
-  const prev = await sbGet(boardKey);
+  const prev = await sbGet(boardKey(storeId));
   // No row yet means the board has never been opened for this store. Creating a
   // half-formed one here would put an unbranded board on a wall, so leave it.
   if (!prev) return { published: false, why: "no board row yet; open The Board once from the tool" };
@@ -231,7 +220,7 @@ async function refreshBoardRow(storeId, sdata) {
     stats[norm(a.name)] = keep;
   }
 
-  await sbPut(boardKey, {
+  await sbPut(boardKey(storeId), {
     ...prev,
     ym: month,
     roster,
@@ -396,7 +385,6 @@ function applyToStore(data, entries, sourceLabel) {
 }
 
 /* ---------- routing helpers ---------- */
-const squash = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 /* Match a store name read out of a PDF against the configured stores.
 
@@ -419,26 +407,6 @@ function groupByStore(entries) {
   return byStore;
 }
 
-function matchStoreByName(stores, parsedName) {
-  const P = squash(parsedName);
-  if (!P) return null;
-  let best = null;
-  const consider = (s, cand, quality) => {
-    if (!cand) return;
-    if (!best || cand.length > best.len) best = { store: s, len: cand.length, quality };
-  };
-  for (const s of stores || []) {
-    for (const cand of [squash(s.name), squash(s.id)]) {
-      if (!cand) continue;
-      if (P === cand) { consider(s, cand, "exact"); continue; }
-      // the heading carries the store name plus something extra
-      if (P.startsWith(cand) && cand.length >= 6) { consider(s, cand, "prefix"); continue; }
-      // the heading was truncated, but is long enough to be unambiguous
-      if (cand.startsWith(P) && P.length >= 10) consider(s, cand, "truncated");
-    }
-  }
-  return best ? { store: best.store, quality: best.quality } : null;
-}
 
 function channelFrom(text) {
   const t = String(text || "").toLowerCase();
@@ -631,7 +599,7 @@ export default async function handler(req, res) {
 
     const stores = [];
     for (const { store: st, entries: mine } of byStore.values()) {
-      const key = `lpc:store:${st.id}:v2`;
+      const key = storeKey(st.id);
       const data = await sbGet(key);
       if (!data) {
         const why = `store ${st.id} has no data document yet`;

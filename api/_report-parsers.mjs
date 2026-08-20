@@ -513,10 +513,47 @@ function parseDeliverySummaryRows(rows) {
   return out;
 }
 
+/* Which real store a parsed heading names, and how sure we are.
+   Lives here because both the pipeline and the app need it now: the pipeline to
+   route an emailed report, and the app to refuse a PDF a manager drops into the
+   wrong store. */
+function matchStoreByName(stores, parsedName) {
+  const P = squashT(parsedName);
+  if (!P) return null;
+  let best = null;
+  const consider = (s, cand, quality) => {
+    if (!cand) return;
+    if (!best || cand.length > best.len) best = { store: s, len: cand.length, quality };
+  };
+  for (const s of stores || []) {
+    for (const cand of [squashT(s.name), squashT(s.id)]) {
+      if (!cand) continue;
+      if (P === cand) { consider(s, cand, "exact"); continue; }
+      // the heading carries the store name plus something extra
+      if (P.startsWith(cand) && cand.length >= 6) { consider(s, cand, "prefix"); continue; }
+      // the heading was truncated, but is long enough to be unambiguous
+      if (cand.startsWith(P) && P.length >= 10) consider(s, cand, "truncated");
+    }
+  }
+  return best ? { store: best.store, quality: best.quality } : null;
+}
+
+/* The store a report belongs to, when somebody is standing in a different one.
+   Null means go ahead: either the heading names this very store, or it names no
+   store we know — a store may have been renamed or not added yet, and whoever is
+   importing did choose where they are deliberately. A heading naming a DIFFERENT
+   store is returned, because there is no reading of that where they meant it. */
+export function reportBelongsElsewhere(stores, parsedName, currentStoreId) {
+  const hit = matchStoreByName(stores, parsedName);
+  if (!hit || hit.store.id === currentStoreId) return null;
+  return hit.store;
+}
+
 export {
   norm, toNum, squashT,
   detectReportType, parseReport, parseDeliverySummaryRows,
   dedupeName, stripVocabWith, vocabCountWith,
   DA_VOCAB, mapDailyActivityGrid,
   DS_VOCAB, DS_SOURCES, DS_VEHICLE, mapDeliverySummaryGrid,
+  matchStoreByName,
 };
