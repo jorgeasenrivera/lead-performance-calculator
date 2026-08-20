@@ -2,6 +2,10 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
+/* The rules for what a claim of "I'm with a customer" has to be backed by live
+   next to the code that will one day raise them from a phone, not here, so that
+   the server and the screen can never drift into judging people differently. */
+import { reconcile as reconcilePresence, judge as judgePresence, upheldFor } from "../api/_floor-presence.mjs";
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
    editor would otherwise carry on every single load. */
@@ -9295,6 +9299,22 @@ async function mutateFloorRow(store, date, fn) {
   return next;
 }
 
+/* Several days at once, for the screen that looks back rather than at now.
+   A claim can only be reconciled after the day's activity report has landed, and
+   the report lands the next morning, so the thing a manager reviews is always
+   yesterday and older — never the day they are standing in. */
+async function loadFloorDays(store, fromDate, toDate) {
+  if (!supabase) return [];
+  try {
+    const { data, error } = await supabase.from(FLOOR_TABLE)
+      .select("fdate,data").eq("store", store)
+      .gte("fdate", fromDate).lte("fdate", toDate)
+      .order("fdate", { ascending: false }).limit(60);
+    if (error) throw error;
+    return (data || []).filter((r) => r && r.data).map((r) => ({ date: r.fdate, row: r.data }));
+  } catch (e) { console.error("loadFloorDays", e); return []; }
+}
+
 /* ---- Supabase access: the deal_events feed (read-only) ----
    Pulls events for this store's dealership_norm(s) that arrived after `sinceIso`.
    deal_events RLS allows authenticated reads; writes are service-role only. */
@@ -9864,6 +9884,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [identities, setIdentities] = useState({});
   const [showQR, setShowQR] = useState(false);
   const [showPins, setShowPins] = useState(false);
+  const [showBacklog, setShowBacklog] = useState(false);
+  const [backlogCount, setBacklogCount] = useState(null);
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, force] = useReducer((x) => x + 1, 0);
@@ -10104,6 +10126,14 @@ function FloorBoard({ config, store, data, onData, userName }) {
         <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          {/* Only ever shown when there is something in it. A button that reads
+              "0 to review" every day of the year teaches a manager to stop
+              looking at exactly the place they are meant to look. */}
+          {backlogCount > 0 && (
+            <button className={"btn" + (showBacklog ? "" : " f-bl-btn")} onClick={() => setShowBacklog((v) => !v)}>
+              {showBacklog ? "Hide off-lot" : `Off-lot · ${backlogCount}`}
+            </button>
+          )}
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
           <QueueBoardLink storeId={store.id} kind="floor" />
@@ -10143,6 +10173,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
           ))}
         </div>
       )}
+
+      <FloorBacklog store={store} data={data} userName={userName} open={showBacklog} onCount={setBacklogCount} />
 
       {showPins && (
         <div className="q-pins-panel">
@@ -10277,6 +10309,188 @@ function FloorBoard({ config, store, data, onData, userName }) {
       <ActivityTimeline horizontal history={row?.history} nameOf={realName} />
 
       {toast && <div className="f-toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* =========================================================================
+   FloorBacklog — the morning after.
+
+   A salesperson's phone can tell that they left the lot while they were in line,
+   and it asks them why. That answer is a claim, and a claim is worth nothing on
+   its own — which is the entire reason this screen exists rather than a number
+   on somebody's record.
+
+   Three things look identical from outside the building: lunch with no sign-out,
+   a test drive with a forgotten check-in, and a test drive taken on purpose while
+   holding a place in line. Only the third is dishonest, and nothing observable in
+   the moment tells it from the second. So the app never decides. It collects the
+   claim, waits for the day to finish, checks it against two independent records —
+   the line's own history and the Visit column on the activity report — and brings
+   a manager only the claims that neither record backs up.
+
+   Even then the wording states what happened and stops. A flat battery, a lost
+   signal in a parking garage and a genuinely forgotten check-in all produce this
+   exact flag, and a manager knows things this screen never will. Upheld sticks to
+   the record; excused does not, and the excuse is kept, because in three months
+   somebody will ask why.
+
+   Yesterday is the newest day here on purpose. The activity report lands the
+   following morning, so a claim from today has nothing to be checked against yet,
+   and flagging it would mean flagging everybody every afternoon.
+   ========================================================================= */
+const BACKLOG_DAYS = 14;
+const BACKLOG_OPP_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
+const shiftDay = (d, n) => {
+  const t = new Date(d + "T12:00:00Z");
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+};
+const backlogDayLabel = (d) =>
+  new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+const backlogTime = (ms) =>
+  new Date(ms).toLocaleTimeString("en-US", { timeZone: STORE_TZ, hour: "numeric", minute: "2-digit" });
+
+/* One day's flags, worked out from the day's floor row and the day's report.
+   Pulled out of the component because it is the whole of the thinking and none
+   of the drawing, and because it is the part worth testing. */
+function backlogForDay(date, row, data) {
+  const presence = row.presence || { events: [], state: {} };
+  /* What the line itself saw. These are the three ways a customer reaches a
+     salesperson on the floor, and the same three the instrument cluster counts,
+     so a claim is checked against exactly the record a manager already trusts. */
+  const customerActions = (row.history || [])
+    .filter((h) => h && h.id && BACKLOG_OPP_ACTIONS.has(h.action))
+    .map((h) => ({ id: h.id, t: h.t }));
+  /* And what the report says, keyed by roster id — the report speaks names and
+     everything else on the floor speaks ids, and this is the only place the two
+     meet. A person the report does not mention gets no entry rather than a zero:
+     "no report yet" and "saw nobody" have to stay different, because one of them
+     would flag an entire floor on a morning the import ran late. */
+  const visits = {};
+  for (const r of row.roster || []) {
+    const rec = ((data && data.activity && data.activity[date]) || {})[norm(r.name || r.label)];
+    if (rec && rec.visits != null) visits[r.id] = rec.visits;
+  }
+  const judged = presence.judged || {};
+  const flags = reconcilePresence(presence, customerActions, { visits })
+    .map((f) => (judged[f.id] ? { ...f, ...judged[f.id] } : f));
+  return { date, flags, hasReport: Object.keys(visits).length > 0 };
+}
+
+function FloorBacklog({ store, data, userName, open, onCount }) {
+  const [days, setDays] = useState(null);      // null while it is still loading
+  const [busy, setBusy] = useState("");
+  const [notes, setNotes] = useState({});
+  const [err, setErr] = useState("");
+
+  const to = shiftDay(today(), -1);
+  const from = shiftDay(to, -(BACKLOG_DAYS - 1));
+
+  const load = useCallback(async () => {
+    const rows = await loadFloorDays(store.id, from, to);
+    setDays(rows.map(({ date, row }) => backlogForDay(date, row, data)).filter((d) => d.flags.length));
+  }, [store.id, from, to, data]);
+
+  useEffect(() => { load().catch(() => setErr("The backlog could not be read.")); }, [load]);
+
+  const all = useMemo(() => (days || []).flatMap((d) => d.flags), [days]);
+  /* A day whose activity report has not landed is half a day's evidence: the
+     line's own history is there, the visit count is not, and the visit count is
+     the only record a secondary salesperson ever appears in. Asking a manager to
+     uphold on that is asking them to be wrong about the one case this feature was
+     built not to get wrong, so those days are shown and not counted. */
+  const pending = (days || []).filter((d) => d.hasReport).flatMap((d) => d.flags).filter((f) => f.status === "unverified");
+  useEffect(() => { if (onCount) onCount(days === null ? null : pending.length); }, [days, pending.length]); // eslint-disable-line
+
+  const setVerdict = async (date, flag, verdict) => {
+    setBusy(flag.id); setErr("");
+    try {
+      await mutateFloorRow(store.id, date, (cur) => {
+        if (!cur) return cur;
+        cur.presence = cur.presence || { events: [], state: {} };
+        cur.presence.judged = cur.presence.judged || {};
+        const j = judgePresence(flag, verdict, userName || "", qNowIso(), (notes[flag.id] || "").trim());
+        cur.presence.judged[flag.id] = { status: j.status, judgedBy: j.judgedBy, judgedAt: j.judgedAt, note: j.note };
+        return cur;
+      });
+      await load();
+    } catch (e) {
+      setErr(e.message || "That could not be saved.");
+    } finally { setBusy(""); }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="f-backlog">
+      <div className="f-backlog-head">
+        <h3>Off the lot while in line</h3>
+        <p className="muted">
+          Yesterday and the {BACKLOG_DAYS - 1} days before it. Somebody appears here only when they
+          left the lot while they were in the running, said it was a customer or said nothing at all,
+          and neither the line nor that day's visit count shows a customer for them. That is a fact,
+          not a verdict — a dead phone looks exactly the same.
+        </p>
+      </div>
+
+      {err && <p className="f-backlog-err">{err}</p>}
+
+      {days === null && <p className="muted">Reading the last two weeks…</p>}
+
+      {days !== null && all.length === 0 && (
+        <p className="muted f-backlog-none">
+          Nothing to look at. Either every trip off the lot was backed up by the day's record, or no
+          phone on this floor is reporting its location yet.
+        </p>
+      )}
+
+      {(days || []).map((d) => (
+        <div key={d.date} className="f-bl-day">
+          <div className="f-bl-date">{backlogDayLabel(d.date)}</div>
+          {d.flags.map((f) => {
+            const upheld = upheldFor(all, f.personId).length;
+            return (
+              <div key={f.id} className={"f-bl-row" + (f.status === "unverified" && d.hasReport ? "" : " f-bl-done")}>
+                <span className="mf-av" style={{ background: `hsl(${hueFromName(f.label)} 52% 42%)` }}>{initialsOf(f.label)}</span>
+                <div className="f-bl-body">
+                  <div className="f-bl-who">
+                    {f.label || f.personId}
+                    <span className="f-bl-when">left at {backlogTime(f.at)}</span>
+                    {f.claimed === "customer" && <span className="f-bl-claim">said: customer</span>}
+                    {!f.claimed && <span className="f-bl-claim f-bl-silent">never answered</span>}
+                    {upheld > 1 && f.status === "upheld" && (
+                      <span className="f-bl-repeat" title="Times this has been upheld in the last two weeks">
+                        {upheld}× upheld
+                      </span>
+                    )}
+                  </div>
+                  <div className="f-bl-why">{f.reason}</div>
+                  {f.status !== "unverified" && (
+                    <div className="f-bl-verdict">
+                      {f.status === "upheld" ? "Upheld" : "Excused"}
+                      {f.judgedBy ? ` by ${f.judgedBy}` : ""}
+                      {f.judgedAt ? ` · ${new Date(f.judgedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
+                      {f.note ? ` — ${f.note}` : ""}
+                    </div>
+                  )}
+                </div>
+                {f.status === "unverified" && !d.hasReport && (
+                  <div className="f-bl-wait">Waiting on that day's activity report — the visit count isn't in yet, and it's the only record a second salesperson on a deal ever shows up in.</div>
+                )}
+                {f.status === "unverified" && d.hasReport && (
+                  <div className="f-bl-acts">
+                    <input className="f-bl-note" placeholder="A line about why (optional)"
+                      value={notes[f.id] || ""} onChange={(e) => setNotes((n) => ({ ...n, [f.id]: e.target.value }))} />
+                    <button className="btn btn-sm" disabled={busy === f.id} onClick={() => setVerdict(d.date, f, "excused")}>Excuse it</button>
+                    <button className="btn btn-sm f-bl-uphold" disabled={busy === f.id} onClick={() => setVerdict(d.date, f, "upheld")}>Uphold it</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
@@ -25007,6 +25221,35 @@ function Style() {
    is currently having to guess at. */
 .f-ups{font-size:9px;font-weight:800;letter-spacing:.6px;color:#b9c9ff;background:rgba(120,150,255,.16);padding:1px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
 .f-ups.none{color:var(--sfink3);background:rgba(255,255,255,.06);}
+/* The morning-after review. Deliberately plain: nothing here is red until a
+   manager makes it so, because the screen is showing facts, not accusations. */
+.f-bl-btn{border-color:rgba(255,190,90,.45);color:#ffcf87;}
+.f-backlog{margin:14px 0 6px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);}
+.f-backlog-head h3{margin:0 0 6px;font-size:15px;letter-spacing:.2px;}
+.f-backlog-head p{margin:0 0 12px;font-size:12px;line-height:1.55;max-width:74ch;}
+.f-backlog-err{color:#ff9c9c;font-size:12px;margin:0 0 10px;}
+.f-backlog-none{font-size:12.5px;}
+.f-bl-day{margin-top:12px;}
+.f-bl-date{font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--sfink3);margin-bottom:6px;}
+.f-bl-row{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.045);margin-bottom:6px;}
+.f-bl-row.f-bl-done{opacity:.62;}
+.f-bl-body{flex:1;min-width:0;}
+.f-bl-who{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;font-weight:700;font-size:13.5px;}
+.f-bl-when{font-weight:600;font-size:11px;color:var(--sfink3);}
+.f-bl-claim{font-size:9px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;padding:1px 6px;border-radius:999px;color:#b9c9ff;background:rgba(120,150,255,.16);}
+.f-bl-claim.f-bl-silent{color:var(--sfink3);background:rgba(255,255,255,.07);}
+.f-bl-repeat{font-size:9px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;padding:1px 6px;border-radius:999px;color:#ffc08a;background:rgba(255,150,60,.16);}
+.f-bl-why{font-size:12px;line-height:1.5;color:var(--sfink2);margin-top:3px;max-width:78ch;}
+.f-bl-verdict{font-size:11.5px;margin-top:5px;color:var(--sfink3);}
+.f-bl-acts{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.f-bl-note{width:190px;font-size:12px;padding:6px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.2);color:inherit;}
+.f-bl-uphold{border-color:rgba(255,150,60,.5);color:#ffc08a;}
+.f-bl-wait{font-size:11.5px;color:var(--sfink3);font-style:italic;max-width:70ch;align-self:center;}
+@media (max-width:760px){
+  .f-bl-row{flex-wrap:wrap;}
+  .f-bl-acts{width:100%;}
+  .f-bl-note{flex:1;width:auto;min-width:140px;}
+}
 .f-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:800;letter-spacing:.4px;padding:1px 7px;border-radius:999px;margin-left:6px;text-transform:uppercase;}
 .f-tag-ico{width:11px;height:11px;}
 .f-tag-appt{background:rgba(120,150,255,.20);color:#b9c9ff;}
