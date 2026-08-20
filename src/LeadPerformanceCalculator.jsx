@@ -1136,6 +1136,11 @@ function parseReport(rows, type) {
       rec.actApptShow = toNum(row[idx("Show")]) ?? toNum(row[idx("Total Show")]) ?? toNum(row[idx("Appt Show")]) ?? toNum(row[idx("Shown")]);
       rec.actOppsTotal = toNum(row[idx("Total")]);
       rec.actCompletedTasks = toNum(row[idx("Completed Tasks")]);
+      /* Visits: customers this person was credited with seeing that day. It is the
+         only figure in any export that credits a SECOND salesperson on a walk-in —
+         DriveCentric's deal notification names the primary and nobody else — so it
+         is the one place a co-sold up leaves a trace at all. */
+      rec.actVisits = toNum(row[idx("Visit")]) ?? toNum(row[idx("Visits")]);
       // "Open Tasks" is the posted/outstanding task count on the Workplan; the completion
       // rate is Completed / Open. Fall back to other header names other exports have used.
       rec.actOpenTasks = toNum(row[idx("Open Tasks")]) ?? toNum(row[idx("Total Tasks")]) ??
@@ -1260,13 +1265,27 @@ const DA_VOCAB = new Set(["netleads","net","leads","showroom","phoneups","phone"
   "ilmleads","ilm","campaign","appcreated","appscheduled","appconfirmed","appshow","app",
   "created","scheduled","confirmed","show","callsmade","calls","made","connects","texts",
   "text","emails","email","videos","video","opentasks","open","tasks","completedtasks",
-  "completed","totaldelivered","totalclosing","total","delivered","closing"]);
+  "completed","totaldelivered","totalclosing","total","delivered","closing",
+  /* Added to the export later. It has to be in here as well as in the columns
+     below: a name is whatever is LEFT of a header line after the vocabulary is
+     struck out, so a column word missing from this list becomes part of every
+     salesperson's name. */
+  "visit","visits"]);
 
 function mapDailyActivityGrid(lines) {
-  // Same decimal fix as the Delivery Summary: Units Delivered carries half
-  // credit on split deals, and one dropped token knocks the whole row out.
-  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
-  const val = (t) => (t === "-" || t === "∞" || t == null) ? null : toNum(t);
+  /* Same decimal fix as the Delivery Summary: Units Delivered carries half credit
+     on split deals, and one dropped token knocks the whole row out.
+
+     "?" belongs in here for a harder reason. DriveCentric prints it in App
+     Confirmed wherever the figure is not applicable, and the STORE row carries
+     one on most days. Without it that row fell one token short, was skipped, and
+     the first salesperson's row was taken for the store instead — so the store
+     came through named "Holler Ford Fin Smith", Fin vanished from the report
+     entirely, and every later person carrying a "?" was dropped in a way that
+     welded their name onto the next one: "Luke Pancake Mike Ganus", one person,
+     nobody's numbers. All of it silent. */
+  const isNum = (t) => /^[\d,]+(?:\.\d+)?$/.test(t) || t === "-" || t === "?" || t === "∞" || /^\d+(?:\.\d+)?%$/.test(t);
+  const val = (t) => (t === "-" || t === "?" || t === "∞" || t == null) ? null : toNum(t);
 
   let storeName = null, sawHeaderSig = false;
   let nameParts = [];
@@ -1289,7 +1308,10 @@ function mapDailyActivityGrid(lines) {
       const parts = nameParts.slice();
       let nm = dedupeName(parts.join(" "));
       nameParts = [];
-      const v = nums.slice(0, 19).map(val);
+      /* Twenty since Visit was added to the export, nineteen before it. Both are
+         read rather than one being demanded, so a store still on the older report
+         keeps importing exactly as it did. */
+      const v = nums.slice(0, 20).map(val);
       if (!storeName) {
         if (!nm) continue;
         storeName = nm;
@@ -1320,12 +1342,16 @@ function mapDailyActivityGrid(lines) {
 
   const header = ["Name","Total","Showroom","Phone","Internet","Campaign",
     "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
-    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered","Visit"];
   const rows = [["Daily Activity"], header];
   for (const p of Object.values(people)) {
     const c = p.cols;
     rows.push([p.displayName, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8],
-      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17]]);
+      c[9], c[10], c[11], c[12], c[13], c[15], c[16], c[17],
+      /* Visit sits past Total Closing %, so it is only there on the newer export.
+         Absent, it stays null rather than becoming a zero — nobody logged no
+         visits, the report simply did not say. */
+      c.length > 19 ? c[19] : null]);
   }
   return { storeName, rows };
 }
@@ -14866,13 +14892,13 @@ function mapStackedActivityCsv(rows) {
     calls: col("Calls Made"), connects: col("Connects"),
     texts: col("Texts"), emails: col("Emails"), videos: col("Videos"),
     openTasks: col("Open Tasks"), completedTasks: col("Completed Tasks"),
-    delivered: col("Total Delivered"),
+    delivered: col("Total Delivered"), visit: col("Visit"),
   };
   if (src.calls < 0 || src.net < 0) return null;   // not this format
 
   const target = ["Name","Total","Showroom","Phone","Internet","Campaign",
     "Created","Scheduled","Confirmed","Show","Calls","Call Contacted","Text","Email",
-    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered"];
+    "Personalized Video","Open Tasks","Completed Tasks","Units Delivered","Visit"];
   const out = [["Daily Activity"], target];
 
   const num = (row, i) => (i < 0 ? 0 : toNum(row[i]) ?? 0);
@@ -14908,6 +14934,9 @@ function mapStackedActivityCsv(rows) {
         num(row, src.openTasks),
         num(row, src.completedTasks),
         num(row, src.delivered),
+        // Only on the newer export; null rather than 0 when the column is absent,
+        // because "nobody saw anybody" and "the report did not say" are different.
+        src.visit < 0 ? null : num(row, src.visit),
       ]);
       pendingName = null;
       continue;
