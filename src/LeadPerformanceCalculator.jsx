@@ -6405,6 +6405,23 @@ function HelpPanel({ config, who, store, context, figures, onClose }) {
 function RepairPanel({ config }) {
   const [target, setTarget] = useState("");
   const [source, setSource] = useState("");     // optional: compare against one store
+  /* Two faults, and only one of them can be found by looking.
+
+     "shared" is the original: a name on this store's roster that is also on
+     another store's. That is what a copied roster looks like, and the comparison
+     finds it on its own.
+
+     "pick" is for the one that followed. When another dealership's REPORT was
+     filed here, its people arrived with real figures and real activity days
+     attached — a full working history at a store they have never set foot in.
+     They are on no other store's roster, so the comparison finds nothing and
+     says so; and every test of "does this store's own record know them" comes
+     back yes, because the wrong record is the one that was written.
+
+     Nothing observable separates them from the real floor. The only authority
+     is somebody who knows who works there, so this mode stops guessing and
+     asks. */
+  const [mode, setMode] = useState("shared");
   const [plan, setPlan] = useState(null);
   const [picked, setPicked] = useState({});
   const [busy, setBusy] = useState(false);
@@ -6471,19 +6488,43 @@ function RepairPanel({ config }) {
         return { from: home.name, hereScore: mine[k] || 0, thereScore: home.ev[k] || 0 };
       };
 
+      /* What this store's own books have against a name, in the units a manager
+         thinks in. It is the thing that makes the choice possible: a person who
+         does not work here still shows up with cars beside their name, and those
+         cars are in the store's month total right now. */
+      const monthUnits = (() => {
+        const M = data.months?.[ym()];
+        const out = {};
+        for (const [k, st] of Object.entries((M && M.stats) || {})) {
+          out[k] = (st?.internetUnits ?? 0) + (st?.phoneUnits ?? 0)
+                 + (st?.showroomUnits ?? 0) + (st?.campaignUnits ?? 0);
+        }
+        return out;
+      })();
+      const daysOnRecord = (() => {
+        const out = {};
+        for (const day of Object.values(data.activity || {})) {
+          for (const [k, r] of Object.entries(day || {})) {
+            const worked = r && ((r.calls || 0) > 0 || (r.video || 0) > 0 || (r.tasks || 0) > 0);
+            if (worked) out[k] = (out[k] || 0) + 1;
+          }
+        }
+        return out;
+      })();
+      const detail = (name) => {
+        const k = norm(name);
+        return { units: monthUnits[k] || 0, days: daysOnRecord[k] || 0 };
+      };
+
       const rows = [];
-      for (const a of (data.roster) || []) {
-        const j = judge(a.name);
-        if (j) rows.push({ kind: "roster", name: a.name, ...j });
-      }
-      for (const x of (data.excluded) || []) {
-        const j = judge(x);
-        if (j) rows.push({ kind: "excluded", name: x, ...j });
-      }
-      for (const d of (data.departed) || []) {
-        const j = judge(d.name);
-        if (j) rows.push({ kind: "departed", name: d.name, ...j });
-      }
+      const take = (kind, name) => {
+        if (mode === "pick") { rows.push({ kind, name, ...detail(name) }); return; }
+        const j = judge(name);
+        if (j) rows.push({ kind, name, ...j, ...detail(name) });
+      };
+      for (const a of (data.roster) || []) take("roster", a.name);
+      for (const x of (data.excluded) || []) take("excluded", x);
+      for (const d of (data.departed) || []) take("departed", d.name);
 
       /* Plates carry no activity history to weigh, so the evidence is who was holding
          them: a plate logged out to somebody who works at another store came from that
@@ -6551,22 +6592,51 @@ function RepairPanel({ config }) {
 
       const res = await saveStoreCAS(storeKey(target), (server) => {
         const out = JSON.parse(JSON.stringify(server || plan.data));
-        out.roster = (out.roster || []).filter((a) => !go.roster.has(norm(a.name)));
-        out.excluded = (out.excluded || []).filter((x) => !go.excluded.has(norm(x)));
-        out.departed = (out.departed || []).filter((d) => !go.departed.has(norm(d.name)));
-        // Their figures go too, or the Check Out sheet keeps showing them.
+        const t = new Date().toISOString();
+
+        /* ---- Removing a person has to be RECORDED, not just done ----
+
+           Filtering the roster here does not remove anybody. Every other manager
+           with this store open still holds them, and the roster merge is a union:
+           the next save from any tab on the floor puts every one of them straight
+           back, and the tool looks like it did nothing. It is the same trap the
+           ignore list hit and the same one the plate log hit — the note two blocks
+           down explains it for plates — and people were the one thing still doing
+           it the old way.
+
+           So a removal is written as an ignore with a timestamp, which is the
+           mechanism the merge already honours. It also settles the other half:
+           the next import naming them will not add them back either, because the
+           importer skips ignored names. Gone, and staying gone. */
+        const goneNames = new Set([...go.roster, ...go.departed, ...go.excluded]);
+        out.excluded = [...(out.excluded || [])];
+        out.ignoredAt = { ...(out.ignoredAt || {}) };
+        const already = new Set(out.excluded.map(norm));
+        for (const r of chosen) {
+          if (r.kind === "plate" || r.kind === "plateReg") continue;
+          const k = norm(r.name);
+          if (!already.has(k)) { out.excluded.push(r.name); already.add(k); }
+          out.ignoredAt[k] = t;
+          /* And clear any stamp that says they were let back in, or the same
+             comparison that protects this would undo it. */
+          if (out.unignored) delete out.unignored[k];
+        }
+
+        out.roster = (out.roster || []).filter((a) => !goneNames.has(norm(a.name)));
+        out.departed = (out.departed || []).filter((d) => !goneNames.has(norm(d.name)));
+        /* Their figures go too, or the Check Out sheet keeps showing them — and,
+           worse, the store's month total keeps counting cars it never sold. */
         for (const m of Object.values(out.months || {})) {
           if (!m || !m.stats) continue;
-          for (const k of Object.keys(m.stats)) if (go.roster.has(k)) delete m.stats[k];
+          for (const k of Object.keys(m.stats)) if (goneNames.has(k)) delete m.stats[k];
         }
         for (const day of Object.keys(out.activity || {})) {
-          for (const k of Object.keys(out.activity[day] || {})) if (go.roster.has(k)) delete out.activity[day][k];
+          for (const k of Object.keys(out.activity[day] || {})) if (goneNames.has(k)) delete out.activity[day][k];
         }
         /* Tombstoned as well as filtered. Every manager with this store open still
            holds the foreign plates in their tab, and the plate merge treats a plate
            it has not seen before as news — so without a record of the removal the
            next save anywhere on the floor puts them all back. */
-        const t = new Date().toISOString();
         out.plateGone = { ...(out.plateGone || {}) };
         out.plateRegGone = { ...(out.plateRegGone || {}) };
         for (const day of Object.keys(out.plates || {})) {
@@ -6597,23 +6667,45 @@ function RepairPanel({ config }) {
 
   return (
     <div className="card">
-      <h3>Repair a store that picked up another store's people</h3>
-      <p className="hint">
-        For a store showing names that belong somewhere else. Every shared name is listed with how much
-        each store's own records actually say about that person: real days worked and real figures. Where
-        the other store clearly has the stronger claim it is ticked for you, and everything else is left
-        for you to decide. Nothing is removed until you press the button.
-      </p>
+      <h3>Take people off a store they do not belong to</h3>
+      <div className="seg-small" style={{ marginBottom: 10 }}>
+        {[["shared", "Find them for me"], ["pick", "I'll pick them"]].map(([id, lbl]) => (
+          <button key={id} className={"seg-opt " + (mode === id ? "on" : "")}
+            onClick={() => { setMode(id); setPlan(null); setDone(null); setPicked({}); }}>{lbl}</button>
+        ))}
+      </div>
+      {mode === "shared" ? (
+        <p className="hint">
+          For a store showing names that belong somewhere else. Every shared name is listed with how much
+          each store's own records actually say about that person: real days worked and real figures. Where
+          the other store clearly has the stronger claim it is ticked for you, and everything else is left
+          for you to decide. Nothing is removed until you press the button.
+        </p>
+      ) : (
+        <p className="hint">
+          For when the comparison finds nothing and you can see perfectly well that it is wrong. That happens
+          when another dealership's <b>report</b> was filed here rather than its roster: its people arrived
+          with real figures and real days attached, so they are on no other store's list to be compared
+          against, and every test of "does this store know them" comes back yes — because the wrong record
+          is the one that got written. Nothing can tell them apart from your real floor except somebody who
+          knows who works there. Every name this store carries is below, with the cars it is currently
+          counting for each. Tick the ones who do not work here.
+        </p>
+      )}
       <div className="inline-form">
         <select value={target} onChange={(e) => { setTarget(e.target.value); setPlan(null); setDone(null); }}>
           <option value="">Which store is wrong?</option>
           {(config.stores || []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <select value={source} onChange={(e) => { setSource(e.target.value); setPlan(null); }}>
-          <option value="">Compare with every store</option>
-          {(config.stores || []).filter((s) => s.id !== target).map((s) => <option key={s.id} value={s.id}>Only {s.name}</option>)}
-        </select>
-        <button className="btn" disabled={!target || busy} onClick={build}>{busy ? "Checking..." : "Check it"}</button>
+        {mode === "shared" && (
+          <select value={source} onChange={(e) => { setSource(e.target.value); setPlan(null); }}>
+            <option value="">Compare with every store</option>
+            {(config.stores || []).filter((s) => s.id !== target).map((s) => <option key={s.id} value={s.id}>Only {s.name}</option>)}
+          </select>
+        )}
+        <button className="btn" disabled={!target || busy} onClick={build}>
+          {busy ? "Checking..." : mode === "shared" ? "Check it" : "List everybody"}
+        </button>
       </div>
 
       {done && <p className="hint" style={{ marginTop: 10 }}><b>{done}</b></p>}
@@ -6622,13 +6714,28 @@ function RepairPanel({ config }) {
       {plan && !plan.error && (
         <div style={{ marginTop: 14 }}>
           {plan.rows.length === 0 ? (
-            <p className="hint"><b>Nothing shared.</b> No name on {plan.store} also belongs to another store.</p>
+            mode === "shared" ? (
+              <p className="hint">
+                <b>Nothing shared.</b> No name on {plan.store} also belongs to another store.{" "}
+                That is not the same as nothing being wrong: if another dealership's report was filed
+                here, its people are on no other store's roster and this comparison cannot see them.
+                Switch to <b>I'll pick them</b>.
+              </p>
+            ) : <p className="hint"><b>{plan.store} carries no names at all.</b></p>
           ) : (
             <>
               <p className="hint">
                 <b>{plan.store}</b> has {plan.total} on its roster.{" "}
-                {plan.rows.length === 1 ? "One entry is" : `${plan.rows.length} entries are`} shared with another
-                store. <b>{chosen.length} ticked</b> for removal.
+                {mode === "shared"
+                  ? <>{plan.rows.length === 1 ? "One entry is" : `${plan.rows.length} entries are`} shared with another store.{" "}</>
+                  : <>{plan.rows.length} {plan.rows.length === 1 ? "name" : "names"} in total.{" "}</>}
+                <b>{chosen.length} ticked</b> for removal
+                {chosen.length > 0 && (() => {
+                  const cars = chosen.reduce((n, r) => n + (r.units || 0), 0);
+                  return cars > 0
+                    ? <>, carrying <b>{fmtNum(Math.round(cars * 10) / 10)}</b> of this month's cars with them</>
+                    : null;
+                })()}.
               </p>
               {groups.filter(([k]) => plan.rows.some((r) => r.kind === k)).map(([k, label]) => (
                 <div key={k} style={{ marginTop: 12 }}>
@@ -6644,7 +6751,14 @@ function RepairPanel({ config }) {
                           <span className="rp-ev">
                             {r.kind === "plate" || r.kind === "plateReg"
                               ? <>belongs to {r.from}</>
-                              : <>here <b>{r.hereScore}</b> · {r.from} <b>{r.thereScore}</b></>}
+                              : mode === "pick"
+                                /* What this store is counting for them right now, which is
+                                   the thing a manager recognises. A name with cars against
+                                   it at a store it has never worked at is the whole fault
+                                   stated in four words. */
+                                ? <>{r.units > 0 ? <><b>{fmtNum(r.units)}</b> cars this month</> : "no cars this month"}
+                                  {r.days > 0 ? <> · {r.days} {r.days === 1 ? "day" : "days"} on record</> : " · no days on record"}</>
+                                : <>here <b>{r.hereScore}</b> · {r.from} <b>{r.thereScore}</b></>}
                           </span>
                         </button>
                       );
@@ -6653,8 +6767,13 @@ function RepairPanel({ config }) {
                 </div>
               ))}
               <p className="hint" style={{ marginTop: 10 }}>
-                The numbers are how much real work each store has on record for that person. A high number
-                somewhere else and a zero here is the clearest sign a name got in by mistake.
+                {mode === "shared"
+                  ? <>The numbers are how much real work each store has on record for that person. A high number
+                     somewhere else and a zero here is the clearest sign a name got in by mistake.</>
+                  : <>Removing somebody takes this month's cars with them, so the store's total and its pace
+                     correct themselves. A copy of the store as it stands is saved first, and the removal is
+                     written down rather than just done — otherwise the next manager whose tab is still open
+                     would put everybody straight back.</>}
               </p>
               <button className="btn" style={{ marginTop: 8 }} disabled={busy || !chosen.length} onClick={apply}>
                 {busy ? "Working..." : `Remove the ${chosen.length} ticked`}
