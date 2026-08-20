@@ -397,7 +397,7 @@ function applyToStore(data, entries, sourceLabel) {
 /* One group per store, in the order the stores were first seen. Every entry has
    to carry its own store by the time it gets here — an entry that does not know
    where it belongs has no safe place to go. */
-function groupByStore(entries) {
+export function groupByStore(entries) {
   const byStore = new Map();
   for (const e of entries || []) {
     if (!e || !e.store || !e.store.id) continue;

@@ -6,18 +6,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+/* Imported, not scraped out of the source by line number. The first version of
+   this file read ingest.mjs off disk with an absolute path, which passed on the
+   machine it was written on and failed the moment it ran anywhere else. */
+import { groupByStore } from "../api/ingest.mjs";
 import { matchStoreByName } from "../api/_report-parsers.mjs";
 // One email, two dealerships. Does each set of figures land in its own store?
-import fs from "fs";
-const SRC = "/home/user/lead-performance-calculator/api/ingest.mjs";
-const all = fs.readFileSync(SRC, "utf8").split("\n");
-const at = (n) => all.findIndex((l) => l.startsWith(n)) + 1;
-const endOfBlock = (s) => { for (let i = s; i < all.length; i++) if (/^[}\)]/.test(all[i])) return i + 1; return s; };
-const block = (n) => { const s = at(n); return all.slice(s - 1, endOfBlock(s)).join("\n"); };
-const one = (n) => all[at(n) - 1];
 
-const M = { ...new Function(block("function groupByStore(") + "\nreturn { groupByStore };")(),
-            matchStoreByName };
 
 
 const MAZDA = { id: "classic-mazda", name: "Classic Mazda" };
@@ -30,7 +25,7 @@ test("the bug the user hit: two stores' reports in one message", () => {
       { store: MAZDA, type: "delivery-summary", fileName: "mazda.pdf", rows: [["ds"], ["h"], ["Alejandro Marquez"]] },
       { store: DMWP,  type: "activity", fileName: "dmwp.pdf", rows: [["da"], ["h"], ["Jason Campion"], ["Mitch Marius"]] },
     ];
-    const g = M.groupByStore(entries);
+    const g = groupByStore(entries);
     assert.ok(
       g.size === 2, [...g.keys()]);
     const mz = g.get("classic-mazda"), dm = g.get("drivers-mart-winter-park");
@@ -46,7 +41,7 @@ test("the bug the user hit: two stores' reports in one message", () => {
 
 // ---- the ordinary case must be untouched ----
 test("the ordinary case must be untouched", () => {
-    const g = M.groupByStore([
+    const g = groupByStore([
       { store: MAZDA, type: "activity", fileName: "a.pdf", rows: [] },
       { store: MAZDA, type: "delivery-summary", fileName: "b.pdf", rows: [] },
     ]);
@@ -56,30 +51,30 @@ test("the ordinary case must be untouched", () => {
 
 // ---- an entry that does not know where it belongs is dropped, not guessed ----
 test("an entry that does not know where it belongs is dropped, not guessed", () => {
-    const g = M.groupByStore([{ store: null, type: "activity", fileName: "orphan.csv", rows: [] },
+    const g = groupByStore([{ store: null, type: "activity", fileName: "orphan.csv", rows: [] },
                               { store: MAZDA, type: "activity", fileName: "a.pdf", rows: [] }]);
     assert.ok(
       g.size === 1 && !JSON.stringify([...g.values()]).includes("orphan"), [...g.keys()]);
 });
 test("and an empty message groups to nothing", () => {
     assert.ok(
-      M.groupByStore([]).size === 0);
+      groupByStore([]).size === 0);
     assert.ok(
-      M.groupByStore(null).size === 0);
+      groupByStore(null).size === 0);
 });
 
 // ---- the store matcher must not reach across dealerships ----
 test("the store matcher must not reach across dealerships", () => {
     assert.ok(
-      M.matchStoreByName(STORES, "Drivers Mart Winter Visit Park") === null,
-          M.matchStoreByName(STORES, "Drivers Mart Winter Visit Park"));
+      matchStoreByName(STORES, "Drivers Mart Winter Visit Park") === null,
+          matchStoreByName(STORES, "Drivers Mart Winter Visit Park"));
     assert.ok(
-      M.matchStoreByName(STORES, "Drivers Mart Winter Park")?.store.id === "drivers-mart-winter-park");
+      matchStoreByName(STORES, "Drivers Mart Winter Park")?.store.id === "drivers-mart-winter-park");
     assert.ok(
-      M.matchStoreByName(STORES, "Drivers Mart Winter Park")?.store.id !== "classic-mazda");
+      matchStoreByName(STORES, "Drivers Mart Winter Park")?.store.id !== "classic-mazda");
     assert.ok(
-      M.matchStoreByName(STORES, "Classic Mazda Fin Smith")?.store.id === "classic-mazda");
+      matchStoreByName(STORES, "Classic Mazda Fin Smith")?.store.id === "classic-mazda");
     assert.ok(
-      M.matchStoreByName(STORES, "Some Other Dealership") === null);
+      matchStoreByName(STORES, "Some Other Dealership") === null);
 });
 

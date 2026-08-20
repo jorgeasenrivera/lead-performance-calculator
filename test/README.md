@@ -44,3 +44,10 @@ need to agree, and that bet keeps losing. So: share it, or add the name to
 Test the shared modules in `api/`, not the app file. Anything worth checking is
 worth moving into a module both sides import — that is the same move that fixes
 the drift, so it pays twice.
+
+Import what you are testing. Do not read a source file off disk and pull a
+function out of it by line number: the first version of the routing check did
+exactly that, with an absolute path, and it passed here and failed the moment it
+ran anywhere else. A check that only works on the machine it was written on
+teaches people that a red build is normal, which is worse than having no check
+at all. There is a test that now fails on any absolute path in this directory.

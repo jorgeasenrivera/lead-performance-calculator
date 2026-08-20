@@ -109,3 +109,18 @@ test("every name the app imports from a shared file is really exported", async (
   }
   assert.ok(checked > 0, "no shared imports were found to check — has the app stopped importing them?");
 });
+
+test("no check reaches for a path on somebody's machine", () => {
+  /* The first version of the routing test read ingest.mjs off disk by absolute
+     path. It passed here and failed the moment it ran anywhere else, which is
+     the one failure mode a suite must not have: a check that only works where
+     it was written teaches people that the red build is normal. */
+  const dir = path.join(ROOT, "test");
+  const bad = [];
+  for (const f of fs.readdirSync(dir)) {
+    if (!/\.mjs$/.test(f)) continue;
+    const src = fs.readFileSync(path.join(dir, f), "utf8");
+    for (const m of src.matchAll(/["'`](\/(?:home|Users|tmp|var)\/[^"'`]*)["'`]/g)) bad.push(`${f}: ${m[1]}`);
+  }
+  assert.deepEqual(bad, [], "absolute paths in tests:\n  " + bad.join("\n  "));
+});
