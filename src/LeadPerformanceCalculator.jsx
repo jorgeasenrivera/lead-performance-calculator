@@ -15,6 +15,10 @@ import {
   storeKey, actKey, floorStatsKey, boardKey,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "../api/_store-keys.mjs";
+/* The store's month: every day the doors are open, minus the holidays, and what
+   the store is being asked for. Its own file because it is the arithmetic a
+   manager acts on, and that is worth being able to check on its own. */
+import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -14688,6 +14692,18 @@ function StoreWizard({ config, store, onCancel, onSave }) {
   const [thresholds, setThresholds] = useState(() => normThresholds(store?.thresholds));
   const [act, setAct] = useState(store?.activityStandards || { ...DEFAULT_ACTIVITY_STANDARDS });
   const [graceDays, setGraceDays] = useState(store?.graceDays ?? 10);
+  /* The goal is kept per month as well as as a standing figure, because goals move
+     every month and last month's is worse than none. The field here writes THIS
+     month; the standing one is the fallback for a month nobody has set. */
+  const [goal, setGoal] = useState(() => {
+    const g = store?.goal || {};
+    const mk = ym();
+    return {
+      units: (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0),
+      pct: g.pct ?? 100,
+      byMonth: g.byMonth || {},
+    };
+  });
   const [hours, setHours] = useState(store?.hours || { ...DEFAULT_HOURS });
   const [cutoff, setCutoff] = useState(() => cutoffFor(store));
   const [cropSrc, setCropSrc] = useState(null);
@@ -14709,7 +14725,12 @@ function StoreWizard({ config, store, onCancel, onSave }) {
     if (!name.trim()) { setErr("Give the store a name."); return; }
     if (!id) { setErr("That name doesn't make a valid store ID. Try adding a letter or number."); return; }
     if (idTaken) { setErr("A store with that name already exists."); return; }
-    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours, reportCutoff: cutoff });
+    const mk = ym();
+    const byMonth = { ...goal.byMonth };
+    if (goal.units > 0) byMonth[mk] = goal.units; else delete byMonth[mk];
+    onSave({ id, name: name.trim(), icon, brand, thresholds, activityStandards: act, graceDays, hours,
+      reportCutoff: cutoff,
+      goal: { units: goal.units, pct: goal.pct, byMonth } });
   };
 
   return (
@@ -14779,6 +14800,27 @@ function StoreWizard({ config, store, onCancel, onSave }) {
               <label className="thr-label">Grace days
                 <input type="number" min="0" max="28" value={graceDays}
                   onChange={(e) => setGraceDays(Math.max(0, Math.min(28, parseInt(e.target.value) || 0)))} />
+              </label>
+            </div>
+
+            <label>This month's goal</label>
+            <p className="hint">
+              What the store is being asked for, and the share of it that counts as having got there — a
+              100-car goal at 85% is judged at 85. Both show at the top of the health popup, with the
+              month's pace against them. Set here each month; the last figure carries over to a month
+              nobody has set. Holidays come out of the count on their own.
+            </p>
+            <div className="wiz-nums">
+              <label className="thr-label">Goal (units)
+                <input type="number" min="0" value={goal.units || ""}
+                  onChange={(e) => setGoal({ ...goal, units: Math.max(0, parseInt(e.target.value) || 0) })} />
+              </label>
+              <label className="thr-label">Counts as hit at
+                <input type="number" min="1" max="200" value={goal.pct}
+                  onChange={(e) => setGoal({ ...goal, pct: Math.max(1, Math.min(200, parseInt(e.target.value) || 100)) })} />
+              </label>
+              <label className="thr-label wiz-goal-out">The number
+                <b>{goal.units > 0 ? fmtNum(Math.round(goal.units * (goal.pct / 100) * 10) / 10) : "\u2014"}</b>
               </label>
             </div>
 
@@ -15374,17 +15416,6 @@ function workingDaysInMonth(monthKey) {
   const cap = (monthKey === t.slice(0, 7)) ? Number(t.slice(8, 10)) : lastDay;
   let n = 0;
   for (let d = 1; d <= cap; d++) if (new Date(y, m - 1, d).getDay() !== 0) n++;
-  return n;
-}
-
-/* Every working day in the month, whether it has happened yet or not. The one
-   above deliberately stops at today, which is right for an average and wrong for
-   a projection — pacing needs the whole month in the denominator. */
-function workingDaysWholeMonth(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  let n = 0;
-  for (let d = 1; d <= lastDay; d++) if (new Date(y, m - 1, d).getDay() !== 0) n++;
   return n;
 }
 
@@ -17997,13 +18028,68 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const halves = halfStory(data, M, closingRoster);
 
   const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
-  /* Where the month lands if the rest of it goes like the part that has happened.
-     Held back for the first few working days, when one good or bad morning swings
-     the projection by twenty cars and the number is worse than nothing. */
-  const paceDaysGone = workingDaysElapsed();
-  const paceDaysAll = workingDaysWholeMonth(ym());
-  const pacingUnits = paceDaysGone >= 3 && totalUnits > 0
-    ? (totalUnits / paceDaysGone) * paceDaysAll : null;
+  /* ---- Where the store stands against what it was asked for ----
+
+     The one thing a manager wants off this screen and could not get: how the
+     month is going against the number the store is actually held to, with the
+     holidays taken out and without doing the arithmetic in their head.
+
+     Every figure here is worked from days that are FINISHED. Today's cars are
+     not in the month total until tomorrow's report lands, so counting today
+     would divide real sales by a day whose sales have not arrived. */
+  const storePace = (() => {
+    const monthKey = ym();
+    const goal = storeGoalFor(store, monthKey);
+    /* Built from the config in hand rather than from isHoliday(), which reads a
+       module-level set filled in during the top component's render. That is true
+       in the running app and not true anywhere else, and the first time this was
+       drawn outside it the popup said "2 holidays taken out" above a count of 31
+       days with neither taken out. A block that contradicts itself in its own two
+       lines is worse than one that omits the holidays entirely. */
+    const hol = new Set((config.holidays || []).map((h) => (typeof h === "string" ? h : h.date)));
+    const isHol = (d) => hol.has(d);
+    const daysAll = storeDaysInMonth(monthKey, isHol);
+    const daysDone = storeDaysDone(monthKey, isHol, today());
+    const daysLeft = Math.max(0, daysAll - daysDone);
+    /* Two or three days is not a month. One strong Saturday at the start would
+       project a number nobody should be asked to act on, and a manager who sees
+       a wild projection once stops believing the sober ones. */
+    if (daysDone < 3 || !(daysAll > 0)) return { tooEarly: true, goal, daysAll, daysDone, daysLeft };
+    const perDay = totalUnits / daysDone;
+    const projected = perDay * daysAll;
+    const out = { goal, daysAll, daysDone, daysLeft, perDay, projected, units: totalUnits };
+    if (goal) {
+      out.short = Math.max(0, goal.bar - totalUnits);
+      /* What the rest of the month has to run at. Not the average that would have
+         got here — the pace from here, which is the only one anybody can still
+         do anything about. */
+      out.needPerDay = daysLeft > 0 ? out.short / daysLeft : null;
+      out.willHit = projected >= goal.bar;
+      /* Where the store should be standing today if the month were running dead
+         level. It is the honest comparison for "am I behind": measuring against
+         the whole goal on the tenth tells a manager nothing. */
+      out.parToday = goal.bar * (daysDone / daysAll);
+      out.aheadBy = totalUnits - out.parToday;
+      /* One tone for the whole block. "Will it land on the number" and "is it
+         ahead of where today should be" are the same question written twice —
+         projected >= bar reduces to units >= par — so drawing them in two
+         separately-computed colours could only ever create a disagreement that
+         does not exist. The amber band is the one real addition: just behind is
+         not the same as adrift, and a manager treats them differently. */
+      out.tone = out.aheadBy >= 0 ? "g"
+        : out.aheadBy > -(goal.bar * 0.05) ? "y" : "r";
+    }
+    return out;
+  })();
+  /* Holidays that fall in this month, named, because a manager looking at a
+     denominator of 30 on a 31-day month should be able to see why. */
+  const monthHolidays = (() => {
+    const mk = ym();
+    return (config.holidays || [])
+      .map((h) => (typeof h === "string" ? { date: h, name: "" } : h))
+      .filter((h) => h && String(h.date).slice(0, 7) === mk)
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+  })();
 
   /* New against used, off the Delivery Summary's vehicle rows. Those rows were
      discarded by the parser until now, so a month imported before that change has
@@ -18120,6 +18206,105 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           </div>
 
           <div className="health-pop">
+            {/* ---- The month, against what the store was asked for ----
+                First, because it is the question the rest of this popup was being
+                used to answer the long way round. The track is the whole goal; the
+                solid line on it is the number that counts as hitting; the marker is
+                where a level month would have the store standing today. */}
+            <div className="hp-goal">
+              <div className="mp-title">The month</div>
+              {storePace.goal ? (
+                <>
+                  <div className="hp-goal-top">
+                    <div className="hp-goal-now">
+                      <b>{fmtNum(totalUnits)}</b>
+                      <span>of {fmtNum(storePace.goal.bar)} to hit</span>
+                    </div>
+                    <div className="hp-goal-of">
+                      {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const g = storePace.goal;
+                    const pos = (v) => `${Math.max(0, Math.min(100, (v / g.units) * 100))}%`;
+                    const tone = storePace.tooEarly ? "dim" : storePace.tone;
+                    return (
+                      <>
+                        <div className={"hp-bar hp-bar-" + tone}>
+                          <div className="hp-bar-fill" style={{ width: pos(totalUnits) }} />
+                          <div className="hp-bar-hit" style={{ left: pos(g.bar) }} title={`${g.pct}% of ${fmtNum(g.units)} is ${fmtNum(g.bar)}`} />
+                          {!storePace.tooEarly && (
+                            <div className="hp-bar-par" style={{ left: pos(storePace.parToday) }}
+                              title={`A level month would be at ${Math.round(storePace.parToday)} by now`} />
+                          )}
+                        </div>
+                        <div className="hp-bar-legend">
+                          <span><i className="hp-key hp-key-fill" />delivered</span>
+                          <span><i className="hp-key hp-key-hit" />{fmtNum(g.bar)} to hit</span>
+                          {!storePace.tooEarly && <span><i className="hp-key hp-key-par" />today</span>}
+                          <span className="hp-bar-end">{fmtNum(g.units)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {storePace.tooEarly ? (
+                    <div className="hp-goal-sub">
+                      Too early in the month to project. One strong Saturday at the start throws a
+                      month's projection further than it is worth reading.
+                    </div>
+                  ) : (
+                    <>
+                      <div className={"hp-goal-verdict hp-v-" + storePace.tone}>
+                        {storePace.willHit
+                          ? <>On for <b>{Math.round(storePace.projected)}</b></>
+                          : <>Pacing <b>{Math.round(storePace.projected)}</b></>}
+                        <span className="hp-goal-gap">
+                          {storePace.aheadBy >= 0
+                            ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
+                            : `${fmtNum(Math.round(-storePace.aheadBy * 10) / 10)} behind where today should be`}
+                        </span>
+                      </div>
+                      {storePace.short > 0 && storePace.daysLeft > 0 && (
+                        <div className="hp-goal-need">
+                          <b>{(Math.round(storePace.needPerDay * 10) / 10).toFixed(1)}</b> a day for the last{" "}
+                          {storePace.daysLeft} {storePace.daysLeft === 1 ? "day" : "days"} to get there
+                          <span className="hp-goal-sofar">running {(Math.round(storePace.perDay * 10) / 10).toFixed(1)} a day so far</span>
+                        </div>
+                      )}
+                      {storePace.short === 0 && (
+                        <div className="hp-goal-need hp-goal-done">
+                          Already there, with {storePace.daysLeft} {storePace.daysLeft === 1 ? "day" : "days"} still to run.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="hp-goal-none">
+                  {storePace.tooEarly
+                    ? <>Too early in the month to project.</>
+                    : <>Pacing <b>{Math.round(storePace.projected)}</b> for the month, at{" "}
+                       {(Math.round(storePace.perDay * 10) / 10).toFixed(1)} a day.</>}
+                  <span className="hp-goal-sofar">
+                    Set this store's monthly goal under Stores to see it against a target.
+                  </span>
+                </div>
+              )}
+              <div className="hp-goal-days">
+                {storePace.daysDone} of {storePace.daysAll} days counted
+                {monthHolidays.length > 0 && (
+                  <span title={monthHolidays.map((h) => `${h.date}${h.name ? " — " + h.name : ""}`).join("\n")}>
+                    {" · "}{monthHolidays.length} {monthHolidays.length === 1 ? "holiday" : "holidays"} taken out
+                  </span>
+                )}
+                <span className="hp-goal-note" title="Deliveries arrive on the next morning's report, so today's cars are not in the month total yet and today is not in the denominator either.">
+                  {" · "}through yesterday
+                </span>
+              </div>
+            </div>
+
             <div className="mp-title">Store closing rates</div>
             <div className="mp-desc">Units delivered against the leads worked, month to date.</div>
             <div className="hp-rows">
@@ -18163,14 +18348,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               </div>
             )}
             <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
-            {pacingUnits != null && (
-              <div className="hp-pace">
-                Pacing <b>{Math.round(pacingUnits)}</b> for the month
-                <span className="hp-pace-sub">
-                  {fmtNum(totalUnits)} in {paceDaysGone} working {paceDaysGone === 1 ? "day" : "days"}, across {paceDaysAll}
-                </span>
-              </div>
-            )}
+            {/* The month's projection used to sit here, worked out over six-day
+                weeks. It has moved to the top of this popup and is now worked over
+                the days the doors are actually open, which is every day bar the
+                holidays. Two projections of the same number, differing by a sixth,
+                is worse than either one alone. */}
 
             {/* A half is one side of a split deal, never a rounding error — so say
                 which side and whose, rather than hanging a flag on the number and
@@ -20230,7 +20412,10 @@ function Style() {
       .hero-datechip:active { transform:scale(.94); }
       .hero-datechip:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
       .datechip-tap { opacity:.65; margin-left:1px; }
-      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:300px; z-index:240;
+      /* Wider than it was. The month block at the top carries a bar with three
+         things marked on it, and at 300px the legend wrapped onto three lines and
+         read as clutter rather than as a picture. */
+      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:346px; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
         transition: opacity .16s ease, transform .38s var(--ease-bloop);
@@ -20268,6 +20453,71 @@ function Style() {
       .hp-pace b { font-family:var(--font-display); font-size:14px; color:var(--ink);
         letter-spacing:-.02em; margin:0 3px; }
       .hp-pace-sub { display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px; }
+
+      /* ---- The month, against the goal ---- */
+      .hp-goal { padding-bottom:11px; margin-bottom:11px; border-bottom:1px solid rgba(0,0,0,.07); }
+      .hp-goal-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-top:2px; }
+      .hp-goal-now b { font-family:var(--font-display); font-size:27px; font-weight:700;
+        letter-spacing:-.03em; color:var(--ink); line-height:1; }
+      .hp-goal-now span { font-size:11px; color:var(--ink-3); margin-left:5px; }
+      .hp-goal-of { font-size:10px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+        color:var(--ink-3); background:rgba(16,32,52,.05); padding:3px 7px; border-radius:999px; white-space:nowrap; }
+
+      /* The track is the whole goal, so the picture holds both numbers at once:
+         how far along the store is, and where the line it is judged against sits. */
+      .hp-bar { position:relative; height:12px; margin-top:10px; border-radius:999px;
+        background:rgba(16,32,52,.08); overflow:visible; }
+      .hp-bar-fill { position:absolute; left:0; top:0; bottom:0; border-radius:999px;
+        background:var(--ink-3); transition:width .5s var(--ease); }
+      .hp-bar-g .hp-bar-fill { background:linear-gradient(90deg,#12B981,#0FB37E); }
+      .hp-bar-y .hp-bar-fill { background:linear-gradient(90deg,#F0B429,#E8A317); }
+      .hp-bar-r .hp-bar-fill { background:linear-gradient(90deg,#F0685A,#E5533F); }
+      /* The number that counts as hitting: a full-height line, because it is the
+         one thing on here that is not a matter of degree. */
+      .hp-bar-hit { position:absolute; top:-3px; bottom:-3px; width:2px; margin-left:-1px;
+        background:var(--ink); border-radius:2px; }
+      /* Where a level month would be standing today. Deliberately lighter — it is
+         a reference, not a rule, and a month is allowed to be uneven. */
+      .hp-bar-par { position:absolute; top:-5px; bottom:-5px; width:2px; margin-left:-1px;
+        background:repeating-linear-gradient(180deg, rgba(16,32,52,.55) 0 3px, transparent 3px 6px); }
+      .hp-bar-legend { display:flex; align-items:center; gap:11px; margin-top:7px;
+        font-size:9.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--ink-3); }
+      .hp-bar-legend span { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+      .hp-key { width:9px; height:3px; border-radius:2px; display:inline-block; }
+      .hp-key-fill { background:var(--ink-3); }
+      .hp-bar-g ~ .hp-bar-legend .hp-key-fill { background:#0FB37E; }
+      .hp-bar-y ~ .hp-bar-legend .hp-key-fill { background:#E8A317; }
+      .hp-bar-r ~ .hp-bar-legend .hp-key-fill { background:#E5533F; }
+      .hp-key-hit { background:var(--ink); width:3px; height:9px; }
+      .hp-key-par { background:repeating-linear-gradient(180deg, rgba(16,32,52,.55) 0 2px, transparent 2px 4px);
+        width:3px; height:9px; }
+      .hp-bar-end { margin-left:auto; }
+
+      /* The tone classes shared with the rows below set only a colour, and this
+         rule comes after them in the sheet, so setting a colour here would win and
+         the verdict would always read the same shade. Its own names instead. */
+      .hp-goal-verdict { margin-top:9px; font-size:12px; }
+      .hp-v-g { color:#1E7A3C; } .hp-v-y { color:#95600A; } .hp-v-r { color:#C13529; }
+      .hp-goal-verdict b { font-family:var(--font-display); font-size:16px; letter-spacing:-.02em; }
+      .hp-goal-gap { display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px; font-weight:500; }
+      .hp-goal-need { margin-top:7px; font-size:11.5px; color:var(--ink-2); }
+      .hp-goal-need b { font-family:var(--font-display); font-size:14px; color:var(--ink); letter-spacing:-.02em; }
+      .hp-goal-sofar { display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px; }
+      .hp-goal-done { color:#0E9C6E; font-weight:600; }
+      .hp-goal-none { margin-top:8px; font-size:11.5px; color:var(--ink-2); }
+      .hp-goal-none b { font-family:var(--font-display); font-size:15px; color:var(--ink); letter-spacing:-.02em; }
+      .hp-goal-sub { margin-top:8px; font-size:11px; color:var(--ink-3); line-height:1.45; }
+      .hp-goal-days { margin-top:9px; font-size:10px; font-weight:700; letter-spacing:.03em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .hp-goal-note { font-weight:500; text-transform:none; letter-spacing:0; }
+      /* The multiplication, done where it is entered, so nobody has to trust that
+         the popup did the same one they were doing in their head. */
+      /* A bare text node beside an element is an anonymous flex item, and the
+         parent's gap does not always land between the two — which is how this
+         first read "The number126". Spaced explicitly rather than relied upon. */
+      .wiz-goal-out { align-items:baseline; }
+      .wiz-goal-out b { font-family:var(--font-display); font-size:20px; font-weight:700;
+        letter-spacing:-.02em; color:var(--ink); margin-left:6px; }
       .hp-why { margin-top:8px; padding-top:8px; border-top:1px solid rgba(0,0,0,.07);
         display:flex; flex-direction:column; gap:6px; }
       .hp-why-line { font-size:10.5px; line-height:1.45; color:var(--ink-2); }
