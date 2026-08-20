@@ -41,10 +41,24 @@ export default async function handler(req, res) {
   });
   const { data: who, error: whoErr } = await asUser.auth.getUser();
   if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid" });
-  const personId = who.user.id;
+  const userId = who.user.id;
 
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
+
+  /* The account is not the person. The line is written with ROSTER ids, so a
+     device filed under the account's uuid would sit there perfectly registered
+     and never match anybody in any queue — registered, and unreachable. The link
+     is what turns one into the other, and until a manager has made it there is
+     nothing to register against. */
+  const { data: links, error: linkErr } = await db
+    .from("floor_people").select("person_id").eq("user_id", userId).eq("store", store).limit(1);
+  if (linkErr) return res.status(500).json({ error: "could not check this account" });
+  const personId = links && links[0] && links[0].person_id;
+  if (!personId) {
+    return res.status(403).json({ error: "not-linked",
+      message: "This account isn't linked to anybody on this store's floor yet. A manager can link it under Access." });
+  }
 
   const row = { id: `${device_id}:${store}`, device_id, store, person_id: personId, platform,
                 updated_at: new Date().toISOString() };
