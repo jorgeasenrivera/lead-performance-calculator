@@ -11,6 +11,8 @@
  * The caller's own profile is read server-side to check they manage that store.
  * A role sent in the body would be worth exactly nothing.
  *
+ * GET  ?store=X                            who is linked to whom, and whose
+ *                                          phone has actually registered
  * POST { store, person_id, user_id }        link (or move) an account
  * POST { store, user_id, unlink: true }     take a link away
  *
@@ -20,15 +22,18 @@ import { createClient } from "@supabase/supabase-js";
 import { checkLink } from "./_people-link.mjs";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+  const reading = req.method === "GET";
+  if (!reading && req.method !== "POST") return res.status(405).json({ error: "GET or POST only" });
 
   const auth = String(req.headers.authorization || "");
   const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!jwt) return res.status(401).json({ error: "sign in first" });
 
-  const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-  const { store, person_id: personId, user_id: userId, unlink } = body;
-  if (!store || !userId) return res.status(400).json({ error: "store and user_id are required" });
+  const body = reading ? {} : (typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}));
+  const store = reading ? String(req.query.store || "") : body.store;
+  const { person_id: personId, user_id: userId, unlink } = body;
+  if (!store) return res.status(400).json({ error: "store is required" });
+  if (!reading && !userId) return res.status(400).json({ error: "user_id is required" });
 
   const asUser = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
     auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
@@ -44,6 +49,32 @@ export default async function handler(req, res) {
   const managesStore = prof && Array.isArray(prof.stores) && prof.stores.includes(store);
   if (!prof || (!isAdmin && !managesStore)) {
     return res.status(403).json({ error: "only a manager of this store can link accounts" });
+  }
+
+  if (reading) {
+    /* The links themselves, and one fact about each that a manager cannot get
+       anywhere else: whether a phone has actually arrived. A link with no device
+       looks identical to a working one on screen, and the difference only shows
+       up the night nobody's phone buzzes. No token is returned — the manager has
+       no use for it and it is the one part of this worth stealing. */
+    const { data: links, error: linkErr } = await db.from("floor_people")
+      .select("user_id, person_id, linked_by, updated_at").eq("store", store);
+    if (linkErr) return res.status(500).json({ error: "could not read the links" });
+
+    const { data: devices } = await db.from("device_tokens")
+      .select("person_id, platform, updated_at").eq("store", store);
+    const byPerson = new Map();
+    for (const d of devices || []) {
+      const cur = byPerson.get(d.person_id) || { devices: 0, platforms: [], lastSeen: null };
+      cur.devices += 1;
+      if (d.platform && !cur.platforms.includes(d.platform)) cur.platforms.push(d.platform);
+      if (!cur.lastSeen || d.updated_at > cur.lastSeen) cur.lastSeen = d.updated_at;
+      byPerson.set(d.person_id, cur);
+    }
+
+    return res.status(200).json({
+      links: (links || []).map((l) => ({ ...l, ...(byPerson.get(l.person_id) || { devices: 0, platforms: [], lastSeen: null }) })),
+    });
   }
 
   if (unlink) {

@@ -2233,6 +2233,36 @@ async function authResetPassword(email) {
   });
   return { error: error ? error.message : null };
 }
+/* ---- the link between an account and a person on the floor ----
+   Reads and writes both go through /api/link-person, which reads the caller's
+   own role server-side. floor_people lets a salesperson read their own row and
+   nothing else on purpose: a table a browser can list is a table that tells
+   anybody who signs in exactly whose phone to aim at. */
+async function apiCall(path, { method = "GET", body = null } = {}) {
+  const t = await getTokens();
+  if (!t) return { error: "You are not signed in." };
+  try {
+    const r = await fetch(path, {
+      method,
+      headers: { Authorization: `Bearer ${t.access_token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const json = await r.json().catch(() => ({}));
+    if (!r.ok) return { error: json.error || json.message || `That failed (${r.status}).` };
+    return json;
+  } catch (e) {
+    return { error: "The server could not be reached." };
+  }
+}
+async function loadFloorLinks(store) {
+  const r = await apiCall(`/api/link-person?store=${encodeURIComponent(store)}`);
+  return r.error ? { error: r.error, links: [] } : { links: r.links || [] };
+}
+const linkFloorPerson = (store, userId, personId) =>
+  apiCall("/api/link-person", { method: "POST", body: { store, user_id: userId, person_id: personId } });
+const unlinkFloorPerson = (store, userId) =>
+  apiCall("/api/link-person", { method: "POST", body: { store, user_id: userId, unlink: true } });
+
 async function listProfiles() {
   if (!supabase) return [];
   const { data, error } = await supabase.from("profiles").select("*").order("created_at");
@@ -9884,6 +9914,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [identities, setIdentities] = useState({});
   const [showQR, setShowQR] = useState(false);
   const [showPins, setShowPins] = useState(false);
+  const [showPhones, setShowPhones] = useState(false);
   const [showBacklog, setShowBacklog] = useState(false);
   const [backlogCount, setBacklogCount] = useState(null);
   const [pendingAssign, setPendingAssign] = useState(null);
@@ -10126,6 +10157,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
         <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
           {/* Only ever shown when there is something in it. A button that reads
               "0 to review" every day of the year teaches a manager to stop
               looking at exactly the place they are meant to look. */}
@@ -10175,6 +10207,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
       )}
 
       <FloorBacklog store={store} data={data} userName={userName} open={showBacklog} onCount={setBacklogCount} />
+
+      {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} />}
 
       {showPins && (
         <div className="q-pins-panel">
@@ -10350,6 +10384,125 @@ const backlogDayLabel = (d) =>
   new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 const backlogTime = (ms) =>
   new Date(ms).toLocaleTimeString("en-US", { timeZone: STORE_TZ, hour: "numeric", minute: "2-digit" });
+
+/* =========================================================================
+   FloorPhones — whose phone is whose.
+
+   Everything that reaches a person on the floor speaks roster ids: the line is
+   written with them, the notification is addressed with one. An account is a
+   uuid in a different alphabet entirely. Joining the two is a decision somebody
+   has to make, once, and this is where it is made.
+
+   It is a manager's decision and not the salesperson's, not out of suspicion but
+   because the link decides whose pocket buzzes when a customer walks in. Anybody
+   able to set their own could take the next up from somebody else, quietly, all
+   day, and nothing on any screen would look wrong.
+
+   ---- Why the device count is on this screen ----
+   A link with no phone behind it looks exactly like a working one. The account is
+   named, the person is named, the row reads green — and the difference only shows
+   itself on the night nobody's phone buzzes and a customer stands in the doorway.
+   So the row says plainly whether a phone has ever arrived, and when it last did.
+   ========================================================================= */
+function FloorPhones({ store, roster, onClose }) {
+  const [links, setLinks] = useState(null);
+  const [accounts, setAccounts] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    const [l, a] = await Promise.all([loadFloorLinks(store.id), listProfiles()]);
+    if (l.error) setErr(l.error);
+    setLinks(l.links);
+    setAccounts(a);
+  }, [store.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const byPerson = useMemo(() => {
+    const m = new Map();
+    for (const l of links || []) m.set(l.person_id, l);
+    return m;
+  }, [links]);
+  const acct = (id) => (accounts || []).find((a) => a.id === id);
+
+  /* An account already spoken for at this store cannot be offered again — the
+     server would refuse it, and offering something that will be refused is a
+     worse way to say no than not offering it. */
+  const taken = useMemo(() => new Set((links || []).map((l) => l.user_id)), [links]);
+
+  const act = async (fn, key) => {
+    setBusy(key); setErr("");
+    const r = await fn();
+    setBusy("");
+    if (r && r.error) { setErr(r.error); return; }
+    await load();
+  };
+
+  const seen = (l) => {
+    if (!l.devices) return null;
+    const when = l.lastSeen ? new Date(l.lastSeen).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
+    return `${l.devices} phone${l.devices === 1 ? "" : "s"}${l.platforms.length ? ` · ${l.platforms.join(", ")}` : ""}${when ? ` · last seen ${when}` : ""}`;
+  };
+
+  return (
+    <div className="f-phones">
+      <div className="f-phones-head">
+        <h3>Phones on the floor</h3>
+        <button className="btn-quiet" onClick={onClose}>Close</button>
+      </div>
+      <p className="hint">
+        Which account belongs to which person here. It is what decides whose phone buzzes when their
+        customer walks in, so it is set here rather than by the salesperson. They need an account on
+        this site first — they sign up as usual and you leave them with no stores ticked, which keeps
+        them off the dashboard while still letting their phone know who they are.
+      </p>
+
+      {err && <p className="f-backlog-err">{err}</p>}
+      {(links === null || accounts === null) && <p className="muted">Reading the links…</p>}
+
+      {links !== null && accounts !== null && (
+        <table className="roster-table wide f-phones-table">
+          <thead><tr><th>On the floor</th><th>Account</th><th>Phone</th><th /></tr></thead>
+          <tbody>
+            {roster.map((p) => {
+              const l = byPerson.get(p.id);
+              const a = l && acct(l.user_id);
+              return (
+                <tr key={p.id}>
+                  <td><b>{p.name}</b></td>
+                  <td className="mono">
+                    {l
+                      ? (a ? (a.email || a.name) : <span title="The account exists but is not a profile on this site any more.">{String(l.user_id).slice(0, 8)}…</span>)
+                      : (
+                        <select className="q-flag-sel" value="" disabled={busy === p.id}
+                          onChange={(e) => e.target.value && act(() => linkFloorPerson(store.id, e.target.value, p.id), p.id)}>
+                          <option value="">Not linked — pick an account…</option>
+                          {(accounts || []).filter((x) => !taken.has(x.id) && x.active !== false)
+                            .slice().sort((x, y) => String(x.email || x.name).localeCompare(String(y.email || y.name)))
+                            .map((x) => <option key={x.id} value={x.id}>{x.email || x.name}</option>)}
+                        </select>
+                      )}
+                  </td>
+                  <td className={"f-ph-dev" + (l && !l.devices ? " f-ph-none" : "")}>
+                    {!l ? <span className="muted">—</span>
+                      : l.devices ? seen(l)
+                      : <span title="The link is made, but no phone has ever registered against it. Nothing will buzz until the app is installed and opened once.">No phone yet</span>}
+                  </td>
+                  <td>
+                    {l && (
+                      <button className="btn btn-sm" disabled={busy === p.id}
+                        onClick={() => act(() => unlinkFloorPerson(store.id, l.user_id), p.id)}>Unlink</button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 /* One day's flags, worked out from the day's floor row and the day's report.
    Pulled out of the component because it is the whole of the thinking and none
@@ -25245,6 +25398,13 @@ function Style() {
 .f-bl-note{width:190px;font-size:12px;padding:6px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.2);color:inherit;}
 .f-bl-uphold{border-color:rgba(255,150,60,.5);color:#ffc08a;}
 .f-bl-wait{font-size:11.5px;color:var(--sfink3);font-style:italic;max-width:70ch;align-self:center;}
+.f-phones{margin:14px 0 6px;padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);}
+.f-phones-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;}
+.f-phones-head h3{margin:0 0 6px;font-size:15px;letter-spacing:.2px;}
+.f-phones .hint{margin:0 0 12px;font-size:12px;line-height:1.55;max-width:76ch;}
+.f-phones-table td{vertical-align:middle;}
+.f-ph-dev{font-size:11.5px;color:var(--sfink3);}
+.f-ph-dev.f-ph-none{color:#ffc08a;}
 @media (max-width:760px){
   .f-bl-row{flex-wrap:wrap;}
   .f-bl-acts{width:100%;}
