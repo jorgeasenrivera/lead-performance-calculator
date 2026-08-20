@@ -3010,12 +3010,33 @@ export default function LeadPerformanceCalculator() {
   const overviewStores = isAdmin ? config.stores : accessibleStores;
 
   // "The Board" chosen from the splash: scope it to who's signed in.
+  /* The store's headline figures as they stand on screen, so a manager saying
+     "that is wrong" sends the number they were looking at rather than a
+     description of it. By the time anybody reads the report the import may have
+     run again, and then the one fact that mattered is gone. */
+  const helpFigures = (() => {
+    const M = storeData?.months?.[ym()];
+    if (!M) return [];
+    const out = [];
+    const st = M.stats || {};
+    const sum = (f) => Object.values(st).reduce((n, r) => n + (r?.[f] ?? 0), 0);
+    const units = sum("internetUnits") + sum("phoneUnits") + sum("showroomUnits") + sum("campaignUnits");
+    out.push({ label: `Units delivered, ${ym()}`, value: fmtNum(units) });
+    for (const c of CHANNEL_LIST) {
+      out.push({ label: `${c.label} units, ${ym()}`, value: fmtNum(sum(c.id + "Units")) });
+    }
+    const g = storeGoalFor(currentStore, ym());
+    if (g) out.push({ label: "Goal to hit this month", value: fmtNum(g.bar) });
+    out.push({ label: "People counted on the board", value: String(Object.keys(st).length) });
+    return out;
+  })();
+  const helpCtx = `${appModule || "performance"} / ${tab || ""} at ${view || "no store"}`;
   const helpNode = (
     <>
       <HelpButton config={config} who={session && session.name} store={view}
-        context={`${appModule || "performance"} / ${tab || ""} at ${view || "no store"}`} />
+        context={helpCtx} figures={helpFigures} />
       {helpOpen && <HelpPanel config={config} who={session && session.name} store={view}
-        context={`${appModule || "performance"} / ${tab || ""} at ${view || "no store"}`}
+        context={helpCtx} figures={helpFigures}
         onClose={() => setHelpOpen(false)} />}
     </>
   );
@@ -6094,8 +6115,21 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
             ? `Numbers as of ${stamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
             : "No activity report has landed for today yet"}
         </div>
+        {/* A salesperson's own figures. They are the person most likely to spot a
+            wrong one — it is their day — and least likely to have anywhere to say
+            so, which is how a wrong number gets lived with for a month. */}
         <HelpButton config={config} who={meName} store={store}
-          context={`My day, ${meName || "unknown"}, ${date}`} floating={false} />
+          context={`My day, ${meName || "unknown"}, ${date}`}
+          figures={[
+            { label: `Calls today`, value: String(stats?.calls ?? "\u2014") },
+            { label: `Videos today`, value: String(stats?.video ?? "\u2014") },
+            { label: `Texts today`, value: String(stats?.text ?? "\u2014") },
+            { label: `Emails today`, value: String(stats?.email ?? "\u2014") },
+            { label: `Tasks today`, value: String(stats?.tasks ?? "\u2014") },
+            { label: `Ups credited today`, value: String(stats?.visits ?? "\u2014") },
+            { label: `Units this month`, value: String(monthStats?.units ?? "\u2014") },
+          ]}
+          floating={false} />
       </SfScreen>
     );
   }
@@ -6112,44 +6146,90 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
    One button, everywhere, for everyone. A manager who cannot save and a salesperson
    whose name is missing from the line both end up in the same place, and neither has
    to know who to ask. */
-function HelpButton({ config, who, store, context, floating = true }) {
+function HelpButton({ config, who, store, context, figures, floating = true }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button className={"help-fab" + (floating ? "" : " inline")} onClick={() => setOpen(true)}
-        title="Get help" aria-label="Get help">
+        title="Get help, or say a number is wrong" aria-label="Get help, or say a number is wrong">
         <PixIcon glyph="question" size={floating ? 20 : 15} />
         {!floating && <span>Help</span>}
       </button>
-      {open && <HelpPanel config={config} who={who} store={store} context={context} onClose={() => setOpen(false)} />}
+      {open && <HelpPanel config={config} who={who} store={store} context={context} figures={figures}
+        onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function HelpPanel({ config, who, store, context, onClose }) {
+/* ---- "This number is wrong" is not "I need help" ----
+
+   They arrive through the same button because nobody wants to learn two, but they
+   are different reports and mixing them loses both. Somebody who cannot sign in
+   is stuck and wants an answer. Somebody looking at 84.5 where they know they
+   sold 85 is not stuck at all — they are telling us the tool is lying, and that
+   is worth more than a support request, because they are the only ones who can
+   see it. A screen that only offers "get help" quietly teaches people that a
+   wrong number is their problem to live with.
+
+   The difference this makes is what gets captured. "The numbers are off" is
+   unactionable and it is what you get if you ask an open question. So the form
+   asks the three things that make it fixable — which figure, what it should say,
+   and how they know — and takes the rest off the screen itself. */
+function HelpPanel({ config, who, store, context, figures, onClose }) {
   const s = (config && config.support) || {};
   const [tab, setTab] = useState("contact");
   const [what, setWhat] = useState("");
   const [name, setName] = useState(who || "");
   const [reach, setReach] = useState("");
   const [sent, setSent] = useState(null);   // null | "sending" | "ok" | "fail"
+  // The wrong-number report
+  const onScreen = Array.isArray(figures) ? figures.filter((f) => f && f.label) : [];
+  const [which, setWhich] = useState("");
+  const [shouldBe, setShouldBe] = useState("");
+  const [basis, setBasis] = useState("");
+
+  const picked = onScreen.find((f) => f.label === which) || null;
+  const wrongReady = !!(which.trim() || what.trim());
+
+  const baseTicket = () => ({
+    id: uid() + Date.now().toString(36),
+    at: new Date().toISOString(),
+    from: name.trim() || "Not given",
+    reach: reach.trim(),
+    store: store || "",
+    // What the app was doing when they hit the button, so a ticket does not
+    // arrive as "it broke" with nothing to go on.
+    context: context || "",
+    page: (typeof window !== "undefined" && window.location ? window.location.pathname + window.location.search : ""),
+    agent: (typeof navigator !== "undefined" ? navigator.userAgent : ""),
+    status: "open",
+  });
 
   const send = async () => {
     if (!what.trim()) return;
     setSent("sending");
+    setSent((await saveTicket({ ...baseTicket(), kind: "problem", body: what.trim() })) ? "ok" : "fail");
+  };
+
+  const sendWrong = async () => {
+    if (!wrongReady) return;
+    setSent("sending");
     const t = {
-      id: uid() + Date.now().toString(36),
-      at: new Date().toISOString(),
-      from: name.trim() || "Not given",
-      reach: reach.trim(),
-      store: store || "",
-      // What the app was doing when they hit the button, so a ticket does not
-      // arrive as "it broke" with nothing to go on.
-      context: context || "",
-      page: (typeof window !== "undefined" && window.location ? window.location.pathname + window.location.search : ""),
-      agent: (typeof navigator !== "undefined" ? navigator.userAgent : ""),
+      ...baseTicket(),
+      kind: "figures",
+      figure: which.trim(),
+      /* Taken off the screen rather than typed. Somebody reporting a wrong number
+         should not have to transcribe it correctly to be believed, and what they
+         were looking at is the one fact that cannot be reconstructed later — by
+         the time anybody reads this, the import may have run again. */
+      shown: picked ? String(picked.value) : "",
+      expected: shouldBe.trim(),
+      basis: basis.trim(),
+      /* Everything else that was on the screen at that moment, which is how a
+         wrong figure usually gets traced: the one that is off is rarely off
+         alone. */
+      snapshot: onScreen.map((f) => ({ label: f.label, value: String(f.value) })),
       body: what.trim(),
-      status: "open",
     };
     setSent((await saveTicket(t)) ? "ok" : "fail");
   };
@@ -6159,17 +6239,105 @@ function HelpPanel({ config, who, store, context, onClose }) {
     <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="help-sheet" role="dialog" aria-label="Help">
         <div className="help-head">
-          <h3>Need a hand?</h3>
+          {/* The heading follows the tab. "Need a hand?" over a wrong-number form
+              tells somebody they are asking for help, which is the framing that
+              stops people reporting a bad figure at all: they do not need help,
+              they are doing us one. */}
+          <h3>{tab === "wrong" ? "Something look wrong?" : tab === "ticket" ? "Something broken?" : "Need a hand?"}</h3>
           <button className="btn-x md-x" onClick={onClose} aria-label="Close">
             <PixIcon glyph="close" size={19} />
           </button>
         </div>
         <div className="help-tabs">
+          <button className={"help-tab help-tab-wrong" + (tab === "wrong" ? " on" : "")} onClick={() => setTab("wrong")}>
+            A number's wrong
+          </button>
+          <button className={"help-tab" + (tab === "ticket" ? " on" : "")} onClick={() => setTab("ticket")}>Something's broken</button>
           <button className={"help-tab" + (tab === "contact" ? " on" : "")} onClick={() => setTab("contact")}>Contact</button>
-          <button className={"help-tab" + (tab === "ticket" ? " on" : "")} onClick={() => setTab("ticket")}>Report a problem</button>
         </div>
 
-        {tab === "contact" ? (
+        {tab === "wrong" ? (
+          <div className="help-body">
+            {sent === "ok" ? (
+              <div className="help-done">
+                <PixIcon glyph="check" size={26} />
+                <b>Flagged.</b>
+                <p className="hint">
+                  {s.name ? s.name.split(" ")[0] : "An administrator"} gets this with the figure you were looking at
+                  and everything else on the screen beside it. Nothing about your day changes in the meantime —
+                  the number stays as it is until somebody has looked.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="help-intro">
+                  If a figure here does not match what you know happened, say so. You are the only one who can
+                  see that, and it is worth telling us even when you are not stuck.
+                </p>
+
+                <label className="help-lbl">Which number?</label>
+                {onScreen.length > 0 ? (
+                  <select className="help-in" value={which} onChange={(e) => setWhich(e.target.value)}>
+                    <option value="">Pick the one that looks wrong…</option>
+                    {onScreen.map((f) => (
+                      <option key={f.label} value={f.label}>{f.label} — showing {String(f.value)}</option>
+                    ))}
+                    <option value="__other">Something else on this screen</option>
+                  </select>
+                ) : (
+                  <input className="help-in" value={which} onChange={(e) => setWhich(e.target.value)}
+                    placeholder="e.g. my units for the month" />
+                )}
+
+                {which && which !== "__other" && picked && (
+                  <div className="help-shown">
+                    This screen is showing <b>{String(picked.value)}</b>
+                  </div>
+                )}
+
+                <div className="help-row">
+                  <span>
+                    <label className="help-lbl">What should it be?</label>
+                    <input className="help-in" value={shouldBe} onChange={(e) => setShouldBe(e.target.value)}
+                      placeholder="If you know" />
+                  </span>
+                  <span>
+                    <label className="help-lbl">How do you know?</label>
+                    <input className="help-in" value={basis} onChange={(e) => setBasis(e.target.value)}
+                      placeholder="e.g. DriveCentric says 12" />
+                  </span>
+                </div>
+
+                <label className="help-lbl">Anything else worth knowing</label>
+                <textarea className="help-area" rows={3} value={what} onChange={(e) => setWhat(e.target.value)}
+                  placeholder="Optional. When you noticed it, whether it was right yesterday, anything odd that day." />
+
+                <div className="help-row">
+                  <span>
+                    <label className="help-lbl">Your name</label>
+                    <input className="help-in" value={name} onChange={(e) => setName(e.target.value)}
+                      placeholder="So somebody can come back to you" />
+                  </span>
+                  <span>
+                    <label className="help-lbl">Phone or email</label>
+                    <input className="help-in" value={reach} onChange={(e) => setReach(e.target.value)} placeholder="Optional" />
+                  </span>
+                </div>
+
+                <p className="hint">
+                  Sent with it: {context ? context + ", " : ""}
+                  {onScreen.length > 0
+                    ? `and the ${onScreen.length} ${onScreen.length === 1 ? "figure" : "figures"} on this screen as they stand right now.`
+                    : "and the page you are on."}
+                </p>
+                {sent === "fail" && <p className="sched-err">That did not send. Check the connection and try again.</p>}
+                <button className="btn" disabled={!wrongReady || sent === "sending"} onClick={sendWrong}>
+                  {sent === "sending" ? "Sending…" : "Flag it"}
+                </button>
+              </>
+            )}
+          </div>
+        ) : tab === "contact" ? (
           <div className="help-body">
             <div className="help-person">
               <span className="help-avatar">{String(s.name || "?").split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}</span>
@@ -6503,8 +6671,10 @@ function RepairPanel({ config }) {
 function TicketsPanel({ config, onChange }) {
   const [items, setItems] = useState(null);
   const [filter, setFilter] = useState("open");
+  const [kind, setKind] = useState("all");
   const s = (config && config.support) || {};
-  const [form, setForm] = useState({ name: s.name || "", role: s.role || "", email: s.email || "", phone: s.phone || "", note: s.note || "" });
+  const [form, setForm] = useState({ name: s.name || "", role: s.role || "", email: s.email || "",
+    phone: s.phone || "", note: s.note || "", alertWebhook: s.alertWebhook || "" });
 
   const reload = () => loadTickets().then(setItems);
   useEffect(() => { reload(); }, []);
@@ -6519,7 +6689,17 @@ function TicketsPanel({ config, onChange }) {
     onChange(next, { action: "Updated support contact", detail: form.name });
   };
 
-  const shown = (items || []).filter((t) => (filter === "all" ? true : (t.status || "open") === filter));
+  /* A wrong figure outranks a support request, always. Somebody stuck can be
+     helped tomorrow; a number that is lying is being read by everybody in the
+     meantime, and every hour it stands is an hour of decisions made on it. */
+  const shown = (items || [])
+    .filter((t) => (filter === "all" ? true : (t.status || "open") === filter))
+    .filter((t) => (kind === "all" ? true : (t.kind || "problem") === kind))
+    .sort((a, b) => {
+      const w = (t) => ((t.status || "open") === "open" && t.kind === "figures" ? 0 : 1);
+      return w(a) - w(b) || String(b.at || "").localeCompare(String(a.at || ""));
+    });
+  const openWrong = (items || []).filter((t) => t.kind === "figures" && (t.status || "open") === "open").length;
 
   return (
     <div className="board-page">
@@ -6544,15 +6724,36 @@ function TicketsPanel({ config, onChange }) {
         <label className="help-lbl">Anything else they should know</label>
         <input className="help-in" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })}
           placeholder="e.g. Text is fastest on weekends" />
+
+        <label className="help-lbl" style={{ marginTop: 14 }}>Send wrong-number reports to</label>
+        <p className="hint">
+          A report sitting in this panel until somebody next opens it is barely a report — the value of
+          a salesperson saying "that is not what I sold" is that they said it today. Paste an incoming
+          webhook here and every flagged number arrives wherever you already look: Slack and Teams both
+          hand one out in about a minute, and so does any automation service. Leave it blank and reports
+          still land below, just quietly. Reports of things being broken are not sent — only numbers.
+        </p>
+        <input className="help-in" value={form.alertWebhook || ""}
+          onChange={(e) => setForm({ ...form, alertWebhook: e.target.value })}
+          placeholder="https://hooks.slack.com/services/…" />
+        {form.alertWebhook && !/^https:\/\//i.test(form.alertWebhook.trim()) && (
+          <p className="sched-err">That has to start with https. A plain http address would put whatever
+            somebody typed across the wire in clear.</p>
+        )}
         <button className="btn" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
       </div>
 
       <div className="card">
         <div className="tk-head">
-          <h3>Tickets</h3>
+          <h3>Tickets{openWrong > 0 && <span className="tk-badge">{openWrong} wrong {openWrong === 1 ? "number" : "numbers"}</span>}</h3>
           <div className="seg-small">
             {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
               <button key={id} className={"seg-opt " + (filter === id ? "on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
+            ))}
+          </div>
+          <div className="seg-small">
+            {[["all", "Everything"], ["figures", "Wrong numbers"], ["problem", "Problems"]].map(([id, lbl]) => (
+              <button key={id} className={"seg-opt " + (kind === id ? "on" : "")} onClick={() => setKind(id)}>{lbl}</button>
             ))}
           </div>
           <button className="btn-quiet" onClick={reload}>Refresh</button>
@@ -6562,13 +6763,42 @@ function TicketsPanel({ config, onChange }) {
           : (
             <div className="tk-list">
               {shown.map((t) => (
-                <div key={t.id} className={"tk" + ((t.status || "open") === "closed" ? " tk-closed" : "")}>
+                <div key={t.id} className={"tk" + ((t.status || "open") === "closed" ? " tk-closed" : "")
+                  + (t.kind === "figures" ? " tk-wrong" : "")}>
                   <div className="tk-top">
+                    {t.kind === "figures" && <span className="tk-kind">number's wrong</span>}
                     <b>{t.from || "Anonymous"}</b>
                     {t.reach && <a className="tk-reach" href={t.reach.includes("@") ? `mailto:${t.reach}` : `tel:${t.reach.replace(/[^\d+]/g, "")}`}>{t.reach}</a>}
                     <span className="tk-when">{t.at ? new Date(t.at).toLocaleString() : ""}</span>
                   </div>
-                  <p className="tk-body">{t.body}</p>
+                  {t.kind === "figures" && (
+                    <div className="tk-fig">
+                      <div className="tk-fig-line">
+                        <span className="tk-fig-what">{t.figure === "__other" ? "Something on that screen" : (t.figure || "A figure")}</span>
+                        <span className="tk-fig-vs">
+                          {t.shown ? <>showing <b>{t.shown}</b></> : "value not captured"}
+                          {t.expected ? <> · should be <b>{t.expected}</b></> : null}
+                        </span>
+                      </div>
+                      {t.basis && <div className="tk-fig-basis">Their source: {t.basis}</div>}
+                      {/* The rest of what was on that screen at that moment. A wrong
+                          figure is rarely wrong alone, and this is usually where the
+                          shape of the fault shows up. */}
+                      {Array.isArray(t.snapshot) && t.snapshot.length > 0 && (
+                        <details className="tk-snap">
+                          <summary>Everything else on that screen ({t.snapshot.length})</summary>
+                          <div className="tk-snap-rows">
+                            {t.snapshot.map((f, i) => (
+                              <div key={i} className={"tk-snap-row" + (f.label === t.figure ? " on" : "")}>
+                                <span>{f.label}</span><b>{f.value}</b>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                  {t.body && <p className="tk-body">{t.body}</p>}
                   <div className="tk-meta">
                     {t.store && <span>{t.store}</span>}
                     {t.context && <span>{t.context}</span>}
@@ -21908,6 +22138,27 @@ function Style() {
       .tk-top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:6px; }
       .tk-reach { font-size:12.5px; color:var(--blue); text-decoration:none; }
       .tk-when { margin-left:auto; font-size:12px; color:var(--ink-3); }
+      /* ---- a report that a number is wrong ---- */
+      .tk-wrong { border-left:3px solid #E5533F; padding-left:11px; }
+      .tk-wrong.tk-closed { border-left-color:rgba(16,32,52,.15); }
+      .tk-kind { font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+        color:#C13529; background:rgba(229,83,63,.12); padding:2px 7px; border-radius:999px; }
+      .tk-badge { margin-left:9px; font-size:10px; font-weight:800; letter-spacing:.05em;
+        text-transform:uppercase; color:#C13529; background:rgba(229,83,63,.12);
+        padding:3px 8px; border-radius:999px; vertical-align:middle; }
+      .tk-fig { margin:6px 0 8px; padding:9px 11px; border-radius:11px; background:rgba(16,32,52,.04); }
+      .tk-fig-line { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; }
+      .tk-fig-what { font-weight:700; font-size:13.5px; }
+      .tk-fig-vs { font-size:12.5px; color:var(--ink-2); }
+      .tk-fig-vs b { font-family:var(--font-display); font-size:14px; color:var(--ink); letter-spacing:-.02em; }
+      .tk-fig-basis { font-size:12px; color:var(--ink-2); margin-top:4px; }
+      .tk-snap { margin-top:7px; }
+      .tk-snap summary { font-size:11.5px; color:var(--ink-3); cursor:pointer; }
+      .tk-snap-rows { margin-top:6px; display:grid; gap:2px; }
+      .tk-snap-row { display:flex; justify-content:space-between; gap:12px; font-size:12px;
+        color:var(--ink-2); padding:2px 0; border-bottom:1px dotted rgba(16,32,52,.09); }
+      .tk-snap-row.on { color:var(--ink); font-weight:700; }
+      .tk-snap-row b { font-family:var(--font-display); letter-spacing:-.02em; }
       .tk-body { font-size:14px; white-space:pre-wrap; margin-bottom:8px; }
       .tk-meta { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
       .tk-meta span { font-size:11.5px; color:var(--ink-3); background:rgba(16,32,52,.05);
@@ -21986,6 +22237,15 @@ function Style() {
       .help-tabs { display:flex; gap:6px; background:rgba(16,32,52,.05); border-radius:12px; padding:4px; margin-bottom:14px; }
       .help-tab { flex:1; font-family:inherit; font-size:13px; font-weight:700; padding:9px; border:0;
         border-radius:9px; background:none; color:var(--ink-2); cursor:pointer; }
+      /* First and widest, because it is the one people will not think to look for.
+         Nobody arrives at a help button meaning to report a wrong number — they
+         arrive meaning to give up on it. */
+      .help-tab-wrong { flex:1.35; }
+      .help-tab-wrong.on { color:#C13529; }
+      .help-intro { font-size:12.5px; color:var(--ink-2); line-height:1.5; margin:0 0 12px; }
+      .help-shown { margin-top:7px; font-size:12.5px; color:var(--ink-2);
+        background:rgba(16,32,52,.05); padding:7px 10px; border-radius:9px; }
+      .help-shown b { font-family:var(--font-display); font-size:16px; color:var(--ink); letter-spacing:-.02em; }
       .help-tab.on { background:#fff; color:var(--ink); box-shadow:0 3px 10px -6px rgba(16,32,52,.5); }
       .help-body { display:flex; flex-direction:column; gap:10px; }
       .help-person { display:flex; align-items:center; gap:12px; margin-bottom:4px; }
