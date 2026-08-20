@@ -3858,7 +3858,11 @@ function LEADERBOARD_HTML(p) {
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
     --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
-  html,body { height:100%; }
+  /* Same guard as the app: plenty of these screens are driven by an Android stick
+     or an Android TV, and every size on this board is computed from the height of
+     the screen. Chrome deciding a column should be bigger than the arithmetic said
+     is the one thing that can throw the whole layout out. */
+  html,body { height:100%; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   body { font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif; color:#EAF1F8;
     font-variant-numeric:tabular-nums; font-feature-settings:'tnum' 1;
     background:#0E2033; overflow:hidden; }
@@ -20029,7 +20033,16 @@ function Style() {
         --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
       }
 
-      html { scroll-behavior: smooth; }
+      /* ---- Android's own idea of how big your text should be ----
+         Chrome on Android inflates the type in blocks it decides are wide for the
+         viewport — "font boosting". It is well meant and it is invisible during
+         development, because it does not happen on a desktop at all: the first
+         anybody knows is a salesperson holding a phone where one column of a card
+         is a size nobody chose. 100% turns the boosting off while still honouring
+         the text-size slider in the phone's own settings, which is the half of it
+         worth keeping. Setting it to none would take that away too, and somebody who has
+         turned their text up has a reason. */
+      html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 
       /* Display face on anything that carries hierarchy or a number worth reading
          across a room. Everything else stays on Inter, which holds up better in
