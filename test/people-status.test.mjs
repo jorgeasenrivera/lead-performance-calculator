@@ -198,3 +198,146 @@ test("the store it was given is never modified", () => {
   setStatus(d, ["Fin Smith"], "ignored");
   assert.deepEqual(d, copy, "callers hold the original until they choose to save");
 });
+
+// ---- holding a report's unknown names ----
+import { admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
+         packUp, transferIn, transferOut, priorFor } from "../api/_people-status.mjs";
+
+/* Somebody the store has no record of at all, which is the case being tested.
+   Angel Perez is on the base fixture's roster, so holding her would have proved
+   nothing — the first version of this did exactly that and passed for the wrong
+   reason until the assertion caught it. */
+const held = () => {
+  const d = store();
+  holdPerson(d, "Vernon Johnson", { monthKey: "2026-08", rec: { displayName: "Vernon Johnson", internetUnits: 4 },
+    day: "2026-08-19", dayRow: { calls: 8, video: 1 }, at: "2026-08-20T10:00:00.000Z", file: "Report-8-20.pdf" });
+  return d;
+};
+
+test("a new store takes its first report as gospel", () => {
+  /* Otherwise a manager opens a brand new store to forty names in a queue and an
+     empty screen, which is a worse first five minutes than the risk. */
+  assert.equal(admitsEveryone({ roster: [] }), true);
+  assert.equal(admitsEveryone({}), true);
+  assert.equal(admitsEveryone(store()), false, "a store with people checks them");
+});
+
+test("an unknown name is parked, not added and not dropped", () => {
+  const d = held();
+  assert.equal(statusOf(d, "Vernon Johnson"), "unknown", "not on the floor");
+  assert.equal(d.months["2026-08"].stats["vernon johnson"], undefined, "and not in the store's totals");
+  const p = pendingList(d);
+  assert.equal(p.length, 1);
+  assert.equal(p[0].name, "Vernon Johnson");
+  assert.equal(p[0].units, 4, "but the figures are kept, whole");
+  assert.deepEqual(p[0].files, ["Report-8-20.pdf"], "with the report they came from");
+});
+
+test("the same name across two reports collects rather than replaces", () => {
+  const d = held();
+  holdPerson(d, "Vernon Johnson", { monthKey: "2026-08", rec: { phoneUnits: 2 },
+    day: "2026-08-20", dayRow: { calls: 3 }, file: "Report-8-21.pdf" });
+  const p = pendingList(d)[0];
+  assert.equal(p.units, 6, "4 from one report and 2 from the next");
+  assert.equal(p.days, 2);
+  assert.equal(p.files.length, 2);
+});
+
+test("claiming somebody folds their held figures in", () => {
+  /* The only path by which a report's numbers reach a store's totals now. */
+  const d = claimPending(held(), ["Vernon Johnson"], { by: "Jorge" });
+  assert.equal(statusOf(d, "Vernon Johnson"), "active");
+  assert.equal(d.months["2026-08"].stats["vernon johnson"].internetUnits, 4);
+  assert.equal(d.activity["2026-08-19"]["vernon johnson"].calls, 8);
+  assert.equal(d.pendingPeople["vernon johnson"], undefined, "and nothing is left waiting");
+});
+
+test("claiming does not disturb what was already there", () => {
+  const d = claimPending(held(), ["Vernon Johnson"]);
+  assert.equal(d.months["2026-08"].stats["fin smith"].internetUnits, 6);
+  assert.equal(d.activity["2026-08-19"]["fin smith"].calls, 20);
+});
+
+test("disowning somebody takes the held figures with the decision", () => {
+  const d = dropPending(held(), ["Vernon Johnson"], { by: "Jorge" });
+  assert.equal(statusOf(d, "Vernon Johnson"), "ignored");
+  assert.equal(d.pendingPeople["vernon johnson"], undefined);
+  assert.equal(d.months["2026-08"].stats["vernon johnson"], undefined,
+    "they never reached the totals, and they are not going to now");
+  assert.ok(d.ignoredAt["vernon johnson"], "and it is stamped, so a later report cannot undo it");
+});
+
+test("nothing waiting is the ordinary state", () => {
+  assert.deepEqual(pendingList(store()), []);
+  assert.deepEqual(pendingList({}), []);
+});
+
+// ---- transferring between stores ----
+const ford = () => ({ roster: [{ id: "b1", name: "Someone Else", roleId: "sales" }],
+  departed: [], excluded: [], months: { "2026-08": { stats: { "someone else": { internetUnits: 5 } } } },
+  activity: {}, ignoredAt: {}, unignored: {}, returned: {} });
+
+test("a transfer carries everything the old store knew", () => {
+  const packed = packUp(store(), "Fin Smith", "classic-mazda", "Classic Mazda");
+  assert.equal(packed.name, "Fin Smith");
+  assert.equal(packed.roleId, "sales");
+  assert.equal(packed.months["2026-08"].internetUnits, 6);
+  assert.equal(packed.days["2026-08-19"].calls, 20);
+  assert.equal(packed.fromName, "Classic Mazda");
+});
+
+test("the old store keeps every car they sold there", () => {
+  /* A store whose past totals shrink because somebody transferred out is a store
+     whose figures cannot be trusted. */
+  const out = transferOut(store(), "Fin Smith", "Holler Ford", { by: "Jorge" });
+  assert.equal(statusOf(out, "Fin Smith"), "departed");
+  assert.equal(out.months["2026-08"].stats["fin smith"].internetUnits, 6);
+  assert.match(out.peopleLog[0].note, /transferred to Holler Ford/);
+});
+
+test("and the new store gets their record without counting it as its own", () => {
+  /* The whole point. Cars sold at another dealership must never be summed into
+     this one's totals — doing that deliberately for a transfer would be no better
+     than doing it by accident, which is the fault all of this exists to prevent. */
+  const packed = packUp(store(), "Fin Smith", "classic-mazda", "Classic Mazda");
+  const inn = transferIn(ford(), packed, { by: "Jorge", startedAt: "2026-08-21" });
+  assert.equal(statusOf(inn, "Fin Smith"), "active");
+  assert.equal(inn.roster.find((a) => a.name === "Fin Smith").hiredAt, "2026-08-21");
+  assert.equal(inn.months["2026-08"].stats["fin smith"], undefined,
+    "their Mazda cars are NOT in Ford's August");
+  const prior = priorFor(inn, "Fin Smith");
+  assert.equal(prior.length, 1);
+  assert.equal(prior[0].storeName, "Classic Mazda");
+  assert.equal(prior[0].units, 8, "6 internet and 2 phone, readable on their own screen");
+  assert.deepEqual(prior[0].months, ["2026-08"]);
+});
+
+test("a transfer does not put the newcomer on the unclaimed list", () => {
+  const packed = packUp(store(), "Fin Smith", "classic-mazda", "Classic Mazda");
+  const inn = transferIn(ford(), packed, {});
+  assert.deepEqual(unclaimed(inn), [], "they are claimed, and their old figures are not in these books");
+});
+
+test("somebody who moves twice keeps the store they came from", () => {
+  const packed1 = packUp(store(), "Fin Smith", "classic-mazda", "Classic Mazda");
+  const d = transferIn(ford(), packed1, {});
+  d.months["2026-09"] = { stats: { "fin smith": { internetUnits: 4 } } };
+  const packed2 = packUp(d, "Fin Smith", "holler-ford", "Holler Ford");
+  const third = transferIn({ roster: [], departed: [], excluded: [], months: {}, activity: {} }, packed2, {});
+  assert.deepEqual(priorFor(third, "Fin Smith").map((p) => p.storeName), ["Holler Ford"]);
+  assert.equal(priorFor(d, "Fin Smith")[0].storeName, "Classic Mazda",
+    "and the earlier move still stands where it was made");
+});
+
+test("packing somebody the store has never heard of gives an empty parcel", () => {
+  const packed = packUp(store(), "Nobody At All", "classic-mazda", "Classic Mazda");
+  assert.deepEqual(packed.months, {});
+  assert.deepEqual(packed.days, {});
+  const f = ford();
+  assert.equal(transferIn(f, null, {}), f, "and an empty parcel changes nothing at all");
+});
+
+test("nobody with no prior record is claimed to have one", () => {
+  assert.deepEqual(priorFor(ford(), "Someone Else"), []);
+  assert.deepEqual(priorFor({}, "Anyone"), []);
+});

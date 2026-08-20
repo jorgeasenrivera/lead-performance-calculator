@@ -32,9 +32,7 @@ function rosterMerge(next, serverCopy) {
   /* Both halves as they stand in the app: the tombstone merge that settles which
      decision is newer, then the roster union it protects. */
   const tomb = cut("const TOMB_DAYS", "\n/*", ) + "\n" + cut("function mergeTombstones(mine, theirs) {", "\n/*");
-  const block = cut("next.ignoredAt = mergeTombstones(", "next.roster = roster.filter")
-    + src.slice(src.indexOf("next.roster = roster.filter"),
-                src.indexOf("\n", src.indexOf("next.roster = roster.filter")));
+  const block = cut("next.ignoredAt = mergeTombstones(", "        }\n        /* ---- The plate log ----");
   assert.ok(block.includes("const onList"), "the ignore-stamp comparison has moved; update this check");
   const fn = new Function("next", "serverCopy", "norm", `
     ${tomb}
@@ -116,9 +114,77 @@ test("the tool writes the stamp, not just the filter", () => {
 test("the importer will not put an ignored name back", () => {
   /* The other half of staying gone. A daily import naming them would undo the
      whole repair by tomorrow morning otherwise. */
-  const imp = src.slice(src.indexOf("const rosterKeys = new Set(next.roster.map"),
-                        src.indexOf("setImportLog(log);"));
-  assert.ok(imp.includes("if (excluded.has(key)) continue;"), "ignored names are skipped on import");
   const excl = src.slice(src.indexOf("const excluded = new Set(["), src.indexOf("\n", src.indexOf("const excluded = new Set([")));
+  assert.ok(excl.includes("next.excluded"), "ignored names are dropped before anything is written");
   assert.ok(excl.includes("departedNames"), "and so are people marked departed");
+});
+
+test("and it will not add an unrecognised one either", () => {
+  /* The gate. Both paths, because the emailed one is the path reports actually
+     arrive by and nobody re-imports by hand — and because the last four times
+     one of these existed in two copies, the two copies disagreed. */
+  const server = fs.readFileSync(path.join(ROOT, "api/ingest.mjs"), "utf8");
+  for (const [where, text] of [["the app", src], ["the pipeline", server]]) {
+    assert.ok(/const openDoor = admitsEveryone\(next\)/.test(text), `${where} does not check the people list`);
+    assert.ok(/holdPerson\(next,/.test(text), `${where} does not hold an unknown name`);
+    assert.ok(/if \(openDoor\) \{/.test(text), `${where} adds names outside the empty-store case`);
+  }
+});
+
+// ---- names a report brought that nobody has claimed yet ----
+const withHeld = (roster, held, extra = {}) => ({
+  roster: roster.map((n, i) => ({ id: "a" + i, name: n, roleId: "sales" })),
+  excluded: [], departed: [], ignoredAt: {}, unignored: {}, returned: {},
+  pendingPeople: held, ...extra,
+});
+
+test("held names survive a save from a tab that never saw them", () => {
+  /* The email import writes these on the server. A browser opened before that
+     has never heard of them, and without the merge its copy wins and the held
+     figures are gone — the one thing this feature promised not to do. */
+  const server = withHeld(["Fin Smith"], {
+    "vernon johnson": { name: "Vernon Johnson", files: ["r1.pdf"], months: { "2026-08": { internetUnits: 5 } }, days: {} },
+  });
+  const stale = withHeld(["Fin Smith"], {});
+  const out = rosterMerge(stale, server);
+  assert.ok(out.pendingPeople["vernon johnson"], "the held person is still held");
+  assert.equal(out.pendingPeople["vernon johnson"].months["2026-08"].internetUnits, 5);
+});
+
+test("two reports each holding a piece of the same person add up", () => {
+  const server = withHeld(["Fin Smith"], {
+    "vernon johnson": { name: "Vernon Johnson", files: ["r1.pdf"], months: { "2026-07": { internetUnits: 2 } }, days: { "2026-07-30": { calls: 4 } } },
+  });
+  const mine = withHeld(["Fin Smith"], {
+    "vernon johnson": { name: "Vernon Johnson", files: ["r2.pdf"], months: { "2026-08": { internetUnits: 5 } }, days: { "2026-08-19": { calls: 9 } } },
+  });
+  const out = rosterMerge(mine, server);
+  const v = out.pendingPeople["vernon johnson"];
+  assert.deepEqual(Object.keys(v.months).sort(), ["2026-07", "2026-08"], "neither month overwrites the other");
+  assert.equal(Object.keys(v.days).length, 2);
+  assert.deepEqual(v.files.sort(), ["r1.pdf", "r2.pdf"]);
+});
+
+test("claiming somebody in one tab is not undone by another that never saw it", () => {
+  /* The removal needs no tombstone of its own: being on the roster is the record,
+     and that already survives. */
+  const stale = withHeld(["Fin Smith"], {
+    "vernon johnson": { name: "Vernon Johnson", files: [], months: {}, days: {} },
+  });
+  const claimed = withHeld(["Fin Smith", "Vernon Johnson"], {});
+  assert.equal(rosterMerge(claimed, stale).pendingPeople["vernon johnson"], undefined,
+    "claimed here, and a stale server copy does not put them back in the queue");
+  assert.equal(rosterMerge(stale, claimed).pendingPeople["vernon johnson"], undefined,
+    "and not the other way round either");
+});
+
+test("rejecting somebody is not undone either", () => {
+  const stale = withHeld(["Fin Smith"], {
+    "vernon johnson": { name: "Vernon Johnson", files: [], months: {}, days: {} },
+  });
+  const rejected = withHeld(["Fin Smith"], {}, {
+    excluded: ["Vernon Johnson"], ignoredAt: { "vernon johnson": "2026-08-20T18:00:00.000Z" },
+  });
+  assert.equal(rosterMerge(rejected, stale).pendingPeople["vernon johnson"], undefined);
+  assert.equal(rosterMerge(stale, rejected).pendingPeople["vernon johnson"], undefined);
 });

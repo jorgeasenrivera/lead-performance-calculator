@@ -23,6 +23,9 @@ import {
   storeKey, actKey, floorStatsKey, boardKey,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "./_store-keys.mjs";
+/* A person's standing at a store, shared with the app so an import and a screen
+   cannot disagree about who this store's people are. */
+import { admitsEveryone, holdPerson } from "./_people-status.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 try {
@@ -282,6 +285,45 @@ function applyToStore(data, entries, sourceLabel) {
       const c = canon(k);
       parsed[c] = { ...(parsed[c] || {}), ...v };
     }
+    /* ---- Nobody joins this store's books by turning up in a file ----
+       The same gate as the app's, and the one that matters more: this is the
+       path the reports actually arrive by, and nobody re-imports by hand. An
+       unrecognised name is held with its figures parked exactly as they came,
+       and folded in the moment a manager says the person works here. A store
+       with nobody on it yet takes the lot, because that is its first import. */
+    const openDoor = admitsEveryone(next);
+    const knownHere = new Set([
+      ...(next.roster || []).map((a) => norm(a.name)),
+      ...(next.departed || []).map((d) => norm(d && d.name)),
+    ]);
+    let heldCount = 0;
+    if (!openDoor) {
+      for (const key of Object.keys(parsed)) {
+        if (knownHere.has(key)) continue;
+        const rec = parsed[key];
+        heldCount++;
+        /* Parked in the shape it would have been written in. A day report and a
+           month report do not use the same field names, and parking one as the
+           other would hand somebody back an empty week. */
+        holdPerson(next, rec.displayName || key, type === "activity"
+          ? { day: actDay, dayRow: {
+              displayName: rec.displayName,
+              calls: rec.actCalls, video: rec.actVideo, contacted: rec.actCallContacted,
+              text: rec.actText, email: rec.actEmail, apptCreated: rec.actApptCreated,
+              apptShow: rec.actApptShow, opps: rec.actOppsTotal, tasks: rec.actCompletedTasks,
+              tasksPosted: rec.actOpenTasks ?? null,
+              sold: rec.actSold, units: rec.actUnits,
+              oppShowroom: rec.actOppShowroom, oppPhone: rec.actOppPhone,
+              oppInternet: rec.actOppInternet, oppCampaign: rec.actOppCampaign,
+              apptScheduled: rec.actApptScheduled, apptConfirmed: rec.actApptConfirmed,
+              apptNoShow: rec.actApptNoShow, visits: rec.actVisits,
+              uploadedAt: nowISO,
+            }, at: nowISO, file: fileName }
+          : { monthKey: month, rec, at: nowISO, file: fileName });
+        delete parsed[key];
+      }
+    }
+
     M.names[type] = Object.keys(parsed);
     /* The combined Delivery Summary already ticks every per-channel box in
        M.imports. It never did the same for M.names, and M.names is what the
@@ -371,15 +413,17 @@ function applyToStore(data, entries, sourceLabel) {
       ...(next.importLog || []),
     ].slice(0, 200);
 
-    const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
-    for (const [key, rec] of Object.entries(parsed)) {
-      if (excludedSet.has(key)) continue;
-      if (!rosterKeys.has(key)) {
+    // Only a store with nobody on it yet reaches this; everyone else's unknown
+    // names were held above.
+    if (openDoor) {
+      const rosterKeys = new Set(next.roster.map((a) => norm(a.name)));
+      for (const [key, rec] of Object.entries(parsed)) {
+        if (excludedSet.has(key) || rosterKeys.has(key)) continue;
         next.roster.push({ id: uid(), name: rec.displayName, roleId: null, order: next.roster.length });
         rosterKeys.add(key);
       }
     }
-    results.push({ file: fileName, type, day: type === "activity" ? actDay : day, count, skipped });
+    results.push({ file: fileName, type, day: type === "activity" ? actDay : day, count, skipped, held: heldCount });
   }
   return { next, results };
 }
