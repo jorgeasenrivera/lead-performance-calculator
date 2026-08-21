@@ -163,10 +163,15 @@ came to make; the list is something they came to read.
 On a phone the labels stay and the row wraps. Dropping them to icons fits the row and turns
 four unlabelled marks into a guessing game, one of which is destructive.
 
-And the tab had no gutter at all: every other manager page sits in `.board-page` (32px sides,
-1440 ceiling) and this one was rendered bare into `.page`, which carries no padding, so on a
-wide monitor it ran from one edge of the glass to the other. Worth checking whether Summary,
-History and Import have the same gap.
+And the tab had no gutter at all: the Dashboard sits in `.board-page` (32px sides, 1440
+ceiling) and every other tab in this module was rendered bare into `.page`, which carries no
+padding, so on a wide monitor a card ran from one edge of the glass to the other. Import,
+Summary, History, Standards and People now share one `.tab-page` gutter.
+
+Deliberately per tab rather than on `.page` itself: the activity module's tracker is a dense
+table that has always had the full width, and a 1440 ceiling would change a screen nobody
+asked about. The admin tabs are still bare for the same reason — nobody has complained, and
+guessing is how a screen somebody relies on gets narrowed overnight.
 
 "No position yet" is a real state and a common one — every name a report brings in arrives
 without one — so it gets its own grey identity rather than being lumped in with the first
@@ -219,8 +224,19 @@ The check now seeds the name on **every list a store keeps**, not the two that w
 "We fixed the two in the report" is what produced instances two through six.
 
 One consequence worth knowing: while a name is an alias it cannot be on any list. Somebody
-genuinely called that would need the alias removed first — which is right, but there is no
-screen that removes an alias today.
+genuinely called that would need the alias removed first — which is right, and there is now a
+screen for it: **Spellings folded into people**, under the People list.
+
+**Undoing a fold is a stamp, not a deletion** — instance eight, pre-empted. `aliases` is a
+union so that a tab which has never heard of a fold cannot drop it, which means deleting a
+key would be undone by the first save from any other tab. So `aliasesAt` and `aliasesGone` are
+a stamped pair, settled by time in both directions, and an alias with no stamp predates
+anybody's decision to undo it, so the undo wins.
+
+What an undo can and cannot give back: the spelling is free from the next report onwards and
+can be claimed or ignored like any other name. The FIGURES do not come apart — five and three
+became eight when the fold was made and nothing records which of the eight came from where.
+The screen says so rather than guessing at somebody's month.
 
 ---
 

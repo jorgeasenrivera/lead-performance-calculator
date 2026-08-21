@@ -216,6 +216,8 @@ export const FIELD_POLICY = {
   activity:      { how: "newestImportWins", why: "Travels with months; the same import writes both." },
   activitySnaps: { how: "newestImportWins", why: "Travels with months." },
   aliases:       { how: "aliasesThenFold", why: "Who somebody is, is a decision. It survived being deleted but not being handed back with the server's month." },
+  aliasesAt:     { how: "tombstones", why: "When each fold was made. Half of a pair, so folding a spelling back after somebody undid it wins on time rather than on which tab saved last." },
+  aliasesGone:   { how: "tombstones", why: "And when a fold was undone. The aliases are a union, so a plain deletion is put back by the first save from any other tab: this is the removal, written down." },
 
   // ---- who the store's people are ----
   roster:        { how: "stampedUnion", why: "Union minus the departed and the ignored, so a removal needs a stamp behind it." },
@@ -398,7 +400,25 @@ export function mergeAgainstServer(next, serverCopy) {
            than being a deletion and hoping nothing hands the name back. The
            aliases are a union first, so a tab that has never heard of the fold
            cannot drop it either. */
-        next.aliases = { ...(serverCopy.aliases || {}), ...(next.aliases || {}) };
+        {
+          const folded = { ...(serverCopy.aliases || {}), ...(next.aliases || {}) };
+          /* The two stamps are settled the way every other pair here is: the later
+             of the two sides, and nothing older than the window, since no tab is
+             old enough to argue about a decision from three months ago. */
+          const at = mergeTombstones(next.aliasesAt, serverCopy.aliasesAt);
+          const gone = mergeTombstones(next.aliasesGone, serverCopy.aliasesGone);
+          /* Somebody genuinely called what a misspelling was folded into: the fold
+             has to be undoable, and a union means deleting the key cannot be how.
+             Settled by time, like every other removal here. An alias with no stamp
+             predates anybody's decision to undo it, so the undo wins. */
+          for (const [k, t] of Object.entries(gone)) {
+            if (!(k in folded)) continue;
+            if (!at[k] || String(at[k]) <= String(t)) { delete folded[k]; delete at[k]; }
+          }
+          next.aliases = folded;
+          next.aliasesAt = at;
+          next.aliasesGone = gone;
+        }
         // The log itself is a union: no entry from either side should disappear.
         {
           const seen = new Set();

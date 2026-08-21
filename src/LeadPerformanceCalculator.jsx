@@ -26,7 +26,7 @@ import { doorCheck } from "../api/_geofence.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
   packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn,
-  manglings, mergeManglings, foldAliases } from "../api/_people-status.mjs";
+  manglings, mergeManglings, foldAliases, folds, unfold } from "../api/_people-status.mjs";
 /* Two copies of a store, folded into one. Out here rather than in this file so
    that it can be imported and checked; see the note at the top of it. */
 import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
@@ -3217,15 +3217,15 @@ export default function LeadPerformanceCalculator() {
                       onIgnore={ignoreNames} />
                   </div>
                 )}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
-                {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
-                {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
-                {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+                {/* The gutter the Dashboard has had all along. These four were
+                    rendered straight into .page, which carries no padding, so they
+                    ran edge to edge on anything wider than a laptop. */}
+                {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
+                {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
+                {tab === "standards" && isAdmin && <div className="tab-page"><StandardsEditor config={config} storeId={view} onChange={persistConfig} /></div>}
                 {tab === "roster" && (
-                  /* The gutter the Dashboard has had all along. This tab was
-                     rendered straight into .page, which carries no padding, so it
-                     ran edge to edge on anything wider than a laptop. */
-                  <div className="pp-page">
+                  <div className="tab-page">
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
                       storeName={currentStore?.name} allStores={accessibleStores}
                       onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
@@ -20369,6 +20369,8 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   };
 
   const wrongRead = useMemo(() => manglings(data), [data]);
+  const foldList = useMemo(() => folds(data), [data]);
+  const [showFolds, setShowFolds] = useState(false);
 
   return (
     <>
@@ -20956,6 +20958,64 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               </button>
               <button className="btn-quiet" onClick={() => setMoving(null)}>Cancel</button>
             </div>
+          </div>
+        )}
+
+        {/* ---- the folds, and the way back out of one ----
+            While a name is an alias it cannot be on any list at all, which is
+            right — this store has decided which person that spelling means — and
+            it left one case with no way back: somebody genuinely called what a
+            misspelling was folded into. A new hire named the same as a heading a
+            reader mangled is not a hypothetical; that is where these spellings
+            come from.
+
+            Behind a fold-out, because it is a list of settled decisions rather
+            than anything anybody has to act on. */}
+        {foldList.length > 0 && (
+          <div className="pp-logwrap">
+            <button className="btn-quiet" onClick={() => setShowFolds((v) => !v)}>
+              {showFolds ? "Hide folded spellings" : `Spellings folded into people (${foldList.length})`}
+            </button>
+            {showFolds && (
+              <div className="pp-folds">
+                <p className="hint">
+                  Each of these is a spelling a report used that this store has said belongs to
+                  somebody. Reports file it under them automatically and it stays off every list.
+                  Undoing one frees the spelling again, from the next report onwards. <b>It does not
+                  split the figures back apart</b>: they were added together when the fold was made
+                  and nothing records which half came from where, so the months already merged stay
+                  merged.
+                </p>
+                {foldList.map((f) => {
+                  /* An alias is stored as the flattened key both sides match on,
+                     so there is no cased spelling to show. The person it points at
+                     is on a list and has one; the misspelling never was, and the
+                     reports that wrote it are gone. Title case is a fair rendering
+                     of how it arrived and is only ever shown, never matched on. */
+                  const cased = (k) => String(k || "").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+                  const target = people.find((x) => x.key === f.to);
+                  return (
+                  <div key={f.key} className="pp-fold-row">
+                    <span className="pp-nm pp-was">{cased(f.from)}</span>
+                    <span className="pp-arrow">&rarr;</span>
+                    <span className="pp-nm">{target ? target.name : cased(f.to)}</span>
+                    {f.at && <span className="pp-log-when">{new Date(f.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                    <button className="pp-act" onClick={() => {
+                      if (!window.confirm(
+                        `Stop folding "${cased(f.from)}" into ${target ? target.name : cased(f.to)}?\n\n` +
+                        `From the next report onwards it is a name of its own again, and you can put it ` +
+                        `on the floor or mark it as not yours.\n\nThe figures already merged stay merged: ` +
+                        `there is no record of which of them came from which spelling.`)) return;
+                      onChange(unfold(data, f.from, { by: userName }),
+                        { action: "Undid a fold", detail: `${cased(f.from)} is no longer ${target ? target.name : cased(f.to)}` });
+                    }}>
+                      <PixIcon glyph="swap" size={11} /><span>Not the same person</span>
+                    </button>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -23403,13 +23463,23 @@ function Style() {
          person. */
 
       /* ---- room at the edges ----
-         Every other manager tab that carries a page of its own sits in .board-page,
-         which is 32px of gutter and a 1440 ceiling. The People tab was rendered
-         bare into .page, which has no padding at all, so on a wide monitor the
-         card ran from one edge of the glass to the other and the buttons finished
-         hard against the right-hand side. */
-      .pp-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
-      @media (max-width:900px) { .pp-page { padding:16px 16px 0; } }
+         The Dashboard sits in .board-page: 32px of gutter and a 1440 ceiling.
+         Every other tab in this module was rendered bare into .page, which has no
+         padding at all, so on a wide monitor a card ran from one edge of the glass
+         to the other and its buttons finished hard against the right-hand side.
+         The same gutter, under a name any tab can wear.
+
+         Deliberately applied per tab rather than to .page itself: the activity
+         module's tracker is a dense table that has always had the full width, and
+         putting a 1440 ceiling on it would change a screen nobody asked about. */
+      .tab-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
+      @media (max-width:900px) { .tab-page { padding:16px 16px 0; } }
+      .pp-folds { margin-top:10px; display:grid; gap:6px; }
+      .pp-folds .hint { margin:0 0 8px; max-width:78ch; }
+      .pp-fold-row { display:flex; flex-wrap:wrap; gap:9px; align-items:center; padding:9px 12px;
+        border-radius:11px; background:rgba(16,32,52,.035); }
+      .pp-fold-row .pp-act { margin-left:auto; }
+
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }
