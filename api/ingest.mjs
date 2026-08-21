@@ -11,7 +11,7 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
    reads the same PDFs when a manager drops one in by hand — see the note at the
    top of that file for what living as two copies cost. */
 import {
-  norm, toNum,
+  norm, toNum, squashT,
   detectReportType, parseReport, parseDeliverySummaryRows,
   mapDailyActivityGrid, mapDeliverySummaryGrid, matchStoreByName,
 } from "./_report-parsers.mjs";
@@ -478,12 +478,12 @@ export default async function handler(req, res) {
     const subject = mail.subject || "";
 
     const local = to.split("@")[0] || "";
-    const slug = squash(local.replace(/^lpc-?/, ""));
+    const slug = squashT(local.replace(/^lpc-?/, ""));
     const cfg = await sbGet("lpc:config:v2");
     /* The store the ADDRESS names, and nothing else may change it. It used to be
        the same variable the PDF loop assigned to, so the last PDF in a message
        silently became the store for everything in that message. */
-    const addressStore = (cfg?.stores || []).find((s) => squash(s.name) === slug || squash(s.id) === slug) || null;
+    const addressStore = (cfg?.stores || []).find((s) => squashT(s.name) === slug || squashT(s.id) === slug) || null;
 
     const atts = mail.attachments || [];
     const csvs = atts.filter((a) => /csv$/i.test(a.filename || "") || /text\/csv/i.test(a.mimeType || ""));
