@@ -65,3 +65,25 @@ test("the keys themselves", () => {
     assert.ok(
       K.actKey("a", "2026-08-19") !== K.actKey("a", "2026-08-20"));
 });
+
+// ---- days that already have a row of their own ----
+import fs from "node:fs";
+import path from "node:path";
+
+test("an older day that already has its own row keeps being written to it", () => {
+  /* Rows are read back whatever their age and they win over the copy embedded in
+     the document. So a correction to a day older than the split window would be
+     saved into the document, overlaid by the stale row on the next read, and
+     appear to undo itself a few seconds later — which is exactly what a merged
+     name doing that looks like from a manager's chair.
+
+     Read off the source because the writer talks to the database and cannot be
+     called here; this holds the one condition that decides it. */
+  const ROOT = new URL("..", import.meta.url).pathname;
+  const src = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+  const fn = src.slice(src.indexOf("async function saveActivityDays("),
+                       src.indexOf("/* ---- the daily digest"));
+  assert.ok(fn.includes("next.__splitDays"), "the writer has to know which days already have a row");
+  assert.ok(/if \(!keep\.has\(day\) && !split\.has\(day\)\) continue;/.test(fn),
+    "and skip a day only when it is both outside the window and has no row yet");
+});

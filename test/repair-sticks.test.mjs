@@ -188,3 +188,69 @@ test("rejecting somebody is not undone either", () => {
   assert.equal(rosterMerge(rejected, stale).pendingPeople["vernon johnson"], undefined);
   assert.equal(rosterMerge(stale, rejected).pendingPeople["vernon johnson"], undefined);
 });
+
+// ---- a merged misspelling that would not stay merged ----
+import { sameAs } from "../api/_people-status.mjs";
+
+test("folding a misspelling away survives the merge", () => {
+  /* Reported from a live floor: "Angel Perez Angel Perez → Angel Perez", merge,
+     and the card is back a few seconds later. The ignore list is a union across
+     every open tab, so removing the misspelling with a plain filter was undone
+     by the first save from anywhere else.
+
+     Same trap as the repair tool, the roster editor and the import screen. It got
+     in here because sameAs was written as a fold rather than as a change of
+     standing, and a fold does not think about other people's tabs. */
+  const server = {
+    roster: [{ id: "a1", name: "Angel Perez", roleId: "sales" }],
+    excluded: ["Angel Perez Angel Perez"],
+    ignoredAt: { "angel perez angel perez": "2026-08-01T00:00:00.000Z" },
+    unignored: {}, returned: {}, departed: [], months: {}, activity: {},
+  };
+  const merged = sameAs(server, "Angel Perez Angel Perez", "Angel Perez",
+    { at: "2026-08-21T12:00:00.000Z" });
+  assert.ok(!merged.excluded.some((x) => /angel perez angel/i.test(x)), "gone from the list");
+
+  const out = rosterMerge(merged, server);
+  assert.ok(!out.excluded.some((x) => /angel perez angel/i.test(x)),
+    "and still gone after a tab that never saw the merge saves over the top");
+});
+
+test("and the same, whichever tab saves last", () => {
+  const stale = {
+    roster: [{ id: "a1", name: "Angel Perez", roleId: "sales" }],
+    excluded: ["Angel Perez Angel Perez"],
+    ignoredAt: { "angel perez angel perez": "2026-08-01T00:00:00.000Z" },
+    unignored: {}, returned: {}, departed: [], months: {}, activity: {},
+  };
+  const merged = sameAs(stale, "Angel Perez Angel Perez", "Angel Perez",
+    { at: "2026-08-21T12:00:00.000Z" });
+  assert.ok(!rosterMerge(stale, merged).excluded.some((x) => /angel perez angel/i.test(x)),
+    "a stale tab saving must not resurrect it either");
+});
+
+test("a misspelling on the departed list goes the same way", () => {
+  const server = {
+    roster: [{ id: "a1", name: "Angel Perez", roleId: "sales" }],
+    departed: [{ id: "a9", name: "Angel Perez Angel Perez", at: "2026-08-01T00:00:00.000Z" }],
+    excluded: [], ignoredAt: {}, unignored: {}, returned: {}, months: {}, activity: {},
+  };
+  const merged = sameAs(server, "Angel Perez Angel Perez", "Angel Perez",
+    { at: "2026-08-21T12:00:00.000Z" });
+  const out = rosterMerge(merged, server);
+  assert.ok(!out.departed.some((d) => /angel perez angel/i.test(d.name)));
+  assert.ok(!out.roster.some((a) => /angel perez angel/i.test(a.name)));
+});
+
+test("somebody genuinely ignored is still ignored afterwards", () => {
+  /* The stamps must not become a way to quietly un-ignore the rest of the list. */
+  const server = {
+    roster: [{ id: "a1", name: "Angel Perez", roleId: "sales" }],
+    excluded: ["Angel Perez Angel Perez", "Round Robin"],
+    ignoredAt: { "angel perez angel perez": "2026-08-01T00:00:00.000Z",
+                 "round robin": "2026-06-01T00:00:00.000Z" },
+    unignored: {}, returned: {}, departed: [], months: {}, activity: {},
+  };
+  const out = rosterMerge(sameAs(server, "Angel Perez Angel Perez", "Angel Perez", {}), server);
+  assert.ok(out.excluded.some((x) => x === "Round Robin"), "Round Robin is untouched");
+});
