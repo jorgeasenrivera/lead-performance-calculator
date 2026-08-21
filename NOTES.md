@@ -124,6 +124,17 @@ was there in small grey type, doing none of the work of telling them apart.
   table. The same identity turning up in a second place, not a new one invented for this
   screen. The settings table now draws the same badge, so a colour picked there is visibly
   the colour it becomes on People.
+- **Warm, because the site is.** The seeded role colours were an iOS-ish blue, purple, teal
+  and slate that had never matched the amber, lime and clay this site's cards are tinted
+  with. Nobody had noticed because they were never seen together until this screen put four
+  of them on one page. They are now amber, olive, brick and warm stone, migrated on load —
+  and ONLY where the colour is one nobody chose (a seeded default or the old ramp), so a
+  store that picked its own keeps it.
+- **The colour stays in the heading.** A bar down the left of each row and a ring around each
+  face were both tried and both removed: the bar was a louder second copy of what the heading
+  already says and a hard vertical edge is a shape this site does not use, and the ring put a
+  warm outline around a face whose fill is a hue off the person's own name — two palettes
+  arguing on one 30-pixel object.
 - **The glyph comes off the position's NAME**, not its id, because the ids are whatever
   somebody typed. Every store invents its own titles — "Internet Sales", "Product
   Specialist", "Client Advisor" — so a new position gets something that fits on the day it

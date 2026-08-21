@@ -356,7 +356,30 @@ const DEFAULT_TIERS = [
   ]},
 ];
 
-const ROLE_COLORS = ["#2A5E9B", "#00A896", "#BF5AF2", "#FF9F0A", "#5E8C31", "#FF375F"];
+/* ---- the colours a position can wear ----
+   Warm, because the rest of this site is: the tints under its cards are amber,
+   lime and clay, and the old ramp was an iOS-ish blue, teal, purple and magenta
+   that belonged to a different app. They were invisible until the People screen
+   started grouping by position and put four of them on one page, which is the
+   usual way a palette that never matched gets found.
+
+   Distinct by lightness as much as by hue, since warmth narrows the hue range a
+   long way. The colour is the third thing that tells positions apart anyway --
+   the heading and the glyph do the work -- so it does not have to carry it. */
+const ROLE_COLORS = ["#C77800", "#7E8B24", "#A6402F", "#8A7360", "#8A5A3C", "#B08A1F"];
+/* What the old ramp becomes. Only these exact values are rewritten, so a colour
+   a manager picked for themselves is never overwritten by an upgrade. */
+const ROLE_COLOR_WARM = {
+  "#2A5E9B": "#C77800",   // sales: blue      -> amber, the site's own
+  "#7A4F9B": "#7E8B24",   // service: purple  -> olive, off the lime it uses for good news
+  "#00A896": "#A6402F",   // bdc: teal        -> brick
+  "#5B6874": "#8A7360",   // manager: slate   -> warm stone
+  "#BF5AF2": "#8A5A3C",   // and the rest of the old ramp, for positions a store added
+  "#FF9F0A": "#B08A1F",
+  "#5E8C31": "#6F6A2E",
+  "#FF375F": "#A6402F",
+  "#0A84FF": "#C77800",   // the one the earlier migration was already rewriting
+};
 
 // Leaderboard delivered-% thresholds, per channel. At or above green is green, at or
 // above yellow is yellow, anything lower is red. Internet, phone and showroom sit in
@@ -875,10 +898,10 @@ const DEFAULT_CONFIG = {
     { id: "holler-hyundai", name: "Holler Hyundai", icon: null },
   ],
   roles: [
-    { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
-    { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
-    { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
-    { id: "manager", name: "Manager", color: "#5B6874", onBoard: false, coaching: false, tracked: false },
+    { id: "sales", name: "Sales Associate", color: "#C77800", onBoard: true, coaching: true },
+    { id: "service", name: "Service to Sales", color: "#7E8B24", onBoard: true, coaching: true },
+    { id: "bdc", name: "BDC Agent", color: "#A6402F", onBoard: false, coaching: false },
+    { id: "manager", name: "Manager", color: "#8A7360", onBoard: false, coaching: false, tracked: false },
   ],
   standards: {},
   approvedDomains: [],
@@ -1979,8 +2002,12 @@ export default function LeadPerformanceCalculator() {
 
       if (cfg) {
         let dirty = false;
+        /* The positions wear the site's own warm palette now. Only the colours
+           nobody chose are rewritten — the seeded defaults and the old ramp — so
+           a store that picked its own is left exactly as it set it. */
         for (const r of cfg.roles || []) {
-          if (r.color === "#0A84FF") { r.color = "#2A5E9B"; dirty = true; }
+          const warm = ROLE_COLOR_WARM[String(r.color || "").toUpperCase()];
+          if (warm && warm !== r.color) { r.color = warm; dirty = true; }
         }
         if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
         if (cfg.holidays === undefined) { cfg.holidays = []; dirty = true; }
@@ -1995,7 +2022,7 @@ export default function LeadPerformanceCalculator() {
         // (right after Sales Associate) if it's missing. It behaves like Sales: on The
         // Board, coached, and lead-gated.
         if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "service")) {
-          const svc = { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true };
+          const svc = { id: "service", name: "Service to Sales", color: "#7E8B24", onBoard: true, coaching: true };
           const salesIdx = cfg.roles.findIndex((r) => r.id === "sales");
           if (salesIdx >= 0) cfg.roles.splice(salesIdx + 1, 0, svc);
           else cfg.roles.unshift(svc);
@@ -20079,10 +20106,10 @@ function roleGlyph(role) {
 /* Somebody with no position at all is a real state and a common one: every name
    a report brings in arrives without one. It gets its own grey identity rather
    than being dropped in with the first position on the list. */
-const NO_ROLE = { id: "", name: "No position yet", color: "#94A3B8" };
+const NO_ROLE = { id: "", name: "No position yet", color: "#9A8F82" };
 const roleOf = (config, roleId) =>
   ((config && config.roles) || []).find((r) => r.id === roleId) ||
-  (roleId ? { id: roleId, name: roleId, color: "#94A3B8" } : NO_ROLE);
+  (roleId ? { id: roleId, name: roleId, color: NO_ROLE.color } : NO_ROLE);
 
 /** The position, wearing its own colour. Small in a row, large on a heading. */
 function RoleBadge({ role, count, big }) {
@@ -20631,7 +20658,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
         <div className="pp-list">
           {shown.length === 0 && <p className="hint">Nobody matches that.</p>}
           {groups.map((g) => (
-          <div key={g.role.id || "none"} className="pp-group" style={{ "--rolec": g.role.color || "#94A3B8" }}>
+          <div key={g.role.id || "none"} className="pp-group" style={{ "--rolec": g.role.color || NO_ROLE.color }}>
             <div className="pp-group-head">
               <RoleBadge role={g.role} count={g.rows.length} big />
               <button className="btn-quiet pp-group-sel" onClick={() => setSel((cur) => {
@@ -20655,10 +20682,8 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               </button>
               {/* The same face the line-up draws, at the same brightness: this list and
                   the Live Floor are the same people, and two different looks for one
-                  person is a small thing that quietly makes a screen feel unrelated.
-                  The ring around it is the position, so a face carries both: who they
-                  are, and what they do. */}
-              <span className="mf-av pp-av" style={{ background: `hsl(${hueFromName(p.name)} 62% 46%)` }}>{initialsOf(p.name)}</span>
+                  person is a small thing that quietly makes a screen feel unrelated. */}
+              <span className="mf-av" style={{ background: `hsl(${hueFromName(p.name)} 62% 46%)` }}>{initialsOf(p.name)}</span>
               <div className="pp-who">
                 <div className="pp-nm">{p.name}</div>
                 <div className="pp-sub">
@@ -23368,14 +23393,14 @@ function Style() {
          only appears for a mouse does not exist at all. */
       .pp-group-sel { font-size:12px; opacity:.62; }
       .pp-group-sel:hover, .pp-group:hover .pp-group-sel { opacity:1; }
-      /* The colour on the row itself, so a face is placed without reading a word
-         of it. Kept to an edge and a ring: a whole row tinted per position turns
-         a list of people into a chart of positions. */
-      .pp-group .pp-row { border-left:3px solid var(--rolec); }
-      /* Two selectors deep on purpose. This block sits early in the sheet and the
-         plain .mf-av rule is a long way below it, so a single class here loses to
-         it and the ring silently never appears. */
-      .pp-row .pp-av { box-shadow:0 0 0 2px #fff, 0 0 0 3px var(--rolec, #94A3B8); }
+      /* No bar down the left-hand side. It was a second, louder copy of what the
+         heading already says, and a hard vertical edge is not a shape this site
+         uses anywhere else. The ring around the face is enough. */
+      /* No ring around the face either, for the same reason the bar went. These
+         faces are the Live Floor's, and their fill is a hue off the person's own
+         name — a warm ring around a teal circle is two palettes arguing on one
+         30-pixel object. The heading carries the position; the row carries the
+         person. */
 
       /* ---- room at the edges ----
          Every other manager tab that carries a page of its own sits in .board-page,
