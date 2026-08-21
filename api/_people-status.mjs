@@ -32,6 +32,8 @@
  * a person; the other is a mistake.
  */
 
+import { dedupeName, DA_VOCAB, squashT } from "./_report-parsers.mjs";
+
 export const STATUSES = ["active", "departed", "ignored"];
 
 const nm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -53,7 +55,8 @@ export function everyone(data) {
     if (!k) return;
     out.set(k, { key: k, name, ...(out.get(k) || {}), ...extra });
   };
-  for (const a of data.roster || []) put(a.name, { id: a.id, roleId: a.roleId, hiredAt: a.hiredAt || null, aka: a.aka || [] });
+  for (const a of data.roster || []) put(a.name, { id: a.id, roleId: a.roleId, hiredAt: a.hiredAt || null,
+    langs: a.langs || [], skills: a.skills || [] });
   for (const d of data.departed || []) if (d && d.name) put(d.name, { departedAt: d.at || null, roleId: d.roleId ?? undefined });
   for (const x of data.excluded || []) put(x, {});
   for (const [k, v] of out) v.status = statusOf(data, v.name), out.set(k, v);
@@ -484,7 +487,11 @@ export function sameAs(data, heldName, personName, opts = {}) {
   next.excluded = (next.excluded || []).filter((x) => nm(x) !== from);
 
   next.peopleLog.unshift({ at: opts.at || new Date().toISOString(), by: opts.by || "",
-    name: heldName, from: "unknown", to: "same person", note: `same as ${personName}` });
+    name: heldName, from: "unknown", to: "same person",
+    /* A caller with a better reason than "same as" gets to say it. A batch repair
+       wants the log to record WHY two hundred names moved, not two hundred lines
+       all saying the obvious. */
+    note: opts.note ? `${opts.note} — same as ${personName}` : `same as ${personName}` });
   next.peopleLog = next.peopleLog.slice(0, 500);
   return next;
 }
@@ -507,4 +514,106 @@ export function servedOn(person, ds, departedAt) {
   if (person && person.hiredAt && ds < String(person.hiredAt).slice(0, 10)) return false;
   if (departedAt && ds > String(departedAt).slice(0, 10)) return false;
   return true;
+}
+
+/* =========================================================================
+   Names the reader mangled, which are real people underneath.
+
+   Two faults left the same wreckage behind, and both are fixed at the source
+   now — but the damage they wrote is still in the books and no amount of fixing
+   the parser takes it out.
+
+     A column heading welded onto a name. "Chase Cabney Visit" is Chase Cabney
+     and a word the reader did not recognise, and it appears once per report for
+     as long as nobody notices.
+
+     A name printed twice. "Danielle Newsome Danielle Newsome" is one person the
+     export doubled.
+
+   Both leave somebody sitting in the store's books as a stranger while their
+   real row carries half a month. One at a time, with two hundred of them, is
+   not a repair anybody finishes.
+
+   Nothing here guesses at a name that is two people welded together — "Luke
+   Pancake Mike Ganus" could be split two ways and both are wrong. Those stay
+   for a person to look at.
+   ========================================================================= */
+
+/** The name underneath, if this one is obviously mangled. Null if it looks fine. */
+export function unmangle(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return null;
+
+  /* Trailing column words first. The reader strikes the vocabulary out of a
+     heading to find the name, so anything it did not know is left welded to the
+     end — which is exactly what a newly added column looks like. */
+  let out = raw, why = null;
+  const words = out.split(/\s+/);
+  while (words.length > 2 && DA_VOCAB.has(squashT(words[words.length - 1]))) {
+    words.pop();
+    why = "a column heading was read as part of the name";
+  }
+  out = words.join(" ");
+
+  /* Then the doubling, using the reader's own test so the two agree about what
+     counts as doubled. */
+  const dd = dedupeName(out);
+  if (nm(dd) !== nm(out)) { out = dd; why = "the report printed the name twice"; }
+
+  if (!why || !out || nm(out) === nm(raw)) return null;
+  return { name: out, why };
+}
+
+/**
+ * Every mangled name in this store that has a real person underneath.
+ *
+ * Only proposed where the cleaned-up name is somebody the store already claims.
+ * A mangled name with nobody behind it is a different problem — it might be a
+ * person nobody has added yet — and merging it into thin air would help nothing.
+ */
+export function manglings(data) {
+  const known = new Map(everyone(data).map((p) => [p.key, p]));
+  const out = [];
+  const consider = (name, where) => {
+    const fixed = unmangle(name);
+    if (!fixed) return;
+    const target = known.get(nm(fixed.name));
+    if (!target || target.status === "ignored") return;
+    if (nm(name) === target.key) return;
+    out.push({ from: name, to: target.name, why: fixed.why, where,
+      units: monthUnitsOf(data, nm(name)) });
+  };
+  for (const x of data.excluded || []) consider(x, "not ours");
+  for (const p of data.roster || []) consider(p.name, "on the floor");
+  for (const d of data.departed || []) if (d && d.name) consider(d.name, "left");
+  for (const k of Object.keys(data.pendingPeople || {})) {
+    consider((data.pendingPeople[k] || {}).name || k, "waiting");
+  }
+  /* And names that only exist in the figures, which is where a mangled one
+     usually lives: written by an import, on no list at all. */
+  for (const u of unclaimed(data)) consider(u.name, "in the figures");
+
+  const seen = new Set();
+  return out.filter((r) => { const k = nm(r.from); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => b.units - a.units || a.from.localeCompare(b.from));
+}
+
+function monthUnitsOf(data, key) {
+  let n = 0;
+  for (const m of Object.values(data.months || {})) {
+    const st = m && m.stats && m.stats[key];
+    if (!st) continue;
+    n += (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+  }
+  return n;
+}
+
+/** Fold a whole batch of them back into the people they belong to. */
+export function mergeManglings(data, rows, opts = {}) {
+  let next = data;
+  for (const r of rows || []) {
+    if (!r || !r.from || !r.to) continue;
+    next = sameAs(next, r.from, r.to, { ...opts, note: `${opts.note || "read wrong"}: ${r.why}` });
+  }
+  return next;
 }

@@ -24,7 +24,8 @@ import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-mon
    quietly broken in the same way. */
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
-  packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn } from "../api/_people-status.mjs";
+  packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn,
+  manglings, mergeManglings } from "../api/_people-status.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -3411,7 +3412,6 @@ export default function LeadPerformanceCalculator() {
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
                       storeName={currentStore?.name} allStores={accessibleStores}
                       onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
-                    <RosterEditor config={config} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
                   </>
                 )}
               </>
@@ -19710,6 +19710,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   const [moveTo, setMoveTo] = useState("");
   const [moveBusy, setMoveBusy] = useState("");
   const people = useMemo(() => everyPerson(data), [data]);
+  const earnedFor = useMemo(() => earnedStrengths(data, data.roster || []), [data]);
   /* What this store is counting for somebody right now — the number that makes
      "remove them" concrete rather than abstract. */
   const monthUnitsFor = (key) => {
@@ -19839,8 +19840,65 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     } finally { setMoveBusy(""); }
   };
 
+  const wrongRead = useMemo(() => manglings(data), [data]);
+
   return (
     <>
+      {/* ---- names the reader mangled, which are real people underneath ----
+          Both faults behind these are fixed at the source now, but the damage
+          they wrote is still in the books and fixing the reader does not take it
+          out. Two hundred of them, one at a time, is not a repair anybody
+          finishes — so they are proposed as a batch. */}
+      {wrongRead.length > 0 && (
+        <div className="card pp-alert pp-mangled">
+          <h3>
+            {wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}
+          </h3>
+          <p className="hint">
+            These are your own people with something stuck to their name — a column heading the reader did
+            not recognise, or a name the report printed twice. Each one is sitting in the books as a
+            stranger while their real row carries the rest of their month. Merging puts the figures back
+            together and remembers the spelling, so the next report needs no repair.
+            {" "}Anything that looks like two people welded into one is not offered here: it could be split
+            two ways and both would be wrong.
+          </p>
+          <div className="pp-batch">
+            <button className="btn" onClick={() => {
+              const cars = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
+              if (wrongRead.length > 1 && !window.confirm(
+                `Merge ${wrongRead.length} misread names back into your people?\n\n` +
+                wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") +
+                (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") +
+                (cars > 0 ? `\n\n${fmtNum(Math.round(cars * 10) / 10)} cars move onto the right people.` : ""))) return;
+              onChange(mergeManglings(data, wrongRead, { by: userName }),
+                { action: "Merged misread names", detail: `${wrongRead.length} at ${storeName || "this store"}` });
+            }}>Merge all {wrongRead.length}</button>
+            <span className="pp-batch-n">
+              {(() => { const c = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
+                return c > 0 ? `${fmtNum(Math.round(c * 10) / 10)} cars move onto the right people` : "no cars involved"; })()}
+            </span>
+          </div>
+          <div className="pp-strangers">
+            {wrongRead.slice(0, 40).map((r) => (
+              <div key={r.from} className="pp-stranger">
+                <span className="pp-nm pp-was">{r.from}</span>
+                <span className="pp-arrow">→</span>
+                <span className="pp-nm">{r.to}</span>
+                <span className="pp-ev">
+                  {r.units > 0 ? <><b>{fmtNum(Math.round(r.units * 10) / 10)}</b> cars · </> : null}{r.why}
+                </span>
+                <button className="btn btn-sm" onClick={() => onChange(
+                  mergeManglings(data, [r], { by: userName }),
+                  { action: "Merged a misread name", detail: `${r.from} → ${r.to}` })}>Merge</button>
+              </div>
+            ))}
+            {wrongRead.length > 40 && (
+              <p className="hint">…and {wrongRead.length - 40} more, all included in Merge all.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ---- names a report brought that nobody has claimed ---- */}
       {waiting.length > 0 && (
         <div className="card pp-alert pp-wait">
@@ -20033,6 +20091,17 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               <input type="date" className="help-in" value={nu.hiredAt || ""} onChange={(e) => setNu({ ...nu, hiredAt: e.target.value })} />
             </label>
             <button className="btn btn-sm" disabled={!nu.name.trim()} onClick={hire}>Add them</button>
+            {/* Not everything a report names is a person. "Round Robin", "Team A"
+                and "Manager Dead Deal Review" are rows the export prints and the
+                reader cannot tell from a salesperson, and they have to be nameable
+                before they have ever appeared. */}
+            <button className="btn btn-sm pp-danger" disabled={!nu.name.trim()}
+              onClick={() => {
+                const n = nu.name.trim();
+                onChange(setPersonStatus(data, [n], "ignored", { by: userName, note: "not a person" }),
+                  { action: "Ignored a name from imports", detail: n });
+                setAdding(false); setNu({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
+              }}>Not a person — never import this</button>
           </div>
         )}
 
@@ -20120,6 +20189,69 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                       nothing, to the one person on the floor least able to argue
                       with a screen. Blank means the whole month, which is what it
                       has always meant, so nothing changes for anybody already on. */}
+                  {/* ---- what they do, and what they can be handed ----
+                      Lived on a separate roster table under this one, which meant
+                      a manager changing somebody's position scrolled past their
+                      whole record to get to a second copy of their name. It is
+                      one person; it is one place. */}
+                  <div className="pp-move-row pp-startrow">
+                    <label className="pp-date">Position
+                      <select className="q-flag-sel" value={p.roleId || ""}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          const next = JSON.parse(JSON.stringify(data));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, roleId: v } : x));
+                          onChange(next, { action: "Changed position", detail: `${p.name}: ${roleName(v) || "none"}` });
+                        }}>
+                        <option value="">needs a position</option>
+                        {(config.roles || []).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </select>
+                    </label>
+                    {/* Beyond English, as short codes so they fit on a wall: ES, HT,
+                        UR. Shown on the queue boards so a walk-in asking for a
+                        language is matched without anybody asking around the floor. */}
+                    <label className="pp-date">Languages
+                      <input className="help-in lang-in" defaultValue={(p.langs || []).join(", ")}
+                        placeholder="ES, HT…" title={(p.langs || []).map(langName).join(", ")}
+                        onBlur={(e) => {
+                          const codes = e.target.value.split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+                          const next = JSON.parse(JSON.stringify(data));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, langs: codes } : x));
+                          onChange(next, { action: "Changed languages", detail: `${p.name}: ${codes.join(", ") || "none"}` });
+                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+                    </label>
+                  </div>
+                  {/* Skills only. A strength is worked out from what somebody has
+                      actually done, so there is nothing here to tick. */}
+                  <div className="pp-move-row pp-startrow">
+                    <span className="pp-date">Can take</span>
+                    <span className="skill-set">
+                      {DEFAULT_TAGS.map((t) => {
+                        const on = (p.skills || []).includes(t.id);
+                        return (
+                          <button key={t.id} className={"skill-chip" + (on ? " on" : "")}
+                            onClick={() => {
+                              const have = new Set(p.skills || []);
+                              if (have.has(t.id)) have.delete(t.id); else have.add(t.id);
+                              const next = JSON.parse(JSON.stringify(data));
+                              next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, skills: [...have] } : x));
+                              onChange(next, { action: "Changed what they can take", detail: `${p.name}: ${[...have].join(", ") || "none"}` });
+                            }}>{t.label}</button>
+                        );
+                      })}
+                    </span>
+                    {/* Earned, not ticked. Worked out from what somebody has
+                        actually done, so it is the half of this row nobody can
+                        set — and the half worth reading. */}
+                    {(earnedFor[p.key] || []).length > 0 && (
+                      <span className="skill-earned">
+                        {(earnedFor[p.key] || []).map((sk) => (
+                          <span key={sk.id} className="skill-chip earned" title={`Earned: top three for ${sk.what}`}>{sk.label}</span>
+                        ))}
+                      </span>
+                    )}
+                  </div>
                   <div className="pp-move-row pp-startrow">
                     <label className="pp-date">Started here
                       <input type="date" className="help-in" value={p.hiredAt || ""}
@@ -20245,343 +20377,6 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   );
 }
 
-/* ---------------- Roster editor ---------------- */
-function RosterEditor({ config, data, onChange, userName }) {
-  /* Which people are ticked. Held by normalised name rather than id, because
-     ignoring works on the name — that is what a future import will present. */
-  const [sel, setSel] = useState(() => new Set());
-  const toggleSel = (key) => setSel((p) => {
-    const n = new Set(p);
-    if (n.has(key)) n.delete(key); else n.add(key);
-    return n;
-  });
-  const [name, setName] = useState("");
-  const [roleId, setRoleId] = useState(config.roles[0]?.id);
-  const [mergeFrom, setMergeFrom] = useState("");
-  const [mergeInto, setMergeInto] = useState("");
-  const [excl, setExcl] = useState("");
-
-  // names that are not people. Skipped on every future import, and removed from the
-  // roster now if they already slipped in.
-  /* Ignore: off the roster, figures gone, and on the list so the next import
-     does not put them straight back. That last part is what makes this the right
-     tool for a report that was run against the wrong store — Remove alone would
-     hold until the file landed again. */
-  /* Both of these used to edit the lists by hand here, and both were wrong in
-     the way that is hardest to see: Remove filtered the roster and wrote nothing
-     down, so the union merge handed everybody back on the next save from any
-     other tab, and Ignore added to the list without stamping it, so an older
-     note that somebody had been let back in could quietly reverse it.
-
-     They go through the one function that owns a standing now, which is the same
-     one the People panel above uses. Two screens cannot disagree about what
-     "ignored" does if there is only one of it. */
-  const bulk = (mode) => {
-    if (!sel.size) return;
-    const names = (data.roster || []).filter((a) => sel.has(norm(a.name))).map((a) => a.name);
-    if (!names.length) { setSel(new Set()); return; }
-    const next = setPersonStatus(data, names, mode === "ignore" ? "ignored" : "departed", { by: userName });
-    setSel(new Set());
-    onChange(next, {
-      action: mode === "ignore" ? "Ignored names from imports" : "Marked as departed",
-      detail: `${names.length}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? `, +${names.length - 8} more` : ""}`,
-    });
-  };
-
-  const addExcluded = () => {
-    const n = excl.trim();
-    if (!n) return;
-    const next = JSON.parse(JSON.stringify(data));
-    next.excluded = [...(next.excluded || [])];
-    if (!next.excluded.some((x) => norm(x) === norm(n))) next.excluded.push(n);
-    // Stamped, so ignoring a name again outranks any earlier decision to free it.
-    // Deleting that earlier record instead would not survive the merge.
-    next.ignoredAt = { ...(next.ignoredAt || {}), [norm(n)]: new Date().toISOString() };
-    next.roster = (next.roster || []).filter((a) => norm(a.name) !== norm(n));
-    setExcl("");
-    onChange(next, { action: "Excluded name from imports", detail: n });
-  };
-  const removeExcluded = (n) => {
-    const next = JSON.parse(JSON.stringify(data));
-    next.excluded = (next.excluded || []).filter((x) => norm(x) !== norm(n));
-    /* Taking a name off this list has to be recorded, not just left absent. Every
-       other browser still holds it, and an absence is indistinguishable from never
-       having heard of it — which is why the name always came back. */
-    next.unignored = { ...(next.unignored || {}), [norm(n)]: new Date().toISOString() };
-    onChange(next, { action: "Stopped excluding name", detail: n });
-  };
-
-  // Fold a duplicate/renamed person into the person they really are.
-  const merge = () => {
-    const from = data.roster.find((a) => a.id === mergeFrom);
-    const into = data.roster.find((a) => a.id === mergeInto);
-    if (!from || !into || from.id === into.id) return;
-    const fk = norm(from.name), ik = norm(into.name);
-    if (!window.confirm(`Merge "${from.name}" into "${into.name}"?\n\nTheir history moves to ${into.name}, "${from.name}" is removed from the roster, and any future report that still says "${from.name}" will automatically count toward ${into.name}.`)) return;
-
-    const next = JSON.parse(JSON.stringify(data));
-    // move monthly stats where the canonical person has none
-    for (const mKey of Object.keys(next.months || {})) {
-      const M = next.months[mKey];
-      if (M.stats?.[fk]) {
-        M.stats[ik] = { ...(M.stats[fk]), ...(M.stats[ik] || {}) };
-        delete M.stats[fk];
-      }
-      if (M.names) {
-        for (const t of Object.keys(M.names)) {
-          M.names[t] = (M.names[t] || []).map((k) => (k === fk ? ik : k));
-        }
-      }
-    }
-    // move daily activity
-    for (const d of Object.keys(next.activity || {})) {
-      if (next.activity[d]?.[fk]) {
-        next.activity[d][ik] = { ...(next.activity[d][fk]), ...(next.activity[d][ik] || {}) };
-        delete next.activity[d][fk];
-      }
-    }
-    // repoint plate assignments
-    for (const d of Object.keys(next.plates || {})) {
-      next.plates[d] = (next.plates[d] || []).map((p) => (norm(p.assignee || "") === fk ? { ...p, assignee: into.name } : p));
-    }
-    // carry any active restriction across, then drop the duplicate
-    if (next.restrictions?.[from.id] && !next.restrictions?.[into.id]) {
-      next.restrictions[into.id] = next.restrictions[from.id];
-    }
-    delete next.restrictions?.[from.id];
-    next.roster = next.roster.filter((a) => a.id !== from.id);
-    // remember the alias so future imports fold automatically
-    next.aliases = { ...(next.aliases || {}), [fk]: ik };
-
-    setMergeFrom(""); setMergeInto("");
-    onChange(next, { action: "Merged associates", detail: `${from.name} → ${into.name}` });
-  };
-
-  const unmerge = (aliasKey) => {
-    const next = JSON.parse(JSON.stringify(data));
-    delete next.aliases[aliasKey];
-    onChange(next, { action: "Removed name link", detail: aliasKey });
-  };
-
-  const add = () => {
-    const n = name.trim(); if (!n) return;
-    const next = JSON.parse(JSON.stringify(data));
-    if (next.roster.some((a) => norm(a.name) === norm(n))) return;
-    next.roster.push({ id: uid(), name: n, roleId, order: next.roster.length });
-    setName("");
-    onChange(next, { action: "Added associate", detail: `${n} (${config.roles.find((r) => r.id === roleId)?.name})` });
-  };
-  /* Free text rather than a fixed list. A dealership floor speaks whatever it speaks,
-     and a list somebody has to maintain is a list that goes stale. */
-  const setLangs = (id, raw) => {
-    // "spanish", "es" and "SPAN" all land on the same code, so nobody has to learn
-    // the shorthand before they can record something true.
-    const langs = String(raw || "").split(/[,/]+/).map((s) => langCode(s))
-      .filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 4);
-    const a = (data.roster || []).find((x) => x.id === id);
-    if (!a || JSON.stringify(a.langs || []) === JSON.stringify(langs)) return;
-    const next = JSON.parse(JSON.stringify(data));
-    next.roster = next.roster.map((x) => (x.id === id ? { ...x, langs } : x));
-    onChange(next, { action: "Set languages", detail: `${a.name}: ${langs.join(", ") || "none"}` });
-  };
-
-  // Recomputed on render: a strength should never be a stored fact that can go stale.
-  const earned = useMemo(() => earnedStrengths(data, data.roster || []), [data]);
-
-  const toggleSkill = (id, tagId) => {
-    const a = (data.roster || []).find((x) => x.id === id);
-    if (!a) return;
-    const have = new Set(a.skills || []);
-    have.has(tagId) ? have.delete(tagId) : have.add(tagId);
-    const next = JSON.parse(JSON.stringify(data));
-    next.roster = next.roster.map((x) => (x.id === id ? { ...x, skills: [...have] } : x));
-    const label = (DEFAULT_TAGS.find((t) => t.id === tagId) || {}).label || tagId;
-    onChange(next, { action: have.has(tagId) ? "Added a tag" : "Removed a tag", detail: `${a.name}: ${label}` });
-  };
-
-  const setRole = (id, rid) => {
-    const next = JSON.parse(JSON.stringify(data));
-    const a = next.roster.find((x) => x.id === id); if (!a) return;
-    a.roleId = rid || null;
-    onChange(next, { action: "Changed position", detail: `${a.name} → ${config.roles.find((r) => r.id === rid)?.name || "Needs a position"}` });
-  };
-  // Taking someone off used to be undone by the very next import, which is how a
-  // person who had left kept reappearing. This records the departure instead.
-  const remove = (id) => {
-    const a = (data.roster || []).find((x) => x.id === id);
-    if (!a) return;
-    if (!window.confirm(`${a.name} has left the store?\n\nThey come off every current list right away and future reports will not add them back. Their history stays on file, and you can bring them back from the Former associates list below.`)) return;
-    onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
-  };
-  const bringBack = (name) => {
-    onChange(undoDeparted(data, name), { action: "Brought associate back", detail: name });
-  };
-  const former = [...((data.departed) || [])].sort((x, y) => String(y.at).localeCompare(String(x.at)));
-  return (
-    <div className="roster">
-      <div className="card">
-        <div className="inline-form">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="First Last, exactly as it appears in DriveCentric" style={{ minWidth: 260 }} />
-          <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-            {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <button className="btn" onClick={add}>Add Associate</button>
-        </div>
-        <p className="hint">Names must match DriveCentric exports exactly (not case-sensitive). Anyone who shows up in a report but isn't listed here gets added automatically under "Needs a Position." Roster changes are recorded in the audit log.</p>
-      </div>
-
-      <div className="card">
-        <h3>Former associates</h3>
-        <p className="hint">
-          Anyone who has left the store. They are off the roster, the check out sheet, the line and the board,
-          and no report will add them back. Everything they did is still on file, so past months read correctly.
-          Bring someone back and they pick up right where they were.
-        </p>
-        {former.length === 0
-          ? <p className="hint">Nobody yet. Use <b>No longer here</b> on a person's card, or Remove on the roster below.</p>
-          : <div className="domain-list">
-              {former.map((f) => (
-                <span key={f.name} className="domain-chip">
-                  {f.name}<span className="hint" style={{ marginLeft: 6 }}>
-                    left {f.at ? new Date(f.at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "-"}
-                  </span>
-                  <button className="btn-x" title="Put them back on the roster" onClick={() => bringBack(f.name)}>Bring back</button>
-                </span>
-              ))}
-            </div>}
-      </div>
-
-      <div className="card">
-        <h3>Ignore these names</h3>
-        <p className="hint">
-          DriveCentric exports contain roll-up rows that are not people, like "Team A" or a house account.
-          Left alone they get added to the roster and drag every average around. Anything listed here is
-          skipped on import and will never appear again.
-        </p>
-        <div className="inline-form">
-          <input value={excl} onChange={(e) => setExcl(e.target.value)} placeholder="e.g. Team A"
-            onKeyDown={(e) => e.key === "Enter" && addExcluded()} />
-          <button className="btn" onClick={addExcluded}>Ignore this name</button>
-        </div>
-        {(data.excluded || []).length > 0 && (
-          <div className="domain-list">
-            {(data.excluded || []).map((n) => (
-              <span key={n} className="domain-chip">{n}
-                <button className="btn-x" onClick={() => removeExcluded(n)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
-              </span>
-            ))}
-          </div>
-        )}
-        {(data.roster || []).filter((a) => !a.roleId).length > 0 && (
-          <p className="hint">
-            Tip: anyone sitting in "Needs a Position" who is not a real person is probably one of these.
-          </p>
-        )}
-      </div>
-
-      <div className="card">
-        <h3>Merge duplicate names</h3>
-        <p className="hint">If DriveCentric ever spells someone differently (a nickname, a married name, a typo), they'll show up here as a second person and their history splits. Merge them and the history joins back up, plus future reports using the old spelling will automatically count toward the right person.</p>
-        <div className="inline-form">
-          <select value={mergeFrom} onChange={(e) => setMergeFrom(e.target.value)}>
-            <option value="">Select the duplicate</option>
-            {(data.roster || []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <span className="merge-arrow">→</span>
-          <select value={mergeInto} onChange={(e) => setMergeInto(e.target.value)}>
-            <option value="">Select the real person</option>
-            {(data.roster || []).filter((a) => a.id !== mergeFrom).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <button className="btn" onClick={merge} disabled={!mergeFrom || !mergeInto}>Merge</button>
-        </div>
-        {Object.keys(data.aliases || {}).length > 0 && (
-          <div className="alias-list">
-            <div className="check-group-label">Linked names</div>
-            {Object.entries(data.aliases).map(([from, to]) => (
-              <div key={from} className="alias-row">
-                <span className="mono">{from}</span> <span className="merge-arrow">→</span> <span className="mono">{to}</span>
-                <button className="btn-x" onClick={() => unmerge(from)}>Unlink</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="card">
-        {/* The bar only exists once something is ticked, so the roster is not
-            carrying a row of disabled buttons the rest of the time. */}
-        {sel.size > 0 && (
-          <div className="bulk-bar">
-            <span className="bulk-n">{sel.size} selected</span>
-            <button className="btn" onClick={() => bulk("ignore")}>
-              Ignore {sel.size === 1 ? "this name" : "these names"}
-            </button>
-            <button className="btn secondary" onClick={() => bulk("remove")}>Remove from roster</button>
-            <button className="btn-quiet" onClick={() => setSel(new Set())}>Clear</button>
-          </div>
-        )}
-        <table className="roster-table">
-          <thead><tr>
-            <th className="rt-pick">
-              <input type="checkbox" aria-label="Select everyone"
-                checked={sel.size > 0 && sel.size === (data.roster || []).length}
-                onChange={(e) => setSel(e.target.checked
-                  ? new Set((data.roster || []).map((a) => norm(a.name))) : new Set())} />
-            </th>
-            <th>Name</th><th>Position</th><th>Languages</th><th>Tags</th><th /></tr></thead>
-          <tbody>
-            {(data.roster || []).sort((a, b) => a.order - b.order).map((a) => (
-              <tr key={a.id} className={sel.has(norm(a.name)) ? "rt-on" : ""}>
-                <td className="rt-pick">
-                  <input type="checkbox" checked={sel.has(norm(a.name))}
-                    aria-label={`Select ${a.name}`}
-                    onChange={() => toggleSel(norm(a.name))} />
-                </td>
-                <td>{a.name}</td>
-                <td>
-                  <select value={a.roleId || ""} onChange={(e) => setRole(a.id, e.target.value)}>
-                    <option value="">needs a position</option>
-                    {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                </td>
-                {/* Beyond English, as short codes so they fit on a wall: ES, HT, UR.
-                    Shown on the queue boards so a walk-in asking for a language can be
-                    matched without anyone having to ask around the floor. */}
-                <td>
-                  <input className="lang-in" defaultValue={(a.langs || []).join(", ")}
-                    placeholder="add.."
-                    title={(a.langs || []).map(langName).join(", ")}
-                    onBlur={(e) => setLangs(a.id, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
-                </td>
-                {/* Skills only. A strength is worked out from what somebody has
-                    actually done, so there is nothing here to tick. */}
-                <td>
-                  <span className="skill-set">
-                    {DEFAULT_TAGS.map((t) => {
-                      const on = (a.skills || []).includes(t.id);
-                      return (
-                        <button key={t.id} className={"skill-chip" + (on ? " on" : "")}
-                          onClick={() => toggleSkill(a.id, t.id)}>{t.label}</button>
-                      );
-                    })}
-                  </span>
-                  {(earned[norm(a.name)] || []).length > 0 && (
-                    <span className="skill-earned">
-                      {(earned[norm(a.name)] || []).map((s) => (
-                        <span key={s.id} className="skill-chip earned" title={`Earned: top three for ${s.what}`}>{s.label}</span>
-                      ))}
-                    </span>
-                  )}
-                </td>
-                <td><button className="btn-x" onClick={() => remove(a.id)}>Remove</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 /* ---------------- Access panel ---------------- */
 function AccessPanel({ config, session, onChange }) {
@@ -22954,6 +22749,12 @@ function Style() {
       .pp-stranger.on { background:rgba(42,94,155,.14); }
       .pp-batch { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 6px; }
       .pp-batch-n { font-size:11.5px; color:var(--ink-3); margin-right:2px; }
+      /* A repair rather than a question or a fault, so its own colour: these are
+         your people, and the tool is offering to put them back together. */
+      .pp-mangled { border-color:rgba(42,94,155,.35); background:linear-gradient(180deg,rgba(42,94,155,.06),transparent); }
+      .pp-mangled h3 { color:var(--blue); }
+      .pp-was { color:var(--ink-3); text-decoration:line-through; text-decoration-thickness:1px; }
+      .pp-arrow { color:var(--ink-3); }
       .pp-stranger .pp-nm { font-weight:700; font-size:14px; }
       .pp-ev { font-size:12px; color:var(--ink-3); flex:1; min-width:150px; }
       .pp-ev b { font-family:var(--font-display); color:var(--ink); letter-spacing:-.02em; }

@@ -490,3 +490,101 @@ test("a timestamp works as well as a date", () => {
   assert.equal(servedOn({ hiredAt: "2026-08-18T14:22:07.000Z" }, "2026-08-18", null), true);
   assert.equal(servedOn({ hiredAt: "2026-08-18T14:22:07.000Z" }, "2026-08-17", null), false);
 });
+
+// ---- names the reader mangled, which are real people underneath ----
+import { unmangle, manglings, mergeManglings } from "../api/_people-status.mjs";
+
+test("a column heading welded onto a name comes off", () => {
+  /* The Visit column, once per report, for as long as nobody noticed. */
+  assert.deepEqual(unmangle("Chase Cabney Visit"),
+    { name: "Chase Cabney", why: "a column heading was read as part of the name" });
+});
+
+test("a name the report printed twice", () => {
+  assert.equal(unmangle("Danielle Newsome Danielle Newsome").name, "Danielle Newsome");
+  assert.equal(unmangle("LetitiaLetitia").name, "Letitia", "including with no space between");
+});
+
+test("two people welded together are left for a person to look at", () => {
+  /* "Luke Pancake Mike Ganus" splits two ways and both are wrong. Guessing here
+     would put one person's month onto another's. */
+  assert.equal(unmangle("Luke Pancake Mike Ganus"), null);
+});
+
+test("an ordinary name is left alone", () => {
+  for (const n of ["Fin Smith", "Rafael Lopez de Victoria", "Dr. David Davis II", ""]) {
+    assert.equal(unmangle(n), null, n);
+  }
+});
+
+test("a name that is only a column word is not turned into nothing", () => {
+  /* Stripping to an empty string and then merging it into somebody would be the
+     worst outcome available. */
+  assert.equal(unmangle("Visit"), null);
+  assert.equal(unmangle("Total Delivered"), null);
+});
+
+const mangled = () => {
+  const d = store();
+  d.roster.push({ id: "a7", name: "Chase Cabney", roleId: "sales" });
+  d.months["2026-08"].stats["chase cabney"] = { displayName: "Chase Cabney", internetUnits: 4 };
+  d.months["2026-08"].stats["chase cabney visit"] = { displayName: "Chase Cabney Visit", internetUnits: 3 };
+  d.excluded.push("Danielle Newsome Danielle Newsome");
+  d.roster.push({ id: "a8", name: "Danielle Newsome", roleId: "sales" });
+  return d;
+};
+
+test("every mangled name with a real person behind it is found", () => {
+  const rows = manglings(mangled());
+  const names = rows.map((r) => r.from).sort();
+  assert.deepEqual(names, ["Chase Cabney Visit", "Danielle Newsome Danielle Newsome"]);
+  const chase = rows.find((r) => r.from === "Chase Cabney Visit");
+  assert.equal(chase.to, "Chase Cabney");
+  assert.equal(chase.units, 3, "and the cars it is holding, so the size of the fix is visible");
+});
+
+test("a mangled name with nobody behind it is left alone", () => {
+  /* It might be somebody nobody has added yet, and merging it into thin air
+     helps nothing. */
+  const d = store();
+  d.excluded.push("Nobody Here Visit");
+  assert.deepEqual(manglings(d), []);
+});
+
+test("and one whose real self the store has disowned is not resurrected", () => {
+  const d = store();
+  d.excluded.push("Round Robin Visit");
+  assert.deepEqual(manglings(d), [], "Round Robin is ignored, so this is not a repair");
+});
+
+test("a clean store proposes nothing", () => {
+  assert.deepEqual(manglings(store()), []);
+});
+
+test("merging the batch puts the figures back on the real people", () => {
+  const d0 = mangled();
+  const rows = manglings(d0);
+  const d = mergeManglings(d0, rows, { by: "Jorge" });
+  assert.equal(d.months["2026-08"].stats["chase cabney"].internetUnits, 7, "4 that were his and 3 that were read wrong");
+  assert.equal(d.months["2026-08"].stats["chase cabney visit"], undefined);
+  assert.equal(statusOf(d, "Chase Cabney"), "active");
+  assert.equal(d.excluded.includes("Danielle Newsome Danielle Newsome"), false, "off the ignore list");
+  assert.equal(statusOf(d, "Danielle Newsome"), "active");
+});
+
+test("and teaches the spelling, so the next report needs no repair", () => {
+  const d = mergeManglings(mangled(), manglings(mangled()), {});
+  assert.equal(d.aliases["chase cabney visit"], "chase cabney");
+});
+
+test("merging the batch is written down, one line each", () => {
+  const d = mergeManglings(mangled(), manglings(mangled()), { by: "Jorge" });
+  assert.equal(d.peopleLog.length, 2);
+  assert.match(d.peopleLog[0].note, /read wrong/);
+});
+
+test("an empty batch changes nothing", () => {
+  const d = mangled();
+  assert.equal(mergeManglings(d, [], {}), d);
+  assert.equal(mergeManglings(d, null, {}), d);
+});
