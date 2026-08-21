@@ -19,6 +19,7 @@ import {
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
+import { doorCheck } from "../api/_geofence.mjs";
 /* A person's standing at a store, and every list and stamp a change to it
    implies. One place, because three screens used to do this and two of them were
    quietly broken in the same way. */
@@ -1843,6 +1844,23 @@ async function apiCall(path, { method = "GET", body = null } = {}) {
     return { error: "The server could not be reached." };
   }
 }
+/* The person YOU are on this store's floor.
+
+   floor_people lets somebody read their own row and nobody else's, so this needs
+   no endpoint and no manager: the signed-in salesperson asks the database who
+   they are and the policy answers for exactly one row. */
+async function myFloorPerson(store) {
+  if (!supabase) return null;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    const { data, error } = await supabase.from("floor_people")
+      .select("person_id").eq("store", store).eq("user_id", session.user.id).maybeSingle();
+    if (error) throw error;
+    return data ? data.person_id : null;
+  } catch (e) { console.error("myFloorPerson", e); return null; }
+}
+
 async function loadFloorLinks(store) {
   const r = await apiCall(`/api/link-person?store=${encodeURIComponent(store)}`);
   return r.error ? { error: r.error, links: [] } : { links: r.links || [] };
@@ -9629,14 +9647,33 @@ function FloorSignIn({ store, date, token, test = false }) {
 
   useEffect(() => { if (meId && line.some((p) => p.id === meId)) setStep("done"); }, [meId, line]);
 
+  /* ---- who you are, if the phone already knows ----
+     A salesperson with an account and a link is already identified, so the name
+     list and the PIN are two screens asking a question that has been answered.
+     The session persists, so this happens once and every morning after is a scan
+     and a tap.
+
+     The name-and-PIN path stays exactly as it was underneath. It is what the
+     podium uses, what somebody with no account uses, and what everybody uses on
+     the morning the sign-in service is having a bad day. */
+  const [knownAs, setKnownAs] = useState(undefined);   // undefined = still asking
+  useEffect(() => {
+    let dead = false;
+    myFloorPerson(store).then((id) => { if (!dead) setKnownAs(id || null); });
+    return () => { dead = true; };
+  }, [store]);
+  const accountPerson = knownAs ? ((row && row.roster) || []).find((r) => r.id === knownAs) || null : null;
+
   let screen;
-  if (row === undefined || identities === null) screen = "loading";
+  if (row === undefined || identities === null || knownAs === undefined) screen = "loading";
   else if (!isToday || !valid) screen = "invalid";
   else if (step === "done" && me) screen = "done";
   else if (step === "pin" && switchTo) screen = "switch";
   else if (step === "pin" && selected) screen = "pin";
   else if (step === "pick") screen = "pick";
   else if (step === "confirm") screen = "confirm";
+  /* Identified by their account, and not on the line yet: one button, no typing. */
+  else if (accountPerson && step === "name") screen = "known";
   else screen = "name";
 
   // A wipe should fire between EVERY page they touch — including flag changes on the
@@ -9652,21 +9689,61 @@ function FloorSignIn({ store, date, token, test = false }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [liveKey, shownKey, screen]);
 
+  /* ---- the door ----
+     The morning scan is the moment worth checking that somebody is actually
+     here, and the moment where getting it wrong costs the most: turn away
+     somebody standing in the middle of the lot on their first morning and they
+     will never trust the tool again, and will tell the floor why.
+
+     So only a confident outside refuses. No fence drawn, no permission, no fix,
+     or a fix too vague to argue with all let them on — the rule lives in
+     doorCheck and is the same rule everywhere. The dishonest case is not lost by
+     being lenient here; it is caught the same way it always was, by the day's
+     record failing to back the claim up. */
+  const [doorNote, setDoorNote] = useState(null);
+  const storeFence = ((cfg && cfg.stores) || []).find((x) => x.id === store)?.fence || null;
+
+  const readPosition = () => new Promise((resolve) => {
+    if (!navigator.geolocation || !storeFence) return resolve(null);
+    let done = false;
+    const finish = (v) => { if (!done) { done = true; resolve(v); } };
+    navigator.geolocation.getCurrentPosition(
+      (pos) => finish({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => finish(null),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
+    /* A phone that never answers must not leave somebody staring at a spinner
+       when they are trying to get onto the floor. */
+    setTimeout(() => finish(null), 9000);
+  });
+
   async function joinAs(person) {
     setBusy(true);
+    setDoorNote(null);
+    const reading = await readPosition();
+    const door = doorCheck(reading, storeFence);
+    if (!door.allow) {
+      setDoorNote(door);
+      setBusy(false);
+      return;
+    }
     const next = await mutateFloorRow(store, date, (cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
       if (!cur.line.some((p) => p.id === person.id)) {
         cur.line.push({ id: person.id, label: person.label, joinedAt: qNowIso(), status: "waiting", statusAt: qNowIso() });
         cur.history = cur.history || [];
-        cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self" });
+        /* How they got on is worth keeping. "Signed on from the lot" and "signed
+           on with a phone that would not say" are the same event to everybody
+           except the person reviewing an odd day later. */
+        cur.history.push({ t: qNowIso(), action: "signed-in", id: person.id, who: person.label, by: "self",
+          detail: door.why === "inside" ? "on the lot" : door.why });
       }
       return cur;
     });
     try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
     remember(person.id);
     if (next) setRow(next);
+    if (door.why !== "inside") setDoorNote(door);
     setStep("done"); setPin(""); setPin2(""); setBusy(false);
   }
 
@@ -9806,10 +9883,40 @@ function FloorSignIn({ store, date, token, test = false }) {
         <p className="sf-sub">Ask a manager to show today&rsquo;s code, and scan it again.</p>
       </SfScreen>
     );
+  } else if (eff === "known" && accountPerson) {
+    /* Scanned, and the phone already knows who is holding it. One tap. */
+    const who = String(accountPerson.name || accountPerson.label || "").split(/\s+/)[0];
+    content = (
+      <SfScreen spine={queueSpine} className="sf-v-name">
+        <SfMark variant={variant} />
+        <SfDisplay small a="Morning," b={who} />
+        <p className="sf-sub">
+          {line.length ? `${line.length} ${variant.count} already on.` : "Nobody on yet. You would be first."}
+        </p>
+        {doorNote && !doorNote.allow && (
+          <div className="sf-door sf-door-no">
+            <b>Not on the lot yet</b>
+            <span>{doorNote.note}</span>
+          </div>
+        )}
+        <button className="sf-go" disabled={busy} onClick={() => { buzz(10); joinAs(accountPerson); }}>
+          {busy ? "Checking\u2026" : "Get me on"}
+        </button>
+        {/* Somebody else's phone, or a link made against the wrong name. Rare, and
+            impossible to recover from without a way back to the list. */}
+        <button type="button" className="sf-link" onClick={() => { setKnownAs(null); setStep("name"); }}>
+          Not {who}?
+        </button>
+      </SfScreen>
+    );
   } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
     const isNext = me.status === "waiting" && availableAhead === 0;
+    /* Said once, quietly, and never again. They are on the floor either way; this
+       only explains why nothing was checked, so nobody thinks the fence is
+       watching them when it is not. */
+    const doorAside = doorNote && doorNote.allow && doorNote.why !== "inside" ? doorNote.note : null;
     const canUndo = me.status === "customer" && me.autoFlip && me.accidentalUntil && new Date(me.accidentalUntil) > new Date();
     const st = me.status;
     const title = st === "customer" ? "With a customer" : st === "lunch" ? "At lunch" : st === "away" ? "Stepped away" : isNext ? "You're up" : "You're on the floor";
@@ -9857,6 +9964,7 @@ function FloorSignIn({ store, date, token, test = false }) {
             <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
           </div>
         )}
+        {doorAside && <p className="sf-door-aside">{doorAside}</p>}
       </div>
     );
   } else if (eff === "switch" && selected && switchTo) {
@@ -19681,7 +19789,13 @@ function StandardsEditor({ config, storeId, onChange }) {
    ========================================================================= */
 function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChange, userName }) {
   const [q, setQ] = useState("");
-  const [only, setOnly] = useState("all");
+  /* The floor is the answer to "who works here", and it is the only one anybody
+     opens this screen for. A store that has been running a while carries far more
+     people who have left or were never its own than people on it — two hundred to
+     fifty at one rooftop — so showing everybody by default buries the fifty that
+     matter under the rest. The others are a click away and no further. */
+  const [only, setOnly] = useState("active");
+  const [showRest, setShowRest] = useState(false);
   const [sel, setSel] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
   const [nu, setNu] = useState({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
@@ -20059,11 +20173,20 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
         <div className="pp-bar">
           <input className="help-in pp-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a name…" />
-          <div className="seg-small">
-            {[["all", "Everyone"], ["active", "On the floor"], ["departed", "Left"], ["ignored", "Not ours"]].map(([id, lbl]) => (
-              <button key={id} className={"seg-opt " + (only === id ? "on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
-            ))}
-          </div>
+          {showRest ? (
+            <div className="seg-small">
+              {[["active", "On the floor"], ["departed", "Left"], ["ignored", "Not ours"], ["all", "Everyone"]].map(([id, lbl]) => (
+                <button key={id} className={"seg-opt " + (only === id ? "on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
+              ))}
+            </div>
+          ) : (counts.departed + counts.ignored) > 0 && (
+            <button className="btn-quiet pp-rest" onClick={() => setShowRest(true)}>
+              Also {counts.departed + counts.ignored} not on the floor
+            </button>
+          )}
+          {showRest && (
+            <button className="btn-quiet" onClick={() => { setShowRest(false); setOnly("active"); }}>Just the floor</button>
+          )}
           {/* Whatever the search and the filter have left, and nothing else. On
               the "Not ours" filter that is exactly the batch a manager came to
               clear; a select-all that reached past the filter would take the
@@ -22755,6 +22878,15 @@ function Style() {
       .pp-mangled h3 { color:var(--blue); }
       .pp-was { color:var(--ink-3); text-decoration:line-through; text-decoration-thickness:1px; }
       .pp-arrow { color:var(--ink-3); }
+      .pp-rest { white-space:nowrap; }
+      /* The door, on the sign-in screen. Only ever shown when there is something
+         to say: standing on the lot with a good fix says nothing at all. */
+      .sf-door { display:block; margin:14px auto 0; max-width:30rem; padding:12px 16px; border-radius:14px;
+        text-align:left; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); }
+      .sf-door b { display:block; font-size:15px; margin-bottom:3px; }
+      .sf-door span { font-size:13px; opacity:.82; line-height:1.45; }
+      .sf-door-no { background:rgba(229,83,63,.16); border-color:rgba(229,83,63,.4); }
+      .sf-door-aside { margin-top:12px; font-size:12.5px; opacity:.7; text-align:center; }
       .pp-stranger .pp-nm { font-weight:700; font-size:14px; }
       .pp-ev { font-size:12px; color:var(--ink-3); flex:1; min-width:150px; }
       .pp-ev b { font-family:var(--font-display); color:var(--ink); letter-spacing:-.02em; }

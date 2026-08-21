@@ -152,3 +152,49 @@ export function settle(state, reading, fence, now, opts = {}) {
   const crossed = from === "unknown" ? null : (v === "out" ? "left" : "returned");
   return { ...s, crossed };
 }
+
+/* =========================================================================
+   At the door: can this person join the line right now?
+
+   The morning scan is the one moment worth checking, and it is also the one
+   moment where getting it wrong is most expensive. Somebody standing in the
+   middle of the lot who is turned away on their first morning will never trust
+   the tool again, and will tell the rest of the floor why.
+
+   So the only answer that refuses is a CONFIDENT outside. Everything else lets
+   them in:
+
+     no fence drawn        the store has not said where it is, so the tool has
+                           no opinion and must not invent one
+     location refused      a permission prompt is not a disciplinary matter
+     location unavailable  indoors, old phone, airplane mode on a lanyard
+     unsure                a phone inside a steel showroom is routinely fifty to
+                           a hundred metres out, and "probably outside" is not
+                           grounds for sending somebody home
+
+   The dishonest case is not lost by being lenient here. It is caught the same
+   way it always was: by the day's record failing to back up the claim, reviewed
+   by a manager who knows things this does not.
+   ========================================================================= */
+export function doorCheck(reading, fence, opts = {}) {
+  const has = fence && Array.isArray(fence.ring) && fence.ring.length >= 3;
+  if (!has) {
+    return { allow: true, why: "no-fence",
+      note: "No lot has been drawn for this store yet, so nothing was checked." };
+  }
+  if (!reading) {
+    return { allow: true, why: "no-reading",
+      note: "Your phone did not share a location, so nothing was checked." };
+  }
+  const verdict = readingVerdict(reading, fence, opts);
+  if (verdict === "out") {
+    const edge = Math.round(metersToEdge(reading, fence.ring));
+    return { allow: false, why: "outside", metres: edge,
+      note: `You are about ${edge}m off the lot. Sign on when you get here.` };
+  }
+  if (verdict === "unsure") {
+    return { allow: true, why: "unsure",
+      note: "Your phone is not sure exactly where it is, so you have been let on." };
+  }
+  return { allow: true, why: "inside", note: "" };
+}
