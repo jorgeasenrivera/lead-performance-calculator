@@ -19710,6 +19710,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   const [moveTo, setMoveTo] = useState("");
   const [moveBusy, setMoveBusy] = useState("");
   const people = useMemo(() => everyPerson(data), [data]);
+  /* What this store is counting for somebody right now — the number that makes
+     "remove them" concrete rather than abstract. */
+  const monthUnitsFor = (key) => {
+    const st = data.months?.[ym()]?.stats?.[key];
+    if (!st) return 0;
+    return (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+  };
   const strangers = useMemo(() => unclaimed(data), [data]);
   const waiting = useMemo(() => pendingList(data), [data]);
   const roleName = (id) => (config.roles || []).find((r) => r.id === id)?.name || "";
@@ -19745,6 +19752,39 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   };
 
   const picked = [...sel];
+
+  /* ---- doing it to all of them at once ----
+     Six names off one misfiled report is six clicks, and the sixth is the one
+     somebody gets bored before reaching. The batch controls take whatever is on
+     screen, which for the two cards is the whole card and for the list below is
+     what the search and the filter have left — "select all" meaning anything
+     other than "what I am looking at" is how people select more than they meant. */
+  const [batch, setBatch] = useState(() => new Set());
+  const inBatch = (n) => batch.has(norm(n));
+  const toggleBatch = (n) => setBatch((b) => {
+    const x = new Set(b); const k = norm(n);
+    if (x.has(k)) x.delete(k); else x.add(k);
+    return x;
+  });
+  const batchNames = (rows) => rows.filter((r) => inBatch(r.name)).map((r) => r.name);
+
+  /* A batch that removes figures is worth a second look. One name is a click a
+     manager meant; twenty is a click they might not have. */
+  const confirmBatch = (names, cars, what) => {
+    if (names.length < 2) return true;
+    return window.confirm(
+      `${what} ${names.length} people?\n\n${names.slice(0, 12).join("\n")}${names.length > 12 ? `\n…and ${names.length - 12} more` : ""}` +
+      (cars > 0 ? `\n\nThis takes ${fmtNum(Math.round(cars * 10) / 10)} cars out of this store's totals.` : ""));
+  };
+
+  const BatchBar = ({ rows, onAll, onNone, children }) => (
+    <div className="pp-batch">
+      <button className="btn-quiet" onClick={onAll}>Select all {rows.length}</button>
+      {batchNames(rows).length > 0 && <button className="btn-quiet" onClick={onNone}>Clear</button>}
+      <span className="pp-batch-n">{batchNames(rows).length} selected</span>
+      {batchNames(rows).length > 0 && children}
+    </div>
+  );
 
   /* ---- moving somebody to another rooftop ----
      Two stores have to be written, and they are separate documents, so this is
@@ -19813,9 +19853,31 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             arrived and nothing is lost either way: say they work here and everything folds in, or say they do not
             and it goes with them. Until then the store's totals are unaffected.
           </p>
+          <BatchBar rows={waiting}
+            onAll={() => setBatch(new Set(waiting.map((w) => norm(w.name))))}
+            onNone={() => setBatch(new Set())}>
+            <button className="btn btn-sm" onClick={() => {
+              const names = batchNames(waiting);
+              if (!confirmBatch(names, 0, "Put")) return;
+              onChange(claimPending(data, names, { by: userName, roleId: config.roles?.[0]?.id || null, newId: uid() }),
+                { action: "Claimed names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` });
+              setBatch(new Set());
+            }}>They all work here</button>
+            <button className="btn btn-sm pp-danger" onClick={() => {
+              const names = batchNames(waiting);
+              const cars = waiting.filter((w) => inBatch(w.name)).reduce((n, w) => n + (w.units || 0), 0);
+              if (!confirmBatch(names, 0, "Reject")) return;
+              onChange(dropPending(data, names, { by: userName }),
+                { action: "Rejected names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` });
+              setBatch(new Set());
+            }}>None of them are ours</button>
+          </BatchBar>
           <div className="pp-strangers">
             {waiting.map((w) => (
-              <div key={w.key} className="pp-stranger">
+              <div key={w.key} className={"pp-stranger" + (inBatch(w.name) ? " on" : "")}>
+                <button className="pp-tick" onClick={() => toggleBatch(w.name)} aria-label={`Select ${w.name}`}>
+                  <span className="md-box">{inBatch(w.name) && <PixIcon glyph="check" size={13} />}</span>
+                </button>
                 <span className="pp-nm">{w.name}</span>
                 <span className="pp-ev">
                   {w.units > 0 ? <><b>{fmtNum(Math.round(w.units * 10) / 10)}</b> cars held</> : "no cars"}
@@ -19885,9 +19947,29 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             which each one is. <b>Not ours</b> takes their figures out of this store's totals; <b>they work
             here</b> puts them on the floor and leaves the figures alone.
           </p>
+          <BatchBar rows={strangers}
+            onAll={() => setBatch(new Set(strangers.map((x) => norm(x.name))))}
+            onNone={() => setBatch(new Set())}>
+            <button className="btn btn-sm" onClick={() => {
+              const names = batchNames(strangers);
+              if (!confirmBatch(names, 0, "Put")) return;
+              move(names, "active", "claimed from unmatched figures");
+              setBatch(new Set());
+            }}>They all work here</button>
+            <button className="btn btn-sm pp-danger" onClick={() => {
+              const names = batchNames(strangers);
+              const cars = strangers.filter((x) => inBatch(x.name)).reduce((n, x) => n + (x.units || 0), 0);
+              if (!confirmBatch(names, cars, "Take")) return;
+              move(names, "ignored", "figures belonged to another store");
+              setBatch(new Set());
+            }}>None of them are ours</button>
+          </BatchBar>
           <div className="pp-strangers">
             {strangers.map((sname) => (
-              <div key={sname.key} className="pp-stranger">
+              <div key={sname.key} className={"pp-stranger" + (inBatch(sname.name) ? " on" : "")}>
+                <button className="pp-tick" onClick={() => toggleBatch(sname.name)} aria-label={`Select ${sname.name}`}>
+                  <span className="md-box">{inBatch(sname.name) && <PixIcon glyph="check" size={13} />}</span>
+                </button>
                 <span className="pp-nm">{sname.name}</span>
                 <span className="pp-ev">
                   {sname.units > 0 ? <><b>{fmtNum(Math.round(sname.units * 10) / 10)}</b> cars</> : "no cars"}
@@ -19924,6 +20006,19 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               <button key={id} className={"seg-opt " + (only === id ? "on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
             ))}
           </div>
+          {/* Whatever the search and the filter have left, and nothing else. On
+              the "Not ours" filter that is exactly the batch a manager came to
+              clear; a select-all that reached past the filter would take the
+              floor with it. */}
+          {shown.length > 0 && (
+            <button className="btn-quiet" onClick={() => {
+              const all = new Set(shown.map((p) => p.name));
+              const already = shown.every((p) => sel.has(p.name));
+              setSel(already ? new Set() : all);
+            }}>
+              {shown.every((p) => sel.has(p.name)) ? "Clear selection" : `Select all ${shown.length}`}
+            </button>
+          )}
           <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>{adding ? "Cancel" : "Add a person"}</button>
         </div>
 
@@ -19946,7 +20041,15 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             <span>{picked.length} selected</span>
             <button className="btn btn-sm" onClick={() => move(picked, "active")}>On the floor</button>
             <button className="btn btn-sm" onClick={() => move(picked, "departed")}>They left</button>
-            <button className="btn btn-sm pp-danger" onClick={() => move(picked, "ignored")}>Not ours</button>
+            <button className="btn btn-sm pp-danger" onClick={() => {
+              /* This one takes their figures with them, so a batch gets a second
+                 look and the cars are named. One name is a click a manager meant;
+                 twenty is a click they might not have. */
+              const cars = people.filter((p) => sel.has(p.name))
+                .reduce((n, p) => n + (monthUnitsFor(p.key) || 0), 0);
+              if (!confirmBatch(picked, cars, "Take")) return;
+              move(picked, "ignored");
+            }}>Not ours</button>
             <button className="btn-quiet" onClick={() => setSel(new Set())}>Clear</button>
           </div>
         )}
@@ -22848,6 +22951,9 @@ function Style() {
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }
+      .pp-stranger.on { background:rgba(42,94,155,.14); }
+      .pp-batch { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 6px; }
+      .pp-batch-n { font-size:11.5px; color:var(--ink-3); margin-right:2px; }
       .pp-stranger .pp-nm { font-weight:700; font-size:14px; }
       .pp-ev { font-size:12px; color:var(--ink-3); flex:1; min-width:150px; }
       .pp-ev b { font-family:var(--font-display); color:var(--ink); letter-spacing:-.02em; }
