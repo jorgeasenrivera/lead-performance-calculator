@@ -111,6 +111,45 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## History and Summary — REWORKED 2026-08-21
+
+> I feel like we haven't given any recent love to the history and summary tabs
+
+### History showed no history
+
+It listed one month's figures in a table and let you change which month with a dropdown, so
+every month looked exactly like every other one. The one question a history tab is for — is
+this getting better? — was the one thing it could not answer, and the only way to find out
+was to write the numbers down and change the dropdown.
+
+- **Every figure now carries its move** since the month before, in points, with a 0.5-point
+  deadband so a rounding wobble is never dressed up as a trend. Points rather than percent of
+  a percent, because "up four points" is what a manager says out loud.
+- **The month it compares against is the previous month ON RECORD**, not last month by the
+  calendar. A store that imported nothing in July should be read against June rather than
+  against nothing.
+- **The verdict trail**: how each person was judged in each of the last eight months, oldest
+  on the left, each month under the standards that were in force at the time. A run of reds
+  turning green is a coaching story, and it was in the data all along with nothing drawing it.
+- The first month on record says so and draws no arrows, rather than comparing against zero.
+
+### Summary led with a caption
+
+The four numbers the page is read for were a run-on sentence under the title — "4 restricted ·
+2 in grace period · 9 cleared". They are tiles now, the site's own, already used on the
+Dashboard. **Paused right now** is deliberately its own number rather than folded into
+"below standard": it is the only one where somebody is not being handed leads this minute.
+
+### Left alone, deliberately
+
+Somebody with NO figures at all in a month is judged **Restrict**, because a missing value
+counts as a failed requirement. That is the same unfairness the day-off rule was written to
+avoid, and it is arguably wrong — but the Board judges the same way from the same function,
+so changing it here alone would make two screens disagree about one person. Raised rather
+than quietly changed.
+
+---
+
 ## Positions, told apart — BUILT 2026-08-21
 
 > I'd like there to be a visual difference between job types like BDC and sales and so on

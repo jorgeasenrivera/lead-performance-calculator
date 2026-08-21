@@ -19844,8 +19844,39 @@ function GMSummary({ config, data, stores }) {
       </div>
       <div className="gm-head">
         <h2>Lead Performance Summary <span className="section-sub">{monthLabel(month)}</span></h2>
-        <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()} · {restricted.length} restricted · {trending.length > 0 ? `${trending.length} in grace period · ` : ""}{cleared.length} cleared to grab leads</p>
+        <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()}</p>
       </div>
+
+      {/* ---- the four numbers this page is actually read for ----
+          They were a run-on sentence under the title -- "4 restricted · 2 in grace
+          period · 9 cleared to grab leads" -- which is the shape of a caption, not
+          of a headline, and the whole page is a headline. The tile is the site's
+          own, already drawn on the Dashboard.
+
+          "Paused right now" is deliberately its own number rather than a subset
+          quietly folded into "restricted": it is the only one of the four where
+          somebody is not being handed leads THIS MINUTE, and that is the thing a
+          manager acts on before lunch. */}
+      {rows.length > 0 && (
+        <div className="hero-tiles gm-tiles">
+          <div className={"tile " + (restricted.length ? "tile-bad" : "tile-flat")}>
+            <div className="tile-num">{restricted.length}<span className="tile-of">/{rows.length}</span></div>
+            <div className="tile-label">Below standard</div>
+          </div>
+          <div className={"tile " + (paused.length ? "tile-bad" : "tile-flat")}>
+            <div className="tile-num">{paused.length}</div>
+            <div className="tile-label">Paused right now</div>
+          </div>
+          <div className={"tile " + (trending.length ? "tile-warn" : "tile-flat")}>
+            <div className="tile-num">{trending.length}</div>
+            <div className="tile-label">Inside grace</div>
+          </div>
+          <div className={"tile " + (cleared.length ? "tile-good" : "tile-flat")}>
+            <div className="tile-num">{cleared.length}</div>
+            <div className="tile-label">Holding standard</div>
+          </div>
+        </div>
+      )}
       {rows.length === 0 && <div className="empty">No data for this month yet.</div>}
 
       <TrendsPanel config={config} stores={stores} data={data} />
@@ -19884,7 +19915,9 @@ function GMSummary({ config, data, stores }) {
             <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Because of</th></tr></thead>
             <tbody>
               {paused.map((r, i) => (
-                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td><td>{r.role}</td><td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
+                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td>
+                  <td><RoleBadge role={(config.roles || []).find((x) => x.name === r.role)} /></td>
+                  <td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -19908,19 +19941,100 @@ function GMSummary({ config, data, stores }) {
   );
 }
 
-/* ---------------- History ---------------- */
+/* ---------------- History ----------------
+   A history tab that showed no history.
+
+   It listed one month's figures in a table and let you change which month with a
+   dropdown, so every month looked exactly like every other one and the only way
+   to know whether somebody was climbing or sliding was to write the numbers down
+   and change the dropdown. The one question a history is for — is this getting
+   better? — was the one thing it could not answer.
+
+   Two things fix that, and neither invents a number:
+
+     every figure carries its move since the month before, with the board's own
+     0.5-point deadband so a rounding wobble is never dressed up as a trend
+
+     every person carries the verdict trail: how they were judged each month,
+     under the standards that were in force at the time, oldest to newest. A run
+     of restricts that turns into a run of cleared is a coaching story, and it
+     was in the data all along with nothing drawing it
+   ========================================================================= */
+
+/* Judged under the standards THAT month, not today's. A store that raised its bar
+   in June would otherwise appear to have had a terrible spring. */
+function verdictIn(data, config, storeId, monthKey, person) {
+  const M = (data.months || {})[monthKey];
+  if (!M) return null;
+  const s = M.stats?.[norm(person.name)];
+  if (!s) return null;
+  const frozen = monthKey !== ym() ? M.standardsSnapshot?.[person.roleId]?.tiers : null;
+  const tiers = frozen || config.standards?.[storeId]?.[person.roleId]?.tiers;
+  const ev = evaluateAssociate(s, tiers);
+  return ev.status === "pass" ? "pass" : ev.status === "fail" ? "fail" : null;
+}
+
+/* A percentage against the same figure a month earlier. Points, not percent of a
+   percent: "up 4 points" is what a manager says out loud, and it is the only one
+   of the two readings that cannot be argued with. */
+const HIST_DEADBAND = 0.5;
+function moveOn(now, before) {
+  if (now == null || before == null) return null;
+  const d = (now - before) * 100;
+  if (d > HIST_DEADBAND) return { dir: "up", txt: "+" + d.toFixed(1) };
+  if (d < -HIST_DEADBAND) return { dir: "down", txt: d.toFixed(1) };
+  return { dir: "flat", txt: "" };
+}
+
+/** One figure and how it moved. */
+function HistCell({ now, before }) {
+  const mv = moveOn(now, before);
+  return (
+    <span className="hist-cell">
+      <b>{fmtPct(now)}</b>
+      {mv && mv.dir !== "flat" && (
+        <i className={"hist-move " + mv.dir}>
+          <PixIcon glyph={mv.dir === "up" ? "triup" : "tridown"} size={8} />{mv.txt}
+        </i>
+      )}
+    </span>
+  );
+}
+
 function HistoryPanel({ config, store, data }) {
   const months = Object.keys(data.months || {}).sort().reverse();
   const [month, setMonth] = useState(months[0] || ym());
   if (months.length === 0) return <div className="empty">History builds itself month by month. Nothing here yet.</div>;
   const M = data.months[month];
+  /* The month before the one being read, wherever it is in the list. Not "last
+     month" by the calendar: a store that imported nothing in July should compare
+     August with June rather than with nothing at all. */
+  const prevKey = months[months.indexOf(month) + 1] || null;
+  const prevStats = prevKey ? (data.months[prevKey].stats || {}) : {};
+  /* Oldest to newest, so the trail reads left to right the way time does. */
+  const trail = months.slice(0, 8).reverse();
+  const before = (name, field) => (prevStats[norm(name)] || {})[field];
+
   return (
     <div className="history">
       <div className="gm-toolbar">
         <select value={month} onChange={(e) => setMonth(e.target.value)}>
           {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
         </select>
-        {month !== ym() && <span className="hint">{M.standardsSnapshot ? "Verdicts shown under the standards that were in effect that month." : "This month predates standards snapshots, so verdicts are recalculated with today's standards."}</span>}
+        <span className="hint">
+          {prevKey
+            ? <>Every figure against {monthLabel(prevKey)}, in points.</>
+            : <>The first month on record, so there is nothing to compare it with yet.</>}
+          {month !== ym() && (M.standardsSnapshot
+            ? " Verdicts are under the standards that were in effect that month."
+            : " This month predates standards snapshots, so verdicts use today's standards.")}
+        </span>
+        {/* Said once, at the top, rather than under every position on the page. */}
+        <span className="hist-key">
+          <i className="hist-pip pass" />cleared
+          <i className="hist-pip fail" />restricted
+          <i className="hist-pip none" />no figures
+        </span>
       </div>
       {config.roles.map((role) => {
         const frozen = month !== ym() ? M.standardsSnapshot?.[role.id]?.tiers : null;
@@ -19929,20 +20043,38 @@ function HistoryPanel({ config, store, data }) {
         if (!people.length) return null;
         return (
           <div key={role.id} className="card role-section" style={{ "--role": role.color }}>
-            <h3 className="role-header"><span className="role-swatch" />{role.name}</h3>
-            <table className="gm-table">
-              <thead><tr><th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th><th>Engaged %</th><th>BH %</th><th>Verdict</th></tr></thead>
+            <h3 className="role-header"><RoleBadge role={role} count={people.length} big /></h3>
+            <table className="gm-table hist-table">
+              <thead><tr>
+                <th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th>
+                <th>Engaged %</th><th>BH %</th><th>Verdict</th><th className="hist-trail-h">Since {monthLabel(trail[0])}</th>
+              </tr></thead>
               <tbody>
                 {people.map((a) => {
-                  const s = M.stats?.[norm(a.name)];
-                  const ev = evaluateAssociate(s, tiers);
+                  const st = M.stats?.[norm(a.name)];
+                  const ev = evaluateAssociate(st, tiers);
                   return (
                     <tr key={a.id}>
                       <td><b>{a.name}</b></td>
                       <td>{ev.opps ?? 0} / {ev.cap ?? "-"}</td>
-                      <td>{fmtPct(s?.deliveredPct)}</td><td>{fmtPct(s?.apptVideoDayPct)}</td>
-                      <td>{fmtPct(s?.engagedVideoPct)}</td><td>{fmtPct(s?.bhVideoPct)}</td>
+                      <td><HistCell now={st?.deliveredPct} before={before(a.name, "deliveredPct")} /></td>
+                      <td><HistCell now={st?.apptVideoDayPct} before={before(a.name, "apptVideoDayPct")} /></td>
+                      <td><HistCell now={st?.engagedVideoPct} before={before(a.name, "engagedVideoPct")} /></td>
+                      <td><HistCell now={st?.bhVideoPct} before={before(a.name, "bhVideoPct")} /></td>
                       <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span> : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span> : "-"}</td>
+                      {/* The whole point of the tab: what has been happening to this
+                          person, month by month, rather than one month in isolation. */}
+                      <td>
+                        <span className="hist-trail">
+                          {trail.map((m) => {
+                            const v = verdictIn(data, config, store.id, m, a);
+                            return (
+                              <i key={m} className={"hist-pip " + (v || "none") + (m === month ? " here" : "")}
+                                title={`${monthLabel(m)}: ${v === "pass" ? "cleared" : v === "fail" ? "restricted" : "no figures"}`} />
+                            );
+                          })}
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -23474,6 +23606,28 @@ function Style() {
          putting a 1440 ceiling on it would change a screen nobody asked about. */
       .tab-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
       @media (max-width:900px) { .tab-page { padding:16px 16px 0; } }
+      /* ---- history: the figure and its move ---- */
+      .gm-tiles { margin:4px 0 20px; }
+      .hist-cell { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
+      .hist-cell b { font-weight:600; font-variant-numeric:tabular-nums; }
+      .hist-move { display:inline-flex; align-items:center; gap:2px; font-style:normal;
+        font-family:var(--font-mono); font-size:10.5px; font-weight:600; }
+      .hist-move.up { color:#1E7A3C; } .hist-move.down { color:#C13529; }
+      /* The trail. Small on purpose: it is a shape to be read across a row at a
+         glance, not eight more numbers to take in. */
+      .hist-trail { display:inline-flex; gap:3px; align-items:center; }
+      .hist-pip { width:9px; height:9px; border-radius:3px; display:inline-block; }
+      .hist-pip.pass { background:#30B155; }
+      .hist-pip.fail { background:#E5473C; }
+      .hist-pip.none { background:rgba(16,32,52,.13); }
+      .hist-pip.here { outline:2px solid rgba(16,32,52,.35); outline-offset:1px; }
+      .hist-trail-h { white-space:nowrap; }
+      .hist-key { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-3);
+        margin-left:auto; white-space:nowrap; }
+      .hist-key .hist-pip { margin-left:9px; }
+      .hist-key .hist-pip:first-child { margin-left:0; }
+      @media (max-width:1100px) { .hist-trail-h, .hist-table td:last-child { display:none; } }
+
       .pp-folds { margin-top:10px; display:grid; gap:6px; }
       .pp-folds .hint { margin:0 0 8px; max-width:78ch; }
       .pp-fold-row { display:flex; flex-wrap:wrap; gap:9px; align-items:center; padding:9px 12px;
