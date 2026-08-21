@@ -434,7 +434,10 @@ function halfStory(data, M, roster) {
   }
   const total = roster.reduce((n, a) => n + personUnits(M, a.name), 0);
   const odd = Math.abs(total - Math.round(total)) > 0.01;
-  return { holders, ignoredWithUnits, odd, total };
+  // What the ignore list is holding, added up. The popup says the figure rather
+  // than listing the names, so it is worked out here beside the list itself.
+  const ignoredUnits = ignoredWithUnits.reduce((n, x) => n + x.units, 0);
+  return { holders, ignoredWithUnits, ignoredUnits, odd, total };
 }
 
 function channelRates(M, roster) {
@@ -18510,6 +18513,17 @@ function TapMark() {
 }
 
 function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
+  /* The panel hangs off the bottom of this card, and on a short window the last
+     of it — the new-and-used split — simply left the screen. A share of the
+     screen height cannot fix that on its own, because it says nothing about how
+     far down the screen the panel starts. So measure the room actually left
+     below the card as it opens, and let the panel scroll inside whatever that is. */
+  const fitPop = (e) => {
+    const card = e.currentTarget;
+    const room = window.innerHeight - card.getBoundingClientRect().bottom - 40;
+    card.style.setProperty("--pop-max", Math.max(240, Math.round(room)) + "px");
+  };
+
   const M = data.months?.[ym()];
   const restrictions = data.restrictions || {};
   const graceDays = store.graceDays ?? 10;
@@ -18789,7 +18803,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           </div>
         </div>
 
-        <div className="hero-health">
+        <div className="hero-health" onMouseEnter={fitPop} onFocusCapture={fitPop}>
           <TapMark />
           <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
             <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
@@ -18976,29 +18990,22 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 holidays. Two projections of the same number, differing by a sixth,
                 is worse than either one alone. */}
 
-            {/* A half is one side of a split deal, never a rounding error — so say
-                which side and whose, rather than hanging a flag on the number and
-                leaving a manager to work it out. */}
+            {/* This used to spell out, name by name, why the total is what it is.
+                Five paragraphs to read before reaching the number underneath is not
+                a glance. Whatever is missing from the total is now one short line,
+                and the names behind it live on the People screen where they can
+                actually be fixed. */}
             {(halves.odd || halves.ignoredWithUnits.length > 0) && (
               <div className="hp-why">
-                {halves.odd && (
-                  <div className="hp-why-line">
-                    <b>The .5 is half of a split deal.</b>{" "}
-                    {halves.holders.length === 0
-                      ? "No one here is carrying a half, so the other side of it belongs to a name this store is not counting."
-                      : <>Carried by {halves.holders.map((h) => h.name + (h.hasLeft ? " (left)" : "")).join(", ")}
-                        {halves.holders.length % 2 === 1
-                          ? ". An odd number of halves means one side of a split is not counted here. The partner is either on the ignore list below or works at another store."
-                          : ". Those pair up, so the odd half is on a name this store is not counting."}</>}
-                  </div>
-                )}
-                {halves.ignoredWithUnits.map((x) => (
-                  <div className="hp-why-line" key={x.name}>
-                    <b>{x.name}</b> has {fmtNum(x.units)} {x.units === 1 ? "unit" : "units"} this month and is on the
-                    ignore list, so they are not in the total. If that is a person rather than a roll-up row, mark them
-                    departed instead and their figures come back.
-                  </div>
-                ))}
+                <div className="hp-why-line">
+                  {halves.ignoredWithUnits.length > 0 && (
+                    <><b>{fmtNum(halves.ignoredUnits)} {halves.ignoredUnits === 1 ? "unit" : "units"}</b> sit on{" "}
+                    {halves.ignoredWithUnits.length === 1
+                      ? "an ignored name"
+                      : `${halves.ignoredWithUnits.length} ignored names`} and are not counted.{" "}</>
+                  )}
+                  {halves.odd && <>The .5 is half of a split deal.</>}
+                </div>
               </div>
             )}
 
@@ -21422,16 +21429,30 @@ function Style() {
       /* Wider than it was. The month block at the top carries a bar with three
          things marked on it, and at 300px the legend wrapped onto three lines and
          read as clutter rather than as a picture. */
-      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:346px; z-index:240;
+      /* Border-box, so the height cap means the whole panel rather than the part
+         inside the padding — the difference is 28px, which is exactly how much of
+         it still hung off the bottom. The width is the rendered width it always
+         had (346 content + 32 padding + 2 border), so nothing reflows. */
+      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:380px; box-sizing:border-box; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
         transition: opacity .16s ease, transform .38s var(--ease-bloop);
         background:#FFFFFF; border:1px solid rgba(0,0,0,.07); border-radius:16px;
-        padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3); }
+        padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3);
+        /* It hangs off the hero with nothing below it, so on a short window the
+           bottom of it simply left the screen — and the thing that fell off the
+           end was the new-and-used split. It now stops at the screen and scrolls
+           the last of itself into view. */
+        max-height:var(--pop-max, min(70vh, 620px)); overflow-y:auto; overscroll-behavior:contain; }
       .hero-health:hover .health-pop { opacity:1; transform: translateY(0) scale(1); }
-      .health-pop::after { content:""; position:absolute; right:42px; bottom:100%; width:12px; height:12px;
-        margin-bottom:-6px; transform:rotate(45deg); background:#FFFFFF; z-index:1;
+      /* The arrow belongs to the card, not to the panel. It used to hang off the
+         panel's top edge, which a panel that scrolls its own contents would clip
+         and then scroll away. */
+      .hero-health::after { content:""; position:absolute; right:42px; top:calc(100% + 10px);
+        width:12px; height:12px; transform:rotate(45deg); background:#FFFFFF; z-index:241;
+        opacity:0; pointer-events:none; transition:opacity .16s ease;
         border-left:1px solid rgba(0,0,0,.07); border-top:1px solid rgba(0,0,0,.07); border-radius:3px 0 0 0; }
+      .hero-health:hover::after { opacity:1; }
       .hp-rows { margin-top:10px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
       .hp-row { display:grid; grid-template-columns: 1fr auto; gap:2px 10px; padding:6px 0; align-items:baseline; }
       .hp-row + .hp-row { border-top:1px solid rgba(0,0,0,.05); }
@@ -24592,7 +24613,10 @@ function Style() {
       .is-touch .popped .health-pop, .is-touch .popped .hf-pop, .is-touch .popped .mdial-pop {
         display:block; position:static; opacity:1; pointer-events:auto; transform:none;
         width:100%; max-width:none; min-width:0; margin-top:12px;
+        max-height:none; overflow:visible;
         animation:popOpen .34s var(--ease-bloop) both; }
+      /* On a tap there is no card-to-panel gap to point across. */
+      .is-touch .hero-health::after { display:none; }
       .is-touch .popped .health-pop::after, .is-touch .popped .hf-pop::after,
       .is-touch .popped .mdial-pop::after { display:none; }
       /* Two motions, on purpose. The panel arrives with the bloop everything
