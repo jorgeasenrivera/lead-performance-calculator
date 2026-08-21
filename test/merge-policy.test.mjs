@@ -26,7 +26,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { FIELD_POLICY, STRATEGIES } from "../api/_store-merge.mjs";
+import { FIELD_POLICY, STRATEGIES, DEAD_FIELDS } from "../api/_store-merge.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const MERGE = fs.readFileSync(path.join(ROOT, "api/_store-merge.mjs"), "utf8");
@@ -78,9 +78,11 @@ test("every rule says why, so the next person inherits the reasoning", () => {
   assert.deepEqual(bare, []);
 });
 
-/* The two rules that mean "the merge does not touch this": one is an admission
-   that a field has no rule yet, the other is a decision that it never needs one. */
-const UNMERGED = new Set(["clientWins", "deadField"]);
+/* The one rule that means "the merge does not touch this", and it is an
+   admission rather than a decision: the field has no rule yet. There are none
+   left. A field that turned out to have no purpose is deleted now rather than
+   given a rule for its own sake — see DEAD_FIELDS. */
+const UNMERGED = new Set(["clientWins"]);
 
 /* ---- the check that makes the table falsifiable ---- */
 test("a field claiming to be unmerged is really unmerged", () => {
@@ -97,17 +99,30 @@ test("and a field claiming a rule is really merged", () => {
     "declares a rule the merge does not carry out; either merge it or mark it clientWins");
 });
 
-/* ---- what is left unmerged, named, so it can only grow on purpose ---- */
-test("nothing is left unmerged except the field that is dead", () => {
+/* ---- nothing is left unmerged at all ---- */
+test("no field of a store is left for the last writer to win", () => {
   const unmerged = Object.entries(FIELD_POLICY)
     .filter(([, v]) => UNMERGED.has(v.how)).map(([f]) => f).sort();
-  assert.deepEqual(unmerged, ["repeatFlags"],
-    "a field a second manager can silently lose their work on. If that is deliberate, say why in the row and add it here.");
+  assert.deepEqual(unmerged, [],
+    "a field a second manager can silently lose their work on, with no error and nothing in the log");
   /* The seven that used to be gaps are closed, so nothing should still be
      claiming to be one. A gap left marked after the work was done would put the
      next person off looking. */
   const stillMarked = Object.entries(FIELD_POLICY).filter(([, v]) => v.gap).map(([f]) => f);
   assert.deepEqual(stillMarked, [], "marked as a gap but no longer one");
+});
+
+test("a field that was deleted is not quietly still around", () => {
+  /* Deleting beats merging for something nothing reads, but only if it is really
+     gone: a dead field with a policy row, or one the merge still writes, is a
+     field that was never actually removed. */
+  for (const f of DEAD_FIELDS) {
+    assert.ok(!FIELD_POLICY[f], `${f} is deleted but still has a merge rule`);
+    assert.ok(!ASSIGNED.has(f), `${f} is deleted but the merge still writes it`);
+    assert.ok(!SNAPSHOT.has(f), `${f} is deleted but the importer still snapshots it`);
+    const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+    assert.ok(!APP.includes(f), `${f} is deleted but the app still carries it around`);
+  }
 });
 
 test("the app actually writes the stamps these rules are settled by", () => {

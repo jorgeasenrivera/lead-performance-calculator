@@ -2346,7 +2346,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
-      repeatFlags: data.repeatFlags, excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
+      excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -15631,7 +15631,7 @@ function UploadHistory({ data, onChange }) {
           roster: current.roster, months: current.months, activity: current.activity,
           plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
           stars: current.stars, goals: current.goals, baselines: current.baselines,
-          repeatFlags: current.repeatFlags, excluded: current.excluded,
+          excluded: current.excluded,
         })) },
         ...(current.snapshots || []),
       ].slice(0, 12),
@@ -15641,7 +15641,6 @@ function UploadHistory({ data, onChange }) {
       goals: current.goals,
       baselines: current.baselines,
       stars: current.stars,
-      repeatFlags: current.repeatFlags,
       excluded: current.excluded,
     };
     onChange(restored, { action: "Undid upload", detail: `${u.label} (${u.file})` });

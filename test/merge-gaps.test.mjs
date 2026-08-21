@@ -120,9 +120,12 @@ test("and excluding them again afterwards also sticks", () => {
   assert.deepEqual(merge(mine, server).statsExcluded, ["Fin Smith"]);
 });
 
-/* ---- and the one that is deliberately left alone ---- */
-test("repeatFlags is untouched, because nothing reads or writes it", () => {
+/* ---- and the one that turned out not to be a field at all ---- */
+test("repeatFlags is dropped rather than merged, from either side", () => {
+  /* Nothing read it and nothing wrote it; it was carried from document to
+     document for no reason. Giving it a merge rule would have been inventing
+     behaviour to protect something that had none, so it is deleted instead, and
+     it drains on the next save of each store rather than needing a job run. */
   const out = merge({ repeatFlags: { keep: 1 } }, { repeatFlags: { other: 2 } });
-  assert.deepEqual(out.repeatFlags, { keep: 1 },
-    "it is dead; merging it would be inventing a rule for something with no behaviour");
+  assert.ok(!("repeatFlags" in out), "still there: " + JSON.stringify(out.repeatFlags));
 });

@@ -62,8 +62,22 @@ import { foldAliases } from "./_people-status.mjs";
    A new branch of the merge cannot reopen this class of fault, because whatever
    it hands back goes through here before it is saved.
    ========================================================================= */
+/* Fields that used to be part of a store and are not any more.
+
+   repeatFlags was the first. Every reference to it in the app and the pipeline
+   was copy-through — snapshot lists and an undo-restore list — so nothing read a
+   value out of it and nothing wrote one in. It was carried from document to
+   document for no reason at all.
+
+   Dropping it here rather than in a migration means it drains on the next save
+   of each store, with no separate job to run and nothing to remember. An old
+   snapshot restored through undo can bring one back; the next save takes it out
+   again, which is the whole point of doing it on the way through. */
+export const DEAD_FIELDS = ["repeatFlags"];
+
 export function applyDecisions(doc) {
   const next = doc || {};
+  for (const f of DEAD_FIELDS) if (f in next) delete next[f];
   /* Who somebody is. Folds any figures filed under a spelling that has since
      been merged into a real person. */
   foldAliases(next);
@@ -193,7 +207,6 @@ export const STRATEGIES = {
   stampedMap: "A map keyed by person, settled key by key against a stamp. An absence with a newer stamp is a removal rather than ignorance, which is the distinction this system has failed to draw five times.",
   stampedDayMap: "The same, one level deeper: day, then person. Stamps outside the ninety-day window are dropped, since no tab is old enough to argue about them.",
   fillOnly: "Gaps filled, nothing overwritten and nothing removed. For a field nothing writes any more.",
-  deadField: "Nothing reads it and nothing writes it. Not merged on purpose, and the data is left alone rather than deleted, because deleting it would gain nothing and cannot be undone.",
   clientWins: "NOT MERGED. This copy is written over the server's whole. A concurrent change by another manager is silently lost. Every one of these is a gap, not a decision.",
 };
 
@@ -243,7 +256,6 @@ export const FIELD_POLICY = {
   statsExcluded: { how: "stampedUnion", why: "Who is out of the store's benchmark averages. A list, so a union like the ignore list, and putting somebody back into the averages is stamped rather than filtered." },
   statsExcludedAt: { how: "tombstones", why: "When somebody was taken out of the averages. Half of a pair: one stamp alone could only ever say it once, so re-excluding after a re-inclusion could never win." },
   statsExcludedGone: { how: "tombstones", why: "And when they were put back in. The two are compared by time, so the decision can be changed as often as somebody changes their mind." },
-  repeatFlags:   { how: "deadField", why: "Every reference in the app and the pipeline is copy-through: nothing reads a value out of it and nothing writes one in. Left alone rather than merged or deleted." },
 };
 
 /* A plate tag, compared the way a person would compare two of them: case and
@@ -600,9 +612,5 @@ export function mergeAgainstServer(next, serverCopy) {
            class of fault that has now been found six times. */
         applyDecisions(next);
 
-        /* repeatFlags is deliberately absent: it is dead. Every reference in the
-           app and the pipeline is copy-through, nothing reads a value out of it
-           and nothing writes one in. Merging it would be inventing a rule for
-           something with no behaviour to protect. */
   return next;
 }

@@ -72,9 +72,12 @@ Established by reading every reference, 2026-08-21:
   bar of 40 instead of a yes/no. **Nothing writes it any more** — tapping the new control
   deletes the old star value so the two cannot disagree. It is only still read so that old
   months keep scoring. It can shrink, never grow.
-- **`repeatFlags` — dead.** Every reference in the app and the pipeline is copy-through:
-  snapshot lists and restore lists. Nothing reads a value out of it and nothing writes one
-  in. Safe to delete rather than write a merge rule for.
+- **`repeatFlags` — dead, and now deleted.** Every reference in the app and the pipeline was
+  copy-through: snapshot lists and an undo-restore list. Nothing read a value out of it and
+  nothing wrote one in; it was carried from document to document for no reason. Jorge chose
+  deletion over a merge rule. It is in `DEAD_FIELDS` and drains on the next save of each
+  store, so there is no job to run. An old snapshot restored through undo can bring one
+  back; the next save takes it out again.
 - **`statsExcluded` — live, keep.** People left out of the store's *benchmark averages*, so
   one outlier does not drag the store's comparison numbers around. Toggled per person on
   the coaching screen, where it shows as an "out of stats" badge.
