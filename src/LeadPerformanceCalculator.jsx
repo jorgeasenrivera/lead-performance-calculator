@@ -20033,6 +20033,57 @@ function StandardsEditor({ config, storeId, onChange }) {
    never earned them. Collapsing those two into "remove" is how a month that
    delivered 85 came to read 84.5.
    ========================================================================= */
+/* ---- "no, that one is Karina" ------------------------------------------
+   One picker, everywhere a name can appear, because Jorge asked for exactly the
+   thing its absence caused:
+
+     the merging names selector only pops up if the site notices that it has a
+     name that's similar, I want to also have the ability to pick it as well
+
+   Which was true, and was the wrong way round. The app offered the fold only
+   where it had already worked out the answer — the mangled-name list and the
+   holding pen — and stayed silent on the two lists where a person is most likely
+   to know something the measure never will. A nickname, a maiden name, a first
+   name spelled the way somebody's family spells it: no edit distance finds those,
+   and a manager recognises them at a glance.
+
+   So the suggestion stays a suggestion and the whole roster is always under it.
+   The measure gets to sort the list; the person gets to decide.
+
+   Never offers somebody themselves, and never offers a name the store has said is
+   not one of its people — folding a real month into a heading is the one mistake
+   here that costs figures. */
+function SameAsPicker({ data, people, name, label = "Same as someone\u2026", confirm = false, onPick }) {
+  const key = norm(name);
+  const hits = likelyMatches(data, name).filter((h) => h.key !== key);
+  const best = hits.find((h) => h.confident);
+  const rest = (people || [])
+    .filter((x) => x.status !== "ignored" && x.key !== key && !hits.some((h) => h.key === x.key));
+  return (
+    <select className="q-flag-sel pp-same" value=""
+      onChange={(e) => {
+        const to = e.target.value;
+        e.target.value = "";
+        if (!to) return;
+        /* Asked only where the name being folded is somebody the store claims.
+           A stranger in the figures has nothing to lose; a person on the roster
+           comes off it, and that is worth a sentence first. */
+        if (confirm && !window.confirm(
+          `${name} and ${to} are the same person?\n\n` +
+          `${name}'s figures move onto ${to}, and ${name} comes off this store's lists. ` +
+          `The spelling is remembered, so the next report needs no repair.`)) return;
+        onPick(to);
+      }}>
+      <option value="">{best ? `Same as ${best.name}?` : label}</option>
+      {hits.map((h) => (
+        <option key={h.key} value={h.name}>{h.name}{h.confident ? " \u00b7 looks like a match" : ""}</option>
+      ))}
+      {rest.length > 0 && hits.length > 0 && <option disabled>{"\u2014".repeat(10)}</option>}
+      {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
+    </select>
+  );
+}
+
 function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChange, userName }) {
   const [q, setQ] = useState("");
   /* The floor is the answer to "who works here", and it is the only one anybody
@@ -20250,6 +20301,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 <button className="btn btn-sm" onClick={() => onChange(
                   mergeManglings(data, [r], { by: userName }),
                   { action: "Merged a misread name", detail: `${r.from} → ${r.to}` })}>Merge</button>
+                {/* The arrow is the app's guess. It is right almost always and
+                    unarguable never, and a wrong guess used to leave nothing to do
+                    but merge it wrongly or leave it alone for ever. */}
+                <SameAsPicker data={data} people={people} name={r.from} label="or somebody else\u2026"
+                  onPick={(to) => onChange(sameAs(data, r.from, to, { by: userName, note: "picked by hand" }),
+                    { action: "Merged a misread name", detail: `${r.from} → ${to}` })} />
               </div>
             ))}
             {wrongRead.length > 40 && (
@@ -20322,28 +20379,9 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     which is worse than a duplicate row. Nicknames are the common
                     case that no measure can safely offer, so the list is not
                     limited to the suggestions. */}
-                <select className="q-flag-sel pp-same" value=""
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    onChange(sameAs(data, w.name, e.target.value, { by: userName }),
-                      { action: "Folded a spelling into a person", detail: `${w.name} → ${e.target.value}` });
-                  }}>
-                  {(() => {
-                    const hits = likelyMatches(data, w.name);
-                    const best = hits.find((h) => h.confident);
-                    const rest = people.filter((x) => x.status !== "ignored" && !hits.some((h) => h.key === x.key));
-                    return (
-                      <>
-                        <option value="">{best ? `Same as ${best.name}?` : "Same as someone…"}</option>
-                        {hits.map((h) => (
-                          <option key={h.key} value={h.name}>{h.name}{h.confident ? " · looks like a match" : ""}</option>
-                        ))}
-                        {rest.length > 0 && hits.length > 0 && <option disabled>──────────</option>}
-                        {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
-                      </>
-                    );
-                  })()}
-                </select>
+                <SameAsPicker data={data} people={people} name={w.name} onPick={(to) =>
+                  onChange(sameAs(data, w.name, to, { by: userName }),
+                    { action: "Folded a spelling into a person", detail: `${w.name} → ${to}` })} />
               </div>
             ))}
           </div>
@@ -20396,6 +20434,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 </span>
                 <button className="btn btn-sm" onClick={() => move(sname.name, "active", "claimed from unmatched figures")}>They work here</button>
                 <button className="btn btn-sm pp-danger" onClick={() => move(sname.name, "ignored", "figures belonged to another store")}>Not ours</button>
+                {/* The third answer this list was missing. "Not ours" and "they work
+                    here" are both wrong for a name that is somebody you already
+                    have spelled differently, and until now there was nothing else
+                    to say — so the figures either stayed as a duplicate row or were
+                    thrown away. */}
+                <SameAsPicker data={data} people={people} name={sname.name} onPick={(to) =>
+                  onChange(sameAs(data, sname.name, to, { by: userName }),
+                    { action: "Folded a spelling into a person", detail: `${sname.name} → ${to}` })} />
               </div>
             ))}
           </div>
@@ -20697,6 +20743,32 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   {acctSaid && acctSaid.key === key && (
                     <p className={acctSaid.bad ? "sched-err" : "hint"}><b>{acctSaid.text}</b></p>
                   )}
+
+                  {/* ---- the same person, twice ----
+                      The other half of what Jorge asked for. Every picker before
+                      this one is on a list of names the store does NOT claim, and
+                      the commonest duplicate is two entries the store claims both
+                      of: a maiden name and a married one, a first name spelled two
+                      ways, somebody added by hand who was already there under what
+                      the reports call them. No measure catches those and nothing
+                      here could say so.
+
+                      Their figures are added together rather than one copy winning,
+                      because half a month under each spelling is exactly how this
+                      goes wrong, and the spelling is remembered so the next report
+                      files itself correctly. */}
+                  <div className="pp-move-row pp-samerow">
+                    <span className="pp-date">Same person as</span>
+                    <SameAsPicker data={data} people={people} name={p.name} confirm
+                      label={"Somebody already on this list\u2026"}
+                      onPick={(to) => onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }),
+                        { action: "Folded a duplicate person", detail: `${p.name} → ${to}` })} />
+                  </div>
+                  <p className="hint">
+                    Only when they are genuinely one person under two spellings. {p.name} comes off this
+                    store's lists and their cars move across. Two people who happen to share a name are
+                    not this, and merging them puts one person's month onto the other.
+                  </p>
                 </div>
               );
             })()}
@@ -23215,6 +23287,23 @@ function Style() {
         background:rgba(255,255,255,.55); border:1px solid rgba(16,32,52,.09); }
       .pp-acctbox .hint { margin:0 0 9px; }
       .pp-acctbox .hint:last-child { margin:9px 0 0; }
+      .pp-samerow { margin-top:11px; padding-top:11px; border-top:1px solid rgba(16,32,52,.08); }
+      /* The base select is drawn for the dark boards, which on this white card is
+         a bordered control with no border: it read as a label rather than as
+         something to open. */
+      /* Tagged with the element on purpose. The board's own .q-flag-sel is defined
+         further down the sheet, at the same specificity, so a bare .pp-same loses
+         to it and the control comes out with no border at all on a white card. */
+      select.pp-same { max-width:min(100%, 320px); background:#fff; color:inherit;
+        border:1px solid rgba(16,32,52,.18); border-radius:10px; padding:7px 10px;
+        font-size:13px; font-weight:600; cursor:pointer; }
+      select.pp-same:hover { border-color:rgba(16,32,52,.34); }
+      /* Every other picker on this white card had the same problem, for the same
+         reason: a white border on a white background. Position, languages and the
+         account picker all read as plain text you had to discover were clickable. */
+      .pp-list select.q-flag-sel, .pp-strangers select.q-flag-sel, .pp-acctbox select.q-flag-sel {
+        background:#fff; color:inherit; border:1px solid rgba(16,32,52,.18); border-radius:10px;
+        padding:7px 10px; font-size:13px; font-weight:600; cursor:pointer; }
       .pp-acct-line { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; margin-bottom:9px; }
       .pp-acct-line b { font-size:13.5px; }
       .pp-acct-line span { font-size:11.5px; color:var(--ink-3); }

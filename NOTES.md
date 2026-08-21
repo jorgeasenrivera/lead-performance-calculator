@@ -111,6 +111,28 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## Picking the person yourself — BUILT 2026-08-21
+
+> the merging names selector only pops up if the site notices that it has a name that's
+> similar, I want to also have the ability to pick it as well
+
+True, and the wrong way round. The app offered the fold only where it had already worked out
+the answer — the mangled-name list and the holding pen — and said nothing on the two lists
+where a person is most likely to know something the measure never will. A nickname, a maiden
+name, a first name spelled the way a family spells it: no edit distance finds those, and a
+manager recognises them at a glance.
+
+One picker now, in four places: the holding pen, the strangers-in-the-figures list, beside
+the app's guess on a misread name (so a wrong guess can be redirected instead of merged
+wrongly or left alone for ever), and inside a person's own Details — which is the case none
+of the others could reach, two entries the store claims BOTH of. The suggestion still sorts
+to the top; the whole roster is always under it. The measure sorts, the person decides.
+
+Folding a person the store claims asks first, because they come off the roster. Folding a
+name in the figures does not, because nothing is lost either way.
+
+---
+
 ## The removal bug, instance seven — FIXED 2026-08-21
 
 Reported as *"trying to merge and it's still clicking and then reverting back"*, twenty-four
