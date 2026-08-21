@@ -13438,8 +13438,8 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                     </td>
                     <td className="mono">{p.by || "-"}</td>
                     <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
-                    <td>
-                      {handing !== p.id && <button className="btn-quiet" onClick={() => { setPlateErr(""); setHanding(p.id); }}>Hand over</button>}
+                    <td className="plate-acts plate-acts-3">
+                      <span>{handing !== p.id && <button className="btn-quiet" onClick={() => { setPlateErr(""); setHanding(p.id); }}>Hand over</button>}</span>
                       <button className="plate-check out" onClick={() => toggleIn(p.id)}>Mark returned</button>
                       <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
                     </td>
@@ -13510,7 +13510,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                   <td>{p.checkedIn ? <span className="plate-returned">{fmtTimeShort(p.returnedAt)}</span> : <span className="plate-out-tag">Still out</span>}</td>
                   <td className="mono">{p.by || "-"}</td>
                   <td><button className="plate-hist-btn" onClick={() => setHistoryFor(p.id)}>{(p.history || []).length} event{(p.history || []).length === 1 ? "" : "s"}</button></td>
-                  <td>
+                  {/* Two fixed columns. "Mark returned" is wider than "Returned",
+                      so letting these sit side by side put Remove in a different
+                      place on every line and the eye had to find it each time. */}
+                  <td className="plate-acts">
                     <button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? <><PixIcon glyph="check" size={11} /> Returned</> : "Mark returned"}</button>
                     <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
                   </td>
@@ -14519,9 +14522,20 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
    target. Short of the tick is a gap, past it is fine. The tick's position and
    the colour both carry the meaning, so it still reads if colours are hard to
    tell apart or the screen is glanced at from across a desk. */
+/* The four every tier is written in terms of, in one order, always. Tiers ask for
+   different subsets, so drawing only what each one requires gave every row a
+   different number of dials in different places, and a column of people became a
+   column of nothing lining up with anything. Reading down a column is the whole
+   point of putting them side by side. */
+const STRIP_METRICS = ["apptVideoDayPct", "deliveredPct", "engagedVideoPct", "bhVideoPct"];
+
 function MetricStrip({ ev, stats }) {
   const reqs = ev?.tier?.requirements;
   if (!reqs || !reqs.length) return null;
+  const need = new Map(reqs.map((r) => [r.metric, r]));
+  /* The fixed four first, then anything else this tier happens to ask for. A
+     requirement must never be hidden just because it is unusual. */
+  const columns = [...STRIP_METRICS, ...reqs.map((r) => r.metric).filter((m) => !STRIP_METRICS.includes(m))];
 
   // 180-degree dial: centre (38,40), radius 30. The target sits at 70% of the
   // sweep rather than the end, so beating it still has somewhere to travel.
@@ -14536,22 +14550,54 @@ function MetricStrip({ ev, stats }) {
 
   return (
     <div className="mstrip">
-      {reqs.map((req, i) => {
-        const def = METRICS[req.metric];
-        const v = stats?.[req.metric];
-        const need = def.kind === "pct" ? req.min / 100 : req.min;
-        const ratio = (v == null || need <= 0) ? 0 : v / need;
+      {columns.map((metric, i) => {
+        const req = need.get(metric);
+        const def = METRICS[metric];
+        if (!def) return null;
+        const v = stats?.[metric];
+
+        /* Shown, but not graded. This tier does not ask for it, so there is no
+           target and therefore no scale: a sweep would be inventing one. The
+           figure and the empty dial keep the column, which is what it is here
+           for, and say plainly that nothing is being measured against. */
+        if (!req) {
+          return (
+            <div key={metric} className="mdial mdial-off">
+              <svg viewBox="0 0 76 48" aria-hidden="true">
+                <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
+                <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">
+                  {v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v))}
+                </text>
+              </svg>
+              <div className="mdial-label">
+                {METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")}{" "}
+                {/* Short because the column is 88px and the metric name already
+                    fills most of it. The hover card carries the full sentence. */}
+                <span className="mdial-need">n/a</span>
+              </div>
+              <div className="mdial-pop">
+                <div className="mp-title">{def.label}</div>
+                <div className="mp-desc">
+                  This tier does not ask for it, so nothing is being measured against.
+                  The figure is here so the row lines up with the ones that are.
+                </div>
+              </div>
+            </div>
+          );
+        }
+        const want = def.kind === "pct" ? req.min / 100 : req.min;
+        const ratio = (v == null || want <= 0) ? 0 : v / want;
         const t = Math.max(0, Math.min(1, ratio * TARGET_T));
         const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
         const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
         const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
-        const lbl = METRIC_TINY[req.metric] || def.short.replace(/\s*%\s*$/, "");
+        const lbl = METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "");
         // How far off target, in the metric's own units, for the hover card.
         const shortBy = (v == null || ratio >= 1) ? null
-          : (def.kind === "pct" ? ((need - v) * 100).toFixed(1) + " points" : fmtNum(need - v));
+          : (def.kind === "pct" ? ((want - v) * 100).toFixed(1) + " points" : fmtNum(want - v));
         const [nx, ny] = pt(t, R);
         return (
-          <div key={i} className={"mdial mdial-" + state}>
+          <div key={metric} className={"mdial mdial-" + state}>
             <svg viewBox="0 0 76 48" aria-hidden="true">
               <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
               <path className="md-fill" d={arc} fill="none" strokeWidth="7" strokeLinecap="round"
@@ -23459,12 +23505,20 @@ function Style() {
 
       /* ---- scorecard dials: the 5-second read on every associate ---- */
       .reason-lead { font-size:12.5px; color:var(--ink-2); margin-bottom:10px; }
-      .mstrip { display:flex; flex-wrap:wrap; gap:10px 14px; }
+      /* A grid of fixed columns rather than a row of whatever fits. Every dial is
+         88px, so column four sits under column four on every row and a manager
+         can read down "Delivery" instead of hunting for it on each line. */
+      .mstrip { display:grid; grid-auto-flow:column; grid-auto-columns:88px; gap:10px 14px; justify-content:start; }
       /* On the associate row the dials ride to the right of the name and stay
          together as one unit; the row itself wraps them if the screen is narrow. */
-      .assoc-row .mstrip { margin-left:auto; flex-wrap:nowrap; gap:10px; }
+      .assoc-row .mstrip { margin-left:auto; gap:10px; }
       .mstrip + .assoc-leads { margin-left:14px; }
       .mdial { width:88px; text-align:center; position:relative; }
+      /* Present for the column, not being graded. Quiet enough that the eye goes
+         to the ones with a target on them. */
+      .mdial-off { opacity:.42; }
+      .mdial-off .md-val { fill:var(--ink-3); }
+      .mdial-off:hover { opacity:.75; }
       .mdial svg { display:block; width:88px; height:50px; overflow:visible;
         transition: transform .36s cubic-bezier(.34,1.56,.64,1); }
       .mdial:hover { z-index:41; }
@@ -23473,8 +23527,12 @@ function Style() {
       .md-target { stroke:rgba(0,0,0,.5); }
       .md-val { font-size:13px; font-weight:800; letter-spacing:-.03em; fill:var(--ink);
         font-variant-numeric:tabular-nums; }
+      /* Wraps rather than truncates. "ENGAGED VIDEO 40%" does not fit an 88px
+         column on one line, and "ENGAGED VIDE…" tells a manager less than two
+         short lines do. Two lines of room is reserved on every dial so the
+         labels sit on the same baseline whether they wrap or not. */
       .mdial-label { font-size:8.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;
-        color:var(--ink-2); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        color:var(--ink-2); margin-top:1px; line-height:1.25; min-height:2.5em; }
       .mdial-need { font-size:8px; color:var(--ink-3); font-weight:700; font-variant-numeric:tabular-nums; }
 
       /* Hover card. The overshoot in the timing function is the "bloop". */
@@ -23924,7 +23982,14 @@ function Style() {
 
       /* ---- plate tracker ---- */
       .plate-out td { }
-      .plate-check { border:none; border-radius:8px; padding:5px 12px; font-weight:600; font-size:12px; cursor:pointer; }
+      /* The status pill gets a column of its own and fills it, so Remove starts at
+         the same x on every row and reads as a column rather than a ragged edge. */
+      .plate-acts { display:grid; grid-template-columns:8.9rem max-content; gap:8px; align-items:center; justify-content:start; }
+      .plate-acts-3 { grid-template-columns:6.2rem 8.9rem max-content; }
+      .plate-acts .plate-check { width:100%; }
+      @media (max-width:760px) { .plate-acts, .plate-acts-3 { grid-template-columns:1fr; gap:5px; } }
+      .plate-check { border:none; border-radius:8px; padding:5px 12px; font-weight:600; font-size:12px; cursor:pointer;
+        display:inline-flex; align-items:center; justify-content:center; gap:5px; }
       .plate-check.out { background:rgba(255,159,10,.16); color:var(--amber); }
       .plate-check.in { background:rgba(48,177,85,.14); color:#1E7A3C; }
       .plate-time { border:none; background:transparent; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; padding:4px 8px; border-radius:7px; display:inline-flex; align-items:center; gap:6px; }
@@ -24861,7 +24926,10 @@ function Style() {
         .hf-wide { grid-column:auto; }
         /* --- dials: bigger tap targets --- */
         .mstrip { gap:14px 12px; }
-        .assoc-row .mstrip { flex-wrap:wrap; margin-left:0; }
+        /* Narrow screens wrap to two rows of two rather than one long scroll,
+           and the columns still line up because the tracks are the same width. */
+        .assoc-row .mstrip { margin-left:0; }
+        .mstrip { grid-auto-flow:row; grid-template-columns:repeat(2, 88px); grid-auto-columns:auto; }
         .mdial { width:calc(33.333% - 8px); }
         /* The cap sentence is what the bar and the pill under it already say. On a
            phone, where reading is the expensive part, the visual carries it. */
