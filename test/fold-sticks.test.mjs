@@ -20,6 +20,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sameAs, foldAliases, manglings, unclaimed } from "../api/_people-status.mjs";
+import { mergeAgainstServer } from "../api/_store-merge.mjs";
 
 const ym = new Date().toISOString().slice(0, 7);
 const store = () => ({
@@ -94,4 +95,84 @@ test("an alias pointing at an alias lands on the real person", () => {
   foldAliases(d);
   assert.equal(d.months[ym].stats["alejandro diaz"].internetUnits, 8,
     JSON.stringify(d.months[ym].stats));
+});
+
+
+/* =========================================================================
+   And the seventh time, reported the same way: "trying to merge and it's still
+   clicking and then reverting back", twenty-four names at Holler Honda.
+
+   The figures were fixed. The LISTS were not. sameAs takes the misspelling off
+   the roster and out of the holding pen by deleting it, and both of those are
+   unions in the merge — the roster so a stale tab cannot drop somebody, the pen
+   so two reports can each hold half of one unclaimed person. The server's copy
+   handed the name straight back, and the screen offered it again.
+
+   Every list this store keeps is checked here, because "we fixed the two that
+   were reported" is what produced instances two through six.
+   ========================================================================= */
+const withName = (where) => {
+  const d = store();
+  d.excluded = d.excluded || []; d.departed = d.departed || []; d.pendingPeople = d.pendingPeople || {};
+  d.importLog = [{ id: "i1", t: "2026-08-21T10:00:00.000Z" }];
+  if (where === "roster") d.roster.push({ id: "a9", name: "Alejandro Diaz Visit", roleId: "sales" });
+  if (where === "excluded") d.excluded.push("Alejandro Diaz Visit");
+  if (where === "departed") d.departed.push({ name: "Alejandro Diaz Visit", at: "2026-07-01T00:00:00.000Z" });
+  if (where === "pendingPeople") d.pendingPeople["alejandro diaz visit"] = { name: "Alejandro Diaz Visit", months: {}, days: {} };
+  return d;
+};
+/* The ordinary case, not the rare one: reports arrive hourly, so the server
+   almost always has an import this browser has never seen. */
+const serverAhead = (d) => {
+  const s = JSON.parse(JSON.stringify(d));
+  s.importLog = [{ id: "i2", t: "2026-08-21T18:00:00.000Z" }];
+  return s;
+};
+
+for (const where of ["roster", "excluded", "departed", "pendingPeople", "the figures alone"]) {
+  test(`a name folded away does not come back off ${where}`, () => {
+    const mine = withName(where);
+    const rows = manglings(mine);
+    assert.equal(rows.length, 1, `nothing was offered to merge from ${where}`);
+    const folded = sameAs(mine, rows[0].from, rows[0].to, { by: "Jorge" });
+    assert.deepEqual(manglings(folded), [], "still offered before the merge even ran");
+    const out = mergeAgainstServer(JSON.parse(JSON.stringify(folded)), serverAhead(mine));
+    assert.deepEqual(manglings(out).map((r) => r.from), [],
+      `came back off ${where}: the merge screen offers it again seconds after it was merged`);
+  });
+}
+
+test("and the person it was folded into keeps everything", () => {
+  const mine = withName("roster");
+  const rows = manglings(mine);
+  const out = mergeAgainstServer(
+    JSON.parse(JSON.stringify(sameAs(mine, rows[0].from, rows[0].to, { by: "Jorge" }))), serverAhead(mine));
+  assert.equal(out.months[ym].stats["alejandro diaz"].internetUnits, 7, "3 folded into 4");
+  assert.equal(out.months[ym].stats["alejandro diaz visit"], undefined);
+  assert.ok(out.roster.some((a) => a.name === "Alejandro Diaz"), "the real person was taken off the roster");
+  assert.equal(out.roster.filter((a) => /Visit/.test(a.name)).length, 0);
+});
+
+test("everybody else on the lists is left exactly where they were", () => {
+  /* The fold reaches into four lists now. A pass that took anybody else off any
+     of them would be a far worse fault than the one it fixes. */
+  const mine = withName("roster");
+  mine.roster.push({ id: "a2", name: "Fin Smith", roleId: "sales" });
+  mine.excluded.push("Round Robin");
+  mine.departed.push({ name: "Rick Dawkins", at: "2026-07-01T00:00:00.000Z" });
+  mine.pendingPeople["vernon johnson"] = { name: "Vernon Johnson", months: {}, days: {} };
+  const rows = manglings(mine);
+  const out = foldAliases(sameAs(mine, rows[0].from, rows[0].to, { by: "Jorge" }));
+  assert.ok(out.roster.some((a) => a.name === "Fin Smith"));
+  assert.ok(out.excluded.includes("Round Robin"));
+  assert.ok(out.departed.some((d) => d.name === "Rick Dawkins"));
+  assert.ok(out.pendingPeople["vernon johnson"], "somebody still waiting to be claimed was dropped");
+});
+
+test("a store with no folds at all is not touched", () => {
+  const d = store();
+  d.roster.push({ id: "a9", name: "Alejandro Diaz Visit", roleId: "sales" });
+  const before = JSON.stringify(d);
+  foldAliases(d);
+  assert.equal(JSON.stringify(d), before, "a document with no aliases must come back untouched");
 });

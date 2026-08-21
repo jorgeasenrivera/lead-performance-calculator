@@ -557,6 +557,36 @@ export function foldAliases(data) {
       delete row[from];
     }
   }
+
+  /* ---- and off every list, every time ----
+     The seventh instance of the same fault, and the second one inside this
+     function. sameAs takes the misspelling off the roster and out of the holding
+     pen with a plain deletion. Both of those are UNIONS in the merge — the roster
+     so that a stale tab cannot drop somebody, the holding pen so that two reports
+     can each hold half of one unclaimed person — so the server's copy handed the
+     name straight back and the merge screen offered it again seconds later.
+     Twenty-four names at Holler Honda, merged and re-appearing, for as long as
+     the fold lived only in the copy that had just been replaced.
+
+     A stamp is not needed and would be a seventh way of saying the same thing:
+     the alias IS the record, it is already a union, and it already survives every
+     merge. So the decision is simply carried out again here, over whatever the
+     lists now say, the same way the figures are.
+
+     One consequence worth knowing: while a name is an alias it cannot be on a
+     list at all. Somebody who really is called that would have to have the alias
+     removed first, which is right — two people cannot share one spelling and this
+     store has already decided which one it means. */
+  const aliased = (name) => {
+    const k = nm(name);
+    return !!k && !!aliases[k] && aliases[k] !== k;
+  };
+  next.roster = (next.roster || []).filter((a) => !aliased(a && a.name));
+  next.departed = (next.departed || []).filter((d) => !aliased(d && d.name));
+  next.excluded = (next.excluded || []).filter((x) => !aliased(x));
+  for (const k of Object.keys(next.pendingPeople || {})) {
+    if (aliases[k] && aliases[k] !== k) delete next.pendingPeople[k];
+  }
   return next;
 }
 
