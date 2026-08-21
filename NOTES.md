@@ -49,9 +49,13 @@ those stay open. Confirm with Jorge before building either way.
 
 ---
 
-## Merge policy decisions (for the store-merge work)
+## Merge policy decisions — BUILT 2026-08-21
 
 Answers given 2026-08-21, in response to the scope of the "one guard" merge work.
+All of it is in now: the merge is `api/_store-merge.mjs`, every field declares its
+rule in `FIELD_POLICY`, the seven that had no rule have one, and `applyDecisions`
+runs every recorded decision over whatever a merge produces. Kept here because the
+reasoning is worth more than the outcome.
 
 | Field | Decision |
 |---|---|
@@ -75,8 +79,15 @@ Established by reading every reference, 2026-08-21:
   one outlier does not drag the store's comparison numbers around. Toggled per person on
   the coaching screen, where it shows as an "out of stats" badge.
 
-**Worth knowing about `statsExcluded`:** it is an array, and removing somebody from it is a
-plain `filter`. It is not merged at all today, so a removal does stick — but a second
-manager's concurrent addition is silently lost. If it is ever changed to a union without
-stamps, it becomes the sixth instance of the removal-does-not-survive bug. Give it stamps
-when the merge policy table is built.
+**`statsExcluded` got its stamps.** It was an array removed with a plain `filter`, which
+would have become the sixth instance of the removal-does-not-survive bug the moment anybody
+made it a union. It is a union now, with a stamped *pair* behind it — the first attempt used
+a single removal stamp and re-excluding somebody after putting them back could never win,
+because the other tab's removal stamp was unioned back every time.
+
+**The sixth instance turned up anyway, somewhere else.** Marking a roll-up row as ignored
+strips its figures, but the merge hands back the server's month whole, so the units walked
+back into the store's total while the name correctly stayed off every list. Found by writing
+the tests rather than by anybody noticing a wrong total. That is what `applyDecisions` is
+for: every decision is carried out again at the end of every merge, so a branch that hands
+data back cannot quietly undo one.

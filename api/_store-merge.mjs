@@ -34,6 +34,70 @@ import { norm } from "./_report-parsers.mjs";
 import { foldAliases } from "./_people-status.mjs";
 
 /* =========================================================================
+   Carrying out every decision, over whatever the merge just produced.
+
+   The merge settles each field against its own rule, and that is not the same
+   as the document obeying the decisions somebody made. Several branches above
+   hand back data this browser did not write — the biggest being
+
+     next.months = serverCopy.months     // when the server has the newer import
+
+   which is right on its own terms and returns everything the server's copy
+   still has in it, including things a manager has already decided are not this
+   store's. Twice now that has been a live fault:
+
+     a name folded into its real owner came back, because the fold was a
+     deletion and the month was handed over whole
+
+     a roll-up row marked as not one of this store's people kept its cars. The
+     name stayed off every list, correctly, while its forty units walked back
+     into the store's total — which is the one thing ignoring a name is for
+
+   Both were the same mistake: a decision carried out once, by deleting
+   something, in a system where deletions do not survive being merged. So the
+   decisions are carried out again here, at the end, against whatever the
+   document now holds. Idempotent by construction — each pass removes what it
+   removes and there is nothing left for a second pass to do.
+
+   A new branch of the merge cannot reopen this class of fault, because whatever
+   it hands back goes through here before it is saved.
+   ========================================================================= */
+export function applyDecisions(doc) {
+  const next = doc || {};
+  /* Who somebody is. Folds any figures filed under a spelling that has since
+     been merged into a real person. */
+  foldAliases(next);
+
+  /* Whose figures these are not. A name on the ignore list is not a person who
+     left — it is a duplicate, a heading a parser mistook for a person, or
+     another dealership's row, and the store never earned what is attached to
+     it. Departed people are deliberately not touched here: the store did sell
+     those cars, and a month that loses a leaver's deliveries reads as 84.5
+     where 85 were delivered. */
+  const ignored = new Set();
+  for (const x of next.excluded || []) {
+    const k = norm(x);
+    if (!k) continue;
+    const back = (next.unignored || {})[k] || "";
+    const out = (next.ignoredAt || {})[k] || "";
+    // No stamps at all predates the stamps and stays ignored, as it always has.
+    if (!(back > out)) ignored.add(k);
+  }
+  if (ignored.size) {
+    for (const m of Object.values(next.months || {})) {
+      if (!m || !m.stats) continue;
+      for (const k of Object.keys(m.stats)) if (ignored.has(k)) delete m.stats[k];
+    }
+    for (const day of Object.keys(next.activity || {})) {
+      const row = next.activity[day];
+      if (!row) continue;
+      for (const k of Object.keys(row)) if (ignored.has(k)) delete row[k];
+    }
+  }
+  return next;
+}
+
+/* =========================================================================
    Settling a keyed field by stamps.
 
    The seven fields that had no rule are all shaped the same way: a map keyed by
@@ -323,7 +387,6 @@ export function mergeAgainstServer(next, serverCopy) {
            aliases are a union first, so a tab that has never heard of the fold
            cannot drop it either. */
         next.aliases = { ...(serverCopy.aliases || {}), ...(next.aliases || {}) };
-        foldAliases(next);
         // The log itself is a union: no entry from either side should disappear.
         {
           const seen = new Set();
@@ -531,6 +594,12 @@ export function mergeAgainstServer(next, serverCopy) {
               return stillOut(n);
             });
         }
+        /* ---- and then every decision, over the whole of what came out ----
+           Last, so that it sees whatever every branch above decided to keep. This
+           is what stops the next branch somebody adds from quietly reopening the
+           class of fault that has now been found six times. */
+        applyDecisions(next);
+
         /* repeatFlags is deliberately absent: it is dead. Every reference in the
            app and the pipeline is copy-through, nothing reads a value out of it
            and nothing writes one in. Merging it would be inventing a rule for
