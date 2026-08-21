@@ -35,17 +35,29 @@ So the flag is driven off the coaching entries, not off store goals.
    their manager? Somewhere the manager is actually prompted to read it, or it will be
    written into a void.
 4. **Whether a manager can lift it**, and whether lifting it is recorded.
-5. **How much of the app the block covers.** See the risk below — this one matters most.
 
-### The risk worth naming before it is built
+### What the block covers — DECIDED 2026-08-21
 
-A hard block that catches the morning **QR sign-in to the line** would stop someone taking
-an up. Locking a salesperson out of the floor is the most expensive thing this app could
-do to a store, and it would land on whoever is already having the worst month.
+A hard block that caught the morning **QR sign-in to the line** would stop someone taking an
+up. Locking a salesperson off the floor is the most expensive thing this app could do to a
+store, and it would land on whoever is already having the worst month — which is the
+opposite of what the flag is for.
 
-The block should keep them out of the parts of the app that are about *reviewing* their
-performance, and let them keep *working*. Sign in to the line, take an up, log a delivery —
-those stay open. Confirm with Jorge before building either way.
+Jorge agreed the split. **The block stops them reviewing, never working.**
+
+| stays open | blocked until they write |
+|---|---|
+| sign in to the line, by QR or otherwise | their numbers, their trend, their standing |
+| take an up | the board, the summary, anything ranking them |
+| log a delivery, and anything else the floor needs | |
+
+The test of a candidate screen: if being locked out of it costs the store a sale, it stays
+open. Everything a salesperson does that puts money on the board keeps working; the part
+that tells them how they are doing is what waits on the note.
+
+Worth building the block as a list of screens it applies to rather than a list of exceptions,
+so that a screen added later is open by default. A new screen that silently joins the blocked
+set is how this ends up costing a sale a year from now.
 
 ---
 
