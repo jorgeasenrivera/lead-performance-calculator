@@ -356,3 +356,155 @@ export function priorFor(data, name) {
   }
   return out;
 }
+
+/* =========================================================================
+   The same person, spelled two ways.
+
+   "Juan Ruiz lopez" and "Juan Ruiz Lopez" are one salesperson and two rows, and
+   the tool had no way to be told so short of a schedule upload. Left alone they
+   split a month in half: two half-records, two sets of averages, and a manager
+   wondering why somebody's numbers halved.
+
+   The alias map already existed and both importers already honour it. What was
+   missing was any way to teach it from the place the problem actually shows up —
+   a held name that is obviously somebody you already have.
+   ========================================================================= */
+
+/** How far apart two names are. Small numbers mean a likely misspelling. */
+function editDistance(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m || !n) return m || n;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/**
+ * Who a stray name most likely already is.
+ *
+ * Ranked, and deliberately not decided: a suggestion a manager confirms is
+ * useful, and an automatic match is how two different people called Chris end up
+ * as one. Returns the best few, closest first, with the confident one flagged.
+ */
+export function likelyMatches(data, name, limit = 4) {
+  const k = nm(name);
+  if (!k) return [];
+  const tokens = (x) => new Set(x.split(" ").filter(Boolean));
+  const mine = tokens(k);
+  const out = [];
+  for (const p of everyone(data)) {
+    if (p.status === "ignored" || p.key === k) continue;
+    const theirs = tokens(p.key);
+    let shared = 0;
+    for (const t of mine) if (theirs.has(t)) shared++;
+    const d = editDistance(k, p.key);
+    /* Two signals, because either alone gets it wrong. Edit distance alone calls
+       "Toni Thomas" and "Toni Law" a match; shared words alone calls every
+       Rodriguez the same person. Together they only agree on a real near-miss. */
+    const close = d <= Math.max(2, Math.round(k.length * 0.2));
+    const mostlySame = shared >= Math.max(2, Math.min(mine.size, theirs.size));
+    if (!close && !mostlySame) continue;
+    out.push({ key: p.key, name: p.name, status: p.status, distance: d, shared,
+      /* Same words, different capitals or spacing — the case this exists for,
+         and the only one worth pre-selecting. */
+      confident: (mostlySame && d <= 3) || d <= 1 });
+  }
+  return out.sort((a, b) => (b.confident - a.confident) || (a.distance - b.distance) || (b.shared - a.shared)).slice(0, limit);
+}
+
+/**
+ * Say that a held name is somebody the store already has.
+ *
+ * Three things at once, and all three are needed: the spelling is remembered so
+ * every future report folds itself in, the figures already held are added to the
+ * person they belong to, and the queue entry goes.
+ */
+export function sameAs(data, heldName, personName, opts = {}) {
+  const from = nm(heldName), to = nm(personName);
+  if (!from || !to || from === to) return data;
+  const next = JSON.parse(JSON.stringify(data || {}));
+  next.aliases = next.aliases || {};
+  next.months = next.months || {};
+  next.activity = next.activity || {};
+  next.peopleLog = next.peopleLog || [];
+  next.aliases[from] = to;
+
+  const holdRec = (next.pendingPeople || {})[from];
+  if (holdRec) {
+    for (const [mk, rec] of Object.entries(holdRec.months || {})) {
+      next.months[mk] = next.months[mk] || { stats: {}, names: {}, imports: {} };
+      next.months[mk].stats = next.months[mk].stats || {};
+      /* Added to what is already there rather than replacing it. Half a month
+         under each spelling is exactly how this goes wrong, and overwriting
+         would throw away the half that was filed correctly. */
+      const into = next.months[mk].stats[to] || {};
+      for (const [f, v] of Object.entries(rec)) {
+        if (typeof v === "number" && typeof into[f] === "number") into[f] = into[f] + v;
+        else if (into[f] === undefined) into[f] = v;
+      }
+      next.months[mk].stats[to] = into;
+    }
+    for (const [day, row] of Object.entries(holdRec.days || {})) {
+      next.activity[day] = next.activity[day] || {};
+      next.activity[day][to] = { ...(next.activity[day][to] || {}), ...row };
+    }
+    delete next.pendingPeople[from];
+  }
+
+  /* And any figures already filed under the wrong spelling, from before anybody
+     said they were the same person. */
+  for (const m of Object.values(next.months)) {
+    if (!m || !m.stats || !m.stats[from]) continue;
+    const into = m.stats[to] || {};
+    for (const [f, v] of Object.entries(m.stats[from])) {
+      if (typeof v === "number" && typeof into[f] === "number") into[f] = into[f] + v;
+      else if (into[f] === undefined) into[f] = v;
+    }
+    m.stats[to] = into;
+    delete m.stats[from];
+  }
+  for (const day of Object.keys(next.activity)) {
+    const row = next.activity[day];
+    if (!row || !row[from]) continue;
+    row[to] = { ...(row[to] || {}), ...row[from] };
+    delete row[from];
+  }
+
+  /* The misspelling must not be left on any list, or the next report matches it
+     before the alias is ever consulted. */
+  next.roster = (next.roster || []).filter((a) => nm(a.name) !== from);
+  next.departed = (next.departed || []).filter((d) => nm(d && d.name) !== from);
+  next.excluded = (next.excluded || []).filter((x) => nm(x) !== from);
+
+  next.peopleLog.unshift({ at: opts.at || new Date().toISOString(), by: opts.by || "",
+    name: heldName, from: "unknown", to: "same person", note: `same as ${personName}` });
+  next.peopleLog = next.peopleLog.slice(0, 500);
+  return next;
+}
+
+/**
+ * Was this person on the payroll on this day?
+ *
+ * The bound under every average they are judged by. A day before somebody
+ * started is not a day they failed to work: a hire on the 18th used to be
+ * measured against the whole month, so their first week read as three weeks of
+ * doing nothing — to the one person on the floor least able to argue with a
+ * screen. The other end matters as much: a leaver is not still missing calls in
+ * the fortnight after they went.
+ *
+ * Both bounds include the day itself, because you worked the day you started.
+ * No start date means the whole month, which is what it has always meant, so
+ * nothing changes for anybody already on the roster.
+ */
+export function servedOn(person, ds, departedAt) {
+  if (person && person.hiredAt && ds < String(person.hiredAt).slice(0, 10)) return false;
+  if (departedAt && ds > String(departedAt).slice(0, 10)) return false;
+  return true;
+}

@@ -341,3 +341,152 @@ test("nobody with no prior record is claimed to have one", () => {
   assert.deepEqual(priorFor(ford(), "Someone Else"), []);
   assert.deepEqual(priorFor({}, "Anyone"), []);
 });
+
+// ---- the same person, spelled two ways ----
+import { likelyMatches, sameAs } from "../api/_people-status.mjs";
+
+/* Worth knowing before reading these: norm() already folds case and spacing, so
+   "Juan Ruiz lopez" and "Juan Ruiz Lopez" are ONE key and were never two rows.
+   The spellings that really split a person are the ones normalising cannot
+   reach — a hyphen in a different place, a suffix, a middle name, a nickname. */
+
+test("a hyphen in the wrong place is spotted, and confidently", () => {
+  const d = store();
+  d.roster.push({ id: "a4", name: "Karina Ramirez-Pagan", roleId: "sales" });
+  const hits = likelyMatches(d, "Karina Ramirez- Pagan");
+  assert.equal(hits[0].name, "Karina Ramirez-Pagan");
+  assert.equal(hits[0].confident, true, "one character apart, so it can be offered as the answer");
+});
+
+test("a missing letter is spotted too", () => {
+  const hits = likelyMatches(store(), "Fin Smth");
+  assert.equal(hits[0].name, "Fin Smith");
+  assert.ok(hits[0].confident);
+});
+
+test("a suffix that one report carries and another does not", () => {
+  const d = store();
+  d.roster.push({ id: "a4", name: "Samuel Miller", roleId: "sales" });
+  const hits = likelyMatches(d, "Samuel Miller IV");
+  assert.equal(hits[0].name, "Samuel Miller");
+});
+
+test("but two different people are not run together", () => {
+  /* Edit distance alone calls these a match. An automatic merge would put one
+     person's month onto another's, which is worse than a duplicate row — so the
+     two signals have to agree before anything is offered confidently. */
+  const d = store();
+  d.roster.push({ id: "a5", name: "Toni Thomas", roleId: "sales" });
+  assert.deepEqual(likelyMatches(d, "Toni Law").filter((h) => h.confident), [],
+    "a shared first name is not a match");
+});
+
+test("a nickname is left for a person to decide", () => {
+  /* "Mike" and "Michael" are four characters apart with one word in common,
+     which is also what two different Ganuses would look like. Not suggested,
+     which is why the screen also lets a manager pick anybody. */
+  const d = store();
+  d.roster.push({ id: "a6", name: "Michael Ganus", roleId: "sales" });
+  assert.deepEqual(likelyMatches(d, "Mike Ganus").filter((h) => h.confident), []);
+});
+
+test("and a stranger matches nobody", () => {
+  assert.deepEqual(likelyMatches(store(), "Vicente Pastoriza"), []);
+});
+
+test("somebody already ignored is never offered", () => {
+  /* Folding a name into a person the store has said is not theirs would put the
+     figures back by the side door. */
+  assert.deepEqual(likelyMatches(store(), "Round Robbin").filter((h) => h.name === "Round Robin"), []);
+});
+
+test("saying they are the same person teaches it for good", () => {
+  const d0 = store();
+  d0.roster.push({ id: "a4", name: "Karina Ramirez-Pagan", roleId: "sales" });
+  holdPerson(d0, "Karina Ramirez- Pagan", { monthKey: "2026-08", rec: { internetUnits: 3 },
+    day: "2026-08-19", dayRow: { calls: 7 } });
+  const d = sameAs(d0, "Karina Ramirez- Pagan", "Karina Ramirez-Pagan", { by: "Jorge" });
+  assert.equal(d.aliases["karina ramirez- pagan"], "karina ramirez-pagan",
+    "so every future report folds itself in without being asked again");
+  assert.equal(d.pendingPeople["karina ramirez- pagan"], undefined, "nothing left waiting");
+  assert.equal(d.months["2026-08"].stats["karina ramirez-pagan"].internetUnits, 3, "the held cars are theirs");
+  assert.equal(d.activity["2026-08-19"]["karina ramirez-pagan"].calls, 7);
+});
+
+test("and adds up a month that was already split between the two spellings", () => {
+  /* Overwriting would throw away the half that was filed correctly, which is the
+     half the store has been reporting on all month. */
+  const d0 = store();
+  d0.roster.push({ id: "a4", name: "Karina Ramirez-Pagan", roleId: "sales" });
+  d0.months["2026-08"].stats["karina ramirez-pagan"] = { displayName: "Karina Ramirez-Pagan", internetUnits: 5 };
+  d0.months["2026-08"].stats["karina ramirez- pagan"] = { internetUnits: 3 };
+  const d = sameAs(d0, "Karina Ramirez- Pagan", "Karina Ramirez-Pagan", {});
+  assert.equal(d.months["2026-08"].stats["karina ramirez-pagan"].internetUnits, 8, "5 and 3, not 3");
+  assert.equal(d.months["2026-08"].stats["karina ramirez- pagan"], undefined);
+});
+
+test("the misspelling is taken off every list", () => {
+  /* Or the next report matches the wrong row before the alias is consulted. */
+  const d0 = store();
+  d0.roster.push({ id: "a4", name: "Karina Ramirez-Pagan", roleId: "sales" });
+  d0.roster.push({ id: "a5", name: "Karina Ramirez- Pagan", roleId: "sales" });
+  const d = sameAs(d0, "Karina Ramirez- Pagan", "Karina Ramirez-Pagan", {});
+  const karinas = d.roster.filter((a) => /karina/i.test(a.name));
+  assert.equal(karinas.length, 1);
+  assert.equal(karinas[0].name, "Karina Ramirez-Pagan");
+});
+
+test("nobody is made an alias of themselves", () => {
+  const d = store();
+  assert.equal(sameAs(d, "Fin Smith", "Fin Smith", {}), d);
+  assert.equal(sameAs(d, "FIN  smith", "Fin Smith", {}), d, "including a spelling norm already folds");
+  assert.equal(sameAs(d, "", "Fin Smith", {}), d);
+});
+
+test("it is written down, like every other change to a person", () => {
+  const d0 = store();
+  d0.roster.push({ id: "a4", name: "Karina Ramirez-Pagan", roleId: "sales" });
+  const d = sameAs(d0, "Karina Ramirez- Pagan", "Karina Ramirez-Pagan", { by: "Jorge", at: "2026-08-20T12:00:00.000Z" });
+  assert.equal(d.peopleLog[0].by, "Jorge");
+  assert.match(d.peopleLog[0].note, /same as Karina Ramirez-Pagan/);
+});
+
+// ---- the days somebody is actually judged on ----
+import { servedOn } from "../api/_people-status.mjs";
+
+test("a day before they started is not a day they failed to work", () => {
+  /* A hire on the 18th used to be measured against the whole month, so their
+     first week read as three weeks of doing nothing. */
+  const nina = { name: "Nina Cortez", hiredAt: "2026-08-18" };
+  assert.equal(servedOn(nina, "2026-08-17", null), false);
+  assert.equal(servedOn(nina, "2026-08-18", null), true, "you worked the day you started");
+  assert.equal(servedOn(nina, "2026-08-19", null), true);
+});
+
+test("and a leaver is not still missing calls after they went", () => {
+  const fin = { name: "Fin Smith" };
+  assert.equal(servedOn(fin, "2026-08-05", "2026-08-05T17:00:00.000Z"), true, "including their last day");
+  assert.equal(servedOn(fin, "2026-08-06", "2026-08-05T17:00:00.000Z"), false);
+});
+
+test("somebody who started and left inside one month", () => {
+  const short = { name: "Brief Stay", hiredAt: "2026-08-10" };
+  const left = "2026-08-14T00:00:00.000Z";
+  assert.deepEqual(
+    ["2026-08-09", "2026-08-10", "2026-08-12", "2026-08-14", "2026-08-15"].map((d) => servedOn(short, d, left)),
+    [false, true, true, true, false]);
+});
+
+test("no start date means the whole month, as it always has", () => {
+  /* Nothing changes for anybody already on a roster, which is everybody. */
+  assert.equal(servedOn({ name: "Old Hand" }, "2020-01-01", null), true);
+  assert.equal(servedOn(null, "2026-08-01", null), true);
+  assert.equal(servedOn({ name: "X", hiredAt: "" }, "2026-08-01", null), true);
+});
+
+test("a timestamp works as well as a date", () => {
+  /* Departures are stamped with the full instant and start dates are typed as a
+     day. Both have to answer the same question. */
+  assert.equal(servedOn({ hiredAt: "2026-08-18T14:22:07.000Z" }, "2026-08-18", null), true);
+  assert.equal(servedOn({ hiredAt: "2026-08-18T14:22:07.000Z" }, "2026-08-17", null), false);
+});

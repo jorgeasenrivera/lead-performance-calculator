@@ -24,7 +24,7 @@ import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-mon
    quietly broken in the same way. */
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
-  packUp, transferIn, transferOut, priorFor } from "../api/_people-status.mjs";
+  packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn } from "../api/_people-status.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -585,6 +585,11 @@ function activityLandedOn(data, d) {
 
 /* Scheduled to work, the report ran, and still no sign of them. */
 function looksAbsent(data, aId, d) {
+  /* A day before somebody started is not a day they failed to turn up on, and
+     the overnight close-out reads this — so without it a new hire's first
+     morning came with a fortnight of days off already written against them. */
+  const who = ((data && data.roster) || []).find((a) => a.id === aId);
+  if (who && !servedOn(who, d, departedOnFor(data, who))) return false;
   if (!isScheduled(data, aId, d)) return false;
   if (data.daysOff?.[aId]?.includes(d)) return false;   // already off
   if (!activityLandedOn(data, d)) return false;
@@ -764,14 +769,30 @@ function StreakIcon({ data, a, std, min = 3 }) {
     </span>
   );
 }
+/* Somebody's days so far this month, which is the denominator under every
+   average they are judged by.
+
+   A day before they started is not a day they failed to work. Somebody hired on
+   the 18th used to be measured against the whole month, so their first week read
+   as three weeks of doing nothing, and the one person on the floor least able to
+   argue with a screen was the one it was hardest on. Same at the other end: a
+   leaver is not still missing calls in the fortnight after they went.
+
+   Both bounds are inclusive of the day itself — you worked the day you started. */
+function departedOnFor(data, a) {
+  const rec = ((data && data.departed) || []).find((d) => d && a && norm(d.name) === norm(a.name));
+  return rec ? rec.at : null;
+}
 function daysWorkedThisMonth(data, a) {
   const t = today(); const [y, m, dd] = t.split("-").map(Number);
+  const left = departedOnFor(data, a);
   let n = 0;
   for (let day = 1; day <= dd; day++) {
     const dt = new Date(y, m - 1, day);
     if (dt.getDay() === 0) continue;               // skip Sundays
     const ds = `${y}-${String(m).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     if (isHoliday(ds)) continue;                   // the group was closed
+    if (!servedOn(a, ds, left)) continue;          // before they started, or after they left
     if (isOff(data, a.id, ds)) continue;           // skip their days off
     n++;
   }
@@ -1829,6 +1850,8 @@ const linkFloorPerson = (store, userId, personId) =>
   apiCall("/api/link-person", { method: "POST", body: { store, user_id: userId, person_id: personId } });
 const unlinkFloorPerson = (store, userId) =>
   apiCall("/api/link-person", { method: "POST", body: { store, user_id: userId, unlink: true } });
+const setAccountActive = (store, userId, on) =>
+  apiCall("/api/floor-account", { method: "POST", body: { store, user_id: userId, action: on ? "activate" : "deactivate" } });
 
 async function listProfiles() {
   if (!supabase) return [];
@@ -19664,6 +19687,25 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   const [nu, setNu] = useState({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
   const [showLog, setShowLog] = useState(false);
 
+  /* ---- the account half ----
+     Whether somebody can sign in is a fact about a person, so it belongs on the
+     person's row rather than on a separate screen a manager has to know exists.
+     Read through the same endpoint the Phones panel uses, which checks the
+     caller manages this store server-side. */
+  const [links, setLinks] = useState(null);
+  const [accounts, setAccounts] = useState(null);
+  const [openAcct, setOpenAcct] = useState(null);   // whose account menu is open
+  const [acctBusy, setAcctBusy] = useState("");
+  const [acctSaid, setAcctSaid] = useState(null);   // { key, text, bad }
+
+  const loadAccounts = useCallback(async () => {
+    if (!storeId) return;
+    const [l, a] = await Promise.all([loadFloorLinks(storeId), listProfiles()]);
+    setLinks(l.links || []);
+    setAccounts(a || []);
+  }, [storeId]);
+  useEffect(() => { loadAccounts(); }, [loadAccounts]);
+
   const [moving, setMoving] = useState(null);   // who is being transferred
   const [moveTo, setMoveTo] = useState("");
   const [moveBusy, setMoveBusy] = useState("");
@@ -19709,6 +19751,34 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
      the one action here that cannot be a single save. The new store is written
      FIRST: if the second write fails, somebody is on two floors, which a manager
      can see and fix. The other order loses them from both. */
+  /* A person's roster id is what a link is filed under, so somebody with no id —
+     a name that only exists on the ignore list — simply has no account to show. */
+  const linkFor = (p) => (links || []).find((l) => l.person_id === p.id) || null;
+  const acctFor = (l) => (accounts || []).find((a) => a.id === (l && l.user_id)) || null;
+  const takenAccounts = useMemo(() => new Set((links || []).map((l) => l.user_id)), [links]);
+
+  const acctDo = async (key, fn, okText) => {
+    setAcctBusy(key); setAcctSaid(null);
+    const r = await fn();
+    setAcctBusy("");
+    if (r && r.error) { setAcctSaid({ key, text: r.error, bad: true }); return; }
+    setAcctSaid({ key, text: okText });
+    await loadAccounts();
+  };
+
+  const sendReset = async (key, email) => {
+    /* Straight from the browser on purpose. Supabase sends the mail to the
+       account's own address and anybody can already ask for one from the sign-in
+       page, so putting a privileged endpoint in front of it would add a check
+       that guards nothing and one more thing to break. */
+    setAcctBusy(key); setAcctSaid(null);
+    const r = await authResetPassword(email);
+    setAcctBusy("");
+    setAcctSaid(r && r.error
+      ? { key, text: r.error, bad: true }
+      : { key, text: `Sent to ${email}. The link works once and expires.` });
+  };
+
   const doTransfer = async () => {
     if (!moving || !moveTo) return;
     const dest = (allStores || []).find((x) => x.id === moveTo);
@@ -19760,6 +19830,40 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   onChange(dropPending(data, [w.name], { by: userName }),
                     { action: "Rejected a name from a report", detail: w.name });
                 }}>Not ours</button>
+                {/* ---- or they are somebody you already have ----
+                    A report that spells a hyphen differently, or carries a suffix
+                    one month and not the next, arrives as a stranger. Answering
+                    "no, that is Karina" once folds the figures onto her and
+                    teaches the spelling, so it never asks again.
+
+                    Suggested, never decided: a near-miss and two different people
+                    with the same first name look identical to any measure, and
+                    merging the wrong pair puts one person's month onto another's,
+                    which is worse than a duplicate row. Nicknames are the common
+                    case that no measure can safely offer, so the list is not
+                    limited to the suggestions. */}
+                <select className="q-flag-sel pp-same" value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    onChange(sameAs(data, w.name, e.target.value, { by: userName }),
+                      { action: "Folded a spelling into a person", detail: `${w.name} → ${e.target.value}` });
+                  }}>
+                  {(() => {
+                    const hits = likelyMatches(data, w.name);
+                    const best = hits.find((h) => h.confident);
+                    const rest = people.filter((x) => x.status !== "ignored" && !hits.some((h) => h.key === x.key));
+                    return (
+                      <>
+                        <option value="">{best ? `Same as ${best.name}?` : "Same as someone…"}</option>
+                        {hits.map((h) => (
+                          <option key={h.key} value={h.name}>{h.name}{h.confident ? " — looks like a match" : ""}</option>
+                        ))}
+                        {rest.length > 0 && hits.length > 0 && <option disabled>──────────</option>}
+                        {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
+                      </>
+                    );
+                  })()}
+                </select>
               </div>
             ))}
           </div>
@@ -19866,6 +19970,21 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   {p.roleId && <span>{roleName(p.roleId)}</span>}
                   {p.hiredAt && <span>started {p.hiredAt}</span>}
                   {p.departedAt && <span>left {String(p.departedAt).slice(0, 10)}</span>}
+                  {(() => {
+                    if (!storeId || links === null || !p.id) return null;
+                    const l = linkFor(p);
+                    const a = acctFor(l);
+                    if (!l) return <span className="pp-noacct">no account</span>;
+                    const off = a && a.active === false;
+                    return (
+                      <span className={"pp-acct" + (off ? " pp-acct-off" : "")}
+                        title={l.devices ? `${l.devices} phone${l.devices === 1 ? "" : "s"} registered` : "No phone has registered against this account yet"}>
+                        {a ? (a.email || a.name) : String(l.user_id).slice(0, 8) + "…"}
+                        {off ? " · switched off" : ""}
+                        {l.devices ? ` · ${l.devices} ${l.devices === 1 ? "phone" : "phones"}` : ""}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="pp-acts">
@@ -19875,7 +19994,105 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   <button className="btn btn-sm" onClick={() => { setMoving(p); setMoveTo(""); }}>Move store</button>
                 )}
                 {p.status !== "ignored" && <button className="btn btn-sm pp-danger" onClick={() => move(p.name, "ignored")}>Not ours</button>}
+                {storeId && p.id && p.status !== "ignored" && (
+                  <button className="btn btn-sm" onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
+                    {openAcct === p.key ? "Close" : "Details"}
+                  </button>
+                )}
               </div>
+            {openAcct === p.key && storeId && p.id && (() => {
+              const l = linkFor(p);
+              const a = acctFor(l);
+              const key = p.key;
+              const free = (accounts || [])
+                .filter((x) => !takenAccounts.has(x.id) && x.active !== false)
+                .slice().sort((x, y) => String(x.email || x.name).localeCompare(String(y.email || y.name)));
+              return (
+                <div className="pp-acctbox">
+                  {/* ---- when they started ----
+                      The denominator under every average they are judged by. A day
+                      before somebody started is not a day they failed to work, and
+                      without this a hire on the 18th was measured against the whole
+                      month — their first week reading as three weeks of doing
+                      nothing, to the one person on the floor least able to argue
+                      with a screen. Blank means the whole month, which is what it
+                      has always meant, so nothing changes for anybody already on. */}
+                  <div className="pp-move-row pp-startrow">
+                    <label className="pp-date">Started here
+                      <input type="date" className="help-in" value={p.hiredAt || ""}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          const next = JSON.parse(JSON.stringify(data));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, hiredAt: v } : x));
+                          onChange(next, { action: "Set a start date", detail: `${p.name}: ${v || "cleared"}` });
+                        }} />
+                    </label>
+                    <span className="hint pp-startnote">
+                      {p.hiredAt
+                        ? "Days before this are left out of their averages, and out of the days-off close-out."
+                        : "Blank counts the whole month, as it always has."}
+                    </span>
+                  </div>
+                  {!l ? (
+                    <>
+                      <p className="hint">
+                        Nobody signs in as {p.name} yet. They sign up on this site with a dealership address
+                        like anybody else; leave their stores unticked and they stay off the dashboard while
+                        still having an account to be joined to. Then pick it here — this is what decides
+                        whose phone buzzes when their customer walks in, which is why a manager sets it and
+                        not the salesperson.
+                      </p>
+                      <div className="pp-move-row">
+                        <select className="q-flag-sel" value="" disabled={acctBusy === key}
+                          onChange={(e) => e.target.value && acctDo(key, () => linkFloorPerson(storeId, e.target.value, p.id), "Joined to their account.")}>
+                          <option value="">Pick an account…</option>
+                          {free.map((x) => <option key={x.id} value={x.id}>{x.email || x.name}</option>)}
+                        </select>
+                        {free.length === 0 && <span className="hint">Every account is already spoken for.</span>}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="pp-acct-line">
+                        <b>{a ? (a.email || a.name) : "An account this site no longer has a profile for"}</b>
+                        <span>
+                          {a && a.active === false ? "switched off" : "active"}
+                          {" · "}
+                          {l.devices
+                            ? `${l.devices} phone${l.devices === 1 ? "" : "s"}${l.lastSeen ? `, last seen ${new Date(l.lastSeen).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}`
+                            : "no phone registered"}
+                        </span>
+                      </div>
+                      <div className="pp-move-row">
+                        {a && a.email && (
+                          <button className="btn btn-sm" disabled={acctBusy === key}
+                            onClick={() => sendReset(key, a.email)}>Send a password reset</button>
+                        )}
+                        {a && (
+                          <button className="btn btn-sm" disabled={acctBusy === key}
+                            onClick={() => acctDo(key, () => setAccountActive(storeId, l.user_id, a.active === false),
+                              a.active === false ? "Switched back on." : "Switched off. They cannot sign in until it is switched back on.")}>
+                            {a.active === false ? "Switch back on" : "Switch off"}
+                          </button>
+                        )}
+                        <button className="btn btn-sm pp-danger" disabled={acctBusy === key}
+                          onClick={() => acctDo(key, () => unlinkFloorPerson(storeId, l.user_id),
+                            "Unjoined. Their phones were unregistered with it.")}>Unjoin this account</button>
+                      </div>
+                      <p className="hint">
+                        Switching an account off stops them signing in and leaves everything they have done
+                        exactly where it is; it is the one to reach for when somebody is let go. Unjoining
+                        only breaks the link between the account and this person, and takes their registered
+                        phones with it so nothing keeps buzzing about a floor they are not on.
+                      </p>
+                    </>
+                  )}
+                  {acctSaid && acctSaid.key === key && (
+                    <p className={acctSaid.bad ? "sched-err" : "hint"}><b>{acctSaid.text}</b></p>
+                  )}
+                </div>
+              );
+            })()}
             </div>
           ))}
         </div>
@@ -22634,7 +22851,13 @@ function Style() {
       .pp-stranger .pp-nm { font-weight:700; font-size:14px; }
       .pp-ev { font-size:12px; color:var(--ink-3); flex:1; min-width:150px; }
       .pp-ev b { font-family:var(--font-display); color:var(--ink); letter-spacing:-.02em; }
-      .pp-danger { border-color:rgba(229,83,63,.5); color:#C13529; }
+      /* .btn paints a solid blue with white text, so overriding a colour here
+         changed nothing at all and "Not ours" sat next to "They left" looking
+         exactly as harmless. These take somebody off a floor or out of a
+         month; they should not read as the same kind of button. */
+      .btn.pp-danger { background:linear-gradient(180deg,#F0796B 0%,#D9463A 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 1px 2px rgba(68,16,16,.22), 0 6px 18px rgba(200,60,45,.24); }
+      .btn.pp-danger:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.26), 0 2px 4px rgba(68,16,16,.2), 0 12px 26px rgba(200,60,45,.32); }
 
       .pp-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:10px; }
       .pp-counts { display:flex; gap:7px; }
@@ -22671,6 +22894,22 @@ function Style() {
          store counting cars it never sold. */
       .pp-wait { border-color:rgba(240,180,41,.45); background:linear-gradient(180deg,rgba(240,180,41,.07),transparent); }
       .pp-wait h3 { color:#95600A; }
+      /* The account panel opens inside the person's row, so the row has to be
+         allowed to grow rather than squeezing it into a flex column. */
+      .pp-row { flex-wrap:wrap; }
+      .pp-acct { font-size:11px; color:var(--ink-3); background:rgba(16,32,52,.05);
+        padding:1px 7px; border-radius:999px; }
+      .pp-acct-off { color:#C13529; background:rgba(229,83,63,.12); }
+      .pp-noacct { font-size:11px; color:var(--ink-3); font-style:italic; }
+      .pp-acctbox { width:100%; margin-top:9px; padding:11px 13px; border-radius:12px;
+        background:rgba(255,255,255,.55); border:1px solid rgba(16,32,52,.09); }
+      .pp-acctbox .hint { margin:0 0 9px; }
+      .pp-acctbox .hint:last-child { margin:9px 0 0; }
+      .pp-acct-line { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; margin-bottom:9px; }
+      .pp-acct-line b { font-size:13.5px; }
+      .pp-acct-line span { font-size:11.5px; color:var(--ink-3); }
+      .pp-startrow { padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid rgba(16,32,52,.08); }
+      .pp-startnote { margin:0 !important; flex:1; min-width:180px; }
       .pp-move { margin-top:12px; padding:12px 14px; border-radius:13px;
         background:rgba(42,94,155,.07); border:1px solid rgba(42,94,155,.2); }
       .pp-move-head { font-size:14px; margin-bottom:4px; }
