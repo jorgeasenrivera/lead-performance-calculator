@@ -34,6 +34,63 @@ import { norm } from "./_report-parsers.mjs";
 import { foldAliases } from "./_people-status.mjs";
 
 /* =========================================================================
+   Settling a keyed field by stamps.
+
+   The seven fields that had no rule are all shaped the same way: a map keyed by
+   associate, or by day and associate, that one manager edits while another
+   manager edits a different entry in it. Replacing the whole map — which is what
+   not merging it amounts to — means the second save silently drops the first
+   manager's work.
+
+   A stamp per key fixes both directions at once. The later write wins, and an
+   absence with a newer stamp is a deletion rather than ignorance, which is the
+   distinction this system has failed to draw five times.
+   ========================================================================= */
+
+/** One level: { key: value } settled against { key: when }. */
+export function mergeStampedMap(mine, mineAt, theirs, theirsAt) {
+  const vals = {}, at = {};
+  const mv = mine || {}, tv = theirs || {}, ma = mineAt || {}, ta = theirsAt || {};
+  for (const k of new Set([...Object.keys(mv), ...Object.keys(tv), ...Object.keys(ma), ...Object.keys(ta)])) {
+    const mt = ma[k] || "", tt = ta[k] || "";
+    let take;
+    if (mt > tt) take = "mine";
+    else if (tt > mt) take = "theirs";
+    /* Neither side has said when, so neither is claiming to have changed it and
+       an absence proves nothing. Keep whatever exists — this is data written
+       before stamps, and it must not be deleted by the arrival of them. */
+    else take = (k in mv) ? "mine" : "theirs";
+    const src = take === "mine" ? mv : tv;
+    if (k in src) vals[k] = src[k];
+    const stamp = mt > tt ? mt : tt;
+    if (stamp) at[k] = stamp;
+  }
+  return { vals, at };
+}
+
+/** Two levels: { day: { key: value } } against { day: { key: when } }. */
+export function mergeStampedDayMap(mine, mineAt, theirs, theirsAt, cutoff = "") {
+  const vals = {}, at = {};
+  const mv = mine || {}, tv = theirs || {}, ma = mineAt || {}, ta = theirsAt || {};
+  for (const day of new Set([...Object.keys(mv), ...Object.keys(tv), ...Object.keys(ma), ...Object.keys(ta)])) {
+    const one = mergeStampedMap(mv[day], ma[day], tv[day], ta[day]);
+    if (Object.keys(one.vals).length) vals[day] = one.vals;
+    // Days older than the window keep their marks and drop their stamps: no tab
+    // is old enough to argue about them, and the stamps are the part that grows.
+    if (Object.keys(one.at).length && (!cutoff || day >= cutoff)) at[day] = one.at;
+  }
+  return { vals, at };
+}
+
+/** Two levels, fill only: nothing is overwritten and nothing is removed. */
+export function mergeFillTwoLevel(mine, theirs) {
+  const out = {};
+  for (const [day, row] of Object.entries(theirs || {})) out[day] = { ...(row || {}) };
+  for (const [day, row] of Object.entries(mine || {})) out[day] = { ...(out[day] || {}), ...(row || {}) };
+  return out;
+}
+
+/* =========================================================================
    What happens to each field when two copies of a store meet.
 
    The register of rules, one row per field. It exists because the thing that
@@ -69,6 +126,10 @@ export const STRATEGIES = {
   unionById: "Nothing from either side disappears; entries are deduplicated by id.",
   heldUnion: "Union, with each side's pieces of the same held person added together, minus anyone since settled.",
   aliasesThenFold: "Union first so no tab can drop a fold, then the fold is carried out again over whatever the figures now say.",
+  stampedMap: "A map keyed by person, settled key by key against a stamp. An absence with a newer stamp is a removal rather than ignorance, which is the distinction this system has failed to draw five times.",
+  stampedDayMap: "The same, one level deeper: day, then person. Stamps outside the ninety-day window are dropped, since no tab is old enough to argue about them.",
+  fillOnly: "Gaps filled, nothing overwritten and nothing removed. For a field nothing writes any more.",
+  deadField: "Nothing reads it and nothing writes it. Not merged on purpose, and the data is left alone rather than deleted, because deleting it would gain nothing and cannot be undone.",
   clientWins: "NOT MERGED. This copy is written over the server's whole. A concurrent change by another manager is silently lost. Every one of these is a gap, not a decision.",
 };
 
@@ -101,19 +162,24 @@ export const FIELD_POLICY = {
   daysOff:       { how: "perKeyNewest", why: "An empty schedule from an old tab used to wipe the month for everybody." },
   daysOffAt:     { how: "perKeyNewest", why: "The per-person stamp that made that possible." },
 
-  /* ---- gaps: fields the merge does not touch at all ----
-     Not decisions. The client's whole copy wins, so two managers changing
-     different people at the same moment means one of them loses their work with
-     no error and nothing written down. Jorge confirmed this matters: many
-     managers across many stores working the same system at once.
-     Being listed here is what stops them being forgotten again. */
-  restrictions:  { how: "clientWins", gap: true, why: "Per-associate and manager-set. Wants a per-person stamp, like daysOff." },
-  goals:         { how: "clientWins", gap: true, why: "Store-level, manager-set. Individual goals are not here: they live in the daily tracker under coaching. Wants a stamp." },
-  baselines:     { how: "clientWins", gap: true, why: "Per-person, seeded once from history and warned about before it is re-seeded, because every coaching target is built from it. Losing a seed to another tab is worse than losing a goal. Keyed by associate id, so it wants a stamp per person." },
-  statsExcluded: { how: "clientWins", gap: true, why: "Who is left out of the store's benchmark averages. An array removed with a plain filter, so it becomes the sixth instance of the removal-does-not-survive bug the moment anybody makes it a union without stamps." },
-  qualified:     { how: "clientWins", gap: true, why: "The RockEd mark, per day per person. Live." },
-  stars:         { how: "clientWins", gap: true, why: "The old form of the RockEd mark. Nothing writes it any more; it is only read so old months keep scoring, so it can shrink and never grow." },
-  repeatFlags:   { how: "clientWins", gap: true, why: "Dead. Every reference in the app and the pipeline is copy-through: nothing reads a value out of it and nothing writes one in. Delete rather than merge." },
+  /* ---- the seven that used to have no rule ----
+     Each is a map or a list that one manager edits while another edits a
+     different entry in it, and until now the whole thing was replaced wholesale.
+     Jorge asked for these specifically: many managers across many stores and
+     many reps, all on one system at once. */
+  restrictions:  { how: "stampedMap", why: "Per associate, and liftable, so an absence with a newer stamp has to read as taken off rather than never heard of." },
+  restrictionsAt:{ how: "stampedMap", why: "The stamps restrictions is settled by." },
+  goals:         { how: "stampedMap", why: "An individual's monthly goal, keyed by associate and set under coaching. The STORE's goal is not here: it lives on the store in config." },
+  goalsAt:       { how: "stampedMap", why: "The stamps goals is settled by." },
+  baselines:     { how: "stampedMap", why: "Per person, seeded from history, and every coaching target is built from it. Re-seeding is warned about; losing a seed to another tab would be the same damage without the warning." },
+  baselinesAt:   { how: "stampedMap", why: "The stamps baselines is settled by." },
+  qualified:     { how: "stampedDayMap", why: "The RockEd mark, per day per person. Two managers marking two different people on the same morning is the ordinary case." },
+  qualifiedAt:   { how: "stampedDayMap", why: "The stamps qualified is settled by, pruned outside the ninety-day window." },
+  stars:         { how: "fillOnly", why: "The old form of the RockEd mark. Nothing writes it any more — tapping the new control deletes the old value — and it is only read so old months keep scoring. So it may shrink and never grow." },
+  statsExcluded: { how: "stampedUnion", why: "Who is out of the store's benchmark averages. A list, so a union like the ignore list, and putting somebody back into the averages is stamped rather than filtered." },
+  statsExcludedAt: { how: "tombstones", why: "When somebody was taken out of the averages. Half of a pair: one stamp alone could only ever say it once, so re-excluding after a re-inclusion could never win." },
+  statsExcludedGone: { how: "tombstones", why: "And when they were put back in. The two are compared by time, so the decision can be changed as often as somebody changes their mind." },
+  repeatFlags:   { how: "deadField", why: "Every reference in the app and the pipeline is copy-through: nothing reads a value out of it and nothing writes one in. Left alone rather than merged or deleted." },
 };
 
 /* A plate tag, compared the way a person would compare two of them: case and
@@ -397,5 +463,77 @@ export function mergeAgainstServer(next, serverCopy) {
           next.daysOff = mine;
           next.daysOffAt = mineAt;
         }
+
+        /* ---- the seven that had no rule at all ----
+           Until now the client's whole copy of each of these won, so two
+           managers changing different entries at the same moment meant one of
+           them lost their work with no error and nothing written down. With many
+           managers across many stores on one system, that is not a rare race. */
+        {
+          const cutoff = new Date(Date.now() - TOMB_DAYS * 864e5).toISOString().slice(0, 10);
+          /* Per associate, written out one at a time rather than looped over a list
+             of field names. The loop was shorter, and the check that reads this
+             file could not see through it: a computed next[field] is not a field
+             as far as anything reading the source can tell, so three fields
+             silently stopped being covered by the very guard meant to cover them.
+             Explicit is what makes that guard work. */
+          // A restriction can be lifted, so an absence with a newer stamp has to
+          // read as "taken off" rather than "never heard of".
+          {
+            const r = mergeStampedMap(next.restrictions, next.restrictionsAt,
+                                      serverCopy.restrictions, serverCopy.restrictionsAt);
+            next.restrictions = r.vals;
+            next.restrictionsAt = r.at;
+          }
+          {
+            const r = mergeStampedMap(next.goals, next.goalsAt, serverCopy.goals, serverCopy.goalsAt);
+            next.goals = r.vals;
+            next.goalsAt = r.at;
+          }
+          {
+            const r = mergeStampedMap(next.baselines, next.baselinesAt,
+                                      serverCopy.baselines, serverCopy.baselinesAt);
+            next.baselines = r.vals;
+            next.baselinesAt = r.at;
+          }
+          /* The RockEd mark, per day per person. Two managers marking two
+             different people on the same morning is the ordinary case. */
+          const q = mergeStampedDayMap(next.qualified, next.qualifiedAt,
+                                       serverCopy.qualified, serverCopy.qualifiedAt, cutoff);
+          next.qualified = q.vals;
+          next.qualifiedAt = q.at;
+          /* The star counts are the old form of that mark and nothing writes them
+             any more — tapping the new control deletes the old value. They are
+             only still read so that old months keep scoring, so this fills gaps
+             and never overwrites: the field can shrink, never grow. */
+          next.stars = mergeFillTwoLevel(next.stars, serverCopy.stars);
+          /* Who is out of the store's benchmark averages. A list, so it is a
+             union like the ignore list, and for the same reason: an absence is
+             also what a browser that never heard of the name looks like.
+             Taking somebody back into the averages is therefore stamped. */
+          /* A stamped PAIR, exactly like the ignore list above, and for a reason
+             worth writing down: the first version of this kept only the removal
+             stamp. Taking somebody back into the averages stuck, and putting them
+             out again afterwards could never win — the removal stamp was unioned
+             back from the other tab every time. One-sided tombstones can only say
+             a thing once. Two stamps compared by time can be changed as often as
+             somebody changes their mind. */
+          next.statsExcludedAt = mergeTombstones(next.statsExcludedAt, serverCopy.statsExcludedAt);
+          next.statsExcludedGone = mergeTombstones(next.statsExcludedGone, serverCopy.statsExcludedGone);
+          const stillOut = (n) =>
+            !((next.statsExcludedGone[norm(n)] || "") > (next.statsExcludedAt[norm(n)] || ""));
+          const seen = new Set();
+          next.statsExcluded = [...(next.statsExcluded || []), ...(serverCopy.statsExcluded || [])]
+            .filter((n) => {
+              const k = norm(n);
+              if (!k || seen.has(k)) return false;
+              seen.add(k);
+              return stillOut(n);
+            });
+        }
+        /* repeatFlags is deliberately absent: it is dead. Every reference in the
+           app and the pipeline is copy-through, nothing reads a value out of it
+           and nothing writes one in. Merging it would be inventing a rule for
+           something with no behaviour to protect. */
   return next;
 }

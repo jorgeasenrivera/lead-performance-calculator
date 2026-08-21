@@ -78,30 +78,67 @@ test("every rule says why, so the next person inherits the reasoning", () => {
   assert.deepEqual(bare, []);
 });
 
+/* The two rules that mean "the merge does not touch this": one is an admission
+   that a field has no rule yet, the other is a decision that it never needs one. */
+const UNMERGED = new Set(["clientWins", "deadField"]);
+
 /* ---- the check that makes the table falsifiable ---- */
 test("a field claiming to be unmerged is really unmerged", () => {
   const lying = Object.entries(FIELD_POLICY)
-    .filter(([f, v]) => v.how === "clientWins" && ASSIGNED.has(f)).map(([f]) => f);
+    .filter(([f, v]) => UNMERGED.has(v.how) && ASSIGNED.has(f)).map(([f]) => f);
   assert.deepEqual(lying, [],
     "the merge writes this, so clientWins is wrong; give it the rule it actually has");
 });
 
 test("and a field claiming a rule is really merged", () => {
   const lying = Object.entries(FIELD_POLICY)
-    .filter(([f, v]) => v.how !== "clientWins" && !ASSIGNED.has(f)).map(([f]) => f);
+    .filter(([f, v]) => !UNMERGED.has(v.how) && !ASSIGNED.has(f)).map(([f]) => f);
   assert.deepEqual(lying, [],
     "declares a rule the merge does not carry out; either merge it or mark it clientWins");
 });
 
-/* ---- the gaps, counted, so they can only go down on purpose ---- */
-test("the unmerged fields are the seven known ones and no more", () => {
-  const gaps = Object.entries(FIELD_POLICY).filter(([, v]) => v.gap).map(([f]) => f).sort();
-  assert.deepEqual(gaps,
-    ["baselines", "goals", "qualified", "repeatFlags", "restrictions", "stars", "statsExcluded"],
-    "the list of fields a second manager can silently lose their work on has changed");
-  /* Marked and unmerged have to mean the same thing, or a gap could be quietly
-     closed in the table without being closed in the code. */
+/* ---- what is left unmerged, named, so it can only grow on purpose ---- */
+test("nothing is left unmerged except the field that is dead", () => {
+  const unmerged = Object.entries(FIELD_POLICY)
+    .filter(([, v]) => UNMERGED.has(v.how)).map(([f]) => f).sort();
+  assert.deepEqual(unmerged, ["repeatFlags"],
+    "a field a second manager can silently lose their work on. If that is deliberate, say why in the row and add it here.");
+  /* The seven that used to be gaps are closed, so nothing should still be
+     claiming to be one. A gap left marked after the work was done would put the
+     next person off looking. */
+  const stillMarked = Object.entries(FIELD_POLICY).filter(([, v]) => v.gap).map(([f]) => f);
+  assert.deepEqual(stillMarked, [], "marked as a gap but no longer one");
+});
+
+test("the app actually writes the stamps these rules are settled by", () => {
+  /* The rule and the writer are in different files, and a stamped rule with
+     nothing writing the stamp is worse than no rule at all: it reads as decided
+     and behaves as last-writer-wins, which is the state all seven of these were
+     already in. So the two are held together here.
+
+     Each entry is the field, and a line the app must contain to be writing its
+     stamp. Deliberately the assignment itself rather than a loose mention, so
+     that a stamp being read somewhere does not count as one being written. */
+  const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+  const writers = [
+    ["restrictions", "next.restrictionsAt[assoc.id] ="],
+    ["goals", "next.goalsAt[a.id] ="],
+    ["baselines", "next.baselinesAt[a.id] ="],
+    ["qualified", "next.qualifiedAt[day][k] ="],
+    ["statsExcluded", "next.statsExcludedAt[norm(a.name)] ="],
+    ["statsExcluded (put back)", "next.statsExcludedGone[norm(a.name)] ="],
+  ];
+  const missing = writers.filter(([, line]) => !APP.includes(line)).map(([f]) => f);
+  assert.deepEqual(missing, [],
+    "the merge settles this by a stamp the app never writes, so it silently stays last-writer-wins");
+});
+
+test("every stamped field has the stamps it is settled by", () => {
+  /* A rule of stampedMap with nothing writing the stamps is worse than no rule:
+     it reads as decided and behaves as last-writer-wins. */
   for (const [f, v] of Object.entries(FIELD_POLICY)) {
-    assert.equal(!!v.gap, v.how === "clientWins", `${f}: gap and clientWins must agree`);
+    if (v.how !== "stampedMap" || f.endsWith("At")) continue;
+    assert.ok(FIELD_POLICY[f + "At"], `${f} is settled by stamps but ${f}At has no rule`);
+    assert.ok(ASSIGNED.has(f + "At"), `${f}At is never written by the merge`);
   }
 });
