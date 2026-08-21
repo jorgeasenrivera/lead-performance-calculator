@@ -137,6 +137,26 @@ was there in small grey type, doing none of the work of telling them apart.
   Quiet but never hidden until hover: half the people on this screen are on an iPad, where
   a control that only appears for a mouse does not exist at all.
 
+### The row's own buttons, and room at the edges — same day
+
+Every row carried four solid blue pills, so a list of people read as a wall of buttons with
+some names in it. They are all ordinary, occasional actions — somebody leaves, somebody
+moves store — and none of them is what a manager came to the screen to do; the list itself
+is. They are outlined and quiet now, turn solid under the pointer, and only **Not ours**
+takes a colour, because it is the only one that removes a person's figures from the store's
+books.
+
+The buttons on the ALERT cards stayed solid on purpose. Those cards are a decision somebody
+came to make; the list is something they came to read.
+
+On a phone the labels stay and the row wraps. Dropping them to icons fits the row and turns
+four unlabelled marks into a guessing game, one of which is destructive.
+
+And the tab had no gutter at all: every other manager page sits in `.board-page` (32px sides,
+1440 ceiling) and this one was rendered bare into `.page`, which carries no padding, so on a
+wide monitor it ran from one edge of the glass to the other. Worth checking whether Summary,
+History and Import have the same gap.
+
 "No position yet" is a real state and a common one — every name a report brings in arrives
 without one — so it gets its own grey identity rather than being lumped in with the first
 position on the list.

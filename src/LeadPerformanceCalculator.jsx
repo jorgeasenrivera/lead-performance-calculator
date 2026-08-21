@@ -3195,11 +3195,14 @@ export default function LeadPerformanceCalculator() {
                 {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
                 {tab === "roster" && (
-                  <>
+                  /* The gutter the Dashboard has had all along. This tab was
+                     rendered straight into .page, which carries no padding, so it
+                     ran edge to edge on anything wider than a laptop. */
+                  <div className="pp-page">
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
                       storeName={currentStore?.name} allStores={accessibleStores}
                       onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
-                  </>
+                  </div>
                 )}
               </>
             )}
@@ -20684,16 +20687,40 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   })()}
                 </div>
               </div>
+              {/* ---- four filled buttons per row, nine rows deep ----
+                  Every one of these was a solid blue pill, so a list of people
+                  read as a wall of buttons with some names in it. They are all
+                  ordinary, occasional actions — somebody leaves, somebody moves
+                  store — and none of them is what a manager came to this screen
+                  to do; the list itself is. So they are drawn quietly and turn
+                  solid under the pointer, and only the one that takes figures
+                  away has a colour of its own. */}
               <div className="pp-acts">
-                {p.status !== "active" && <button className="btn btn-sm" onClick={() => move(p.name, "active")}>On the floor</button>}
-                {p.status !== "departed" && <button className="btn btn-sm" onClick={() => move(p.name, "departed")}>They left</button>}
-                {p.status === "active" && (allStores || []).length > 1 && (
-                  <button className="btn btn-sm" onClick={() => { setMoving(p); setMoveTo(""); }}>Move store</button>
+                {p.status !== "active" && (
+                  <button className="pp-act" onClick={() => move(p.name, "active")}>
+                    <PixIcon glyph="check" size={11} /><span>On the floor</span>
+                  </button>
                 )}
-                {p.status !== "ignored" && <button className="btn btn-sm pp-danger" onClick={() => move(p.name, "ignored")}>Not ours</button>}
+                {p.status !== "departed" && (
+                  <button className="pp-act" onClick={() => move(p.name, "departed")}>
+                    <PixIcon glyph="door" size={11} /><span>They left</span>
+                  </button>
+                )}
+                {p.status === "active" && (allStores || []).length > 1 && (
+                  <button className="pp-act" onClick={() => { setMoving(p); setMoveTo(""); }}>
+                    <PixIcon glyph="swap" size={11} /><span>Move store</span>
+                  </button>
+                )}
+                {p.status !== "ignored" && (
+                  <button className="pp-act danger" onClick={() => move(p.name, "ignored")}>
+                    <PixIcon glyph="close" size={11} /><span>Not ours</span>
+                  </button>
+                )}
                 {storeId && p.id && p.status !== "ignored" && (
-                  <button className="btn btn-sm" onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
-                    {openAcct === p.key ? "Close" : "Details"}
+                  <button className={"pp-act" + (openAcct === p.key ? " on" : "")}
+                    onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
+                    <PixIcon glyph={openAcct === p.key ? "arrowup" : "more"} size={11} />
+                    <span>{openAcct === p.key ? "Close" : "Details"}</span>
                   </button>
                 )}
               </div>
@@ -23350,6 +23377,14 @@ function Style() {
          it and the ring silently never appears. */
       .pp-row .pp-av { box-shadow:0 0 0 2px #fff, 0 0 0 3px var(--rolec, #94A3B8); }
 
+      /* ---- room at the edges ----
+         Every other manager tab that carries a page of its own sits in .board-page,
+         which is 32px of gutter and a 1440 ceiling. The People tab was rendered
+         bare into .page, which has no padding at all, so on a wide monitor the
+         card ran from one edge of the glass to the other and the buttons finished
+         hard against the right-hand side. */
+      .pp-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
+      @media (max-width:900px) { .pp-page { padding:16px 16px 0; } }
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }
@@ -23398,7 +23433,7 @@ function Style() {
         padding:9px 12px; border-radius:12px; background:rgba(42,94,155,.08); font-size:12.5px; font-weight:600; }
 
       .pp-list { display:grid; gap:5px; margin-top:10px; }
-      .pp-row { display:flex; gap:10px; align-items:center; padding:8px 11px; border-radius:12px;
+      .pp-row { display:flex; gap:12px; align-items:center; padding:11px 14px; border-radius:13px;
         background:rgba(16,32,52,.035); }
       .pp-row.on { background:rgba(42,94,155,.12); }
       .pp-row.pp-ignored { opacity:.62; }
@@ -23411,7 +23446,33 @@ function Style() {
       .pp-pill-active { color:#0E7C55; background:rgba(15,179,126,.14); }
       .pp-pill-departed { color:#95600A; background:rgba(240,180,41,.16); }
       .pp-pill-ignored { color:#C13529; background:rgba(229,83,63,.13); }
-      .pp-acts { display:flex; flex-wrap:wrap; gap:6px; }
+      .pp-acts { display:flex; flex-wrap:wrap; gap:6px; margin-left:auto; }
+      /* Quiet until you go for one. An outline and a glyph is enough to be found
+         and not enough to shout, which is the right weight for something you do
+         to a person twice a year. */
+      .pp-act { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:11px;
+        font-family:inherit; font-size:12.5px; font-weight:650; letter-spacing:-.01em; cursor:pointer;
+        color:var(--ink-2, #44546B); background:rgba(255,255,255,.55);
+        border:1px solid rgba(16,32,52,.13); box-shadow:0 1px 1px rgba(16,32,52,.03);
+        transition:background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease), transform .15s var(--ease); }
+      .pp-act svg { opacity:.55; transition:opacity .15s; }
+      .pp-act:hover { background:#fff; border-color:rgba(16,32,52,.3); color:var(--ink, #17202E); transform:translateY(-1px); }
+      .pp-act:hover svg { opacity:1; }
+      .pp-act:active { transform:none; }
+      /* Open, and staying open: the one state in this row that is not momentary. */
+      .pp-act.on { background:rgba(42,94,155,.1); border-color:rgba(42,94,155,.32); color:#2A5E9B; }
+      .pp-act.on svg { opacity:1; }
+      /* The only one that takes a person's figures out of the store's books. It
+         earns a colour; the other four do not. */
+      .pp-act.danger:hover { background:rgba(229,83,63,.09); border-color:rgba(229,83,63,.4); color:#C13529; }
+      @media (max-width:760px) {
+        /* The labels STAY. Dropping them to icons fits the row and turns four
+           unlabelled marks into a guessing game, one of which takes a person's
+           figures out of the store's books. The row already wraps on a phone, so
+           they simply sit under the name with their names on them. */
+        .pp-acts { margin-left:0; }
+        .pp-act { padding:9px 12px; }
+      }
       /* Waiting on a decision, not wrong yet — so amber rather than the red the
          unclaimed-figures card uses. One of those is a question, the other is a
          store counting cars it never sold. */
