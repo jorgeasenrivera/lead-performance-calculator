@@ -258,7 +258,7 @@ function applyToStore(data, entries, sourceLabel) {
     roster: next.roster, months: next.months, activity: next.activity,
     plates: next.plates, restrictions: next.restrictions, aliases: next.aliases,
     stars: next.stars, goals: next.goals, baselines: next.baselines, qualified: next.qualified,
-    repeatFlags: next.repeatFlags, excluded: next.excluded, departed: next.departed,
+    excluded: next.excluded, departed: next.departed,
     daysOff: next.daysOff, daysOffAt: next.daysOffAt,
     statsExcluded: next.statsExcluded, plateRegistry: next.plateRegistry,
   }));

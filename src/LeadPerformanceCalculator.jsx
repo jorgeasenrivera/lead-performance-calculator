@@ -2346,7 +2346,7 @@ export default function LeadPerformanceCalculator() {
       roster: data.roster, months: data.months, activity: data.activity,
       plates: data.plates, restrictions: data.restrictions, aliases: data.aliases,
       stars: data.stars, goals: data.goals, baselines: data.baselines, qualified: data.qualified,
-      repeatFlags: data.repeatFlags, excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
+      excluded: data.excluded, departed: data.departed, daysOff: data.daysOff, daysOffAt: data.daysOffAt, statsExcluded: data.statsExcluded, plateRegistry: data.plateRegistry,
     }));
     const t = new Date().toISOString();
     const snaps = data.snapshots || [];
@@ -2751,6 +2751,11 @@ export default function LeadPerformanceCalculator() {
     if (!storeData) return;
     const next = JSON.parse(JSON.stringify(storeData));
     next.restrictions = next.restrictions || {};
+    /* Stamped, because taking a restriction off is a deletion, and a deletion
+       that is not written down cannot survive meeting another manager's copy —
+       theirs still has it and an absence proves nothing. */
+    next.restrictionsAt = next.restrictionsAt || {};
+    next.restrictionsAt[assoc.id] = new Date().toISOString();
     if (restriction) next.restrictions[assoc.id] = restriction;
     else delete next.restrictions[assoc.id];
     await persistStore(view, next, {
@@ -10887,6 +10892,11 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     const next = JSON.parse(JSON.stringify(data));
     next.qualified = next.qualified || {};
     next.qualified[day] = next.qualified[day] || {};
+    /* Stamped per person per day. Two managers marking two different people on
+       the same morning is the ordinary case, not a race worth losing. */
+    next.qualifiedAt = next.qualifiedAt || {};
+    next.qualifiedAt[day] = next.qualifiedAt[day] || {};
+    next.qualifiedAt[day][k] = new Date().toISOString();
     // clear any legacy star value so the two don't fight
     if (next.stars?.[day]) delete next.stars[day][k];
     if (nextVal === null) delete next.qualified[day][k];
@@ -15422,7 +15432,13 @@ function BaselineImport({ data, onChange }) {
 
     const next = JSON.parse(JSON.stringify(data));
     next.baselines = next.baselines || {};
+    /* Stamped per person: re-seeding is warned about because every coaching
+       target is built from this, and losing a seed to another manager's tab
+       would be the same damage without the warning. */
+    next.baselinesAt = next.baselinesAt || {};
+    const seededAt = new Date().toISOString();
     for (const { a, rec } of preview.people) {
+      next.baselinesAt[a.id] = seededAt;
       next.baselines[a.id] = {
         daysWorked: d,
         oppShowroom: rec.actOppShowroom ?? 0,
@@ -15615,7 +15631,7 @@ function UploadHistory({ data, onChange }) {
           roster: current.roster, months: current.months, activity: current.activity,
           plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
           stars: current.stars, goals: current.goals, baselines: current.baselines,
-          repeatFlags: current.repeatFlags, excluded: current.excluded,
+          excluded: current.excluded,
         })) },
         ...(current.snapshots || []),
       ].slice(0, 12),
@@ -15625,7 +15641,6 @@ function UploadHistory({ data, onChange }) {
       goals: current.goals,
       baselines: current.baselines,
       stars: current.stars,
-      repeatFlags: current.repeatFlags,
       excluded: current.excluded,
     };
     onChange(restored, { action: "Undid upload", detail: `${u.label} (${u.file})` });
@@ -16685,6 +16700,9 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
     // Remember the goal for the current month so a past-month recap can be measured
     // against the goal that was actually in force then, not whatever the goal is now.
     next.goals[a.id] = { ...prevG, monthly: g, byMonth: { ...(prevG.byMonth || {}), [ym()]: g } };
+    // Stamped so two managers setting two people's goals both keep theirs.
+    next.goalsAt = next.goalsAt || {};
+    next.goalsAt[a.id] = new Date().toISOString();
     onChange(next, { action: "Set monthly goal", detail: `${a.name}: ${v}` });
   };
 
@@ -17047,8 +17065,22 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
     const set = new Set((next.statsExcluded || []));
     // store by display name so it survives id changes
     const has = [...set].some((n) => norm(n) === norm(a.name));
-    if (has) next.statsExcluded = [...set].filter((n) => norm(n) !== norm(a.name));
-    else next.statsExcluded = [...set, a.name];
+    /* The list is a union across every open tab, so putting somebody back into
+       the averages is a decision with a time on it rather than a filter. Filtering
+       alone is the exact shape of the bug that has now bitten five times. */
+    next.statsExcludedAt = next.statsExcludedAt || {};
+    next.statsExcludedGone = next.statsExcludedGone || {};
+    const at = new Date().toISOString();
+    if (has) {
+      next.statsExcluded = [...set].filter((n) => norm(n) !== norm(a.name));
+      next.statsExcludedGone[norm(a.name)] = at;
+    } else {
+      next.statsExcluded = [...set, a.name];
+      /* Stamped rather than clearing the other one: deleting a stamp does not
+         survive its own merge, since the other tab still holds it and the union
+         puts it straight back. */
+      next.statsExcludedAt[norm(a.name)] = at;
+    }
     onChange(next, { action: has ? "Included in store stats" : "Excluded from store stats", detail: a.name });
   };
   const thr = normThresholds(store.thresholds);

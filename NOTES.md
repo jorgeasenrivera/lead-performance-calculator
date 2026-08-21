@@ -35,23 +35,39 @@ So the flag is driven off the coaching entries, not off store goals.
    their manager? Somewhere the manager is actually prompted to read it, or it will be
    written into a void.
 4. **Whether a manager can lift it**, and whether lifting it is recorded.
-5. **How much of the app the block covers.** See the risk below — this one matters most.
 
-### The risk worth naming before it is built
+### What the block covers — DECIDED 2026-08-21
 
-A hard block that catches the morning **QR sign-in to the line** would stop someone taking
-an up. Locking a salesperson out of the floor is the most expensive thing this app could
-do to a store, and it would land on whoever is already having the worst month.
+A hard block that caught the morning **QR sign-in to the line** would stop someone taking an
+up. Locking a salesperson off the floor is the most expensive thing this app could do to a
+store, and it would land on whoever is already having the worst month — which is the
+opposite of what the flag is for.
 
-The block should keep them out of the parts of the app that are about *reviewing* their
-performance, and let them keep *working*. Sign in to the line, take an up, log a delivery —
-those stay open. Confirm with Jorge before building either way.
+Jorge agreed the split. **The block stops them reviewing, never working.**
+
+| stays open | blocked until they write |
+|---|---|
+| sign in to the line, by QR or otherwise | their numbers, their trend, their standing |
+| take an up | the board, the summary, anything ranking them |
+| log a delivery, and anything else the floor needs | |
+
+The test of a candidate screen: if being locked out of it costs the store a sale, it stays
+open. Everything a salesperson does that puts money on the board keeps working; the part
+that tells them how they are doing is what waits on the note.
+
+Worth building the block as a list of screens it applies to rather than a list of exceptions,
+so that a screen added later is open by default. A new screen that silently joins the blocked
+set is how this ends up costing a sale a year from now.
 
 ---
 
-## Merge policy decisions (for the store-merge work)
+## Merge policy decisions — BUILT 2026-08-21
 
 Answers given 2026-08-21, in response to the scope of the "one guard" merge work.
+All of it is in now: the merge is `api/_store-merge.mjs`, every field declares its
+rule in `FIELD_POLICY`, the seven that had no rule have one, and `applyDecisions`
+runs every recorded decision over whatever a merge produces. Kept here because the
+reasoning is worth more than the outcome.
 
 | Field | Decision |
 |---|---|
@@ -68,15 +84,25 @@ Established by reading every reference, 2026-08-21:
   bar of 40 instead of a yes/no. **Nothing writes it any more** — tapping the new control
   deletes the old star value so the two cannot disagree. It is only still read so that old
   months keep scoring. It can shrink, never grow.
-- **`repeatFlags` — dead.** Every reference in the app and the pipeline is copy-through:
-  snapshot lists and restore lists. Nothing reads a value out of it and nothing writes one
-  in. Safe to delete rather than write a merge rule for.
+- **`repeatFlags` — dead, and now deleted.** Every reference in the app and the pipeline was
+  copy-through: snapshot lists and an undo-restore list. Nothing read a value out of it and
+  nothing wrote one in; it was carried from document to document for no reason. Jorge chose
+  deletion over a merge rule. It is in `DEAD_FIELDS` and drains on the next save of each
+  store, so there is no job to run. An old snapshot restored through undo can bring one
+  back; the next save takes it out again.
 - **`statsExcluded` — live, keep.** People left out of the store's *benchmark averages*, so
   one outlier does not drag the store's comparison numbers around. Toggled per person on
   the coaching screen, where it shows as an "out of stats" badge.
 
-**Worth knowing about `statsExcluded`:** it is an array, and removing somebody from it is a
-plain `filter`. It is not merged at all today, so a removal does stick — but a second
-manager's concurrent addition is silently lost. If it is ever changed to a union without
-stamps, it becomes the sixth instance of the removal-does-not-survive bug. Give it stamps
-when the merge policy table is built.
+**`statsExcluded` got its stamps.** It was an array removed with a plain `filter`, which
+would have become the sixth instance of the removal-does-not-survive bug the moment anybody
+made it a union. It is a union now, with a stamped *pair* behind it — the first attempt used
+a single removal stamp and re-excluding somebody after putting them back could never win,
+because the other tab's removal stamp was unioned back every time.
+
+**The sixth instance turned up anyway, somewhere else.** Marking a roll-up row as ignored
+strips its figures, but the merge hands back the server's month whole, so the units walked
+back into the store's total while the name correctly stayed off every list. Found by writing
+the tests rather than by anybody noticing a wrong total. That is what `applyDecisions` is
+for: every decision is carried out again at the end of every merge, so a branch that hands
+data back cannot quietly undo one.
