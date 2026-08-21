@@ -18856,6 +18856,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           </div>
 
           <div className="health-pop">
+            {/* Two columns, because the panel got wide enough to earn them. The
+                month and the closing rates are read side by side rather than one
+                under the other, which is what took the bottom of this panel off
+                the screen and put a scrollbar on a thing you glance at. */}
+            <div className="hp-cols">
             {/* ---- The month, against what the store was asked for ----
                 First, because it is the question the rest of this popup was being
                 used to answer the long way round. The track is the whole goal; the
@@ -18955,8 +18960,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               </div>
             </div>
 
+            <div className="hp-col">
+            {/* The heading carried a sentence explaining that a closing rate is
+                units over leads. Anyone reading this panel knows, and it cost a
+                line in the one place that has to be readable at a glance. */}
             <div className="mp-title">Store closing rates</div>
-            <div className="mp-desc">Units delivered against the leads worked, month to date.</div>
             <div className="hp-rows">
               {closing.map((c) => (
                 <div key={c.id} className="hp-row">
@@ -18997,6 +19005,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 </div>
               </div>
             )}
+            </div>
+            </div>
             <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
             {/* The month's projection used to sit here, worked out over six-day
                 weeks. It has moved to the top of this popup and is now worked over
@@ -21447,17 +21457,18 @@ function Style() {
          inside the padding — the difference is 28px, which is exactly how much of
          it still hung off the bottom. The width is the rendered width it always
          had (346 content + 32 padding + 2 border), so nothing reflows. */
-      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:380px; box-sizing:border-box; z-index:240;
+      .health-pop { position:absolute; right:0; top:calc(100% + 16px); width:560px; box-sizing:border-box; z-index:240;
         opacity:0; pointer-events:none; text-align:left;
         transform: translateY(-6px) scale(.9); transform-origin: top right;
         transition: opacity .16s ease, transform .38s var(--ease-bloop);
         background:#FFFFFF; border:1px solid rgba(0,0,0,.07); border-radius:16px;
         padding:14px 16px 12px; box-shadow: 0 18px 46px rgba(16,32,52,.3);
-        /* It hangs off the hero with nothing below it, so on a short window the
-           bottom of it simply left the screen — and the thing that fell off the
-           end was the new-and-used split. It now stops at the screen and scrolls
-           the last of itself into view. */
-        max-height:var(--pop-max, min(70vh, 620px)); overflow-y:auto; overscroll-behavior:contain; }
+        /* Wide enough to hold the channels two-up rather than stacked, which is
+           what took the panel past the bottom of the screen. A scrollbar in here
+           was the wrong answer twice over: it hid the new-and-used split behind a
+           gesture, and this is a thing you glance at. The cap stays as a floor for
+           a genuinely tiny window, but nothing ordinary reaches it now. */
+        max-height:var(--pop-max, min(88vh, 760px)); overflow-y:auto; overscroll-behavior:contain; }
       .hero-health:hover .health-pop { opacity:1; transform: translateY(0) scale(1); }
       /* The arrow belongs to the card, not to the panel. It used to hang off the
          panel's top edge, which a panel that scrolls its own contents would clip
@@ -21467,7 +21478,14 @@ function Style() {
         opacity:0; pointer-events:none; transition:opacity .16s ease;
         border-left:1px solid rgba(0,0,0,.07); border-top:1px solid rgba(0,0,0,.07); border-radius:3px 0 0 0; }
       .hero-health:hover::after { opacity:1; }
-      .hp-rows { margin-top:10px; padding-top:9px; border-top:1px solid rgba(0,0,0,.07); }
+      /* The month on the left, the rates on the right, with a rule between them
+         rather than under the month. */
+      .hp-cols { display:grid; grid-template-columns:1fr 1fr; gap:0 18px; align-items:start; }
+      .hp-cols > .hp-goal { padding-bottom:0; margin-bottom:0; border-bottom:0;
+        border-right:1px solid rgba(0,0,0,.07); padding-right:18px; }
+      .hp-col { min-width:0; }
+      .hp-col > .mp-title { margin-top:0; }
+      .hp-rows { margin-top:8px; padding-top:8px; border-top:1px solid rgba(0,0,0,.07); }
       .hp-row { display:grid; grid-template-columns: 1fr auto; gap:2px 10px; padding:6px 0; align-items:baseline; }
       .hp-row + .hp-row { border-top:1px solid rgba(0,0,0,.05); }
       .hp-ch { font-size:12.5px; font-weight:700; }
