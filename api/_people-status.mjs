@@ -168,10 +168,15 @@ export function setStatus(data, names, status, opts = {}) {
  */
 export function unclaimed(data) {
   const claimed = new Set(everyone(data).map((p) => p.key));
+  /* A spelling somebody has already folded into a person is not waiting to be
+     claimed, whatever the figures still say. Without this the merge screen goes
+     on offering a name that has been dealt with, which is how it came to look
+     like the button did nothing. */
+  const folded = data.aliases || {};
   const found = new Map();
   for (const [mk, m] of Object.entries(data.months || {})) {
     for (const [k, st] of Object.entries((m && m.stats) || {})) {
-      if (claimed.has(k)) continue;
+      if (claimed.has(k) || folded[k]) continue;
       const units = (st?.internetUnits ?? 0) + (st?.phoneUnits ?? 0) + (st?.showroomUnits ?? 0) + (st?.campaignUnits ?? 0);
       const cur = found.get(k) || { key: k, name: st?.displayName || k, months: [], units: 0, days: 0 };
       cur.months.push(mk); cur.units += units;
@@ -180,7 +185,7 @@ export function unclaimed(data) {
   }
   for (const day of Object.values(data.activity || {})) {
     for (const [k, r] of Object.entries(day || {})) {
-      if (claimed.has(k)) continue;
+      if (claimed.has(k) || folded[k]) continue;
       const worked = r && ((r.calls || 0) > 0 || (r.video || 0) > 0 || (r.tasks || 0) > 0);
       if (!worked) continue;
       const cur = found.get(k) || { key: k, name: r?.displayName || k, months: [], units: 0, days: 0 };
@@ -463,22 +468,7 @@ export function sameAs(data, heldName, personName, opts = {}) {
 
   /* And any figures already filed under the wrong spelling, from before anybody
      said they were the same person. */
-  for (const m of Object.values(next.months)) {
-    if (!m || !m.stats || !m.stats[from]) continue;
-    const into = m.stats[to] || {};
-    for (const [f, v] of Object.entries(m.stats[from])) {
-      if (typeof v === "number" && typeof into[f] === "number") into[f] = into[f] + v;
-      else if (into[f] === undefined) into[f] = v;
-    }
-    m.stats[to] = into;
-    delete m.stats[from];
-  }
-  for (const day of Object.keys(next.activity)) {
-    const row = next.activity[day];
-    if (!row || !row[from]) continue;
-    row[to] = { ...(row[to] || {}), ...row[from] };
-    delete row[from];
-  }
+  foldAliases(next);
 
   /* The misspelling must not be left on any list, or the next report matches it
      before the alias is ever consulted.
@@ -512,6 +502,61 @@ export function sameAs(data, heldName, personName, opts = {}) {
        all saying the obvious. */
     note: opts.note ? `${opts.note} · same as ${personName}` : `same as ${personName}` });
   next.peopleLog = next.peopleLog.slice(0, 500);
+  return next;
+}
+
+/**
+ * Move every figure filed under an aliased spelling onto the person it belongs to.
+ *
+ * Separate from sameAs because the fold has to happen more than once. sameAs
+ * records the decision; this carries it out, and the figures are the one part of
+ * a store that a merge can hand straight back:
+ *
+ *   next.months = serverCopy.months   // when the server has the newer import
+ *
+ * That line is right — a browser holding an hours-old month must not overwrite
+ * the imports since — but it returns the mangled spellings with it, and reports
+ * arrive hourly, so a merge that hands the month back is the normal case rather
+ * than the rare one. A name folded away came back within seconds, every time,
+ * which is what made the merge button look broken.
+ *
+ * Safe to run as often as you like: the source key is removed as it is folded,
+ * so there is nothing left to add a second time.
+ */
+export function foldAliases(data) {
+  const next = data || {};
+  const aliases = next.aliases || {};
+  if (!Object.keys(aliases).length) return next;
+  // An alias pointing at an alias should land on the person at the end of it.
+  const target = (k) => {
+    let t = k, hops = 0;
+    while (aliases[t] && aliases[t] !== t && hops++ < 10) t = aliases[t];
+    return t;
+  };
+  for (const m of Object.values(next.months || {})) {
+    if (!m || !m.stats) continue;
+    for (const from of Object.keys(m.stats)) {
+      const to = target(from);
+      if (to === from) continue;
+      const into = m.stats[to] || {};
+      for (const [f, v] of Object.entries(m.stats[from])) {
+        if (typeof v === "number" && typeof into[f] === "number") into[f] = into[f] + v;
+        else if (into[f] === undefined) into[f] = v;
+      }
+      m.stats[to] = into;
+      delete m.stats[from];
+    }
+  }
+  for (const day of Object.keys(next.activity || {})) {
+    const row = next.activity[day];
+    if (!row) continue;
+    for (const from of Object.keys(row)) {
+      const to = target(from);
+      if (to === from) continue;
+      row[to] = { ...(row[to] || {}), ...row[from] };
+      delete row[from];
+    }
+  }
   return next;
 }
 
