@@ -12,35 +12,24 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+/* The merge itself, imported. This used to read the app's source as text, cut the
+   roster half out with indexOf and rebuild it with `new Function`, because the
+   merge lived in the middle of a 26k-line component and there was no other way to
+   reach it. That hack is gone: the merge is a module now, and these run against
+   the real thing rather than a slice of it that could go stale without saying so. */
 import fs from "node:fs";
 import path from "node:path";
 import { norm } from "../api/_report-parsers.mjs";
+import { mergeAgainstServer } from "../api/_store-merge.mjs";
 
 const ROOT = new URL("..", import.meta.url).pathname;
+/* Still read as text, and rightly so: the three checks at the bottom are about
+   the repair tool and the importer, which do live in the app file. Only the
+   merge moved out. */
 const src = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
 
-/* The roster half of mergeAgainstServer, lifted from the app so this tests the
-   real union rather than a description of it. If the shape below stops matching
-   the source, that is a signal in itself and the check fails loudly. */
-const cut = (from, to) => {
-  const a = src.indexOf(from);
-  const b = src.indexOf(to, a);
-  assert.ok(a >= 0 && b > a, `the merge has moved; update this check (${from})`);
-  return src.slice(a, b);
-};
-function rosterMerge(next, serverCopy) {
-  /* Both halves as they stand in the app: the tombstone merge that settles which
-     decision is newer, then the roster union it protects. */
-  const tomb = cut("const TOMB_DAYS", "\n/*", ) + "\n" + cut("function mergeTombstones(mine, theirs) {", "\n/*");
-  const block = cut("next.ignoredAt = mergeTombstones(", "        }\n        /* ---- The plate log ----");
-  assert.ok(block.includes("const onList"), "the ignore-stamp comparison has moved; update this check");
-  const fn = new Function("next", "serverCopy", "norm", `
-    ${tomb}
-    const gone = new Set(((next.departed) || []).map((x) => norm(x.name)));
-    ${block}
-    return next;`);
-  return fn(JSON.parse(JSON.stringify(next)), serverCopy, norm);
-}
+const rosterMerge = (next, serverCopy) =>
+  mergeAgainstServer(JSON.parse(JSON.stringify(next)), serverCopy);
 
 const store = (names, extra = {}) => ({
   roster: names.map((n, i) => ({ id: "a" + i, name: n, roleId: "sales" })),

@@ -30,6 +30,7 @@ import path from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const APP = path.join(ROOT, "src/LeadPerformanceCalculator.jsx");
+const API = path.join(ROOT, "api");
 
 /* Names allowed to exist twice, each with the reason it is not worth sharing.
    Keep this list short. Every entry is a small bet that these two will never
@@ -108,6 +109,86 @@ test("every name the app imports from a shared file is really exported", async (
     }
   }
   assert.ok(checked > 0, "no shared imports were found to check — has the app stopped importing them?");
+});
+
+/* ---- a name that is called but never defined ----
+   Twice now, consolidating shared code has left a call behind pointing at a name
+   that moved. Both were invisible until the code ran:
+
+     squash()   the reader's helper became squashT when the two copies were
+                merged into one. The ingest handler kept the old name, in the
+                first few lines of the handler, and every report email 500ed for
+                four hours
+
+     normTag()  the plate registry merge used it from the app's top level. When
+                the merge became a module the call came with it and the
+                definition did not, so the first merge of a tagged registry
+                would have thrown
+
+   A module with one of these still imports and still passes every test that does
+   not happen to call the line. That is the whole problem, so this does not run
+   anything: it reads each server file, collects every name bound in it, and
+   complains about a call to a name that is not one of them. */
+/* Comments and string literals removed, by walking the file rather than by a
+   chain of regexes. The regexes were tried first and were wrong in a way worth
+   recording: an apostrophe inside a line comment ("does not") opened a string
+   that swallowed real code until the next quote, and whole function definitions
+   went missing from the file this check was reading. */
+function codeOnly(src) {
+  let out = "", i = 0, n = src.length;
+  while (i < n) {
+    const c = src[i], d = src[i + 1];
+    if (c === "/" && d === "/") { while (i < n && src[i] !== "\n") i++; continue; }
+    if (c === "/" && d === "*") { i += 2; while (i < n && !(src[i] === "*" && src[i + 1] === "/")) i++; i += 2; continue; }
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c; i++;
+      while (i < n && src[i] !== q) { if (src[i] === "\\") i++; i++; }
+      i++; out += '""'; continue;
+    }
+    out += c; i++;
+  }
+  return out;
+}
+
+test("every name a server file calls is one it has or imports", () => {
+  const GLOBALS = new Set(["if","for","while","switch","catch","return","typeof","function","await",
+    "new","fetch","String","Number","Boolean","Array","Object","JSON","Math","Date","Set","Map",
+    "Promise","Buffer","console","parseInt","parseFloat","isNaN","encodeURIComponent",
+    "decodeURIComponent","require","import","setTimeout","clearTimeout","RegExp","Error","process",
+    "globalThis","URL","URLSearchParams","TextDecoder","TextEncoder","crypto","Uint8Array","Intl",
+    "async","of","in","do","else","try","yield","delete","void","instanceof","case"]);
+  const bad = [];
+  for (const f of fs.readdirSync(API).filter((x) => x.endsWith(".mjs"))) {
+    /* Comments and string literals out first, so a name written in prose or inside
+       a message is not mistaken for a call. */
+    const text = codeOnly(fs.readFileSync(path.join(API, f), "utf8"));
+    const bound = new Set();
+    const add = (re, g = 1) => { for (const m of text.matchAll(re)) bound.add(m[g]); };
+    add(/\b(?:function|class)\s+([A-Za-z_$][\w$]*)/g);
+    add(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g);
+    add(/import\s+([A-Za-z_$][\w$]*)\s+from/g);
+    add(/import\s*\*\s*as\s+([A-Za-z_$][\w$]*)/g);
+    for (const m of text.matchAll(/import\s*\{([^}]*)\}/g)) {
+      for (const part of m[1].split(",")) {
+        const name = part.split(" as ").pop().trim();
+        if (name) bound.add(name);
+      }
+    }
+    /* Parameters and destructured bindings, generously: a false "bound" only ever
+       costs coverage, while a false "missing" would fail the build on good code.
+       Deliberately not requiring what follows the name — matching the delimiter
+       after it as well consumed the comma, so the second parameter of every pair
+       had nothing in front of it left to match and read as undefined. */
+    add(/[(,{[]\s*([A-Za-z_$][\w$]*)/g);
+    /* A call not reached through a dot, so method names are not counted, and not
+       preceded by a backslash either: inside a regex literal \b( and \d( look
+       exactly like a call to b or d. */
+    for (const m of text.matchAll(/(^|[^.\w$\\])([A-Za-z_$][\w$]*)\s*\(/g)) {
+      const name = m[2];
+      if (!GLOBALS.has(name) && !bound.has(name)) bad.push(`${f}: ${name}()`);
+    }
+  }
+  assert.deepEqual(bad, [], "called but never defined or imported");
 });
 
 test("no check reaches for a path on somebody's machine", () => {
