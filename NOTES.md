@@ -5,7 +5,7 @@ Separate from the HANDOFF files on purpose: those describe a session, this outli
 
 ---
 
-## Goal accountability, with a hard stop
+## Goal accountability, with a hard stop — BUILT 2026-08-21
 
 **Asked for 2026-08-21, in Jorge's words:**
 
@@ -25,16 +25,46 @@ Where the goals live, per Jorge:
 
 So the flag is driven off the coaching entries, not off store goals.
 
-### What has to be decided before this can be built
+### What was decided, and what it does now
 
-1. **What counts as "keeps not getting to".** Consecutive days short? A count inside a
-   rolling window — three of the last five? Below goal by any margin, or by some amount?
-   This is the whole trigger and there is no sensible default to guess at.
-2. **Who it applies to.** Salespeople only, or managers against the store goal too?
-3. **Where the written reason goes.** Into the coaching record for that person, visible to
-   their manager? Somewhere the manager is actually prompted to read it, or it will be
-   written into a void.
-4. **Whether a manager can lift it**, and whether lifting it is recorded.
+The rule and everything that follows from it are in `api/_goal-standing.mjs`, checked by
+`test/goal-standing.test.mjs`. The screen is My Day, in the app.
+
+1. **What counts as "keeps not getting to".** Jorge chose **three of the last five**, and
+   the store can change both numbers (`repeatDays`, `repeatWindow` under Standards). Days
+   off and days with no report are **skipped**, not counted either way — a day nobody
+   worked is not a day somebody failed. Somebody who signed in and did nothing HAS worked,
+   which the figures alone cannot tell apart, so the sign-in record decides it.
+2. **What counts as a bad day: calls and videos**, against the store's own minimums.
+   Deliberately NOT the RockEd mark, which is the third leg of the daily points system:
+   the mark is not published with the floor figures, so a phone cannot read it, and a flag
+   defined partly on something one side cannot see is two definitions of a bad day wearing
+   one name — the shape of the last six faults in this system. If the mark is ever wanted
+   in the rule, publish it first and change `dayBelow` in one place.
+3. **Who it applies to.** Salespeople. Still open: whether a manager should be held to the
+   store goal the same way.
+4. **Where the written reason goes.** On the **day's floor row**, and that is forced rather
+   than chosen: the store document is readable only by somebody signed in with that store
+   (`lpc:store:%` is gated on `has_store`) and the person who owes the note is holding a
+   phone that never signs in at all. The floor row is the one record both sides can read
+   and write. There is deliberately **no field for it on the store document** — that would
+   have been a field nothing ever wrote, which is exactly what `repeatFlags` turned out to
+   be.
+5. **A manager can lift it**, with a reason and their name against it, recorded next to the
+   notes. A lift covers days up to the day it was lifted for, so a later bad day raises it
+   again rather than the lift standing for ever. Still open: whether a lift should also go
+   into the audit log.
+
+The flag itself is never stored. It is derived from the days every time, so there is no
+piece of state for a merge to settle or a stale tab to resurrect.
+
+### Still to build
+
+- **The manager's side.** The notes are written and nothing prompts anybody to read them,
+  which is the void this file warned about. A manager needs to see who is flagged, read
+  what they wrote, and lift it from there.
+- The settings screen now describes the rule correctly; it described a "repeat offender"
+  flag that never existed for as long as the app has been running.
 
 ### What the block covers — DECIDED 2026-08-21
 

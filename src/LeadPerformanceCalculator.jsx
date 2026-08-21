@@ -30,6 +30,12 @@ import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclai
 /* Two copies of a store, folded into one. Out here rather than in this file so
    that it can be imported and checked; see the note at the top of it. */
 import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
+/* Somebody who keeps missing the standard, and the note they owe about it. The
+   rule and what counts as a bad day are in one file so the manager's screen and
+   the salesperson's phone can never come to two different answers about the same
+   week; see the note at the top of it. */
+import { goalStanding, dayBelow, didWork, notesFor, owesNote, makeNote, addNote,
+  makeLift, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -487,8 +493,10 @@ function normThresholds(t) {
 // Daily Activity checkout minimums (per store, editable)
 // minStars is optional: leave it at 0 and stars are recorded but not required.
 // rockEdStars is the RockEd bar used by the point system (the third point). Default 40.
-// repeatDays is how many days below standard in a month before someone is flagged
-// automatically as a repeat offender.
+// repeatDays and repeatWindow are the missed-standard flag: repeatDays days below
+// the bar out of the last repeatWindow days somebody actually worked, and they are
+// asked to write down why before the app will show them their day again. Days off
+// and days with no report are skipped rather than counted either way.
 /* Texts and emails on the daily tracker, by request from Driver's Mart Winter Park.
    Off everywhere else on purpose: automated follow-up fires whether or not a person
    is present, so these two are a record of outreach rather than a standard anyone is
@@ -543,7 +551,8 @@ function reportFreshness(store, rows, now = new Date()) {
 }
 
 
-const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40, repeatDays: 3 };
+const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40,
+  repeatDays: 3, repeatWindow: 5 };
 
 // ---- Days off + the Check Out point system ----
 // Off-days live in data.daysOff, keyed by association id, as a set of YYYY-MM-DD.
@@ -5805,14 +5814,81 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   const [openK, setOpenK] = useState("calls");
 
   /* The activity rows are already one per store per day, so a fortnight of one
-     person's numbers is a single query against keys we can name in advance. */
+     person's numbers is a single query against keys we can name in advance.
+
+     Read on the way in rather than when the one-number screen is opened: the
+     same ten days are what say whether somebody has missed the standard three
+     times in the last five, and that has to be known before the day is drawn
+     rather than after they have tapped into it. */
   const [series, setSeries] = useState(null);
   useEffect(() => {
-    if (view !== "one" || !meName) return;
+    if (!meName) return;
     let dead = false;
     loadMyDays(store, date, [norm(meName)]).then((d) => { if (!dead) setSeries(d); });
     return () => { dead = true; };
-  }, [view, store, date, meName]);
+  }, [store, date, meName]);
+
+  /* ---- three of the last five ----------------------------------------------
+     Jorge: "if someone in the store keeps not getting to their goal I want it to
+     flag it and make it obvious for them and they can't do anything in the app
+     until they write down why they're not able to fix everything."
+
+     What the block covers was settled by what a salesperson can actually reach.
+     Summary, History, Standards and the Dashboard are manager screens they never
+     see, so a block naming them would be a block on nothing while looking like
+     one. What they have is the line and this panel, and the line stays open
+     however far behind they are: locking somebody off the floor is the most
+     expensive thing this app could do to a store, and it would land on whoever
+     is already having the worst month. So the note stands in front of their own
+     figures, and the way back to the line is on the same screen. */
+  const whoKey = norm(meName || "");
+  const [record, setRecord] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteErr, setNoteErr] = useState("");
+  useEffect(() => {
+    if (!meName) return;
+    let dead = false;
+    loadGoalRecord(store, date, norm(meName), meId)
+      .then((r) => { if (!dead) setRecord(r); })
+      /* A record that cannot be read must not become a block. Being shut out by a
+         dropped connection, with no way to answer, is worse than a missed flag. */
+      .catch(() => { if (!dead) setRecord({ notes: [], lift: null, signedIn: new Set(), failed: true }); });
+    return () => { dead = true; };
+  }, [store, date, meName, meId]);
+
+  const standing = (() => {
+    if (!series) return null;
+    const seen = (record && record.signedIn) || new Set();
+    /* Only days this person worked AND that have figures. A day off, and a day
+       whose report has not landed yet, are not days anybody failed. */
+    const worked = series
+      .filter((d) => d.row && (didWork(d.row) || seen.has(d.day)))
+      .map((d) => ({ day: d.day, below: dayBelow(d.row, std) }));
+    return goalStanding(worked, { need: std.repeatDays, window: std.repeatWindow });
+  })();
+  /* Not until both halves have landed: gating on a half-read record would flash a
+     block at somebody who has already answered. */
+  const owing = !!(standing && record && !record.failed
+    && gatesMyDay("myday") && owesNote(record.notes, standing, record.lift));
+
+  const saveNote = async () => {
+    const note = makeNote(noteText, {
+      forDay: standing.latestMiss, by: meId || "", name: meName || "", who: whoKey, id: meId || "",
+      missed: standing.missed, of: standing.counted,
+    });
+    if (!note) return;
+    setNoteSaving(true); setNoteErr("");
+    try {
+      await writeGoalNote(store, date, note);
+      setRecord((r) => ({ ...(r || { lift: null, signedIn: new Set() }),
+        notes: notesFor(addNote((r && r.notes) || [], note)) }));
+      setNoteText(""); buzz([18, 40, 18]);
+    } catch (e) {
+      setNoteErr((e && e.message) || "That did not save. Try again in a moment.");
+    }
+    setNoteSaving(false);
+  };
 
   const spineItems = LIST.map((c) => {
     const auto = autoFor(c);
@@ -5832,7 +5908,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
         const made = t.target ? t.v >= t.target : false;
         return (
           <button key={t.k} type="button" className="sf-band"
-            onClick={() => { buzz(8); setOpenK(t.k); setSeries(null); setView("one"); }}>
+            onClick={() => { buzz(8); setOpenK(t.k); setView("one"); }}>
             <span className="sf-band-fig">
               <span className={"sf-band-dm" + (made ? " made" : "")}><DmNumber value={t.v} /></span>
             </span>
@@ -5851,7 +5927,63 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
   );
 
   let inner;
-  if (view === "one") {
+  if (owing) {
+    /* Their own figures and checklist are replaced by the record of what was
+       missed and the box to answer in. Not made unopenable: being shut out of the
+       one screen that would tell them why would be absurd, and the way back to
+       the line is right here, because the floor is never blocked. */
+    const missedRows = (series || [])
+      .filter((d) => standing.days.includes(d.day))
+      .sort((x, y) => String(y.day).localeCompare(String(x.day)));
+    inner = (
+      <SfScreen spine={spine} className="sf-v-owe">
+        <button type="button" className="sf-back" onClick={onClose}>
+          <PixIcon glyph="arrowleft" size={12} /><span>Back to the line</span>
+        </button>
+        <p className="sf-kicker">{longDay(date)}</p>
+        <SfDisplay a={standing.missed + " of your last " + standing.counted}
+          b="days missed the bar" />
+        <p className="sf-sub">
+          The bar is {std.minCalls} calls and {std.minVideos} videos in a day. Write down what is
+          stopping you and this goes away. Nobody is being marked down for what you say here,
+          and it is the only way anyone finds out what you are up against.
+        </p>
+
+        <div className="sf-owe-days">
+          {missedRows.map((d) => {
+            const r = d.row || {};
+            return (
+              <div key={d.day} className="sf-owe-day">
+                <span className="sf-owe-d">{shortDay(d.day)}</span>
+                <span className={"sf-owe-f" + ((Number(r.calls) || 0) < std.minCalls ? " under" : "")}>
+                  {r.calls || 0}<small>/{std.minCalls} calls</small>
+                </span>
+                <span className={"sf-owe-f" + ((Number(r.video) || 0) < std.minVideos ? " under" : "")}>
+                  {r.video || 0}<small>/{std.minVideos} videos</small>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="sf-owe-box">
+          <label htmlFor="sf-owe-note">What is stopping you?</label>
+          <textarea id="sf-owe-note" rows={4} value={noteText} maxLength={900}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder={"No inventory in my segment, three days on the desk covering, phone system down\u2026"} />
+          {noteErr ? <p className="sf-err">{noteErr}</p> : null}
+          <button type="button" className="sf-owe-go" disabled={!noteText.trim() || noteSaving}
+            onClick={saveNote}>
+            {noteSaving ? "Saving\u2026" : "Send it and carry on"}
+          </button>
+          <p className="sf-owe-fine">
+            Your manager reads this. Signing in, taking ups and logging a delivery all keep
+            working. This screen is the only thing waiting on you.
+          </p>
+        </div>
+      </SfScreen>
+    );
+  } else if (view === "one") {
     const peak = dayValues ? Math.max(...dayValues, 1) : 1;
     const CELLS = 7;
     const topIx = dayValues ? dayValues.indexOf(Math.max(...dayValues)) : -1;
@@ -7777,6 +7909,51 @@ function SfPickList({ variant, people, taken, countLabel, onPick, onBack, typed,
       </div>
     </SfScreen>
   );
+}
+
+/* ---- the missed-standard record: the notes, the lifts, and who was here ----
+   All three come off the day's floor rows, which is the only record a phone can
+   both read and write. The store document is out of reach from a phone by
+   design — `lpc:store:%` is gated on being signed in with that store — and a
+   flag whose evidence one side cannot read would be two different answers about
+   the same week wearing one name. See api/_goal-standing.mjs.
+
+   Three weeks back rather than ten days: the note has to cover the most recent
+   bad day, which can be a week old by the time a run of days off has passed
+   over it, and one query with a date range costs the same either way. */
+const GOAL_LOOKBACK = 21;
+async function loadGoalRecord(store, endDay, whoKey, meId) {
+  const days = lastDays(GOAL_LOOKBACK, endDay);
+  const rows = await loadFloorDays(store, days[0], days[days.length - 1]);
+  const mine = (n) => n && (n.who === whoKey || (meId && n.id === meId));
+  const notes = [];
+  let lift = null;
+  const signedIn = new Set();
+  for (const r of rows || []) {
+    const d = r.row || {};
+    for (const n of d.goalNotes || []) if (mine(n)) notes.push(n);
+    for (const l of d.goalLifts || []) {
+      if (!mine(l)) continue;
+      // One lift stands: the most recently made, whichever day it was recorded on.
+      if (!lift || String(l.at || "") > String(lift.at || "")) lift = l;
+    }
+    /* Somebody who signed in and did nothing all day HAS worked, and that is a
+       bad day rather than a day off. The figures alone cannot tell those apart. */
+    for (const p of d.line || []) {
+      if (p && (p.id === meId || norm(p.label || "") === whoKey)) signedIn.add(r.date);
+    }
+  }
+  return { notes: notesFor(notes), lift, signedIn };
+}
+
+/* Append-only, like every other decision in this system: a note is added, never
+   edited and never replaced. */
+async function writeGoalNote(store, date, note) {
+  return mutateFloorRow(store, date, (cur) => {
+    const next = cur || { date, store, line: [], history: [] };
+    next.goalNotes = addNote(next.goalNotes, note);
+    return next;
+  });
 }
 
 async function loadMyDays(store, endDay, nameKeys) {
@@ -13495,7 +13672,9 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
         <div className="preview-line">
           To RockEd: <b>{std.minCalls} calls</b> and <b>{std.minVideos} videos</b>
           {std.minStars > 0 ? <> and <b>{std.minStars} stars</b></> : null} in a day.
-          Missing that on <b>{std.repeatDays ?? 3} days</b> in a month flags someone as a repeat offender automatically.
+          Missing that on <b>{std.repeatDays ?? 3}</b> of the last <b>{std.repeatWindow ?? 5}</b> days
+          somebody works asks them, on their own phone, to write down what is stopping them
+          before My Day will show them anything else. Signing in and taking ups is never blocked.
           {!std.minStars && " Stars are recorded but not required at 0."}
         </div>
       </div>
@@ -20102,7 +20281,10 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               })} aria-label={`Select ${p.name}`}>
                 <span className="md-box">{sel.has(p.name) && <PixIcon glyph="check" size={13} />}</span>
               </button>
-              <span className="mf-av" style={{ background: `hsl(${hueFromName(p.name)} 52% 42%)` }}>{initialsOf(p.name)}</span>
+              {/* The same face the line-up draws, at the same brightness: this list and
+                  the Live Floor are the same people, and two different looks for one
+                  person is a small thing that quietly makes a screen feel unrelated. */}
+              <span className="mf-av" style={{ background: `hsl(${hueFromName(p.name)} 62% 46%)` }}>{initialsOf(p.name)}</span>
               <div className="pp-who">
                 <div className="pp-nm">{p.name}</div>
                 <div className="pp-sub">
@@ -25363,7 +25545,11 @@ function Style() {
 .mf .q-ord-b:hover:not(:disabled){ color:var(--mfink); }
 .mf .q-ord-b:disabled{ opacity:.3; }
 .mf .q-rank{ font-family:var(--mfmono); color:var(--mfink3); font-size:13px; min-width:18px; text-align:center; }
-.mf .mf-av{ width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:#fff; font-family:var(--mffont); font-weight:600; font-size:13px; margin:0 6px 0 2px; box-shadow:0 3px 10px rgba(16,32,52,.22); flex:0 0 auto; }
+/* The round initials badge. Not scoped to the Live Floor any more: the People
+   screen has been drawing the same span since it was written and getting a bare
+   coloured rectangle, because the only rule for it lived under .mf. One rule, so
+   a face looks the same wherever the app draws it. */
+.mf-av{ width:36px; height:36px; border-radius:50%; display:grid; place-items:center; color:#fff; font-family:var(--mffont, var(--font-ui)); font-weight:600; font-size:13px; margin:0 6px 0 2px; box-shadow:0 3px 10px rgba(16,32,52,.22); flex:0 0 auto; }
 .mf .q-nm{ font-family:var(--mffont); font-weight:600; color:var(--mfink); font-size:15px; display:flex; align-items:center; }
 .mf .q-next-tag{ background:linear-gradient(90deg,var(--a1),var(--a2)); color:#fff; font-family:var(--mfmono); font-size:10px; font-weight:600; letter-spacing:.06em; padding:2px 8px; border-radius:999px; margin-left:8px; }
 .mf .q-meta{ margin-top:5px; display:flex; align-items:center; gap:8px; }
@@ -25805,6 +25991,48 @@ function Style() {
 .sf-focus h4{ margin:0; font-size:16px; letter-spacing:-.025em; font-weight:650; color:var(--sfink); }
 .sf-focus-n{ font-family:var(--sfmono); font-size:10.5px; letter-spacing:.06em; color:var(--sfink2); margin-top:5px; text-transform:uppercase; }
 .sf-focus p{ margin:11px 0 0; font-size:13px; color:var(--sfink2); line-height:1.5; }
+
+/* ---- the missed-standard gate ----
+   Deliberately not styled as an alarm. Red edges and warning triangles on
+   somebody's own phone read as a punishment, and a punishment is answered with
+   the shortest thing that clears the screen. The point is to find out what is
+   actually stopping them, so this is the same card the rest of the panel is made
+   of, with the figures stated plainly and the box the only bright thing on it. */
+.sf-owe-days{ display:flex; flex-direction:column; gap:8px; margin:18px 16px 0 0; }
+.sf-owe-day{
+  display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07);
+}
+.sf-owe-d{ font-family:var(--sfmono); font-size:10px; letter-spacing:.06em; color:var(--sfink3);
+  text-transform:uppercase; min-width:52px; }
+.sf-owe-f{ font-size:14px; font-weight:640; color:var(--sfink); font-variant-numeric:tabular-nums; }
+.sf-owe-f small{ font-family:var(--sfmono); font-size:9.5px; letter-spacing:.05em; font-weight:400;
+  color:var(--sfink3); margin-left:4px; text-transform:uppercase; }
+.sf-owe-f.under{ color:#FFC46B; }
+.sf-owe-box{ margin:20px 16px 0 0; }
+.sf-owe-box label{ display:block; font-size:12px; font-weight:640; color:var(--sfink2);
+  letter-spacing:-.01em; margin-bottom:8px; }
+.sf-owe-box textarea{
+  width:100%; box-sizing:border-box; resize:vertical; min-height:104px;
+  font-family:var(--sffont); font-size:15px; line-height:1.45; color:var(--sfink);
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+  border-radius:16px; padding:14px; outline:none;
+}
+.sf-owe-box textarea:focus{ border-color:var(--a2); background:rgba(255,255,255,.09); }
+.sf-owe-box textarea::placeholder{ color:var(--sfink3); }
+.sf-owe-go{
+  display:block; width:100%; margin-top:12px; padding:15px 16px; border:0; border-radius:16px;
+  font-family:var(--sffont); font-size:15px; font-weight:660; letter-spacing:-.015em;
+  color:#0b0b10; background:var(--a2); cursor:pointer;
+  transition:transform .3s var(--ease-bloop), opacity .2s linear;
+}
+.sf-owe-go:disabled{ opacity:.4; cursor:default; }
+.sf-owe-go:active:not(:disabled){ transform:scale(.98); }
+.sf-owe-fine{ margin:14px 0 0; font-size:12px; line-height:1.55; color:var(--sfink2);
+  /* The panel's glow sits under the foot of this screen, and the dimmest ink on
+     the palette disappears into it. This line is the one that says the floor is
+     not blocked, so it is the last thing that should be hard to read. */
+  background:rgba(6,8,14,.55); border-radius:12px; padding:11px 12px; }
 
 .sf-jump{
   display:flex; align-items:center; gap:10px; width:100%; margin:22px 16px 0 0;
