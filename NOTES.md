@@ -111,6 +111,34 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## The removal bug, instance seven — FIXED 2026-08-21
+
+Reported as *"trying to merge and it's still clicking and then reverting back"*, twenty-four
+names at Holler Honda, all of them a column heading welded onto a real person's name.
+
+Instance five fixed the FIGURES: a folded name's numbers came back with the server's month.
+Instance seven was the same fold and the same trap one layer over, in the LISTS. `sameAs`
+takes the misspelling off the roster and out of the holding pen by deleting it, and both of
+those are unions in the merge — the roster so a stale tab cannot drop somebody, the holding
+pen so two reports can each hold half of one unclaimed person. So the server handed the name
+straight back and the screen offered it again seconds later.
+
+Found by running the fold through the real merge with the misspelling seeded on each list in
+turn: roster and pendingPeople came back, excluded and departed did not (they carry stamps
+already). Both are now carried out again by `foldAliases`, over whatever the lists say after
+a merge, with no new stamp: **the alias is the record**, it is already a union, and it
+already survives every merge. A seventh stamp would have been a seventh way of saying the
+same thing.
+
+The check now seeds the name on **every list a store keeps**, not the two that were reported.
+"We fixed the two in the report" is what produced instances two through six.
+
+One consequence worth knowing: while a name is an alias it cannot be on any list. Somebody
+genuinely called that would need the alias removed first — which is right, but there is no
+screen that removes an alias today.
+
+---
+
 ## Merge policy decisions — BUILT 2026-08-21
 
 Answers given 2026-08-21, in response to the scope of the "one guard" merge work.
