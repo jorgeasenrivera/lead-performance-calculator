@@ -26,7 +26,7 @@ import { doorCheck } from "../api/_geofence.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
   packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn,
-  manglings, mergeManglings } from "../api/_people-status.mjs";
+  manglings, mergeManglings, foldAliases } from "../api/_people-status.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -1660,6 +1660,20 @@ function mergeAgainstServer(next, serverCopy) {
           next.activity = serverCopy.activity || next.activity;
           next.activitySnaps = serverCopy.activitySnaps || next.activitySnaps;
         }
+        /* ---- names somebody has already folded away ----
+           Both branches above hand back figures this browser did not write, and
+           the server's copy still has every mangled spelling in it: "Alejandro
+           Diaz Visit" beside Alejandro Diaz. Merging the name was undone within
+           seconds, over and over, because the fold lived only in the copy that
+           had just been replaced.
+
+           Who somebody is, is a decision, and it survives the same way every
+           other decision here does: it is written down and re-applied, rather
+           than being a deletion and hoping nothing hands the name back. The
+           aliases are a union first, so a tab that has never heard of the fold
+           cannot drop it either. */
+        next.aliases = { ...(serverCopy.aliases || {}), ...(next.aliases || {}) };
+        foldAliases(next);
         // The log itself is a union: no entry from either side should disappear.
         {
           const seen = new Set();
