@@ -140,13 +140,37 @@ The four numbers the page is read for were a run-on sentence under the title —
 Dashboard. **Paused right now** is deliberately its own number rather than folded into
 "below standard": it is the only one where somebody is not being handed leads this minute.
 
-### Left alone, deliberately
+### Nothing to judge is not the same as judged and found wanting — FIXED
 
-Somebody with NO figures at all in a month is judged **Restrict**, because a missing value
-counts as a failed requirement. That is the same unfairness the day-off rule was written to
-avoid, and it is arguably wrong — but the Board judges the same way from the same function,
-so changing it here alone would make two screens disagree about one person. Raised rather
-than quietly changed.
+Somebody with NO figures at all in a month was judged **Restrict**, because a missing value
+counted as a failed requirement: a new hire in their first week, somebody on leave, a store
+whose report had not landed. Jorge asked for it fixed on both screens, so it is fixed in
+`evaluateAssociate` where both read it — a new `no-data` status, shown as **No figures yet**.
+
+The bar is deliberately EVERY required figure absent. One missing number out of four is a
+real shortfall against that requirement and still counts.
+
+### The board row, restructured — same day
+
+> Remove the words on the bar underneath. The speedometers are not lined up with each other.
+> I want the lead bar to take up a longer length within the tile.
+
+- **The dials never lined up** because the row was a flex line with TWO auto margins in it —
+  one before the dials, one before the lead count — so free space split between them and the
+  dials landed wherever the verdict's wording left them. "Nearing the limit" and "Below
+  standard, room left" are different widths, so no two rows agreed. It is a grid of fixed
+  tracks now: column four is under column four on every row.
+- **The bar is in the row** and takes whatever is left, which is most of it. It used to sit
+  under the row capped at 520px — the smallest object on a line with room for it to be the
+  largest — with a sentence beneath restating what it and the verdict already said.
+- **The sentences are gone**, kept as the bar's own `title`. A manager who wants the wording
+  has it on hover; the page is not nine paragraphs long. What is left under a row is the one
+  thing that was never a restatement: the Confirm-removed-from-leads action.
+- Below 1200px the row wraps instead, bar on its own line, so nothing is pushed off the edge.
+
+### Next: more pictures, fewer words, everywhere else
+
+Jorge's follow-up, not yet started: the same pass over the rest of the site.
 
 ---
 

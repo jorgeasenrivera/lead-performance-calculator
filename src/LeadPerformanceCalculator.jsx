@@ -1224,6 +1224,24 @@ function evaluateAssociate(stats, tiers) {
   let tierIndex = sorted.findIndex((t) => (opps ?? 0) <= t.cap);
   if (tierIndex === -1) tierIndex = sorted.length - 1;
   const tier = sorted[tierIndex];
+
+  /* ---- nothing to judge is not the same as judged and found wanting ----
+     A missing figure counted as a failed requirement, so anybody the month's
+     reports never mentioned came out as "restrict": a new hire in their first
+     week, somebody on leave, a store whose report had not landed yet. It is the
+     same unfairness the day-off rule exists to prevent, and it lands on the
+     person least able to argue with a screen.
+
+     Judged on what we have, and where we have nothing at all, said so. Note the
+     bar: EVERY required figure absent. One missing number out of four is a real
+     shortfall against that requirement and still counts. */
+  const measurable = tier.requirements.filter((r) => stats?.[r.metric] != null);
+  if (!measurable.length) {
+    return { status: "no-data", failures: [], tier, tierIndex, cap: tier.cap,
+      opps: opps ?? 0, atCap: false, capUse: tier.cap > 0 ? (opps ?? 0) / tier.cap : 0,
+      nextCap: sorted[tierIndex + 1]?.cap ?? null, surpass: 0 };
+  }
+
   const failures = [];
   let marginSum = 0, marginCount = 0;
   for (const req of tier.requirements) {
@@ -1278,10 +1296,15 @@ const VERDICT = {
   room:     { key: "room",     label: "Below standard, room left", short: "Room left", icon: "\u25CB", cls: "watch" },
   grace:    { key: "grace",    label: "Working toward standard", short: "Working",  icon: "\u25D0", cls: "grace" },
   none:     { key: "none",     label: "No standards",           short: "—",        icon: "\u00B7", cls: "dim" },
+  nodata:   { key: "nodata",   label: "No figures yet",         short: "No figures", icon: "\u00B7", cls: "dim" },
 };
 function verdictOf(ev, { restricted = false, inGrace = false } = {}) {
   if (restricted) return VERDICT.off;
   if (!ev || ev.status === "no-standards") return VERDICT.none;
+  /* Nothing to judge. Falling through to the bottom of this function would have
+     called it "below standard, room left", which is a verdict on figures nobody
+     has. */
+  if (ev.status === "no-data") return VERDICT.nodata;
   if (ev.status === "pass") return VERDICT.cleared;
   // status === "fail"
   if (inGrace) return VERDICT.grace;
@@ -14842,6 +14865,17 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
      Anybody who is graded gets their dials. */
   const showDials = !incomplete && !restrictedNow && (ev.status === "fail" || ev.status === "pass");
 
+  /* The sentence that was printed under every bar. Kept, as the bar's own title:
+     a manager who wants the wording has it on hover, and the page is not
+     nine paragraphs long. */
+  const capNote = ev.cap == null ? "" :
+    restrictedNow ? `Off leads. ${ev.opps ?? 0} of ${ev.cap} leads this month.`
+    : ev.status === "pass" ? `${ev.opps ?? 0} of ${ev.cap} leads. Cleared${ev.nextCap ? `, and cleared up to ${ev.nextCap}` : ""}.`
+    : ev.status === "fail" && ev.atCap ? `At the lead cap and below standard, so leads are restricted.`
+    : ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
+    : ev.status === "fail" ? `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`
+    : `${ev.opps ?? 0} of ${ev.cap} leads this month.`;
+
   const confirmRestrict = () => {
     const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
     onSetRestriction({ since: new Date().toISOString(), until, reasons: failureText(ev) });
@@ -14862,6 +14896,22 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           <PixIcon glyph="star" size={12} /> Crushing it
         </span>}
         {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+        {/* ---- the lead bar, in the row and running most of its length ----
+            It used to sit under the row at a fifth of the tile's width with a
+            sentence beneath it saying in fifteen words what the bar and the
+            verdict beside it already say: "Approaching the cap (83 of 100).
+            Leads pause at the cap unless these improve."
+
+            A bar is a picture of exactly one thing — how much of your allowance
+            is gone — and it was the smallest object on a row that had room for
+            it to be the largest. The sentence is now the bar's own title, so it
+            is one hover away rather than on the page nine times over. */}
+        {ev.cap != null && (
+          <span className="assoc-gauge" title={capNote}>
+            <span className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")}
+              style={{ width: pct + "%" }} />
+          </span>
+        )}
         {showDials && <MetricStrip ev={ev} stats={stats} />}
         <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
         {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
@@ -14875,13 +14925,9 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
                 : <span className="verdict verdict-watch">Below standard, room left</span>
           )}
           {ev.status === "no-standards" && <span className="verdict verdict-dim">No standards</span>}
+          {ev.status === "no-data" && <span className="verdict verdict-dim" title="No figures for this person in this month's reports, so there is nothing to judge them on.">No figures yet</span>}
         </>)}
       </div>
-      {ev.cap != null && (
-        <div className="gauge">
-          <div className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")} style={{ width: pct + "%" }} />
-        </div>
-      )}
       {incomplete && (
         <div className="reasons gray-note">
           Not all reports are in yet for this associate. {missing.length > 0 ? `Waiting on: ${missing.join(", ")}.` : "Some required numbers are blank."} The status stays on hold until the file is complete.
@@ -14894,20 +14940,11 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           {!readOnly && <button className="btn-x" onClick={() => onSetRestriction(null)}>Put back on leads</button>}
         </div>
       )}
-      {softFail && !restrictedNow && (
-        <div className="reasons watch-note">
-          <div className="reason-lead">Working toward standard. No restriction recommended during the grace period.</div>
-        </div>
-      )}
       {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
         <div className="reasons">
-          <div className="reason-lead">
-            {ev.atCap
-              ? "At the lead cap and below standard, so leads are restricted."
-              : (ev.capUse ?? 0) >= 0.8
-                ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
-                : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`}
-          </div>
+          {/* No sentence here any more: the verdict beside the name says it in
+              three words and the bar shows it. What is left is the one thing on
+              this block that is not a restatement — the action. */}
           {!readOnly && ev.atCap && (!showRestrict ? (
             <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
           ) : (
@@ -14920,11 +14957,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
               <span className="hint">{days > 0 ? `Comes back up for review on ${new Date(Date.now() + days * 86400000).toLocaleDateString()}. Set 0 for no auto date.` : "No automatic re-evaluation date."}</span>
             </div>
           ))}
-        </div>
-      )}
-      {ev.status === "pass" && ev.nextCap && !restrictedNow && (
-        <div className="reasons pass-note">
-          {star ? "Blowing past every requirement. " : `Tier ${ev.tierIndex + 1} requirements met. `}Cleared up to {ev.nextCap} leads.
         </div>
       )}
       {open && !picking && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
@@ -20061,7 +20093,9 @@ function HistoryPanel({ config, store, data }) {
                       <td><HistCell now={st?.apptVideoDayPct} before={before(a.name, "apptVideoDayPct")} /></td>
                       <td><HistCell now={st?.engagedVideoPct} before={before(a.name, "engagedVideoPct")} /></td>
                       <td><HistCell now={st?.bhVideoPct} before={before(a.name, "bhVideoPct")} /></td>
-                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span> : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span> : "-"}</td>
+                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span>
+                        : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span>
+                        : ev.status === "no-data" ? <span className="verdict verdict-dim sm">No figures</span> : "-"}</td>
                       {/* The whole point of the tab: what has been happening to this
                           person, month by month, rather than one month in isolation. */}
                       <td>
@@ -22761,7 +22795,8 @@ function Style() {
         .store-item-actions { justify-content:flex-start; }
         .store-item-actions .btn-ghost, .store-item-actions .btn-x { flex:1 1 auto; text-align:center; }
 
-        .assoc-row { flex-wrap:wrap; gap:6px; }
+        .assoc-row { display:flex; flex-wrap:wrap; gap:6px; }
+        .assoc-row .assoc-gauge { order:9; flex:1 0 100%; }
         .assoc-leads { margin-left:auto; }
         .wiz-body { grid-template-columns:1fr; }
         .wiz { max-height:94vh; border-radius:18px; }
@@ -24236,12 +24271,38 @@ function Style() {
          came back. The button is a <button>, so the last div is still the last
          card. */
       .assoc-card:last-of-type { border-bottom:none; }
-      .assoc-row { display:flex; align-items:center; gap:10px; cursor:grab; flex-wrap:wrap; }
+      /* ---- one line, and every column under the one above it ----
+         It was a flex row with TWO auto margins in it — one before the dials and
+         one before the lead count — so the free space split between them and the
+         dials landed wherever the verdict's wording left them. "Nearing the
+         limit" and "Below standard, room left" are different widths, so no two
+         rows agreed and a manager could not read down a column of dials at all.
+
+         Fixed tracks, so column four is under column four on every row whatever
+         anybody's verdict says. The bar takes whatever is left, which on a
+         desktop is most of the row. */
+      .assoc-row { display:grid; align-items:center; gap:10px; cursor:grab;
+        grid-template-columns: auto minmax(120px, 212px) minmax(80px, 1fr) auto 62px 186px; }
+      /* One line, so every row is the same height and the eye runs down the
+         column instead of stepping over it. */
+      .assoc-row .verdict { white-space:nowrap; }
+      /* Without a pick box or a rank there is nothing in the first track, and the
+         grid must not reserve a column for it. */
+      .assoc-row > .assoc-name:first-child { grid-column: 2; }
+      /* Six tracks need about 1200px. Below that the row wraps instead, with the
+         bar on a line of its own under the name — still long, still first thing
+         the eye lands on, and nothing is pushed off the right-hand edge. */
+      @media (max-width: 1200px) {
+        .assoc-row { display:flex; flex-wrap:wrap; align-items:center; }
+        .assoc-row .assoc-name { flex:1 1 180px; }
+        .assoc-row .assoc-gauge { order:9; flex:1 1 100%; }
+        .assoc-row .mstrip { margin-left:auto; }
+      }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
       .assoc-name { font-weight:650; font-size:15.5px; flex:0 0 212px; letter-spacing:-.015em; }
       .flag { font-size:11px; color:var(--amber); background:rgba(255,159,10,.14); padding:3px 9px; border-radius:20px; font-weight:600; }
-      .assoc-leads { margin-left:auto; font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+      .assoc-leads { text-align:right; font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
       .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; }
       .verdict { font-size:12px; font-weight:700; padding:5px 12px; border-radius:20px; min-width:118px; text-align:center;
         transition: transform .2s var(--spring); }
@@ -24253,6 +24314,14 @@ function Style() {
       /* blue: below standard but plenty of headroom, so nothing is paused yet */
       .verdict-watch { background:rgba(42,94,155,.12); color:#1D4674; }
       .verdict-dim { background:#F2F2F4; color:var(--ink-2); }
+      /* In the row now, and long. A bar is a picture of exactly one thing — how
+         much of the allowance is gone — and it was the smallest object on a row
+         with room for it to be the largest. */
+      .assoc-gauge { position:relative; display:block; height:10px; background:#E9E9EB;
+        border-radius:6px; overflow:hidden; min-width:80px; }
+      /* Both of these are spans so they can sit in the row's grid. An inline
+         child ignores height:100%, which drew every bar as an empty track. */
+      .assoc-gauge > .gauge-fill { display:block; }
       .gauge { position:relative; height:8px; background:#E9E9EB; border-radius:5px; margin:9px 0 0 23px; max-width:520px; }
       .gauge-fill { height:100%; border-radius:5px; background:linear-gradient(90deg, #2A5E9B, #C1D730);
         transition: width .6s var(--spring); }
@@ -24269,8 +24338,7 @@ function Style() {
       .mstrip { display:grid; grid-auto-flow:column; grid-auto-columns:88px; gap:10px 14px; justify-content:start; }
       /* On the associate row the dials ride to the right of the name and stay
          together as one unit; the row itself wraps them if the screen is narrow. */
-      .assoc-row .mstrip { margin-left:auto; gap:10px; }
-      .mstrip + .assoc-leads { margin-left:14px; }
+      .assoc-row .mstrip { gap:10px; }
       .mdial { width:88px; text-align:center; position:relative; }
       /* Present for the column, not being graded. Quiet enough that the eye goes
          to the ones with a target on them. */
@@ -24480,7 +24548,9 @@ function Style() {
         padding:3px 10px; border-radius:99px; }
       .lb-std.ok { color:#1E7A3C; background:rgba(48,177,85,.13); }
       .lb-std.part { color:#95600A; background:rgba(255,159,10,.15); }
-      .unassigned-row { gap:14px; }
+      /* Not a graded row: a name and a picker, and the six-track grid would
+         strand the picker in column three. */
+      .unassigned-row { display:flex; align-items:center; gap:14px; }
       .assign-select { margin-left:auto; }
       @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
 
@@ -25706,7 +25776,10 @@ function Style() {
         .gauge, .reasons { margin-left:0; }
 
         /* --- associate rows stack instead of spanning a wide line --- */
-        .assoc-row { flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
+        /* Below this the six tracks cannot all fit, so the row goes back to
+           wrapping: the bar takes a line of its own under the name. */
+        .assoc-row { display:flex; flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
+        .assoc-row .assoc-gauge { order:9; flex:1 0 100%; }
         .assoc-name { flex:1 1 60%; font-size:15px; }
         .assoc-leads { margin-left:auto; }
         .mstrip + .assoc-leads { margin-left:auto; }
