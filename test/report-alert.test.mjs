@@ -6,7 +6,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alertText, alertBody, usableHook, sendAlert } from "../api/_report-alert.mjs";
+import { alertText, alertBody, usableHook, sendAlert, worthSending } from "../api/_report-alert.mjs";
 
 const ticket = {
   id: "t1", at: "2026-08-20T14:00:00Z", kind: "figures", status: "open",
@@ -103,4 +103,56 @@ test("and one that takes it reports it went", async () => {
   assert.equal(seen.method, "POST");
   assert.equal(seen.url, "https://hooks.slack.com/x");
   assert.match(seen.body.text, /should be 85/);
+});
+
+/* ---- and the other thing worth interrupting somebody for ----
+   Somebody who kept missing the standard has written down what is stopping them.
+   It goes out the same way for the same reason: a note nobody is prompted to read
+   is a note written into a void, which is the whole risk this feature carries. */
+const note = {
+  id: "t2", at: "2026-08-19T20:00:00Z", kind: "standard", status: "open",
+  from: "Luis Vega", store: "Holler Honda", who: "luis vega", forDay: "2026-08-18",
+  missed: 3, of: 5, days: ["2026-08-18", "2026-08-17", "2026-08-15"],
+  bar: "10 calls and 3 videos a day",
+  body: "No inventory in my segment all week, and I covered the desk Tuesday.",
+  context: "My day, Luis Vega, 2026-08-19",
+};
+
+test("a missed-standard note leads with who, and then with what they said", () => {
+  const lines = alertText(note).split("\n");
+  assert.match(lines[0], /Luis Vega at Holler Honda missed the standard on 3 of their last 5 days\./);
+  assert.match(lines[1], /No inventory in my segment/,
+    "what they said is the whole point and must not be below the housekeeping");
+});
+
+test("the days read as days, not as timestamps to decode", () => {
+  const txt = alertText(note);
+  assert.ok(txt.includes("18 Aug, 17 Aug, 15 Aug"), txt);
+  assert.ok(!txt.includes("2026-08-18"), "raw dates in something read on a phone");
+});
+
+test("it says plainly that there is nothing to do about it", () => {
+  /* It arrives beside reports that DO need chasing. Without this it reads as a
+     task, and a manager either chases somebody who has already answered or
+     learns to skim the channel. */
+  assert.match(alertText(note), /Nothing to action here/);
+});
+
+test("a note with nothing in it still does not throw", () => {
+  assert.equal(typeof alertText({ kind: "standard" }), "string");
+});
+
+test("the week rides along with the sentence about it", () => {
+  const b = alertBody(note);
+  assert.deepEqual(b.ticket.days, note.days);
+  assert.equal(b.ticket.missed, 3);
+});
+
+test("only the two kinds that go stale are carried, and only while open", () => {
+  assert.equal(worthSending(note), true);
+  assert.equal(worthSending(ticket), true);
+  assert.equal(worthSending({ kind: "problem", status: "open" }), false,
+    "somebody stuck can be helped tomorrow; this is not the rail for it");
+  assert.equal(worthSending({ ...note, status: "closed" }), false, "an edit is not a new report");
+  assert.equal(worthSending(null), false);
 });

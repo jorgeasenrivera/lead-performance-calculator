@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { goalStanding, owesNote, makeNote, addNote, makeLift, notesFor, dayBelow, didWork,
-  gates, GATED_WHILE_OWING, NEVER_GATED } from "../api/_goal-standing.mjs";
+  readFloorDays, standingFor, gates, GATED_WHILE_OWING, NEVER_GATED } from "../api/_goal-standing.mjs";
 
 /* The notes list, wherever the caller keeps it. A salesperson's phone writes the
    day's floor row because that is what it is allowed to write; this file does not
@@ -204,4 +204,74 @@ test("a surface nobody has ruled on is open", () => {
   assert.equal(gates("some-new-screen-in-2027"), false);
   assert.equal(gates(""), false);
   assert.equal(gates(null), false);
+});
+
+/* ---- one reading of the record, not two ----
+   The phone reads a fortnight of floor rows to find out whether IT owes a note.
+   The manager's screen reads the same fortnight to find out who does. Written
+   twice, those two drift, and the store gets two answers about one week — which
+   is the fault this whole system has now had six of. So both call these. */
+const floorDay = (date, extra) => ({ date, row: { date, line: [{ id: "a1", label: "Fin Smith" }], ...extra } });
+
+test("a fortnight of floor rows says who was here, what they wrote and what was lifted", () => {
+  const rows = [
+    floorDay(D(12), { goalNotes: [{ at: D(12) + "T18:00:00Z", who: "fin smith", forDay: D(12), text: "first" }] }),
+    floorDay(D(14), { goalNotes: [{ at: D(14) + "T18:00:00Z", who: "fin smith", forDay: D(14), text: "second" }],
+      goalLifts: [{ at: D(14) + "T09:00:00Z", who: "ada reyes", by: "Jorge" }] }),
+    { date: D(13), row: { date: D(13) } },
+  ];
+  const r = readFloorDays(rows);
+  assert.deepEqual([...r.signedIn.a1].sort(), [D(12), D(14)], "the days they signed in");
+  assert.deepEqual(r.notes["fin smith"].map((n) => n.text), ["second", "first"], "newest first");
+  assert.equal(r.lifts["ada reyes"].by, "Jorge");
+});
+
+test("the most recently MADE lift stands, not the one on the latest day's row", () => {
+  /* A manager lifting again this morning from a screen showing last week writes
+     into today's row about an older day. The older lift must not win. */
+  const rows = [
+    { date: D(18), row: { goalLifts: [{ at: D(14) + "T09:00:00Z", who: "fin smith", why: "old" }] } },
+    { date: D(14), row: { goalLifts: [{ at: D(18) + "T09:00:00Z", who: "fin smith", why: "new" }] } },
+  ];
+  assert.equal(readFloorDays(rows).lifts["fin smith"].why, "new");
+});
+
+test("an empty fortnight reads as an empty fortnight, not as a crash", () => {
+  const r = readFloorDays([]);
+  assert.deepEqual(r.signedIn, {}); assert.deepEqual(r.notes, {}); assert.deepEqual(r.lifts, {});
+  assert.deepEqual(readFloorDays(null).notes, {});
+});
+
+test("standingFor counts a day with figures, and skips one with none", () => {
+  const std = { minCalls: 10, minVideos: 3, repeatDays: 3, repeatWindow: 5 };
+  const days = [
+    { day: D(10), row: { calls: 2, video: 0 } },
+    { day: D(11), row: null },                       // no report, or a day off
+    { day: D(12), row: { calls: 2, video: 0 } },
+    { day: D(13), row: { calls: 20, video: 5 } },
+    { day: D(14), row: { calls: 1, video: 1 } },
+  ];
+  const s = standingFor(days, { std });
+  assert.equal(s.counted, 4, "the empty day should not have counted");
+  assert.equal(s.flagged, true);
+  assert.equal(s.latestMiss, D(14));
+});
+
+test("a day of nothing at all counts if they signed in for it", () => {
+  /* Somebody who was here and did nothing has had a bad day, not a day off, and
+     the figures alone cannot tell those two apart. */
+  const std = { minCalls: 10, minVideos: 3, repeatDays: 3, repeatWindow: 5 };
+  const days = [{ day: D(10), row: { calls: 0, video: 0 } }, { day: D(11), row: { calls: 0, video: 0 } },
+                { day: D(12), row: { calls: 0, video: 0 } }];
+  assert.equal(standingFor(days, { std }).flagged, false, "nobody was here; nobody failed");
+  assert.equal(standingFor(days, { std, worked: new Set([D(10), D(11), D(12)]) }).flagged, true);
+});
+
+test("the store's own numbers drive it, both of them", () => {
+  const days = [{ day: D(10), row: { calls: 5, video: 5 } }, { day: D(11), row: { calls: 5, video: 5 } },
+                { day: D(12), row: { calls: 5, video: 5 } }];
+  assert.equal(standingFor(days, { std: { minCalls: 4, minVideos: 4, repeatDays: 3, repeatWindow: 5 } }).flagged, false);
+  assert.equal(standingFor(days, { std: { minCalls: 6, minVideos: 4, repeatDays: 3, repeatWindow: 5 } }).flagged, true);
+  assert.equal(standingFor(days, { std: { minCalls: 4, minVideos: 4, repeatDays: 4, repeatWindow: 5 } }).flagged, false,
+    "the store can ask for more than three before it says anything");
 });

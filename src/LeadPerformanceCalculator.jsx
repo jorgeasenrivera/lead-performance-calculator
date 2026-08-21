@@ -35,7 +35,7 @@ import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
    the salesperson's phone can never come to two different answers about the same
    week; see the note at the top of it. */
 import { goalStanding, dayBelow, didWork, notesFor, owesNote, makeNote, addNote,
-  makeLift, gates as gatesMyDay } from "../api/_goal-standing.mjs";
+  makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
@@ -5857,16 +5857,11 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     return () => { dead = true; };
   }, [store, date, meName, meId]);
 
-  const standing = (() => {
-    if (!series) return null;
-    const seen = (record && record.signedIn) || new Set();
-    /* Only days this person worked AND that have figures. A day off, and a day
-       whose report has not landed yet, are not days anybody failed. */
-    const worked = series
-      .filter((d) => d.row && (didWork(d.row) || seen.has(d.day)))
-      .map((d) => ({ day: d.day, below: dayBelow(d.row, std) }));
-    return goalStanding(worked, { need: std.repeatDays, window: std.repeatWindow });
-  })();
+  /* The same reading the manager's screen makes of the same days: which of them
+     count, and which of those were under the bar. */
+  const standing = series
+    ? standingFor(series, { std, worked: (record && record.signedIn) || new Set() })
+    : null;
   /* Not until both halves have landed: gating on a half-read record would flash a
      block at somebody who has already answered. */
   const owing = !!(standing && record && !record.failed
@@ -5884,6 +5879,26 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
       setRecord((r) => ({ ...(r || { lift: null, signedIn: new Set() }),
         notes: notesFor(addNote((r && r.notes) || [], note)) }));
       setNoteText(""); buzz([18, 40, 18]);
+      /* And send it to somebody. The floor row is the RECORD — it is what clears
+         the flag and what a manager reads back later — but a record nobody is
+         prompted to open is the void this was built to avoid. A ticket is the one
+         rail in this app that already reaches a person: it survives the browser
+         being closed, it lands in the panel, and Supabase carries it out to
+         whatever webhook the store has set. Jorge asked for the notes to come to
+         him, and this is the route that already goes there.
+
+         Deliberately after the note is saved, and deliberately unable to fail it.
+         Somebody who has written their answer is owed their day back whether or
+         not a notification went anywhere. */
+      try {
+        await saveTicket({
+          id: uid() + Date.now().toString(36), at: note.at, kind: "standard", status: "open",
+          store: store || "", from: meName || "Not given", reach: "",
+          who: whoKey, forDay: note.forDay, missed: standing.missed, of: standing.counted,
+          days: standing.days, bar: `${std.minCalls} calls and ${std.minVideos} videos a day`,
+          body: note.text, context: `My day, ${meName || "unknown"}, ${date}`,
+        });
+      } catch (e) { /* the note stands either way */ }
     } catch (e) {
       setNoteErr((e && e.message) || "That did not save. Try again in a moment.");
     }
@@ -6841,6 +6856,7 @@ function TicketsPanel({ config, onChange }) {
       return w(a) - w(b) || String(b.at || "").localeCompare(String(a.at || ""));
     });
   const openWrong = (items || []).filter((t) => t.kind === "figures" && (t.status || "open") === "open").length;
+  const openBehind = (items || []).filter((t) => t.kind === "standard" && (t.status || "open") === "open").length;
 
   return (
     <div className="board-page">
@@ -6886,14 +6902,17 @@ function TicketsPanel({ config, onChange }) {
 
       <div className="card">
         <div className="tk-head">
-          <h3>Tickets{openWrong > 0 && <span className="tk-badge">{openWrong} wrong {openWrong === 1 ? "number" : "numbers"}</span>}</h3>
+          <h3>Tickets
+            {openWrong > 0 && <span className="tk-badge">{openWrong} wrong {openWrong === 1 ? "number" : "numbers"}</span>}
+            {openBehind > 0 && <span className="tk-badge tk-badge-behind">{openBehind} behind</span>}
+          </h3>
           <div className="seg-small">
             {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
               <button key={id} className={"seg-opt " + (filter === id ? "on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
             ))}
           </div>
           <div className="seg-small">
-            {[["all", "Everything"], ["figures", "Wrong numbers"], ["problem", "Problems"]].map(([id, lbl]) => (
+            {[["all", "Everything"], ["figures", "Wrong numbers"], ["standard", "Behind"], ["problem", "Problems"]].map(([id, lbl]) => (
               <button key={id} className={"seg-opt " + (kind === id ? "on" : "")} onClick={() => setKind(id)}>{lbl}</button>
             ))}
           </div>
@@ -6905,9 +6924,10 @@ function TicketsPanel({ config, onChange }) {
             <div className="tk-list">
               {shown.map((t) => (
                 <div key={t.id} className={"tk" + ((t.status || "open") === "closed" ? " tk-closed" : "")
-                  + (t.kind === "figures" ? " tk-wrong" : "")}>
+                  + (t.kind === "figures" ? " tk-wrong" : "") + (t.kind === "standard" ? " tk-behind" : "")}>
                   <div className="tk-top">
                     {t.kind === "figures" && <span className="tk-kind">number's wrong</span>}
+                    {t.kind === "standard" && <span className="tk-kind tk-kind-behind">behind the standard</span>}
                     <b>{t.from || "Anonymous"}</b>
                     {t.reach && <a className="tk-reach" href={t.reach.includes("@") ? `mailto:${t.reach}` : `tel:${t.reach.replace(/[^\d+]/g, "")}`}>{t.reach}</a>}
                     <span className="tk-when">{t.at ? new Date(t.at).toLocaleString() : ""}</span>
@@ -6936,6 +6956,18 @@ function TicketsPanel({ config, onChange }) {
                             ))}
                           </div>
                         </details>
+                      )}
+                    </div>
+                  )}
+                  {/* Somebody who kept missing the bar, and what they said was stopping
+                      them. Above the note rather than below it, because the note is
+                      the answer to it and reads as thin without the question. */}
+                  {t.kind === "standard" && (
+                    <div className="tk-behind-head">
+                      Missed the bar on <b>{t.missed}</b> of their last <b>{t.of}</b> days
+                      {t.bar ? <> · the bar is {t.bar}</> : null}
+                      {Array.isArray(t.days) && t.days.length > 0 && (
+                        <span className="tk-behind-days">{t.days.map((d) => shortDay(d)).join(" · ")}</span>
                       )}
                     </div>
                   )}
@@ -7925,25 +7957,17 @@ const GOAL_LOOKBACK = 21;
 async function loadGoalRecord(store, endDay, whoKey, meId) {
   const days = lastDays(GOAL_LOOKBACK, endDay);
   const rows = await loadFloorDays(store, days[0], days[days.length - 1]);
-  const mine = (n) => n && (n.who === whoKey || (meId && n.id === meId));
-  const notes = [];
-  let lift = null;
-  const signedIn = new Set();
-  for (const r of rows || []) {
-    const d = r.row || {};
-    for (const n of d.goalNotes || []) if (mine(n)) notes.push(n);
-    for (const l of d.goalLifts || []) {
-      if (!mine(l)) continue;
-      // One lift stands: the most recently made, whichever day it was recorded on.
-      if (!lift || String(l.at || "") > String(lift.at || "")) lift = l;
-    }
+  /* Read by the same code the manager's screen reads them with, so the two sides
+     cannot come to different answers about the same fortnight. This picks one
+     person out of it; that screen shows all of them. */
+  const { signedIn, notes, lifts } = readFloorDays(rows);
+  return {
+    notes: notes[whoKey] || [],
+    lift: lifts[whoKey] || null,
     /* Somebody who signed in and did nothing all day HAS worked, and that is a
        bad day rather than a day off. The figures alone cannot tell those apart. */
-    for (const p of d.line || []) {
-      if (p && (p.id === meId || norm(p.label || "") === whoKey)) signedIn.add(r.date);
-    }
-  }
-  return { notes: notesFor(notes), lift, signedIn };
+    signedIn: signedIn[meId] || new Set(),
+  };
 }
 
 /* Append-only, like every other decision in this system: a note is added, never
@@ -9036,6 +9060,14 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          {/* Same rule as the off-lot button: shown only when there is somebody in
+              it. A button reading "Behind · 0" every morning is how a manager
+              learns to stop looking at the place they are meant to look. */}
+          {behindCount > 0 && (
+            <button className={"btn" + (showBehind ? "" : " f-bl-btn")} onClick={() => setShowBehind((v) => !v)}>
+              {showBehind ? "Hide behind" : `Behind · ${behindCount}`}
+            </button>
+          )}
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
           <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
@@ -9973,6 +10005,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [showPhones, setShowPhones] = useState(false);
   const [showBacklog, setShowBacklog] = useState(false);
   const [backlogCount, setBacklogCount] = useState(null);
+  const [showBehind, setShowBehind] = useState(false);
+  const [behindCount, setBehindCount] = useState(null);
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, force] = useReducer((x) => x + 1, 0);
@@ -10263,6 +10297,9 @@ function FloorBoard({ config, store, data, onData, userName }) {
       )}
 
       <FloorBacklog store={store} data={data} userName={userName} open={showBacklog} onCount={setBacklogCount} />
+
+      <MissedStandards store={store} data={data} roster={salesRoster} userName={userName}
+        open={showBehind} onCount={setBehindCount} />
 
       {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} />}
 
@@ -10556,6 +10593,189 @@ function FloorPhones({ store, roster, onClose }) {
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   MissedStandards — who is behind, and what they said about it.
+
+   The salesperson's half of this was built first: somebody who misses the bar on
+   three of their last five working days is asked, on their own phone, to write
+   down what is stopping them before My Day will show them anything else. That
+   half is worthless on its own. A note nobody is prompted to read is a note
+   written into a void, and the person who wrote it finds out it was a void the
+   second time they are asked and nothing has changed.
+
+   So this is the other half. It reads the same floor rows the phone writes, runs
+   the same rule on the same figures — one definition, imported from the same file
+   — and shows a manager who is behind, what they said, and who has not answered
+   yet. Lifting is here too, with a reason and a name against it.
+
+   It sits on the Live Floor next to the off-lot backlog because they are the same
+   job at the same moment: the handful of things from the last fortnight that want
+   a manager's judgement, in the place a manager already stands every morning.
+   ========================================================================= */
+const STANDARD_LOOKBACK = 21;   // calendar days, to find five WORKED ones behind a run of days off
+
+function MissedStandards({ store, data, roster, userName, open, onCount }) {
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
+  const [rows, setRows] = useState(null);
+  const [why, setWhy] = useState({});
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const to = today();
+  const from = shiftDay(to, -(STANDARD_LOOKBACK - 1));
+
+  const load = useCallback(async () => setRows(await loadFloorDays(store.id, from, to)),
+    [store.id, from, to]);
+  useEffect(() => { load().catch(() => setErr("The last three weeks could not be read.")); }, [load]);
+
+  const people = useMemo(() => {
+    if (!rows || !data) return null;
+    /* Who was here, what they wrote, and what has been lifted — all off the same
+       fortnight of floor rows the phone reads. */
+    const { signedIn, notes: notesBy, lifts: liftBy } = readFloorDays(rows);
+    const days = lastDays(STANDARD_LOOKBACK, to);
+    const out = [];
+    for (const a of roster || []) {
+      const key = norm(a.name);
+      /* The store's own activity, which is the same figures the floor publishes
+         to the phone, read by the same rule. */
+      const mine = days.map((d) => ({ day: d, row: ((data.activity || {})[d] || {})[key] }));
+      const standing = standingFor(mine, { std, worked: signedIn[a.id] || new Set() });
+      if (!standing.flagged) continue;
+      const notes = notesBy[key] || [];
+      const lift = liftBy[key] || null;
+      out.push({ a, key, standing, notes, lift,
+        owes: owesNote(notes, standing, lift),
+        missedRows: standing.days.map((d) => ({ day: d, row: (mine.find((w) => w.day === d) || {}).row || {} })) });
+    }
+    /* Somebody who has not answered first: they are the ones whose day is
+       currently waiting on them, and the only ones a manager can act on. */
+    return out.sort((x, y) => (y.owes ? 1 : 0) - (x.owes ? 1 : 0) || x.a.name.localeCompare(y.a.name));
+  }, [rows, roster, data, std.minCalls, std.minVideos, std.repeatDays, std.repeatWindow, to]);
+
+  const owing = (people || []).filter((p) => p.owes).length;
+  useEffect(() => { if (onCount) onCount(people === null ? null : (people || []).length); }, [people]); // eslint-disable-line
+
+  const lift = async (p) => {
+    setBusy(p.key); setErr("");
+    try {
+      await mutateFloorRow(store.id, to, (cur) => {
+        const next = cur || { date: to, store: store.id, line: [], history: [] };
+        next.goalLifts = [makeLift({ who: p.key, id: p.a.id, by: userName || "",
+          why: (why[p.key] || "").trim(), forDay: p.standing.latestMiss }), ...(next.goalLifts || [])].slice(0, 200);
+        return next;
+      });
+      setWhy((w) => ({ ...w, [p.key]: "" }));
+      await load();
+    } catch (e) {
+      setErr((e && e.message) || "That could not be saved.");
+    } finally { setBusy(""); }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="f-backlog">
+      <div className="f-backlog-head">
+        <h3>Behind the standard</h3>
+        <p className="muted">
+          Missing {std.minCalls} calls or {std.minVideos} videos on {std.repeatDays} of the
+          last {std.repeatWindow} days they worked. Days off and days with no report are not
+          counted either way. Each of these people has been asked, on their own phone, to write
+          down what is stopping them, and their My Day is waiting until they do. Nothing about
+          the floor is blocked: they can still sign in, take ups and log deliveries.
+        </p>
+      </div>
+      {err && <p className="sched-err">{err}</p>}
+      {people === null ? <p className="muted">Reading the last three weeks&hellip;</p>
+        : people.length === 0 ? <p className="muted">Nobody is behind the standard. Nothing to do here.</p>
+        : (
+          <div className="ms-list">
+            {people.map((p) => (
+              <div key={p.key} className={"ms-row" + (p.owes ? " ms-owes" : "")}>
+                <div className="ms-top">
+                  <span className="mf-av" style={{ background: `hsl(${hueFromName(p.a.name)} 62% 46%)` }}>{initialsOf(p.a.name)}</span>
+                  <div className="ms-who">
+                    <b>{p.a.name}</b>
+                    <span className="ms-count">
+                      {p.standing.missed} of their last {p.standing.counted} days under the bar
+                    </span>
+                  </div>
+                  <span className={"ms-state" + (p.owes ? " owes" : "")}>
+                    {/* Which of the two things cleared it, not which one exists: somebody
+                        can have written a note weeks ago AND have been lifted this
+                        morning, and calling that "answered" would credit them with an
+                        answer to a question nobody has asked them yet. */}
+                    {p.owes ? "has not answered yet" : isLifted(p.lift, p.standing) ? "lifted" : "answered"}
+                  </span>
+                </div>
+
+                <div className="ms-days">
+                  {p.missedRows.map((d) => (
+                    <span key={d.day} className="ms-day">
+                      <b>{shortDay(d.day)}</b>
+                      <i>{d.row.calls || 0}/{std.minCalls} calls</i>
+                      <i>{d.row.video || 0}/{std.minVideos} videos</i>
+                    </span>
+                  ))}
+                </div>
+
+                {/* What they said, newest first. Kept whole and never trimmed: the
+                    sentence somebody wrote about their own worst week is the entire
+                    output of this feature. */}
+                {p.notes.length > 0 && (
+                  <div className="ms-notes">
+                    {p.notes.slice(0, 4).map((n, i) => (
+                      <div key={i} className="ms-note">
+                        <p>{n.text}</p>
+                        <span className="ms-note-m">
+                          {n.at ? new Date(n.at).toLocaleDateString() : ""}
+                          {n.forDay ? ` · about ${shortDay(n.forDay)}` : ""}
+                          {n.missed ? ` · ${n.missed} of ${n.of} then` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {p.notes.length === 0 && !p.lift && (
+                  <p className="ms-empty">Nothing written yet. Their My Day is showing them this instead of their figures.</p>
+                )}
+                {p.lift && (
+                  <p className="ms-lift">
+                    Lifted by {p.lift.by || "a manager"}
+                    {p.lift.why ? `: ${p.lift.why}` : ""}
+                    {p.lift.at ? ` · ${new Date(p.lift.at).toLocaleDateString()}` : ""}
+                  </p>
+                )}
+
+                {p.owes && (
+                  <div className="ms-act">
+                    {/* A lift is for the case the screen cannot know about: a
+                        bereavement, a fortnight covering the desk, a person who was
+                        told to do something else. The reason is kept because in
+                        three months somebody will ask why this week looks like it
+                        does. */}
+                    <input className="help-in" placeholder="Why you are lifting it (kept on the record)"
+                      value={why[p.key] || ""} onChange={(e) => setWhy((w) => ({ ...w, [p.key]: e.target.value }))} />
+                    <button className="btn btn-sm" disabled={busy === p.key} onClick={() => lift(p)}>
+                      {busy === p.key ? "Lifting\u2026" : "Lift it"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {owing > 0 && (
+              <p className="muted ms-foot">
+                {owing === 1 ? "One person is" : `${owing} people are`} waiting on their own answer.
+                Whatever they write arrives in Tickets, under Behind, and goes out to wherever
+                wrong-number reports already go.
+              </p>
+            )}
+          </div>
+        )}
     </div>
   );
 }
@@ -25998,6 +26218,15 @@ function Style() {
    the shortest thing that clears the screen. The point is to find out what is
    actually stopping them, so this is the same card the rest of the panel is made
    of, with the figures stated plainly and the box the only bright thing on it. */
+/* Somebody behind the standard, and what they said. Not styled as an alarm and
+   not styled as a fault: it sits in a list beside reports that something is
+   broken, and this one is a person answering a question they were asked. */
+.tk-behind{ border-left:3px solid #E8A33D; }
+.tk-kind-behind{ background:#E8A33D; }
+.tk-behind-head{ font-size:12.5px; color:var(--muted,#667); margin:6px 0 2px; }
+.tk-behind-days{ display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; margin-top:4px; opacity:.75; }
+.tk-badge-behind{ background:#E8A33D; }
+
 .sf-owe-days{ display:flex; flex-direction:column; gap:8px; margin:18px 16px 0 0; }
 .sf-owe-day{
   display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px;
@@ -26383,6 +26612,53 @@ function Style() {
 .f-backlog-head p{margin:0 0 12px;font-size:12px;line-height:1.55;max-width:74ch;}
 .f-backlog-err{color:#ff9c9c;font-size:12px;margin:0 0 10px;}
 .f-backlog-none{font-size:12.5px;}
+/* ---- behind the standard, on the manager's side ----
+   Same frame as the off-lot backlog: they sit next to each other and they are the
+   same job, so looking like two different features would be a lie about how they
+   are read. */
+.ms-list{display:flex;flex-direction:column;gap:10px;}
+.ms-row{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.06);}
+.ms-row.ms-owes{border-color:rgba(232,163,61,.42);background:rgba(232,163,61,.07);}
+.ms-top{display:flex;align-items:center;gap:10px;}
+.ms-who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
+.ms-who b{font-size:14px;letter-spacing:-.01em;}
+.ms-count{font-size:11.5px;color:var(--sfink3);}
+.ms-state{font-size:9.5px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;padding:3px 8px;border-radius:999px;
+  color:#a9e8c8;background:rgba(80,200,140,.14);white-space:nowrap;}
+.ms-state.owes{color:#f6cf95;background:rgba(232,163,61,.18);}
+.ms-days{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0;}
+.ms-day{display:flex;align-items:baseline;gap:8px;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,.05);}
+.ms-day b{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--sfink3);}
+.ms-day i{font-style:normal;font-size:11.5px;font-variant-numeric:tabular-nums;}
+.ms-notes{margin-top:10px;display:flex;flex-direction:column;gap:8px;}
+.ms-note{padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.05);border-left:3px solid rgba(120,150,255,.5);}
+.ms-note p{margin:0;font-size:13px;line-height:1.5;}
+.ms-note-m{display:block;margin-top:6px;font-size:10.5px;color:var(--sfink3);}
+.ms-empty{margin:10px 0 0;font-size:12.5px;color:#f6cf95;}
+.ms-lift{margin:10px 0 0;font-size:12px;color:var(--sfink3);}
+.ms-act{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap;}
+.ms-act .help-in{flex:1;min-width:220px;}
+.ms-foot{margin:4px 0 0;font-size:12px;}
+.mf .ms-foot{color:var(--mfink2);}
+/* The manager's page is the light one, and every rule above is written for the
+   dark surfaces this panel's frame came from. Same treatment the line rows get.
+
+   The frame itself gets it too, which fixes the off-lot backlog next door at the
+   same time: a card drawn as five per cent white on a white page is not a card. */
+.mf .f-backlog{ background:#fff; border:1px solid var(--mfline); box-shadow:0 1px 2px rgba(16,32,52,.05); }
+.mf .f-backlog-head p{ color:var(--mfink2); }
+.mf .f-bl-row{ background:#F6F8FA; }
+.mf .f-bl-date, .mf .f-bl-when{ color:var(--mfink2); }
+.mf .ms-row{ background:#fff; border:1px solid var(--mfline); box-shadow:0 1px 2px rgba(16,32,52,.05); }
+.mf .ms-row.ms-owes{ background:linear-gradient(160deg,var(--c-amber-bg),#fff 65%); border-color:#F2D9A8; }
+.mf .ms-count, .mf .ms-note-m, .mf .ms-lift{ color:var(--mfink2); }
+.mf .ms-state{ font-family:var(--mfmono); background:var(--c-blue-bg); color:var(--c-blue); letter-spacing:.04em; }
+.mf .ms-state.owes{ background:#fff; color:var(--c-amber); border:1px solid #F2D9A8; }
+.mf .ms-day{ background:#F6F8FA; }
+.mf .ms-day b{ font-family:var(--mfmono); color:var(--mfink2); }
+.mf .ms-note{ background:#F6F8FA; border-left:3px solid var(--c-blue); }
+.mf .ms-empty{ color:#7A5A12; }
+
 .f-bl-day{margin-top:12px;}
 .f-bl-date{font-size:10px;font-weight:800;letter-spacing:1.2px;text-transform:uppercase;color:var(--sfink3);margin-bottom:6px;}
 .f-bl-row{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.045);margin-bottom:6px;}

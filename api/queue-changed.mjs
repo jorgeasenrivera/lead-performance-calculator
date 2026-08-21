@@ -23,7 +23,7 @@ import { createClient } from "@supabase/supabase-js";
 import { decide, contentState } from "./_queue-notify.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
-import { sendAlert } from "./_report-alert.mjs";
+import { sendAlert, worthSending } from "./_report-alert.mjs";
 
 const ACTIVITY_TYPE = "QueueAttributes";     // must match the Swift struct's name
 
@@ -51,8 +51,12 @@ export default async function handler(req, res) {
      matched no devices, and quietly went nowhere. */
   if (String(after.id || "").startsWith("ticket:")) {
     const t = after.data || {};
-    if (t.kind !== "figures" || (t.status && t.status !== "open")) {
-      return res.status(200).json({ ok: true, sent: 0, note: "not a new wrong-number report" });
+    /* Which kinds are worth interrupting somebody for is decided in one place,
+       next to the wording each of them gets. A report of a wrong number, and a
+       note from somebody who kept missing the standard: both are about today and
+       both go stale in a panel. */
+    if (!worthSending(t)) {
+      return res.status(200).json({ ok: true, sent: 0, note: "nothing to carry on" });
     }
     const db0 = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { persistSession: false } });
