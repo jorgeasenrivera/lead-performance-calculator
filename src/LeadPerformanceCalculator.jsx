@@ -1363,11 +1363,18 @@ async function loadStore(storeId, fallback, throwOnError) {
 async function saveActivityDays(storeId, next, prev) {
   if (!supabase) return { written: 0, failed: [] };
   const keep = new Set(recentDays(SPLIT_ACT_DAYS));
+  /* A day that already HAS a row of its own has to keep being written to it,
+     however old it is. Rows are read back whatever their age and they win over
+     the embedded copy, so a correction to an older day would be saved into the
+     document, overlaid by the stale row on the next read, and appear to undo
+     itself a few seconds later. Only the last 45 days may gain a NEW row; days
+     that already have one are maintained for as long as they exist. */
+  const split = new Set(next.__splitDays || []);
   const cur = next.activity || {};
   const before = (prev && prev.activity) || {};
   const changed = [];
   for (const day of Object.keys(cur)) {
-    if (!keep.has(day)) continue;
+    if (!keep.has(day) && !split.has(day)) continue;
     if (JSON.stringify(cur[day]) === JSON.stringify(before[day])) continue;
     changed.push(day);
   }

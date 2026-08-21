@@ -481,12 +481,31 @@ export function sameAs(data, heldName, personName, opts = {}) {
   }
 
   /* The misspelling must not be left on any list, or the next report matches it
-     before the alias is ever consulted. */
+     before the alias is ever consulted.
+
+     And taking it off has to be RECORDED, not just done. The ignore list and the
+     departed list are unions across every open tab, so a plain removal is undone
+     by the first save from anywhere else and the merged name reappears seconds
+     later. This is the same trap the repair tool hit, and the roster editor, and
+     the import screen; it got in here too because sameAs was written as a fold
+     rather than as a change of standing.
+
+     The stamps are the ones the merge already compares, so the removal outranks
+     the copy every other tab is holding. */
+  const at = opts.at || new Date().toISOString();
+  next.unignored = next.unignored || {};
+  next.returned = next.returned || {};
+  if ((next.excluded || []).some((x) => nm(x) === from)) next.unignored[from] = at;
+  if ((next.departed || []).some((d) => nm(d && d.name) === from)) next.returned[from] = at;
+  /* A stale note that the misspelling was ignored must not outrank the note that
+     it has just been folded away. */
+  if (next.ignoredAt) delete next.ignoredAt[from];
+
   next.roster = (next.roster || []).filter((a) => nm(a.name) !== from);
   next.departed = (next.departed || []).filter((d) => nm(d && d.name) !== from);
   next.excluded = (next.excluded || []).filter((x) => nm(x) !== from);
 
-  next.peopleLog.unshift({ at: opts.at || new Date().toISOString(), by: opts.by || "",
+  next.peopleLog.unshift({ at, by: opts.by || "",
     name: heldName, from: "unknown", to: "same person",
     /* A caller with a better reason than "same as" gets to say it. A batch repair
        wants the log to record WHY two hundred names moved, not two hundred lines
