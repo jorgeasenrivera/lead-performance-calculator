@@ -197,6 +197,69 @@ export function makeLift(opts = {}) {
 }
 
 /* =========================================================================
+   Reading a run of floor rows.
+
+   Both sides do this and they must not do it differently. The phone reads three
+   weeks of rows to find out whether IT owes a note; the manager's screen reads
+   the same three weeks to find out who does. Two readers of one record, written
+   twice, is how the same week ends up with two answers — so it is written once,
+   here, and neither side knows the shape of the other's copy.
+   ========================================================================= */
+
+/**
+ * What a run of floor rows says: who was here, what they wrote, what was lifted.
+ *
+ * `rows` is [{ date, row }] as the store hands them over. Notes and lifts are
+ * keyed by `who` (a normalised name), which is what the writers put on them.
+ * Sign-ins are keyed by person id, because that is what the line records.
+ */
+export function readFloorDays(rows) {
+  const signedIn = {};
+  const notes = {};
+  const lifts = {};
+  for (const r of rows || []) {
+    const d = (r && r.row) || {};
+    const date = r && r.date;
+    for (const p of d.line || []) {
+      if (!p || !p.id) continue;
+      (signedIn[p.id] = signedIn[p.id] || new Set()).add(date);
+    }
+    for (const n of d.goalNotes || []) {
+      if (!n) continue;
+      const k = n.who || "";
+      (notes[k] = notes[k] || []).push(n);
+    }
+    for (const l of d.goalLifts || []) {
+      const k = l && l.who;
+      if (!k) continue;
+      /* The most recently MADE lift stands, whichever day's row it was recorded
+         on. A manager lifting again today from a screen showing last week must
+         not be beaten by the row their earlier lift happens to sit in. */
+      if (!lifts[k] || String(l.at || "") > String(lifts[k].at || "")) lifts[k] = l;
+    }
+  }
+  for (const k of Object.keys(notes)) notes[k] = notesFor(notes[k]);
+  return { signedIn, notes, lifts };
+}
+
+/**
+ * One person's standing, from their days and what the floor saw of them.
+ *
+ * `days` is [{ day, row }] oldest or newest first, `row` being that day's figures
+ * or nothing at all. `worked` is the set of days they signed in on. A day counts
+ * when there are figures AND either the figures show something or they were here
+ * — a day off and a day with no report are neither passed nor failed.
+ */
+export function standingFor(days, opts = {}) {
+  const std = opts.std || {};
+  const worked = opts.worked || new Set();
+  const counted = (days || [])
+    .filter((d) => d && d.row && (didWork(d.row) || worked.has(d.day)))
+    .map((d) => ({ day: d.day, below: dayBelow(d.row, std) }));
+  return goalStanding(counted, { need: std.repeatDays, window: std.repeatWindow });
+}
+
+/* =========================================================================
    What the block covers.
 
    Jorge settled the principle: the block stops somebody reviewing their

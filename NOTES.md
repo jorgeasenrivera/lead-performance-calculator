@@ -58,13 +58,33 @@ The rule and everything that follows from it are in `api/_goal-standing.mjs`, ch
 The flag itself is never stored. It is derived from the days every time, so there is no
 piece of state for a merge to settle or a stale tab to resurrect.
 
-### Still to build
+### The manager's side — BUILT 2026-08-21
 
-- **The manager's side.** The notes are written and nothing prompts anybody to read them,
-  which is the void this file warned about. A manager needs to see who is flagged, read
-  what they wrote, and lift it from there.
-- The settings screen now describes the rule correctly; it described a "repeat offender"
-  flag that never existed for as long as the app has been running.
+Asked for the same day: *"start on my side, I want the notes to go to me."* Two things,
+because "go to me" means both of them:
+
+- **It arrives.** A note raises a ticket as well as writing the floor row, so it rides the
+  one rail in this app that already reaches a person: it lands in Tickets under **Behind**,
+  and Supabase carries it out to whatever webhook the store has set — the same route a
+  wrong-number report takes. Which kinds are worth interrupting somebody for is decided in
+  one place, `worthSending` in `api/_report-alert.mjs`. The alert says plainly that there is
+  nothing to action, because it arrives beside reports that do need chasing.
+- **It can be reviewed.** *Behind the standard* on the Live Floor, next to the off-lot
+  backlog, because they are the same job at the same moment: who is flagged, the days and
+  figures behind it, what they wrote, and who has not answered yet. Lifting is there, with a
+  reason and a name against it.
+
+The ticket is a delivery, not the record. The floor row is the record — it is what clears
+the flag and what the panel reads back — and a ticket that fails to save can never cost
+somebody their day back.
+
+Both sides read the fortnight of floor rows through the same two functions, `readFloorDays`
+and `standingFor`, for the reason this repository has learned six times: one record with two
+readers written separately ends up as two answers about the same week.
+
+Still open: whether a manager should be held to the store goal the same way, and whether a
+lift should also go into the audit log. The settings screen now describes the rule correctly;
+it described a "repeat offender" flag that never existed for as long as the app has run.
 
 ### What the block covers — DECIDED 2026-08-21
 

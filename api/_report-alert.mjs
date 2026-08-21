@@ -17,9 +17,43 @@
  * Only https, and only a URL an administrator typed into their own settings.
  */
 
-/** A wrong-number report as a few lines somebody can read on a phone. */
+/* Dates as somebody says them out loud. A run of ISO strings in a notification
+   is a thing to decode rather than read, and this is read on a phone. */
+function sayDay(iso) {
+  const d = new Date(String(iso) + "T12:00:00");
+  if (isNaN(d)) return String(iso || "");
+  return `${d.getDate()} ${d.toLocaleDateString("en-US", { month: "short" })}`;
+}
+
+/**
+ * Somebody who kept missing the standard, and what they said was stopping them.
+ *
+ * This rides the same rail as a wrong number for one reason: it is the only rail
+ * that reaches anybody. A note that lands in a panel until somebody happens to
+ * open it is the void this feature was built to avoid — the person wrote it
+ * today, about this week, and it is worth something today.
+ *
+ * The note leads. Everything else is context for it: a manager who reads only
+ * the first two lines still has the whole point, which is what somebody said.
+ */
+function standardText(t) {
+  const who = t.from && t.from !== "Not given" ? t.from : "Somebody";
+  const where = t.store ? ` at ${t.store}` : "";
+  const of = t.of ? ` of their last ${t.of}` : "";
+  const lines = [`${who}${where} missed the standard on ${t.missed || "several"}${of} days.`];
+  if (t.body) lines.push(`They say: ${t.body}`);
+  if (Array.isArray(t.days) && t.days.length) lines.push(`Days: ${t.days.map(sayDay).join(", ")}`);
+  if (t.bar) lines.push(`The bar: ${t.bar}`);
+  /* Nobody is asked to act on this in the app. Saying so keeps it from being
+     read as a task and left open for a week. */
+  lines.push("Nothing to action here. They have written it down and their day is back.");
+  return lines.join("\n");
+}
+
+/** A report as a few lines somebody can read on a phone. */
 export function alertText(t) {
   if (!t) return "";
+  if (t.kind === "standard") return standardText(t);
   const who = t.from && t.from !== "Not given" ? t.from : "Somebody";
   const where = t.store ? ` at ${t.store}` : "";
   const lines = [`${who}${where} says a number is wrong.`];
@@ -47,8 +81,18 @@ export function alertBody(t) {
     id: t.id, at: t.at, kind: t.kind, store: t.store, from: t.from, reach: t.reach,
     figure: t.figure, shown: t.shown, expected: t.expected, basis: t.basis,
     body: t.body, context: t.context, page: t.page,
+    /* The missed-standard fields, so anything richer than a line of text has the
+       week in front of it rather than just the sentence about it. */
+    who: t.who, forDay: t.forDay, missed: t.missed, of: t.of, days: t.days, bar: t.bar,
   } };
 }
+
+/* What is worth interrupting somebody for. A report that a figure is wrong is
+   being read by the whole store while it stands; a note about a missed standard
+   was written today about this week. Everything else waits in the panel. */
+export const ALERTED_KINDS = ["figures", "standard"];
+export const worthSending = (t) =>
+  !!t && ALERTED_KINDS.includes(t.kind) && (!t.status || t.status === "open");
 
 /** Whether this is a destination we are willing to post to. */
 export function usableHook(url) {
