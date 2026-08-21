@@ -124,3 +124,46 @@ test("no check reaches for a path on somebody's machine", () => {
   }
   assert.deepEqual(bad, [], "absolute paths in tests:\n  " + bad.join("\n  "));
 });
+
+test("no em dash in anything a person reads", () => {
+  /* They were all over the writing on the screen. Comments keep them — nobody
+     reads those on the site — and so do two things that are not writing at all:
+     the dash a table shows where a figure is missing, and a regex that matches a
+     dash character in a schedule. Both are checked for by shape below rather
+     than exempted by line number, which would rot the first time anything moved.
+
+     This is a style check, and it is here because the alternative is finding one
+     of them on a screenshot again. */
+  const files = ["src/LeadPerformanceCalculator.jsx", "src/FenceEditor.jsx",
+                 "api/_people-status.mjs", "api/_report-parsers.mjs", "api/_store-keys.mjs",
+                 "api/_store-month.mjs", "api/_floor-presence.mjs", "api/_geofence.mjs",
+                 "api/_report-alert.mjs", "api/ingest.mjs", "api/link-person.mjs",
+                 "api/floor-account.mjs", "api/register-device.mjs", "api/queue-changed.mjs"];
+  const bad = [];
+  for (const rel of files) {
+    const lines = fs.readFileSync(path.join(ROOT, rel), "utf8").split("\n");
+    let inBlock = false;
+    lines.forEach((line, i) => {
+      let s = line;
+      if (inBlock) {
+        if (s.includes("*/")) { inBlock = false; s = s.split("*/").slice(1).join("*/"); }
+        else return;
+      }
+      while (s.includes("/*")) {
+        const [before, rest] = [s.slice(0, s.indexOf("/*")), s.slice(s.indexOf("/*") + 2)];
+        if (rest.includes("*/")) s = before + rest.slice(rest.indexOf("*/") + 2);
+        else { s = before; inBlock = true; break; }
+      }
+      const t = line.trim();
+      if (t.startsWith("//") || t.startsWith("*")) return;
+      s = s.replace(/\s\/\/[^"'`]*$/, "");
+      if (!s.includes("—")) return;
+      // the "no figure" dash, on its own inside quotes
+      if (/["'>]\s*—\s*["'<]/.test(s)) return;
+      // a character class matching dashes
+      if (/\[[^\]]*—[^\]]*\]/.test(s)) return;
+      bad.push(`${rel}:${i + 1}  ${t.slice(0, 90)}`);
+    });
+  }
+  assert.deepEqual(bad, [], "em dashes in text somebody reads:\n  " + bad.join("\n  "));
+});

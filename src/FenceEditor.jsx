@@ -97,7 +97,7 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
         radius: 7, color: "#fff", weight: 2, fillColor: "#0FB37E", fillOpacity: 1,
         draggable: false,
       }).addTo(map);
-      dot.bindTooltip(`Corner ${i + 1} — tap to remove`, { direction: "top" });
+      dot.bindTooltip(`Corner ${i + 1} · tap to remove`, { direction: "top" });
       /* Tapping a corner removes it, and the click must not also reach the map
          underneath — or removing one corner would immediately add another in the
          same spot, which is what it did.
@@ -146,7 +146,7 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
           <p className="hint">
             Tap the map at each corner of the property to trace it, and tap a corner again to take it
             off. The green shape is the lot. The dashed circle is what a phone can actually watch in
-            the background — crossing it is what wakes the app, and the shape is what the app then
+            the background: crossing it is what wakes the app, and the shape is what the app then
             checks, so the circle is always a little wider than the lot itself.
           </p>
         </div>
@@ -164,7 +164,7 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
         <button className="btn secondary" disabled={!ring.length} onClick={() => setRing([])}>Start again</button>
         <span className="fence-count">
           {ring.length === 0 ? "No corners yet"
-            : ring.length < 3 ? `${ring.length} corner${ring.length === 1 ? "" : "s"} — three at least`
+            : ring.length < 3 ? `${ring.length} corner${ring.length === 1 ? "" : "s"}, three at least`
             : `${ring.length} corners · watched circle ${circle.radius}m across the middle`}
         </span>
       </div>
@@ -172,7 +172,7 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
       {tooSmall && (
         <p className="fence-warn">
           That is a very small area. A phone's own accuracy is routinely 10 to 40 metres, so a lot
-          this size would spend most of its time being unsure — which means nobody would ever be
+          this size would spend most of its time being unsure, which means nobody would ever be
           marked off it.
         </p>
       )}

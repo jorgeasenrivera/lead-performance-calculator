@@ -516,7 +516,7 @@ export default async function handler(req, res) {
          filed under another's name. Unplaceable is now refused rather than
          guessed: a report in the wrong store is worse than a report nowhere. */
       if (!addressStore) {
-        const why = "a CSV names no store, and this address names no store either — send it to that store's own address";
+        const why = "a CSV names no store, and this address names no store either. Send it to that store's own address";
         skippedFiles.push({ file: a.filename, why });
         failures.push({ file: a.filename, why });
         continue;

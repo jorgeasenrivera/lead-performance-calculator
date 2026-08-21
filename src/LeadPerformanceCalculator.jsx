@@ -2680,7 +2680,7 @@ export default function LeadPerformanceCalculator() {
       }
       if (heldNow.length) {
         log.push({ ok: false, msg: `${fileName} → ${heldNow.length} ${heldNow.length === 1 ? "name is" : "names are"} not on this store's people list, so ${heldNow.length === 1 ? "it was" : "they were"} held rather than added: ${
-          heldNow.slice(0, 6).join(", ")}${heldNow.length > 6 ? `, +${heldNow.length - 6} more` : ""}. Their figures are kept and are waiting under People — say whether they work here and they will be folded in.` });
+          heldNow.slice(0, 6).join(", ")}${heldNow.length > 6 ? `, +${heldNow.length - 6} more` : ""}. Their figures are kept and are waiting under People. Say whether they work here and they will be folded in.` });
       }
 
       M.names[type] = Object.keys(parsed);
@@ -2912,7 +2912,7 @@ export default function LeadPerformanceCalculator() {
             if (!other) return false;
             log.push({ ok: false, msg: `${file.name} is ${other.name}'s report, and you're in ${
               (config?.stores || []).find((x) => x.id === view)?.name || "another store"
-            }. It was skipped — switch stores and drop it there.` });
+            }. It was skipped. Switch stores and drop it there.` });
             return true;
           };
           const da = mapDailyActivityGrid(lines);
@@ -4113,7 +4113,7 @@ function LEADERBOARD_HTML(p) {
   }
 </style></head>
 <body>
-<div class="stale-note" id="stale-note">Holding the last board — the newest report looked incomplete. Updating on the next cycle.</div>
+<div class="stale-note" id="stale-note">Holding the last board: the newest report looked incomplete. Updating on the next cycle.</div>
 <div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
 
 <!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
@@ -6376,7 +6376,7 @@ function HelpPanel({ config, who, store, context, figures, onClose }) {
                 <b>Flagged.</b>
                 <p className="hint">
                   {s.name ? s.name.split(" ")[0] : "An administrator"} gets this with the figure you were looking at
-                  and everything else on the screen beside it. Nothing about your day changes in the meantime —
+                  and everything else on the screen beside it. Nothing about your day changes in the meantime;
                   the number stays as it is until somebody has looked.
                 </p>
               </div>
@@ -6392,7 +6392,7 @@ function HelpPanel({ config, who, store, context, figures, onClose }) {
                   <select className="help-in" value={which} onChange={(e) => setWhich(e.target.value)}>
                     <option value="">Pick the one that looks wrong…</option>
                     {onScreen.map((f) => (
-                      <option key={f.label} value={f.label}>{f.label} — showing {String(f.value)}</option>
+                      <option key={f.label} value={f.label}>{f.label}, showing {String(f.value)}</option>
                     ))}
                     <option value="__other">Something else on this screen</option>
                   </select>
@@ -6798,7 +6798,7 @@ function RepairPanel({ config }) {
           For when the comparison finds nothing and you can see perfectly well that it is wrong. That happens
           when another dealership's <b>report</b> was filed here rather than its roster: its people arrived
           with real figures and real days attached, so they are on no other store's list to be compared
-          against, and every test of "does this store know them" comes back yes — because the wrong record
+          against, and every test of "does this store know them" comes back yes, because the wrong record
           is the one that got written. Nothing can tell them apart from your real floor except somebody who
           knows who works there. Every name this store carries is below, with the cars it is currently
           counting for each. Tick the ones who do not work here.
@@ -6884,7 +6884,7 @@ function RepairPanel({ config }) {
                      somewhere else and a zero here is the clearest sign a name got in by mistake.</>
                   : <>Removing somebody takes this month's cars with them, so the store's total and its pace
                      correct themselves. A copy of the store as it stands is saved first, and the removal is
-                     written down rather than just done — otherwise the next manager whose tab is still open
+                     written down rather than just done. Otherwise the next manager whose tab is still open
                      would put everybody straight back.</>}
               </p>
               <button className="btn" style={{ marginTop: 8 }} disabled={busy || !chosen.length} onClick={apply}>
@@ -6958,11 +6958,11 @@ function TicketsPanel({ config, onChange }) {
 
         <label className="help-lbl" style={{ marginTop: 14 }}>Send wrong-number reports to</label>
         <p className="hint">
-          A report sitting in this panel until somebody next opens it is barely a report — the value of
+          A report sitting in this panel until somebody next opens it is barely a report. The value of
           a salesperson saying "that is not what I sold" is that they said it today. Paste an incoming
           webhook here and every flagged number arrives wherever you already look: Slack and Teams both
           hand one out in about a minute, and so does any automation service. Leave it blank and reports
-          still land below, just quietly. Reports of things being broken are not sent — only numbers.
+          still land below, just quietly. Reports of things being broken are not sent; only numbers.
         </p>
         <input className="help-in" value={form.alertWebhook || ""}
           onChange={(e) => setForm({ ...form, alertWebhook: e.target.value })}
@@ -10144,7 +10144,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
     act((cur) => { cur.token = uid(); return cur; }, { action: "Floor: code regenerated", detail: store.name });
   };
   const resetPin = async (id) => {
-    if (!window.confirm(`Reset ${realName(id)}'s PIN? This is the shared PIN — it also resets it for the phone line. They'll set a new one next sign-in.`)) return;
+    if (!window.confirm(`Reset ${realName(id)}'s PIN? This is the shared PIN, so it also resets it for the phone line. They'll set a new one next sign-in.`)) return;
     const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
     setIdentities(next);
   };
@@ -10464,7 +10464,7 @@ function FloorPhones({ store, roster, onClose }) {
       <p className="hint">
         Which account belongs to which person here. It is what decides whose phone buzzes when their
         customer walks in, so it is set here rather than by the salesperson. They need an account on
-        this site first — they sign up as usual and you leave them with no stores ticked, which keeps
+        this site first. They sign up as usual and you leave them with no stores ticked, which keeps
         them off the dashboard while still letting their phone know who they are.
       </p>
 
@@ -10487,7 +10487,7 @@ function FloorPhones({ store, roster, onClose }) {
                       : (
                         <select className="q-flag-sel" value="" disabled={busy === p.id}
                           onChange={(e) => e.target.value && act(() => linkFloorPerson(store.id, e.target.value, p.id), p.id)}>
-                          <option value="">Not linked — pick an account…</option>
+                          <option value="">Not linked. Pick an account…</option>
                           {(accounts || []).filter((x) => !taken.has(x.id) && x.active !== false)
                             .slice().sort((x, y) => String(x.email || x.name).localeCompare(String(y.email || y.name)))
                             .map((x) => <option key={x.id} value={x.id}>{x.email || x.name}</option>)}
@@ -10594,7 +10594,7 @@ function FloorBacklog({ store, data, userName, open, onCount }) {
           Yesterday and the {BACKLOG_DAYS - 1} days before it. Somebody appears here only when they
           left the lot while they were in the running, said it was a customer or said nothing at all,
           and neither the line nor that day's visit count shows a customer for them. That is a fact,
-          not a verdict — a dead phone looks exactly the same.
+          not a verdict. A dead phone looks exactly the same.
         </p>
       </div>
 
@@ -10635,12 +10635,12 @@ function FloorBacklog({ store, data, userName, open, onCount }) {
                       {f.status === "upheld" ? "Upheld" : "Excused"}
                       {f.judgedBy ? ` by ${f.judgedBy}` : ""}
                       {f.judgedAt ? ` · ${new Date(f.judgedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : ""}
-                      {f.note ? ` — ${f.note}` : ""}
+                      {f.note ? ` · ${f.note}` : ""}
                     </div>
                   )}
                 </div>
                 {f.status === "unverified" && !d.hasReport && (
-                  <div className="f-bl-wait">Waiting on that day's activity report — the visit count isn't in yet, and it's the only record a second salesperson on a deal ever shows up in.</div>
+                  <div className="f-bl-wait">Waiting on that day's activity report. The visit count isn't in yet, and it's the only record a second salesperson on a deal ever shows up in.</div>
                 )}
                 {f.status === "unverified" && d.hasReport && (
                   <div className="f-bl-acts">
@@ -10752,7 +10752,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           <button className="btn" onClick={addDealer}>Add</button>
         </div>
         {(cfg.dealershipNorms || []).length === 0
-          ? <p className="muted">None linked yet — the board runs as a manual floor line until you add one.</p>
+          ? <p className="muted">None linked yet. The board runs as a manual floor line until you add one.</p>
           : <div className="f-dealer-list">
               {(cfg.dealershipNorms || []).map((d) => (
                 <span key={d} className="f-dealer-chip">{d}<button className="f-chip-x" onClick={() => removeDealer(d)} aria-label="Close"><PixIcon glyph="close" size={13} /></button></span>
@@ -10782,7 +10782,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
         <h3>The lot</h3>
         <p className="hint">
           Where this store's property ends. A phone can only tell that somebody has left the lot if
-          it knows where the lot is — and it never records where anybody goes, only whether they are
+          it knows where the lot is, and it never records where anybody goes, only whether they are
           on it or off it.
         </p>
         {fence && fence.ring && fence.ring.length >= 3 && !drawing && (
@@ -10807,7 +10807,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
       <div className="card">
         <h3>Event → action map</h3>
-        <p className="hint">How each DriveCentric event moves the floor. Defaults match the known DriveCentric vocabulary; override any of them, or add a new event type as DriveCentric introduces one — no code change needed. Note: the two "sold" events differ only by their subject, so this map keys off the subject event, not the alert.</p>
+        <p className="hint">How each DriveCentric event moves the floor. Defaults match the known DriveCentric vocabulary; override any of them, or add a new event type as DriveCentric introduces one, with no code change needed. Note: the two "sold" events differ only by their subject, so this map keys off the subject event, not the alert.</p>
         <div className="f-map">
           {knownEvents.map((evt) => (
             <div key={evt} className="f-map-row">
@@ -10829,7 +10829,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
       <div className="card">
         <h3>Schedule presence <span className="section-sub">applies when Live Floor is built into coaching</span></h3>
-        <p className="hint">A rep who signs onto the floor (or the phone line) counts as present today. These thresholds let activity alone also mark them present. The retroactive coaching fix that clears a "missed scheduled day" flag lands in the next build — these settings are stored now so they're ready.</p>
+        <p className="hint">A rep who signs onto the floor (or the phone line) counts as present today. These thresholds let activity alone also mark them present. The retroactive coaching fix that clears a "missed scheduled day" flag lands in the next build; these settings are stored now so they're ready.</p>
         <div className="stepper-row">
           <Stepper label="Calls to count present" field="overrideCalls" value={cfg.overrideCalls} hint="more than this many calls" min={0} />
           <Stepper label="Videos to count present" field="overrideVideos" value={cfg.overrideVideos} hint="more than this many videos" min={0} />
@@ -12682,7 +12682,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
                           <option value="">Not on the roster, skip</option>
                           {cands.map((c) => (
                             <option key={c.a.id} value={c.a.id}>
-                              {c.a.name}{c.why ? ` — ${c.why}` : ""}
+                              {c.a.name}{c.why ? ` · ${c.why}` : ""}
                             </option>
                           ))}
                         </select>
@@ -13205,10 +13205,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             value={standing ? "standing" : "daily"} onChange={setMode} />
           <p className="hint">
             {standing
-              ? "This store gives a salesperson a plate and they keep it. There is no day to work through and nothing is overdue for being out overnight — the screen shows who is holding what and since when. Changing this back to daily does not touch a single record."
+              ? "This store gives a salesperson a plate and they keep it. There is no day to work through and nothing is overdue for being out overnight, so the screen shows who is holding what and since when. Changing this back to daily does not touch a single record."
               : "This store hands plates out and wants them back by close, so the log runs a day at a time and a plate that did not come back is flagged. Switch to held-until-returned if your salespeople keep a plate for weeks at a time."}
           </p>
-          <p className="hint">This is set per store, and it changes nothing about the records themselves — the same trips, times and custody logs are underneath either way.</p>
+          <p className="hint">This is set per store, and it changes nothing about the records themselves. The same trips, times and custody logs are underneath either way.</p>
         </div>
       )}
       {masterOpen && (
@@ -15566,8 +15566,8 @@ function BaselineImport({ data, onChange }) {
       <h3>Seed baselines from history {seeded > 0 && <span className="badge badge-ok">{seeded} seeded</span>}</h3>
       <p className="hint">
         Every coaching target is built from a person's own conversion history, and the tool has none until it has
-        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric —
-        a whole year works — drop it here, and it seeds everyone at once. CSV or PDF, and either the normal
+        been running a while. Pull the <b>Daily Activity report for a past date range</b> out of DriveCentric (a
+        whole year works), drop it here, and it seeds everyone at once. CSV or PDF, and either the normal
         export or the stacked totals export. It sets per-day averages only; it does not touch this month's numbers.
         Set the working days below so the per-day math is right, then from here the tool builds its own history.
       </p>
@@ -17555,7 +17555,7 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const verb = activity
     ? { label: "Daily report", glyph: "doc", act: openDailyReport, aria: "Open the daily report" }
     : { label: ready ? "Imported" : `Import ${done}/${need}`, glyph: ready ? "check" : "arrowup",
-        act: onImport, aria: ready ? "Import — today's files are in" : `Import — ${done} of ${need} done today` };
+        act: onImport, aria: ready ? "Import: today's files are in" : `Import: ${done} of ${need} done today` };
 
   const [, queueLabel, queueGlyph] = BAR_TOOLS[2];
   const here = queueOn ? queueTool(appModule) : null;
@@ -18287,7 +18287,7 @@ function DeliveryAll({ data, roster, thr, digests }) {
         </>}
       </svg>
       <p className="flow-scale-note">
-        Height is each channel against <b>its own</b> target, so all three can share one chart —
+        Height is each channel against <b>its own</b> target, so all three can share one chart:
         the line marked TARGET is 20% for internet and 30% for showroom alike. The figure on the end
         of each line is the rate it is actually running.
       </p>
@@ -18756,7 +18756,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               <div className="hp-goal-days">
                 {storePace.daysDone} of {storePace.daysAll} days counted
                 {monthHolidays.length > 0 && (
-                  <span title={monthHolidays.map((h) => `${h.date}${h.name ? " — " + h.name : ""}`).join("\n")}>
+                  <span title={monthHolidays.map((h) => `${h.date}${h.name ? " · " + h.name : ""}`).join("\n")}>
                     {" · "}{monthHolidays.length} {monthHolidays.length === 1 ? "holiday" : "holidays"} taken out
                   </span>
                 )}
@@ -18827,7 +18827,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                       ? "No one here is carrying a half, so the other side of it belongs to a name this store is not counting."
                       : <>Carried by {halves.holders.map((h) => h.name + (h.hasLeft ? " (left)" : "")).join(", ")}
                         {halves.holders.length % 2 === 1
-                          ? ". An odd number of halves means one side of a split is not counted here — the partner is either on the ignore list below or works at another store."
+                          ? ". An odd number of halves means one side of a split is not counted here. The partner is either on the ignore list below or works at another store."
                           : ". Those pair up, so the odd half is on a name this store is not counting."}</>}
                   </div>
                 )}
@@ -19051,13 +19051,13 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             <span className="check-note">
               {seedT.delivery
                 ? (seeding ? "on file for " + seedMonthLabel : "landed today, all channels")
-                : "emailed in on schedule — nothing to upload"}
+                : "emailed in on schedule, nothing to upload"}
             </span>
           </div>
           {!seedT.delivery && (
             <p className="hint">
               If this hasn't ticked by mid-morning, the email pipeline may be stuck. You can still
-              pull the Delivery Summary by hand and drop it below — hit <strong>Help</strong> for the steps.
+              pull the Delivery Summary by hand and drop it below. Hit <strong>Help</strong> for the steps.
             </p>
           )}
           <div className={"check " + (seedT["delivery-campaign"] ? "done" : "")}>
@@ -19855,7 +19855,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             {wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}
           </h3>
           <p className="hint">
-            These are your own people with something stuck to their name — a column heading the reader did
+            These are your own people with something stuck to their name: a column heading the reader did
             not recognise, or a name the report printed twice. Each one is sitting in the books as a
             stranger while their real row carries the rest of their month. Merging puts the figures back
             together and remembers the spelling, so the next report needs no repair.
@@ -19976,7 +19976,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                       <>
                         <option value="">{best ? `Same as ${best.name}?` : "Same as someone…"}</option>
                         {hits.map((h) => (
-                          <option key={h.key} value={h.name}>{h.name}{h.confident ? " — looks like a match" : ""}</option>
+                          <option key={h.key} value={h.name}>{h.name}{h.confident ? " · looks like a match" : ""}</option>
                         ))}
                         {rest.length > 0 && hits.length > 0 && <option disabled>──────────</option>}
                         {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
@@ -20053,7 +20053,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
         </div>
         <p className="hint">
           Who this store employs, whatever has happened to them. Somebody who leaves keeps the cars they
-          sold in the month they sold them — the store did sell those. Somebody who was never here loses
+          sold in the month they sold them. The store did sell those. Somebody who was never here loses
           theirs, because it never earned them. That difference is why both exist.
         </p>
 
@@ -20101,7 +20101,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 onChange(setPersonStatus(data, [n], "ignored", { by: userName, note: "not a person" }),
                   { action: "Ignored a name from imports", detail: n });
                 setAdding(false); setNu({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
-              }}>Not a person — never import this</button>
+              }}>Not a person: never import this</button>
           </div>
         )}
 
@@ -20273,7 +20273,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                       <p className="hint">
                         Nobody signs in as {p.name} yet. They sign up on this site with a dealership address
                         like anybody else; leave their stores unticked and they stay off the dashboard while
-                        still having an account to be joined to. Then pick it here — this is what decides
+                        still having an account to be joined to. Then pick it here. This is what decides
                         whose phone buzzes when their customer walks in, which is why a manager sets it and
                         not the salesperson.
                       </p>

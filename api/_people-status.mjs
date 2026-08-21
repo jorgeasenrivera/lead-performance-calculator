@@ -491,7 +491,7 @@ export function sameAs(data, heldName, personName, opts = {}) {
     /* A caller with a better reason than "same as" gets to say it. A batch repair
        wants the log to record WHY two hundred names moved, not two hundred lines
        all saying the obvious. */
-    note: opts.note ? `${opts.note} — same as ${personName}` : `same as ${personName}` });
+    note: opts.note ? `${opts.note} · same as ${personName}` : `same as ${personName}` });
   next.peopleLog = next.peopleLog.slice(0, 500);
   return next;
 }
