@@ -20033,6 +20033,66 @@ function StandardsEditor({ config, storeId, onChange }) {
    never earned them. Collapsing those two into "remove" is how a month that
    delivered 85 came to read 84.5.
    ========================================================================= */
+/* ---- what each position looks like ---------------------------------------
+   Jorge: "I'd like there to be a visual difference between job types like BDC
+   and sales and so on and group them accordingly, keep it fun."
+
+   A store's people list is one grey run of names, and a manager reading it is
+   almost always after one group of them: the BDC's numbers, or who is actually
+   on the floor selling. The position was there, in small grey type, doing none
+   of the work of telling them apart.
+
+   The colour is the one the position already carries — it is set under Settings
+   and drawn on the standards table, so this is the same identity turning up in
+   a second place rather than a new one invented here.
+
+   The glyph is picked off the position's NAME rather than its id, because the
+   ids are whatever somebody typed. Every store invents its own titles — "Internet
+   Sales", "Product Specialist", "Client Advisor" — and none of them are in any
+   list we could ship. A new position gets something that fits on the day it is
+   added, without a manager being asked to choose an icon they did not ask for. */
+const ROLE_GLYPHS = [
+  [/\b(bdc|call|phone)/i, "phone"],
+  [/(internet|online|digital|web|e-?commerce)/i, "globe"],
+  [/(service|fixed ?ops)/i, "swap"],
+  [/(manager|director|desk|gm\b|gsm\b|principal)/i, "star"],
+  [/(finance|f ?& ?i|title|paperwork|business)/i, "doc"],
+  [/(delivery|driver|porter|logistics)/i, "car"],
+  [/(lot|inventory|recon)/i, "clipboard"],
+  [/(train|coach|academy)/i, "trophy"],
+  [/(sales|associate|consultant|advisor|specialist|product)/i, "handshake"],
+];
+/* Something rather than nothing for a title none of those recognise. Off the id
+   so it never moves once a position exists. */
+const ROLE_SPARE = ["user", "bolt", "flame", "chart", "clipboard", "trophy", "globe"];
+function roleGlyph(role) {
+  const name = (role && role.name) || "";
+  for (const [re, g] of ROLE_GLYPHS) if (re.test(name)) return g;
+  const id = String((role && role.id) || name);
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return ROLE_SPARE[h % ROLE_SPARE.length];
+}
+/* Somebody with no position at all is a real state and a common one: every name
+   a report brings in arrives without one. It gets its own grey identity rather
+   than being dropped in with the first position on the list. */
+const NO_ROLE = { id: "", name: "No position yet", color: "#94A3B8" };
+const roleOf = (config, roleId) =>
+  ((config && config.roles) || []).find((r) => r.id === roleId) ||
+  (roleId ? { id: roleId, name: roleId, color: "#94A3B8" } : NO_ROLE);
+
+/** The position, wearing its own colour. Small in a row, large on a heading. */
+function RoleBadge({ role, count, big }) {
+  const c = (role && role.color) || NO_ROLE.color;
+  return (
+    <span className={"role-badge" + (big ? " big" : "")} style={{ "--rolec": c }}>
+      <PixIcon glyph={roleGlyph(role)} size={big ? 13 : 11} />
+      <b>{(role && role.name) || NO_ROLE.name}</b>
+      {count != null && <i>{count}</i>}
+    </span>
+  );
+}
+
 /* ---- "no, that one is Karina" ------------------------------------------
    One picker, everywhere a name can appear, because Jorge asked for exactly the
    thing its absence caused:
@@ -20078,7 +20138,9 @@ function SameAsPicker({ data, people, name, label = "Same as someone\u2026", con
       {hits.map((h) => (
         <option key={h.key} value={h.name}>{h.name}{h.confident ? " \u00b7 looks like a match" : ""}</option>
       ))}
-      {rest.length > 0 && hits.length > 0 && <option disabled>{"\u2014".repeat(10)}</option>}
+      {/* A rule, not a run of dashes: the box-drawing character reads as a divider
+          in a menu and cannot be mistaken for a name. */}
+      {rest.length > 0 && hits.length > 0 && <option disabled>{"\u2500".repeat(10)}</option>}
       {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
     </select>
   );
@@ -20141,6 +20203,31 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
   const shown = people.filter((p) => (only === "all" || p.status === only)
     && (!q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())));
+
+  /* ---- one group per position ----
+     In the order the positions are listed under Settings, so the store's own
+     idea of who comes first is the order here too, and never alphabetically by
+     job title — which would put the BDC above the floor at every store in the
+     group for no reason anybody chose.
+
+     Only groups with somebody in them are drawn. A search that matches two
+     salespeople should not leave four empty headings behind, and an empty
+     heading reads as a position with nobody in it, which is a different and
+     alarming thing. */
+  const groups = useMemo(() => {
+    const order = [...((config.roles || []).map((r) => r.id)), ""];
+    const by = new Map();
+    for (const p of shown) {
+      const k = order.includes(p.roleId || "") ? (p.roleId || "") : (p.roleId || "");
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(p);
+    }
+    const known = order.filter((k) => by.has(k));
+    // A position somebody was given that this config no longer lists still needs
+    // drawing, or their row silently disappears off the screen.
+    const strays = [...by.keys()].filter((k) => !order.includes(k)).sort();
+    return [...known, ...strays].map((k) => ({ role: roleOf(config, k), rows: by.get(k) }));
+  }, [shown, config.roles]);
 
   const move = (names, status, note) => {
     const list = Array.isArray(names) ? names : [names];
@@ -20540,7 +20627,23 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
         <div className="pp-list">
           {shown.length === 0 && <p className="hint">Nobody matches that.</p>}
-          {shown.map((p) => (
+          {groups.map((g) => (
+          <div key={g.role.id || "none"} className="pp-group" style={{ "--rolec": g.role.color || "#94A3B8" }}>
+            <div className="pp-group-head">
+              <RoleBadge role={g.role} count={g.rows.length} big />
+              <button className="btn-quiet pp-group-sel" onClick={() => setSel((cur) => {
+                /* Selecting a whole position is the batch a manager actually
+                   comes here with: every BDC agent off the floor, this lot moved
+                   across. One at a time was the only way to do it. */
+                const next = new Set(cur);
+                const all = g.rows.every((p) => next.has(p.name));
+                for (const p of g.rows) { if (all) next.delete(p.name); else next.add(p.name); }
+                return next;
+              })}>
+                {g.rows.every((p) => sel.has(p.name)) ? "Clear these" : `Select these ${g.rows.length}`}
+              </button>
+            </div>
+          {g.rows.map((p) => (
             <div key={p.key} className={"pp-row pp-" + p.status + (sel.has(p.name) ? " on" : "")}>
               <button className="pp-tick" onClick={() => setSel((s) => {
                 const n = new Set(s); if (n.has(p.name)) n.delete(p.name); else n.add(p.name); return n;
@@ -20549,15 +20652,19 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               </button>
               {/* The same face the line-up draws, at the same brightness: this list and
                   the Live Floor are the same people, and two different looks for one
-                  person is a small thing that quietly makes a screen feel unrelated. */}
-              <span className="mf-av" style={{ background: `hsl(${hueFromName(p.name)} 62% 46%)` }}>{initialsOf(p.name)}</span>
+                  person is a small thing that quietly makes a screen feel unrelated.
+                  The ring around it is the position, so a face carries both: who they
+                  are, and what they do. */}
+              <span className="mf-av pp-av" style={{ background: `hsl(${hueFromName(p.name)} 62% 46%)` }}>{initialsOf(p.name)}</span>
               <div className="pp-who">
                 <div className="pp-nm">{p.name}</div>
                 <div className="pp-sub">
                   <span className={"pp-pill pp-pill-" + p.status}>
                     {p.status === "active" ? "on the floor" : p.status === "departed" ? "left" : "not ours"}
                   </span>
-                  {p.roleId && <span>{roleName(p.roleId)}</span>}
+                  {/* Not repeated in grey type under every name any more: the
+                      heading above the group says it once, and the row wears the
+                      position's colour on its edge and around their face. */}
                   {p.hiredAt && <span>started {p.hiredAt}</span>}
                   {p.departedAt && <span>left {String(p.departedAt).slice(0, 10)}</span>}
                   {(() => {
@@ -20773,6 +20880,8 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               );
             })()}
             </div>
+          ))}
+          </div>
           ))}
         </div>
 
@@ -21271,7 +21380,9 @@ function SettingsPanel({ config, onChange }) {
           <tbody>
             {config.roles.map((r) => (
               <tr key={r.id}>
-                <td><span className="role-chip" style={{ background: r.color }}>{r.name}</span></td>
+                {/* The same badge the People screen groups by, so the colour set
+                    here is visibly the colour it turns into over there. */}
+                <td><RoleBadge role={r} /></td>
                 <td>
                   <label className="check-inline">
                     <input type="checkbox" checked={r.onBoard !== false}
@@ -23209,6 +23320,36 @@ function Style() {
       /* ---- who works here ---- */
       .pp-alert { border:1px solid rgba(229,83,63,.35); background:linear-gradient(180deg,rgba(229,83,63,.05),transparent); }
       .pp-alert h3 { color:#C13529; }
+      /* ---- one position, one look ----
+         The colour is the position's own, set under Settings and already drawn on
+         the standards table, so this is that identity turning up again rather than
+         a second one invented here. */
+      .role-badge { display:inline-flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px;
+        background:color-mix(in srgb, var(--rolec) 13%, #fff); color:var(--rolec);
+        border:1px solid color-mix(in srgb, var(--rolec) 30%, transparent); }
+      .role-badge b { font-size:12px; font-weight:750; letter-spacing:-.01em; }
+      .role-badge i { font-style:normal; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px;
+        background:var(--rolec); color:#fff; }
+      .role-badge.big { padding:6px 13px; }
+      .role-badge.big b { font-size:13.5px; }
+
+      .pp-group { margin-top:14px; }
+      .pp-group:first-child { margin-top:0; }
+      .pp-group-head { display:flex; align-items:center; gap:10px; margin:0 0 7px; }
+      /* Quiet, but never hidden until hover: half the people who use this screen
+         are on an iPad on the floor, where there is no hover and a control that
+         only appears for a mouse does not exist at all. */
+      .pp-group-sel { font-size:12px; opacity:.62; }
+      .pp-group-sel:hover, .pp-group:hover .pp-group-sel { opacity:1; }
+      /* The colour on the row itself, so a face is placed without reading a word
+         of it. Kept to an edge and a ring: a whole row tinted per position turns
+         a list of people into a chart of positions. */
+      .pp-group .pp-row { border-left:3px solid var(--rolec); }
+      /* Two selectors deep on purpose. This block sits early in the sheet and the
+         plain .mf-av rule is a long way below it, so a single class here loses to
+         it and the ring silently never appears. */
+      .pp-row .pp-av { box-shadow:0 0 0 2px #fff, 0 0 0 3px var(--rolec, #94A3B8); }
+
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }

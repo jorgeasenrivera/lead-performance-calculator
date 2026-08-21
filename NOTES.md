@@ -111,6 +111,38 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## Positions, told apart — BUILT 2026-08-21
+
+> I'd like there to be a visual difference between job types like BDC and sales and so on
+> and group them accordingly, keep it fun.
+
+The People list was one grey run of names, and a manager reading it is almost always after
+one group of them: the BDC's numbers, or who is actually on the floor selling. The position
+was there in small grey type, doing none of the work of telling them apart.
+
+- **The colour is the position's own**, set under Settings and already drawn on the standards
+  table. The same identity turning up in a second place, not a new one invented for this
+  screen. The settings table now draws the same badge, so a colour picked there is visibly
+  the colour it becomes on People.
+- **The glyph comes off the position's NAME**, not its id, because the ids are whatever
+  somebody typed. Every store invents its own titles — "Internet Sales", "Product
+  Specialist", "Client Advisor" — so a new position gets something that fits on the day it
+  is added, with a stable fallback off the id for a title nothing recognises. Nobody is
+  asked to choose an icon they did not ask for.
+- **Groups follow the order positions are listed under Settings**, never alphabetically by
+  job title, which would put the BDC above the floor at every store in the group for no
+  reason anybody chose. Empty groups are not drawn: a heading with nobody under it reads as
+  a position with nobody in it, which is a different and alarming thing.
+- **Select these N** per group, because that is the batch a manager actually arrives with.
+  Quiet but never hidden until hover: half the people on this screen are on an iPad, where
+  a control that only appears for a mouse does not exist at all.
+
+"No position yet" is a real state and a common one — every name a report brings in arrives
+without one — so it gets its own grey identity rather than being lumped in with the first
+position on the list.
+
+---
+
 ## Picking the person yourself — BUILT 2026-08-21
 
 > the merging names selector only pops up if the site notices that it has a name that's
