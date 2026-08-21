@@ -356,7 +356,30 @@ const DEFAULT_TIERS = [
   ]},
 ];
 
-const ROLE_COLORS = ["#2A5E9B", "#00A896", "#BF5AF2", "#FF9F0A", "#5E8C31", "#FF375F"];
+/* ---- the colours a position can wear ----
+   Warm, because the rest of this site is: the tints under its cards are amber,
+   lime and clay, and the old ramp was an iOS-ish blue, teal, purple and magenta
+   that belonged to a different app. They were invisible until the People screen
+   started grouping by position and put four of them on one page, which is the
+   usual way a palette that never matched gets found.
+
+   Distinct by lightness as much as by hue, since warmth narrows the hue range a
+   long way. The colour is the third thing that tells positions apart anyway --
+   the heading and the glyph do the work -- so it does not have to carry it. */
+const ROLE_COLORS = ["#C77800", "#7E8B24", "#A6402F", "#8A7360", "#8A5A3C", "#B08A1F"];
+/* What the old ramp becomes. Only these exact values are rewritten, so a colour
+   a manager picked for themselves is never overwritten by an upgrade. */
+const ROLE_COLOR_WARM = {
+  "#2A5E9B": "#C77800",   // sales: blue      -> amber, the site's own
+  "#7A4F9B": "#7E8B24",   // service: purple  -> olive, off the lime it uses for good news
+  "#00A896": "#A6402F",   // bdc: teal        -> brick
+  "#5B6874": "#8A7360",   // manager: slate   -> warm stone
+  "#BF5AF2": "#8A5A3C",   // and the rest of the old ramp, for positions a store added
+  "#FF9F0A": "#B08A1F",
+  "#5E8C31": "#6F6A2E",
+  "#FF375F": "#A6402F",
+  "#0A84FF": "#C77800",   // the one the earlier migration was already rewriting
+};
 
 // Leaderboard delivered-% thresholds, per channel. At or above green is green, at or
 // above yellow is yellow, anything lower is red. Internet, phone and showroom sit in
@@ -875,10 +898,10 @@ const DEFAULT_CONFIG = {
     { id: "holler-hyundai", name: "Holler Hyundai", icon: null },
   ],
   roles: [
-    { id: "sales", name: "Sales Associate", color: "#2A5E9B", onBoard: true, coaching: true },
-    { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true },
-    { id: "bdc", name: "BDC Agent", color: "#00A896", onBoard: false, coaching: false },
-    { id: "manager", name: "Manager", color: "#5B6874", onBoard: false, coaching: false, tracked: false },
+    { id: "sales", name: "Sales Associate", color: "#C77800", onBoard: true, coaching: true },
+    { id: "service", name: "Service to Sales", color: "#7E8B24", onBoard: true, coaching: true },
+    { id: "bdc", name: "BDC Agent", color: "#A6402F", onBoard: false, coaching: false },
+    { id: "manager", name: "Manager", color: "#8A7360", onBoard: false, coaching: false, tracked: false },
   ],
   standards: {},
   approvedDomains: [],
@@ -1979,8 +2002,12 @@ export default function LeadPerformanceCalculator() {
 
       if (cfg) {
         let dirty = false;
+        /* The positions wear the site's own warm palette now. Only the colours
+           nobody chose are rewritten — the seeded defaults and the old ramp — so
+           a store that picked its own is left exactly as it set it. */
         for (const r of cfg.roles || []) {
-          if (r.color === "#0A84FF") { r.color = "#2A5E9B"; dirty = true; }
+          const warm = ROLE_COLOR_WARM[String(r.color || "").toUpperCase()];
+          if (warm && warm !== r.color) { r.color = warm; dirty = true; }
         }
         if (cfg.approvedDomains === undefined) { cfg.approvedDomains = []; dirty = true; }
         if (cfg.holidays === undefined) { cfg.holidays = []; dirty = true; }
@@ -1995,7 +2022,7 @@ export default function LeadPerformanceCalculator() {
         // (right after Sales Associate) if it's missing. It behaves like Sales: on The
         // Board, coached, and lead-gated.
         if (Array.isArray(cfg.roles) && !cfg.roles.some((r) => r.id === "service")) {
-          const svc = { id: "service", name: "Service to Sales", color: "#7A4F9B", onBoard: true, coaching: true };
+          const svc = { id: "service", name: "Service to Sales", color: "#7E8B24", onBoard: true, coaching: true };
           const salesIdx = cfg.roles.findIndex((r) => r.id === "sales");
           if (salesIdx >= 0) cfg.roles.splice(salesIdx + 1, 0, svc);
           else cfg.roles.unshift(svc);
@@ -3195,11 +3222,14 @@ export default function LeadPerformanceCalculator() {
                 {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
                 {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
                 {tab === "roster" && (
-                  <>
+                  /* The gutter the Dashboard has had all along. This tab was
+                     rendered straight into .page, which carries no padding, so it
+                     ran edge to edge on anything wider than a laptop. */
+                  <div className="pp-page">
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
                       storeName={currentStore?.name} allStores={accessibleStores}
                       onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
-                  </>
+                  </div>
                 )}
               </>
             )}
@@ -20033,6 +20063,119 @@ function StandardsEditor({ config, storeId, onChange }) {
    never earned them. Collapsing those two into "remove" is how a month that
    delivered 85 came to read 84.5.
    ========================================================================= */
+/* ---- what each position looks like ---------------------------------------
+   Jorge: "I'd like there to be a visual difference between job types like BDC
+   and sales and so on and group them accordingly, keep it fun."
+
+   A store's people list is one grey run of names, and a manager reading it is
+   almost always after one group of them: the BDC's numbers, or who is actually
+   on the floor selling. The position was there, in small grey type, doing none
+   of the work of telling them apart.
+
+   The colour is the one the position already carries — it is set under Settings
+   and drawn on the standards table, so this is the same identity turning up in
+   a second place rather than a new one invented here.
+
+   The glyph is picked off the position's NAME rather than its id, because the
+   ids are whatever somebody typed. Every store invents its own titles — "Internet
+   Sales", "Product Specialist", "Client Advisor" — and none of them are in any
+   list we could ship. A new position gets something that fits on the day it is
+   added, without a manager being asked to choose an icon they did not ask for. */
+const ROLE_GLYPHS = [
+  [/\b(bdc|call|phone)/i, "phone"],
+  [/(internet|online|digital|web|e-?commerce)/i, "globe"],
+  [/(service|fixed ?ops)/i, "swap"],
+  [/(manager|director|desk|gm\b|gsm\b|principal)/i, "star"],
+  [/(finance|f ?& ?i|title|paperwork|business)/i, "doc"],
+  [/(delivery|driver|porter|logistics)/i, "car"],
+  [/(lot|inventory|recon)/i, "clipboard"],
+  [/(train|coach|academy)/i, "trophy"],
+  [/(sales|associate|consultant|advisor|specialist|product)/i, "handshake"],
+];
+/* Something rather than nothing for a title none of those recognise. Off the id
+   so it never moves once a position exists. */
+const ROLE_SPARE = ["user", "bolt", "flame", "chart", "clipboard", "trophy", "globe"];
+function roleGlyph(role) {
+  const name = (role && role.name) || "";
+  for (const [re, g] of ROLE_GLYPHS) if (re.test(name)) return g;
+  const id = String((role && role.id) || name);
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return ROLE_SPARE[h % ROLE_SPARE.length];
+}
+/* Somebody with no position at all is a real state and a common one: every name
+   a report brings in arrives without one. It gets its own grey identity rather
+   than being dropped in with the first position on the list. */
+const NO_ROLE = { id: "", name: "No position yet", color: "#9A8F82" };
+const roleOf = (config, roleId) =>
+  ((config && config.roles) || []).find((r) => r.id === roleId) ||
+  (roleId ? { id: roleId, name: roleId, color: NO_ROLE.color } : NO_ROLE);
+
+/** The position, wearing its own colour. Small in a row, large on a heading. */
+function RoleBadge({ role, count, big }) {
+  const c = (role && role.color) || NO_ROLE.color;
+  return (
+    <span className={"role-badge" + (big ? " big" : "")} style={{ "--rolec": c }}>
+      <PixIcon glyph={roleGlyph(role)} size={big ? 13 : 11} />
+      <b>{(role && role.name) || NO_ROLE.name}</b>
+      {count != null && <i>{count}</i>}
+    </span>
+  );
+}
+
+/* ---- "no, that one is Karina" ------------------------------------------
+   One picker, everywhere a name can appear, because Jorge asked for exactly the
+   thing its absence caused:
+
+     the merging names selector only pops up if the site notices that it has a
+     name that's similar, I want to also have the ability to pick it as well
+
+   Which was true, and was the wrong way round. The app offered the fold only
+   where it had already worked out the answer — the mangled-name list and the
+   holding pen — and stayed silent on the two lists where a person is most likely
+   to know something the measure never will. A nickname, a maiden name, a first
+   name spelled the way somebody's family spells it: no edit distance finds those,
+   and a manager recognises them at a glance.
+
+   So the suggestion stays a suggestion and the whole roster is always under it.
+   The measure gets to sort the list; the person gets to decide.
+
+   Never offers somebody themselves, and never offers a name the store has said is
+   not one of its people — folding a real month into a heading is the one mistake
+   here that costs figures. */
+function SameAsPicker({ data, people, name, label = "Same as someone\u2026", confirm = false, onPick }) {
+  const key = norm(name);
+  const hits = likelyMatches(data, name).filter((h) => h.key !== key);
+  const best = hits.find((h) => h.confident);
+  const rest = (people || [])
+    .filter((x) => x.status !== "ignored" && x.key !== key && !hits.some((h) => h.key === x.key));
+  return (
+    <select className="q-flag-sel pp-same" value=""
+      onChange={(e) => {
+        const to = e.target.value;
+        e.target.value = "";
+        if (!to) return;
+        /* Asked only where the name being folded is somebody the store claims.
+           A stranger in the figures has nothing to lose; a person on the roster
+           comes off it, and that is worth a sentence first. */
+        if (confirm && !window.confirm(
+          `${name} and ${to} are the same person?\n\n` +
+          `${name}'s figures move onto ${to}, and ${name} comes off this store's lists. ` +
+          `The spelling is remembered, so the next report needs no repair.`)) return;
+        onPick(to);
+      }}>
+      <option value="">{best ? `Same as ${best.name}?` : label}</option>
+      {hits.map((h) => (
+        <option key={h.key} value={h.name}>{h.name}{h.confident ? " \u00b7 looks like a match" : ""}</option>
+      ))}
+      {/* A rule, not a run of dashes: the box-drawing character reads as a divider
+          in a menu and cannot be mistaken for a name. */}
+      {rest.length > 0 && hits.length > 0 && <option disabled>{"\u2500".repeat(10)}</option>}
+      {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
+    </select>
+  );
+}
+
 function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChange, userName }) {
   const [q, setQ] = useState("");
   /* The floor is the answer to "who works here", and it is the only one anybody
@@ -20090,6 +20233,31 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
   const shown = people.filter((p) => (only === "all" || p.status === only)
     && (!q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())));
+
+  /* ---- one group per position ----
+     In the order the positions are listed under Settings, so the store's own
+     idea of who comes first is the order here too, and never alphabetically by
+     job title — which would put the BDC above the floor at every store in the
+     group for no reason anybody chose.
+
+     Only groups with somebody in them are drawn. A search that matches two
+     salespeople should not leave four empty headings behind, and an empty
+     heading reads as a position with nobody in it, which is a different and
+     alarming thing. */
+  const groups = useMemo(() => {
+    const order = [...((config.roles || []).map((r) => r.id)), ""];
+    const by = new Map();
+    for (const p of shown) {
+      const k = order.includes(p.roleId || "") ? (p.roleId || "") : (p.roleId || "");
+      if (!by.has(k)) by.set(k, []);
+      by.get(k).push(p);
+    }
+    const known = order.filter((k) => by.has(k));
+    // A position somebody was given that this config no longer lists still needs
+    // drawing, or their row silently disappears off the screen.
+    const strays = [...by.keys()].filter((k) => !order.includes(k)).sort();
+    return [...known, ...strays].map((k) => ({ role: roleOf(config, k), rows: by.get(k) }));
+  }, [shown, config.roles]);
 
   const move = (names, status, note) => {
     const list = Array.isArray(names) ? names : [names];
@@ -20250,6 +20418,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 <button className="btn btn-sm" onClick={() => onChange(
                   mergeManglings(data, [r], { by: userName }),
                   { action: "Merged a misread name", detail: `${r.from} → ${r.to}` })}>Merge</button>
+                {/* The arrow is the app's guess. It is right almost always and
+                    unarguable never, and a wrong guess used to leave nothing to do
+                    but merge it wrongly or leave it alone for ever. */}
+                <SameAsPicker data={data} people={people} name={r.from} label="or somebody else\u2026"
+                  onPick={(to) => onChange(sameAs(data, r.from, to, { by: userName, note: "picked by hand" }),
+                    { action: "Merged a misread name", detail: `${r.from} → ${to}` })} />
               </div>
             ))}
             {wrongRead.length > 40 && (
@@ -20322,28 +20496,9 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     which is worse than a duplicate row. Nicknames are the common
                     case that no measure can safely offer, so the list is not
                     limited to the suggestions. */}
-                <select className="q-flag-sel pp-same" value=""
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    onChange(sameAs(data, w.name, e.target.value, { by: userName }),
-                      { action: "Folded a spelling into a person", detail: `${w.name} → ${e.target.value}` });
-                  }}>
-                  {(() => {
-                    const hits = likelyMatches(data, w.name);
-                    const best = hits.find((h) => h.confident);
-                    const rest = people.filter((x) => x.status !== "ignored" && !hits.some((h) => h.key === x.key));
-                    return (
-                      <>
-                        <option value="">{best ? `Same as ${best.name}?` : "Same as someone…"}</option>
-                        {hits.map((h) => (
-                          <option key={h.key} value={h.name}>{h.name}{h.confident ? " · looks like a match" : ""}</option>
-                        ))}
-                        {rest.length > 0 && hits.length > 0 && <option disabled>──────────</option>}
-                        {rest.map((x) => <option key={x.key} value={x.name}>{x.name}</option>)}
-                      </>
-                    );
-                  })()}
-                </select>
+                <SameAsPicker data={data} people={people} name={w.name} onPick={(to) =>
+                  onChange(sameAs(data, w.name, to, { by: userName }),
+                    { action: "Folded a spelling into a person", detail: `${w.name} → ${to}` })} />
               </div>
             ))}
           </div>
@@ -20396,6 +20551,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 </span>
                 <button className="btn btn-sm" onClick={() => move(sname.name, "active", "claimed from unmatched figures")}>They work here</button>
                 <button className="btn btn-sm pp-danger" onClick={() => move(sname.name, "ignored", "figures belonged to another store")}>Not ours</button>
+                {/* The third answer this list was missing. "Not ours" and "they work
+                    here" are both wrong for a name that is somebody you already
+                    have spelled differently, and until now there was nothing else
+                    to say — so the figures either stayed as a duplicate row or were
+                    thrown away. */}
+                <SameAsPicker data={data} people={people} name={sname.name} onPick={(to) =>
+                  onChange(sameAs(data, sname.name, to, { by: userName }),
+                    { action: "Folded a spelling into a person", detail: `${sname.name} → ${to}` })} />
               </div>
             ))}
           </div>
@@ -20494,7 +20657,23 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
         <div className="pp-list">
           {shown.length === 0 && <p className="hint">Nobody matches that.</p>}
-          {shown.map((p) => (
+          {groups.map((g) => (
+          <div key={g.role.id || "none"} className="pp-group" style={{ "--rolec": g.role.color || NO_ROLE.color }}>
+            <div className="pp-group-head">
+              <RoleBadge role={g.role} count={g.rows.length} big />
+              <button className="btn-quiet pp-group-sel" onClick={() => setSel((cur) => {
+                /* Selecting a whole position is the batch a manager actually
+                   comes here with: every BDC agent off the floor, this lot moved
+                   across. One at a time was the only way to do it. */
+                const next = new Set(cur);
+                const all = g.rows.every((p) => next.has(p.name));
+                for (const p of g.rows) { if (all) next.delete(p.name); else next.add(p.name); }
+                return next;
+              })}>
+                {g.rows.every((p) => sel.has(p.name)) ? "Clear these" : `Select these ${g.rows.length}`}
+              </button>
+            </div>
+          {g.rows.map((p) => (
             <div key={p.key} className={"pp-row pp-" + p.status + (sel.has(p.name) ? " on" : "")}>
               <button className="pp-tick" onClick={() => setSel((s) => {
                 const n = new Set(s); if (n.has(p.name)) n.delete(p.name); else n.add(p.name); return n;
@@ -20511,7 +20690,9 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   <span className={"pp-pill pp-pill-" + p.status}>
                     {p.status === "active" ? "on the floor" : p.status === "departed" ? "left" : "not ours"}
                   </span>
-                  {p.roleId && <span>{roleName(p.roleId)}</span>}
+                  {/* Not repeated in grey type under every name any more: the
+                      heading above the group says it once, and the row wears the
+                      position's colour on its edge and around their face. */}
                   {p.hiredAt && <span>started {p.hiredAt}</span>}
                   {p.departedAt && <span>left {String(p.departedAt).slice(0, 10)}</span>}
                   {(() => {
@@ -20531,16 +20712,40 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   })()}
                 </div>
               </div>
+              {/* ---- four filled buttons per row, nine rows deep ----
+                  Every one of these was a solid blue pill, so a list of people
+                  read as a wall of buttons with some names in it. They are all
+                  ordinary, occasional actions — somebody leaves, somebody moves
+                  store — and none of them is what a manager came to this screen
+                  to do; the list itself is. So they are drawn quietly and turn
+                  solid under the pointer, and only the one that takes figures
+                  away has a colour of its own. */}
               <div className="pp-acts">
-                {p.status !== "active" && <button className="btn btn-sm" onClick={() => move(p.name, "active")}>On the floor</button>}
-                {p.status !== "departed" && <button className="btn btn-sm" onClick={() => move(p.name, "departed")}>They left</button>}
-                {p.status === "active" && (allStores || []).length > 1 && (
-                  <button className="btn btn-sm" onClick={() => { setMoving(p); setMoveTo(""); }}>Move store</button>
+                {p.status !== "active" && (
+                  <button className="pp-act" onClick={() => move(p.name, "active")}>
+                    <PixIcon glyph="check" size={11} /><span>On the floor</span>
+                  </button>
                 )}
-                {p.status !== "ignored" && <button className="btn btn-sm pp-danger" onClick={() => move(p.name, "ignored")}>Not ours</button>}
+                {p.status !== "departed" && (
+                  <button className="pp-act" onClick={() => move(p.name, "departed")}>
+                    <PixIcon glyph="door" size={11} /><span>They left</span>
+                  </button>
+                )}
+                {p.status === "active" && (allStores || []).length > 1 && (
+                  <button className="pp-act" onClick={() => { setMoving(p); setMoveTo(""); }}>
+                    <PixIcon glyph="swap" size={11} /><span>Move store</span>
+                  </button>
+                )}
+                {p.status !== "ignored" && (
+                  <button className="pp-act danger" onClick={() => move(p.name, "ignored")}>
+                    <PixIcon glyph="close" size={11} /><span>Not ours</span>
+                  </button>
+                )}
                 {storeId && p.id && p.status !== "ignored" && (
-                  <button className="btn btn-sm" onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
-                    {openAcct === p.key ? "Close" : "Details"}
+                  <button className={"pp-act" + (openAcct === p.key ? " on" : "")}
+                    onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
+                    <PixIcon glyph={openAcct === p.key ? "arrowup" : "more"} size={11} />
+                    <span>{openAcct === p.key ? "Close" : "Details"}</span>
                   </button>
                 )}
               </div>
@@ -20697,10 +20902,38 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   {acctSaid && acctSaid.key === key && (
                     <p className={acctSaid.bad ? "sched-err" : "hint"}><b>{acctSaid.text}</b></p>
                   )}
+
+                  {/* ---- the same person, twice ----
+                      The other half of what Jorge asked for. Every picker before
+                      this one is on a list of names the store does NOT claim, and
+                      the commonest duplicate is two entries the store claims both
+                      of: a maiden name and a married one, a first name spelled two
+                      ways, somebody added by hand who was already there under what
+                      the reports call them. No measure catches those and nothing
+                      here could say so.
+
+                      Their figures are added together rather than one copy winning,
+                      because half a month under each spelling is exactly how this
+                      goes wrong, and the spelling is remembered so the next report
+                      files itself correctly. */}
+                  <div className="pp-move-row pp-samerow">
+                    <span className="pp-date">Same person as</span>
+                    <SameAsPicker data={data} people={people} name={p.name} confirm
+                      label={"Somebody already on this list\u2026"}
+                      onPick={(to) => onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }),
+                        { action: "Folded a duplicate person", detail: `${p.name} → ${to}` })} />
+                  </div>
+                  <p className="hint">
+                    Only when they are genuinely one person under two spellings. {p.name} comes off this
+                    store's lists and their cars move across. Two people who happen to share a name are
+                    not this, and merging them puts one person's month onto the other.
+                  </p>
                 </div>
               );
             })()}
             </div>
+          ))}
+          </div>
           ))}
         </div>
 
@@ -21199,7 +21432,9 @@ function SettingsPanel({ config, onChange }) {
           <tbody>
             {config.roles.map((r) => (
               <tr key={r.id}>
-                <td><span className="role-chip" style={{ background: r.color }}>{r.name}</span></td>
+                {/* The same badge the People screen groups by, so the colour set
+                    here is visibly the colour it turns into over there. */}
+                <td><RoleBadge role={r} /></td>
                 <td>
                   <label className="check-inline">
                     <input type="checkbox" checked={r.onBoard !== false}
@@ -23137,6 +23372,44 @@ function Style() {
       /* ---- who works here ---- */
       .pp-alert { border:1px solid rgba(229,83,63,.35); background:linear-gradient(180deg,rgba(229,83,63,.05),transparent); }
       .pp-alert h3 { color:#C13529; }
+      /* ---- one position, one look ----
+         The colour is the position's own, set under Settings and already drawn on
+         the standards table, so this is that identity turning up again rather than
+         a second one invented here. */
+      .role-badge { display:inline-flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px;
+        background:color-mix(in srgb, var(--rolec) 13%, #fff); color:var(--rolec);
+        border:1px solid color-mix(in srgb, var(--rolec) 30%, transparent); }
+      .role-badge b { font-size:12px; font-weight:750; letter-spacing:-.01em; }
+      .role-badge i { font-style:normal; font-size:11px; font-weight:700; padding:1px 7px; border-radius:999px;
+        background:var(--rolec); color:#fff; }
+      .role-badge.big { padding:6px 13px; }
+      .role-badge.big b { font-size:13.5px; }
+
+      .pp-group { margin-top:14px; }
+      .pp-group:first-child { margin-top:0; }
+      .pp-group-head { display:flex; align-items:center; gap:10px; margin:0 0 7px; }
+      /* Quiet, but never hidden until hover: half the people who use this screen
+         are on an iPad on the floor, where there is no hover and a control that
+         only appears for a mouse does not exist at all. */
+      .pp-group-sel { font-size:12px; opacity:.62; }
+      .pp-group-sel:hover, .pp-group:hover .pp-group-sel { opacity:1; }
+      /* No bar down the left-hand side. It was a second, louder copy of what the
+         heading already says, and a hard vertical edge is not a shape this site
+         uses anywhere else. The ring around the face is enough. */
+      /* No ring around the face either, for the same reason the bar went. These
+         faces are the Live Floor's, and their fill is a hue off the person's own
+         name — a warm ring around a teal circle is two palettes arguing on one
+         30-pixel object. The heading carries the position; the row carries the
+         person. */
+
+      /* ---- room at the edges ----
+         Every other manager tab that carries a page of its own sits in .board-page,
+         which is 32px of gutter and a 1440 ceiling. The People tab was rendered
+         bare into .page, which has no padding at all, so on a wide monitor the
+         card ran from one edge of the glass to the other and the buttons finished
+         hard against the right-hand side. */
+      .pp-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
+      @media (max-width:900px) { .pp-page { padding:16px 16px 0; } }
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }
@@ -23185,7 +23458,7 @@ function Style() {
         padding:9px 12px; border-radius:12px; background:rgba(42,94,155,.08); font-size:12.5px; font-weight:600; }
 
       .pp-list { display:grid; gap:5px; margin-top:10px; }
-      .pp-row { display:flex; gap:10px; align-items:center; padding:8px 11px; border-radius:12px;
+      .pp-row { display:flex; gap:12px; align-items:center; padding:11px 14px; border-radius:13px;
         background:rgba(16,32,52,.035); }
       .pp-row.on { background:rgba(42,94,155,.12); }
       .pp-row.pp-ignored { opacity:.62; }
@@ -23198,7 +23471,33 @@ function Style() {
       .pp-pill-active { color:#0E7C55; background:rgba(15,179,126,.14); }
       .pp-pill-departed { color:#95600A; background:rgba(240,180,41,.16); }
       .pp-pill-ignored { color:#C13529; background:rgba(229,83,63,.13); }
-      .pp-acts { display:flex; flex-wrap:wrap; gap:6px; }
+      .pp-acts { display:flex; flex-wrap:wrap; gap:6px; margin-left:auto; }
+      /* Quiet until you go for one. An outline and a glyph is enough to be found
+         and not enough to shout, which is the right weight for something you do
+         to a person twice a year. */
+      .pp-act { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:11px;
+        font-family:inherit; font-size:12.5px; font-weight:650; letter-spacing:-.01em; cursor:pointer;
+        color:var(--ink-2, #44546B); background:rgba(255,255,255,.55);
+        border:1px solid rgba(16,32,52,.13); box-shadow:0 1px 1px rgba(16,32,52,.03);
+        transition:background .15s var(--ease), border-color .15s var(--ease), color .15s var(--ease), transform .15s var(--ease); }
+      .pp-act svg { opacity:.55; transition:opacity .15s; }
+      .pp-act:hover { background:#fff; border-color:rgba(16,32,52,.3); color:var(--ink, #17202E); transform:translateY(-1px); }
+      .pp-act:hover svg { opacity:1; }
+      .pp-act:active { transform:none; }
+      /* Open, and staying open: the one state in this row that is not momentary. */
+      .pp-act.on { background:rgba(42,94,155,.1); border-color:rgba(42,94,155,.32); color:#2A5E9B; }
+      .pp-act.on svg { opacity:1; }
+      /* The only one that takes a person's figures out of the store's books. It
+         earns a colour; the other four do not. */
+      .pp-act.danger:hover { background:rgba(229,83,63,.09); border-color:rgba(229,83,63,.4); color:#C13529; }
+      @media (max-width:760px) {
+        /* The labels STAY. Dropping them to icons fits the row and turns four
+           unlabelled marks into a guessing game, one of which takes a person's
+           figures out of the store's books. The row already wraps on a phone, so
+           they simply sit under the name with their names on them. */
+        .pp-acts { margin-left:0; }
+        .pp-act { padding:9px 12px; }
+      }
       /* Waiting on a decision, not wrong yet — so amber rather than the red the
          unclaimed-figures card uses. One of those is a question, the other is a
          store counting cars it never sold. */
@@ -23215,6 +23514,23 @@ function Style() {
         background:rgba(255,255,255,.55); border:1px solid rgba(16,32,52,.09); }
       .pp-acctbox .hint { margin:0 0 9px; }
       .pp-acctbox .hint:last-child { margin:9px 0 0; }
+      .pp-samerow { margin-top:11px; padding-top:11px; border-top:1px solid rgba(16,32,52,.08); }
+      /* The base select is drawn for the dark boards, which on this white card is
+         a bordered control with no border: it read as a label rather than as
+         something to open. */
+      /* Tagged with the element on purpose. The board's own .q-flag-sel is defined
+         further down the sheet, at the same specificity, so a bare .pp-same loses
+         to it and the control comes out with no border at all on a white card. */
+      select.pp-same { max-width:min(100%, 320px); background:#fff; color:inherit;
+        border:1px solid rgba(16,32,52,.18); border-radius:10px; padding:7px 10px;
+        font-size:13px; font-weight:600; cursor:pointer; }
+      select.pp-same:hover { border-color:rgba(16,32,52,.34); }
+      /* Every other picker on this white card had the same problem, for the same
+         reason: a white border on a white background. Position, languages and the
+         account picker all read as plain text you had to discover were clickable. */
+      .pp-list select.q-flag-sel, .pp-strangers select.q-flag-sel, .pp-acctbox select.q-flag-sel {
+        background:#fff; color:inherit; border:1px solid rgba(16,32,52,.18); border-radius:10px;
+        padding:7px 10px; font-size:13px; font-weight:600; cursor:pointer; }
       .pp-acct-line { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:baseline; margin-bottom:9px; }
       .pp-acct-line b { font-size:13.5px; }
       .pp-acct-line span { font-size:11.5px; color:var(--ink-3); }

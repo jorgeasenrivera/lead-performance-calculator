@@ -111,6 +111,91 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## Positions, told apart — BUILT 2026-08-21
+
+> I'd like there to be a visual difference between job types like BDC and sales and so on
+> and group them accordingly, keep it fun.
+
+The People list was one grey run of names, and a manager reading it is almost always after
+one group of them: the BDC's numbers, or who is actually on the floor selling. The position
+was there in small grey type, doing none of the work of telling them apart.
+
+- **The colour is the position's own**, set under Settings and already drawn on the standards
+  table. The same identity turning up in a second place, not a new one invented for this
+  screen. The settings table now draws the same badge, so a colour picked there is visibly
+  the colour it becomes on People.
+- **Warm, because the site is.** The seeded role colours were an iOS-ish blue, purple, teal
+  and slate that had never matched the amber, lime and clay this site's cards are tinted
+  with. Nobody had noticed because they were never seen together until this screen put four
+  of them on one page. They are now amber, olive, brick and warm stone, migrated on load —
+  and ONLY where the colour is one nobody chose (a seeded default or the old ramp), so a
+  store that picked its own keeps it.
+- **The colour stays in the heading.** A bar down the left of each row and a ring around each
+  face were both tried and both removed: the bar was a louder second copy of what the heading
+  already says and a hard vertical edge is a shape this site does not use, and the ring put a
+  warm outline around a face whose fill is a hue off the person's own name — two palettes
+  arguing on one 30-pixel object.
+- **The glyph comes off the position's NAME**, not its id, because the ids are whatever
+  somebody typed. Every store invents its own titles — "Internet Sales", "Product
+  Specialist", "Client Advisor" — so a new position gets something that fits on the day it
+  is added, with a stable fallback off the id for a title nothing recognises. Nobody is
+  asked to choose an icon they did not ask for.
+- **Groups follow the order positions are listed under Settings**, never alphabetically by
+  job title, which would put the BDC above the floor at every store in the group for no
+  reason anybody chose. Empty groups are not drawn: a heading with nobody under it reads as
+  a position with nobody in it, which is a different and alarming thing.
+- **Select these N** per group, because that is the batch a manager actually arrives with.
+  Quiet but never hidden until hover: half the people on this screen are on an iPad, where
+  a control that only appears for a mouse does not exist at all.
+
+### The row's own buttons, and room at the edges — same day
+
+Every row carried four solid blue pills, so a list of people read as a wall of buttons with
+some names in it. They are all ordinary, occasional actions — somebody leaves, somebody
+moves store — and none of them is what a manager came to the screen to do; the list itself
+is. They are outlined and quiet now, turn solid under the pointer, and only **Not ours**
+takes a colour, because it is the only one that removes a person's figures from the store's
+books.
+
+The buttons on the ALERT cards stayed solid on purpose. Those cards are a decision somebody
+came to make; the list is something they came to read.
+
+On a phone the labels stay and the row wraps. Dropping them to icons fits the row and turns
+four unlabelled marks into a guessing game, one of which is destructive.
+
+And the tab had no gutter at all: every other manager page sits in `.board-page` (32px sides,
+1440 ceiling) and this one was rendered bare into `.page`, which carries no padding, so on a
+wide monitor it ran from one edge of the glass to the other. Worth checking whether Summary,
+History and Import have the same gap.
+
+"No position yet" is a real state and a common one — every name a report brings in arrives
+without one — so it gets its own grey identity rather than being lumped in with the first
+position on the list.
+
+---
+
+## Picking the person yourself — BUILT 2026-08-21
+
+> the merging names selector only pops up if the site notices that it has a name that's
+> similar, I want to also have the ability to pick it as well
+
+True, and the wrong way round. The app offered the fold only where it had already worked out
+the answer — the mangled-name list and the holding pen — and said nothing on the two lists
+where a person is most likely to know something the measure never will. A nickname, a maiden
+name, a first name spelled the way a family spells it: no edit distance finds those, and a
+manager recognises them at a glance.
+
+One picker now, in four places: the holding pen, the strangers-in-the-figures list, beside
+the app's guess on a misread name (so a wrong guess can be redirected instead of merged
+wrongly or left alone for ever), and inside a person's own Details — which is the case none
+of the others could reach, two entries the store claims BOTH of. The suggestion still sorts
+to the top; the whole roster is always under it. The measure sorts, the person decides.
+
+Folding a person the store claims asks first, because they come off the roster. Folding a
+name in the figures does not, because nothing is lost either way.
+
+---
+
 ## The removal bug, instance seven — FIXED 2026-08-21
 
 Reported as *"trying to merge and it's still clicking and then reverting back"*, twenty-four
