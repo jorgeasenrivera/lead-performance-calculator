@@ -33,6 +33,89 @@
 import { norm } from "./_report-parsers.mjs";
 import { foldAliases } from "./_people-status.mjs";
 
+/* =========================================================================
+   What happens to each field when two copies of a store meet.
+
+   The register of rules, one row per field. It exists because the thing that
+   went wrong five times was never a hard question badly answered — it was a
+   field whose rule nobody had decided, behaving the way the code happened to
+   fall out. A field with no rule does not fail loudly. It silently keeps
+   whichever copy saved last, and you find out weeks later when a manager says
+   the name came back.
+
+   This is a register, not the engine: the merge below is still written out
+   longhand, because rewriting it as a loop over this table would risk the one
+   function in the system that corrupts data rather than throwing when it is
+   wrong. A table that only describes code is exactly the kind of second copy
+   this codebase keeps being bitten by, so it is tied to the code instead of
+   trusted:
+
+     test/merge-policy.test.mjs reads the merge's own source, and every field it
+     assigns must appear here, every field here must be one the merge assigns or
+     one the importer counts as part of a store, and anything marked clientWins
+     must be a field the merge genuinely does not touch.
+
+   So a wrong row fails the build rather than misleading the next person.
+   ========================================================================= */
+
+/** The rules a field is allowed to have. Adding one means teaching the guard. */
+export const STRATEGIES = {
+  newestImportWins: "The import log settles it. A browser holding an hours-old month must not overwrite the imports since, so if the server has an import this copy has never seen, the server's is kept whole.",
+  tombstones: "A stamped decision, { key: when }, newest wins, pruned at ninety days. The only form of removal this system has ever been able to keep.",
+  stampedUnion: "A union, so a stale tab cannot delete somebody by not knowing about them, minus whatever the stamps say has since been undone.",
+  perEntryNewest: "Merged entry by entry rather than wholesale, because several managers write the same day at once. A collision is settled by the entry's own history.",
+  perKeyNewest: "Each key carries the time it was last written, and the later write wins. Whole-object replacement wiped the month for everybody.",
+  newestStampWins: "One setting for the whole floor, so somebody has to win: whoever set it last.",
+  unionById: "Nothing from either side disappears; entries are deduplicated by id.",
+  heldUnion: "Union, with each side's pieces of the same held person added together, minus anyone since settled.",
+  aliasesThenFold: "Union first so no tab can drop a fold, then the fold is carried out again over whatever the figures now say.",
+  clientWins: "NOT MERGED. This copy is written over the server's whole. A concurrent change by another manager is silently lost. Every one of these is a gap, not a decision.",
+};
+
+export const FIELD_POLICY = {
+  // ---- the figures ----
+  months:        { how: "newestImportWins", why: "Reports arrive hourly and a stale tab must not undo them." },
+  activity:      { how: "newestImportWins", why: "Travels with months; the same import writes both." },
+  activitySnaps: { how: "newestImportWins", why: "Travels with months." },
+  aliases:       { how: "aliasesThenFold", why: "Who somebody is, is a decision. It survived being deleted but not being handed back with the server's month." },
+
+  // ---- who the store's people are ----
+  roster:        { how: "stampedUnion", why: "Union minus the departed and the ignored, so a removal needs a stamp behind it." },
+  departed:      { how: "stampedUnion", why: "Leaving is a decision with a time on it; being brought back is another." },
+  excluded:      { how: "stampedUnion", why: "The ignore list, settled against ignoredAt and unignored." },
+  ignoredAt:     { how: "tombstones", why: "When a name was marked as not one of this store's people." },
+  unignored:     { how: "tombstones", why: "And when that was lifted. The pair is what lets somebody change their mind twice." },
+  returned:      { how: "tombstones", why: "When a leaver came back, so the departed union cannot bury it." },
+  pendingPeople: { how: "heldUnion", why: "Two reports can each hold half of the same unclaimed person." },
+
+  // ---- the plate log, the most contended thing in the document ----
+  plates:        { how: "perEntryNewest", why: "Every manager on the floor writes today's day key at once." },
+  plateRegistry: { how: "perEntryNewest", why: "Same, and two managers adding one plate made two entries." },
+  plateGone:     { how: "tombstones", why: "A browser that never knew a plate and one that deleted it look identical." },
+  plateRegGone:  { how: "tombstones", why: "Same, for the registry." },
+  plateMode:     { how: "newestStampWins", why: "How the store runs plates is one setting for the whole floor." },
+  plateModeAt:   { how: "newestStampWins", why: "The stamp plateMode is judged by." },
+
+  // ---- the rest ----
+  importLog:     { how: "unionById", why: "It is the evidence months and activity are judged by, so it must lose nothing." },
+  daysOff:       { how: "perKeyNewest", why: "An empty schedule from an old tab used to wipe the month for everybody." },
+  daysOffAt:     { how: "perKeyNewest", why: "The per-person stamp that made that possible." },
+
+  /* ---- gaps: fields the merge does not touch at all ----
+     Not decisions. The client's whole copy wins, so two managers changing
+     different people at the same moment means one of them loses their work with
+     no error and nothing written down. Jorge confirmed this matters: many
+     managers across many stores working the same system at once.
+     Being listed here is what stops them being forgotten again. */
+  restrictions:  { how: "clientWins", gap: true, why: "Per-associate and manager-set. Wants a per-person stamp, like daysOff." },
+  goals:         { how: "clientWins", gap: true, why: "Store-level, manager-set. Individual goals are not here: they live in the daily tracker under coaching. Wants a stamp." },
+  baselines:     { how: "clientWins", gap: true, why: "Per-person, seeded once from history and warned about before it is re-seeded, because every coaching target is built from it. Losing a seed to another tab is worse than losing a goal. Keyed by associate id, so it wants a stamp per person." },
+  statsExcluded: { how: "clientWins", gap: true, why: "Who is left out of the store's benchmark averages. An array removed with a plain filter, so it becomes the sixth instance of the removal-does-not-survive bug the moment anybody makes it a union without stamps." },
+  qualified:     { how: "clientWins", gap: true, why: "The RockEd mark, per day per person. Live." },
+  stars:         { how: "clientWins", gap: true, why: "The old form of the RockEd mark. Nothing writes it any more; it is only read so old months keep scoring, so it can shrink and never grow." },
+  repeatFlags:   { how: "clientWins", gap: true, why: "Dead. Every reference in the app and the pipeline is copy-through: nothing reads a value out of it and nothing writes one in. Delete rather than merge." },
+};
+
 /* A plate tag, compared the way a person would compare two of them: case and
    punctuation are not part of the tag. It lives here because the registry merge
    below is what needs it to tell one plate from another, and the app imports it
