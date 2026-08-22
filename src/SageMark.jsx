@@ -54,6 +54,12 @@ export const SAGE_PRINT = "#2E3A32";     // one flat colour, print and PDF only
 export default function SageMark({
   word = false,
   size = 32,
+  /* How many dots to draw, left to right, for the build on the sign-in screen.
+     Left out of the handoff's file because the mark itself does not know about
+     the form; it is here rather than in the screen because the ORDER has to be
+     the mark's own (sorted by x, then y) and nothing outside should have to know
+     that. Undefined draws the whole mark, which is every other call site. */
+  revealed,
   base = SAGE_BASE,
   cap = SAGE_CAP,
   flat,          // one colour: pass SAGE_PRINT for print and PDF
@@ -77,22 +83,30 @@ export default function SageMark({
   const reversed = word && (base === SAGE_BASE_REVERSED || cap === SAGE_CAP_REVERSED || plate === SAGE_PLATE);
   const fillOn = fill === undefined ? (reversed ? FILL_REVERSED : FILL) : fill;
 
-  const dots = [];
+  const cells = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const ch = pattern[r][c];
-      if (ch !== "o") continue;
-      dots.push(
-        <circle
-          key={r + "-" + c}
-          cx={(c + 0.5) * PITCH + padPx}
-          cy={(r + 0.5) * PITCH + padPx}
-          r={((riseOn ? WEIGHT[r] : 1) * CELL * fillOn) / 2}
-          fill={flat || mix(base, cap, rows > 1 ? 1 - r / (rows - 1) : 0)}
-        />
-      );
+      if (pattern[r][c] !== "o") continue;
+      cells.push({ r, c });
     }
   }
+  /* Left to right, then down: the order the mark builds in. */
+  const order = [...cells].sort((a, b) => a.c - b.c || a.r - b.r);
+  const shown = revealed === undefined ? null : new Set(order.slice(0, Math.max(0, revealed)).map((d) => d.r + "-" + d.c));
+
+  const dots = cells.map(({ r, c }) => (
+    <circle
+      key={r + "-" + c}
+      cx={(c + 0.5) * PITCH + padPx}
+      cy={(r + 0.5) * PITCH + padPx}
+      r={((riseOn ? WEIGHT[r] : 1) * CELL * fillOn) / 2}
+      fill={flat || mix(base, cap, rows > 1 ? 1 - r / (rows - 1) : 0)}
+      /* Drawn but transparent rather than absent, so the mark never reflows as
+         it fills and the streaks later have every dot to start from. */
+      opacity={shown && !shown.has(r + "-" + c) ? 0 : undefined}
+      data-dot={r + "-" + c}
+    />
+  ));
 
   return (
     <svg

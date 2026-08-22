@@ -7104,34 +7104,52 @@ function Login({ config, onBack, onAuthed }) {
     setOk("If that email has an account, a reset link is on its way. Check your inbox.");
   };
 
+  /* ---- the mark builds as the form is filled ----
+     73 dots against 34 characters of email and password. Driven off the real
+     input values rather than off keystrokes, so a password manager filling both
+     fields in one go lands where a person typing them lands. */
+  const typed = Math.min(34, email.length + password.length);
+  const revealed = Math.round((typed / 34) * 73);
+  const filled = Math.min(5, Math.round((typed / 34) * 5));
+
   return (
     <div className={"login" + (leaving ? " is-leaving" : "")}>
-      {/* The wash is the thread through the whole move: it blooms out of the card,
-          covers the join, and contracts away as the app builds. */}
-      {leaving && <div className="login-wash" />}
+      <SageGround beat={leaving ? "gather" : "idle"} />
       <div className={"login-card " + (busy ? "login-busy" : "")}>
+        <p className="login-eyebrow">{greetingFor()}</p>
         <div className="login-logo">
-          {busy && !leaving ? <SageLoading size={44} /> : <SageMark word size={56} className="logo-anim" />}
+          {busy && !leaving
+            ? <SageLoading size={44} />
+            : <SageMark word size={64} revealed={mode === "signin" ? revealed : undefined} />}
         </div>
-        <h1 className="login-title">Sage</h1>
-        <p className="login-sub">{busy ? "Signing you in…" : "Sign in to continue"}</p>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
         {mode === "signin" && (
           <>
-            <label>Work email</label>
-            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+            <label className="lf-label">Work email</label>
+            <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               placeholder="you@company.com" autoComplete="username" />
-            <label>Password</label>
-            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+            <label className="lf-label lf-label-row">
+              Password
+              {/* Inline on the label row, where the eye already is when the field
+                  is the thing that went wrong. */}
+              <button type="button" className="lf-forgot"
+                onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot?</button>
+            </label>
+            <input className="lf-in" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="Your password" autoComplete="current-password" />
             {err && <div className="login-err">{err}</div>}
             {ok && <div className="login-ok">{ok}</div>}
-            <button className="btn wide" onClick={signIn} disabled={busy}>{busy ? "Signing in..." : "Sign In"}</button>
-            <button className="btn-link" onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot password?</button>
-            <div className="login-divider"><span>or</span></div>
-            <button className="btn-outline wide" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
+            {/* The five dots fill on the same ratio the mark builds on, so the
+                button and the mark are two readings of one thing. */}
+            <button className="lf-go" onClick={signIn} disabled={busy}>
+              <span>{busy ? "Signing in\u2026" : "Sign in"}</span>
+              <span className="lf-dots">
+                {[0, 1, 2, 3, 4].map((i) => <i key={i} className={i < filled ? "on" : ""} />)}
+              </span>
+            </button>
+            <button className="lf-alt" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
             {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
           </>
         )}
@@ -7173,6 +7191,101 @@ function Login({ config, onBack, onAuthed }) {
             <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- The ground ----------------
+   Four drifting blobs and a field of dots, behind BOTH the sign-in screen and
+   the dashboard. One layer that continues through the arrival rather than being
+   swapped for another at the join, which is what makes the jump read as one
+   move rather than two screens changing places.
+
+   The handoff's performance notes are load-bearing here and cost real time to
+   find, so they are honoured exactly:
+
+     the field is built ONCE and memoised. Rebuilding 925 dot objects and their
+     style strings on every render stalled the main thread for over a second
+
+     only the bright minority (about 12%) gets its own streak in the jump. The
+     other 88% ride the layer's scale, which is what bought the density back
+
+     no will-change on the streaks. Scaling a 10px dot to 177x with it made the
+     browser hold 74 promoted layers at full scaled extent: a 1664ms stall
+     against a 21ms median without it
+   ------------------------------------------------------------------- */
+/* The same words the dashboard hero opens with, so the eyebrow on the sign-in
+   screen and the line waiting on the other side of it are one greeting rather
+   than two that happen to agree. */
+function greetingFor(d = new Date()) {
+  const h = d.getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+const GROUND_PITCH = 44;
+const GROUND_TINTS = ["rgba(46,58,50,0.34)", "rgba(120,150,120,0.44)", "rgba(110,150,160,0.42)",
+  "rgba(160,158,110,0.40)", "rgba(120,130,170,0.38)"];
+
+function buildField(w, h) {
+  const dots = [];
+  const cx = w / 2, cy = h / 2;
+  let i = 0;
+  for (let y = GROUND_PITCH / 2; y < h; y += GROUND_PITCH) {
+    for (let x = GROUND_PITCH / 2; x < w; x += GROUND_PITCH) {
+      const bright = i % 8 === 3;          // about an eighth of them
+      const dx = x - cx, dy = y - cy;
+      dots.push({
+        x, y, bright,
+        size: bright ? 4.4 : 2.6,
+        tint: GROUND_TINTS[i % GROUND_TINTS.length],
+        /* Its own angle out of the centre, so in the jump every streak leaves
+           along the line it is already on. */
+        angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+        dist: Math.hypot(dx, dy),
+        dur: 2600 + ((i * 971) % 5000),
+        delay: (i * 337) % 4200,
+      });
+      i++;
+    }
+  }
+  return dots;
+}
+
+function SageGround({ beat = "idle" }) {
+  const [size, setSize] = useState(() => ({
+    w: typeof window === "undefined" ? 1440 : window.innerWidth,
+    h: typeof window === "undefined" ? 900 : window.innerHeight,
+  }));
+  useEffect(() => {
+    /* Re-measured on resize, and only on resize. A field rebuilt per render was
+       the second of the handoff's performance notes. */
+    let t = null;
+    const onResize = () => {
+      clearTimeout(t);
+      t = setTimeout(() => setSize({ w: window.innerWidth, h: window.innerHeight }), 220);
+    };
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); clearTimeout(t); };
+  }, []);
+  const dots = useMemo(() => buildField(size.w, size.h), [size.w, size.h]);
+
+  return (
+    <div className={"sage-ground beat-" + beat} aria-hidden="true">
+      <div className="sg-blobs">
+        <i className="sg-blob b1" /><i className="sg-blob b2" />
+        <i className="sg-blob b3" /><i className="sg-blob b4" />
+      </div>
+      <div className="sg-field">
+        {dots.map((d, i) => (
+          <i key={i} className={"sg-dot" + (d.bright ? " bright" : "")}
+            style={{
+              left: d.x, top: d.y, width: d.size, height: d.size, background: d.tint,
+              animationDuration: d.dur + "ms", animationDelay: d.delay + "ms",
+              /* Read by the jump; set here so nothing has to be measured later. */
+              "--a": d.angle + "deg",
+            }} />
+        ))}
       </div>
     </div>
   );
@@ -18961,7 +19074,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const missing = need.filter((k) => !t[k]).map((k) => reportLabel(k));
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = greetingFor();
   const firstName = (session.name || "").split(" ")[0];
 
   // Progress ring. Bigger than it was: at r=34 the inner space was only ~60px across,
@@ -24416,19 +24529,90 @@ function Style() {
       .section-sub { font-size:14px; font-weight:500; color:var(--ink-2); margin-left:8px; letter-spacing:0; }
 
       /* ---- login ---- */
-      .login { display:flex; justify-content:center; padding:80px 20px; }
-      .login-card { background:rgba(255,255,255,.74); border:1px solid rgba(255,255,255,.75); border-radius:24px; padding:36px 32px; width:360px;
-        text-align:center;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), var(--shadow-2); animation: loginIn .5s var(--spring); }
+      /* ---- the ground: blobs and a dot field, behind both screens ----
+         One layer, continuing through the arrival rather than being swapped at
+         the join. Fixed rather than absolute so it does not scroll away from the
+         form on a short window. */
+      .sage-ground { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+      .sg-blobs, .sg-field { position:absolute; inset:0; }
+      .sg-blob { position:absolute; display:block; border-radius:50%;
+        animation: sgDrift 40s ease-in-out infinite alternate; }
+      .sg-blob.b1 { width:760px; height:620px; left:-80px; top:-120px; animation-duration:34s;
+        background: radial-gradient(circle at 40% 40%, rgba(196,220,196,0.62), transparent 68%); }
+      .sg-blob.b2 { width:820px; height:680px; right:-120px; bottom:-140px; animation-duration:52s;
+        background: radial-gradient(circle at 55% 50%, rgba(178,208,214,0.58), transparent 68%); }
+      .sg-blob.b3 { width:620px; height:520px; right:60px; top:-180px; animation-duration:44s;
+        background: radial-gradient(circle at 50% 50%, rgba(226,224,182,0.50), transparent 66%); }
+      .sg-blob.b4 { width:680px; height:560px; left:180px; bottom:-200px; animation-duration:38s;
+        background: radial-gradient(circle at 50% 50%, rgba(200,206,226,0.46), transparent 68%); }
+      @keyframes sgDrift {
+        from { transform: translate3d(0,0,0) scale(1); }
+        to   { transform: translate3d(26px,18px,0) scale(1.12); }
+      }
+      .sg-field { animation: sgFieldDrift 28s ease-in-out infinite alternate; }
+      @keyframes sgFieldDrift {
+        from { transform: translate3d(0,0,0); }
+        to   { transform: translate3d(-26px,-16px,0); }
+      }
+      .sg-dot { position:absolute; display:block; border-radius:50%; opacity:.26;
+        transform: translate(-50%,-50%);
+        animation: sgTwinkle 4s ease-in-out infinite alternate; }
+      @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
+
+      .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }
+      /* No card. The form sits on the ground, 340px wide, centred. */
+      .login-card { width:340px; text-align:center; background:none; border:0; box-shadow:none; padding:26px 0;
+        animation: loginIn .5s var(--spring); }
+      .login-eyebrow { font-family:var(--font-mono); font-size:11.5px; letter-spacing:.16em;
+        text-transform:uppercase; color:#6E6E76; margin:0 0 22px; }
       @keyframes loginIn { from { opacity:0; transform: translateY(16px) scale(.97); } to { opacity:1; transform:none; } }
       /* Signing in: the form and the card chrome gracefully fade out, leaving just the
          spinning speedometer and title — so the jump to the full loading screen is seamless. */
-      .login-card.login-busy { background:transparent; border-color:transparent; box-shadow:none;
-        backdrop-filter:none; -webkit-backdrop-filter:none; transition: background .5s ease, box-shadow .5s ease, border-color .5s ease; }
+      .login-card.login-busy { background:transparent; border-color:transparent; box-shadow:none; }
       .login-card.login-busy > *:not(.login-logo):not(.login-title):not(.login-sub) {
         opacity:0; pointer-events:none; transition: opacity .4s ease; max-height:0; overflow:hidden; }
       .login-card.login-busy .login-logo { animation: loginLogoRise .5s var(--spring) both; }
       @keyframes loginLogoRise { from { transform: translateY(0); } to { transform: translateY(-4px) scale(1.05); } }
+
+      /* ---- underline fields ---- */
+      /* Two selectors deep: .login-card label already sets display:block at the
+         same specificity, and the row would lose the coin toss. */
+      .login-card .lf-label { display:block; text-align:left; font-size:12px; font-weight:600;
+        color:#7A7A80; margin:22px 0 0; }
+      .login-card .lf-label-row { display:flex; align-items:baseline; justify-content:space-between; }
+      .lf-forgot { background:none; border:0; padding:0; cursor:pointer; font:inherit;
+        font-size:12px; font-weight:600; color:#6B8E5A; }
+      .lf-forgot:hover { text-decoration:underline; }
+      /* Same reason. The app's global input rule paints a bordered, rounded field
+         and a focus ring around it; underline-only has to outrank both. */
+      .login-card input.lf-in { width:100%; box-sizing:border-box; background:none; border:0;
+        border-bottom:1.5px solid #C9CBC9; border-radius:0; padding:0 0 9px; margin:6px 0 0;
+        font-size:16px; color:#2E3A32; outline:none; box-shadow:none;
+        transition: border-color .2s var(--ease); }
+      .login-card input.lf-in:focus { border:0; border-bottom:1.5px solid #2F7F72;
+        outline:none; box-shadow:none; }
+      .login .lf-in::placeholder { color:#B4B6B4; }
+
+      /* ---- the button, and the five dots that fill with the mark ---- */
+      .lf-go { display:flex; align-items:center; justify-content:space-between; gap:14px;
+        width:100%; margin-top:30px; padding:15px 22px; border:0; border-radius:999px; cursor:pointer;
+        background:#2E3A32; color:#F1F2EE; font-family:inherit; font-size:15px; font-weight:600;
+        box-shadow:0 6px 18px rgba(46,58,50,0.18);
+        transition: background .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease); }
+      .lf-go:hover:not(:disabled) { background:#3A4A3E; transform:translateY(-1px);
+        box-shadow:0 10px 26px rgba(46,58,50,0.24); }
+      .lf-go:disabled { opacity:.72; cursor:default; }
+      .lf-dots { display:inline-flex; gap:5px; }
+      .lf-dots i { width:5px; height:5px; border-radius:50%; background:rgba(241,242,238,.3);
+        transition: background .3s var(--ease); }
+      .lf-dots i.on { background:#F1F2EE; }
+      .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
+        font:inherit; font-size:13px; color:#6E6E76; }
+      .lf-alt:hover { color:#2E3A32; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .sg-dot, .sg-field, .sg-blob { animation:none !important; }
+      }
       .login-logo { display:flex; justify-content:center; margin-bottom:12px; }
       .login-card h2 { font-size:22px; font-weight:700; letter-spacing:-.02em; margin:0 0 2px; }
       .login-card label { display:block; text-align:left; font-size:12px; font-weight:600; margin:16px 0 6px; color:var(--ink-2); }
