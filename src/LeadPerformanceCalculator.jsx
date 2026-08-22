@@ -7526,7 +7526,10 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     let frames = 0;
     const painted = () => {
       if (++frames < 2) { requestAnimationFrame(painted); return; }
-      ts.push(setTimeout(() => onDone(), 90));
+      /* Straight on once the white is painted. It used to wait another 90ms for
+         the handoff's 140, but the white is held now rather than timed, so every
+         millisecond spent here is a millisecond of stopped streaks under it. */
+      ts.push(setTimeout(() => onDone(), 20));
     };
     requestAnimationFrame(painted);
   });
@@ -7566,7 +7569,24 @@ function SageArrival({ onComplete }) {
      covering. The beat reaches the dashboard as a class on the document rather
      than as a prop threaded through six components that have no other reason to
      know about it. */
-  useEffect(() => {
+  /* A LAYOUT effect, not an ordinary one, and that is the whole difference
+     between this landing and the stutter it replaced.
+
+     The blocks have to be measured before they are first painted, and the old
+     code waited a frame for it — held them at opacity 0, asked for a
+     requestAnimationFrame, and measured in that. But the frame it was waiting for
+     is the one the browser spends mounting the dashboard, and under that load it
+     did not come back for a SECOND: measured in the built app, the page arrived
+     at 2134ms and the blocks were still invisible at 3180ms. The screen recording
+     is 1.2 seconds of a byte-identical frame — the white had faded, the streaks
+     were gone, and nothing at all was moving. That is the stutter.
+
+     A layout effect runs after the DOM is committed and before the browser
+     paints, so layout is already there to be read and the animation is on the
+     blocks the first time they are drawn. Nothing to hide, nothing to wait for,
+     and once the animation has started it belongs to the compositor and runs
+     however busy the main thread gets. */
+  useLayoutEffect(() => {
     const root = document.documentElement;
     /* The flash beat belongs to the sign-in screen's clock, which has stopped.
        Hand it over rather than letting the two overlap: .sage-assemble carries an
@@ -7583,26 +7603,14 @@ function SageArrival({ onComplete }) {
     try {
       reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch (e) {}
-    /* Measured on the next frame, not this one: this effect runs inside the
-       commit that mounts the dashboard, and the blocks have no layout yet. The
-       frame's wait costs nothing because .sage-assemble is already holding them
-       invisible. */
     let undo = () => {};
-    let raf = 0;
-    if (!reduce) {
-      root.classList.add("sage-arming");
-      raf = requestAnimationFrame(() => {
-        undo = radialAssemble();
-        root.classList.remove("sage-arming");
-      });
-    }
+    if (!reduce) undo = radialAssemble();
     const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
     return () => {
       clearTimeout(t);
-      cancelAnimationFrame(raf);
       undo();
       jumpOwnsEntrance = false;
-      root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash", "sage-arming");
+      root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash");
     };
   }, []);
   return null;
@@ -7821,24 +7829,32 @@ function SageStreaks({ dots, origin, w, h }) {
     const groups = [...byTint.entries()];
     const t0 = performance.now();
     let raf = 0;
-    const ease = (t) => {
-      /* The handoff's stretch curve, cubic-bezier(.6,0,.9,.24), close enough for
-         a value we only ever sample forwards. */
-      return t * t * (3 - 2 * t) * t;
-    };
+    /* ---- and it keeps accelerating to the end ----
+       The streaks used to stop. The beat ended, the canvas held its last frame,
+       and a screen full of static lines sat there for the quarter second the
+       flash and the mount took — motion halted and then the page landed, which is
+       the stutter at the join. Nothing about the shape was wrong; it simply never
+       left.
+
+       So the curve never flattens (a power curve, not a smoothstep, which eases
+       OUT at the end), the travel is far enough to carry every near end off the
+       frame rather than only the far ends, and it runs past the beat into the
+       flash, fading as it goes. Whatever is still on screen when the sign-in
+       screen goes is under the white by then. */
+    const RUN = ARRIVAL.stretch + 300;
     const draw = () => {
-      const p = Math.min(1, (performance.now() - t0) / ARRIVAL.stretch);
-      const e = ease(p);
+      const p = Math.min(1, (performance.now() - t0) / RUN);
+      const e = Math.pow(p, 2.2);
       ctx.clearRect(0, 0, w, h);
-      ctx.globalAlpha = 1 - 0.15 * p;
+      ctx.globalAlpha = p < 0.72 ? 1 : Math.max(0, 1 - (p - 0.72) / 0.28);
       for (const [tint, arr] of groups) {
         ctx.fillStyle = tint;
         ctx.beginPath();
         for (const d of arr) {
           /* The near end leaves too, so the field opens out of the origin
              instead of stretching from a standstill. */
-          const lead = e * (40 + d.dist * 0.55);
-          const len = e * (120 + d.dist * 1.9);
+          const lead = e * (90 + d.dist * 1.75);
+          const len = e * (150 + d.dist * 2.4);
           const nx = d.x + d.ux * lead, ny = d.y + d.uy * lead;
           const fx = nx + d.ux * len, fy = ny + d.uy * len;
           const px = -d.uy * d.r, py = d.ux * d.r;
@@ -25311,17 +25327,21 @@ function Style() {
          logo is. A dot 300 user units long clears a 1440x900 frame from anywhere
          inside it, and the far ends are gone well before anything snaps. */
       .login-logo circle { transform-box: fill-box; transform-origin: left center; }
-      /* ---- and why the pull is capped ----
-         The gather draws every dot in along its own radius from the middle of the
-         lockup, and that middle falls inside the "a". So the S, a compact block
-         sitting furthest out, was pulled hardest and by the widest spread — it
-         collapsed into itself while "age" barely moved. Capping the distance term
-         means everything past about two thirds of the way out travels the same
-         amount: the S moves as one piece, the letters nearer the centre still
-         come in less than the ones further out, and the lockup contracts evenly.
-         The uniform part of the contraction is the layer's own scale(.90). */
+      /* ---- the whole lockup condenses as one ----
+         The gather used to draw each dot in along its own radius, scaled by how
+         far it sat from the middle of the lockup — and that middle falls inside
+         the "a", so the S was always the thing furthest out and always the thing
+         pulled hardest. Capping the distance helped and did not fix it: any
+         per-dot pull distorts the word, because the letters are not equidistant
+         from its centre.
+
+         So there is no per-dot pull at all now. The mark condenses at ONE rate,
+         as a single piece, toward the point the streaks come out of — which is
+         its own centre, which is what the layer's scale already does. Each dot
+         still squashes along its own axis by the same amount, priming the streak
+         it is about to become, and that is uniform so it cannot distort anything. */
       .sage-beat-gather .login-logo circle {
-        transform: rotate(var(--a)) translateX(calc((-7 - min(var(--d), 64) * .16) * 1px)) scaleX(.70);
+        transform: rotate(var(--a)) scaleX(.70);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
       /* .login-busy also runs loginLogoRise on the wrapper; same collision, same
          cure, so the mark's layer can be scaled by the beats. */
@@ -25333,8 +25353,16 @@ function Style() {
       .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
         transform: rotate(var(--a)) scaleX(calc((900 + var(--d) * 2.4) / var(--dr) / 2));
         transition: transform .88s cubic-bezier(.6,0,.9,.24); }
-      .sage-beat-stretch .login-logo svg, .sage-beat-flash .login-logo svg {
+      .sage-beat-stretch .login-logo svg {
         transform: scale(2.6); transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      /* And out. The near end of every streak is pinned to its dot, so the layer
+         is the only thing that can carry them off the frame — at 2.6 they were
+         still anchored to the middle of the screen when the beat ended, and a
+         starburst that stops is what reads as the stutter. It keeps going through
+         the flash, which is under the white by then. */
+      .sage-beat-flash .login-logo svg {
+        transform: scale(9); transition: transform .34s cubic-bezier(.5,0,.85,.4); }
+      .sage-beat-flash .login-logo circle { opacity:0; transition: opacity .3s ease-in .1s; }
       /* The eyebrow is not part of the mark and should not fly with it. */
       .sage-beat-stretch .login-eyebrow, .sage-beat-flash .login-eyebrow { opacity:0; }
 
@@ -25344,16 +25372,22 @@ function Style() {
          swap it exists to hide. */
       .sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
         pointer-events:none; z-index:9500; }
-      .sage-beat-flash .sage-flash, .sage-assemble .sage-flash {
-        animation: saFlash .42s ease-out both; }
-      /* Up in 76ms and held to 134, because the handover is at 140: the white has
-         to be at full before the swap, not still climbing through it. */
-      @keyframes saFlash { 0% { opacity:0; } 18%, 32% { opacity:1; } 100% { opacity:0; } }
-      /* Held white while a slow sign-in finishes. Better a held flash than the
-         dashboard arriving half-built, or the sign-in screen coming back after it
-         has already flown apart. */
-      .sage-flash-hold .sage-flash { animation: saFlashHold .42s ease-out both; }
-      @keyframes saFlashHold { 0% { opacity:0; } 18%, 100% { opacity:1; } }
+      /* ---- the white lasts as long as what it is covering ----
+         It used to be a fixed 420ms from the flash beat, and the thing it exists
+         to hide is not fixed at all: mounting the dashboard took 680ms, so the
+         white rose, fell, and was long gone before the page arrived. What you saw
+         was the streaks stop, a flash, the flash clear to reveal the SAME stopped
+         streaks, and then the page. That is the stutter at the join.
+
+         So it rises and holds, and only starts to clear once the dashboard is
+         actually there — .sage-assemble is added on the frame it mounts. Both
+         rules fill forwards and the out starts from full, so the handover
+         between them cannot show a seam however long the mount takes. */
+      .sage-beat-flash .sage-flash, .sage-flash-hold .sage-flash {
+        animation: saFlashUp .34s ease-out both; }
+      @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+      .sage-assemble .sage-flash { animation: saFlashOut .5s ease-in both; }
+      @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
 
       /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
          Written as animations, with the field's own 28s drift kept first in every
@@ -25490,14 +25524,11 @@ function Style() {
          The page itself no longer moves. It used to scale out of the middle of
          the frame, and a parent transform would have scaled these vectors along
          with it — the blocks would have flown to the wrong places. */
-      /* Armed for exactly one frame: added when the dashboard mounts and dropped
-         the moment every block has been measured and given its line. It is its
-         own class rather than part of .sage-assemble so that the two ways this
-         can be skipped — reduced motion, or nothing matching the selector — can
-         never leave the dashboard holding at opacity 0. */
-      .sage-arming .topbar, .sage-arming .app-header, .sage-arming .seg-wrap,
-      .sage-arming .hero, .sage-arming .card, .sage-arming .assoc-card,
-      .sage-arming .empty, .sage-arming .sect-strip { opacity:0; }
+      /* No class holding the blocks invisible any more, because nothing is
+         waiting: they are measured and given their lines in a layout effect,
+         before the browser paints them for the first time. Anything that skips
+         the radial pass — reduced motion, an empty selector — simply gets the
+         blocks as they are, rather than a screen of nothing. */
       /* The page holds still while its blocks fly. It has a mount animation of
          its own — pageIn, a lift from below — and it was running underneath the
          landing, so the whole layout drifted upward while every block inside it
@@ -25530,7 +25561,10 @@ function Style() {
       .sage-spark { position:fixed; left:var(--jx,50%); top:var(--jy,50%); width:10px; height:10px;
         margin:-5px 0 0 -5px; border-radius:50%; opacity:0; pointer-events:none; z-index:9400;
         background: radial-gradient(circle, #fff 0%, rgba(143,189,178,.85) 42%, rgba(143,189,178,0) 72%); }
-      .sage-beat-flash .sage-spark, .sage-assemble .sage-spark {
+      /* Keyed to the assemble alone: under a held flash the spark would be
+         invisible anyway, and it is the thing the blocks come out of, so it
+         belongs on the far side of the white with them. */
+      .sage-assemble .sage-spark {
         animation: saSpark .72s cubic-bezier(.2,.7,.3,1) both; }
       @keyframes saSpark {
         0%   { opacity:0; transform: scale(.2); }
@@ -25549,11 +25583,7 @@ function Style() {
         .sage-flash { animation:none !important; }
         .sage-assemble .sa-radial, .sage-assemble .hero-ring-fill,
         .sage-spark { animation-duration:.18s !important; animation-timing-function:linear !important; }
-        /* And nothing is left armed: the radial pass does not run at all under
-           reduced motion, so the class that hides the blocks must not bite. */
-        .sage-arming .topbar, .sage-arming .app-header, .sage-arming .seg-wrap,
-        .sage-arming .hero, .sage-arming .card, .sage-arming .assoc-card,
-        .sage-arming .empty, .sage-arming .sect-strip { opacity:1 !important; }
+
       }
 
       .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }

@@ -162,6 +162,38 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The stutter at the join was a second of nothing, and it was a `requestAnimationFrame`
+that never came.** The blocks were held invisible while the landing waited a frame
+to measure them — but the frame it was waiting for is the one the browser spends
+mounting the dashboard, and under that load it did not come back for a second.
+Measured in the built app: the page arrived at 2134ms and the blocks were still at
+opacity 0 at 3180ms. The screen recording is 1.2 seconds of a byte-identical frame,
+long after the white had cleared. Measuring in a LAYOUT effect instead removes the
+wait entirely: layout is already computed when it runs, and it runs before the
+browser paints, so the animation is on the blocks the first time they are drawn.
+Nothing to hide, nothing to wait for, and once a CSS animation has started it
+belongs to the compositor and runs however busy the main thread gets.
+
+**And the white now lasts as long as what it is covering.** It was a fixed 420ms
+from the flash beat, and the thing it hides is not fixed at all — the mount took
+680ms, so the white rose, fell, and was gone before the page arrived. What you saw
+was the streaks stop, a flash, the flash clear to reveal the same stopped streaks,
+and then the page. It rises and holds now, and only begins to clear when
+`.sage-assemble` says the dashboard is actually there.
+
+**A note on measuring this.** Two rounds were spent chasing a freeze that was not
+real: a headless browser stops producing compositor frames, so a screen recording
+repeats the last one and every frame reads as identical. The trace of what the page
+was actually doing said the opposite. Frames from a screencast prove what was
+*painted* only when something is painting; for anything else, instrument the page.
+The self-labelling colour patch — a fixed div tinted by the current beat, sampled
+out of each captured frame — is what finally made the recording trustworthy.
+
+**What is left is the mount itself.** The dashboard blocks the main thread for over
+a second in the built app, and the held white is what covers it. The honest fix is
+to mount it under the streaks rather than after them, which is a change to the
+root's branching, not to any of this.
+
 **The streaks are drawn on a canvas now, because a real streak could not be
 afforded as DOM.** The handoff draws every one as a pill — `border-radius:50%`
 with the origin on its left edge — so a dot scaled along its own axis becomes a
@@ -218,7 +250,18 @@ Each dot fades up over 240ms as the form reaches it, per the prototype's
 opacity out of the SVG presentation attribute and into the style, because an
 attribute cannot be transitioned.
 
-**Why the gather's pull is capped.** It draws every dot in along its own radius
+**The whole lockup condenses as one.** The gather used to draw each dot in along
+its own radius scaled by how far it sat from the middle of the lockup, and that
+middle falls inside the "a" — so the S was always the thing furthest out and always
+the thing pulled hardest. Capping the distance helped and did not fix it: any
+per-dot pull distorts the word, because the letters are not equidistant from its
+centre. There is no per-dot pull now. The mark condenses at one rate, as a single
+piece, toward the point the streaks come out of, which is its own centre and which
+is what the layer's scale already does. Each dot still squashes along its own axis
+by the same amount, priming the streak it is about to become, and being uniform it
+cannot distort anything.
+
+**Why the gather's pull was capped (superseded).** It draws every dot in along its own radius
 from the middle of the lockup, and that middle falls inside the "a" — so the S, a
 compact block sitting furthest out, was pulled hardest and across the widest
 spread, and collapsed into itself while "age" barely moved. Capping the distance
