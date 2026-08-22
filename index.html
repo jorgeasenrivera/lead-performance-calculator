@@ -15,6 +15,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- The white flash across the sign-in arrival, and it lives HERE rather than
+         in the app for one reason: the moment it exists to cover is the moment the
+         signed-out tree is replaced by the signed-in one, and those two have
+         different root components, so React tears the whole subtree down between
+         them. Anything mounted inside either one is destroyed by the very swap it
+         was drawn to hide — measured: the flash restarted at 0 on the frame the
+         dashboard appeared. Outside React it cannot be unmounted, and it needs
+         nothing from React: the beats drive it entirely through classes on <html>. -->
+    <div class="sage-flash" aria-hidden="true"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

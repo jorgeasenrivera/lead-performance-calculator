@@ -162,6 +162,35 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**Then it stopped again, and this time the sign-in screen was being pulled out
+from under its own arrival.** The sign-in call is not the only thing that brings
+the session in: the auth client fires SIGNED_IN the moment the password check
+passes, the app's own listener refreshes the profile off that, and the session
+lands about 300ms after the press — a quarter of the way into the hold. The root
+then swapped to the dashboard, the sign-in screen unmounted, and the jump's cleanup
+took every beat class with it. Measured: beats gone at 255ms, dashboard already up.
+The whole animation was over before the gather, which is why it looked like nothing
+happened, or like it went by too fast.
+
+The jump now says when it is running and the root keeps the sign-in screen on until
+it says otherwise. The session can arrive whenever it likes; the hold is released on
+the frame the white is covering, which is the only frame where swapping one screen
+for the other cannot be seen.
+
+The harness never caught this because the stub client did not fire SIGNED_IN. It
+does now, and the harness root holds the same way the real one does — without both,
+a press test proves nothing about the thing that actually breaks.
+
+**And the flash is a static div in index.html, not a component.** The moment it
+exists to cover is the moment the signed-out tree is replaced by the signed-in one,
+and those two have different root components, so React tears the whole subtree down
+between them: anything mounted inside either one is destroyed by the very swap it
+was drawn to hide. Measured, it restarted at opacity 0 on the frame the dashboard
+appeared. Outside React it cannot be unmounted, and it needs nothing from React
+anyway — the beats drive it entirely through classes on the document element. The
+jump origin moved to module scope for the same reason: a ground rebuilt by that
+teardown would land its streaks on different lines from the ones they left on.
+
 **Then the arrival stopped happening at all, and the cause was a cascade loss.**
 Pressing Sign in sets `.login-busy`, which runs the mark's working wave.
 `.login-busy .login-logo circle` and `.sage-beat-stretch .login-logo circle` have

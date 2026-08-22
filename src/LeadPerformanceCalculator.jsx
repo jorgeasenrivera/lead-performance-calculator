@@ -1891,6 +1891,8 @@ export default function LeadPerformanceCalculator() {
   const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
   const [introPlaying, setIntroPlaying] = useState(false);
+  /* True while the sign-in screen is taking itself apart. See where it is read. */
+  const [jumpHold, setJumpHold] = useState(false);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
@@ -2890,9 +2892,16 @@ export default function LeadPerformanceCalculator() {
     setSession(null); setEntered(false); setAppModule("perf");
   };
 
-  // Signed out: splash first, then the sign-in card.
-  if (!session) {
+  /* Signed out, OR signed in a moment ago and still flying. The second half is
+     not a nicety: the auth client signs the session in as soon as the password
+     check passes, roughly 300ms after the press, and without this the sign-in
+     screen would be pulled out from under its own arrival a quarter of the way
+     into the first beat. The jump releases the hold on the frame the flash is
+     covering, which is the only frame where swapping one screen for the other
+     cannot be seen. */
+  if (!session || jumpHold) {
     return <Shell><Login config={config}
+      onJump={setJumpHold}
       onArrival={() => setIntroPlaying(true)}
       onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
   }
@@ -7063,7 +7072,7 @@ function TicketsPanel({ config, onChange }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed, onArrival }) {
+function Login({ config, onBack, onAuthed, onArrival, onJump }) {
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -7094,23 +7103,45 @@ function Login({ config, onBack, onAuthed, onArrival }) {
        handing over to a screen that is not ready */
   const jumping = useRef(null);
   const markRef = useRef(null);
-  const abortJump = () => { if (jumping.current) { jumping.current(); jumping.current = null; } };
-  useEffect(() => abortJump, []);
+  const heldRef = useRef(onJump);
+  heldRef.current = onJump;
+  const abortJump = () => {
+    if (jumping.current) { jumping.current(); jumping.current = null; }
+    if (heldRef.current) heldRef.current(false);
+  };
+  useEffect(() => () => { if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
 
   const signIn = async () => {
     setErr(""); setOk("");
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
+    /* ---- hold the screen for the length of the jump ----
+       The sign-in call is not the only thing that brings the session in: the
+       client fires SIGNED_IN the moment it succeeds, the app's own auth listener
+       refreshes the profile off that, and the session lands about 300ms after the
+       press — a quarter of the way into the hold. The root would then swap to the
+       dashboard, this component would unmount, and the jump's cleanup would take
+       every beat class with it. Measured: beats gone at 255ms, dashboard already
+       up. That is the whole animation, over before the gather, which is why it
+       looked like nothing happened.
+
+       So the jump says when it is running and the root keeps the sign-in screen
+       on until it says otherwise. The session can arrive whenever it likes. */
+    if (onJump) onJump(true);
     /* Before anything moves: tell the ground where the mark is, so the field's
        streaks leave along lines drawn from the logo rather than from the middle
        of the frame. Measured here because here is the only place that knows. */
     tellJumpOrigin(markRef.current);
     let authed = null;                       // null = still in flight
     let flashed = false;
+    let handedOver = false;
     const handOver = () => {
-      if (!flashed || authed !== true) return;
+      if (handedOver || !flashed || authed !== true) return;
+      handedOver = true;
       if (onArrival) onArrival();
+      /* Released here and not before: this is the frame the white is covering. */
+      if (heldRef.current) heldRef.current(false);
       onAuthed();
     };
     jumping.current = runJump({
@@ -7470,13 +7501,12 @@ function SageArrival({ onComplete }) {
   return null;
 }
 
-/* The white flash across the snap. It sits at the root, above the sign-in screen
-   AND above the dashboard, because the handover it covers is the moment one is
-   replaced by the other: mounted inside either one it would be destroyed by the
-   very swap it exists to hide. Same reason the ground moved up here. */
-function SageFlash() {
-  return <div className="sage-flash" aria-hidden="true" />;
-}
+/* The flash is not a component. It is a static div in index.html, because the
+   handover it covers is the moment the signed-out tree is replaced by the
+   signed-in one and those two have different root components: React tears the
+   whole subtree down between them, so anything mounted inside either one is
+   destroyed by the very swap it was drawn to hide. It needs nothing from React
+   anyway — the beats drive it through classes on the document element. */
 
 function greetingFor(d = new Date()) {
   const h = d.getHours();
@@ -7494,12 +7524,16 @@ const GROUND_TINTS = ["rgba(46,58,50,0.34)", "rgba(120,150,120,0.44)", "rgba(110
    gives the eye two vanishing points to choose between. One origin, everything
    on the same lines. */
 const JUMP_ORIGIN = "sage-jump-origin";
+/* Kept outside the component for the same reason the flash is kept outside React:
+   the ground is torn down and rebuilt at the handover along with the rest of the
+   signed-out tree, and a ground that came back not knowing where the mark was
+   would land its streaks on different lines from the ones they left on. */
+let lastJumpOrigin = null;
 function tellJumpOrigin(el) {
   if (typeof document === "undefined" || !el) return;
   const r = el.getBoundingClientRect();
-  document.dispatchEvent(new CustomEvent(JUMP_ORIGIN, {
-    detail: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
-  }));
+  lastJumpOrigin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  document.dispatchEvent(new CustomEvent(JUMP_ORIGIN, { detail: lastJumpOrigin }));
 }
 
 function buildField(w, h, origin) {
@@ -7547,7 +7581,7 @@ function SageGround({ beat = "idle" }) {
   }));
   /* Null until the sign-in screen says where its mark is; the field's own centre
      until then, which is right for every screen that has no mark on it. */
-  const [origin, setOrigin] = useState(null);
+  const [origin, setOrigin] = useState(lastJumpOrigin);
   useEffect(() => {
     const onOrigin = (e) => setOrigin(e.detail);
     document.addEventListener(JUMP_ORIGIN, onOrigin);
@@ -22396,7 +22430,6 @@ function Shell({ children, entering, style }) {
           through the join rather than being swapped at it. */}
       <SageGround />
       {children}
-      <SageFlash />
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
 
