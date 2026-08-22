@@ -1930,7 +1930,9 @@ export default function LeadPerformanceCalculator() {
      runs after paint and would show one frame of an un-animated dashboard right
      where the landing is supposed to begin. */
   useLayoutEffect(() => {
-    const under = !session || jumpHold;
+    /* jumpLanded: once the landing has revealed the app, a session identity
+       change must not hide it again. See the latch's comment. */
+    const under = !session || (jumpHold && !jumpLanded);
     document.documentElement.classList.toggle("jump-under", under);
     return () => document.documentElement.classList.remove("jump-under");
   }, [session, jumpHold]);
@@ -7379,13 +7381,15 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     }
     authed = true;
     document.documentElement.classList.remove("sage-flash-hold");
+    /* From here the only thing between the user and the page is the white, so
+       nothing on this path is allowed to throw its way out of the handover. */
     /* Load the profile NOW, not at the handover. The screen is held for the rest
        of the jump either way, so the fetch costs nothing here and everything
        there: gating the swap on a round trip that only starts at the handover put
        the dashboard on screen most of a second after the flash had been asked
        for, which is far too late for the flash to cover it. By the time the white
        is up the session is already in hand and the swap is a state flip. */
-    await onAuthed();
+    try { await onAuthed(); } catch (e) { console.error("profile load at handover", e); }
     handOver();
   };
 
@@ -7649,7 +7653,7 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    the jump lands anyway — onto whatever screen the app has to show about it
    (the stuck screen, the mismatch panel), because a tunnel that never ends is a
    spinner with better art. */
-const JUMP_T = { ratchet: 520, reform: 640, streaks: 620, cruiseMin: 950, cruiseCap: 15000, burst: 430 };
+const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 15000, burst: 520 };
 
 /* ---- what the jump is waiting for, and where it is going ----
    Told by the root, read by the engine each frame of the cruise. Module state
@@ -7725,6 +7729,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     return () => clearTimeout(t);
   }
   jumpOwnsEntrance = true;
+  jumpLanded = false;
 
   const W = window.innerWidth, H = window.innerHeight;
   const cx = W / 2, cy = H / 2;
@@ -8093,6 +8098,15 @@ function runJump({ onFlash, onDone, lead = 0 }) {
    it in CSS is a losing game (.lpc.is-entering .hero is three classes), so the
    app's entrance simply does not start when the arrival owns the screen. */
 let jumpOwnsEntrance = false;
+/* True from the moment landDashboard reveals the app until the hold is released.
+   The root's layout effect hides the app whenever the sign-in screen is up, and
+   it re-runs when the session object changes identity — which, on real auth,
+   happens more than once: SIGNED_IN fires again after the first profile load.
+   Without this latch a re-run inside the landing window put jump-under BACK on
+   a revealed app: the impact played out hidden, the flash faded over a bare
+   ground, and the dashboard popped in plain a second and a half later. A white
+   screen, made of two pieces of code both doing their job. */
+let jumpLanded = false;
 
 /* Set by the sign-in button and read where the session lands. A page RELOAD
    restores a session without anyone pressing anything, and there is no sign-in
@@ -8231,6 +8245,7 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
    costs nothing anyone can see. */
 function landDashboard() {
   if (typeof document === "undefined") return () => {};
+  jumpLanded = true;
   const root = document.documentElement;
   /* One style change: the app comes out of hiding, the sign-in layer goes, and the
      landing rules come on together. */
