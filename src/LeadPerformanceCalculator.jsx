@@ -2203,6 +2203,27 @@ export default function LeadPerformanceCalculator() {
     return () => { delete window.__lpcSaveBoardDisplay; };
   }, [adminData, storeData, view]); // eslint-disable-line
 
+  /* ---- and it must also run when the SESSION turns up ----
+     This was keyed on `view` alone, which worked only because view used to start
+     at "admin" and change to a store once the session had landed: the change was
+     what ran the load. Opening on the remembered store took that away. `view` is
+     now the store from the first render, so it never changes, the effect never
+     re-runs, and the early return above — taken on mount because there is no
+     session yet — was the last word. The store never loaded and the screen sat on
+     "Loading Holler Honda" for ever.
+
+     `ready` rather than `session` itself, deliberately: it flips false to true
+     exactly once, so a token refresh or a tab focus handing back a new session
+     object cannot re-enter this and drop the store being worked in. That is the
+     failure the comment below is about, and it is still guarded against. */
+  const ready = !!session && !!config;
+  /* True once a store has been "loading" long enough that it is not loading. */
+  const [storeLoadStuck, setStoreLoadStuck] = useState(false);
+  useEffect(() => {
+    if (storeData || view === "admin" || view === "combined" || !ready) { setStoreLoadStuck(false); return undefined; }
+    const t = setTimeout(() => setStoreLoadStuck(true), 15000);
+    return () => clearTimeout(t);
+  }, [storeData, view, ready]);
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     /* A load takes two round trips now (the document, then the split day rows), so
@@ -2263,7 +2284,7 @@ export default function LeadPerformanceCalculator() {
       if (!dead && want === view) setTab("board");
     })();
     return () => { dead = true; };
-  }, [view]); // eslint-disable-line
+  }, [view, ready]); // eslint-disable-line
 
   /* ---- Close out unanswered absences ----
      A day that has ended with a scheduled person showing no calls, no videos and no
@@ -2976,8 +2997,8 @@ export default function LeadPerformanceCalculator() {
     return wrap(<Shell><div className="login"><div className="login-card">
       <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
       <h1 className="login-title">Account paused</h1>
-      <p className="setup-note">This account has been deactivated. Contact your group admin.</p>
-      <button className="btn wide" onClick={signOut}>Sign out</button>
+      <p className="lf-note">This account has been deactivated. Contact your group admin.</p>
+      <button className="lf-go lf-solo" onClick={signOut}><span>Sign out</span></button>
     </div></div><Style /></Shell>);
   }
   if (session.role !== "admin" && session.pending) {
@@ -3278,7 +3299,13 @@ export default function LeadPerformanceCalculator() {
       ) : accessibleStores.length === 0 ? (
         <NoAccessPanel session={session} config={config} onRecheck={refreshProfile} />
       ) : (!storeData || storeHeld) ? (
-        storeHeld ? <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} /> : null
+        /* A spinner with no end is the worst thing this screen can show: it says
+           "wait" for ever and gives nobody, including whoever is asked about it
+           later, anything to act on. After fifteen seconds it stops claiming to be
+           loading and says what it knows. */
+        storeLoadStuck
+          ? <StoreStuck store={currentStore} onRetry={() => window.location.reload()} />
+          : storeHeld ? <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} /> : null
       ) : isOverseer ? (
         <>
           <nav className="seg-wrap no-print">
@@ -7172,10 +7199,10 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
        handing over to a screen that is not ready */
   const jumping = useRef(null);
   const markRef = useRef(null);
+  const emailRef = useRef(null);
+  const pwRef = useRef(null);
   /* null until a press finds the mark unfinished; see RUSH. */
   const [rushTyped, setRushTyped] = useState(null);
-  const rushRaf = useRef(0);
-  useEffect(() => () => cancelAnimationFrame(rushRaf.current), []);
   const hurryBuild = (from) => {
     const t0 = (typeof performance !== "undefined" ? performance : Date).now();
     const step = () => {
@@ -7186,6 +7213,40 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     };
     rushRaf.current = requestAnimationFrame(step);
   };
+  /* ---- an autofill is typing too, as far as the mark is concerned ----
+     A password manager sets both fields without React seeing a thing: no
+     keystrokes, and in Chrome often no input event this component is mounted in
+     time to hear. So `typed` stayed 0, the mark stayed dark, and the one piece of
+     feedback this screen has did nothing for the people most likely to use it.
+
+     The values are read back off the DOM instead of waited for — on mount, on
+     the animation Chrome fires against :-webkit-autofill, and on a couple of
+     ticks after that for the managers that fill late. Anything found is fed
+     through the same rush the sign-in press uses, so the mark BUILDS to where the
+     text is rather than snapping to it. */
+  useEffect(() => {
+    let done = false;
+    const sync = () => {
+      if (done) return;
+      const e = emailRef.current, w = pwRef.current;
+      const ev = e ? e.value : "", wv = w ? w.value : "";
+      if (!ev && !wv) return;
+      if (ev === email && wv === password) return;
+      done = true;
+      const was = Math.min(34, email.length + password.length);
+      setEmail(ev); setPassword(wv);
+      if (Math.min(34, ev.length + wv.length) > was) hurryBuild(was);
+    };
+    const onAnim = (ev) => { if (ev.animationName === "sageAutofill") sync(); };
+    document.addEventListener("animationstart", onAnim, true);
+    const ts = [0, 120, 400, 900].map((ms) => setTimeout(sync, ms));
+    return () => {
+      document.removeEventListener("animationstart", onAnim, true);
+      ts.forEach(clearTimeout);
+    };
+  }, []); // eslint-disable-line
+  const rushRaf = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(rushRaf.current), []);
   const heldRef = useRef(onJump);
   heldRef.current = onJump;
   const abortJump = () => {
@@ -7336,7 +7397,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
         {mode === "signin" && (
           <>
             <label className="lf-label">Work email</label>
-            <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+            <input className="lf-in" ref={emailRef} value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               placeholder="you@company.com" autoComplete="username" />
             <label className="lf-label lf-label-row">
               Password
@@ -7345,7 +7406,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
               <button type="button" className="lf-forgot"
                 onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot?</button>
             </label>
-            <input className="lf-in" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+            <input className="lf-in" ref={pwRef} type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="Your password" autoComplete="current-password" />
             {err && <div className="login-err">{err}</div>}
             {ok && <div className="login-ok">{ok}</div>}
@@ -7362,41 +7423,53 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
           </>
         )}
 
+        {/* ---- the other two modes speak the same vocabulary ----
+            They were still bare <label> and <input>, which pick up the app's
+            general bordered field, and a .btn wide where the sign-in has its
+            pill. Two thirds of the way into somebody's first minute with the
+            product they hit Create Account and the screen changed style under
+            them. Same labels, same underline fields, same pill, same quiet
+            secondary link — the only difference between the three modes is which
+            fields are on screen. */}
         {mode === "signup" && (
           <>
-            <p className="setup-note">
+            <p className="lf-note">
               {canRegister
                 ? "Create your account. Your group admin grants store access after you register."
                 : "Create your account. Heads up: the very first account created becomes the group admin."}
             </p>
-            <label>Work email</label>
-            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+            <label className="lf-label">Work email</label>
+            <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               placeholder="you@company.com" autoComplete="username" />
-            <label>Full name</label>
-            <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="First Last" />
-            <label>Password</label>
-            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+            <label className="lf-label">Full name</label>
+            <input className="lf-in" value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="First Last" />
+            <label className="lf-label">Password</label>
+            <input className="lf-in" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
               placeholder="At least 8 characters" autoComplete="new-password" />
-            <label>Confirm password</label>
-            <input type="password" value={password2} onChange={(e) => { setPassword2(e.target.value); setErr(""); }}
+            <label className="lf-label">Confirm password</label>
+            <input className="lf-in" type="password" value={password2} onChange={(e) => { setPassword2(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && signUp()} placeholder="Repeat it" autoComplete="new-password" />
             {err && <div className="login-err">{err}</div>}
             {ok && <div className="login-ok">{ok}</div>}
-            <button className="btn wide" onClick={signUp} disabled={busy}>{busy ? "Creating..." : "Create Account"}</button>
-            <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setPassword(""); setPassword2(""); }}>Back to sign in</button>
+            <button className="lf-go lf-solo" onClick={signUp} disabled={busy}>
+              <span>{busy ? "Creating\u2026" : "Create account"}</span>
+            </button>
+            <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setPassword(""); setPassword2(""); }}>Back to sign in</button>
           </>
         )}
 
         {mode === "forgot" && (
           <>
-            <p className="setup-note">Enter your email and we will send a link to set a new password.</p>
-            <label>Work email</label>
-            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+            <p className="lf-note">Enter your email and we will send a link to set a new password.</p>
+            <label className="lf-label">Work email</label>
+            <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && forgot()} placeholder="you@company.com" />
             {err && <div className="login-err">{err}</div>}
             {ok && <div className="login-ok">{ok}</div>}
-            <button className="btn wide" onClick={forgot} disabled={busy}>{busy ? "Sending..." : "Send reset link"}</button>
-            <button className="btn-link" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
+            <button className="lf-go lf-solo" onClick={forgot} disabled={busy}>
+              <span>{busy ? "Sending\u2026" : "Send reset link"}</span>
+            </button>
+            <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
           </>
         )}
       </div>
@@ -8039,11 +8112,14 @@ function PendingScreen({ profile, onSignOut }) {
       <div className="login-card">
         <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
         <h1 className="login-title">Almost there</h1>
-        <p className="setup-note">
+        {/* The salesperson's first screen after signing up, so it speaks the same
+            language as the one they just left rather than the app's general
+            chrome. */}
+        <p className="lf-note">
           Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
           Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
         </p>
-        <button className="btn wide" onClick={onSignOut}>Sign out</button>
+        <button className="lf-go lf-solo" onClick={onSignOut}><span>Sign out</span></button>
       </div>
     </div>
   );
@@ -19216,6 +19292,25 @@ function NoAccessPanel({ session, config, onRecheck }) {
   );
 }
 
+/* Shown when a store has been loading for fifteen seconds, which is not loading.
+   It names the store and the account, because the two causes seen in the wild are
+   a document filed under another store's key and access granted to a second
+   account for the same person — and neither is guessable from a spinner. */
+function StoreStuck({ store, onRetry }) {
+  return (
+    <div className="noaccess">
+      <h2 className="noaccess-title">{store?.name || "This store"} is not loading</h2>
+      <p className="noaccess-lead">
+        The data for this store has not come back. Reloading fixes a dropped connection.
+        If it happens again, tell your admin which store it was: it usually means this
+        store's document is filed under another store's key, which has to be put right
+        rather than waited out.
+      </p>
+      <button className="btn" onClick={onRetry}>Reload</button>
+    </div>
+  );
+}
+
 function LoadingScreen({ label = "Loading" }) {
   return (
     <div className="loadscreen">
@@ -25161,6 +25256,11 @@ const SAGE_CSS = `
          rather than by the ground, so it positions itself against the viewport
          instead of against a card that is 340px wide. Behind the form, above the
          blobs. */
+      /* z-index 0 is still a POSITIONED element, and positioned elements paint
+         above the in-flow content of their stacking context — so the field was
+         landing on top of the button and the labels rather than behind them. The
+         card is given a layer of its own above it, which says the order outright
+         instead of relying on document order to hold it. */
       .sg-field { position:fixed; inset:0; z-index:0; pointer-events:none;
         /* The layer opens out of the same point the mark does. It used to scale
            about the middle of the viewport while the mark scaled about the logo,
@@ -25169,7 +25269,10 @@ const SAGE_CSS = `
            measured on the press. */
         transform-origin: var(--jx, 50%) var(--jy, 50%); }
       .sg-blob { position:absolute; display:block; border-radius:50%;
-        animation: sgDrift 40s ease-in-out infinite alternate; }
+        animation: sgDrift 40s ease-in-out infinite alternate;
+        /* Rasterised once and then only transformed. Without this each of the
+           four is a large radial gradient repainted every frame it moves. */
+        will-change: transform; }
       .sg-blob.b1 { width:760px; height:620px; left:-80px; top:-120px; animation-duration:34s;
         background: radial-gradient(circle at 40% 40%, rgba(196,220,196,0.62), transparent 68%); }
       .sg-blob.b2 { width:820px; height:680px; right:-120px; bottom:-140px; animation-duration:52s;
@@ -25189,8 +25292,13 @@ const SAGE_CSS = `
       }
       .sg-dot { position:absolute; display:block; border-radius:50%; opacity:.26;
         background: currentColor;
-        transform: translate(-50%,-50%);
-        animation: sgTwinkle 4s ease-in-out infinite alternate; }
+        transform: translate(-50%,-50%); }
+      /* Only the bright third twinkles. The others are 2.6px at 0.26 opacity and
+         nobody has ever seen one change; animating all 660 was two thirds of the
+         cost of this screen for none of the effect. The handoff reached the same
+         conclusion from the other direction when it cut the streaking dots to a
+         third. */
+      .sg-dot.bright { animation: sgTwinkle 4s ease-in-out infinite alternate; }
       @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
 
       /* ---- switching tools ----
@@ -25756,14 +25864,37 @@ const SAGE_CSS = `
          landing while they are still out of sight. */
       .signin-over { position:fixed; inset:0; z-index:200; overflow:auto; }
       html.jump-under .lpc > *:not(.sage-ground) { visibility:hidden; }
+      /* And it must not scroll either. The app underneath is hidden but still
+         laid out, so it was giving the document a scrollbar on a screen with
+         nothing scrollable on it — and a scrollbar shifts the centre of every
+         fixed layer by its own width. */
+      html.jump-under, html.jump-under body { overflow:hidden; }
       /* Gone the instant the handover happens, rather than when React next
          renders: the beats that were hiding the form come off at the same moment,
          and without this the sign-in form would reappear over the landing. */
       html.signin-gone .signin-over { display:none; }
 
-      .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }
+      /* ---- centred, and centred on the actual middle ----
+         Two things were off. It was top-aligned with 80px of padding, so on a
+         tall screen the form sat high with the rest of the page empty under it —
+         the handoff puts it centred on the ground. And the app is mounted behind
+         this layer, hidden but still laid out, so the document had a scrollbar:
+         that narrows the viewport by its own width and the fixed layer with it,
+         which is why the form was a few pixels left of where it looked like it
+         should be.
+
+         margin:auto rather than align-items:center, because a tall form — the
+         four-field sign-up on a short screen — has to be able to scroll instead
+         of having its top cut off, and align-items:center cuts. */
+      .login { position:relative; z-index:1; display:flex; justify-content:center;
+        /* border-box, because this sheet sets no global box-sizing and the
+           padding was being ADDED to the 100%: an 980px box inside a 900px
+           layer, which is what made the screen scroll and put the form 40px
+           below the middle. */
+        box-sizing:border-box; padding:40px 20px; min-height:100%; }
       /* No card. The form sits on the ground, 340px wide, centred. */
-      .login-card { width:340px; text-align:center; background:none; border:0; box-shadow:none; padding:26px 0;
+      .login-card { width:340px; margin:auto 0; position:relative; z-index:1;
+        text-align:center; background:none; border:0; box-shadow:none; padding:26px 0;
         animation: loginIn .5s var(--spring); }
       .login-eyebrow { font-family:var(--font-mono); font-size:11.5px; letter-spacing:.16em;
         text-transform:uppercase; color:#6E6E76; margin:0 0 22px; }
@@ -25789,12 +25920,20 @@ const SAGE_CSS = `
         /* Each dot fades up as the form reaches it rather than appearing on the
            keystroke. Straight from the handoff, which puts opacity 240ms ease on
            every dot of the build. */
-        transition: opacity .24s ease;
-        animation: markBreathe 4.2s ease-in-out infinite;
-        animation-delay: calc(var(--i) * -58ms); }
+        transition: opacity .24s ease; }
+      /* ---- one breath, not seventy-three ----
+         This used to animate every circle's transform on its own offset, which
+         means repainting the whole SVG every frame, forever, on a screen where
+         nothing is happening. It is the same life for a seventy-third of the
+         cost: one element, one composited transform.
+
+         On the wrapper rather than the <svg>, because the jump drives the svg's
+         transform and an animation would beat those outright. The rule that
+         stops loginLogoRise during the beats stops this with it. */
+      .login-logo { animation: markBreathe 5.4s ease-in-out infinite; }
       @keyframes markBreathe {
         0%, 100% { transform: scale(1); }
-        50%      { transform: scale(.86); }
+        50%      { transform: scale(.972); }
       }
       /* Signing in: one pass of the wave every 1.15s, left to right across the
          word, so the wait has a direction instead of a spin. */
@@ -25823,6 +25962,12 @@ const SAGE_CSS = `
         transition: border-color .2s var(--ease); }
       .login-card input.lf-in:focus { border:0; border-bottom:1.5px solid #2F7F72;
         outline:none; box-shadow:none; }
+      /* The only reliable notice a browser gives that it filled a field for you:
+         it matches :-webkit-autofill, and starting an animation there fires an
+         animationstart the screen can hear. The animation itself does nothing —
+         it exists to be listened for. */
+      .login-card input.lf-in:-webkit-autofill { animation-name: sageAutofill; animation-duration: .01s; }
+      @keyframes sageAutofill { from { opacity:1; } to { opacity:1; } }
       .login .lf-in::placeholder { color:#B4B6B4; }
 
       /* ---- the button, and the five dots that fill with the mark ---- */
@@ -25841,6 +25986,22 @@ const SAGE_CSS = `
       .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
         font:inherit; font-size:13px; color:#6E6E76; }
       .lf-alt:hover { color:#2E3A32; }
+      /* Sign-in puts its label left and the five build dots right, which is what
+         the space-between is for. Every other mode has only a label, and a label
+         pushed to one edge of a full-width pill reads as a mistake. */
+      .lf-go.lf-solo { justify-content:center; }
+      /* The line of explanation above the fields. Same voice as the labels, one
+         step quieter, and no card chrome around it. */
+      .lf-note { font-size:13px; line-height:1.5; color:#6E6E76; margin:0 0 4px; text-align:left; }
+      .login-card .login-title { font-size:22px; font-weight:700; letter-spacing:-.02em;
+        color:#2E3A32; margin:0 0 10px; }
+      /* Scoped to this screen so the boxed versions elsewhere are untouched: on a
+         page with no card and no borders, a filled green panel is the only piece
+         of chrome in sight. */
+      .login-card .setup-note { font-size:13px; line-height:1.5; color:#6E6E76; margin:0 0 4px; text-align:left; }
+      .login-card .login-ok { background:none; padding:0; border-radius:0; color:#3F7A4C;
+        font-size:12.5px; margin-top:12px; text-align:left; }
+      .login-card .login-err { text-align:left; }
 
       @media (prefers-reduced-motion: reduce) {
         .sg-dot, .sg-field, .sg-blob, .login-logo circle { animation:none !important; }
