@@ -2899,6 +2899,7 @@ export default function LeadPerformanceCalculator() {
      behaviour before moving the markup. */
   const switchTool = (mod) => {
     if (mod === appModule) return;
+    warpTo(appModule, mod);
     // These four render their own shell and take no tab.
     if (mod === "board" || mod === "floor" || mod === "line" || mod === "online") {
       setAppModule(mod);
@@ -7075,6 +7076,49 @@ function Login({ config, onBack, onAuthed }) {
       </div>
     </div>
   );
+}
+
+/* ---------------- Switching tools ----------------
+   300ms of streaks in the tool you are going TO, travelling the way the eye just
+   moved: right if the new tool sits right of the old one in the bar, left if it
+   sits left. The outgoing screen unmounts and the new one mounts fresh, so its
+   own entrance plays underneath.
+
+   Written against the DOM rather than through React on purpose. A tool switch
+   already unmounts and remounts a large tree, and putting 34 streaks through
+   state at the same moment would put the animation in the same frame budget as
+   the mount it is covering — which is exactly what it exists to hide.
+
+   The hue is the tool's own accent, taken from the app rather than from the
+   handoff's table. The handoff calls those "the existing pill colours" and lists
+   values that are close to but not the same as the ones in this file; the pill
+   the finger just left is the thing the eye is carrying, so the app's own value
+   is the one that matches it. */
+const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
+const WARP_HUE = { perf: "#404E44", activity: "#404E44", board: "#404E44",
+  floor: "#10B981", line: "#5566F0", online: "#8B5CF6" };
+
+function warpTo(from, to) {
+  if (typeof document === "undefined") return;
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  } catch (e) { /* no matchMedia is not a reason to skip it */ }
+  const dir = WARP_ORDER.indexOf(to) >= WARP_ORDER.indexOf(from) ? "r" : "l";
+  const hue = WARP_HUE[to] || "#404E44";
+  const host = document.createElement("div");
+  host.className = "warp warp-" + dir;
+  const h = window.innerHeight;
+  let html = "";
+  for (let i = 0; i < 34; i++) {
+    const len = 180 + ((i * 137) % 520);          // 180-700px
+    const tall = 2 + ((i * 7) % 3);               // 2-4px
+    const top = Math.round(((i * 617) % 1000) / 1000 * h);
+    const delay = (i * 31) % 132;                 // 0-132ms
+    html += `<i style="top:${top}px;width:${len}px;height:${tall}px;background:${hue};animation-delay:${delay}ms"></i>`;
+  }
+  host.innerHTML = html;
+  document.body.appendChild(host);
+  setTimeout(() => host.remove(), 520);
 }
 
 /* ---------------- The arrival ----------------
@@ -24199,7 +24243,10 @@ function Style() {
         border-radius:10px; padding:2px; }
       .tool-thumb { position:absolute; top:2px; bottom:2px; left:0; background:#fff; border-radius:8px;
         box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 1px 4px rgba(31,54,86,.18); opacity:0; pointer-events:none;
-        transition: transform .4s var(--spring), width .4s var(--spring); will-change: transform, width; }
+        /* 340ms, and the spring the handoff asks for. It already measures the
+           button rather than carrying hardcoded widths, which is the part the
+           prototype got wrong and had to fix. */
+        transition: transform .34s cubic-bezier(.34,1.4,.64,1), width .34s cubic-bezier(.34,1.4,.64,1); }
       .tool-thumb.ready { opacity:1; }
       .tool-btn { border:none; background:none; padding:6px 12px; border-radius:8px; cursor:pointer;
         font-size:12.5px; font-weight:600; color:var(--ink-2); white-space:nowrap;
@@ -24337,6 +24384,59 @@ function Style() {
         transform: translate(-50%,-50%);
         animation: sgTwinkle 4s ease-in-out infinite alternate; }
       @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
+
+      /* ---- switching tools ---- */
+      .warp { position:fixed; inset:0; z-index:8000; pointer-events:none; overflow:hidden; }
+      .warp i { position:absolute; display:block; border-radius:2px; opacity:0; }
+      .warp-r i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
+      .warp-l i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      @keyframes warpR {
+        0%   { transform: translateX(0);              opacity:0; }
+        30%  {                                        opacity:.9; }
+        100% { transform: translateX(calc(100vw + 760px)); opacity:0; }
+      }
+      @keyframes warpL {
+        0%   { transform: translateX(0);              opacity:0; }
+        30%  {                                        opacity:.9; }
+        100% { transform: translateX(calc(-100vw - 760px)); opacity:0; }
+      }
+
+      /* ---- a metric card blooms from the dot that was pressed ---- */
+      .mdial-pop { transform-origin: bottom center; }
+      .mdial:hover .mdial-pop, .mdial.popped .mdial-pop {
+        animation: mBloom .42s cubic-bezier(.34,1.5,.64,1) both; }
+      @keyframes mBloom {
+        from { opacity:0; transform: translateX(-50%) scale(.24); }
+        to   { opacity:1; transform: translateX(-50%) scale(1); }
+      }
+
+      /* ---- a person's detail rises from their row, its cards behind it ---- */
+      /* The real class is .detail — the sheet a row opens into. */
+      .detail { animation: sheetRise .42s cubic-bezier(.34,1.4,.64,1) both; }
+      .detail > * { animation: saArrive .34s cubic-bezier(.34,1.4,.64,1) both; }
+      .detail > *:nth-child(1) { animation-delay:.06s; }
+      .detail > *:nth-child(2) { animation-delay:.12s; }
+      .detail > *:nth-child(3) { animation-delay:.18s; }
+      .detail > *:nth-child(n+4) { animation-delay:.24s; }
+      @keyframes sheetRise {
+        from { opacity:0; transform: translateY(-10px) scaleY(.96); transform-origin: top center; }
+        to   { opacity:1; transform:none; }
+      }
+
+      /* ---- saving: one dot, pulsing ---- */
+      .save-dot { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--ink-3);
+        animation:none; }
+      .save-dot::before { content:""; width:7px; height:7px; border-radius:50%; background:#2F7F72;
+        animation: saveDot .9s ease-in-out infinite; }
+      @keyframes saveDot {
+        0%, 100% { opacity:.25; transform:scale(.8); }
+        50%      { opacity:1;   transform:scale(1.15); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .warp, .detail, .detail > *, .mdial-pop { animation:none !important; }
+        .save-dot::before { animation-duration:2.4s !important; }
+      }
 
       /* ---- the arrival ---- */
       .sage-arrival { position:fixed; inset:0; z-index:9000; background:#F5F5F7; overflow:hidden; }

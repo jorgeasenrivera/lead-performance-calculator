@@ -80,9 +80,24 @@ other reason to know about it would be worse.
 The day key is `lpc:arrival` rather than `lpc:intro-played`, so everybody sees the new arrival
 once even if they had already seen the old one today.
 
-### Part 4 — still to build
+### Part 4 — the smaller transitions — BUILT 2026-08-22
 
-Tool warp, tab pill, metric bloom, person sheet, saving dot. The loading dots are done.
+- **Tool switching**: 34 streaks in the destination tool's hue, travelling the way the eye
+  just moved. Written against the DOM rather than through React on purpose — a tool switch
+  already unmounts and remounts a large tree, and putting 34 streaks through state at the same
+  moment would put the animation in the same frame budget as the mount it exists to hide.
+- **Section tabs**: already a measured pill rather than hardcoded widths — the mistake the
+  prototype made and had to fix, which this app had already avoided. Only the timing changed,
+  to the handoff's 340ms spring.
+- **Metric card**: blooms from `scale(0.24)`. **Person detail**: the sheet rises from the row
+  with its inner blocks at 60/120/180/240ms. **Saving**: one dot pulsing, replacing a pulsing
+  word.
+
+**One deliberate deviation.** The handoff gives tool hues and calls them "the existing pill
+colours"; they are close to, but not the same as, the values in this file (`#0E9F6E` against
+`#10B981`, `#2563EB` against `#5566F0`, `#7C3AED` against `#8B5CF6`). The pill the finger just
+left is what the eye is carrying, so the app's own value is the one that matches it. Same rule
+the handoff sets for the dashboard: the real component is the truth.
 
 ---
 
