@@ -111,6 +111,69 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## Fewer words, more picture — STARTED 2026-08-22
+
+> reducing the "wordiness" of the page … I want more visuals throughout the website instead of
+> words
+
+This app explains itself, and that is deliberate: half of what it does is a judgement about a
+person's month, and a screen that makes one without saying why is a screen nobody should
+trust. The cost crept up on it — **3,905 words of prose permanently on the manager's screens**,
+so the page read every morning is mostly sentences somebody read once, in March.
+
+### The rule
+
+- If the sentence tells you something **the screen already shows**, it goes entirely.
+- If it carries **a decision somebody would otherwise get wrong** — a leaver keeps their cars,
+  a fold cannot be split back apart — it goes behind `<Explain>`: one line always visible, the
+  paragraph one click away.
+- **Empty states stay.** "Nothing on the list yet, paste the drawer of dealer plates above" is
+  the only thing on the screen at that moment; deleting it leaves a blank rectangle.
+- **Rarely-used destructive screens keep their prose.** Backup, Repair and the store wizard are
+  where a wrong click costs a store its records, and they are read by somebody who has not been
+  there in six months. Explanation earns its place there and nowhere is it more expensive to
+  have folded away.
+
+`<Explain>` is a native `<details>`: keyboard-accessible and findable by in-page search for
+free, and no state for a screen full of them to hold.
+
+### Done so far
+
+| screen | permanent prose |
+|---|---|
+| People | 566 → 69 words |
+| Plates | 193 → 81 |
+| Import | 175 → 131 |
+| Coaching | 109 → 76 |
+
+3,905 → 3,071 across the app. Still to do: Floor Config (203), Baseline Import (126), Tickets
+(111), Missed Standards (104, mine — written last week and already too long), Help (91).
+
+### Own Your Outcome: drawn, not folded away
+
+The plan on a person's card is the one thing in the app somebody is asked to ACT on — go and
+find 34 leads — and whether they do it turns entirely on whether they believe the 34. The
+app's answer to that was a sixty-word paragraph explaining the arithmetic, which is right and
+which nobody reads twice.
+
+Folding that into an `<Explain>` would have been **worse than leaving it**: the reasoning IS
+the persuasion here, so hiding it hides the only reason to trust the number. So it is drawn:
+four blocks and three arrows — the gap, their own sales mix (as a stacked bar), their own
+closing rates, the leads that follow — each figure carrying a dot in its channel's colour so
+three percentages say WHICH three without a legend. Same chain, same numbers, read in a second,
+and it stacks into a downward flow on a phone.
+
+Two more sentences became evidence rather than reassurance. "Built from this person's own
+conversion history, not a number anybody made up" is a *claim*; **Their own record · 33 cars
+across 71 working days** is the thing that makes it true, and it is shorter. The coaching
+bar's "drawn from your own floor rather than a number someone made up" got the same treatment:
+**Your own floor · 6 of 18, by units delivered**.
+
+The rule this adds to the sweep: **where the words are the reason to believe a number, draw
+them — do not fold them away.**
+
+---
+
 ## History and Summary — REWORKED 2026-08-21
 
 > I feel like we haven't given any recent love to the history and summary tabs

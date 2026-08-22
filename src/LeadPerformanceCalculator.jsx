@@ -13537,12 +13537,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       {masterOpen && (
         <div className="card">
           <h3>Master plate list</h3>
-          <p className="hint">
+          <Explain label="What the list is for">
             Every plate the store owns. This is what the one-click row suggests from, and what a
             typed tag is checked against, so a number that is one character off gets questioned
             rather than quietly becoming a second plate. Retiring keeps the history and stops the
             suggestions; removing takes it off the list entirely.
-          </p>
+          </Explain>
           <div className="inline-form">
             <textarea className="plate-bulk" value={bulk} onChange={(e) => setBulk(e.target.value)}
               placeholder={"Paste or type plates, one per line or comma separated\ne.g. DLR-1042, DLR-1043"} rows={2} />
@@ -13607,10 +13607,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
           </div>
         )}
-        <p className="hint">
+        <Explain label="How the log works">
           The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
           {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
-        </p>
+          {" "}Handing a plate straight to somebody else closes the current trip and opens a new one, so the
+          log never says the wrong person had it.
+        </Explain>
       </div>
       {standing && (
         <div className="card">
@@ -13656,7 +13658,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
               </tbody>
             </table>
           )}
-          <p className="hint">Handing a plate straight to somebody else closes the current trip and opens a new one, so the log never says the wrong person had it.</p>
+
         </div>
       )}
       {standing && (
@@ -16529,10 +16531,15 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
       ) : (
       <div className="card">
         <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
-        <p className="hint">
-          Top third by units delivered this month ({top.length} of {withData.length} with activity on file), averaged
-          across every day imported. This is the bar, drawn from your own floor rather than a number someone made up.
-        </p>
+        {/* Same treatment as the plan on a person's card: where the bar came from,
+            stated as the evidence rather than as a promise about it. "Not a number
+            someone made up" is a claim; "the top 6 of your 18, every imported day"
+            is the thing that makes it true. */}
+        <div className="oyo-from">
+          <span className="oyo-from-tag">Your own floor</span>
+          <b>{top.length}</b> of <b>{withData.length}</b>
+          <span className="oyo-from-op">by units delivered, averaged across every imported day</span>
+        </div>
         <div className="bench-grid">
           {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
             <div key={b.id} className="bench-tile">
@@ -17134,6 +17141,47 @@ alertHtml +
   setTimeout(function () { w.focus(); w.print(); }, 400);
 }
 
+/* ---- where a number came from, as a picture ------------------------------
+   The plan on this screen is the one thing in the app a salesperson is asked to
+   ACT on: go and find seventy-four leads. Whether they do it turns entirely on
+   whether they believe the seventy-four, and the app's answer to that was a
+   sixty-word paragraph explaining the arithmetic — "your remaining 6 cars, split
+   by your own sales mix so far this month (12 cars), at your own closing rates:
+   about 74 leads gets you to your goal."
+
+   That paragraph is right, and nobody reads it twice. Folding it into a
+   disclosure would have been worse than leaving it: the reasoning IS the
+   persuasion here, so hiding it hides the only reason to trust the number.
+
+   So it is drawn instead. Four blocks and three arrows, each block a real figure
+   off their own record, ending on the number they are being asked to go and get.
+   Same chain, same numbers, read in about a second. */
+function OyoChain({ steps }) {
+  return (
+    <div className="oyo-chain">
+      {steps.map((st, i) => (
+        <div key={i} className="oyo-step">
+          <div className="oyo-step-lbl">{st.label}</div>
+          <div className={"oyo-step-val" + (st.tone ? " " + st.tone : "")}>{st.value}</div>
+          {st.sub && <div className="oyo-step-sub">{st.sub}</div>}
+          {st.bar && (
+            /* The mix, as the mix. Three shares of one bar says "half your cars
+               come from the internet" without the sentence that says it. */
+            <div className="oyo-step-bar">
+              {st.bar.map((b, k) => (
+                <i key={k} style={{ width: Math.max(0, b.pct * 100) + "%", background: b.color }}
+                  title={`${b.label} ${Math.round(b.pct * 100)}%`} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+/* One colour per channel, the same three everywhere they appear. */
+const OYO_CHAN_COLOR = { internet: "#2A5E9B", showroom: "#C77800", phone: "#7E8B24", campaign: "#8A5A3C" };
+
 function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const [editBase, setEditBase] = useState(false);
   const key = norm(a.name);
@@ -17206,7 +17254,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           <label>Monthly goal</label>
           <input type="number" min="0" value={goal || ""} placeholder="0"
             onChange={(e) => setGoal(e.target.value)} />
-          <span className="hint">units. Set per person.</span>
+          <span className="hint">units</span>
         </div>
 
         {goal > 0 && (
@@ -17279,17 +17327,20 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           <h3 className="ac-h3">
             What it takes {goal > 0 && stillNeeded > 0 ? <span className="section-sub">to find {stillNeeded} more car{stillNeeded === 1 ? "" : "s"}</span> : null}
           </h3>
-          {missingDays > 0 && (
-            <p className="hint" style={{ color: "#95600A" }}>
-              Heads up: {calElapsed} working days have passed but activity is only on file for {mtd.daysElapsed}.
-              The daily activity figures below are averaged over the {mtd.daysElapsed} day{mtd.daysElapsed === 1 ? "" : "s"} we
-              actually have, so they are honest. Import the missing days and the picture sharpens.
-            </p>
-          )}
-          <p className="hint">
-            Built from this person's own conversion history, not a number anybody made up.
-            Historically they deliver <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"} across <b>{base.daysWorked}</b> working days.
-          </p>
+          {/* Where the whole table below comes from, as a fact rather than a
+              reassurance. "Not a number anybody made up" is a claim; their own
+              8 cars across 42 days IS the evidence for it. */}
+          <div className="oyo-from">
+            <span className="oyo-from-tag">Their own record</span>
+            <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"}
+            <span className="oyo-from-op">across</span>
+            <b>{base.daysWorked}</b> working days
+            {missingDays > 0 && (
+              <span className="oyo-from-warn" title={`${calElapsed} working days have passed but activity is on file for ${mtd.daysElapsed}. The per-day figures are averaged over the days we actually have, so they are honest. Import the missing days and the picture sharpens.`}>
+                <PixIcon glyph="warn" size={10} /> {mtd.daysElapsed} of {calElapsed} days on file
+              </span>
+            )}
+          </div>
 
           <table className="oyo-table">
             <thead>
@@ -17348,8 +17399,35 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             });
             const total = rows.reduce((t, r) => t + (r.leads ?? 0), 0);
             const missing = rows.some((r) => r.leads == null);
+            /* A dot in the channel's own colour before each figure, so a row of
+               three percentages says WHICH three without a legend or a sentence. */
+            const dots = (list) => (
+              <span className="oyo-figs">
+                {list.map(({ c, txt }) => (
+                  <span key={c.id} className="oyo-fig" title={c.label}>
+                    <i style={{ background: OYO_CHAN_COLOR[c.id] }} />{txt}
+                  </span>
+                ))}
+              </span>
+            );
+            const mixed = OYO_CHANNELS.filter((c) => (mixInfo.mix[c.id] ?? 0) > 0);
+            const CHAIN = [
+              { label: "Still to find", value: stillNeeded, sub: stillNeeded === 1 ? "car" : "cars" },
+              { label: mixInfo.personal ? "Your mix" : "Typical mix",
+                value: dots(mixed.map((c) => ({ c, txt: Math.round((mixInfo.mix[c.id] ?? 0) * 100) + "%" }))),
+                sub: mixInfo.personal ? `${mixInfo.total} cars so far` : `yours once you have ${OYO_MIX_MIN_CARS} delivered`,
+                bar: mixed.map((c) => ({ label: c.label, pct: mixInfo.mix[c.id] ?? 0, color: OYO_CHAN_COLOR[c.id] })) },
+              { label: "Your close rate",
+                value: dots(rows.filter((r) => r.cr > 0).map((r) => ({ c: r.c, txt: fmtPct(r.cr) }))),
+                sub: "off your own months" },
+              { label: "Leads to find", value: total, tone: "big",
+                sub: missing ? "channels with no rate yet are left out" : "raise a rate and this drops" },
+            ];
             return (
               <>
+                {/* The chain first, then the detail. The picture is what somebody
+                    acts on; the table is what they check it against. */}
+                <OyoChain steps={CHAIN} />
                 <table className="oyo-table">
                   <thead>
                     <tr><th>Channel</th><th>You deliver</th><th>Cars of the gap</th><th>Leads needed</th></tr>
@@ -17365,14 +17443,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
                     ))}
                   </tbody>
                 </table>
-                <p className="hint">
-                  Your remaining <b>{stillNeeded}</b> car{stillNeeded === 1 ? "" : "s"}, split by{" "}
-                  {mixInfo.personal
-                    ? <>your own sales mix so far this month ({mixInfo.total} cars)</>
-                    : <>the typical mix, internet about half and showroom and phone the rest (switches to your own mix at {OYO_MIX_MIN_CARS} delivered)</>}, at
-                  your own closing rates: about <b>{total} leads</b> gets you to your goal.{missing ? " Channels without a delivered % yet are left out of that count." : ""} Raise
-                  a closing rate and that number drops.
-                </p>
+
               </>
             );
           })()}
@@ -17384,12 +17455,13 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
         <div className="oyo-base-head">
           <div>
             <b>90-day baseline</b>
-            <span className="hint">
-              {base.source === "seed+observed"
-                ? ` Seeded, plus everything imported since. ${base.daysWorked} days on file.`
-                : base.source === "observed"
-                ? ` Built from ${base.daysWorked} imported day${base.daysWorked === 1 ? "" : "s"}. Seed their real 90-day numbers to make this meaningful sooner.`
-                : " Nothing yet. Paste in their current 90-day numbers to start."}
+            <span className={"oyo-src oyo-src-" + base.source.replace("+", "-")}
+              title={base.source === "seed+observed" ? "Seeded by a manager, plus everything imported since."
+                : base.source === "observed" ? "Built only from imported days. Seed their real 90-day numbers to make it meaningful sooner."
+                : "Nothing yet. Paste in their current 90-day numbers to start."}>
+              {base.source === "seed+observed" ? `seeded + ${base.daysWorked} days`
+                : base.source === "observed" ? `${base.daysWorked} imported day${base.daysWorked === 1 ? "" : "s"}`
+                : "not seeded yet"}
             </span>
           </div>
           <button className="btn-ghost" onClick={() => setEditBase(!editBase)}>
@@ -19449,7 +19521,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
         <UploadHistory data={data} onChange={onChange} />
-        <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
+
       </div>
     );
   }
@@ -19523,7 +19595,12 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         </div>
       )}
       <UploadHistory data={data} onChange={onChange} />
-      <p className="hint">Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the previous numbers for that report. Imports are recorded in the audit log.</p>
+      <Explain label="What an import does to the numbers">
+        Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the
+        previous numbers for that report rather than adding to them, and every import is recorded in the
+        audit log. A day's activity is saved separately from the month, so the Check Out sheet and the
+        history stay accurate day to day.
+      </Explain>
     </div>
   );
 }
@@ -20251,6 +20328,36 @@ function StandardsEditor({ config, storeId, onChange }) {
    never earned them. Collapsing those two into "remove" is how a month that
    delivered 85 came to read 84.5.
    ========================================================================= */
+/* ---- the long explanation, folded away ------------------------------------
+   This app explains itself, and that is deliberate: half of what it does is a
+   judgement about a person's month, and a screen that makes one without saying
+   why is a screen nobody should trust. The cost crept up on it — near four
+   thousand words of prose across the manager's screens, permanently on, so the
+   page a manager reads every morning is mostly sentences they read for the first
+   time in March.
+
+   Jorge, on the board: "reducing the wordiness of the page ... I want more
+   visuals throughout the website instead of words."
+
+   So the reasoning stays and stops shouting. One line is always visible — what
+   this is — and the paragraph that says why is one click away. A <details> rather
+   than a state hook because it is keyboard-accessible and searchable-in-page for
+   free, and because a screen full of these would otherwise be a screen full of
+   state nobody needs to hold.
+
+   The rule for what stays visible: if the sentence tells you something the screen
+   already shows, it goes entirely. If it carries a decision somebody would
+   otherwise get wrong — a leaver keeps their cars, folding is not splittable —
+   it goes in here. Nothing is deleted that a person could act wrongly without. */
+function Explain({ children, label = "Why this matters" }) {
+  return (
+    <details className="explain">
+      <summary>{label}</summary>
+      <div className="explain-body">{children}</div>
+    </details>
+  );
+}
+
 /* ---- what each position looks like ---------------------------------------
    Jorge: "I'd like there to be a visual difference between job types like BDC
    and sales and so on and group them accordingly, keep it fun."
@@ -20572,14 +20679,15 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <h3>
             {wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}
           </h3>
-          <p className="hint">
-            These are your own people with something stuck to their name: a column heading the reader did
-            not recognise, or a name the report printed twice. Each one is sitting in the books as a
-            stranger while their real row carries the rest of their month. Merging puts the figures back
-            together and remembers the spelling, so the next report needs no repair.
-            {" "}Anything that looks like two people welded into one is not offered here: it could be split
-            two ways and both would be wrong.
-          </p>
+          <p className="hint">Your own people with something stuck to their name. Merging puts the figures
+            back together and remembers the spelling.</p>
+          <Explain>
+            A column heading the reader did not recognise, or a name the report printed twice. Each one is
+            sitting in the books as a stranger while their real row carries the rest of their month, so the
+            store's totals are split across two spellings of one person. Merging teaches the spelling as
+            well, and the next report needs no repair. Anything that looks like two people welded into one
+            is never offered here: it could be split two ways and both would be wrong.
+          </Explain>
           <div className="pp-batch">
             <button className="btn" onClick={() => {
               const cars = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
@@ -20631,10 +20739,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           </h3>
           <p className="hint">
             A report named {waiting.length === 1 ? "somebody" : "these"} who {waiting.length === 1 ? "is" : "are"} not
-            on this store's people list, so nothing was added to the books. Their figures are kept exactly as they
-            arrived and nothing is lost either way: say they work here and everything folds in, or say they do not
-            and it goes with them. Until then the store's totals are unaffected.
+            on this store's people list. Nothing was added to the books, and their figures are held exactly
+            as they arrived.
           </p>
+          <Explain>
+            Nothing is lost whichever way you answer: say they work here and everything folds in, say they
+            do not and it goes with them. Until somebody says, the store's totals are unaffected, which is
+            why a name can sit here safely for a week.
+          </Explain>
           <BatchBar rows={waiting}
             onAll={() => setBatch(new Set(waiting.map((w) => norm(w.name))))}
             onNone={() => setBatch(new Set())}>
@@ -20703,13 +20815,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               ? "One name has figures here but is not one of your people"
               : `${strangers.length} names have figures here but are not your people`}
           </h3>
-          <p className="hint">
-            Something credited these with work at {storeName || "this store"} and they are on none of your
-            lists. That is what another dealership's report looks like after it has been filed in the wrong
-            place, and it is also what a heading looks like when the reader mistook it for a person. Say
-            which each one is. <b>Not ours</b> takes their figures out of this store's totals; <b>they work
-            here</b> puts them on the floor and leaves the figures alone.
-          </p>
+          <p className="hint">Credited with work at {storeName || "this store"}, and on none of your lists.</p>
+          <Explain>
+            That is what another dealership's report looks like after it has been filed in the wrong place,
+            and it is also what a heading looks like when the reader mistook it for a person. <b>Not ours</b>
+            takes their figures out of this store's totals. <b>They work here</b> puts them on the floor and
+            leaves the figures alone. <b>Same as someone</b> folds them into a person you already have.
+          </Explain>
           <BatchBar rows={strangers}
             onAll={() => setBatch(new Set(strangers.map((x) => norm(x.name))))}
             onNone={() => setBatch(new Set())}>
@@ -20764,11 +20876,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             <span className="pp-count">{counts.ignored} not ours</span>
           </div>
         </div>
-        <p className="hint">
-          Who this store employs, whatever has happened to them. Somebody who leaves keeps the cars they
-          sold in the month they sold them. The store did sell those. Somebody who was never here loses
-          theirs, because it never earned them. That difference is why both exist.
-        </p>
+        <Explain label="Left, and not ours: what the difference costs">
+          Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
+          did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
+          delivered. Somebody who was <b>never here</b> loses theirs, because the store never earned them
+          and they are inflating its totals. That difference is the whole reason both exist.
+        </Explain>
 
         <div className="pp-bar">
           <input className="help-in pp-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a name…" />
@@ -21037,13 +21150,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   </div>
                   {!l ? (
                     <>
-                      <p className="hint">
-                        Nobody signs in as {p.name} yet. They sign up on this site with a dealership address
-                        like anybody else; leave their stores unticked and they stay off the dashboard while
-                        still having an account to be joined to. Then pick it here. This is what decides
-                        whose phone buzzes when their customer walks in, which is why a manager sets it and
-                        not the salesperson.
-                      </p>
+                      <p className="hint">Nobody signs in as {p.name} yet.</p>
+                      <Explain label="How somebody gets an account">
+                        They sign up on this site with a dealership address like anybody else; leave their
+                        stores unticked and they stay off the dashboard while still having an account to be
+                        joined to. Then pick it here. This is what decides whose phone buzzes when their
+                        customer walks in, which is why a manager sets it and not the salesperson.
+                      </Explain>
                       <div className="pp-move-row">
                         <select className="q-flag-sel" value="" disabled={acctBusy === key}
                           onChange={(e) => e.target.value && acctDo(key, () => linkFloorPerson(storeId, e.target.value, p.id), "Joined to their account.")}>
@@ -21081,12 +21194,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                           onClick={() => acctDo(key, () => unlinkFloorPerson(storeId, l.user_id),
                             "Unjoined. Their phones were unregistered with it.")}>Unjoin this account</button>
                       </div>
-                      <p className="hint">
-                        Switching an account off stops them signing in and leaves everything they have done
-                        exactly where it is; it is the one to reach for when somebody is let go. Unjoining
-                        only breaks the link between the account and this person, and takes their registered
-                        phones with it so nothing keeps buzzing about a floor they are not on.
-                      </p>
+                      <Explain label="Switch off, or unjoin?">
+                        <b>Switching off</b> stops them signing in and leaves everything they have done
+                        exactly where it is; it is the one to reach for when somebody is let go.
+                        <b> Unjoining</b> only breaks the link between the account and this person, and takes
+                        their registered phones with it so nothing keeps buzzing about a floor they are not on.
+                      </Explain>
                     </>
                   )}
                   {acctSaid && acctSaid.key === key && (
@@ -21113,11 +21226,11 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                       onPick={(to) => onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }),
                         { action: "Folded a duplicate person", detail: `${p.name} → ${to}` })} />
                   </div>
-                  <p className="hint">
+                  <Explain label="When to use this">
                     Only when they are genuinely one person under two spellings. {p.name} comes off this
                     store's lists and their cars move across. Two people who happen to share a name are
                     not this, and merging them puts one person's month onto the other.
-                  </p>
+                  </Explain>
                 </div>
               );
             })()}
@@ -21130,12 +21243,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
         {moving && (
           <div className="pp-move">
             <div className="pp-move-head">Move <b>{moving.name}</b> to another store</div>
-            <p className="hint">
+            <Explain label="What moves with them, and what does not">
               They go on the new store's floor with everything {storeName || "this store"} knows about them
               carried across, so a manager there can see how they have been doing. Their record is kept beside
               that store's books rather than inside them: cars sold here are this store's and stay in its month,
               and adding them to another store's total is the exact mistake all of this exists to stop.
-            </p>
+            </Explain>
             <div className="pp-move-row">
               <select className="q-flag-sel" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
                 <option value="">Which store?</option>
@@ -21166,14 +21279,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             </button>
             {showFolds && (
               <div className="pp-folds">
-                <p className="hint">
-                  Each of these is a spelling a report used that this store has said belongs to
-                  somebody. Reports file it under them automatically and it stays off every list.
-                  Undoing one frees the spelling again, from the next report onwards. <b>It does not
-                  split the figures back apart</b>: they were added together when the fold was made
-                  and nothing records which half came from where, so the months already merged stay
-                  merged.
-                </p>
+                <p className="hint">Spellings this store has said belong to somebody. Reports file them
+                  under that person automatically.</p>
+                <Explain label="What undoing one does, and does not do">
+                  Undoing frees the spelling from the next report onwards, and it can be claimed or
+                  marked not-yours like any other name. <b>It does not split the figures back apart</b>:
+                  they were added together when the fold was made and nothing records which half came
+                  from where, so the months already merged stay merged.
+                </Explain>
                 {foldList.map((f) => {
                   /* An alias is stored as the flattened key both sides match on,
                      so there is no cased spelling to show. The person it points at
@@ -23684,6 +23797,67 @@ function Style() {
       .hist-key .hist-pip { margin-left:9px; }
       .hist-key .hist-pip:first-child { margin-left:0; }
       @media (max-width:1100px) { .hist-trail-h, .hist-table td:last-child { display:none; } }
+
+      /* The disclosure that holds the reasoning. Quiet enough to ignore, obvious
+         enough to find on the day somebody needs it. */
+      /* ---- the chain: gap, mix, close rate, leads ----
+         Four blocks and three arrows. The arrows are drawn by the container so
+         the blocks stay plain, and they turn into a downward flow on a phone
+         where four across would be four unreadable columns. */
+      .oyo-chain { display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:12px 0 4px; }
+      .oyo-step { position:relative; flex:1 1 150px; min-width:132px; padding:12px 14px; border-radius:14px;
+        background:rgba(255,255,255,.7); border:1px solid rgba(16,32,52,.09);
+        box-shadow:0 1px 2px rgba(16,32,52,.04); }
+      .oyo-step + .oyo-step { margin-left:14px; }
+      .oyo-step + .oyo-step::before { content:""; position:absolute; left:-19px; top:50%;
+        width:10px; height:10px; margin-top:-5px; border-right:2px solid rgba(16,32,52,.22);
+        border-top:2px solid rgba(16,32,52,.22); transform:rotate(45deg); }
+      .oyo-step-lbl { font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+        color:var(--ink-3); }
+      .oyo-step-val { font-size:20px; font-weight:750; letter-spacing:-.03em; margin-top:5px;
+        font-variant-numeric:tabular-nums; color:var(--ink); }
+      .oyo-step-val.big { font-size:29px; color:var(--blue); }
+      .oyo-step-sub { font-size:11px; color:var(--ink-3); margin-top:3px; line-height:1.35; }
+      .oyo-step-bar { display:flex; height:6px; border-radius:4px; overflow:hidden; margin-top:8px;
+        background:rgba(16,32,52,.07); }
+      .oyo-step-bar i { display:block; }
+      /* Figures that say which channel they belong to, without a legend. */
+      .oyo-figs { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:15px; }
+      .oyo-fig { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+      .oyo-fig i { width:7px; height:7px; border-radius:2px; display:inline-block; }
+      @media (max-width:720px) {
+        .oyo-step { flex:1 1 100%; }
+        .oyo-step + .oyo-step { margin-left:0; margin-top:14px; }
+        .oyo-step + .oyo-step::before { left:50%; top:-19px; margin:0 0 0 -5px; transform:rotate(135deg); }
+      }
+
+      /* Where the table below came from, stated as evidence rather than promised
+         as a reassurance. */
+      .oyo-from { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px;
+        color:var(--ink-2); margin:8px 0 2px; }
+      .oyo-from b { font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums; }
+      .oyo-from-tag { font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+        color:#1D4674; background:rgba(42,94,155,.12); padding:3px 9px; border-radius:999px; }
+      .oyo-from-op { color:var(--ink-3); }
+      .oyo-from-warn { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:650;
+        color:#95600A; background:rgba(255,159,10,.14); padding:3px 9px; border-radius:999px; cursor:help; }
+      .oyo-src { font-size:10.5px; font-weight:750; letter-spacing:.02em; padding:3px 9px; border-radius:999px;
+        margin-left:8px; cursor:help; background:rgba(16,32,52,.07); color:var(--ink-2); }
+      .oyo-src-seed-observed { background:rgba(48,177,85,.14); color:#146B41; }
+      .oyo-src-none { background:rgba(255,159,10,.16); color:#95600A; }
+
+      .explain { margin:6px 0 0; }
+      .explain > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+        font-size:11.5px; font-weight:700; letter-spacing:.01em; color:var(--blue);
+        list-style:none; padding:3px 0; }
+      .explain > summary::-webkit-details-marker { display:none; }
+      .explain > summary::before { content:"?"; display:inline-grid; place-items:center;
+        width:15px; height:15px; border-radius:50%; font-size:10px; font-weight:800;
+        background:rgba(42,94,155,.12); color:var(--blue); }
+      .explain[open] > summary::before { content:"\\2212"; }
+      .explain > summary:hover { text-decoration:underline; }
+      .explain-body { font-size:12.5px; line-height:1.6; color:var(--ink-2); max-width:78ch;
+        margin:6px 0 2px; animation: pageIn .25s var(--spring); }
 
       .pp-folds { margin-top:10px; display:grid; gap:6px; }
       .pp-folds .hint { margin:0 0 8px; max-width:78ch; }
