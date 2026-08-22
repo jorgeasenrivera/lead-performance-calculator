@@ -1925,12 +1925,25 @@ export default function LeadPerformanceCalculator() {
   const [introPlaying, setIntroPlaying] = useState(false);
   /* True while the sign-in screen is taking itself apart. See where it is read. */
   const [jumpHold, setJumpHold] = useState(false);
+  /* Holds the dashboard's mount until the jump's cruise. The session lands a
+     third of a second after the press, and mounting the whole app tree right
+     then blocks the main thread in the middle of the ratchet — the canvas
+     freezes and the most watched beat of the animation stutters. The cruise is
+     the loading zone; the heavy work belongs inside it. */
+  const [holdMount, setHoldMount] = useState(false);
+  useEffect(() => {
+    const on = (e) => { if (e.detail === "cruise" || e.detail === "off") setHoldMount(false); };
+    document.addEventListener(JUMP_PHASE, on);
+    return () => document.removeEventListener(JUMP_PHASE, on);
+  }, []);
   /* Hides the app while the sign-in layer is over it. A LAYOUT effect, so the
      class is gone in the same commit that drops the layer — an ordinary effect
      runs after paint and would show one frame of an un-animated dashboard right
      where the landing is supposed to begin. */
   useLayoutEffect(() => {
-    const under = !session || jumpHold;
+    /* jumpLanded: once the landing has revealed the app, a session identity
+       change must not hide it again. See the latch's comment. */
+    const under = !session || (jumpHold && !jumpLanded);
     document.documentElement.classList.toggle("jump-under", under);
     return () => document.documentElement.classList.remove("jump-under");
   }, [session, jumpHold]);
@@ -2247,6 +2260,49 @@ export default function LeadPerformanceCalculator() {
     const t = setTimeout(() => setStoreLoadStuck(true), 15000);
     return () => clearTimeout(t);
   }, [storeData, view, ready]);
+  /* ---- what the arrival is waiting for ----
+     The jump's cruise holds until the screen it will land on is actually
+     standing. "Standing" includes the failure screens on purpose: a store that
+     answered with a mismatch or a failed load still has something honest to
+     land on, and holding the tunnel for data that is never coming would just be
+     a spinner with better art. The destination sign is the store's own name and
+     brand colour, from config. */
+  const [iconWave, setIconWave] = useState(0);
+  const iconCache = useRef({});
+  useEffect(() => {
+    if (!jumpHold) { tellArrivalReady(false, null); return; }
+    const atStore = view !== "admin" && view !== "combined";
+    const store = atStore ? (config?.stores || []).find((x) => x.id === view) : null;
+    /* The landing has to arrive COMPLETE: a store icon that pops in a beat
+       after the page defeats the whole point of holding the tunnel. The icon is
+       fetched during the cruise and the landing waits for it — bounded, so a
+       broken image can never hold the jump. */
+    let iconReady = true;
+    const src = store && store.icon;
+    if (src) {
+      const st = iconCache.current[src];
+      if (st !== "ok") {
+        iconReady = false;
+        if (!st) {
+          iconCache.current[src] = "pending";
+          const done = () => {
+            if (iconCache.current[src] === "ok") return;
+            iconCache.current[src] = "ok";
+            setIconWave((w) => w + 1);
+          };
+          const img = new Image();
+          img.onload = done; img.onerror = done;
+          img.src = src;
+          setTimeout(done, 1800);
+        }
+      }
+    }
+    const landable = !!session && !!config && iconReady
+      && (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);
+    tellArrivalReady(landable, store
+      ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
+      : null);
+  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave]);
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     /* A load takes two round trips now (the document, then the split day rows), so
@@ -2995,7 +3051,7 @@ export default function LeadPerformanceCalculator() {
   const signInLayer = config && (!session || jumpHold) ? (
     <div className="signin-over" key="signin">
       <Login config={config}
-        onJump={setJumpHold}
+        onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
           const undo = landDashboard();
           /* And the tidying, once the landing is over and a render is free. */
@@ -3003,6 +3059,7 @@ export default function LeadPerformanceCalculator() {
             undo();
             jumpOwnsEntrance = false;
             setJumpHold(false);
+            setHoldMount(false);   // belt and braces: the gate must never outlive the jump
             setIntroDone(true);
           }, ARRIVAL.assemble);
         }}
@@ -3028,7 +3085,7 @@ export default function LeadPerformanceCalculator() {
      cannot be seen. */
   /* Nothing but the ground while there is no session: the sign-in screen itself
      is the layer above, and it is already on screen. */
-  if (!session) return wrap(<Shell><Style /></Shell>);
+  if (!session || holdMount) return wrap(<Shell><Style /></Shell>);
 
   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
   if (!session.active) {
@@ -7362,13 +7419,15 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     }
     authed = true;
     document.documentElement.classList.remove("sage-flash-hold");
+    /* From here the only thing between the user and the page is the white, so
+       nothing on this path is allowed to throw its way out of the handover. */
     /* Load the profile NOW, not at the handover. The screen is held for the rest
        of the jump either way, so the fetch costs nothing here and everything
        there: gating the swap on a round trip that only starts at the handover put
        the dashboard on screen most of a second after the flash had been asked
        for, which is far too late for the flash to cover it. By the time the white
        is up the session is already in hand and the swap is a state flip. */
-    await onAuthed();
+    try { await onAuthed(); } catch (e) { console.error("profile load at handover", e); }
     handOver();
   };
 
@@ -7435,8 +7494,12 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
+        {/* Each mode's fields live in a keyed container so switching modes
+            remounts it and plays the entrance: the fields build up from below in
+            the same vocabulary as everything else here. The mark above never
+            moves — it belongs to all three. */}
         {mode === "signin" && (
-          <>
+          <div className="lf-mode" key="signin">
             <label className="lf-label">Work email</label>
             <input className="lf-in" ref={emailRef} value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               placeholder="you@company.com" autoComplete="username" />
@@ -7461,7 +7524,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
             </button>
             <button className="lf-alt" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
             {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
-          </>
+          </div>
         )}
 
         {/* ---- the other two modes speak the same vocabulary ----
@@ -7473,7 +7536,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
             secondary link — the only difference between the three modes is which
             fields are on screen. */}
         {mode === "signup" && (
-          <>
+          <div className="lf-mode" key="signup">
             <p className="lf-note">
               {canRegister
                 ? "Create your account. Your group admin grants store access after you register."
@@ -7496,11 +7559,11 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
               <span>{busy ? "Creating\u2026" : "Create account"}</span>
             </button>
             <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setPassword(""); setPassword2(""); }}>Back to sign in</button>
-          </>
+          </div>
         )}
 
         {mode === "forgot" && (
-          <>
+          <div className="lf-mode" key="forgot">
             <p className="lf-note">Enter your email and we will send a link to set a new password.</p>
             <label className="lf-label">Work email</label>
             <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
@@ -7511,7 +7574,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
               <span>{busy ? "Sending\u2026" : "Send reset link"}</span>
             </button>
             <button className="lf-alt" onClick={() => { setMode("signin"); setErr(""); setOk(""); }}>Back to sign in</button>
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -7622,6 +7685,32 @@ function rememberView(v) {
 }
 
 const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
+/* The new arrival's clock. cruiseMin is the shortest stay in the tunnel even on
+   an instant load, so the destination sign gets long enough on screen to be
+   read. cruiseCap is the honest ceiling: if the store has not answered by then,
+   the jump lands anyway — onto whatever screen the app has to show about it
+   (the stuck screen, the mismatch panel), because a tunnel that never ends is a
+   spinner with better art. */
+const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 15000, burst: 520 };
+
+/* ---- what the jump is waiting for, and where it is going ----
+   Told by the root, read by the engine each frame of the cruise. Module state
+   for the same reason lastJumpOrigin is: the engine lives outside React so the
+   handover cannot tear it down mid-flight. */
+let arrivalReady = false;
+let arrivalDest = null;   // { name, color } for the travel sign, or null
+/* The engine announces its beats so the root can schedule the expensive work
+   into the right one: the dashboard mounts during the CRUISE, which is the
+   loading zone, instead of during the ratchet, which is the most watched
+   moment of the whole animation. */
+const JUMP_PHASE = "sage-jump-phase";
+const tellPhase = (ph) => {
+  try { document.dispatchEvent(new CustomEvent(JUMP_PHASE, { detail: ph })); } catch (e) {}
+};
+function tellArrivalReady(ready, dest) {
+  arrivalReady = !!ready;
+  if (dest !== undefined) arrivalDest = dest;
+}
 /* ---- every time, not once a day ----
    The handoff asked for the first sign-in of the day, like the morning round-up,
    and Jorge changed it: it plays on every arrival now. So there is no stored key
@@ -7659,66 +7748,404 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    first". */
 const RUSH = 320;
 function runJump({ onFlash, onDone, lead = 0 }) {
+  /* ---- the arrival engine ----
+     One canvas owns every moving dot from the press to the flash: the mark's
+     ratchet, the whole wordmark pouring pixel by pixel into a compact S at the
+     centre of the screen, the field pulled in (with the half-screen of dots
+     beyond every edge dragged into view), the streaks that reach the frame's
+     edge before contracting off, the passing-star tunnel with the destination
+     store's sign, and the burst. One owner is the point: every earlier version
+     of this animation that split the dots between two systems — CSS here,
+     canvas there — eventually had the two disagree about where a dot was, and
+     that disagreement is what a flicker is.
+
+     The engine waits in the tunnel until the root says the dashboard under the
+     streaks is actually standing (tellArrivalReady), so the landing can never
+     beat the data. The cruise absorbs a slow load as scenery instead of a
+     broken beat. */
   const root = typeof document === "undefined" ? null : document.documentElement;
-  const beats = ["hold", "gather", "stretch", "flash"];
-  const clear = () => beats.forEach((b) => root && root.classList.remove("sage-beat-" + b));
   if (!root) { onFlash(); onDone(); return () => {}; }
   let reduce = false;
   try {
     reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   } catch (e) {}
   if (reduce) {
-    /* The order is kept and the movement goes: straight to the handover. */
+    /* The order is kept and the movement goes: straight to the handover. The
+       mount gate still needs its cue, or the app would sit unrendered under
+       the white until the hold cleared. */
+    tellPhase("cruise");
     const t = setTimeout(() => { onFlash(); onDone(); }, 180);
     return () => clearTimeout(t);
   }
-  const ts = [];
-  const beat = (b) => { clear(); root.classList.add("sage-beat-" + b); };
   jumpOwnsEntrance = true;
-  const at = (ms, fn) => ts.push(setTimeout(fn, lead + ms));
-  /* Nothing moves during the hurry. The mark is still drawing itself, and the
-     hold is what takes the form away, so it cannot start until the word is
-     whole. */
-  if (lead) at(0, () => beat("hold"));
-  else beat("hold");
-  let flashing = false;
-  at(ARRIVAL.hold, () => beat("gather"));
-  at(ARRIVAL.hold + ARRIVAL.gather, () => beat("stretch"));
-  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => {
-    flashing = true;
-    beat("flash");
-    onFlash();
-    /* ---- and the handover waits for the white to be ON THE SCREEN ----
-       The handoff puts the assemble 140ms into the flash, and a timer alone does
-       not deliver that. Mounting the dashboard is the most expensive thing this
-       app does, and it blocks the main thread — so a flash class set on one line
-       and a React swap started on the next never gets a frame to paint in. The
-       white did not appear at all until the mount was over, which put it a second
-       and a half late, on top of a dashboard that was already standing there.
-       Measured in the real app: flash beat at 2497ms, dashboard at 3345ms with
-       the flash still at zero, white peaking at 4058ms.
+  jumpLanded = false;
 
-       Two rAFs is the guarantee: the first is the frame the class lands in, the
-       second only runs after that frame has been painted. The white is up before
-       the swap begins, which is the whole reason it exists. */
+  const W = window.innerWidth, H = window.innerHeight;
+  const cx = W / 2, cy = H / 2;
+  /* Everything converges on the middle of the screen now — the reform carries
+     the mark there — so the middle is the origin every later piece (the spark,
+     the radial landing) measures from. */
+  lastJumpOrigin = { x: cx, y: cy };
+  root.style.setProperty("--jx", cx + "px");
+  root.style.setProperty("--jy", cy + "px");
+
+  /* ---- the mark, measured where it actually sits ---- */
+  const gWord = sageDots({ word: true });
+  let mk = [];
+  if (lastMarkEl) {
+    const mr = lastMarkEl.getBoundingClientRect();
+    const scale = Math.min(mr.width / gWord.w, mr.height / gWord.h) || 1;
+    const ox = mr.left + (mr.width - gWord.w * scale) / 2;
+    const oy = mr.top + (mr.height - gWord.h * scale) / 2;
+    const gS = sageDots({ word: false });
+    const seatScale = scale * 0.62;
+    const seats = gS.dots.map((d) => ({
+      x: cx + (d.x - gS.w / 2) * seatScale,
+      y: cy + (d.y - gS.h / 2) * seatScale,
+      r: d.r * seatScale,
+    })).sort((a, b) => a.x - b.x || a.y - b.y);
+    const home = gWord.dots.map((d) => ({ x: ox + d.x * scale, y: oy + d.y * scale, r: d.r * scale, fill: d.fill }))
+      .sort((a, b) => a.x - b.x || a.y - b.y);
+    const spanX = (home[home.length - 1].x - home[0].x) || 1;
+    /* Every dot of the word gets a seat in the compact S — many dots folding
+       into few seats is what "pixel by pixel" looks like. jit is each dot's own
+       moment to leave when the streaks go. */
+    mk = home.map((d, i) => {
+      const seat = seats[Math.round((i * (seats.length - 1)) / (home.length - 1))] || { x: cx, y: cy, r: d.r };
+      return { hx: d.x, hy: d.y, hr: d.r, fill: d.fill,
+        sx: seat.x, sy: seat.y, sr: seat.r,
+        delay: (d.x - home[0].x) / spanX, jit: Math.random() };
+    });
+  }
+
+  /* ---- the field: the page's own grid, continued past every edge ----
+     The in-view dots are generated by the same loop as the DOM field, in the
+     same order, so position, size and tint all agree at the moment the canvas
+     takes over — continuity by construction, not by tuning. The ring beyond the
+     edges is what the pull drags INTO view: the sky compressing into the
+     window, so the launch has far more to throw than the screen held. */
+  const field = [];
+  {
+    let i = 0;
+    for (let y = GROUND_PITCH / 2; y < H; y += GROUND_PITCH)
+      for (let x = GROUND_PITCH / 2; x < W; x += GROUND_PITCH) {
+        const bright = i % 3 === 0;
+        field.push({ x, y, size: bright ? 4.4 : 2.6, tint: GROUND_TINTS[i % GROUND_TINTS.length], jit: Math.random() });
+        i++;
+      }
+    const padX = W * 0.5, padY = H * 0.5;
+    for (let y = GROUND_PITCH / 2 - padY; y < H + padY; y += GROUND_PITCH)
+      for (let x = GROUND_PITCH / 2 - padX; x < W + padX; x += GROUND_PITCH) {
+        if (x > 0 && x < W && y > 0 && y < H) continue; // in-view dots already placed
+        const bright = i % 3 === 0;
+        field.push({ x, y, size: bright ? 4.4 : 2.6, tint: GROUND_TINTS[i % GROUND_TINTS.length], jit: Math.random() });
+        i++;
+      }
+  }
+
+  /* ---- the tunnel: born at the centre, reborn at the centre ----
+     Seeded mid-life so the sky is in steady state from its first frame:
+     identical speeds and simultaneous births are what waves are made of. */
+  const maxR = Math.hypot(W, H) / 2 + 160;
+  const tunnel = [];
+  {
+    const n = Math.round((W * H) / 7800);
+    for (let i = 0; i < n; i++) {
+      const waiting = Math.random() < 0.18;
+      const r = waiting ? 2 : Math.pow(Math.random(), 1.7) * maxR;
+      tunnel.push({
+        ang: Math.random() * Math.PI * 2, r,
+        t: Math.max(0, r - (200 + Math.random() * 160)),
+        wait: waiting ? Math.random() * 0.9 : 0,
+        v: 0.55 + Math.random() * 0.9,
+        size: 1.4 + Math.random() * 2.2,
+        tint: GROUND_TINTS[Math.floor(Math.random() * GROUND_TINTS.length)],
+      });
+    }
+  }
+
+  /* The canvas lives on the document, not in React: the handover tears the
+     sign-in tree down and the engine must not go with it. */
+  const cv = document.createElement("canvas");
+  cv.className = "sage-jump-canvas";
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  document.body.appendChild(cv);
+  const ctx = cv.getContext("2d");
+  ctx.scale(dpr, dpr);
+  root.classList.add("sage-cv");
+
+  const card = document.querySelector(".login-card");
+  const blobs = Array.from(document.querySelectorAll(".sg-blob")).map((el) => {
+    const r = el.getBoundingClientRect();
+    const bx = r.left + r.width / 2, by = r.top + r.height / 2;
+    const dx = bx - cx, dy = by - cy, dist = Math.hypot(dx, dy) || 1;
+    return { el, ux: dx / dist, uy: dy / dist };
+  });
+  const restoreDom = () => {
+    if (card) { card.style.opacity = ""; card.style.transform = ""; }
+    for (const b of blobs) { b.el.style.transform = ""; b.el.style.opacity = ""; }
+  };
+
+  const bodyFont = (() => {
+    try { return getComputedStyle(document.body).fontFamily || "sans-serif"; }
+    catch (e) { return "sans-serif"; }
+  })();
+
+  const pow = (p, k) => Math.pow(Math.min(1, Math.max(0, p)), k);
+  const ease = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
+  const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+  const FP = 0.5;   // how far the pull draws the field toward the centre
+
+  let phase = "ratchet", t0 = performance.now() + lead, lastNow = t0;
+  let cruiseT0 = 0, burstT0 = 0, raf = 0, flashing = false, stopped = false;
+
+  const drawTunnel = (dt, S) => {
+    for (const q of tunnel) {
+      if (q.wait > 0) { q.wait -= dt * Math.max(1, S * 0.6); continue; }
+      if (q.r <= maxR) {
+        q.r += (40 + q.r * 2.1) * S * q.v * dt;
+        /* extend from the centre until the line has its body, then the tail
+           lets go and the whole streak flies to the edge as one piece */
+        q.t = Math.max(0, q.r - (200 + q.size * 55));
+      } else {
+        q.t += (30 + q.t * 1.9) * S * q.v * dt * 1.7;
+        if (q.t > maxR) {
+          q.ang = Math.random() * Math.PI * 2; q.r = 2; q.t = 0;
+          q.wait = Math.random() * 1.1; q.v = 0.55 + Math.random() * 0.9;
+          continue;
+        }
+      }
+      const ux = Math.cos(q.ang), uy = Math.sin(q.ang);
+      const head = Math.min(q.r, maxR);
+      ctx.globalAlpha = Math.min(0.85, q.r / 70);
+      ctx.strokeStyle = q.tint; ctx.lineWidth = q.size; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(cx + ux * q.t, cy + uy * q.t);
+      ctx.lineTo(cx + ux * head, cy + uy * head);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  /* The destination as a travel sign: the store's own colour, drawing slowly
+     nearer through the cruise, swept past in the burst. */
+  const drawSign = (now, mode) => {
+    const dest = arrivalDest;
+    if (!dest || !dest.name) return;
+    let scale = 1, alpha = 1;
+    if (mode === "cruise") {
+      alpha = Math.min(1, (now - cruiseT0) / 400);
+      scale = 0.82 + 0.18 * ease(Math.min(1, (now - cruiseT0) / 1600)) + 0.012 * Math.sin(now / 420);
+    } else {
+      const p = pow((now - burstT0) / (JUMP_T.burst * 0.7), 1.6);
+      scale = 1 + p * 1.9; alpha = Math.max(0, 1 - p);
+    }
+    if (alpha <= 0) return;
+    const color = dest.color || "#2F7F72";
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.globalAlpha = alpha;
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 190);
+    g.addColorStop(0, color + "3A"); g.addColorStop(1, color + "00");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 190, 0, 7); ctx.fill();
+    ctx.font = "600 24px " + bodyFont;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const tw = ctx.measureText(dest.name).width, padX = 26, h = 52, w = tw + padX * 2;
+    ctx.shadowColor = color + "66"; ctx.shadowBlur = 26;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-w / 2, -h / 2, w, h, h / 2);
+    else ctx.rect(-w / 2, -h / 2, w, h);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(dest.name, 0, 1);
+    ctx.restore(); ctx.globalAlpha = 1;
+  };
+
+  const drawFieldDots = (pull) => {
+    for (const d of field) {
+      const x = cx + (d.x - cx) * (1 - pull), y = cy + (d.y - cy) * (1 - pull);
+      ctx.globalAlpha = Math.min(1, 0.26 + pull * 0.8);
+      ctx.fillStyle = d.tint;
+      ctx.beginPath(); ctx.arc(x, y, d.size / 2, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  const toFlash = () => {
+    flashing = true;
+    restoreDom();
+    root.classList.add("sage-beat-flash");
+    root.classList.remove("sage-cv");
+    if (cv.parentNode) cv.parentNode.removeChild(cv);
+    onFlash();
+    /* Two rAFs: the first is the frame the class lands in, the second only runs
+       after that frame has painted. The white is up before the swap begins. */
     let frames = 0;
     const painted = () => {
+      if (stopped) return;
       if (++frames < 2) { requestAnimationFrame(painted); return; }
-      /* Straight on once the white is painted. It used to wait another 90ms for
-         the handoff's 140, but the white is held now rather than timed, so every
-         millisecond spent here is a millisecond of stopped streaks under it. */
-      ts.push(setTimeout(() => onDone(), 20));
+      setTimeout(() => { if (!stopped) onDone(); }, 20);
     };
     requestAnimationFrame(painted);
-  });
-  /* Once the flash is up, this cleanup does nothing. It runs on the sign-in
-     screen's unmount, which IS the handover, and clearing the beat classes there
-     stripped the flash off the frame it was drawn for — the swap went uncovered
-     and the white fired late, over the assembly. The flash belongs to the far
-     side now; SageArrival clears it. */
+  };
+
+  const frame = (now) => {
+    if (stopped || flashing) return;
+    /* When the main thread is taken for a while (the dashboard mounting is the
+       big one), a time-based animation SKIPS to where it would have been, and a
+       skip in the middle of the reform reads as a stutter. Hold the clocks
+       instead: shift every reference point forward by the lost time, so the
+       animation resumes from the frame it was on. A brief hold, not a jump. */
+    const lost = now - lastNow;
+    if (lost > 120) {
+      const shift = lost - 16;
+      t0 += shift; if (cruiseT0) cruiseT0 += shift; if (burstT0) burstT0 += shift;
+    }
+    const dt = Math.min(0.05, (now - lastNow) / 1000);
+    lastNow = now;
+    const t = now - t0;
+    if (t < 0) { raf = requestAnimationFrame(frame); return; }  // the hurry's lead
+    ctx.clearRect(0, 0, W, H);
+
+    /* ---- field + tunnel ---- */
+    if (phase === "ratchet") drawFieldDots(0);
+    else if (phase === "reform") drawFieldDots(ease(t / JUMP_T.reform) * FP);
+    else if (phase === "streaks") {
+      const p = t / JUMP_T.streaks;
+      const mR = Math.hypot(W, H) / 2 + 120;
+      for (const d of field) {
+        /* each dot on its own clock, so departures scatter and so do endings */
+        const pd = Math.min(1, Math.max(0, (p - d.jit * 0.34) / 0.66));
+        const dx = d.x - cx, dy = d.y - cy, dist = Math.hypot(dx, dy) || 1;
+        const ux = dx / dist, uy = dy / dist;
+        const r0 = dist * (1 - FP);
+        if (pd <= 0) {
+          ctx.fillStyle = d.tint; ctx.globalAlpha = 1;
+          ctx.beginPath(); ctx.arc(cx + ux * r0, cy + uy * r0, d.size / 2, 0, 7); ctx.fill();
+          continue;
+        }
+        /* the far end reaches the edge FIRST — a full line drawn to the
+           horizon — and only then does the near end lift off and chase it */
+        const pFar = pow(Math.min(1, pd / 0.62), 1.7);
+        const pNear = pow(Math.max(0, (pd - 0.38) / 0.62), 2.0);
+        const rNear = r0 + pNear * (mR - r0), rFar = r0 + 2 + pFar * (mR - r0);
+        if (rNear >= rFar) continue;
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = d.tint; ctx.lineWidth = d.size; ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(cx + ux * rNear, cy + uy * rNear);
+        ctx.lineTo(cx + ux * rFar, cy + uy * rFar);
+        ctx.stroke();
+      }
+      if (p > 0.5) drawTunnel(dt, 0.6 * ((p - 0.5) / 0.5));
+    } else if (phase === "cruise") {
+      drawTunnel(dt, 1);
+      drawSign(now, "cruise");
+    } else if (phase === "burst") {
+      drawTunnel(dt, 1 + pow(t / JUMP_T.burst, 1.6) * 7);
+      drawSign(now, "burst");
+    }
+
+    /* ---- the mark ---- */
+    if (phase === "ratchet" && mk.length) {
+      /* a click runs through the whole word, left to right */
+      const p = t / JUMP_T.ratchet;
+      for (const d of mk) {
+        const w = p * 1.35 - d.delay * 0.35;
+        const k = Math.max(0, Math.sin(Math.min(1, Math.max(0, w)) * Math.PI));
+        ctx.fillStyle = d.fill;
+        ctx.beginPath(); ctx.arc(d.hx + k * 2.5, d.hy, d.hr * (1 + k * 0.5), 0, 7); ctx.fill();
+      }
+    } else if (phase === "reform" && mk.length) {
+      /* pixel by pixel: every dot leaves its place in the word and takes its
+         seat in the compact S at centre, sagging downward on the way */
+      const p = t / JUMP_T.reform;
+      for (const d of mk) {
+        const lp = easeInOut(Math.min(1, Math.max(0, (p - d.delay * 0.3) / 0.7)));
+        const mx = (d.hx + d.sx) / 2, my = Math.max(d.hy, d.sy) + 90;
+        const ix = (1 - lp) * (1 - lp) * d.hx + 2 * (1 - lp) * lp * mx + lp * lp * d.sx;
+        const iy = (1 - lp) * (1 - lp) * d.hy + 2 * (1 - lp) * lp * my + lp * lp * d.sy;
+        ctx.fillStyle = d.fill;
+        ctx.beginPath(); ctx.arc(ix, iy, d.hr + (d.sr - d.hr) * lp, 0, 7); ctx.fill();
+      }
+    } else if (phase === "streaks" && mk.length) {
+      /* the assembled S goes to light the same way — dot by dot, each holding
+         its seat until its own moment */
+      const p = t / JUMP_T.streaks;
+      const mR = Math.hypot(W, H) / 2 + 120;
+      for (const d of mk) {
+        const pd = Math.min(1, Math.max(0, (p - d.jit * 0.32) / 0.68));
+        const dx = d.sx - cx, dy = d.sy - cy, dist = Math.hypot(dx, dy) || 1;
+        const ux = dx / dist, uy = dy / dist;
+        if (pd <= 0) {
+          ctx.fillStyle = d.fill;
+          ctx.beginPath(); ctx.arc(d.sx, d.sy, d.sr, 0, 7); ctx.fill();
+          continue;
+        }
+        const pFar = pow(Math.min(1, pd / 0.55), 1.6);
+        const pNear = pow(Math.max(0, (pd - 0.3) / 0.7), 2.0);
+        const rNear = dist + pNear * (mR - dist), rFar = dist + 2 + pFar * (mR - dist);
+        if (rNear >= rFar) continue;
+        ctx.strokeStyle = d.fill; ctx.lineWidth = d.sr * 2; ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(cx + ux * rNear, cy + uy * rNear);
+        ctx.lineTo(cx + ux * rFar, cy + uy * rFar);
+        ctx.stroke();
+      }
+    }
+
+    /* ---- the form recedes and the clouds are pulled with it ---- */
+    if (phase === "reform") {
+      const k = ease(t / JUMP_T.reform);
+      if (card) {
+        card.style.opacity = String(Math.max(0, 1 - k * 1.15));
+        card.style.transform = "scale(" + (1 - k * 0.08) + ")";
+      }
+      for (const b of blobs) {
+        b.el.style.transform = "translate(" + (-b.ux * k * 150) + "px," + (-b.uy * k * 150) + "px) scale(" + (1 - k * 0.1) + ")";
+        b.el.style.opacity = String(1 - k * 0.3);
+      }
+    } else if (phase === "streaks") {
+      /* blown out past the frame: flying through cloud on the way out */
+      const k = pow(t / JUMP_T.streaks, 1.8);
+      const out = k * Math.max(W, H) * 0.75;
+      for (const b of blobs) {
+        b.el.style.transform = "translate(" + (b.ux * (out - 150 * (1 - k))) + "px," + (b.uy * (out - 150 * (1 - k))) + "px) scale(" + (0.9 + k * 0.5) + ")";
+        b.el.style.opacity = String(Math.max(0, 0.7 - k * 1.1));
+      }
+      if (card && t < 40) card.style.opacity = "0";
+    }
+
+    /* ---- phase transitions ---- */
+    if (phase === "ratchet" && t >= JUMP_T.ratchet) { phase = "reform"; t0 = now; tellPhase("reform"); }
+    else if (phase === "reform" && t >= JUMP_T.reform) { phase = "streaks"; t0 = now; tellPhase("streaks"); }
+    else if (phase === "streaks" && t >= JUMP_T.streaks) { phase = "cruise"; t0 = now; cruiseT0 = now; tellPhase("cruise"); }
+    else if (phase === "cruise") {
+      const tc = now - cruiseT0;
+      if ((arrivalReady && tc >= JUMP_T.cruiseMin) || tc >= JUMP_T.cruiseCap) {
+        phase = "burst"; t0 = now; burstT0 = now;
+      }
+    } else if (phase === "burst" && t >= JUMP_T.burst) { toFlash(); return; }
+
+    raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
+
+  /* The cleanup runs on the sign-in screen's unmount, which IS the handover.
+     Once the flash is up the engine has already put everything back itself;
+     before it (a failed sign-in) this is the abort, and the screen returns to
+     rest exactly as it was. */
   return () => {
-    ts.forEach(clearTimeout);
-    if (!flashing) { jumpOwnsEntrance = false; clear(); }
+    if (flashing) return;
+    stopped = true;
+    cancelAnimationFrame(raf);
+    restoreDom();
+    root.classList.remove("sage-cv", "sage-beat-flash");
+    if (cv.parentNode) cv.parentNode.removeChild(cv);
+    jumpOwnsEntrance = false;
+    tellPhase("off");   // release the mount gate: this jump is not landing
   };
 }
 
@@ -7731,6 +8158,15 @@ function runJump({ onFlash, onDone, lead = 0 }) {
    it in CSS is a losing game (.lpc.is-entering .hero is three classes), so the
    app's entrance simply does not start when the arrival owns the screen. */
 let jumpOwnsEntrance = false;
+/* True from the moment landDashboard reveals the app until the hold is released.
+   The root's layout effect hides the app whenever the sign-in screen is up, and
+   it re-runs when the session object changes identity — which, on real auth,
+   happens more than once: SIGNED_IN fires again after the first profile load.
+   Without this latch a re-run inside the landing window put jump-under BACK on
+   a revealed app: the impact played out hidden, the flash faded over a bare
+   ground, and the dashboard popped in plain a second and a half later. A white
+   screen, made of two pieces of code both doing their job. */
+let jumpLanded = false;
 
 /* Set by the sign-in button and read where the session lands. A page RELOAD
    restores a session without anyone pressing anything, and there is no sign-in
@@ -7822,8 +8258,10 @@ const JUMP_ORIGIN = "sage-jump-origin";
    signed-out tree, and a ground that came back not knowing where the mark was
    would land its streaks on different lines from the ones they left on. */
 let lastJumpOrigin = null;
+let lastMarkEl = null;
 function tellJumpOrigin(el) {
   if (typeof document === "undefined" || !el) return;
+  lastMarkEl = el;
   const r = el.getBoundingClientRect();
   lastJumpOrigin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   /* Published on the document as well as broadcast, because the spark that marks
@@ -7867,6 +8305,7 @@ const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card
    costs nothing anyone can see. */
 function landDashboard() {
   if (typeof document === "undefined") return () => {};
+  jumpLanded = true;
   const root = document.documentElement;
   /* One style change: the app comes out of hiding, the sign-in layer goes, and the
      landing rules come on together. */
@@ -15257,8 +15696,26 @@ function RoundUp({ config, store, data, M }) {
     [config, store, data, M, digests]);
   const seenKey = `lpc:roundup:${store.id}:${today()}`;
   const [full, setFull] = useState(() => {
-    try { return !localStorage.getItem(seenKey); } catch { return false; }
+    /* Not while the arrival owns the screen. The dashboard is mounted under the
+       streaks now, so this component exists mid-jump, and a modal rising over
+       the tunnel is a hand in front of the projector. */
+    try { return !localStorage.getItem(seenKey) && !jumpOwnsEntrance; } catch { return false; }
   });
+  /* If the round-up was due but the jump was flying, it waits at the door and
+     knocks a breath after the landing has settled. */
+  useEffect(() => {
+    let due = false;
+    try { due = !localStorage.getItem(seenKey); } catch (e) {}
+    if (!due || !jumpOwnsEntrance) return undefined;
+    let t = null;
+    const iv = setInterval(() => {
+      if (!jumpOwnsEntrance) {
+        clearInterval(iv);
+        t = setTimeout(() => setFull(true), 700);
+      }
+    }, 250);
+    return () => { clearInterval(iv); if (t) clearTimeout(t); };
+  }, []); // eslint-disable-line
   useRoundUpOpener(useCallback(() => setFull(true), []));
   const close = () => {
     try { localStorage.setItem(seenKey, "1"); } catch { /* private mode: it shows again, which is survivable */ }
@@ -25864,6 +26321,13 @@ const SAGE_CSS = `
          At the root, above both screens: the handover it covers IS the moment one
          replaces the other, so mounted inside either it would be destroyed by the
          swap it exists to hide. */
+      /* ---- the arrival engine's canvas ----
+         Above the sign-in layer (200), under the flash (9500). While it is up,
+         the DOM copies of what it draws — the dot field and the mark — are
+         hidden, so no dot ever exists twice. The form and the blobs stay DOM:
+         the engine moves them directly. */
+      .sage-jump-canvas { position:fixed; inset:0; z-index:300; pointer-events:none; }
+      .sage-cv .sg-field, .sage-cv .login-logo svg { visibility:hidden; }
       .sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
         pointer-events:none; z-index:9500; }
       /* ---- the white lasts as long as what it is covering ----
@@ -26039,15 +26503,33 @@ const SAGE_CSS = `
          where it belongs and is pulled back, which is what makes it read as
          having been thrown out of the point rather than eased into place. The
          curve it replaced had no overshoot at all. */
+      /* Born as a point at the centre, visible almost at once, so the whole
+         journey out is watched rather than inferred; a 10% overshoot past home
+         and a settle back is the impact. Staggered by distance (--rd), so the
+         middle strikes first and the hit propagates outward. */
       .sage-assemble .sa-radial {
         opacity:0;
-        animation: saRadial 1s cubic-bezier(.34,1.6,.64,1) both;
+        animation: saRadial .68s cubic-bezier(.16,0,.3,1) both;
         animation-delay: var(--rd, 0ms); }
       @keyframes saRadial {
-        0%   { opacity:0; transform: translate3d(var(--rx,0), var(--ry,0), 0) scale(.04); }
-        14%  { opacity:1; }
+        0%   { opacity:0; transform: translate3d(calc(var(--rx,0px) * .94), calc(var(--ry,0px) * .94), 0) scale(.10); }
+        12%  { opacity:1; transform: translate3d(calc(var(--rx,0px) * .83), calc(var(--ry,0px) * .83), 0) scale(.20);
+               animation-timing-function: cubic-bezier(.2,.7,.3,1); }
+        66%  { opacity:1; transform: translate3d(calc(var(--rx,0px) * -.10), calc(var(--ry,0px) * -.10), 0) scale(1.06);
+               animation-timing-function: cubic-bezier(.3,0,.4,1); }
         100% { opacity:1; transform: none; }
       }
+      /* The whole page takes the hit: one breath out from the centre. */
+      .sage-assemble .lpc { animation: saBreath .34s cubic-bezier(.2,.6,.3,1) .12s both;
+        transform-origin: var(--jx, 50%) var(--jy, 46%); }
+      @keyframes saBreath { from { transform: scale(1.022); } to { transform: none; } }
+      /* And the clouds settle back down around the landing — the blob layer
+         drifts in from above, slower than the furniture, the way cloud comes
+         down around something arriving. One layer, not four blobs, because each
+         blob carries its own infinite drift at its own duration and an
+         animation shorthand here would flatten all four to one clock. */
+      .sage-assemble .sg-blobs { animation: saClouds 1.15s cubic-bezier(.2,.6,.25,1) .18s backwards; }
+      @keyframes saClouds { from { transform: translateY(-90px); opacity:0; } to { transform: none; opacity:1; } }
       .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .5s both; }
 
       /* ---- the little light they come out of ----
@@ -26210,6 +26692,19 @@ const SAGE_CSS = `
       .lf-dots i { width:5px; height:5px; border-radius:50%; background:rgba(241,242,238,.3);
         transition: background .3s var(--ease); }
       .lf-dots i.on { background:#F1F2EE; }
+      /* ---- switching between sign in, create account and forgot ----
+         The container remounts on each switch, so the fields build up from
+         below — small, fast, the same physics as the arrival in miniature. Each
+         direct child is staggered a beat behind the one above it. */
+      .lf-mode > * { animation: lfModeIn .3s var(--ease, cubic-bezier(.2,.7,.3,1)) both; }
+      .lf-mode > *:nth-child(2) { animation-delay:.03s; } .lf-mode > *:nth-child(3) { animation-delay:.06s; }
+      .lf-mode > *:nth-child(4) { animation-delay:.09s; } .lf-mode > *:nth-child(5) { animation-delay:.12s; }
+      .lf-mode > *:nth-child(6) { animation-delay:.15s; } .lf-mode > *:nth-child(7) { animation-delay:.18s; }
+      .lf-mode > *:nth-child(n+8) { animation-delay:.21s; }
+      @keyframes lfModeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+      /* The press is physical: the pill gives under the finger, and the ratchet
+         through the mark reads as what the press set in motion. */
+      .lf-go:active:not(:disabled) { transform:scale(.985); box-shadow:0 4px 12px rgba(46,58,50,.16); }
       .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
         font:inherit; font-size:13px; color:#6E6E76; }
       .lf-alt:hover { color:#2E3A32; }
