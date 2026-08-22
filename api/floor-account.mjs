@@ -27,34 +27,11 @@
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
  */
 import { createClient } from "@supabase/supabase-js";
+import { supabaseUrl, anonKey, envGap } from "./_env.mjs";
 
 /* Same guard as /api/link-person, and for the same reason: without it anything
    that throws comes back as the platform's bare 500 with no JSON in it, and the
    browser has nothing to print but the number. See the note there. */
-/* ---- the anon key, and why it is looked for under two names ----
-   This endpoint verifies the caller's JWT with an anon-key client. The browser's
-   copy of that key is called VITE_SUPABASE_ANON_KEY, because Vite only inlines
-   variables with that prefix — but nothing needs the prefix at RUNTIME, and a
-   serverless function reads whatever is set on the project either way.
-
-   So a deployment can very easily have VITE_SUPABASE_ANON_KEY and not
-   SUPABASE_ANON_KEY, and then createClient(url, undefined) throws
-   "supabaseKey is required" before a single line of this file runs. That is a
-   bare 500 with no JSON in it, which is precisely the failure that could not be
-   diagnosed. Note which endpoints need it: ingest and queue-changed do not, which
-   is why they have always worked while these have not.
-
-   Both names are accepted, and if neither is set it says so instead of throwing. */
-function anonKey() {
-  return process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
-}
-function missingEnv() {
-  if (!process.env.SUPABASE_URL) return "SUPABASE_URL is not set on the server";
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return "SUPABASE_SERVICE_ROLE_KEY is not set on the server";
-  if (!anonKey()) return "SUPABASE_ANON_KEY is not set on the server (VITE_SUPABASE_ANON_KEY works too)";
-  return null;
-}
-
 function fail(res, code, error, err) {
   const detail = err && (err.message || err.details || err.hint || String(err));
   if (err) console.error("floor-account:", error, err);
@@ -70,8 +47,8 @@ export default async function handler(req, res) {
 }
 
 async function run(req, res) {
-  const envGap = missingEnv();
-  if (envGap) return fail(res, 500, envGap);
+  const gap = envGap({ anon: true });
+  if (gap) return fail(res, 500, gap);
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
   const auth = String(req.headers.authorization || "");
@@ -85,13 +62,13 @@ async function run(req, res) {
     return res.status(400).json({ error: "action must be deactivate or activate" });
   }
 
-  const asUser = createClient(process.env.SUPABASE_URL, anonKey(), {
+  const asUser = createClient(supabaseUrl(), anonKey(), {
     auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
   });
   const { data: who, error: whoErr } = await asUser.auth.getUser();
   if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid" });
 
-  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+  const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
   const { data: me } = await db.from("profiles").select("role, stores").eq("id", who.user.id).maybeSingle();

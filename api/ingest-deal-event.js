@@ -13,6 +13,7 @@
  *   INGEST_SHARED_SECRET        (must match the worker's secret)
  */
 import { createClient } from "@supabase/supabase-js";
+import { supabaseUrl } from "./_env.mjs";
 
 /* ---- tiny MIME reader (no dependencies) ---- */
 function decodeMimeWords(s) {
@@ -148,7 +149,7 @@ export default async function handler(req, res) {
     const row = parseDealEvent({ subject, text, receivedAt: input.receivedAt });
     if (!row.event && !row.alert) return res.status(422).json({ error: "nothing parseable in email" });
 
-    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    const supabase = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false },
     });
     const { error } = await supabase.from("deal_events").insert(row);
