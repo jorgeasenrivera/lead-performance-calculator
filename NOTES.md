@@ -147,6 +147,29 @@ with it.
   with its inner blocks at 60/120/180/240ms. **Saving**: one dot pulsing, replacing a pulsing
   word.
 
+**Coming out of lightspeed, not stopping at it.** Three rounds of Jorge's feedback shaped
+the end of the arrival, and each was the same note from a different angle. First: the elements
+rose from below, which is this app's ordinary page mount and therefore reads as a page loading
+*after* an animation rather than as the end of one. They scale up out of the middle now, and
+the page itself resolves from beyond the frame, blurred and oversized, decelerating into place.
+Second: it flickered at the very end. The ground was mounted *inside* the arrival overlay, so
+it was destroyed at the same instant the dashboard needed it — it lives at the root now, mounted
+once, and the arrival publishes its beat as a class on the document element so the ground can
+follow along without being owned by it. Third: the peak felt "empty and segmented". The field
+used to fade to nothing halfway through the stretch, which meant the one moment that should be
+full of travelling light was seventy-odd streaks on a bare page. The field and the blobs now
+fly *with* the mark — stretched, still bright — and decelerate back to rest over the same window
+the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
+a start. One streak in three is bright rather than one in eight.
+
+**Waiting screens are held, not flashed.** A loading screen that appears for 80ms and vanishes
+is a flicker, not information: the eye catches a flash of something it cannot read, which is
+worse than a beat of nothing. `useHeld` applies two rules that are opposites on purpose — do
+not show it at all until the wait has lasted long enough to be a wait (170ms), and once shown
+keep it long enough to be read (480ms). The three call sites render *while waiting or while
+held*, so the hold survives the condition clearing. A fast load shows nothing; a slow one shows
+a steady screen; nothing in between flickers.
+
 **One deliberate deviation.** The handoff gives tool hues and calls them "the existing pill
 colours"; they are close to, but not the same as, the values in this file (`#0E9F6E` against
 `#10B981`, `#2563EB` against `#5566F0`, `#7C3AED` against `#8B5CF6`). The pill the finger just

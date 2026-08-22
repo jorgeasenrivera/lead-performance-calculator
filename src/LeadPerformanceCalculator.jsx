@@ -2827,6 +2827,11 @@ export default function LeadPerformanceCalculator() {
         : assoc.name,
     });
   };
+  /* Waiting screens are held, not flashed: nothing shows for a load that finishes
+     quickly, and once one does show it stays long enough to read. See useHeld. */
+  const bootHeld = useHeld(!config || !authReady);
+  const storeHeld = useHeld(!storeData);
+
   // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
   const queueParams = (() => {
     try {
@@ -2871,7 +2876,7 @@ export default function LeadPerformanceCalculator() {
     return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} /><Style /></Shell>;
   }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
-  if (!config || !authReady) return <Shell><LoadingScreen /><Style /></Shell>;
+  if (!config || !authReady || bootHeld) return <Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>;
 
   const signOut = async () => {
     await authSignOut();
@@ -3189,8 +3194,8 @@ export default function LeadPerformanceCalculator() {
         </>
       ) : accessibleStores.length === 0 ? (
         <NoAccessPanel session={session} config={config} onRecheck={refreshProfile} />
-      ) : !storeData ? (
-        <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} />
+      ) : (!storeData || storeHeld) ? (
+        storeHeld ? <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} /> : null
       ) : isOverseer ? (
         <>
           <nav className="seg-wrap no-print">
@@ -7089,7 +7094,6 @@ function Login({ config, onBack, onAuthed, onArrival }) {
 
   return (
     <div className="login">
-      <SageGround />
       <div className={"login-card " + (busy ? "login-busy" : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         <div className="login-logo">
@@ -7274,6 +7278,14 @@ function SageArrival({ onComplete }) {
   const done = useRef(onComplete);
   done.current = onComplete;
 
+  /* The ground is at the root now, above this component in the tree, so the beat
+     travels to it the same way the assemble beat travels to the dashboard. */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("sage-beat-" + beat);
+    return () => root.classList.remove("sage-beat-" + beat);
+  }, [beat]);
+
   useEffect(() => {
     const reduce = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -7317,7 +7329,6 @@ function SageArrival({ onComplete }) {
 
   return (
     <div className={"sage-arrival beat-" + beat} aria-hidden="true">
-      <SageGround beat={beat} />
       <div className="sa-mark">
         <svg viewBox={`0 0 ${art.w} ${art.h}`} width="360">
           {streaks.map((d, i) => (
@@ -7371,7 +7382,13 @@ function buildField(w, h) {
   let i = 0;
   for (let y = GROUND_PITCH / 2; y < h; y += GROUND_PITCH) {
     for (let x = GROUND_PITCH / 2; x < w; x += GROUND_PITCH) {
-      const bright = i % 8 === 3;          // about an eighth of them
+      /* A third of them, not an eighth. The handoff's eighth is the number that
+         keeps the cost down, and it left the frame nearly empty at the peak of
+         the jump — the mark's 73 streaks against a field that had already faded
+         out. A third still costs nothing to animate (they are transforms with no
+         promoted layers) and it is the difference between flying through
+         something and flying through nothing. */
+      const bright = i % 3 === 0;
       const dx = x - cx, dy = y - cy;
       dots.push({
         x, y, bright,
@@ -18519,6 +18536,33 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
   );
 }
 
+/* ---- a wait worth showing, shown properly ----
+   A loading screen that appears for 80ms and vanishes is a flicker, not
+   information: the eye catches a flash of something and cannot read it, which is
+   worse than a beat of nothing. Two rules, and they are opposites on purpose:
+
+     do not show it at all until the wait has lasted long enough to be a wait
+     once shown, keep it long enough to be read
+
+   So a fast load shows nothing and a slow one shows a steady screen. Nothing in
+   between flickers. */
+function useHeld(active, { delay = 170, hold = 480 } = {}) {
+  const [on, setOn] = useState(false);
+  const shownAt = useRef(0);
+  useEffect(() => {
+    let t = null;
+    if (active) {
+      if (on) return undefined;
+      t = setTimeout(() => { shownAt.current = Date.now(); setOn(true); }, delay);
+    } else if (on) {
+      const left = Math.max(0, hold - (Date.now() - shownAt.current));
+      t = setTimeout(() => setOn(false), left);
+    }
+    return () => clearTimeout(t);
+  }, [active, on, delay, hold]);
+  return on;
+}
+
 /* ---------------- Loading screen ---------------- */
 /* Shown when someone is signed in and approved but no store resolves for them.
    "No access" has several very different causes, and the old message assumed only one.
@@ -21598,6 +21642,7 @@ function AccessPanel({ config, session, onChange }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [domain, setDomain] = useState("");
+  const peopleHeld = useHeld(!people);
 
   const reload = useCallback(async () => {
     setPeople(await listProfiles());
@@ -21670,7 +21715,7 @@ function AccessPanel({ config, session, onChange }) {
   if (!AUTH_ENABLED) {
     return <div className="empty">Accounts are managed on the hosted site, where real sign-in is available. This preview has no account system.</div>;
   }
-  if (!people) return <LoadingScreen label="Loading accounts" />;
+  if (!people || peopleHeld) return peopleHeld ? <LoadingScreen label="Loading accounts" /> : null;
 
   const pending = people.filter((u) => u.pending && u.role !== "admin");
   const active = people.filter((u) => !u.pending || u.role === "admin");
@@ -22177,6 +22222,15 @@ function LogoCropper({ src, onCancel, onSave }) {
 function Shell({ children, entering, style }) {
   return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
+      {/* ---- the ground, mounted once and never again ----
+          It used to live inside the sign-in screen and inside the arrival, which
+          meant it was destroyed with each of them: the arrival's overlay faded
+          and took the blobs and the dot field with it, so the last frame of the
+          jump handed over to a different backdrop. That is the flicker at the
+          end. One instance at the root, behind everything, for the whole life of
+          the app — which is what the handoff meant by the same layer continuing
+          through the join rather than being swapped at it. */}
+      <SageGround />
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
@@ -24656,26 +24710,67 @@ function Style() {
          animation rather than restarting it. */
       .beat-flash .sa-flash, .beat-assemble .sa-flash { animation: saFlash .42s ease-out both; }
       @keyframes saFlash { 0% { opacity:0; } 26% { opacity:1; } 100% { opacity:0; } }
-      /* Held until the flash has peaked, so the overlay clears behind the white
-         rather than taking it with it. */
-      .beat-assemble { background:transparent; transition: opacity .3s ease .28s; opacity:0; pointer-events:none; }
+      /* Held until the flash has peaked, and then cleared slowly enough to be
+         part of the landing rather than a cut in the middle of it. The ground it
+         used to carry is at the root now, so nothing disappears with it. */
+      .beat-assemble { background:transparent; transition: opacity .55s ease .28s; opacity:0; pointer-events:none; }
 
       /* The ground goes with it: gathered in, blown out, then back to drifting. */
-      .sage-ground.beat-gather .sg-field { transform:scale(.92); transition: transform .5s cubic-bezier(.32,0,.4,1); }
-      .sage-ground.beat-gather .sg-blobs { transform:scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
-      .sage-ground.beat-stretch .sg-field, .sage-ground.beat-flash .sg-field {
-        transform:scale(3.2); opacity:0; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
-      .sage-ground.beat-stretch .sg-dot.bright, .sage-ground.beat-flash .sg-dot.bright {
+      .sage-beat-gather .sg-field { transform:scale(.92); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-gather .sg-blobs { transform:scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      /* The field flies WITH the mark rather than disappearing while it does.
+         It used to fade to nothing halfway through the stretch, which is why the
+         peak of the jump felt empty: the one moment that should be full of
+         travelling light was 73 streaks on a bare page. */
+      .sage-beat-stretch .sg-field, .sage-beat-flash .sg-field {
+        transform:scale(3.2); opacity:.85; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+      .sage-beat-stretch .sg-dot.bright, .sage-beat-flash .sg-dot.bright {
         transform: translate(-50%,-50%) rotate(var(--a)) scaleX(17);
         transition: transform .88s cubic-bezier(.6,0,.9,.24); }
-      .sage-ground.beat-stretch .sg-blobs, .sage-ground.beat-flash .sg-blobs {
-        transform:scale(1.9); opacity:.12; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+      /* The blobs stretch too, rather than merely swelling: pulled long along
+         the direction of travel and left bright enough to be the colour the
+         streaks are flying through. */
+      .sage-beat-stretch .sg-blobs, .sage-beat-flash .sg-blobs {
+        transform:scale(2.6, .82); opacity:.5; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+
+      /* ---- and out the other side ----
+         Coming out of lightspeed rather than cutting to a still page: the field
+         and the blobs decelerate back to rest over the same window the dashboard
+         lands in, so the last beat is one continuous move instead of a stop
+         followed by a start. */
+      .sage-beat-assemble .sg-field { animation: groundLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
+      .sage-beat-assemble .sg-dot.bright { animation: dotLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
+      .sage-beat-assemble .sg-blobs { animation: blobLand 1.3s cubic-bezier(.12,.78,.28,1) both; }
+      @keyframes groundLand {
+        from { transform:scale(3.2); opacity:.85; }
+        to   { transform:none; opacity:1; }
+      }
+      @keyframes dotLand {
+        from { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(17); }
+        to   { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(1); }
+      }
+      @keyframes blobLand {
+        from { transform:scale(2.6,.82); opacity:.5; }
+        to   { transform:none; opacity:1; }
+      }
       /* Only the bright eighth streaks. The rest ride the layer's own scale,
          which is what bought the density back. */
-      .sage-ground.beat-gather .sg-dot.bright { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.80);
+      .sage-beat-gather .sg-dot.bright { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.80);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
 
-      /* ---- the dashboard building outward from the centre ---- */
+      /* ---- the dashboard coming out of the jump ----
+         The first version had every element rise from below, which is the app's
+         ordinary mount and reads as a page loading normally after an animation
+         rather than as the end of one. Out of lightspeed instead: the whole page
+         resolves from beyond the frame, blurred and oversized, and decelerates
+         into place while its blocks fade up from the middle. */
+      .sage-assemble .page, .sage-assemble .board-page, .sage-assemble .tab-page {
+        animation: warpLand 1.05s cubic-bezier(.12,.78,.28,1) both; }
+      @keyframes warpLand {
+        from { opacity:.25; transform:scale(1.16); filter: blur(7px); }
+        60%  { filter: blur(0); }
+        to   { opacity:1; transform:none; filter: blur(0); }
+      }
       .sage-assemble .hero { animation: saArrive .76s cubic-bezier(.34,1.5,.64,1) both; }
       .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .28s both; }
       .sage-assemble .seg-wrap { animation: saArrive .6s cubic-bezier(.34,1.5,.64,1) .2s both; }
@@ -24690,8 +24785,11 @@ function Style() {
       .sage-assemble .roster-card .assoc-card:nth-child(n+5) { animation-delay:.944s; }
       .sage-assemble .app-header, .sage-assemble .topbar { animation: saArrive .62s cubic-bezier(.34,1.5,.64,1) .95s both; }
       .sage-assemble .brand { animation: saArrive .56s cubic-bezier(.34,1.5,.64,1) 1.25s both; }
+      /* From the middle: scaled up out of the centre of the page rather than
+         lifted from underneath it. The rise belongs to an ordinary page load and
+         this is not one. */
       @keyframes saArrive {
-        from { opacity:0; transform: translateY(14px) scale(.965); }
+        from { opacity:0; transform: scale(.94); }
         to   { opacity:1; transform:none; }
       }
       @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
