@@ -162,6 +162,37 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**And it still did not run, because the field was too expensive to draw.** Three
+attempts to fix this were verified against a harness of extracted components, and
+all three were wrong about the app. So the app itself was built, served, and driven
+with the network faked at the browser: the real root, the real branches, the real
+CSS, a real sign-in. That is what finally showed it.
+
+Frame gaps during the jump, measured there, three runs of each:
+
+| | frames | worst gap | stalls over 200ms |
+|---|---|---|---|
+| as shipped | 39-47 | 667-883ms | 3-4 |
+| field dots with square corners | 59-61 | 150-167ms | 0 |
+| no field at all | 82-85 | 117-150ms | 0 |
+
+A field dot is a 2.6px circle, and a circle is `border-radius:50%` — so a dot
+stretched eighty times along its own axis is a long thin ELLIPSE, and 660 large
+ellipses have to be rasterised every frame. Every stall came from the corners. The
+whole jump was two or three painted frames: the form vanished, one still of streaks
+appeared, the dashboard was there. Nothing to see, which is exactly what was
+reported. Dropping the radius for the length of the jump costs nothing visible at
+2.6px and buys the animation back.
+
+Two more things that measurement caught and nothing else would have. The flash was
+being asked for and then never painted, because the white was set on one line and
+the dashboard mount was started on the next, and the mount blocks the main thread:
+the handover now waits for two animation frames, so the second only runs once the
+white has actually been painted. And the profile was being fetched AT the handover,
+so the swap waited on a round trip that started too late to be covered — it is
+fetched as soon as the password check passes now, while the screen is still held,
+and the handover is a state flip with the session already in hand.
+
 **Then it stopped again, and this time the sign-in screen was being pulled out
 from under its own arrival.** The sign-in call is not the only thing that brings
 the session in: the auth client fires SIGNED_IN the moment the password check

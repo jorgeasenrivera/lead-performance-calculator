@@ -7140,9 +7140,10 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
       if (handedOver || !flashed || authed !== true) return;
       handedOver = true;
       if (onArrival) onArrival();
-      /* Released here and not before: this is the frame the white is covering. */
+      /* Released here and not before: this is the frame the white is covering.
+         Nothing else happens on this line — the profile is already loaded — so
+         the swap is the only work the browser has to do under the flash. */
       if (heldRef.current) heldRef.current(false);
-      onAuthed();
     };
     jumping.current = runJump({
       onFlash: () => {
@@ -7172,6 +7173,13 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
     }
     authed = true;
     document.documentElement.classList.remove("sage-flash-hold");
+    /* Load the profile NOW, not at the handover. The screen is held for the rest
+       of the jump either way, so the fetch costs nothing here and everything
+       there: gating the swap on a round trip that only starts at the handover put
+       the dashboard on screen most of a second after the flash had been asked
+       for, which is far too late for the flash to cover it. By the time the white
+       is up the session is already in hand and the swap is a state flip. */
+    await onAuthed();
     handOver();
   };
 
@@ -7452,14 +7460,30 @@ function runJump({ onFlash, onDone }) {
   let flashing = false;
   at(ARRIVAL.hold, () => beat("gather"));
   at(ARRIVAL.hold + ARRIVAL.gather, () => beat("stretch"));
-  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => { flashing = true; beat("flash"); onFlash(); });
-  /* The handover is 140ms INTO the flash, not at the start of it, which is the
-     handoff's table: flash at +1820, assemble at +1960. The white has to be at
-     its peak when one screen becomes the other — handing over on the first frame
-     of the flash means the swap happens under a transparent overlay and the
-     white then goes off over the top of a dashboard that is already standing
-     there. */
-  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140, () => onDone());
+  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => {
+    flashing = true;
+    beat("flash");
+    onFlash();
+    /* ---- and the handover waits for the white to be ON THE SCREEN ----
+       The handoff puts the assemble 140ms into the flash, and a timer alone does
+       not deliver that. Mounting the dashboard is the most expensive thing this
+       app does, and it blocks the main thread — so a flash class set on one line
+       and a React swap started on the next never gets a frame to paint in. The
+       white did not appear at all until the mount was over, which put it a second
+       and a half late, on top of a dashboard that was already standing there.
+       Measured in the real app: flash beat at 2497ms, dashboard at 3345ms with
+       the flash still at zero, white peaking at 4058ms.
+
+       Two rAFs is the guarantee: the first is the frame the class lands in, the
+       second only runs after that frame has been painted. The white is up before
+       the swap begins, which is the whole reason it exists. */
+    let frames = 0;
+    const painted = () => {
+      if (++frames < 2) { requestAnimationFrame(painted); return; }
+      ts.push(setTimeout(() => onDone(), 90));
+    };
+    requestAnimationFrame(painted);
+  });
   /* Once the flash is up, this cleanup does nothing. It runs on the sign-in
      screen's unmount, which IS the handover, and clearing the beat classes there
      stripped the flash off the frame it was drawn for — the swap went uncovered
@@ -7489,14 +7513,22 @@ function SageArrival({ onComplete }) {
        Hand it over rather than letting the two overlap: .sage-assemble carries an
        identical saFlash shorthand, so the running flash is not restarted by the
        swap, it simply changes which rule is holding it. */
-    root.classList.add("sage-assemble");
+    /* Both: sage-assemble is what the dashboard's own rules key off, and
+       sage-beat-assemble is what the GROUND decelerates on. Adding only the first
+       left the ground with no landing at all — the field and the blobs snapped
+       from full streak back to rest the moment the flash class came off, which is
+       the opposite of coming out of lightspeed. */
+    root.classList.add("sage-assemble", "sage-beat-assemble");
     root.classList.remove("sage-beat-flash");
     let reduce = false;
     try {
       reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch (e) {}
     const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
-    return () => { clearTimeout(t); root.classList.remove("sage-assemble", "sage-beat-flash"); };
+    return () => {
+      clearTimeout(t);
+      root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash");
+    };
   }, []);
   return null;
 }
@@ -25108,6 +25140,23 @@ function Style() {
         from { transform:scale(.92); opacity:1; }
         to   { transform:scale(2.0); opacity:.85; }
       }
+      /* ---- square corners for the length of the jump ----
+         This one line is the difference between the arrival running and the
+         arrival being a slideshow. A field dot is a 2.6px circle, and a circle is
+         border-radius:50% — so a dot stretched eighty times along its own axis is
+         a long thin ELLIPSE, and 660 large ellipses have to be rasterised every
+         frame. Measured in the built app, three runs each: as shipped, 39-47
+         frames with stalls of 667-883ms; with the radius dropped, 59-61 frames
+         and not one stall over 200ms, against 82-85 frames with no field at all.
+         Every stall came from the corners.
+
+         Nothing is lost. At 2.6px tall the rounding was never visible, and it is
+         only dropped while the dots are streaks; the idle field keeps its
+         circles. This is the same cost the handoff hit from the other side, when
+         it cut the streaking dots to a third to buy the frames back — the corners
+         are the cheaper thing to give up, and they buy more. */
+      [class*="sage-beat"] .sg-dot { border-radius:0; }
+
       /* Every dot, not the bright third. They all leave along their own line out
          of the logo, and the far ones go further than the near ones, so the field
          opens out of that point instead of sliding past as a sheet. */
