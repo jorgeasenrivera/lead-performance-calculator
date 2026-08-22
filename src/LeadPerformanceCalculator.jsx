@@ -1915,7 +1915,14 @@ export default function LeadPerformanceCalculator() {
   // The cinematic intro plays once per calendar day per user. null = not decided yet.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
-  const [view, setView] = useState("admin");
+  /* Opens on the store this browser last worked in; see rememberView. Starting
+     from "admin" here and correcting it a moment later would show the overview
+     for a frame on every load. */
+  const [view, setViewRaw] = useState(() => lastView() || "admin");
+  const setView = useCallback((v) => {
+    setViewRaw(v);
+    rememberView(typeof v === "string" ? v : null);
+  }, []);
   const [storeData, setStoreData] = useState(null);
   // What the server row said when this browser last read it. The email ingest writes
   // straight to the database, so without this an open tab keeps showing the tool as
@@ -2096,13 +2103,26 @@ export default function LeadPerformanceCalculator() {
         // an admin opening the tool is what triggers the daily backup
         if (session.role === "admin") runAutoBackup(config, all, session.name).catch(() => {});
         viewPicked.current = true;
-        if (session.role === "admin") {
-          setView("admin");
+        /* ---- land where you were, not on the overview ----
+           An admin opened on All Stores every time, which is the one view that is
+           nobody's actual job: the numbers a manager acts on are a store's. So the
+           last store worked in is remembered and opened again, and the overview is
+           one click away rather than the front door.
+
+           Only a store is remembered. "admin" and "combined" are not stored, so an
+           admin who genuinely wants the overview gets it by asking for it each
+           time rather than by being parked there for ever after one visit. */
+        const remembered = lastView();
+        const openable = remembered && accessible.some((x) => x.id === remembered) ? remembered : null;
+        if (openable) {
+          setView(openable);
+          setStoreData(all[openable]);
         } else if (session.role === "overseer" && accessible.length > 1) {
           setView("combined");
         } else {
           const first = accessible[0]?.id;
           if (first) { setView(first); setStoreData(all[first]); }
+          else if (session.role === "admin") setView("admin");
         }
         return;
       }
@@ -3403,6 +3423,34 @@ function DeliveryGuideModal({ onClose }) {
 }
 
 /* ---------------- Sliding segmented control ---------------- */
+/* A section tab is a smaller version of the same move.
+
+   Jorge: "if elements are selected that aren't in the top navigation bar, they
+   should have their own small side to side transitions, because every page when
+   it loads has the elements pop from the bottom up."
+
+   Exactly the fault: the tabs within a tool were reusing the page's mount
+   animation, so moving one step sideways along a strip made the whole page jump
+   up from the bottom. It travels the way the strip does now — shorter and
+   quicker than a tool switch, because it is a smaller move and should not cost
+   the same. */
+const TAB_MOVE = 260;
+let tabTimer = null;
+function tabMove(dir) {
+  if (typeof document === "undefined") return;
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  } catch (e) {}
+  const root = document.documentElement;
+  clearTimeout(tabTimer);
+  root.classList.remove("tab-move", "tab-dir-r", "tab-dir-l");
+  /* Read once, so the class lands in its own frame rather than being added and
+     removed inside one and never painting. */
+  void root.offsetWidth;
+  root.classList.add("tab-move", "tab-dir-" + dir);
+  tabTimer = setTimeout(() => root.classList.remove("tab-move", "tab-dir-r", "tab-dir-l"), TAB_MOVE + 60);
+}
+
 function SegControl({ items, value, onChange, renderExtra, attentionId }) {
   const wrapRef = useRef(null);
   const btnRefs = useRef({});
@@ -3445,7 +3493,14 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
       {items.map(([id, label]) => (
         <button key={id} ref={(el) => (btnRefs.current[id] = el)}
           className={"seg-btn" + (value === id ? " active" : "") + (attentionId === id && value !== id ? " seg-wave" : "")}
-          onClick={() => onChange(id)}>
+          onClick={() => {
+            /* Which way along the strip, from the strip itself rather than from
+               a list somebody has to keep in step with it. */
+            const from = items.findIndex((it) => it[0] === value);
+            const to = items.findIndex((it) => it[0] === id);
+            if (to !== from) tabMove(to > from ? "r" : "l");
+            onChange(id);
+          }}>
           {label}
           {renderExtra && renderExtra(id)}
         </button>
@@ -7136,7 +7191,7 @@ const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
 /* How long the outgoing page has to leave before the streaks cross. Long enough
    for four staggered blocks at 40ms apart to be gone, short enough that the whole
    switch stays under a second. */
-const TOOL_EXIT = 300;
+const TOOL_EXIT = 190;
 let toolTimers = [];
 function clearToolMove() {
   toolTimers.forEach(clearTimeout);
@@ -7193,6 +7248,17 @@ function warpTo(from, to) {
    dot to 177x with will-change made the browser hold every streak as a promoted
    layer at its full scaled extent. 1664ms stall against a 21ms median without.
    ------------------------------------------------------------------- */
+/* The store this browser was last working in. Only stores: see the note where it
+   is read. */
+const LAST_VIEW_KEY = "lpc:last-view";
+function lastView() {
+  try { return localStorage.getItem(LAST_VIEW_KEY) || null; } catch (e) { return null; }
+}
+function rememberView(v) {
+  if (!v || v === "admin" || v === "combined") return;
+  try { localStorage.setItem(LAST_VIEW_KEY, v); } catch (e) {}
+}
+
 const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
 /* ---- every time, not once a day ----
    The handoff asked for the first sign-in of the day, like the morning round-up,
@@ -24440,15 +24506,20 @@ function Style() {
          Side to side, because the tools sit side by side in the bar. */
       .tool-move .page > *, .tool-move .board-page > *, .tool-move .tab-page > * {
         will-change: auto; }
+      /* Out fast, in with weight. The exit is a flick — it is the part nobody
+         needs to watch — and the arrival carries the inertia: each block comes in
+         from the side, overshoots the resting point, and is pulled back, so it
+         reads as having been thrown and stopped rather than placed. */
       .tool-exit .page > *, .tool-exit .board-page > *, .tool-exit .tab-page > * {
-        animation: toolOut .3s cubic-bezier(.4,0,.9,.3) both; }
+        animation: toolOut .19s cubic-bezier(.5,0,.95,.35) both; }
       .tool-enter .page > *, .tool-enter .board-page > *, .tool-enter .tab-page > * {
-        animation: toolIn .42s cubic-bezier(.16,.84,.36,1) both; }
-      /* Element by element rather than the page as one slab. */
-      .tool-move .page > *:nth-child(2), .tool-move .board-page > *:nth-child(2), .tool-move .tab-page > *:nth-child(2) { animation-delay:.04s; }
-      .tool-move .page > *:nth-child(3), .tool-move .board-page > *:nth-child(3), .tool-move .tab-page > *:nth-child(3) { animation-delay:.08s; }
-      .tool-move .page > *:nth-child(4), .tool-move .board-page > *:nth-child(4), .tool-move .tab-page > *:nth-child(4) { animation-delay:.12s; }
-      .tool-move .page > *:nth-child(n+5), .tool-move .board-page > *:nth-child(n+5), .tool-move .tab-page > *:nth-child(n+5) { animation-delay:.16s; }
+        animation: toolIn .5s cubic-bezier(.2,.9,.3,1) both; }
+      /* Element by element, and tighter than the first version: 22ms apart, so
+         the blocks land in sequence without the last one arriving late. */
+      .tool-move .page > *:nth-child(2), .tool-move .board-page > *:nth-child(2), .tool-move .tab-page > *:nth-child(2) { animation-delay:.022s; }
+      .tool-move .page > *:nth-child(3), .tool-move .board-page > *:nth-child(3), .tool-move .tab-page > *:nth-child(3) { animation-delay:.044s; }
+      .tool-move .page > *:nth-child(4), .tool-move .board-page > *:nth-child(4), .tool-move .tab-page > *:nth-child(4) { animation-delay:.066s; }
+      .tool-move .page > *:nth-child(n+5), .tool-move .board-page > *:nth-child(n+5), .tool-move .tab-page > *:nth-child(n+5) { animation-delay:.088s; }
       /* Going right: the old page leaves to the left and the new one comes in
          from the right. Going left, the mirror. */
       .tool-dir-r { --tx-out:-64px; --tx-in:64px; }
@@ -24457,9 +24528,13 @@ function Style() {
         from { opacity:1; transform:none; }
         to   { opacity:0; transform: translateX(var(--tx-out)); }
       }
+      /* The crash: past the resting point, squashed along the direction of
+         travel at the moment of impact, then let go. */
       @keyframes toolIn {
-        from { opacity:0; transform: translateX(var(--tx-in)); }
-        to   { opacity:1; transform:none; }
+        0%   { opacity:0; transform: translateX(var(--tx-in)) scaleX(1); }
+        62%  { opacity:1; transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.012); }
+        82%  { transform: translateX(calc(var(--tx-in) * .04)) scaleX(.996); }
+        100% { opacity:1; transform:none; }
       }
       /* Nothing that says "loading" belongs in the middle of a move. The new
          tool is fetching underneath, and a spinner appearing between the streaks
@@ -24482,6 +24557,27 @@ function Style() {
         .tool-exit .page > *, .tool-enter .page > *, .tool-exit .board-page > *, .tool-enter .board-page > *,
         .tool-exit .tab-page > *, .tool-enter .tab-page > * { animation-duration:.14s !important; }
         .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page { animation:none !important; }
+      }
+
+      /* ---- a section tab: the same move, smaller ---- */
+      .tab-dir-r { --tabx: 26px; }
+      .tab-dir-l { --tabx: -26px; }
+      .tab-move .page > *, .tab-move .board-page > *, .tab-move .tab-page > * {
+        animation: tabIn .26s cubic-bezier(.2,.9,.3,1) both; }
+      .tab-move .page > *:nth-child(2), .tab-move .board-page > *:nth-child(2), .tab-move .tab-page > *:nth-child(2) { animation-delay:.016s; }
+      .tab-move .page > *:nth-child(3), .tab-move .board-page > *:nth-child(3), .tab-move .tab-page > *:nth-child(3) { animation-delay:.032s; }
+      .tab-move .page > *:nth-child(n+4), .tab-move .board-page > *:nth-child(n+4), .tab-move .tab-page > *:nth-child(n+4) { animation-delay:.048s; }
+      /* Sideways only. The page's own mount animation lifts from the bottom,
+         which is right when a page arrives and wrong when it slides one step
+         along a strip, so this overrides it for the length of the move. */
+      @keyframes tabIn {
+        0%   { opacity:0; transform: translateX(var(--tabx)); }
+        70%  { opacity:1; transform: translateX(calc(var(--tabx) * -.1)); }
+        100% { opacity:1; transform:none; }
+      }
+      .tab-move .page { animation:none !important; }
+      @media (prefers-reduced-motion: reduce) {
+        .tab-move .page > *, .tab-move .board-page > *, .tab-move .tab-page > * { animation-duration:.12s !important; }
       }
 
       /* ---- the streaks that cross between them ---- */

@@ -111,6 +111,29 @@ One trap worth keeping: the whole-page slide had to be an **animation**, not a t
 `.page` carries its own mount animation, and an animation wins over a transition on the same
 property — so a transition was being silently ignored on exactly the pages it was written for.
 
+### Second pass on the preview — 2026-08-22
+
+**The app opened on All Stores.** For an admin that is the one view that is nobody's actual
+job: the numbers a manager acts on are a store's. It now opens on the store this browser last
+worked in, and the overview is one click away rather than the front door. Only stores are
+remembered — "admin" and "combined" are not — so an admin who wants the overview asks for it
+each time rather than being parked there for ever after one visit. The initial state reads the
+remembered store rather than starting on "admin" and correcting itself, which would have shown
+the overview for a frame on every load.
+
+**Pacing: out fast, in with weight.** The exit is a flick at 190ms — it is the part nobody
+needs to watch — and the arrival carries the inertia Jorge asked for: each block comes in from
+the side, overshoots the resting point, squashes very slightly along the direction of travel
+at the moment of impact, and is pulled back. Thrown and stopped, rather than placed. The
+stagger tightened from 40ms to 22ms so the blocks land in sequence without the last one
+arriving late.
+
+**Section tabs move sideways now.** They were reusing the page's mount animation, so stepping
+one place along a strip made the whole page jump up from the bottom. A tab travels the way its
+strip does, shorter and quicker than a tool switch because it is a smaller move. The direction
+comes from the strip's own item order rather than from a list somebody has to keep in step
+with it.
+
 ### Part 4 — the smaller transitions — BUILT 2026-08-22
 
 - **Tool switching**: 34 streaks in the destination tool's hue, travelling the way the eye
