@@ -25506,11 +25506,16 @@ const SAGE_CSS = `
         from { transform: translate3d(0,0,0) scale(1); }
         to   { transform: translate3d(26px,18px,0) scale(1.12); }
       }
-      .sg-field { animation: sgFieldDrift 28s ease-in-out infinite alternate; }
-      @keyframes sgFieldDrift {
-        from { transform: translate3d(0,0,0); }
-        to   { transform: translate3d(-26px,-16px,0); }
-      }
+      /* The field itself does not drift, and must not.
+         It used to slide the whole sheet up to 26px over 28 seconds. The dots are
+         handed to a canvas when the streaks start, and the canvas redraws them from
+         their resting coordinates: it accounts for the gather's scale and knows
+         nothing about the sheet's translate. So the field jumped by however far the
+         drift had carried it at that instant, which is anywhere from nothing to the
+         full 26px depending on where in the cycle somebody happened to sign in.
+         A drift nobody asked for, at the one moment the eye is following the dots.
+         The ambient motion lives where it costs nothing instead: the blobs behind
+         drift on their own, and the bright third twinkles. */
       .sg-dot { position:absolute; display:block; border-radius:50%; opacity:.26;
         background: currentColor;
         transform: translate(-50%,-50%); }
@@ -25886,9 +25891,10 @@ const SAGE_CSS = `
          the whole jump while the mark flew apart around it. Same trap as the page
          mount animation, same way out: keep the running one at index 0 so it is
          never cancelled, and put the beat's animation after it, where it wins. */
+      /* Nothing to preserve at index 0 any more: the field carries no animation of
+         its own, so this introduces the only one it ever runs. */
       .sage-beat-gather .sg-field {
-        animation: sgFieldDrift 28s ease-in-out infinite alternate,
-                   fieldGather .5s cubic-bezier(.32,0,.4,1) both; }
+        animation: fieldGather .5s cubic-bezier(.32,0,.4,1) both; }
       @keyframes fieldGather { from { transform:none; } to { transform:scale(.86); } }
       /* ---- the blobs part like cloud ----
          Each one moves OUT of the frame in the direction it already sits, rather
