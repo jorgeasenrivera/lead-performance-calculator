@@ -16531,11 +16531,15 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
       ) : (
       <div className="card">
         <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
-        <p className="hint">Top third by units delivered, {top.length} of {withData.length}.</p>
-        <Explain label="Where this bar comes from">
-          Averaged across every day imported, and drawn from your own floor rather than a number someone
-          made up. It moves when the floor moves.
-        </Explain>
+        {/* Same treatment as the plan on a person's card: where the bar came from,
+            stated as the evidence rather than as a promise about it. "Not a number
+            someone made up" is a claim; "the top 6 of your 18, every imported day"
+            is the thing that makes it true. */}
+        <div className="oyo-from">
+          <span className="oyo-from-tag">Your own floor</span>
+          <b>{top.length}</b> of <b>{withData.length}</b>
+          <span className="oyo-from-op">by units delivered, averaged across every imported day</span>
+        </div>
         <div className="bench-grid">
           {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
             <div key={b.id} className="bench-tile">
@@ -17137,6 +17141,47 @@ alertHtml +
   setTimeout(function () { w.focus(); w.print(); }, 400);
 }
 
+/* ---- where a number came from, as a picture ------------------------------
+   The plan on this screen is the one thing in the app a salesperson is asked to
+   ACT on: go and find seventy-four leads. Whether they do it turns entirely on
+   whether they believe the seventy-four, and the app's answer to that was a
+   sixty-word paragraph explaining the arithmetic — "your remaining 6 cars, split
+   by your own sales mix so far this month (12 cars), at your own closing rates:
+   about 74 leads gets you to your goal."
+
+   That paragraph is right, and nobody reads it twice. Folding it into a
+   disclosure would have been worse than leaving it: the reasoning IS the
+   persuasion here, so hiding it hides the only reason to trust the number.
+
+   So it is drawn instead. Four blocks and three arrows, each block a real figure
+   off their own record, ending on the number they are being asked to go and get.
+   Same chain, same numbers, read in about a second. */
+function OyoChain({ steps }) {
+  return (
+    <div className="oyo-chain">
+      {steps.map((st, i) => (
+        <div key={i} className="oyo-step">
+          <div className="oyo-step-lbl">{st.label}</div>
+          <div className={"oyo-step-val" + (st.tone ? " " + st.tone : "")}>{st.value}</div>
+          {st.sub && <div className="oyo-step-sub">{st.sub}</div>}
+          {st.bar && (
+            /* The mix, as the mix. Three shares of one bar says "half your cars
+               come from the internet" without the sentence that says it. */
+            <div className="oyo-step-bar">
+              {st.bar.map((b, k) => (
+                <i key={k} style={{ width: Math.max(0, b.pct * 100) + "%", background: b.color }}
+                  title={`${b.label} ${Math.round(b.pct * 100)}%`} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+/* One colour per channel, the same three everywhere they appear. */
+const OYO_CHAN_COLOR = { internet: "#2A5E9B", showroom: "#C77800", phone: "#7E8B24", campaign: "#8A5A3C" };
+
 function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const [editBase, setEditBase] = useState(false);
   const key = norm(a.name);
@@ -17209,7 +17254,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           <label>Monthly goal</label>
           <input type="number" min="0" value={goal || ""} placeholder="0"
             onChange={(e) => setGoal(e.target.value)} />
-          <span className="hint">units. Set per person.</span>
+          <span className="hint">units</span>
         </div>
 
         {goal > 0 && (
@@ -17282,17 +17327,20 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
           <h3 className="ac-h3">
             What it takes {goal > 0 && stillNeeded > 0 ? <span className="section-sub">to find {stillNeeded} more car{stillNeeded === 1 ? "" : "s"}</span> : null}
           </h3>
-          {missingDays > 0 && (
-            <p className="hint" style={{ color: "#95600A" }}>
-              Heads up: {calElapsed} working days have passed but activity is only on file for {mtd.daysElapsed}.
-              The daily activity figures below are averaged over the {mtd.daysElapsed} day{mtd.daysElapsed === 1 ? "" : "s"} we
-              actually have, so they are honest. Import the missing days and the picture sharpens.
-            </p>
-          )}
-          <p className="hint">
-            Built from this person's own conversion history, not a number anybody made up.
-            Historically they deliver <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"} across <b>{base.daysWorked}</b> working days.
-          </p>
+          {/* Where the whole table below comes from, as a fact rather than a
+              reassurance. "Not a number anybody made up" is a claim; their own
+              8 cars across 42 days IS the evidence for it. */}
+          <div className="oyo-from">
+            <span className="oyo-from-tag">Their own record</span>
+            <b>{fmtNum(base.units)}</b> car{base.units === 1 ? "" : "s"}
+            <span className="oyo-from-op">across</span>
+            <b>{base.daysWorked}</b> working days
+            {missingDays > 0 && (
+              <span className="oyo-from-warn" title={`${calElapsed} working days have passed but activity is on file for ${mtd.daysElapsed}. The per-day figures are averaged over the days we actually have, so they are honest. Import the missing days and the picture sharpens.`}>
+                <PixIcon glyph="warn" size={10} /> {mtd.daysElapsed} of {calElapsed} days on file
+              </span>
+            )}
+          </div>
 
           <table className="oyo-table">
             <thead>
@@ -17351,8 +17399,35 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
             });
             const total = rows.reduce((t, r) => t + (r.leads ?? 0), 0);
             const missing = rows.some((r) => r.leads == null);
+            /* A dot in the channel's own colour before each figure, so a row of
+               three percentages says WHICH three without a legend or a sentence. */
+            const dots = (list) => (
+              <span className="oyo-figs">
+                {list.map(({ c, txt }) => (
+                  <span key={c.id} className="oyo-fig" title={c.label}>
+                    <i style={{ background: OYO_CHAN_COLOR[c.id] }} />{txt}
+                  </span>
+                ))}
+              </span>
+            );
+            const mixed = OYO_CHANNELS.filter((c) => (mixInfo.mix[c.id] ?? 0) > 0);
+            const CHAIN = [
+              { label: "Still to find", value: stillNeeded, sub: stillNeeded === 1 ? "car" : "cars" },
+              { label: mixInfo.personal ? "Your mix" : "Typical mix",
+                value: dots(mixed.map((c) => ({ c, txt: Math.round((mixInfo.mix[c.id] ?? 0) * 100) + "%" }))),
+                sub: mixInfo.personal ? `${mixInfo.total} cars so far` : `yours once you have ${OYO_MIX_MIN_CARS} delivered`,
+                bar: mixed.map((c) => ({ label: c.label, pct: mixInfo.mix[c.id] ?? 0, color: OYO_CHAN_COLOR[c.id] })) },
+              { label: "Your close rate",
+                value: dots(rows.filter((r) => r.cr > 0).map((r) => ({ c: r.c, txt: fmtPct(r.cr) }))),
+                sub: "off your own months" },
+              { label: "Leads to find", value: total, tone: "big",
+                sub: missing ? "channels with no rate yet are left out" : "raise a rate and this drops" },
+            ];
             return (
               <>
+                {/* The chain first, then the detail. The picture is what somebody
+                    acts on; the table is what they check it against. */}
+                <OyoChain steps={CHAIN} />
                 <table className="oyo-table">
                   <thead>
                     <tr><th>Channel</th><th>You deliver</th><th>Cars of the gap</th><th>Leads needed</th></tr>
@@ -17368,14 +17443,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
                     ))}
                   </tbody>
                 </table>
-                <p className="hint">
-                  Your remaining <b>{stillNeeded}</b> car{stillNeeded === 1 ? "" : "s"}, split by{" "}
-                  {mixInfo.personal
-                    ? <>your own sales mix so far this month ({mixInfo.total} cars)</>
-                    : <>the typical mix, internet about half and showroom and phone the rest (switches to your own mix at {OYO_MIX_MIN_CARS} delivered)</>}, at
-                  your own closing rates: about <b>{total} leads</b> gets you to your goal.{missing ? " Channels without a delivered % yet are left out of that count." : ""} Raise
-                  a closing rate and that number drops.
-                </p>
+
               </>
             );
           })()}
@@ -17387,12 +17455,13 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
         <div className="oyo-base-head">
           <div>
             <b>90-day baseline</b>
-            <span className="hint">
-              {base.source === "seed+observed"
-                ? ` Seeded, plus everything imported since. ${base.daysWorked} days on file.`
-                : base.source === "observed"
-                ? ` Built from ${base.daysWorked} imported day${base.daysWorked === 1 ? "" : "s"}. Seed their real 90-day numbers to make this meaningful sooner.`
-                : " Nothing yet. Paste in their current 90-day numbers to start."}
+            <span className={"oyo-src oyo-src-" + base.source.replace("+", "-")}
+              title={base.source === "seed+observed" ? "Seeded by a manager, plus everything imported since."
+                : base.source === "observed" ? "Built only from imported days. Seed their real 90-day numbers to make it meaningful sooner."
+                : "Nothing yet. Paste in their current 90-day numbers to start."}>
+              {base.source === "seed+observed" ? `seeded + ${base.daysWorked} days`
+                : base.source === "observed" ? `${base.daysWorked} imported day${base.daysWorked === 1 ? "" : "s"}`
+                : "not seeded yet"}
             </span>
           </div>
           <button className="btn-ghost" onClick={() => setEditBase(!editBase)}>
@@ -23731,6 +23800,52 @@ function Style() {
 
       /* The disclosure that holds the reasoning. Quiet enough to ignore, obvious
          enough to find on the day somebody needs it. */
+      /* ---- the chain: gap, mix, close rate, leads ----
+         Four blocks and three arrows. The arrows are drawn by the container so
+         the blocks stay plain, and they turn into a downward flow on a phone
+         where four across would be four unreadable columns. */
+      .oyo-chain { display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:12px 0 4px; }
+      .oyo-step { position:relative; flex:1 1 150px; min-width:132px; padding:12px 14px; border-radius:14px;
+        background:rgba(255,255,255,.7); border:1px solid rgba(16,32,52,.09);
+        box-shadow:0 1px 2px rgba(16,32,52,.04); }
+      .oyo-step + .oyo-step { margin-left:14px; }
+      .oyo-step + .oyo-step::before { content:""; position:absolute; left:-19px; top:50%;
+        width:10px; height:10px; margin-top:-5px; border-right:2px solid rgba(16,32,52,.22);
+        border-top:2px solid rgba(16,32,52,.22); transform:rotate(45deg); }
+      .oyo-step-lbl { font-size:9.5px; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
+        color:var(--ink-3); }
+      .oyo-step-val { font-size:20px; font-weight:750; letter-spacing:-.03em; margin-top:5px;
+        font-variant-numeric:tabular-nums; color:var(--ink); }
+      .oyo-step-val.big { font-size:29px; color:var(--blue); }
+      .oyo-step-sub { font-size:11px; color:var(--ink-3); margin-top:3px; line-height:1.35; }
+      .oyo-step-bar { display:flex; height:6px; border-radius:4px; overflow:hidden; margin-top:8px;
+        background:rgba(16,32,52,.07); }
+      .oyo-step-bar i { display:block; }
+      /* Figures that say which channel they belong to, without a legend. */
+      .oyo-figs { display:flex; flex-wrap:wrap; gap:4px 10px; font-size:15px; }
+      .oyo-fig { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+      .oyo-fig i { width:7px; height:7px; border-radius:2px; display:inline-block; }
+      @media (max-width:720px) {
+        .oyo-step { flex:1 1 100%; }
+        .oyo-step + .oyo-step { margin-left:0; margin-top:14px; }
+        .oyo-step + .oyo-step::before { left:50%; top:-19px; margin:0 0 0 -5px; transform:rotate(135deg); }
+      }
+
+      /* Where the table below came from, stated as evidence rather than promised
+         as a reassurance. */
+      .oyo-from { display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px;
+        color:var(--ink-2); margin:8px 0 2px; }
+      .oyo-from b { font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums; }
+      .oyo-from-tag { font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+        color:#1D4674; background:rgba(42,94,155,.12); padding:3px 9px; border-radius:999px; }
+      .oyo-from-op { color:var(--ink-3); }
+      .oyo-from-warn { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:650;
+        color:#95600A; background:rgba(255,159,10,.14); padding:3px 9px; border-radius:999px; cursor:help; }
+      .oyo-src { font-size:10.5px; font-weight:750; letter-spacing:.02em; padding:3px 9px; border-radius:999px;
+        margin-left:8px; cursor:help; background:rgba(16,32,52,.07); color:var(--ink-2); }
+      .oyo-src-seed-observed { background:rgba(48,177,85,.14); color:#146B41; }
+      .oyo-src-none { background:rgba(255,159,10,.16); color:#95600A; }
+
       .explain { margin:6px 0 0; }
       .explain > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
         font-size:11.5px; font-weight:700; letter-spacing:.01em; color:var(--blue);

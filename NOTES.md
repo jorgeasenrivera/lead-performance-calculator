@@ -146,9 +146,31 @@ free, and no state for a screen full of them to hold.
 | Import | 175 → 131 |
 | Coaching | 109 → 76 |
 
-3,905 → 3,219 across the app. Still to do, in the order a manager meets them: Own Your
-Outcome (205), Floor Config (203), Baseline Import (126), Tickets (111), Missed Standards (104,
-mine — written last week and already too long), Help (91).
+3,905 → 3,071 across the app. Still to do: Floor Config (203), Baseline Import (126), Tickets
+(111), Missed Standards (104, mine — written last week and already too long), Help (91).
+
+### Own Your Outcome: drawn, not folded away
+
+The plan on a person's card is the one thing in the app somebody is asked to ACT on — go and
+find 34 leads — and whether they do it turns entirely on whether they believe the 34. The
+app's answer to that was a sixty-word paragraph explaining the arithmetic, which is right and
+which nobody reads twice.
+
+Folding that into an `<Explain>` would have been **worse than leaving it**: the reasoning IS
+the persuasion here, so hiding it hides the only reason to trust the number. So it is drawn:
+four blocks and three arrows — the gap, their own sales mix (as a stacked bar), their own
+closing rates, the leads that follow — each figure carrying a dot in its channel's colour so
+three percentages say WHICH three without a legend. Same chain, same numbers, read in a second,
+and it stacks into a downward flow on a phone.
+
+Two more sentences became evidence rather than reassurance. "Built from this person's own
+conversion history, not a number anybody made up" is a *claim*; **Their own record · 33 cars
+across 71 working days** is the thing that makes it true, and it is shorter. The coaching
+bar's "drawn from your own floor rather than a number someone made up" got the same treatment:
+**Your own floor · 6 of 18, by units delivered**.
+
+The rule this adds to the sweep: **where the words are the reason to believe a number, draw
+them — do not fold them away.**
 
 ---
 
