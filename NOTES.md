@@ -162,6 +162,37 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The mark's build got the beat it was always missing.** The handoff opens its
+table with "Hurry | 0 | 320ms | Only if the form is not finished" and this file
+had never implemented it. A saved password fills both fields in one go, so the
+mark is barely started when the button is pressed — and the streaks have to leave a
+whole word, not half of one. So the build is now rushed to the end first and every
+beat after it is pushed back by exactly that 320ms, which is the handoff's own
+instruction: "add 320ms to every figure when the hurry runs first". The mark also
+keeps honouring `revealed` through the press, because the hurry is what finishes
+the drawing; dropping it on press would snap the rest of the word in and leave
+nothing to hurry.
+
+Each dot fades up over 240ms as the form reaches it, per the prototype's
+`opacity 240ms ease`, rather than appearing on the keystroke. That meant moving
+opacity out of the SVG presentation attribute and into the style, because an
+attribute cannot be transitioned.
+
+**Why the gather's pull is capped.** It draws every dot in along its own radius
+from the middle of the lockup, and that middle falls inside the "a" — so the S, a
+compact block sitting furthest out, was pulled hardest and across the widest
+spread, and collapsed into itself while "age" barely moved. Capping the distance
+term means everything past about two thirds of the way out travels the same amount:
+the S moves as one piece and the lockup contracts evenly. The uniform part of the
+contraction was always the layer's own scale(.90).
+
+**And the two sets of streaks now fly on the same lines.** They already shared a
+vanishing point, but not a trajectory: the mark's dots pin their near end and grow
+outward, while the field's grew out of their own middle in both directions, and the
+field layer scaled about the centre of the viewport while the mark scaled about the
+logo. Both fixed — the field's origin is `--jx/--jy` like everything else, and its
+dots pin their near end too.
+
 **The landing now comes out of the point the streaks left from.** Jorge's
 description: the streaks go, a little dot is left in the distance, and the store's
 elements grow out of it and land radially, like coming out of lightspeed. That is

@@ -7106,6 +7106,20 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
        handing over to a screen that is not ready */
   const jumping = useRef(null);
   const markRef = useRef(null);
+  /* null until a press finds the mark unfinished; see RUSH. */
+  const [rushTyped, setRushTyped] = useState(null);
+  const rushRaf = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(rushRaf.current), []);
+  const hurryBuild = (from) => {
+    const t0 = (typeof performance !== "undefined" ? performance : Date).now();
+    const step = () => {
+      const now = (typeof performance !== "undefined" ? performance : Date).now();
+      const p = Math.min(1, (now - t0) / RUSH);
+      setRushTyped(from + (34 - from) * p);
+      if (p < 1) rushRaf.current = requestAnimationFrame(step);
+    };
+    rushRaf.current = requestAnimationFrame(step);
+  };
   const heldRef = useRef(onJump);
   heldRef.current = onJump;
   const abortJump = () => {
@@ -7136,6 +7150,11 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
        streaks leave along lines drawn from the logo rather than from the middle
        of the frame. Measured here because here is the only place that knows. */
     tellJumpOrigin(markRef.current);
+    /* A saved password fills both fields at once, so the mark is barely started
+       when the button is pressed. Finish it first, and push the whole jump back
+       by exactly as long as that takes: the streaks have to leave a whole word. */
+    const short = typed < 34;
+    if (short) hurryBuild(typed);
     let authed = null;                       // null = still in flight
     let flashed = false;
     let handedOver = false;
@@ -7149,6 +7168,7 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
       if (heldRef.current) heldRef.current(false);
     };
     jumping.current = runJump({
+      lead: short ? RUSH : 0,
       onFlash: () => {
         /* Nothing to hand over to yet: hold the flash rather than dropping back
            onto a sign-in screen that has already taken itself apart. */
@@ -7223,8 +7243,11 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
      input values rather than off keystrokes, so a password manager filling both
      fields in one go lands where a person typing them lands. */
   const typed = Math.min(34, email.length + password.length);
-  const revealed = Math.round((typed / 34) * 73);
-  const filled = Math.min(5, Math.round((typed / 34) * 5));
+  /* While the hurry is running the count comes from it rather than from the
+     fields, so the mark finishes drawing itself under its own steam. */
+  const shownTyped = rushTyped === null ? typed : rushTyped;
+  const revealed = Math.round((shownTyped / 34) * 73);
+  const filled = Math.min(5, Math.round((shownTyped / 34) * 5));
 
   return (
     <div className="login">
@@ -7238,7 +7261,10 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
             of the thing you were looking at. The mark stays and goes to work
             instead: the same 73 dots, running a wave left to right. */}
         <div className="login-logo" ref={markRef}>
-          <SageMark word size={64} revealed={mode === "signin" && !busy ? revealed : undefined} />
+          {/* Still driven by `revealed` while signing in, because the hurry is
+              what finishes the drawing — dropping it on press would snap the
+              rest of the word in and there would be nothing to hurry. */}
+          <SageMark word size={64} revealed={mode === "signin" ? revealed : undefined} />
         </div>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
@@ -7445,7 +7471,16 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    The white flash is the one piece that cannot live on this screen, because the
    sign-in screen is gone by the time it peaks: it is mounted at the root, where
    the ground is, for the same reason. */
-function runJump({ onFlash, onDone }) {
+/* ---- the hurry ----
+   The handoff's first beat, and the one this file never had. A saved password
+   fills both fields in one go, so the mark is nowhere near drawn when the button
+   is pressed — and the streaks have to start from a finished mark, not half a
+   word. So the build is rushed to the end first, and every beat after it is
+   pushed back by the same 320ms. The table says as much: "Hurry | 0 | 320ms | Only
+   if the form is not finished", and "add 320ms to every figure when the hurry runs
+   first". */
+const RUSH = 320;
+function runJump({ onFlash, onDone, lead = 0 }) {
   const root = typeof document === "undefined" ? null : document.documentElement;
   const beats = ["hold", "gather", "stretch", "flash"];
   const clear = () => beats.forEach((b) => root && root.classList.remove("sage-beat-" + b));
@@ -7462,8 +7497,12 @@ function runJump({ onFlash, onDone }) {
   const ts = [];
   const beat = (b) => { clear(); root.classList.add("sage-beat-" + b); };
   jumpOwnsEntrance = true;
-  beat("hold");
-  const at = (ms, fn) => ts.push(setTimeout(fn, ms));
+  const at = (ms, fn) => ts.push(setTimeout(fn, lead + ms));
+  /* Nothing moves during the hurry. The mark is still drawing itself, and the
+     hold is what takes the form away, so it cannot start until the word is
+     whole. */
+  if (lead) at(0, () => beat("hold"));
+  else beat("hold");
   let flashing = false;
   at(ARRIVAL.hold, () => beat("gather"));
   at(ARRIVAL.hold + ARRIVAL.gather, () => beat("stretch"));
@@ -24884,7 +24923,13 @@ function Style() {
          rather than by the ground, so it positions itself against the viewport
          instead of against a card that is 340px wide. Behind the form, above the
          blobs. */
-      .sg-field { position:fixed; inset:0; z-index:0; pointer-events:none; }
+      .sg-field { position:fixed; inset:0; z-index:0; pointer-events:none;
+        /* The layer opens out of the same point the mark does. It used to scale
+           about the middle of the viewport while the mark scaled about the logo,
+           so the two sets of streaks were travelling on different lines even
+           though each dot was aimed correctly. --jx/--jy are the mark's centre,
+           measured on the press. */
+        transform-origin: var(--jx, 50%) var(--jy, 50%); }
       .sg-blob { position:absolute; display:block; border-radius:50%;
         animation: sgDrift 40s ease-in-out infinite alternate; }
       .sg-blob.b1 { width:760px; height:620px; left:-80px; top:-120px; animation-duration:34s;
@@ -25164,8 +25209,17 @@ function Style() {
          logo is. A dot 300 user units long clears a 1440x900 frame from anywhere
          inside it, and the far ends are gone well before anything snaps. */
       .login-logo circle { transform-box: fill-box; transform-origin: left center; }
+      /* ---- and why the pull is capped ----
+         The gather draws every dot in along its own radius from the middle of the
+         lockup, and that middle falls inside the "a". So the S, a compact block
+         sitting furthest out, was pulled hardest and by the widest spread — it
+         collapsed into itself while "age" barely moved. Capping the distance term
+         means everything past about two thirds of the way out travels the same
+         amount: the S moves as one piece, the letters nearer the centre still
+         come in less than the ones further out, and the lockup contracts evenly.
+         The uniform part of the contraction is the layer's own scale(.90). */
       .sage-beat-gather .login-logo circle {
-        transform: rotate(var(--a)) translateX(calc((-4 - var(--d) * .12) * 1px)) scaleX(.78);
+        transform: rotate(var(--a)) translateX(calc((-4 - min(var(--d), 64) * .12) * 1px)) scaleX(.78);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
       /* .login-busy also runs loginLogoRise on the wrapper; same collision, same
          cure, so the mark's layer can be scaled by the beats. */
@@ -25298,6 +25352,10 @@ function Style() {
       /* Every dot, not the bright third. They all leave along their own line out
          of the logo, and the far ones go further than the near ones, so the field
          opens out of that point instead of sliding past as a sheet. */
+      /* Pinned at the near end, exactly like the mark's dots: the streak grows
+         away from the origin rather than out of the dot's middle in both
+         directions. Same trajectory, same vanishing point. */
+      [class*="sage-beat"] .sg-dot { transform-origin: left center; }
       .sage-beat-stretch .sg-dot, .sage-beat-flash .sg-dot {
         transform: translate(-50%,-50%) rotate(var(--a))
                    scaleX(calc(14 + var(--d, 400) * .09));
@@ -25443,6 +25501,10 @@ function Style() {
          opacity 0, and animating opacity here would light up the part of the
          word that is meant to be still dark. */
       .login-logo circle { transform-box: fill-box; transform-origin: center;
+        /* Each dot fades up as the form reaches it rather than appearing on the
+           keystroke. Straight from the handoff, which puts opacity 240ms ease on
+           every dot of the build. */
+        transition: opacity .24s ease;
         animation: markBreathe 4.2s ease-in-out infinite;
         animation-delay: calc(var(--i) * -58ms); }
       @keyframes markBreathe {

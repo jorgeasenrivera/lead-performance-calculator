@@ -138,13 +138,16 @@ export default function SageMark({
       cy={(r + 0.5) * PITCH + padPx}
       r={((riseOn ? WEIGHT[r] : 1) * CELL * fillOn) / 2}
       fill={flat || mix(base, cap, rows > 1 ? 1 - r / (rows - 1) : 0)}
-      /* Drawn but transparent rather than absent, so the mark never reflows as
-         it fills and the streaks later have every dot to start from. */
-      opacity={shown && !shown.has(r + "-" + c) ? 0 : undefined}
       data-dot={r + "-" + c}
       style={(() => {
         const dx = (c + 0.5) * PITCH - midX, dy = (r + 0.5) * PITCH - midY;
         return {
+          /* Drawn but transparent rather than absent, so the mark never reflows
+             as it fills and the streaks later have every dot to start from. In
+             the style rather than as an attribute so a stylesheet can put a
+             transition on it: the handoff fades each dot up over 240ms as the
+             form reaches it, and a presentation attribute would snap. */
+          opacity: shown && !shown.has(r + "-" + c) ? 0 : undefined,
           "--i": rank.get(r + "-" + c),
           "--n": order.length,
           "--a": ((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(2) + "deg",
