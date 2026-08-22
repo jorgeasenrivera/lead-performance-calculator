@@ -1844,6 +1844,24 @@ async function runAutoBackup(config, adminData, byName) {
 
 const emptyStoreData = () => ({ roster: [], months: {} });
 
+/* What a store document looks like from the outside, for a screen that has to
+   report on one it is refusing to open. Names are the only part that identifies
+   whose data this really is, so only a handful are taken and the caller decides
+   who may see them. */
+function describeDoc(d) {
+  if (!d || typeof d !== "object") return null;
+  const months = Object.keys(d.months || {}).sort();
+  return {
+    roster: (d.roster || []).length,
+    names: (d.roster || []).slice(0, 5).map((a) => a && a.name).filter(Boolean),
+    months: months.length,
+    firstMonth: months[0] || "",
+    lastMonth: months[months.length - 1] || "",
+    days: Object.keys(d.activity || {}).length,
+    plates: (d.plateRegistry || []).length,
+  };
+}
+
 /* ---- People who have left ----
    Taking someone off the roster was never enough on its own: the next report still
    carried their name and the import put them straight back. Someone who has left is
@@ -2243,7 +2261,7 @@ export default function LeadPerformanceCalculator() {
       const cached = adminData[view];
       if (cached) {
         if (cached.__storeId && cached.__storeId !== view) {
-          setStoreMismatch({ want: view, claims: cached.__storeId });
+          setStoreMismatch({ want: view, claims: cached.__storeId, found: describeDoc(cached) });
           setStoreData(null); setStoreLoadFailed(true);
           return;
         }
@@ -2282,7 +2300,12 @@ export default function LeadPerformanceCalculator() {
            under another store's name is worse than showing nothing. */
         if (d.__storeId && d.__storeId !== want) {
           console.error("store document belongs to another store", { key: want, claims: d.__storeId });
-          setStoreMismatch({ want, claims: d.__storeId });
+          /* Keep a description of what was refused. Whether this row holds the OTHER
+             store's people or this store's people wearing the wrong label is the whole
+             question — the first needs a restore, the second needs one field corrected —
+             and the document is only in hand here. Counts and a few names answer it at
+             a glance; the document itself is still not rendered as this store's. */
+          setStoreMismatch({ want, claims: d.__storeId, found: describeDoc(d) });
           setStoreData(null); setStoreLoadFailed(true);
           return;
         }
@@ -3318,7 +3341,7 @@ export default function LeadPerformanceCalculator() {
            to null on purpose, so the banner further down — which renders inside the
            loaded board — could never be reached: the store simply appeared never to
            load, and the screen asked for a reload at a problem no reload can touch. */
-        <StoreMismatch config={config} mismatch={storeMismatch} />
+        <StoreMismatch config={config} mismatch={storeMismatch} isAdmin={isAdmin} />
       ) : (!storeData || storeHeld) ? (
         /* A spinner with no end is the worst thing this screen can show: it says
            "wait" for ever and gives nobody, including whoever is asked about it
@@ -19331,8 +19354,9 @@ function StoreStuck({ store, detail, onRetry }) {
 /* A store's document claiming to belong to a different store. Shown in place of the
    board, never alongside it: one store's people under another store's name is worse
    than showing nothing, and this is not something a reload can mend. */
-function StoreMismatch({ config, mismatch }) {
+function StoreMismatch({ config, mismatch, isAdmin }) {
   const named = (id) => (config?.stores || []).find((x) => x.id === id)?.name || id;
+  const f = mismatch.found;
   return (
     <div className="noaccess">
       <h2 className="noaccess-title">{named(mismatch.want)} can't be opened</h2>
@@ -19345,6 +19369,21 @@ function StoreMismatch({ config, mismatch }) {
         This needs the record repaired rather than a reload. Send your admin these two keys:
         {" "}<code>{mismatch.want}</code> and <code>{mismatch.claims}</code>.
       </p>
+      {isAdmin && f ? (
+        /* The one question a repair turns on: is this the other store's data sitting
+           in this row, or this store's data wearing the wrong label? Anyone who knows
+           the floor can tell from the names. */
+        <div className="load-warn">
+          <b>What is actually in the {named(mismatch.want)} record:</b>{" "}
+          {f.roster} on the roster{f.names.length ? <>: {f.names.join(", ")}{f.roster > f.names.length ? ", …" : ""}</> : null};
+          {" "}{f.months} month{f.months === 1 ? "" : "s"}{f.firstMonth ? ` (${f.firstMonth} to ${f.lastMonth})` : ""};
+          {" "}{f.days} day{f.days === 1 ? "" : "s"} of activity; {f.plates} plate{f.plates === 1 ? "" : "s"} registered.
+          <br />
+          If those are {named(mismatch.claims)}'s people, this row was overwritten and {named(mismatch.want)} needs
+          restoring from a backup. If they are {named(mismatch.want)}'s own people, only the label is wrong and the
+          data is intact.
+        </div>
+      ) : null}
     </div>
   );
 }
