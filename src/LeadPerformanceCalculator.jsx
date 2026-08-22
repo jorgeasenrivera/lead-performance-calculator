@@ -7093,6 +7093,7 @@ function Login({ config, onBack, onAuthed, onArrival }) {
        if the sign-in is SLOW, the flash holds white until it lands rather than
        handing over to a screen that is not ready */
   const jumping = useRef(null);
+  const markRef = useRef(null);
   const abortJump = () => { if (jumping.current) { jumping.current(); jumping.current = null; } };
   useEffect(() => abortJump, []);
 
@@ -7101,6 +7102,10 @@ function Login({ config, onBack, onAuthed, onArrival }) {
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
+    /* Before anything moves: tell the ground where the mark is, so the field's
+       streaks leave along lines drawn from the logo rather than from the middle
+       of the frame. Measured here because here is the only place that knows. */
+    tellJumpOrigin(markRef.current);
     let authed = null;                       // null = still in flight
     let flashed = false;
     const handOver = () => {
@@ -7110,13 +7115,11 @@ function Login({ config, onBack, onAuthed, onArrival }) {
     };
     jumping.current = runJump({
       onFlash: () => {
-        flashed = true;
         /* Nothing to hand over to yet: hold the flash rather than dropping back
            onto a sign-in screen that has already taken itself apart. */
         if (authed === null) document.documentElement.classList.add("sage-flash-hold");
-        handOver();
       },
-      onDone: () => {},
+      onDone: () => { flashed = true; handOver(); },
     });
     /* A THROW has to land here as well as a returned error. It is not a
        hypothetical: the flash holds white while it waits for an answer, so an
@@ -7189,7 +7192,7 @@ function Login({ config, onBack, onAuthed, onArrival }) {
             loading indicator, which is a different object appearing in the place
             of the thing you were looking at. The mark stays and goes to work
             instead: the same 73 dots, running a wave left to right. */}
-        <div className="login-logo">
+        <div className="login-logo" ref={markRef}>
           <SageMark word size={64} revealed={mode === "signin" && !busy ? revealed : undefined} />
         </div>
 
@@ -7415,11 +7418,23 @@ function runJump({ onFlash, onDone }) {
   const beat = (b) => { clear(); root.classList.add("sage-beat-" + b); };
   beat("hold");
   const at = (ms, fn) => ts.push(setTimeout(fn, ms));
+  let flashing = false;
   at(ARRIVAL.hold, () => beat("gather"));
   at(ARRIVAL.hold + ARRIVAL.gather, () => beat("stretch"));
-  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => { beat("flash"); onFlash(); });
+  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => { flashing = true; beat("flash"); onFlash(); });
+  /* The handover is 140ms INTO the flash, not at the start of it, which is the
+     handoff's table: flash at +1820, assemble at +1960. The white has to be at
+     its peak when one screen becomes the other — handing over on the first frame
+     of the flash means the swap happens under a transparent overlay and the
+     white then goes off over the top of a dashboard that is already standing
+     there. */
   at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140, () => onDone());
-  return () => { ts.forEach(clearTimeout); clear(); };
+  /* Once the flash is up, this cleanup does nothing. It runs on the sign-in
+     screen's unmount, which IS the handover, and clearing the beat classes there
+     stripped the flash off the frame it was drawn for — the swap went uncovered
+     and the white fired late, over the assembly. The flash belongs to the far
+     side now; SageArrival clears it. */
+  return () => { ts.forEach(clearTimeout); if (!flashing) clear(); };
 }
 
 /* Set by the sign-in button and read where the session lands. A page RELOAD
@@ -7439,7 +7454,12 @@ function SageArrival({ onComplete }) {
      know about it. */
   useEffect(() => {
     const root = document.documentElement;
+    /* The flash beat belongs to the sign-in screen's clock, which has stopped.
+       Hand it over rather than letting the two overlap: .sage-assemble carries an
+       identical saFlash shorthand, so the running flash is not restarted by the
+       swap, it simply changes which rule is holding it. */
     root.classList.add("sage-assemble");
+    root.classList.remove("sage-beat-flash");
     let reduce = false;
     try {
       reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -7467,9 +7487,24 @@ const GROUND_PITCH = 44;
 const GROUND_TINTS = ["rgba(46,58,50,0.34)", "rgba(120,150,120,0.44)", "rgba(110,150,160,0.42)",
   "rgba(160,158,110,0.40)", "rgba(120,130,170,0.38)"];
 
-function buildField(w, h) {
+/* Where the jump's streaks radiate FROM. The field's own centre by default, and
+   the sign-in mark once the sign-in screen has told it where the mark is: the
+   whole point of the jump is that it starts at the logo, and a field flying out
+   of the middle of the frame while the mark flies out of a point 250px above it
+   gives the eye two vanishing points to choose between. One origin, everything
+   on the same lines. */
+const JUMP_ORIGIN = "sage-jump-origin";
+function tellJumpOrigin(el) {
+  if (typeof document === "undefined" || !el) return;
+  const r = el.getBoundingClientRect();
+  document.dispatchEvent(new CustomEvent(JUMP_ORIGIN, {
+    detail: { x: r.left + r.width / 2, y: r.top + r.height / 2 },
+  }));
+}
+
+function buildField(w, h, origin) {
   const dots = [];
-  const cx = w / 2, cy = h / 2;
+  const cx = origin ? origin.x : w / 2, cy = origin ? origin.y : h / 2;
   let i = 0;
   for (let y = GROUND_PITCH / 2; y < h; y += GROUND_PITCH) {
     for (let x = GROUND_PITCH / 2; x < w; x += GROUND_PITCH) {
@@ -7479,6 +7514,13 @@ function buildField(w, h) {
          out. A third still costs nothing to animate (they are transforms with no
          promoted layers) and it is the difference between flying through
          something and flying through nothing. */
+      /* Bright is now only about SIZE. Every dot streaks — Jorge asked for the
+         whole page to go, not a third of it — and the handoff's "only the bright
+         minority needs its own streak" was a cost note, written against
+         will-change promoting each one into its own layer. Without that these are
+         ordinary composited transforms and the whole field is affordable, which
+         is the difference between flying through weather and flying through a
+         sprinkling. */
       const bright = i % 3 === 0;
       const dx = x - cx, dy = y - cy;
       dots.push({
@@ -7503,6 +7545,14 @@ function SageGround({ beat = "idle" }) {
     w: typeof window === "undefined" ? 1440 : window.innerWidth,
     h: typeof window === "undefined" ? 900 : window.innerHeight,
   }));
+  /* Null until the sign-in screen says where its mark is; the field's own centre
+     until then, which is right for every screen that has no mark on it. */
+  const [origin, setOrigin] = useState(null);
+  useEffect(() => {
+    const onOrigin = (e) => setOrigin(e.detail);
+    document.addEventListener(JUMP_ORIGIN, onOrigin);
+    return () => document.removeEventListener(JUMP_ORIGIN, onOrigin);
+  }, []);
   useEffect(() => {
     /* Re-measured on resize, and only on resize. A field rebuilt per render was
        the second of the handoff's performance notes. */
@@ -7514,7 +7564,10 @@ function SageGround({ beat = "idle" }) {
     window.addEventListener("resize", onResize);
     return () => { window.removeEventListener("resize", onResize); clearTimeout(t); };
   }, []);
-  const dots = useMemo(() => buildField(size.w, size.h), [size.w, size.h]);
+  /* Rebuilt when the origin arrives, and only then: once per sign-in, not once
+     per render. Rebuilding it per render was the handoff's second performance
+     note and it still holds. */
+  const dots = useMemo(() => buildField(size.w, size.h, origin), [size.w, size.h, origin]);
 
   return (
     <div className={"sage-ground beat-" + beat} aria-hidden="true">
@@ -7528,8 +7581,12 @@ function SageGround({ beat = "idle" }) {
             style={{
               left: d.x, top: d.y, width: d.size, height: d.size, background: d.tint,
               animationDuration: d.dur + "ms", animationDelay: d.delay + "ms",
-              /* Read by the jump; set here so nothing has to be measured later. */
+              /* Read by the jump; set here so nothing has to be measured later.
+                 --d carries how far this dot sits from the origin, so the ones
+                 near the logo travel less than the ones out at the corners and
+                 the whole field opens rather than sliding as a sheet. */
               "--a": d.angle + "deg",
+              "--d": d.dist.toFixed(1),
             }} />
         ))}
       </div>
@@ -24865,13 +24922,29 @@ function Style() {
       .sage-beat-stretch .login-card > *:not(.login-logo),
       .sage-beat-flash .login-card > *:not(.login-logo) {
         opacity:0; pointer-events:none; transition: opacity .42s ease; }
-      /* The wave the mark runs while it is signing in stops the moment the jump
-         starts, and it stops where it is rather than snapping: a dot caught
-         mid-swell at 1.34 jumping to 1 in one frame is a visible flick right at
-         the top of the sequence. */
-      .sage-beat-hold .login-logo circle, .sage-beat-gather .login-logo circle,
-      .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
-        animation: none; }
+      /* ---- the wave has to STOP, and .login-card is why this selector is long ----
+         Pressing Sign in sets .login-busy, which runs markWork across the mark.
+         .login-busy .login-logo circle and .sage-beat-stretch .login-logo
+         circle have identical specificity and the login block is further down
+         this sheet, so the wave won.
+
+         That is not a cosmetic loss. A RUNNING ANIMATION beats a declared
+         transform outright, whatever the specificity — so every streak rule below
+         was silently ignored and the mark sat pulsing while the layer around it
+         scaled. The whole jump had no mark in it. Adding .login-card takes this
+         to four classes against three, the wave stops, and the transforms below
+         are free to apply.
+
+         It only shows up on the real press path: setting the beat classes by hand
+         never sets .login-busy, so every harness run of this looked right. */
+      .sage-beat-hold .login-card .login-logo circle, .sage-beat-gather .login-card .login-logo circle,
+      .sage-beat-stretch .login-card .login-logo circle, .sage-beat-flash .login-card .login-logo circle {
+        animation: none;
+        /* And the origin with it, for the same reason: the breathe sets it to
+           center, further down this sheet, and a streak scaled about its middle
+           grows out of both ends and detaches from the mark. It has to pivot on
+           the near end. */
+        transform-origin: left center; }
       /* Nothing may clip the streaks: they leave the mark's box within about
          80ms and the frame within 900. */
       .sage-beat-hold .login, .sage-beat-gather .login,
@@ -24897,6 +24970,11 @@ function Style() {
       .sage-beat-gather .login-logo circle {
         transform: rotate(var(--a)) translateX(calc((-4 - var(--d) * .12) * 1px)) scaleX(.78);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      /* .login-busy also runs loginLogoRise on the wrapper; same collision, same
+         cure, so the mark's layer can be scaled by the beats. */
+      .sage-beat-hold .login-card .login-logo, .sage-beat-gather .login-card .login-logo,
+      .sage-beat-stretch .login-card .login-logo, .sage-beat-flash .login-card .login-logo {
+        animation: none; }
       .sage-beat-gather .login-logo svg {
         transform: scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
       .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
@@ -24915,12 +24993,14 @@ function Style() {
         pointer-events:none; z-index:9500; }
       .sage-beat-flash .sage-flash, .sage-assemble .sage-flash {
         animation: saFlash .42s ease-out both; }
-      @keyframes saFlash { 0% { opacity:0; } 26% { opacity:1; } 100% { opacity:0; } }
+      /* Up in 76ms and held to 134, because the handover is at 140: the white has
+         to be at full before the swap, not still climbing through it. */
+      @keyframes saFlash { 0% { opacity:0; } 18%, 32% { opacity:1; } 100% { opacity:0; } }
       /* Held white while a slow sign-in finishes. Better a held flash than the
          dashboard arriving half-built, or the sign-in screen coming back after it
          has already flown apart. */
       .sage-flash-hold .sage-flash { animation: saFlashHold .42s ease-out both; }
-      @keyframes saFlashHold { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+      @keyframes saFlashHold { 0% { opacity:0; } 18%, 100% { opacity:1; } }
 
       /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
          Written as animations, with the field's own 28s drift kept first in every
@@ -24934,7 +25014,51 @@ function Style() {
         animation: sgFieldDrift 28s ease-in-out infinite alternate,
                    fieldGather .5s cubic-bezier(.32,0,.4,1) both; }
       @keyframes fieldGather { from { transform:none; } to { transform:scale(.92); } }
+      /* ---- the blobs part like cloud ----
+         Each one moves OUT of the frame in the direction it already sits, rather
+         than the four of them scaling together as one sheet. A sheet that grows
+         is a zoom; four masses drifting apart and thinning is weather being
+         pushed aside, which is what flying through it should look like.
+
+         Written as animations with each blob's own 34-52s drift kept first in the
+         list, for the same reason the field's rules are: sgDrift is an animation
+         on transform, so a plain transform here would have been ignored outright.
+         And the corner each one is pushed toward is the corner it lives in — see
+         the .sg-blob geometry above. */
       .sage-beat-gather .sg-blobs { transform:scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-stretch .sg-blob, .sage-beat-flash .sg-blob {
+        animation: sgDrift 40s ease-in-out infinite alternate,
+                   blobPart .88s cubic-bezier(.44,0,.7,.5) both; }
+      /* Each blob keeps its OWN drift duration alongside the new one. The
+         shorthand above would otherwise reset all four to 40s, and changing a
+         running animation's duration moves it to a different point on its own
+         timeline — the blobs would jump before they parted. */
+      .sage-beat-stretch .sg-blob.b1, .sage-beat-flash .sg-blob.b1 { --bx:-38%; --by:-30%; animation-duration:34s,.88s; }
+      .sage-beat-stretch .sg-blob.b2, .sage-beat-flash .sg-blob.b2 { --bx: 38%; --by: 32%; animation-duration:52s,.88s; }
+      .sage-beat-stretch .sg-blob.b3, .sage-beat-flash .sg-blob.b3 { --bx: 34%; --by:-34%; animation-duration:44s,.88s; }
+      .sage-beat-stretch .sg-blob.b4, .sage-beat-flash .sg-blob.b4 { --bx:-34%; --by: 36%; animation-duration:38s,.88s; }
+      /* They thin, they do not disappear. At 0.14 and pushed 58% out, all four
+         had left the frame by the peak of the jump and the ground under the
+         streaks went flat white. Cloud that has been pushed aside is still
+         cloud. */
+      @keyframes blobPart {
+        from { transform: translate3d(0,0,0) scale(1); opacity:1; }
+        to   { transform: translate3d(var(--bx,0), var(--by,0), 0) scale(1.5); opacity:.34; }
+      }
+      /* And back in as the dashboard lands, on the same deceleration as the rest
+         of the ground, so the weather closes over the join rather than snapping
+         back into place after it. */
+      .sage-beat-assemble .sg-blob {
+        animation: sgDrift 40s ease-in-out infinite alternate,
+                   blobGather 1.3s cubic-bezier(.12,.78,.28,1) both; }
+      .sage-beat-assemble .sg-blob.b1 { animation-duration:34s,1.3s; }
+      .sage-beat-assemble .sg-blob.b2 { animation-duration:52s,1.3s; }
+      .sage-beat-assemble .sg-blob.b3 { animation-duration:44s,1.3s; }
+      .sage-beat-assemble .sg-blob.b4 { animation-duration:38s,1.3s; }
+      @keyframes blobGather {
+        from { transform: translate3d(var(--bx,0), var(--by,0), 0) scale(1.5); opacity:.34; }
+        to   { transform: translate3d(0,0,0) scale(1); opacity:1; }
+      }
       /* The field flies WITH the mark rather than disappearing while it does.
          It used to fade to nothing halfway through the stretch, which is why the
          peak of the jump felt empty: the one moment that should be full of
@@ -24942,18 +25066,31 @@ function Style() {
       .sage-beat-stretch .sg-field, .sage-beat-flash .sg-field {
         animation: sgFieldDrift 28s ease-in-out infinite alternate,
                    fieldStretch .88s cubic-bezier(.6,0,.9,.24) both; }
+      /* 2.0, not 3.2. At 3.2 the layer alone carried every dot past the edge
+         before the beat was over, so the last fifth of the jump was a blank page
+         waiting for the flash — the streaks had all left and nothing had arrived.
+         The layer moves less now and the per-dot streaks do the travelling, which
+         keeps something crossing the frame the whole way through. */
       @keyframes fieldStretch {
         from { transform:scale(.92); opacity:1; }
-        to   { transform:scale(3.2); opacity:.85; }
+        to   { transform:scale(2.0); opacity:.85; }
       }
-      .sage-beat-stretch .sg-dot.bright, .sage-beat-flash .sg-dot.bright {
-        transform: translate(-50%,-50%) rotate(var(--a)) scaleX(17);
-        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      /* Every dot, not the bright third. They all leave along their own line out
+         of the logo, and the far ones go further than the near ones, so the field
+         opens out of that point instead of sliding past as a sheet. */
+      .sage-beat-stretch .sg-dot, .sage-beat-flash .sg-dot {
+        transform: translate(-50%,-50%) rotate(var(--a))
+                   scaleX(calc(14 + var(--d, 400) * .09));
+        /* Staggered by distance: the dots out at the corners go first and the
+           ones close to the logo hold back up to 160ms, so the field empties
+           outward from the mark instead of all at once. Without it the whole
+           field left together and took the middle of the jump with it. */
+        transition: transform .88s cubic-bezier(.6,0,.9,.24);
+        transition-delay: max(0ms, calc((900 - var(--d, 400)) * .18ms)); }
       /* The blobs stretch too, rather than merely swelling: pulled long along
          the direction of travel and left bright enough to be the colour the
          streaks are flying through. */
-      .sage-beat-stretch .sg-blobs, .sage-beat-flash .sg-blobs {
-        transform:scale(2.6, .82); opacity:.5; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+
 
       /* ---- and out the other side ----
          Coming out of lightspeed rather than cutting to a still page: the field
@@ -24963,23 +25100,20 @@ function Style() {
       .sage-beat-assemble .sg-field {
         animation: sgFieldDrift 28s ease-in-out infinite alternate,
                    groundLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
-      .sage-beat-assemble .sg-dot.bright { animation: dotLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
-      .sage-beat-assemble .sg-blobs { animation: blobLand 1.3s cubic-bezier(.12,.78,.28,1) both; }
+      .sage-beat-assemble .sg-dot { animation: dotLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
+
       @keyframes groundLand {
-        from { transform:scale(3.2); opacity:.85; }
+        from { transform:scale(2.0); opacity:.85; }
         to   { transform:none; opacity:1; }
       }
       @keyframes dotLand {
-        from { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(17); }
+        from { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(calc(14 + var(--d, 400) * .09)); }
         to   { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(1); }
       }
-      @keyframes blobLand {
-        from { transform:scale(2.6,.82); opacity:.5; }
-        to   { transform:none; opacity:1; }
-      }
+
       /* Only the bright eighth streaks. The rest ride the layer's own scale,
          which is what bought the density back. */
-      .sage-beat-gather .sg-dot.bright { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.80);
+      .sage-beat-gather .sg-dot { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.80);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
 
       /* ---- the dashboard coming out of the jump ----

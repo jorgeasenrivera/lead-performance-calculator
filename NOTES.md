@@ -162,6 +162,46 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**Then the arrival stopped happening at all, and the cause was a cascade loss.**
+Pressing Sign in sets `.login-busy`, which runs the mark's working wave.
+`.login-busy .login-logo circle` and `.sage-beat-stretch .login-logo circle` have
+identical specificity and the login block sits further down the sheet, so the wave
+won. That is not a cosmetic loss: a RUNNING ANIMATION beats a declared transform
+outright, whatever the specificity, so every streak rule was silently ignored and
+the mark sat there pulsing while the layer around it scaled. The jump had no mark
+in it. The breathe rule's `transform-origin: center` beat the streak's `left
+center` the same way, which would have grown each streak out of both ends.
+
+It only appears on the real press path. Setting the beat classes by hand never sets
+`.login-busy`, so every harness run of the jump looked perfect — which is exactly
+why it shipped. The harness now presses the button.
+
+**And the flash was being stripped off the frame it was drawn for.** The handover
+unmounts the sign-in screen, and the jump's cleanup ran on that unmount and cleared
+every beat class, including the flash set microseconds earlier. Measured: the swap
+happened at opacity 0 and the white went off 270ms later, over a dashboard already
+standing there. The cleanup is now a no-op once the flash is up, the flash belongs
+to the far side, and the handover is 140ms INTO it, per the handoff's table (flash
++1820, assemble +1960).
+
+**The middle of the jump had gone empty again.** The field layer scaled 3.2, which
+carried every dot past the edge before the beat was over, and the blobs left the
+frame entirely at 0.14 opacity: the last fifth of the jump was a blank page waiting
+for the flash. The layer moves 2.0 now and the per-dot streaks do the travelling;
+the dots are staggered by distance so the field empties outward from the mark
+rather than all at once; and the blobs thin rather than vanish. Cloud that has been
+pushed aside is still cloud.
+
+**One origin for everything.** Jorge's note: the field starts at the logo too. The
+ground now takes a jump origin from the sign-in screen, which measures its own mark
+on the press, and every dot's angle and distance is rebuilt from that point — so
+the field and the mark fly along the same lines out of the same place instead of
+giving the eye two vanishing points 250px apart. And every dot goes, not the bright
+third: the handoff's "only the bright minority needs its own streak" was a cost
+note written against `will-change` promoting each one into a layer, and measured
+here the whole field costs the same as a third of it, because the expensive part is
+the stretch and not the count.
+
 **The arrival ran OVER the sign-in screen, not on it.** The first build was a
 fixed opaque panel at z-index 9000 with its own 360px copy of the wordmark at dead
 viewport centre. It painted over the sign-in screen the instant the button was
