@@ -22335,7 +22335,11 @@ function AccessPanel({ config, session, onChange }) {
       {pending.length > 0 && (
         <div className="card">
           <h3>Waiting for approval <span className="badge badge-warn">{pending.length}</span></h3>
-          <p className="hint">These people created an account and are waiting on you. Tick the stores they should see, then approve.</p>
+          <p className="hint">
+            These people created an account and are waiting on you. Tick the stores they should see, then approve.
+            A salesperson needs no stores at all: approve them with nothing ticked and they stay off the dashboard
+            while still having an account you can join to their name on the floor.
+          </p>
           {pending.map((u) => (
             <PendingRow key={u.id} u={u} stores={config.stores} busy={busy}
               onApprove={(ids) => approve(u, ids)} onReject={() => remove(u)} />
@@ -22450,7 +22454,18 @@ function PendingRow({ u, stores, busy, onApprove, onReject }) {
         ))}
       </div>
       <div className="row-actions">
-        <button className="btn" disabled={busy || ids.length === 0} onClick={() => onApprove(ids)}>Approve</button>
+        {/* ---- approving with nothing ticked is the SALESPERSON case ----
+            It was disabled, which made the one flow this screen's own hint
+            describes impossible: "leave their stores unticked and they stay off
+            the dashboard while still having an account to be joined to". A
+            salesperson has no business on the dashboard and every reason to have
+            an account, and there was no way to give them one.
+
+            The button says which of the two it is doing, so approving with
+            nothing ticked is a choice rather than a slip. */}
+        <button className="btn" disabled={busy} onClick={() => onApprove(ids)}>
+          {ids.length ? "Approve" : "Approve for the floor only"}
+        </button>
         <button className="btn-x" disabled={busy} onClick={onReject}>Reject</button>
       </div>
     </div>

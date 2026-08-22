@@ -36,7 +36,14 @@ export default async function handler(req, res) {
 
   /* Who the session actually belongs to. Asking Supabase rather than decoding
      the token here means an expired or revoked session is refused for us. */
-  const asUser = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  /* Two names for the same key: the browser's copy is VITE_SUPABASE_ANON_KEY,
+     because that prefix is what Vite inlines, and a deployment very easily has
+     that one and not the bare name. Without this, createClient throws
+     "supabaseKey is required" and the phone gets a 500 it cannot explain. Same
+     trap as /api/link-person. */
+  const anon = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+  if (!anon) return res.status(500).json({ error: "SUPABASE_ANON_KEY is not set on the server (VITE_SUPABASE_ANON_KEY works too)" });
+  const asUser = createClient(process.env.SUPABASE_URL, anon, {
     auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
   });
   const { data: who, error: whoErr } = await asUser.auth.getUser();
