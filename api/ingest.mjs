@@ -26,6 +26,7 @@ import {
 /* A person's standing at a store, shared with the app so an import and a screen
    cannot disagree about who this store's people are. */
 import { admitsEveryone, holdPerson } from "./_people-status.mjs";
+import { supabaseUrl } from "./_env.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 try {
@@ -122,7 +123,7 @@ function activityDateFrom(name) {
 }
 
 /* ---------- Supabase (PostgREST, service role) ---------- */
-const SB = () => ({ url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY });
+const SB = () => ({ url: supabaseUrl(), key: process.env.SUPABASE_SERVICE_ROLE_KEY });
 async function sbGet(key) {
   const { url, key: k } = SB();
   const r = await fetch(`${url}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}&select=value`, {

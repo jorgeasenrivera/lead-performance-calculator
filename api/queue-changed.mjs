@@ -20,6 +20,7 @@
  *   plus the APNs and FCM variables the senders document
  */
 import { createClient } from "@supabase/supabase-js";
+import { supabaseUrl } from "./_env.mjs";
 import { decide, contentState } from "./_queue-notify.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
@@ -58,7 +59,7 @@ export default async function handler(req, res) {
     if (!worthSending(t)) {
       return res.status(200).json({ ok: true, sent: 0, note: "nothing to carry on" });
     }
-    const db0 = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+    const db0 = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
       { auth: { persistSession: false } });
     let hook = "";
     try {
@@ -73,7 +74,7 @@ export default async function handler(req, res) {
   const plan = decide(before && before.data, after.data);
   if (!plan.length) return res.status(200).json({ ok: true, sent: 0 });
 
-  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+  const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
   /* Devices belonging to the people this change touches. One query, not one per

@@ -2,6 +2,11 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
+/* The mark. One drawing on the same 9x9 grid PixIcon uses, so the identity and
+   the app's iconography come off one ruler. Its own file because it is shipped
+   artwork rather than a screen: every size, plate and print form is generated
+   from the single pattern inside it. */
+import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED, SAGE_PRINT } from "./SageMark.jsx";
 /* The reader for the scheduled reports, shared verbatim with the pipeline that
    reads the emailed ones. It used to be a second copy of the same code with a
    comment promising they matched; they did not, and every way they differed was
@@ -304,27 +309,12 @@ const STORE_TZ = "America/New_York";
 const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
 const today = () => dayIn();
 
-// The cinematic loading sequence plays only on the first sign-in of each calendar
-// day, per person. After that, sign-ins during the same day skip straight into the
-// app so it never becomes tedious. Keyed by dealership day + user so it resets at
-// midnight and is independent per account on a shared machine.
-const INTRO_KEY = "lpc:intro-played";
-function introPlayedToday(userId) {
-  try { return localStorage.getItem(INTRO_KEY) === `${today()}:${userId || "anon"}`; }
-  catch (e) { return false; }
-}
-function markIntroPlayed(userId) {
-  try { localStorage.setItem(INTRO_KEY, `${today()}:${userId || "anon"}`); } catch (e) {}
-}
-// How many times someone has seen the intro overall — used to reveal a "Skip" affordance
-// only after the novelty has worn off (first few plays stay unskippable for the wow).
-const INTRO_COUNT_KEY = "lpc:intro-count";
-function introSeenCount() {
-  try { return parseInt(localStorage.getItem(INTRO_COUNT_KEY) || "0", 10) || 0; } catch (e) { return 0; }
-}
-function bumpIntroCount() {
-  try { const n = introSeenCount() + 1; localStorage.setItem(INTRO_COUNT_KEY, String(n)); return n; } catch (e) { return 0; }
-}
+/* The arrival plays only on the first sign-in of each calendar day, per person:
+   keyed by dealership day plus user, so it resets at midnight and is independent
+   per account on a shared machine. The key is `lpc:arrival` rather than the old
+   `lpc:intro-played`, which means everybody sees the new arrival once even if
+   they had already seen the old cinematic today — which is the right way round,
+   since it is the thing they have not seen. */
 const ym = () => today().slice(0, 7);
 const prevYm = () => {
   const [y, m] = today().split("-").map(Number);
@@ -921,56 +911,42 @@ const DEFAULT_CONFIG = {
 
 /* ---------------- Logo + favicon ---------------- */
 
-function Logo({ size = 40, animated = false, loading = false }) {
+/* ---------------- The mark ----------------
+   The app is Sage now, and the mark is one drawing on the same 9x9 grid the
+   PixIcon glyphs are drawn on — so the identity and the app's own iconography
+   come off the same ruler rather than merely sitting next to each other.
+
+   `Logo` is kept as the name every call site already uses, and it keeps both of
+   the states those call sites pass:
+
+     animated   a slow float, which the old mark had and which costs nothing
+     loading    seven dots lighting one at a time, which is the identity's own
+                loading pattern rather than a spinner borrowed from elsewhere
+
+   The colour pair is fixed and identical in every store: the store palettes
+   paint identity elsewhere and the status colours are reserved, so neither ever
+   touches the mark. */
+function Logo({ size = 40, animated = false, loading = false, word = false, ...rest }) {
+  if (loading) return <SageLoading size={size} />;
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={(animated ? "logo-anim " : "") + (loading ? "logo-loading" : "")}>
-      <defs>
-        <linearGradient id="lpcg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#2A5E9B" />
-          <stop offset="100%" stopColor="#1D4674" />
-        </linearGradient>
-        {/* the "whoosh" gradient — blue → lime, the same one the loading bar used */}
-        <linearGradient id="lpc-trail" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#88C6EA" />
-          <stop offset="55%" stopColor="#2A5E9B" />
-          <stop offset="100%" stopColor="#C1D730" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lpcg)" />
-      {/* full ring track (light blue) */}
-      <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
-      {loading ? (
-        <>
-          {/* a gradient arc that spins as the needle's trail */}
-          <g className="logo-trail" style={{ transformOrigin: "32px 32px" }}>
-            <path d="M 32 15 A 17 17 0 0 1 47.7 25.2" fill="none" stroke="url(#lpc-trail)" strokeWidth="5" strokeLinecap="round" pathLength="100" />
-          </g>
-          {/* the needle, spinning with the trail */}
-          <g className="logo-spin" style={{ transformOrigin: "32px 32px" }}>
-            <line x1="32" y1="32" x2="32" y2="15" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-          </g>
-          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
-        </>
-      ) : (
-        <>
-          {/* soft rounded start for the lime (a butt-capped path would cut flat here) */}
-          <circle className="logo-arc-start" cx="15" cy="32" r="2.5" fill="#C1D730" />
-          {/* Lime sweeps 180° → 320.2°: the SAME angular span as the needle, so the two tips
-              travel together. A butt cap ends it flat on the needle's centerline, whereas a round cap
-              would bulge sideways past the needle. The white needle is drawn on top of the seam. */}
-          <path className="logo-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
-          {/* needle: width 5 so its round tip reaches the arc's outer edge (r=19.5) and covers the seam */}
-          <g className="logo-needle" style={{ transformOrigin: "32px 32px" }}>
-            <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-          </g>
-          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
-        </>
-      )}
-    </svg>
+    <SageMark word={word} size={size} className={animated ? "logo-anim" : undefined} {...rest} />
   );
 }
 
-const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#2A5E9B'/><stop offset='100%' stop-color='#1D4674'/></linearGradient></defs><rect x='2' y='2' width='60' height='60' rx='15' fill='url(#g)'/><circle cx='32' cy='32' r='17' fill='none' stroke='rgba(136,198,234,.5)' stroke-width='5'/><circle cx='15' cy='32' r='2.5' fill='#C1D730'/><path d='M 15 32 A 17 17 0 0 1 45.06 21.12' fill='none' stroke='#C1D730' stroke-width='5' stroke-linecap='butt'/><line x1='32' y1='32' x2='45.06' y2='21.12' stroke='#FFF' stroke-width='5' stroke-linecap='round'/><circle cx='32' cy='32' r='4.5' fill='#FFF'/></svg>`;
+/* Seven dots, lighting one at a time, 150ms apart. The same dot the mark is made
+   of, doing the one job a spinner used to do. */
+function SageLoading({ size = 40 }) {
+  const d = Math.max(4, Math.round(size / 7));
+  return (
+    <span className="sage-loading" aria-label="Loading" role="img"
+      style={{ gap: Math.round(d * 0.7) + "px" }}>
+      {Array.from({ length: 7 }, (_, i) => (
+        <i key={i} style={{ width: d, height: d, animationDelay: i * 150 + "ms" }} />
+      ))}
+    </span>
+  );
+}
+
 
 // Set at module scope, before anything paints. Reveal-on-scroll hides elements
 // until they are observed, so it must only ever engage when this bundle is live.
@@ -1096,11 +1072,12 @@ function useLivingBackground() {
 function useFavicon() {
   useEffect(() => {
     try {
-      const href = "data:image/svg+xml," + encodeURIComponent(LOGO_SVG);
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
-      link.href = href;
-      document.title = "Lead Performance Calculator";
+      /* The favicon is declared in index.html now — an SVG, a 32px raster and the
+         Apple touch icon, all generated from the same 9x9 pattern as the mark.
+         This used to paint one in at runtime from an inline copy of the old logo,
+         which would now overwrite the real one with a second-best version of it a
+         moment after the page loaded. */
+      document.title = "Sage";
       // Type system, loaded as a stylesheet link rather than an @import so it never
       // blocks first paint. Space Grotesk is the same face The Board uses on the TV.
       if (!document.getElementById("lpc-fonts")) {
@@ -1647,8 +1624,22 @@ async function apiCall(path, { method = "GET", body = null } = {}) {
       headers: { Authorization: `Bearer ${t.access_token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    const json = await r.json().catch(() => ({}));
-    if (!r.ok) return { error: json.error || json.message || `That failed (${r.status}).` };
+    /* Read it as text first. A function that THREW rather than returning does not
+       reply with JSON at all — the platform sends its own error page — and parsing
+       that away left the browser with nothing but a status code to show. "That
+       failed (500)." is what a manager saw for every distinct cause there is.
+
+       So the body is kept: put in the console whole, and the first line of it
+       shown when the server had nothing better to say. */
+    const text = await r.text();
+    let json = {};
+    try { json = text ? JSON.parse(text) : {}; } catch (e) { json = {}; }
+    if (!r.ok) {
+      if (!json.error && !json.message) console.error("apiCall", path, r.status, text);
+      const raw = String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      return { error: json.error || json.message
+        || (raw ? `That failed (${r.status}). ${raw}` : `That failed (${r.status}).`) };
+    }
     return json;
   } catch (e) {
     return { error: "The server could not be reached." };
@@ -1914,6 +1905,17 @@ export default function LeadPerformanceCalculator() {
   const [authReady, setAuthReady] = useState(false);
   const [entered, setEntered] = useState(false);
   const [introPlaying, setIntroPlaying] = useState(false);
+  /* True while the sign-in screen is taking itself apart. See where it is read. */
+  const [jumpHold, setJumpHold] = useState(false);
+  /* Hides the app while the sign-in layer is over it. A LAYOUT effect, so the
+     class is gone in the same commit that drops the layer — an ordinary effect
+     runs after paint and would show one frame of an un-animated dashboard right
+     where the landing is supposed to begin. */
+  useLayoutEffect(() => {
+    const under = !session || jumpHold;
+    document.documentElement.classList.toggle("jump-under", under);
+    return () => document.documentElement.classList.remove("jump-under");
+  }, [session, jumpHold]);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
@@ -1921,8 +1923,9 @@ export default function LeadPerformanceCalculator() {
   // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
   // means the next sign-in plays it as well, which is what makes it possible to
   // review the whole handover end to end.
+  /* Kept for the account menu, which has always had it, though with the arrival
+     playing every time there is far less for it to do. */
   const replayIntro = () => {
-    try { localStorage.removeItem(INTRO_KEY); } catch (e) {}
     setIntroDone(false);
     setIntroPlaying(true);
   };
@@ -1930,6 +1933,9 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     if (!session || sawSession.current) return;
     sawSession.current = true;
+    /* Unless the arrival is already doing this. See jumpOwnsEntrance: two
+       entrances at once is what made the landing segmented. */
+    if (jumpOwnsEntrance) return;
     setEntering(true);
     const t = setTimeout(() => setEntering(false), 1100);
     return () => clearTimeout(t);
@@ -1937,7 +1943,14 @@ export default function LeadPerformanceCalculator() {
   // The cinematic intro plays once per calendar day per user. null = not decided yet.
   const [introDone, setIntroDone] = useState(false);
   const [appModule, setAppModule] = useState("perf");
-  const [view, setView] = useState("admin");
+  /* Opens on the store this browser last worked in; see rememberView. Starting
+     from "admin" here and correcting it a moment later would show the overview
+     for a frame on every load. */
+  const [view, setViewRaw] = useState(() => lastView() || "admin");
+  const setView = useCallback((v) => {
+    setViewRaw(v);
+    rememberView(typeof v === "string" ? v : null);
+  }, []);
   const [storeData, setStoreData] = useState(null);
   // What the server row said when this browser last read it. The email ingest writes
   // straight to the database, so without this an open tab keeps showing the tool as
@@ -1989,9 +2002,24 @@ export default function LeadPerformanceCalculator() {
   // Swapping one full screen for another was the hard cut; a curtain lifting is not.
   useEffect(() => {
     if (!session || !session.active || entered) return;
-    // Wait for the sign-in handover to clear before this begins. Overlapping the
-    // two reads as one animation interrupting another rather than a sequence.
-    if (!introPlayedToday(session.userId || session.id)) setTimeout(() => setIntroPlaying(true), 240);
+    /* Straight away, in the same commit that lets the app in. The 240ms wait
+       here was inherited from the cinematic that used to follow the sign-in
+       handover, and against the arrival it is exactly the wrong shape: the app
+       painted, the store started loading, and a quarter of a second later a
+       full-screen animation dropped over the top of it. The arrival is not
+       something that happens after the app loads, it is the thing the loading
+       happens behind.
+
+       And the arrival is NOT started from here. The session now lands in the
+       middle of the jump — about 250ms in, while the mark is still gathering —
+       because the dashboard is mounted under the streaks rather than after them.
+       Setting introPlaying here mounted SageArrival at that moment and ran the
+       whole landing on a dashboard nobody could see, a second before the streaks
+       had finished. The jump hands over on its own clock; see landDashboard.
+
+       The flag is still consumed, because a page RELOAD restores a session with
+       no sign-in screen anywhere and must not be treated as an arrival. */
+    signInPressed = false;
     setAppModule("perf");
     setEntered(true);
   }, [session, entered]);
@@ -2113,13 +2141,26 @@ export default function LeadPerformanceCalculator() {
         // an admin opening the tool is what triggers the daily backup
         if (session.role === "admin") runAutoBackup(config, all, session.name).catch(() => {});
         viewPicked.current = true;
-        if (session.role === "admin") {
-          setView("admin");
+        /* ---- land where you were, not on the overview ----
+           An admin opened on All Stores every time, which is the one view that is
+           nobody's actual job: the numbers a manager acts on are a store's. So the
+           last store worked in is remembered and opened again, and the overview is
+           one click away rather than the front door.
+
+           Only a store is remembered. "admin" and "combined" are not stored, so an
+           admin who genuinely wants the overview gets it by asking for it each
+           time rather than by being parked there for ever after one visit. */
+        const remembered = lastView();
+        const openable = remembered && accessible.some((x) => x.id === remembered) ? remembered : null;
+        if (openable) {
+          setView(openable);
+          setStoreData(all[openable]);
         } else if (session.role === "overseer" && accessible.length > 1) {
           setView("combined");
         } else {
           const first = accessible[0]?.id;
           if (first) { setView(first); setStoreData(all[first]); }
+          else if (session.role === "admin") setView("admin");
         }
         return;
       }
@@ -2824,6 +2865,11 @@ export default function LeadPerformanceCalculator() {
         : assoc.name,
     });
   };
+  /* Waiting screens are held, not flashed: nothing shows for a load that finishes
+     quickly, and once one does show it stays long enough to read. See useHeld. */
+  const bootHeld = useHeld(!config || !authReady);
+  const storeHeld = useHeld(!storeData);
+
   // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
   const queueParams = (() => {
     try {
@@ -2868,7 +2914,45 @@ export default function LeadPerformanceCalculator() {
     return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} /><Style /></Shell>;
   }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
-  if (!config || !authReady) return <Shell><LoadingScreen /><Style /></Shell>;
+  /* ---- the sign-in screen is a LAYER, not a branch ----
+     It used to be one of this component's early returns, which meant the app
+     underneath it did not exist until the jump handed over — so the dashboard
+     mounted after the streaks had gone, and the white flash had to sit there
+     covering half a second of React. Measured at 407-519ms of blocked main
+     thread, on top of the 1.2s it was before the stylesheet stopped being
+     re-parsed on every branch change.
+
+     Now the app renders as soon as the session arrives, about 250ms into the
+     hold, with this layer over the top of it: the mount happens under the
+     streaks, while there is something to look at, and the handover is a state
+     flip onto a dashboard that has already been built.
+
+     It has to be at a fixed position in every branch's output — always the second
+     child of the same fragment — because React reconciles by index. The element
+     at index 0 changes type as the app comes up and remounts; index 1 does not,
+     so the sign-in screen carries on and the jump running inside it is never
+     interrupted. Returning it as a branch of its own is exactly what would tear
+     it down at the moment the session lands. */
+  const signInLayer = config && (!session || jumpHold) ? (
+    <div className="signin-over" key="signin">
+      <Login config={config}
+        onJump={setJumpHold}
+        onHandover={() => {
+          const undo = landDashboard();
+          /* And the tidying, once the landing is over and a render is free. */
+          setTimeout(() => {
+            undo();
+            jumpOwnsEntrance = false;
+            setJumpHold(false);
+            setIntroDone(true);
+          }, ARRIVAL.assemble);
+        }}
+        onAuthed={async () => { await refreshProfile(); }} />
+    </div>
+  ) : null;
+  const wrap = (node) => <>{node}{signInLayer}</>;
+
+  if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
     await authSignOut();
@@ -2876,23 +2960,28 @@ export default function LeadPerformanceCalculator() {
     setSession(null); setEntered(false); setAppModule("perf");
   };
 
-  // Signed out: splash first, then the sign-in card.
-  if (!session) {
-    return <Shell><Login config={config}
-      onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
-  }
+  /* Signed out, OR signed in a moment ago and still flying. The second half is
+     not a nicety: the auth client signs the session in as soon as the password
+     check passes, roughly 300ms after the press, and without this the sign-in
+     screen would be pulled out from under its own arrival a quarter of the way
+     into the first beat. The jump releases the hold on the frame the flash is
+     covering, which is the only frame where swapping one screen for the other
+     cannot be seen. */
+  /* Nothing but the ground while there is no session: the sign-in screen itself
+     is the layer above, and it is already on screen. */
+  if (!session) return wrap(<Shell><Style /></Shell>);
 
   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
   if (!session.active) {
-    return <Shell><div className="login"><div className="login-card">
-      <div className="login-logo"><Logo size={64} animated /></div>
+    return wrap(<Shell><div className="login"><div className="login-card">
+      <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
       <h1 className="login-title">Account paused</h1>
       <p className="setup-note">This account has been deactivated. Contact your group admin.</p>
       <button className="btn wide" onClick={signOut}>Sign out</button>
-    </div></div><Style /></Shell>;
+    </div></div><Style /></Shell>);
   }
   if (session.role !== "admin" && session.pending) {
-    return <Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>;
+    return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>);
   }
 
   // The Tools chooser is gone. Signing in drops the person straight into the
@@ -2920,8 +3009,42 @@ export default function LeadPerformanceCalculator() {
 
      This is the first step of collapsing the three shells into one: agree on the
      behaviour before moving the markup. */
+  /* ---- one tool leaves before the next arrives ----
+     Jorge: "the old page should transition away element by element, then
+     transition, then the next page would hit ... when the movement is side by
+     side, elements should move side to side and pages should move side to side."
+
+     So a switch is three beats, not one. The page leaves a block at a time in
+     the direction of travel, the streaks cross, and only then does the new tool
+     mount and come in from the other side. The old version fired the streaks
+     over a page that was already changing underneath them, which is why it read
+     as a flash on top of a cut rather than as a move.
+
+     Driven through the document's class list rather than React state, and for
+     the same reason the streaks are: the switch remounts a large tree, and the
+     animation covering that mount must not be waiting in the same render queue.
+
+     The timers are module-level so a second switch mid-move cancels the first
+     rather than leaving the page half-exited. */
   const switchTool = (mod) => {
     if (mod === appModule) return;
+    const root = document.documentElement;
+    const dir = WARP_ORDER.indexOf(mod) >= WARP_ORDER.indexOf(appModule) ? "r" : "l";
+    clearToolMove();
+    root.classList.add("tool-move", "tool-dir-" + dir, "tool-exit");
+    toolTimers.push(setTimeout(() => {
+      warpTo(appModule, mod);
+      root.classList.remove("tool-exit");
+      root.classList.add("tool-enter");
+      applyTool(mod);
+      /* The last block starts 66ms in and runs 560ms, so the classes have to
+         outlast 626ms or the animation is stripped off mid-landing and the block
+         snaps the rest of the way. That snap is the "no landing" note. */
+      toolTimers.push(setTimeout(clearToolMove, 700));
+    }, TOOL_EXIT));
+  };
+
+  const applyTool = (mod) => {
     // These four render their own shell and take no tab.
     if (mod === "board" || mod === "floor" || mod === "line" || mod === "online") {
       setAppModule(mod);
@@ -2934,6 +3057,7 @@ export default function LeadPerformanceCalculator() {
     setAppModule(mod);
     setTab(mod === "activity" ? "checkout" : "board");
   };
+
 
   /* The bar's centre button. Importing is the same act in every tool, so the
      button is always there and always means the same thing — but only two
@@ -2985,7 +3109,7 @@ export default function LeadPerformanceCalculator() {
   );
 
   if (appModule === "board") {
-    return (
+    return wrap(
       <AppShell entering={entering}
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
@@ -3001,7 +3125,7 @@ export default function LeadPerformanceCalculator() {
 
   // ---- Live Floor: its own self-contained module (walk-in / showroom queue) ----
   if (appModule === "floor" || appModule === "line" || appModule === "online") {
-    return (
+    return wrap(
       <FloorModule
         queue={appModule}
         config={config}
@@ -3054,7 +3178,7 @@ export default function LeadPerformanceCalculator() {
     navOnChange = setTab;
   }
 
-  return (
+  return wrap(
     <AppShell entering={entering}
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
@@ -3153,8 +3277,8 @@ export default function LeadPerformanceCalculator() {
         </>
       ) : accessibleStores.length === 0 ? (
         <NoAccessPanel session={session} config={config} onRecheck={refreshProfile} />
-      ) : !storeData ? (
-        <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} />
+      ) : (!storeData || storeHeld) ? (
+        storeHeld ? <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} /> : null
       ) : isOverseer ? (
         <>
           <nav className="seg-wrap no-print">
@@ -3276,12 +3400,8 @@ export default function LeadPerformanceCalculator() {
         <DeliveryGuideModal onClose={() => setShowHelp(false)} />
       )}
       {introPlaying && (
-        <LoadingSequence
-          storeName={currentStore?.name || (isAdmin ? "your stores" : "your board")}
-          brand={currentStore?.brand}
-          showStorePicker={accessibleStores.length + (isAdmin ? 1 : 0) + (hasOverview ? 1 : 0) >= 2}
+        <SageArrival
           onComplete={() => {
-            markIntroPlayed(session.userId || session.id);
             setIntroDone(true);
             setIntroPlaying(false);
           }} />
@@ -3391,17 +3511,83 @@ function DeliveryGuideModal({ onClose }) {
 }
 
 /* ---------------- Sliding segmented control ---------------- */
+/* A section tab is a smaller version of the same move.
+
+   Jorge: "if elements are selected that aren't in the top navigation bar, they
+   should have their own small side to side transitions, because every page when
+   it loads has the elements pop from the bottom up."
+
+   Exactly the fault: the tabs within a tool were reusing the page's mount
+   animation, so moving one step sideways along a strip made the whole page jump
+   up from the bottom. It travels the way the strip does now — shorter and
+   quicker than a tool switch, because it is a smaller move and should not cost
+   the same. */
+/* Two beats, the same shape as a tool switch and shorter. The first version had
+   one: the new tab's blocks slid in from the side while the old ones were simply
+   gone, because the content was swapped in the same click that started the
+   animation. Half a move reads as a flicker, however well the arriving half is
+   drawn — what the eye wants is the thing it was looking at LEAVING. So the
+   swap now waits for the exit, and `apply` is what does it. */
+/* The last block starts 48ms in and its exit runs 140, so the swap cannot happen
+   before 188 without cutting it off mid-flight — and a block that vanishes halfway
+   through leaving is exactly what reads as a flicker. Same arithmetic as
+   TOOL_EXIT. */
+const TAB_EXIT = 190;
+const TAB_ENTER = 400;
+let tabTimers = [];
+function clearTabMove() {
+  tabTimers.forEach(clearTimeout);
+  tabTimers = [];
+  if (typeof document === "undefined") return;
+  settleReveals();
+  document.documentElement.classList.remove("tab-move", "tab-exit", "tab-enter", "tab-dir-r", "tab-dir-l");
+}
+function tabMove(dir, apply) {
+  const run = typeof apply === "function" ? apply : () => {};
+  if (typeof document === "undefined") { run(); return; }
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { run(); return; }
+  } catch (e) {}
+  const root = document.documentElement;
+  clearTabMove();
+  /* Read once, so the class lands in its own frame rather than being added and
+     removed inside one and never painting. */
+  void root.offsetWidth;
+  root.classList.add("tab-move", "tab-dir-" + dir, "tab-exit");
+  tabTimers.push(setTimeout(() => {
+    run();
+    root.classList.remove("tab-exit");
+    root.classList.add("tab-enter");
+    tabTimers.push(setTimeout(clearTabMove, TAB_ENTER + 120));
+  }, TAB_EXIT));
+}
+
 function SegControl({ items, value, onChange, renderExtra, attentionId }) {
+  /* The strip answers the finger straight away even though the page underneath
+     waits 130ms for its exit: the thumb and the active label follow `shown`,
+     which is the tab that was pressed, not the tab that has arrived. Without it
+     the control would look 130ms slower than it is. */
+  const [pending, setPending] = useState(null);
+  useEffect(() => { setPending(null); }, [value]);
+  /* And released even if it never arrives. A parent is free to ignore an onChange
+     it does not like, and without this the strip would sit lit on a tab the page
+     never went to. */
+  useEffect(() => {
+    if (pending === null) return undefined;
+    const t = setTimeout(() => setPending(null), TAB_EXIT + 400);
+    return () => clearTimeout(t);
+  }, [pending]);
+  const shown = pending !== null && items.some((it) => it[0] === pending) ? pending : value;
   const wrapRef = useRef(null);
   const btnRefs = useRef({});
   const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
 
   const measure = useCallback(() => {
-    const btn = btnRefs.current[value];
+    const btn = btnRefs.current[shown];
     const wrap = wrapRef.current;
     if (!btn || !wrap) return;
     setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true });
-  }, [value]);
+  }, [shown]);
 
   useEffect(() => {
     measure();
@@ -3413,7 +3599,7 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
        on mount, so every page carrying one opened slightly scrolled. Setting
        scrollLeft touches the horizontal axis of this element only, which is all
        that was ever wanted. */
-    const btn = btnRefs.current[value];
+    const btn = btnRefs.current[shown];
     const wrap = wrapRef.current;
     if (btn && wrap && wrap.scrollWidth > wrap.clientWidth + 1) {
       const want = btn.offsetLeft - (wrap.clientWidth - btn.offsetWidth) / 2;
@@ -3422,7 +3608,7 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [value, measure]);
+  }, [shown, measure]);
 
   // re-measure once fonts settle
   useEffect(() => { const t = setTimeout(measure, 150); return () => clearTimeout(t); }, [measure]);
@@ -3432,8 +3618,16 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
       <div className={"seg-thumb" + (thumb.ready ? " ready" : "")} style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />
       {items.map(([id, label]) => (
         <button key={id} ref={(el) => (btnRefs.current[id] = el)}
-          className={"seg-btn" + (value === id ? " active" : "") + (attentionId === id && value !== id ? " seg-wave" : "")}
-          onClick={() => onChange(id)}>
+          className={"seg-btn" + (shown === id ? " active" : "") + (attentionId === id && shown !== id ? " seg-wave" : "")}
+          onClick={() => {
+            /* Which way along the strip, from the strip itself rather than from
+               a list somebody has to keep in step with it. */
+            const from = items.findIndex((it) => it[0] === shown);
+            const to = items.findIndex((it) => it[0] === id);
+            if (to === from) { onChange(id); return; }
+            setPending(id);
+            tabMove(to > from ? "r" : "l", () => onChange(id));
+          }}>
           {label}
           {renderExtra && renderExtra(id)}
         </button>
@@ -4980,110 +5174,9 @@ function brandFontFor(name) {
   return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
 }
 
-function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
-  const [seen] = useState(() => introSeenCount());
-  const [exiting, setExiting] = useState(false);
-  const doneRef = useRef(false);
-  const onDone = useRef(onComplete);
-  onDone.current = onComplete;
-
-  const finish = useCallback(() => {
-    if (doneRef.current) return;
-    doneRef.current = true;
-    setExiting(true);
-    setTimeout(() => onDone.current(), 620);   // must match the ldxOut duration
-  }, []);
-
-  useEffect(() => {
-    bumpIntroCount();
-    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq && mq.matches) { doneRef.current = true; onDone.current(); return; }
-    const t = setTimeout(finish, 3550);
-    return () => clearTimeout(t);
-  }, [finish]);
-
-  // Same tokens the real hero uses, so the gradient is identical rather than similar.
-  const vars = {
-    "--sp": (brand && brand.primary) || "#2A5E9B",
-    "--sd": (brand && brand.deep) || "#1D4674",
-    "--sa": (brand && brand.accent) || "#C1D730",
-  };
-
-  const bf = brandFontFor(storeName);
-  useEffect(() => {
-    if (!bf) return;
-    const id = "brandfont-" + bf.spec;
-    if (document.getElementById(id)) return;
-    const l = document.createElement("link");
-    l.id = id; l.rel = "stylesheet";
-    l.href = `https://fonts.googleapis.com/css2?family=${bf.spec}:${bf.axis}&display=swap`;
-    document.head.appendChild(l);
-  }, [bf && bf.spec]); // eslint-disable-line
-
-  return (
-    <div className={"ldx" + (exiting ? " is-exiting" : "")} style={vars}>
-      {/* the glow the mark throws as it opens up */}
-      <div className="ldx-bloom" />
-      <div className="ldx-bloom two" />
-
-      {/* the page assembling itself, in the page's own shapes */}
-      <div className="ldx-page">
-        <div className="ldx-bar">
-          <span className="ldx-mark-slot" />
-          <span className="ldx-pills"><i /><i /><i /></span>
-          <span className="ldx-queues"><i /><i /><i /></span>
-          {showStorePicker && <span className="ldx-store" />}
-        </div>
-        {/* The sub-nav and its search. Leaving these out was what let the hero ride
-            up the page: the skeleton has to reserve the same rows the app does. */}
-        {/* Same container the dashboard uses: 1440 max, 32px gutters, centred. The
-            skeleton has to land on the real layout, not near it. */}
-        <div className="ldx-board">
-          {/* The sub-nav and its search. Leaving these out was what let the hero ride
-              up the page: the skeleton has to reserve the same rows the app does. */}
-          <div className="ldx-nav">
-            <span className="ldx-tabs"><i /><i /><i /><i /><i /><i /></span>
-            <span className="ldx-search" />
-          </div>
-          <div className="ldx-hero">
-            <div className="ldx-hero-id">
-              <div className="ldx-hero-logo" />
-              <div className="ldx-hero-text"><span className="w1" /><span className="w2" /><span className="w3" /></div>
-            </div>
-            <div className="ldx-hero-right">
-              <div className="ldx-ring"><svg viewBox="0 0 100 100"><circle className="ldx-ring-bg" cx="50" cy="50" r="42" /><circle className="ldx-ring-fg" cx="50" cy="50" r="42" /></svg></div>
-              <div className="ldx-hero-side"><span className="s1" /><span className="s2" /><span className="s3" /></div>
-            </div>
-          </div>
-          <div className="ldx-cards">
-            <div className="ldx-card tall">
-            <span className="t1" /><span className="t2" />
-            <span className="ldx-meter"><i /></span>
-            <span className="t3" />
-          </div>
-            <div className="ldx-card wide"><i /><i /><i /></div>
-          </div>
-        </div>
-      </div>
-
-      {/* the mark itself: the one thing carried over from the login card */}
-      {/* The mark does not fade. It travels to where it will live in the header,
-          which is what stitches this screen to the one it becomes. */}
-      <div className="ldx-mark"><Logo size={72} /></div>
-      {/* The name drops in on a pill in the store's own colour, holds, then lifts
-          away just before the mark leaves for the header. */}
-      <div className="ldx-word">
-        <span className="ldx-pill" style={{
-          background: `linear-gradient(120deg, ${vars["--sp"]}, ${vars["--sd"]})`,
-          color: inkOn(vars["--sp"]),
-          ...(bf ? { fontFamily: `'${bf.family}', var(--font-display)` } : null),
-        }}>{storeName || "your board"}</span>
-      </div>
-
-      {seen >= 3 && <button className="ldx-skip" onClick={finish}>Skip</button>}
-    </div>
-  );
-}
+/* The cinematic that used to live here is gone: SageArrival replaced it. It
+   drew a stand-in dashboard of invented shapes for three and a half seconds,
+   which the new one does not need because it hands over to the real one. */
 
 /* ---------------- Board launcher (after sign-in, role-aware) ---------------- */
 function BoardLauncher({ config, session, onLaunch, onBack }) {
@@ -5613,7 +5706,10 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
     <div className="brand" ref={ref}>
       <button className={"brand-btn" + (open ? " on" : "")} onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu" aria-expanded={open} title={session?.name || "Account"}>
-        <Logo size={36} />
+        {/* The app-icon form: the mark reversed on its ink plate, which is the one
+            place in the app the plate appears at all. */}
+        <SageMark plate={SAGE_PLATE} base={SAGE_BASE_REVERSED} cap={SAGE_CAP_REVERSED}
+          size={36} radius={30} pad={16} />
       </button>
       {open && (
         <div className="brand-menu" role="menu">
@@ -5624,7 +5720,7 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
               <span className="bm-role">{isAdmin ? "Administrator" : isOverseer ? "BDC Oversight" : "Manager"}</span>
             </span>
           </div>
-          <div className="bm-app">Lead Performance</div>
+          <div className="bm-app">Sage</div>
           {onHelp && <button className="bm-item" onClick={() => { setOpen(false); onHelp(); }}>Get help</button>}
           {onReplayIntro && (
             <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
@@ -6436,7 +6532,7 @@ function HelpPanel({ config, who, store, context, figures, onClose }) {
                 {s.role && <span className="help-role">{s.role}</span>}
               </span>
             </div>
-            {s.email && <a className="help-link" href={`mailto:${s.email}?subject=${encodeURIComponent("Lead Performance help" + (store ? " (" + store + ")" : ""))}`}>{s.email}</a>}
+            {s.email && <a className="help-link" href={`mailto:${s.email}?subject=${encodeURIComponent("Sage help" + (store ? " (" + store + ")" : ""))}`}>{s.email}</a>}
             {s.phone && <a className="help-link" href={`tel:${String(s.phone).replace(/[^\d+]/g, "")}`}>{s.phone}</a>}
             {s.note && <p className="hint">{s.note}</p>}
             {!s.email && !s.phone && <p className="hint">No contact details have been set yet. Use Report a problem and it will still reach an administrator.</p>}
@@ -7045,7 +7141,7 @@ function TicketsPanel({ config, onChange }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed }) {
+function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -7054,27 +7150,124 @@ function Login({ config, onBack, onAuthed }) {
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
-  // "leaving" runs the deconstruction. The card does not simply disappear: its
-  // parts leave in different directions at different moments, and the mark stays
-  // put and travels, so the eye has something continuous to hold on to while the
-  // app assembles behind it.
-  const [leaving, setLeaving] = useState(false);
+  /* The card's own 760ms deconstruction is gone with the handover it belonged
+     to. The arrival takes the screen apart now, from the press, so there is
+     nothing left here to run. */
 
   const domains = config.approvedDomains || [];
   const canRegister = config.registrationOpen && domains.length > 0;
+
+  /* ---- the press starts the jump, and the network runs underneath it ----
+     The jump used to wait for the sign-in call to come back, which is why it read
+     as "loading first, then the animation". It starts on the press now, and the
+     420ms hold and 520ms gather are spent while the request is in flight, so by
+     the time the streaks are gone the answer is nearly always already here. Two
+     things have to be true and are:
+
+       if the sign-in FAILS, the jump is cancelled and the form comes back — the
+       error is more important than the animation and arrives well inside the
+       first beat
+
+       if the sign-in is SLOW, the flash holds white until it lands rather than
+       handing over to a screen that is not ready */
+  const jumping = useRef(null);
+  const markRef = useRef(null);
+  /* null until a press finds the mark unfinished; see RUSH. */
+  const [rushTyped, setRushTyped] = useState(null);
+  const rushRaf = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(rushRaf.current), []);
+  const hurryBuild = (from) => {
+    const t0 = (typeof performance !== "undefined" ? performance : Date).now();
+    const step = () => {
+      const now = (typeof performance !== "undefined" ? performance : Date).now();
+      const p = Math.min(1, (now - t0) / RUSH);
+      setRushTyped(from + (34 - from) * p);
+      if (p < 1) rushRaf.current = requestAnimationFrame(step);
+    };
+    rushRaf.current = requestAnimationFrame(step);
+  };
+  const heldRef = useRef(onJump);
+  heldRef.current = onJump;
+  const abortJump = () => {
+    if (jumping.current) { jumping.current(); jumping.current = null; }
+    if (heldRef.current) heldRef.current(false);
+  };
+  useEffect(() => () => { if (jumping.current) { jumping.current(); jumping.current = null; } }, []);
 
   const signIn = async () => {
     setErr(""); setOk("");
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
-    const res = await authSignIn(email.trim().toLowerCase(), password);
-    if (res.error) { setBusy(false); setErr(res.error); return; }
-    // Authenticated. Take the card apart, THEN hand over: the app mounting
-    // underneath is what the deconstruction is uncovering.
-    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq && mq.matches) { setBusy(false); onAuthed(); return; }
-    setLeaving(true);
-    setTimeout(() => { setBusy(false); onAuthed(); }, 760);
+    signInPressed = true;
+    /* ---- hold the screen for the length of the jump ----
+       The sign-in call is not the only thing that brings the session in: the
+       client fires SIGNED_IN the moment it succeeds, the app's own auth listener
+       refreshes the profile off that, and the session lands about 300ms after the
+       press — a quarter of the way into the hold. The root would then swap to the
+       dashboard, this component would unmount, and the jump's cleanup would take
+       every beat class with it. Measured: beats gone at 255ms, dashboard already
+       up. That is the whole animation, over before the gather, which is why it
+       looked like nothing happened.
+
+       So the jump says when it is running and the root keeps the sign-in screen
+       on until it says otherwise. The session can arrive whenever it likes. */
+    if (onJump) onJump(true);
+    /* Before anything moves: tell the ground where the mark is, so the field's
+       streaks leave along lines drawn from the logo rather than from the middle
+       of the frame. Measured here because here is the only place that knows. */
+    tellJumpOrigin(markRef.current);
+    /* A saved password fills both fields at once, so the mark is barely started
+       when the button is pressed. Finish it first, and push the whole jump back
+       by exactly as long as that takes: the streaks have to leave a whole word. */
+    const short = typed < 34;
+    if (short) hurryBuild(typed);
+    let authed = null;                       // null = still in flight
+    let flashed = false;
+    let handedOver = false;
+    const handOver = () => {
+      if (handedOver || !flashed || authed !== true) return;
+      handedOver = true;
+      /* This is the frame the white is covering, and it is a handful of class
+         names: the dashboard has been mounted and laid out since the hold. */
+      if (onHandover) onHandover();
+    };
+    jumping.current = runJump({
+      lead: short ? RUSH : 0,
+      onFlash: () => {
+        /* Nothing to hand over to yet: hold the flash rather than dropping back
+           onto a sign-in screen that has already taken itself apart. */
+        if (authed === null) document.documentElement.classList.add("sage-flash-hold");
+      },
+      onDone: () => { flashed = true; handOver(); },
+    });
+    /* A THROW has to land here as well as a returned error. It is not a
+       hypothetical: the flash holds white while it waits for an answer, so an
+       exception escaping this call leaves a white screen with nothing behind it
+       and no way back. Anything that is not a clean success puts the form back. */
+    let res;
+    try {
+      res = await authSignIn(email.trim().toLowerCase(), password);
+    } catch (e) {
+      res = { error: "Couldn't reach sign-in. Check your connection and try again." };
+    }
+    if (!res || res.error) {
+      abortJump();
+      signInPressed = false;
+      document.documentElement.classList.remove("sage-flash-hold");
+      authed = false;
+      setBusy(false); setErr((res && res.error) || "Sign-in didn't complete. Try again.");
+      return;
+    }
+    authed = true;
+    document.documentElement.classList.remove("sage-flash-hold");
+    /* Load the profile NOW, not at the handover. The screen is held for the rest
+       of the jump either way, so the fetch costs nothing here and everything
+       there: gating the swap on a round trip that only starts at the handover put
+       the dashboard on screen most of a second after the flash had been asked
+       for, which is far too late for the flash to cover it. By the time the white
+       is up the session is already in hand and the swap is a state flip. */
+    await onAuthed();
+    handOver();
   };
 
   const signUp = async () => {
@@ -7109,32 +7302,62 @@ function Login({ config, onBack, onAuthed }) {
     setOk("If that email has an account, a reset link is on its way. Check your inbox.");
   };
 
+  /* ---- the mark builds as the form is filled ----
+     73 dots against 34 characters of email and password. Driven off the real
+     input values rather than off keystrokes, so a password manager filling both
+     fields in one go lands where a person typing them lands. */
+  const typed = Math.min(34, email.length + password.length);
+  /* While the hurry is running the count comes from it rather than from the
+     fields, so the mark finishes drawing itself under its own steam. */
+  const shownTyped = rushTyped === null ? typed : rushTyped;
+  const revealed = Math.round((shownTyped / 34) * 73);
+  const filled = Math.min(5, Math.round((shownTyped / 34) * 5));
+
   return (
-    <div className={"login" + (leaving ? " is-leaving" : "")}>
-      {/* The wash is the thread through the whole move: it blooms out of the card,
-          covers the join, and contracts away as the app builds. */}
-      {leaving && <div className="login-wash" />}
+    <div className="login">
+      {/* The field belongs to this screen and lives as long as it does: held for
+          the whole jump, gone with it at the handover, underneath the white. */}
+      <SageField />
       <div className={"login-card " + (busy ? "login-busy" : "")}>
-        <div className="login-logo"><Logo size={64} animated={!busy && !leaving} loading={busy && !leaving} /></div>
-        <h1 className="login-title">Lead Performance</h1>
-        <p className="login-sub">{busy ? "Signing you in…" : "Sign in to continue"}</p>
+        <p className="login-eyebrow">{greetingFor()}</p>
+        {/* No spinner here any more. Signing in used to swap the wordmark for a
+            loading indicator, which is a different object appearing in the place
+            of the thing you were looking at. The mark stays and goes to work
+            instead: the same 73 dots, running a wave left to right. */}
+        <div className="login-logo" ref={markRef}>
+          {/* Still driven by `revealed` while signing in, because the hurry is
+              what finishes the drawing — dropping it on press would snap the
+              rest of the word in and there would be nothing to hurry. */}
+          <SageMark word size={64} revealed={mode === "signin" ? revealed : undefined} />
+        </div>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
 
         {mode === "signin" && (
           <>
-            <label>Work email</label>
-            <input value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
+            <label className="lf-label">Work email</label>
+            <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               placeholder="you@company.com" autoComplete="username" />
-            <label>Password</label>
-            <input type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
+            <label className="lf-label lf-label-row">
+              Password
+              {/* Inline on the label row, where the eye already is when the field
+                  is the thing that went wrong. */}
+              <button type="button" className="lf-forgot"
+                onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot?</button>
+            </label>
+            <input className="lf-in" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && signIn()} placeholder="Your password" autoComplete="current-password" />
             {err && <div className="login-err">{err}</div>}
             {ok && <div className="login-ok">{ok}</div>}
-            <button className="btn wide" onClick={signIn} disabled={busy}>{busy ? "Signing in..." : "Sign In"}</button>
-            <button className="btn-link" onClick={() => { setMode("forgot"); setErr(""); setOk(""); }}>Forgot password?</button>
-            <div className="login-divider"><span>or</span></div>
-            <button className="btn-outline wide" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
+            {/* The five dots fill on the same ratio the mark builds on, so the
+                button and the mark are two readings of one thing. */}
+            <button className="lf-go" onClick={signIn} disabled={busy}>
+              <span>{busy ? "Signing in\u2026" : "Sign in"}</span>
+              <span className="lf-dots">
+                {[0, 1, 2, 3, 4].map((i) => <i key={i} className={i < filled ? "on" : ""} />)}
+              </span>
+            </button>
+            <button className="lf-alt" onClick={() => { setMode("signup"); setErr(""); setOk(""); setPassword(""); }}>Create New Account</button>
             {onBack && <button className="btn-link" onClick={onBack}>&larr; Back to start</button>}
           </>
         )}
@@ -7181,13 +7404,640 @@ function Login({ config, onBack, onAuthed }) {
   );
 }
 
+/* ---------------- Switching tools ----------------
+   300ms of streaks in the tool you are going TO, travelling the way the eye just
+   moved: right if the new tool sits right of the old one in the bar, left if it
+   sits left. The outgoing screen unmounts and the new one mounts fresh, so its
+   own entrance plays underneath.
+
+   Written against the DOM rather than through React on purpose. A tool switch
+   already unmounts and remounts a large tree, and putting 34 streaks through
+   state at the same moment would put the animation in the same frame budget as
+   the mount it is covering — which is exactly what it exists to hide.
+
+   The hue is the tool's own accent, taken from the app rather than from the
+   handoff's table. The handoff calls those "the existing pill colours" and lists
+   values that are close to but not the same as the ones in this file; the pill
+   the finger just left is the thing the eye is carrying, so the app's own value
+   is the one that matches it. */
+const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
+/* How long the outgoing page has to leave before the streaks cross. It is not a
+   taste number: the last staggered block starts at 66ms and its exit runs 190ms,
+   so anything below 256 cuts a block off mid-exit, and a block that vanishes
+   halfway through leaving is exactly what reads as a flicker. */
+const TOOL_EXIT = 260;
+let toolTimers = [];
+/* Cards fade up as they scroll into view, and until the observer has marked one
+   it sits at opacity 0. A block that has just been animated into place has not
+   been through that yet, so the frame after a move ended it could drop straight
+   back out — a landing followed by a blink. Anything on screen when a move
+   finishes is, by definition, in view: say so before letting go of it. */
+function settleReveals() {
+  if (typeof document === "undefined") return;
+  const h = window.innerHeight || 0;
+  document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.top < h && r.bottom > 0) el.classList.add("is-in");
+  });
+}
+function clearToolMove() {
+  toolTimers.forEach(clearTimeout);
+  toolTimers = [];
+  if (typeof document === "undefined") return;
+  settleReveals();
+  document.documentElement.classList.remove("tool-move", "tool-exit", "tool-enter", "tool-dir-r", "tool-dir-l");
+}
+const WARP_HUE = { perf: "#404E44", activity: "#404E44", board: "#404E44",
+  floor: "#10B981", line: "#5566F0", online: "#8B5CF6" };
+
+function warpTo(from, to) {
+  if (typeof document === "undefined") return;
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  } catch (e) { /* no matchMedia is not a reason to skip it */ }
+  const dir = WARP_ORDER.indexOf(to) >= WARP_ORDER.indexOf(from) ? "r" : "l";
+  const hue = WARP_HUE[to] || "#404E44";
+  const host = document.createElement("div");
+  host.className = "warp warp-" + dir;
+  const h = window.innerHeight;
+  let html = "";
+  for (let i = 0; i < 34; i++) {
+    const len = 180 + ((i * 137) % 520);          // 180-700px
+    const tall = 2 + ((i * 7) % 3);               // 2-4px
+    const top = Math.round(((i * 617) % 1000) / 1000 * h);
+    const delay = (i * 31) % 132;                 // 0-132ms
+    html += `<i style="top:${top}px;width:${len}px;height:${tall}px;background:${hue};animation-delay:${delay}ms"></i>`;
+  }
+  host.innerHTML = html;
+  document.body.appendChild(host);
+  setTimeout(() => host.remove(), 520);
+}
+
+/* ---------------- The arrival ----------------
+   Press Sign in and the mark gathers, every dot of it stretches into a streak
+   past the frame, a flash covers the snap, and the dashboard builds outward from
+   the centre. 2.7 seconds, once a day.
+
+   ---- what this replaces ----
+   The app already played a cinematic on the first sign-in of each calendar day,
+   keyed the same way, per device and per person. Jorge chose to replace it: two
+   of them would be a minute of animation before anybody sees a number, and the
+   old one ended by drawing a stand-in dashboard that this one does not need
+   because it hands over to the real one.
+
+   ---- why the streaks pin at the near end ----
+   Each dot's wrapper is rotated to its own angle out of the mark's centre with
+   the origin at the near end, and scaled along X. There is no translate: the
+   near end stays exactly where the dot was, so nothing detaches from the mark
+   and re-attaches somewhere else. The layer around them carries them off frame.
+
+   ---- and why no will-change ----
+   Straight from the handoff, which found it the expensive way: scaling a 10px
+   dot to 177x with will-change made the browser hold every streak as a promoted
+   layer at its full scaled extent. 1664ms stall against a 21ms median without.
+   ------------------------------------------------------------------- */
+/* The store this browser was last working in. Only stores: see the note where it
+   is read. */
+const LAST_VIEW_KEY = "lpc:last-view";
+function lastView() {
+  try { return localStorage.getItem(LAST_VIEW_KEY) || null; } catch (e) { return null; }
+}
+function rememberView(v) {
+  if (!v || v === "admin" || v === "combined") return;
+  try { localStorage.setItem(LAST_VIEW_KEY, v); } catch (e) {}
+}
+
+const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
+/* ---- every time, not once a day ----
+   The handoff asked for the first sign-in of the day, like the morning round-up,
+   and Jorge changed it: it plays on every arrival now. So there is no stored key
+   and nothing to reset — which also means it plays on a page RELOAD, because a
+   reload restores the session and that is an arrival as far as this app is
+   concerned. That is the honest reading of "every time"; if a refresh at the
+   desk should go straight in, the trigger moves from "a session appeared" to
+   "the sign-in button was pressed" and this comment is where to start. */
+
+/* ---- the jump runs ON the sign-in screen, not over it ----
+   The first build of this was a fixed, opaque panel at z-index 9000 with its own
+   360px copy of the wordmark at dead viewport centre. It painted over the sign-in
+   screen the instant the button was pressed, so the form never faded, the dot
+   field and the blobs never gathered, and the streaks fired from the middle of
+   the frame off a mark that was neither the size nor in the place of the one the
+   eye was on. Nothing of the sign-in screen ever left, because nothing of it was
+   ever in the animation.
+
+   So there is no overlay any more. The beats are classes on the document, and
+   every rule they carry points at the real elements: the real form fades, the
+   real dot field and the real blobs pull in and blow out, and the streaks are the
+   real mark's own dots, where they sit, at the size they are. What is left here
+   is only the clock.
+
+   The white flash is the one piece that cannot live on this screen, because the
+   sign-in screen is gone by the time it peaks: it is mounted at the root, where
+   the ground is, for the same reason. */
+/* ---- the hurry ----
+   The handoff's first beat, and the one this file never had. A saved password
+   fills both fields in one go, so the mark is nowhere near drawn when the button
+   is pressed — and the streaks have to start from a finished mark, not half a
+   word. So the build is rushed to the end first, and every beat after it is
+   pushed back by the same 320ms. The table says as much: "Hurry | 0 | 320ms | Only
+   if the form is not finished", and "add 320ms to every figure when the hurry runs
+   first". */
+const RUSH = 320;
+function runJump({ onFlash, onDone, lead = 0 }) {
+  const root = typeof document === "undefined" ? null : document.documentElement;
+  const beats = ["hold", "gather", "stretch", "flash"];
+  const clear = () => beats.forEach((b) => root && root.classList.remove("sage-beat-" + b));
+  if (!root) { onFlash(); onDone(); return () => {}; }
+  let reduce = false;
+  try {
+    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {}
+  if (reduce) {
+    /* The order is kept and the movement goes: straight to the handover. */
+    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
+    return () => clearTimeout(t);
+  }
+  const ts = [];
+  const beat = (b) => { clear(); root.classList.add("sage-beat-" + b); };
+  jumpOwnsEntrance = true;
+  const at = (ms, fn) => ts.push(setTimeout(fn, lead + ms));
+  /* Nothing moves during the hurry. The mark is still drawing itself, and the
+     hold is what takes the form away, so it cannot start until the word is
+     whole. */
+  if (lead) at(0, () => beat("hold"));
+  else beat("hold");
+  let flashing = false;
+  at(ARRIVAL.hold, () => beat("gather"));
+  at(ARRIVAL.hold + ARRIVAL.gather, () => beat("stretch"));
+  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => {
+    flashing = true;
+    beat("flash");
+    onFlash();
+    /* ---- and the handover waits for the white to be ON THE SCREEN ----
+       The handoff puts the assemble 140ms into the flash, and a timer alone does
+       not deliver that. Mounting the dashboard is the most expensive thing this
+       app does, and it blocks the main thread — so a flash class set on one line
+       and a React swap started on the next never gets a frame to paint in. The
+       white did not appear at all until the mount was over, which put it a second
+       and a half late, on top of a dashboard that was already standing there.
+       Measured in the real app: flash beat at 2497ms, dashboard at 3345ms with
+       the flash still at zero, white peaking at 4058ms.
+
+       Two rAFs is the guarantee: the first is the frame the class lands in, the
+       second only runs after that frame has been painted. The white is up before
+       the swap begins, which is the whole reason it exists. */
+    let frames = 0;
+    const painted = () => {
+      if (++frames < 2) { requestAnimationFrame(painted); return; }
+      /* Straight on once the white is painted. It used to wait another 90ms for
+         the handoff's 140, but the white is held now rather than timed, so every
+         millisecond spent here is a millisecond of stopped streaks under it. */
+      ts.push(setTimeout(() => onDone(), 20));
+    };
+    requestAnimationFrame(painted);
+  });
+  /* Once the flash is up, this cleanup does nothing. It runs on the sign-in
+     screen's unmount, which IS the handover, and clearing the beat classes there
+     stripped the flash off the frame it was drawn for — the swap went uncovered
+     and the white fired late, over the assembly. The flash belongs to the far
+     side now; SageArrival clears it. */
+  return () => {
+    ts.forEach(clearTimeout);
+    if (!flashing) { jumpOwnsEntrance = false; clear(); }
+  };
+}
+
+/* True from the press until the arrival has finished. The app has an entrance of
+   its own — .lpc.is-entering, the bar dropping in from above and the cards rising
+   from below — and it is keyed off the session appearing, which now happens in the
+   middle of the jump. Both ran, with different origins and unrelated timings, and
+   that is what made the landing read as segmented: nothing came from the centre
+   because appBar comes from the top edge and appRise from the bottom. Out-ranking
+   it in CSS is a losing game (.lpc.is-entering .hero is three classes), so the
+   app's entrance simply does not start when the arrival owns the screen. */
+let jumpOwnsEntrance = false;
+
+/* Set by the sign-in button and read where the session lands. A page RELOAD
+   restores a session without anyone pressing anything, and there is no sign-in
+   screen for the jump to start from — no mark to streak, no form to fade. Jorge's
+   call: a refresh at the desk goes straight in. So the trigger is the press, not
+   the session. */
+let signInPressed = false;
+
+function SageArrival({ onComplete }) {
+  const done = useRef(onComplete);
+  done.current = onComplete;
+  /* Only the last beat is left here. Everything before it happened on the sign-in
+     screen, which is gone by the time this mounts — that is what the flash is
+     covering. The beat reaches the dashboard as a class on the document rather
+     than as a prop threaded through six components that have no other reason to
+     know about it. */
+  /* A LAYOUT effect, not an ordinary one, and that is the whole difference
+     between this landing and the stutter it replaced.
+
+     The blocks have to be measured before they are first painted, and the old
+     code waited a frame for it — held them at opacity 0, asked for a
+     requestAnimationFrame, and measured in that. But the frame it was waiting for
+     is the one the browser spends mounting the dashboard, and under that load it
+     did not come back for a SECOND: measured in the built app, the page arrived
+     at 2134ms and the blocks were still invisible at 3180ms. The screen recording
+     is 1.2 seconds of a byte-identical frame — the white had faded, the streaks
+     were gone, and nothing at all was moving. That is the stutter.
+
+     A layout effect runs after the DOM is committed and before the browser
+     paints, so layout is already there to be read and the animation is on the
+     blocks the first time they are drawn. Nothing to hide, nothing to wait for,
+     and once the animation has started it belongs to the compositor and runs
+     however busy the main thread gets. */
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    /* The flash beat belongs to the sign-in screen's clock, which has stopped.
+       Hand it over rather than letting the two overlap: .sage-assemble carries an
+       identical saFlash shorthand, so the running flash is not restarted by the
+       swap, it simply changes which rule is holding it. */
+    /* Both: sage-assemble is what the dashboard's own rules key off, and
+       sage-beat-assemble is what the GROUND decelerates on. Adding only the first
+       left the ground with no landing at all — the field and the blobs snapped
+       from full streak back to rest the moment the flash class came off, which is
+       the opposite of coming out of lightspeed. */
+    root.classList.add("sage-assemble", "sage-beat-assemble");
+    root.classList.remove("sage-beat-flash");
+    let reduce = false;
+    try {
+      reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {}
+    let undo = () => {};
+    if (!reduce) undo = radialAssemble();
+    const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
+    return () => {
+      clearTimeout(t);
+      undo();
+      jumpOwnsEntrance = false;
+      root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash");
+    };
+  }, []);
+  return null;
+}
+
+/* The flash is not a component. It is a static div in index.html, because the
+   handover it covers is the moment the signed-out tree is replaced by the
+   signed-in one and those two have different root components: React tears the
+   whole subtree down between them, so anything mounted inside either one is
+   destroyed by the very swap it was drawn to hide. It needs nothing from React
+   anyway — the beats drive it through classes on the document element. */
+
+function greetingFor(d = new Date()) {
+  const h = d.getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+const GROUND_PITCH = 44;
+const GROUND_TINTS = ["rgba(46,58,50,0.34)", "rgba(120,150,120,0.44)", "rgba(110,150,160,0.42)",
+  "rgba(160,158,110,0.40)", "rgba(120,130,170,0.38)"];
+
+/* Where the jump's streaks radiate FROM. The field's own centre by default, and
+   the sign-in mark once the sign-in screen has told it where the mark is: the
+   whole point of the jump is that it starts at the logo, and a field flying out
+   of the middle of the frame while the mark flies out of a point 250px above it
+   gives the eye two vanishing points to choose between. One origin, everything
+   on the same lines. */
+const JUMP_ORIGIN = "sage-jump-origin";
+/* Kept outside the component for the same reason the flash is kept outside React:
+   the ground is torn down and rebuilt at the handover along with the rest of the
+   signed-out tree, and a ground that came back not knowing where the mark was
+   would land its streaks on different lines from the ones they left on. */
+let lastJumpOrigin = null;
+function tellJumpOrigin(el) {
+  if (typeof document === "undefined" || !el) return;
+  const r = el.getBoundingClientRect();
+  lastJumpOrigin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  /* Published on the document as well as broadcast, because the spark that marks
+     the far end of the jump is a static element in index.html and has no other
+     way to know where the vanishing point is. */
+  const root = document.documentElement;
+  root.style.setProperty("--jx", lastJumpOrigin.x + "px");
+  root.style.setProperty("--jy", lastJumpOrigin.y + "px");
+  document.dispatchEvent(new CustomEvent(JUMP_ORIGIN, { detail: lastJumpOrigin }));
+}
+
+/* ---------------- coming out of lightspeed ----------------
+   The dashboard does not fade up and it does not scale up in place. It comes out
+   of the point the streaks converged on: every block starts at that point, small,
+   and flies out along its own line to where it belongs, the near ones landing
+   first and the far ones sweeping out after them.
+
+   That vector cannot be written in CSS. Each block's direction and distance
+   depend on where it happens to sit relative to a point that moves with the
+   sign-in mark, so each one is measured once, on the frame the dashboard mounts,
+   and handed its own --rx/--ry/--rd. After that it is an ordinary composited
+   transform like everything else here.
+
+   Measured once and never again: this reads layout for every block in one pass
+   before writing anything back, so it costs a single forced reflow rather than
+   one per element. */
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip";
+
+/* ---- the handover does no React work at all ----
+   Everything the dashboard needs in order to appear is a class on the document
+   and a transform on a handful of blocks — and the dashboard itself has been
+   mounted and laid out since the hold. So the handover is done here, imperatively,
+   rather than by setting state.
+
+   It was state, and the cost was a single 490ms task measured right after the
+   flash: changing anything on the root re-renders the whole app tree, and this
+   tree is very large. The mount had already been moved under the streaks by then,
+   so what was left was React reconciling a dashboard that was not changing. Now
+   the frame that reveals it touches four class names and reads the geometry of six
+   blocks, and the state is settled a second and a half later when a re-render
+   costs nothing anyone can see. */
+function landDashboard() {
+  if (typeof document === "undefined") return () => {};
+  const root = document.documentElement;
+  /* One style change: the app comes out of hiding, the sign-in layer goes, and the
+     landing rules come on together. */
+  root.classList.remove("jump-under", "sage-beat-flash");
+  root.classList.add("sage-assemble", "sage-beat-assemble", "signin-gone");
+  let reduce = false;
+  try {
+    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {}
+  const undo = reduce ? () => {} : radialAssemble();
+  return () => {
+    undo();
+    root.classList.remove("sage-assemble", "sage-beat-assemble", "signin-gone");
+  };
+}
+function radialAssemble() {
+  if (typeof document === "undefined") return () => {};
+  const o = lastJumpOrigin || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  const els = Array.from(document.querySelectorAll(RADIAL_PARTS));
+  if (!els.length) return () => {};
+  /* Read everything first. Interleaving reads and writes here is the classic way
+     to turn one reflow into forty. */
+  const plan = [];
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    /* Anything not actually laid out is skipped. The section strip is
+       display:none above phone width, so its rect is all zeros — it was being
+       handed a vector to the top-left corner of the screen and, being the
+       furthest "element" on the page, it set the scale that every other block's
+       delay was measured against. One invisible element was compressing the
+       whole stagger. */
+    if (r.width < 1 || r.height < 1) continue;
+    const dx = o.x - (r.left + r.width / 2);
+    const dy = o.y - (r.top + r.height / 2);
+    plan.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
+  }
+  if (!plan.length) return () => {};
+  const far = Math.max(1, ...plan.map((p) => p.dist));
+  for (const p of plan) {
+    p.el.style.setProperty("--rx", p.dx.toFixed(1) + "px");
+    p.el.style.setProperty("--ry", p.dy.toFixed(1) + "px");
+    /* Nearest out first, so the screen opens from the point rather than arriving
+       as one sheet. Capped so the last block is not left behind. */
+    p.el.style.setProperty("--rd", Math.round((p.dist / far) * 260) + "ms");
+    p.el.classList.add("sa-radial");
+  }
+  return () => {
+    for (const p of plan) {
+      p.el.classList.remove("sa-radial");
+      p.el.style.removeProperty("--rx");
+      p.el.style.removeProperty("--ry");
+      p.el.style.removeProperty("--rd");
+    }
+  };
+}
+
+function buildField(w, h, origin) {
+  const dots = [];
+  const cx = origin ? origin.x : w / 2, cy = origin ? origin.y : h / 2;
+  let i = 0;
+  for (let y = GROUND_PITCH / 2; y < h; y += GROUND_PITCH) {
+    for (let x = GROUND_PITCH / 2; x < w; x += GROUND_PITCH) {
+      /* A third of them, not an eighth. The handoff's eighth is the number that
+         keeps the cost down, and it left the frame nearly empty at the peak of
+         the jump — the mark's 73 streaks against a field that had already faded
+         out. A third still costs nothing to animate (they are transforms with no
+         promoted layers) and it is the difference between flying through
+         something and flying through nothing. */
+      /* Bright is now only about SIZE. Every dot streaks — Jorge asked for the
+         whole page to go, not a third of it — and the handoff's "only the bright
+         minority needs its own streak" was a cost note, written against
+         will-change promoting each one into its own layer. Without that these are
+         ordinary composited transforms and the whole field is affordable, which
+         is the difference between flying through weather and flying through a
+         sprinkling. */
+      const bright = i % 3 === 0;
+      const dx = x - cx, dy = y - cy;
+      dots.push({
+        x, y, bright,
+        size: bright ? 4.4 : 2.6,
+        tint: GROUND_TINTS[i % GROUND_TINTS.length],
+        /* Its own angle out of the centre, so in the jump every streak leaves
+           along the line it is already on. */
+        angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+        dist: Math.hypot(dx, dy),
+        dur: 2600 + ((i * 971) % 5000),
+        delay: (i * 337) % 4200,
+      });
+      i++;
+    }
+  }
+  return dots;
+}
+
+/* The blobs, and only the blobs. These are the layer the handoff says continues
+   through the transition rather than being swapped, so they are mounted once at
+   the root and outlive both screens. The dot field is the sign-in screen's; see
+   SageField. */
+function SageGround({ beat = "idle" }) {
+  return (
+    <div className={"sage-ground beat-" + beat} aria-hidden="true">
+      <div className="sg-blobs">
+        <i className="sg-blob b1" /><i className="sg-blob b2" />
+        <i className="sg-blob b3" /><i className="sg-blob b4" />
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- The dot field ----------------
+   The sign-in screen's, and nobody else's. The handoff builds it under "The
+   sign-in screen" and its prototype keys the whole thing off whether that screen
+   is visible — `signinVisible ? ... : "off"` — while saying of the BLOBS, and only
+   the blobs, that they "live behind both the sign-in screen and the dashboard,
+   the same layer continuing through the transition rather than being swapped".
+   Two different lifetimes, and this file had given both of them the longer one.
+
+   That cost more than tidiness. 660 dots left on the dashboard meant 660 dots
+   decelerating out of full streak while React mounted the dashboard, and the
+   landing was measurably the worse for it: stalls of 467-983ms with the field
+   there against none at all without it. The choppy landing and the drift Jorge
+   could see on the dashboard are the same mistake seen from two sides.
+
+   Rendered by the sign-in screen, so it is held for the whole jump and goes with
+   that screen at the handover, underneath the white. */
+/* ---------------- the streaks, on a canvas ----------------
+   The field is 660 dots, and for the length of the stretch each one is a streak
+   the size of the screen. As DOM elements that cannot be drawn at frame rate and
+   it is not close: measured in the built app, tapered with a gradient it managed
+   23-38 frames with stalls up to a second, as pills 44-47, and only as flat
+   rectangles did it run clean at 64. The taper is not the problem, the element
+   count is — 660 large composited layers is simply too many to paint.
+
+   So for the one beat that needs them, the streaks stop being elements. One
+   canvas, one texture upload a frame, and each streak drawn as a spike: full dot
+   width at the near end, tapering to a point at the far one, which is what a
+   streak looks like and what a scaled dot never did. Paths are batched by colour,
+   so a frame is five fills rather than six hundred and sixty.
+
+   Only for the stretch. At rest the dots are ordinary elements with a CSS
+   twinkle, which costs nothing and keeps the sign-in screen still. */
+function SageStreaks({ dots, origin, w, h }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return undefined;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr);
+    /* Grouped once, so a frame sets fillStyle five times rather than 660. */
+    /* The canvas takes over mid-move, so it has to start where the gather left
+       the dots: pulled in toward the origin by the field layer's own scale.
+       Starting from their resting places would snap the whole field outward on
+       the frame the streaks begin. */
+    const ox = origin ? origin.x : w / 2, oy = origin ? origin.y : h / 2;
+    const G = 0.86;
+    const byTint = new Map();
+    for (const d of dots) {
+      const a = (d.angle * Math.PI) / 180;
+      const arr = byTint.get(d.tint) || [];
+      arr.push({
+        x: ox + (d.x - ox) * G, y: oy + (d.y - oy) * G,
+        ux: Math.cos(a), uy: Math.sin(a), r: (d.size / 2) * G, dist: d.dist,
+      });
+      byTint.set(d.tint, arr);
+    }
+    const groups = [...byTint.entries()];
+    const t0 = performance.now();
+    let raf = 0;
+    /* ---- and it keeps accelerating to the end ----
+       The streaks used to stop. The beat ended, the canvas held its last frame,
+       and a screen full of static lines sat there for the quarter second the
+       flash and the mount took — motion halted and then the page landed, which is
+       the stutter at the join. Nothing about the shape was wrong; it simply never
+       left.
+
+       So the curve never flattens (a power curve, not a smoothstep, which eases
+       OUT at the end), the travel is far enough to carry every near end off the
+       frame rather than only the far ends, and it runs past the beat into the
+       flash, fading as it goes. Whatever is still on screen when the sign-in
+       screen goes is under the white by then. */
+    const RUN = ARRIVAL.stretch + 300;
+    const draw = () => {
+      const p = Math.min(1, (performance.now() - t0) / RUN);
+      const e = Math.pow(p, 2.2);
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = p < 0.72 ? 1 : Math.max(0, 1 - (p - 0.72) / 0.28);
+      for (const [tint, arr] of groups) {
+        ctx.fillStyle = tint;
+        ctx.beginPath();
+        for (const d of arr) {
+          /* The near end leaves too, so the field opens out of the origin
+             instead of stretching from a standstill. */
+          const lead = e * (90 + d.dist * 1.75);
+          const len = e * (150 + d.dist * 2.4);
+          const nx = d.x + d.ux * lead, ny = d.y + d.uy * lead;
+          const fx = nx + d.ux * len, fy = ny + d.uy * len;
+          const px = -d.uy * d.r, py = d.ux * d.r;
+          ctx.moveTo(nx + px, ny + py);
+          ctx.lineTo(nx - px, ny - py);
+          ctx.lineTo(fx, fy);
+        }
+        ctx.fill();
+      }
+      if (p < 1) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [dots, origin, w, h]);
+  return <canvas ref={ref} className="sg-streaks" style={{ width: w, height: h }} aria-hidden="true" />;
+}
+
+/* Whether the jump is at the beat that needs the canvas. Read off the document
+   because that is where the beats live; see runJump. */
+function useStretching() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const root = document.documentElement;
+    const read = () => setOn(root.classList.contains("sage-beat-stretch")
+      || root.classList.contains("sage-beat-flash"));
+    read();
+    const mo = new MutationObserver(read);
+    mo.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, []);
+  return on;
+}
+
+function SageField() {
+  const [size, setSize] = useState(() => ({
+    w: typeof window === "undefined" ? 1440 : window.innerWidth,
+    h: typeof window === "undefined" ? 900 : window.innerHeight,
+  }));
+  const [origin, setOrigin] = useState(lastJumpOrigin);
+  useEffect(() => {
+    let t = null;
+    const onResize = () => {
+      clearTimeout(t);
+      t = setTimeout(() => setSize({ w: window.innerWidth, h: window.innerHeight }), 220);
+    };
+    const onOrigin = (e) => setOrigin(e.detail);
+    window.addEventListener("resize", onResize);
+    document.addEventListener(JUMP_ORIGIN, onOrigin);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      document.removeEventListener(JUMP_ORIGIN, onOrigin);
+      clearTimeout(t);
+    };
+  }, []);
+  /* Rebuilt when the origin arrives, and only then: once per sign-in, not once
+     per render. Rebuilding it per render was the handoff's second performance
+     note and it still holds. */
+  const dots = useMemo(() => buildField(size.w, size.h, origin), [size.w, size.h, origin]);
+  const stretching = useStretching();
+  if (stretching) {
+    return <SageStreaks dots={dots} origin={origin} w={size.w} h={size.h} />;
+  }
+  return (
+    <div className="sg-field" aria-hidden="true">
+      {dots.map((d, i) => (
+        <i key={i} className={"sg-dot" + (d.bright ? " bright" : "")}
+          style={{
+            left: d.x, top: d.y, width: d.size, height: d.size, color: d.tint,
+            animationDuration: d.dur + "ms", animationDelay: d.delay + "ms",
+            /* Read by the jump; set here so nothing has to be measured later.
+               --d carries how far this dot sits from the origin, so the ones near
+               the logo travel less than the ones out at the corners and the whole
+               field opens rather than sliding as a sheet. */
+            "--a": d.angle + "deg",
+            "--d": d.dist.toFixed(1),
+          }} />
+      ))}
+    </div>
+  );
+}
+
 /* ---------------- Waiting on approval ---------------- */
 function PendingScreen({ profile, onSignOut }) {
   const first = (profile.name || "").split(" ")[0];
   return (
     <div className="login">
       <div className="login-card">
-        <div className="login-logo"><Logo size={64} animated /></div>
+        <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
         <h1 className="login-title">Almost there</h1>
         <p className="setup-note">
           Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
@@ -15197,7 +16047,7 @@ function WelcomeCard({ store, onDismiss }) {
   return (
     <div className="card welcome">
       <div className="welcome-head">
-        <h3>Welcome to the Lead Performance Tracker</h3>
+        <h3>Welcome to Sage</h3>
         <button className="btn-x" onClick={onDismiss} aria-label="Dismiss">Got it <PixIcon glyph="close" size={12} /></button>
       </div>
       <p className="welcome-lede">
@@ -15379,7 +16229,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
       try { data = JSON.parse(r.result); }
       catch { setMsg("That file isn't valid JSON."); return; }
       if (data.app !== "lead-performance-calculator" || !data.config) {
-        setMsg("That doesn't look like a Lead Performance backup file."); return;
+        setMsg("That doesn't look like a Sage backup file."); return;
       }
       const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
       if (!window.confirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`)) return;
@@ -18163,7 +19013,17 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
   return (
     <div className="sect-strip no-print" ref={ref}>
       {shown.map(([id, label]) => (
-        <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
+        /* The same sideways move the wide-screen strip makes. This is the phone's
+           section control and it was a hard cut: the page was replaced under the
+           finger with nothing travelling anywhere, which is the flicker at its
+           plainest. Direction comes from the strip's own order, as everywhere
+           else. */
+        <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => {
+          const from = shown.findIndex((it) => it[0] === value);
+          const to = shown.findIndex((it) => it[0] === id);
+          if (to === from) { onChange(id); return; }
+          tabMove(to > from ? "r" : "l", () => onChange(id));
+        }}>
           {NAV_SHORT[id] || label}
           {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
         </button>
@@ -18269,6 +19129,39 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
       </aside>
     </div>
   );
+}
+
+/* ---- a wait worth showing, shown properly ----
+   A loading screen that appears for 80ms and vanishes is a flicker, not
+   information: the eye catches a flash of something and cannot read it, which is
+   worse than a beat of nothing. Two rules, and they are opposites on purpose:
+
+     do not show it at all until the wait has lasted long enough to be a wait
+     once shown, keep it long enough to be read
+
+   So a fast load shows nothing and a slow one shows a steady screen. Nothing in
+   between flickers.
+
+   The delay is deliberately long — most of a second. Jorge's rule for waiting is
+   that motion is better than a screen: if something is taking a moment, slow the
+   move down and let it settle rather than dropping a loading panel over it. So
+   this is the last resort, for a wait long enough that showing nothing at all
+   would look broken, and every ordinary wait finishes underneath it unseen. */
+function useHeld(active, { delay = 900, hold = 600 } = {}) {
+  const [on, setOn] = useState(false);
+  const shownAt = useRef(0);
+  useEffect(() => {
+    let t = null;
+    if (active) {
+      if (on) return undefined;
+      t = setTimeout(() => { shownAt.current = Date.now(); setOn(true); }, delay);
+    } else if (on) {
+      const left = Math.max(0, hold - (Date.now() - shownAt.current));
+      t = setTimeout(() => setOn(false), left);
+    }
+    return () => clearTimeout(t);
+  }, [active, on, delay, hold]);
+  return on;
 }
 
 /* ---------------- Loading screen ---------------- */
@@ -18964,7 +19857,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const missing = need.filter((k) => !t[k]).map((k) => reportLabel(k));
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greeting = greetingFor();
   const firstName = (session.name || "").split(" ")[0];
 
   // Progress ring. Bigger than it was: at r=34 the inner space was only ~60px across,
@@ -21350,6 +22243,7 @@ function AccessPanel({ config, session, onChange }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [domain, setDomain] = useState("");
+  const peopleHeld = useHeld(!people);
 
   const reload = useCallback(async () => {
     setPeople(await listProfiles());
@@ -21422,7 +22316,7 @@ function AccessPanel({ config, session, onChange }) {
   if (!AUTH_ENABLED) {
     return <div className="empty">Accounts are managed on the hosted site, where real sign-in is available. This preview has no account system.</div>;
   }
-  if (!people) return <LoadingScreen label="Loading accounts" />;
+  if (!people || peopleHeld) return peopleHeld ? <LoadingScreen label="Loading accounts" /> : null;
 
   const pending = people.filter((u) => u.pending && u.role !== "admin");
   const active = people.filter((u) => !u.pending || u.role === "admin");
@@ -21441,7 +22335,11 @@ function AccessPanel({ config, session, onChange }) {
       {pending.length > 0 && (
         <div className="card">
           <h3>Waiting for approval <span className="badge badge-warn">{pending.length}</span></h3>
-          <p className="hint">These people created an account and are waiting on you. Tick the stores they should see, then approve.</p>
+          <p className="hint">
+            These people created an account and are waiting on you. Tick the stores they should see, then approve.
+            A salesperson needs no stores at all: approve them with nothing ticked and they stay off the dashboard
+            while still having an account you can join to their name on the floor.
+          </p>
           {pending.map((u) => (
             <PendingRow key={u.id} u={u} stores={config.stores} busy={busy}
               onApprove={(ids) => approve(u, ids)} onReject={() => remove(u)} />
@@ -21556,7 +22454,18 @@ function PendingRow({ u, stores, busy, onApprove, onReject }) {
         ))}
       </div>
       <div className="row-actions">
-        <button className="btn" disabled={busy || ids.length === 0} onClick={() => onApprove(ids)}>Approve</button>
+        {/* ---- approving with nothing ticked is the SALESPERSON case ----
+            It was disabled, which made the one flow this screen's own hint
+            describes impossible: "leave their stores unticked and they stay off
+            the dashboard while still having an account to be joined to". A
+            salesperson has no business on the dashboard and every reason to have
+            an account, and there was no way to give them one.
+
+            The button says which of the two it is doing, so approving with
+            nothing ticked is a choice rather than a slip. */}
+        <button className="btn" disabled={busy} onClick={() => onApprove(ids)}>
+          {ids.length ? "Approve" : "Approve for the floor only"}
+        </button>
         <button className="btn-x" disabled={busy} onClick={onReject}>Reject</button>
       </div>
     </div>
@@ -21929,6 +22838,15 @@ function LogoCropper({ src, onCancel, onSave }) {
 function Shell({ children, entering, style }) {
   return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
+      {/* ---- the ground, mounted once and never again ----
+          It used to live inside the sign-in screen and inside the arrival, which
+          meant it was destroyed with each of them: the arrival's overlay faded
+          and took the blobs and the dot field with it, so the last frame of the
+          jump handed over to a different backdrop. That is the flicker at the
+          end. One instance at the root, behind everything, for the whole life of
+          the app — which is what the handoff meant by the same layer continuing
+          through the join rather than being swapped at it. */}
+      <SageGround />
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
@@ -22011,9 +22929,20 @@ function AppShell({
   );
 }
 
-function Style() {
-  return (
-    <style>{`
+/* ---------------- The stylesheet ----------------
+   Appended to the head once, on load, and never touched again — rather than
+   rendered as a <style> element inside whichever screen happens to be up.
+
+   It was the second: every branch of this component rendered its own <Style />,
+   so signing in tore down 353KB of CSS and mounted 353KB of identical CSS, and
+   the browser reparsed all of it and recalculated every style on the page. That
+   is a large part of the second-long block that the white flash at the end of the
+   arrival was covering, and it was being paid on any branch change — every tool
+   switch that swapped shells too.
+
+   There is nothing dynamic in here to justify the cost: not one interpolation in
+   353KB. So it goes in once and stays. */
+const SAGE_CSS = `
       :root {
         --bg: #F5F5F7; --card: #FFFFFF; --ink: #1D1D1F; --ink-2: #6E6E73; --ink-3: #AEAEB2;
         --line: rgba(0,0,0,.08); --blue: #2A5E9B; --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
@@ -22117,22 +23046,15 @@ function Style() {
 
       /* ---- living logo: needle sweeps left→right, lime arc draws in behind it ---- */
       .logo-anim { animation: logoFloat 7s ease-in-out 1.8s infinite; will-change: transform; }
-      .logo-anim .logo-arc {
-        stroke-dasharray: 100;
-        stroke-dashoffset: 100;
-        animation: arcDraw 1.5s var(--spring) .25s forwards;
-      }
-      .logo-anim .logo-needle {
-        transform: rotate(-140.2deg);
-        animation: needleSweep 1.5s var(--spring) .25s forwards;
-      }
-      @keyframes arcDraw { to { stroke-dashoffset: 0; } }
-      /* needle sweeps from the arc's start (180°) to its resting angle (320.2°).
-         No overshoot: backing off even a few degrees exposed the lime arc behind the tip. */
-      @keyframes needleSweep {
-        from { transform: rotate(-140.2deg); }
-        to   { transform: rotate(0deg); }
-      }
+      /* The arc and the needle went with the old mark. What is left is the float,
+         which belongs to the mark rather than to any part of it. */
+      /* Seven dots, one at a time, 150ms apart: the identity's own loading
+         pattern, made of the same dot everything else here is made of. */
+      .sage-loading { display:inline-flex; align-items:center; }
+      .sage-loading i { display:block; border-radius:50%; background:#2F7F72; opacity:.22;
+        animation: sageDot 1.05s ease-in-out infinite; }
+      @keyframes sageDot { 0%, 72%, 100% { opacity:.22; transform:scale(.86); }
+        18% { opacity:1; transform:scale(1); } }
       @keyframes logoFloat {
         0%, 100% { transform: translateY(0) scale(1); }
         50%      { transform: translateY(-3px) scale(1.015); }
@@ -22749,9 +23671,7 @@ function Style() {
         filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
       @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
       /* the speedometer needle + its gradient trail spin together */
-      .logo-loading .logo-spin { animation: needleSpin 1s linear infinite; }
-      .logo-loading .logo-trail { animation: needleSpin 1s linear infinite; opacity:.9; }
-      @keyframes needleSpin { to { transform: rotate(360deg); } }
+      .sage-loading i { animation: sageDot 1.05s ease-in-out infinite; }
       .loadscreen-label { margin-top:2px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
 
       /* ---- board launcher ---- */
@@ -22861,12 +23781,10 @@ function Style() {
 
         /* nothing loops forever behind a scrolling surface */
         .logo-anim, .hero-band::after, .qsel-pill::before, .dz-icon, .star-badge,
-        .chip-warn .chip-dot, .leader-crown, .logo-loading .logo-spin, .logo-loading .logo-trail {
+        .chip-warn .chip-dot, .leader-crown, .sage-loading i {
           animation: none !important;
         }
         /* leave the logo in its finished state rather than mid-sweep */
-        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
-        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
 
         /* the sticky blurred header was the other half of the jump */
         .topbar {
@@ -23281,208 +24199,8 @@ function Style() {
          padding, .board-page is max-width 1440 with 32px gutters, .hero-band is 30px/34px
          with a 24px radius and the same gradient tokens. The point is that the last
          frame of this and the first frame of the app are the same picture. */
-      .ldx { position:fixed; inset:0; z-index:400; overflow:hidden; contain:paint;
-        background:var(--bg); animation: ldxIn .45s var(--ease) both; transform:translateZ(0); }
-      .ldx.is-exiting { animation: ldxOut .62s cubic-bezier(.34,1.3,.64,1) forwards;
-        will-change:opacity, transform; }
-      /* Everything inside holds its position and fades together. Nothing moves on
-         the way out, so there is nothing to catch the eye except the layer thinning. */
-      .ldx.is-exiting * { animation-play-state:paused !important; }
-      @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
-      @keyframes ldxOut {
-        0%   { opacity:1; transform:scale(1); }
-        40%  { opacity:.62; transform:scale(1.008); }
-        100% { opacity:0; transform:scale(1.022); }
-      }
+      /* The cinematic's 200 lines of stand-in dashboard went with it. */
 
-      /* The glow the mark throws as it opens: the page's own aurora, brought
-         forward rather than invented for the occasion. */
-      .ldx-bloom { position:absolute; left:50%; top:42%; width:120vmax; height:120vmax;
-        margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
-        background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
-          color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
-        animation: ldxBloom 3.4s cubic-bezier(.34,1.4,.64,1) both; }
-      .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
-          color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
-        animation-delay:.1s; animation-duration:3.4s; }
-      @keyframes ldxBloom {
-        0%   { transform:scale(.02); opacity:0; }
-        10%  { opacity:1; }
-        56%  { transform:scale(.98); opacity:.95; }
-        /* swell, then pull in with the pill, finishing before the mark sets off */
-        62%  { transform:scale(1.06); opacity:1; }
-        70%  { transform:scale(.28); opacity:.4; }
-        74%  { transform:scale(.08); opacity:0; }
-        100% { transform:scale(.08); opacity:0; }
-      }
-
-      /* The mark travels to the exact spot it occupies in the header: 24px in from
-         the left, centred in a 60px bar, at 36px against the 72px it starts at.
-         Transform only, so it moves smoothly. */
-      .ldx-mark { position:fixed; left:0; top:0; z-index:4; width:72px; height:72px; transform-origin:0 0;
-        filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--sp) 42%, transparent));
-        animation: ldxMark 3.4s var(--ease) both; }
-      /* With the origin at the top left, the centre hold needs the half-size offset
-         written in, and the landing is simply the header's own coordinates: 30px in
-         from the left, 12px down, at half of 72 to make 36. */
-      @keyframes ldxMark {
-        0%   { transform:translate(calc(50vw - 27px), calc(42vh - 18px)) scale(.5); opacity:0; }
-        9%   { transform:translate(calc(50vw - 49px), calc(42vh - 40px)) scale(1.12); opacity:1; }
-        20%  { transform:translate(calc(50vw - 45px), calc(42vh - 36px)) scale(1); opacity:1; }
-        /* holds while the name comes and goes, then leaves once the glow is gone */
-        74%  { transform:translate(calc(50vw - 45px), calc(42vh - 36px)) scale(1); opacity:1; }
-        94%  { transform:translate(17px, 9px) scale(.5); opacity:1;
-               filter:drop-shadow(0 0 0 transparent); }
-        100% { transform:translate(17px, 9px) scale(.5); opacity:1;
-               filter:drop-shadow(0 0 0 transparent); }
-      }
-      .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 52px); z-index:4; text-align:center; }
-      .ldx-pill { display:inline-block; padding:11px 26px; border-radius:999px;
-        font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-.015em;
-        box-shadow:0 16px 34px -16px rgba(16,32,52,.5), inset 0 1px 0 rgba(255,255,255,.22);
-        transform-origin:50% 0;
-        animation: ldxPill 3.4s cubic-bezier(.34,1.56,.64,1) both; }
-      /* Drops in past its resting point, settles, then springs back up and out just
-         before the mark leaves for the header. */
-      @keyframes ldxPill {
-        0%    { opacity:0; transform:translateY(-30px) scale(.86); }
-        9%    { opacity:1; transform:translateY(7px) scale(1.03); }
-        16%   { transform:translateY(0) scale(1); }
-        56%   { opacity:1; transform:translateY(0) scale(1); }
-        61%   { transform:translateY(5px) scale(1.03); }
-        70%   { opacity:0; transform:translateY(-30px) scale(.88); }
-        100%  { opacity:0; transform:translateY(-30px) scale(.88); }
-      }
-
-      /* ---- the dashboard's own shapes ---- */
-      .ldx-page { position:absolute; inset:0; z-index:2; }
-      .ldx-bar { position:absolute; top:0; left:0; right:0; height:60px;
-        background:rgba(255,255,255,.9); border-bottom:1px solid rgba(16,32,52,.06);
-        display:flex; align-items:center; gap:12px; padding:12px 24px; box-sizing:border-box;
-        animation: ldxBar .6s var(--ease) both; animation-delay:.5s; }
-      .ldx-mark-slot { width:36px; height:36px; border-radius:11px; background:transparent; flex:0 0 auto; }
-      .ldx-pills, .ldx-queues { display:flex; gap:8px; align-items:center; }
-      .ldx-pills { margin-left:auto; background:rgba(16,32,52,.05); border-radius:10px; padding:3px; }
-      .ldx-bar > :last-child { margin-right:0; }
-      .ldx-pills i { height:28px; border-radius:8px; background:rgba(16,32,52,.08); }
-      .ldx-pills i:nth-child(1) { width:99px; background:#fff; }
-      .ldx-pills i:nth-child(2) { width:93px; }
-      .ldx-pills i:nth-child(3) { width:79px; }
-      .ldx-pills i:first-child { background:#fff; }
-      .ldx-queues i { height:28px; border-radius:999px; position:relative; overflow:hidden; }
-      .ldx-queues i:nth-child(1) { width:103px; }
-      .ldx-queues i:nth-child(2) { width:94px; }
-      .ldx-queues i:nth-child(3) { width:84px; }
-      .ldx-queues i:nth-child(1) { background:#10B981; }
-      .ldx-queues i:nth-child(2) { background:#5566F0; }
-      .ldx-queues i:nth-child(3) { background:#8B5CF6; }
-      .ldx-store { width:274px; height:29px; border-radius:10px; border:1px solid rgba(16,32,52,.14);
-        background:#fff; margin-left:12px; flex:0 0 auto; }
-      @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
-
-      .ldx-board { position:absolute; top:60px; left:0; right:0;
-        padding:20px 0 0; box-sizing:border-box; }
-
-      /* the sub-nav row: the top bar's gutters, not the dashboard's */
-      .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px;
-        padding:0 21px; margin-bottom:33px; }
-      .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
-      .ldx-tabs { display:flex; align-items:center; gap:5px; padding:6px;
-        background:rgba(16,32,52,.05); border-radius:14px; }
-      .ldx-tabs i { height:36px; border-radius:9px; background:transparent; }
-      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:102px; }
-      .ldx-tabs i:nth-child(2) { width:103px; }
-      .ldx-tabs i:nth-child(3) { width:96px; }
-      .ldx-tabs i:nth-child(4) { width:72px; }
-      .ldx-tabs i:nth-child(5) { width:94px; }
-      .ldx-tabs i:nth-child(6) { width:70px; }
-      .ldx-search { width:301px; height:36px; border-radius:13px; background:rgba(16,32,52,.06); flex:0 0 auto; }
-
-      .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
-        gap:32px; margin:0 clamp(24px, 4.75vw, 96px); padding:30px 34px; border-radius:24px;
-        height:182px; box-sizing:border-box;
-        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
-        box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
-        animation: ldxHero .75s var(--spring) both; animation-delay:.74s; }
-      .ldx-hero-id { display:flex; align-items:center; gap:20px; }
-      .ldx-hero-logo { width:62px; height:62px; border-radius:17px; background:rgba(255,255,255,.92); flex:0 0 auto; }
-      .ldx-hero-text { display:flex; flex-direction:column; gap:9px; }
-      .ldx-hero-text span { display:block; border-radius:7px; background:rgba(255,255,255,.34); }
-      .ldx-hero-text .w1 { width:165px; height:9px; }
-      .ldx-hero-text .w2 { width:362px; height:24px; background:rgba(255,255,255,.86); }
-      .ldx-hero-text .w3 { width:112px; height:9px; }
-      .ldx-hero-right { display:flex; align-items:center; gap:21px; }
-      .ldx-ring { width:98px; height:98px; flex:0 0 auto; }
-      .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
-      .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:7.5; }
-      .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:7.5; stroke-linecap:round;
-        stroke-dasharray:264; stroke-dashoffset:264;
-        animation: ldxRing 1.4s var(--ease) both; animation-delay:.9s; }
-      @keyframes ldxRing { to { stroke-dashoffset:78; } }
-      .ldx-hero-side { display:flex; flex-direction:column; gap:8px; }
-      .ldx-hero-side span { display:block; border-radius:7px; background:rgba(255,255,255,.3); }
-      .ldx-hero-side .s1 { width:245px; height:14px; background:rgba(255,255,255,.8); }
-      .ldx-hero-side .s2 { width:264px; height:9px; }
-      .ldx-hero-side .s3 { width:202px; height:9px; }
-      @keyframes ldxHero {
-        from { transform:translateY(24px) scale(.975); opacity:0; filter:blur(5px); }
-        to   { transform:none; opacity:1; filter:blur(0); }
-      }
-
-      .ldx-cards { display:flex; gap:18px; margin:18px clamp(24px, 4.75vw, 96px) 0; }
-      .ldx-card { border-radius:20px; animation: ldxRise .6s var(--ease) both; }
-      .ldx-card.tall { width:332px; height:175px; flex:0 0 auto; padding:21px 22px; box-sizing:border-box;
-        display:flex; flex-direction:column; justify-content:flex-start; gap:11px;
-        background:linear-gradient(150deg,#F09A3E,#E2622B);
-        box-shadow:0 18px 40px -26px rgba(226,98,43,.6); animation-delay:.84s; }
-      .ldx-card.wide { flex:1; height:175px; padding:24px 26px; box-sizing:border-box;
-        display:flex; flex-direction:column; justify-content:center; gap:21px;
-        background:rgba(255,255,255,.72); box-shadow:0 18px 40px -30px rgba(16,32,52,.45);
-        animation-delay:.94s; }
-      .ldx-card.wide i { display:block; height:12px; border-radius:8px; background:rgba(16,32,52,.08); }
-      .ldx-card.wide i:nth-child(1) { width:58%; }
-      .ldx-card.wide i:nth-child(2) { width:48%; }
-      .ldx-card.wide i:nth-child(3) { width:53%; }
-      .ldx-card.tall span { display:block; border-radius:6px; background:rgba(255,255,255,.34); }
-      .ldx-card.tall .t1 { width:106px; height:8px; }
-      .ldx-card.tall .t2 { width:171px; height:14px; background:rgba(255,255,255,.9); margin-top:2px; }
-      .ldx-card.tall .t3 { width:104px; height:8px; }
-      /* The weakest-standard bar fills rather than sitting there finished, for the
-         same reason the health ring draws itself: a number that arrives is read,
-         a number that is simply present is skipped. */
-      .ldx-meter { width:100%; height:6px; border-radius:999px; background:rgba(255,255,255,.3) !important;
-        overflow:hidden; margin-top:8px; }
-      .ldx-meter i { display:block; height:100%; width:0; border-radius:999px; background:#fff;
-        animation: ldxMeter 1.3s var(--ease) both; animation-delay:1.06s; }
-      @keyframes ldxMeter { to { width:62%; } }
-
-      /* The queue buttons carry the same light sweep they do in the header, so the
-         two screens behave the same as well as look the same. */
-      .ldx-queues i::after { content:""; position:absolute; inset:0;
-        background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.5) 50%, transparent 74%);
-        transform:translateX(-130%); animation: ldxSweep 1.5s var(--ease) both; }
-      .ldx-queues i:nth-child(1)::after { animation-delay:.86s; }
-      .ldx-queues i:nth-child(2)::after { animation-delay:1.02s; }
-      .ldx-queues i:nth-child(3)::after { animation-delay:1.18s; }
-      @keyframes ldxSweep {
-        0%   { transform:translateX(-130%); }
-        55%,100% { transform:translateX(130%); }
-      }
-      @keyframes ldxRise { from { transform:translateY(20px); opacity:0; } to { transform:none; opacity:1; } }
-
-      .ldx-skip { position:absolute; right:20px; bottom:18px; z-index:5; font-family:inherit; font-size:12.5px;
-        font-weight:700; padding:7px 14px; border-radius:999px; border:0; cursor:pointer;
-        background:rgba(16,32,52,.08); color:var(--ink-2); }
-      @media (max-width: 900px) {
-        .ldx-store, .ldx-pills { display:none; }
-        .ldx-hero { flex-wrap:wrap; margin:0 20px; }
-        .ldx-cards { margin:20px; }
-        .ldx-hero-side { display:none; }
-        .ldx-cards { flex-direction:column; }
-        .ldx-card.tall, .ldx-card.wide { width:auto; height:120px; }
-        .ldx-search { display:none; }
-      }
-      @media (prefers-reduced-motion: reduce) { .ldx, .ldx * { animation:none !important; } }
 
       /* ---------- sign-in handover ----------
          One continuous move in three overlapping beats. Nothing waits its turn
@@ -24321,7 +25039,10 @@ function Style() {
         border-radius:10px; padding:2px; }
       .tool-thumb { position:absolute; top:2px; bottom:2px; left:0; background:#fff; border-radius:8px;
         box-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 1px 4px rgba(31,54,86,.18); opacity:0; pointer-events:none;
-        transition: transform .4s var(--spring), width .4s var(--spring); will-change: transform, width; }
+        /* 340ms, and the spring the handoff asks for. It already measures the
+           button rather than carrying hardcoded widths, which is the part the
+           prototype got wrong and had to fix. */
+        transition: transform .34s cubic-bezier(.34,1.4,.64,1), width .34s cubic-bezier(.34,1.4,.64,1); }
       .tool-thumb.ready { opacity:1; }
       .tool-btn { border:none; background:none; padding:6px 12px; border-radius:8px; cursor:pointer;
         font-size:12.5px; font-weight:600; color:var(--ink-2); white-space:nowrap;
@@ -24430,19 +25151,700 @@ function Style() {
       .section-sub { font-size:14px; font-weight:500; color:var(--ink-2); margin-left:8px; letter-spacing:0; }
 
       /* ---- login ---- */
-      .login { display:flex; justify-content:center; padding:80px 20px; }
-      .login-card { background:rgba(255,255,255,.74); border:1px solid rgba(255,255,255,.75); border-radius:24px; padding:36px 32px; width:360px;
-        text-align:center;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), var(--shadow-2); animation: loginIn .5s var(--spring); }
+      /* ---- the ground: blobs and a dot field, behind both screens ----
+         One layer, continuing through the arrival rather than being swapped at
+         the join. Fixed rather than absolute so it does not scroll away from the
+         form on a short window. */
+      .sage-ground { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+      .sg-blobs { position:absolute; inset:0; }
+      /* Fixed, not absolute: the field is rendered by the sign-in screen now
+         rather than by the ground, so it positions itself against the viewport
+         instead of against a card that is 340px wide. Behind the form, above the
+         blobs. */
+      .sg-field { position:fixed; inset:0; z-index:0; pointer-events:none;
+        /* The layer opens out of the same point the mark does. It used to scale
+           about the middle of the viewport while the mark scaled about the logo,
+           so the two sets of streaks were travelling on different lines even
+           though each dot was aimed correctly. --jx/--jy are the mark's centre,
+           measured on the press. */
+        transform-origin: var(--jx, 50%) var(--jy, 50%); }
+      .sg-blob { position:absolute; display:block; border-radius:50%;
+        animation: sgDrift 40s ease-in-out infinite alternate; }
+      .sg-blob.b1 { width:760px; height:620px; left:-80px; top:-120px; animation-duration:34s;
+        background: radial-gradient(circle at 40% 40%, rgba(196,220,196,0.62), transparent 68%); }
+      .sg-blob.b2 { width:820px; height:680px; right:-120px; bottom:-140px; animation-duration:52s;
+        background: radial-gradient(circle at 55% 50%, rgba(178,208,214,0.58), transparent 68%); }
+      .sg-blob.b3 { width:620px; height:520px; right:60px; top:-180px; animation-duration:44s;
+        background: radial-gradient(circle at 50% 50%, rgba(226,224,182,0.50), transparent 66%); }
+      .sg-blob.b4 { width:680px; height:560px; left:180px; bottom:-200px; animation-duration:38s;
+        background: radial-gradient(circle at 50% 50%, rgba(200,206,226,0.46), transparent 68%); }
+      @keyframes sgDrift {
+        from { transform: translate3d(0,0,0) scale(1); }
+        to   { transform: translate3d(26px,18px,0) scale(1.12); }
+      }
+      .sg-field { animation: sgFieldDrift 28s ease-in-out infinite alternate; }
+      @keyframes sgFieldDrift {
+        from { transform: translate3d(0,0,0); }
+        to   { transform: translate3d(-26px,-16px,0); }
+      }
+      .sg-dot { position:absolute; display:block; border-radius:50%; opacity:.26;
+        background: currentColor;
+        transform: translate(-50%,-50%);
+        animation: sgTwinkle 4s ease-in-out infinite alternate; }
+      @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
+
+      /* ---- switching tools ----
+         Three beats. The page leaves a block at a time in the direction of
+         travel, the streaks cross, and the new tool arrives from the other side.
+         Side to side, because the tools sit side by side in the bar. */
+      .tool-move .page > *, .tool-move .board-page > *, .tool-move .tab-page > * {
+        will-change: auto; }
+      /* Out fast, in with weight. The exit is a flick — it is the part nobody
+         needs to watch — and the arrival carries the inertia: each block comes in
+         from the side, overshoots the resting point, and is pulled back, so it
+         reads as having been thrown and stopped rather than placed. */
+      .tool-exit .page > *, .tool-exit .board-page > *, .tool-exit .tab-page > * {
+        animation: toolOut .19s cubic-bezier(.5,0,.95,.35) both; }
+      .tool-enter .page > *, .tool-enter .board-page > *, .tool-enter .tab-page > * {
+        animation: toolIn .56s cubic-bezier(.16,.86,.3,1) both; }
+      /* Element by element, and tighter than the first version: 22ms apart, so
+         the blocks land in sequence without the last one arriving late. The last
+         block's exit finishes at 66 + 190 = 256ms, which is what TOOL_EXIT is
+         set from: swapping before that cut the last block mid-flight, and a
+         block that disappears halfway through leaving is a flicker. */
+      .tool-move .page > *:nth-child(2), .tool-move .board-page > *:nth-child(2), .tool-move .tab-page > *:nth-child(2) { animation-delay:.022s; }
+      .tool-move .page > *:nth-child(3), .tool-move .board-page > *:nth-child(3), .tool-move .tab-page > *:nth-child(3) { animation-delay:.044s; }
+      .tool-move .page > *:nth-child(n+4), .tool-move .board-page > *:nth-child(n+4), .tool-move .tab-page > *:nth-child(n+4) { animation-delay:.066s; }
+      /* Going right: the old page leaves to the left and the new one comes in
+         from the right. Going left, the mirror. */
+      .tool-dir-r { --tx-out:-64px; --tx-in:64px; }
+      .tool-dir-l { --tx-out:64px;  --tx-in:-64px; }
+      @keyframes toolOut {
+        from { opacity:1; transform:none; }
+        to   { opacity:0; transform: translateX(var(--tx-out)); }
+      }
+      /* The crash: past the resting point, squashed along the direction of
+         travel at the moment of impact, then let go. */
+      @keyframes toolIn {
+        0%   { opacity:0; transform: translateX(var(--tx-in)) scaleX(1); }
+        30%  { opacity:1; }
+        62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
+        82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
+        92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
+        100% { opacity:1; transform:none; }
+      }
+      /* Nothing that says "loading" belongs in the middle of a move. The new
+         tool is fetching underneath, and a spinner appearing between the streaks
+         and the page arriving is the join made visible — which is the one thing
+         the whole sequence exists to hide. */
+      .tool-move .loadscreen, .tool-move .loading, .tool-move .sage-loading,
+      .tab-move .loadscreen, .tab-move .loading, .tab-move .sage-loading { opacity:0 !important; }
+
+      /* Whole pages move too, not only their blocks. An animation rather than a
+         transition: .page carries its own mount animation, and an animation wins
+         over a transition on the same property, so a transition here would have
+         been silently ignored on exactly the pages it was written for. */
+      .tool-exit .page {
+        animation: pageIn .38s var(--spring), pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
+      .tool-exit .board-page, .tool-exit .tab-page {
+        animation: pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
+      @keyframes pageOut {
+        from { transform:none; opacity:1; }
+        to   { transform: translateX(calc(var(--tx-out) * .35)); opacity:1; }
+      }
+      /* And the same on the way in. This was the missing half: the page's own
+         mount animation, pageIn, a lift from the bottom, was still running
+         underneath blocks that were arriving from the side, so the page rose
+         while its contents slid — two moves at once, in different directions,
+         which is what read as a flicker rather than a landing. The whole page
+         now travels the same axis as its blocks and decelerates into place with
+         them. */
+      .tool-enter .page {
+        animation: pageIn .38s var(--spring), pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
+      .tool-enter .board-page, .tool-enter .tab-page {
+        animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
+      @keyframes pageLand {
+        from { transform: translateX(calc(var(--tx-in) * .35)); opacity:1; }
+        to   { transform:none; opacity:1; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .tool-exit .page > *, .tool-enter .page > *, .tool-exit .board-page > *, .tool-enter .board-page > *,
+        .tool-exit .tab-page > *, .tool-enter .tab-page > * { animation-duration:.14s !important; }
+        .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page { animation:none !important; }
+      }
+
+      /* ---- a section tab: the same move, smaller ----
+         Two beats now, matching a tool switch: out, swap, in. It used to be one,
+         and half a move is what a flicker IS — the old content vanished on the
+         click and only the arriving half was drawn. */
+      .tab-dir-r { --tabx-out:-26px; --tabx-in:26px; }
+      .tab-dir-l { --tabx-out:26px;  --tabx-in:-26px; }
+      .tab-exit .page > *, .tab-exit .board-page > *, .tab-exit .tab-page > * {
+        animation: tabOut .14s cubic-bezier(.45,0,.9,.4) both; }
+      .tab-enter .page > *, .tab-enter .board-page > *, .tab-enter .tab-page > * {
+        animation: tabIn .4s cubic-bezier(.16,.86,.3,1) both; }
+      .tab-move .page > *:nth-child(2), .tab-move .board-page > *:nth-child(2), .tab-move .tab-page > *:nth-child(2) { animation-delay:.016s; }
+      .tab-move .page > *:nth-child(3), .tab-move .board-page > *:nth-child(3), .tab-move .tab-page > *:nth-child(3) { animation-delay:.032s; }
+      .tab-move .page > *:nth-child(n+4), .tab-move .board-page > *:nth-child(n+4), .tab-move .tab-page > *:nth-child(n+4) { animation-delay:.048s; }
+      @keyframes tabOut {
+        from { opacity:1; transform:none; }
+        to   { opacity:0; transform: translateX(var(--tabx-out)); }
+      }
+      /* Overshoots a little and is pulled back, so it lands rather than stops.
+         No opacity step after the first: fading a block in while it is still
+         travelling is what made the arrival read as a dissolve. */
+      @keyframes tabIn {
+        0%   { opacity:0; transform: translateX(var(--tabx-in)); }
+        34%  { opacity:1; }
+        72%  { transform: translateX(calc(var(--tabx-in) * -.08)); }
+        100% { opacity:1; transform:none; }
+      }
+      /* Sideways only. The page's own mount animation lifts from the bottom,
+         which is right when a page arrives and wrong when it slides one step
+         along a strip. The whole page travels with its blocks instead, a third
+         of their distance, so the move has a body under it and not only edges.
+         All three page classes: naming only .page was why a board still jumped
+         up from the bottom mid-slide. */
+      /* ---- why every one of these rules re-lists pageIn first ----
+         .page carries its own mount animation. Replacing the animation on it for
+         the length of a move CANCELS that one, and putting it back when the move
+         ends starts it AGAIN from zero: the page fell to opacity 0 and lifted ten
+         pixels off the bottom the instant the slide finished, every single time.
+         That second, unasked-for mount is what read as a flicker at the end of a
+         side-to-side move, and it is why the landing never landed.
+
+         An animation is matched to the one it replaces BY NAME and position in
+         the list, so keeping pageIn at index 0 and adding the move's animation
+         after it means pageIn is never cancelled and never restarted; it is long
+         finished by then and contributes nothing, while the move's animation sits
+         later in the list and wins on the properties they share. */
+      /* ---- and pageIn is re-listed for .page ONLY ----
+         Because .page is the only one that has it. Naming .board-page and
+         .tab-page here did not preserve a running animation, it INTRODUCED one:
+         pageIn starts from opacity 0, so the board faded in from transparent
+         every time a tab was pressed, over the whole move. That is the flicker.
+         The trick is only ever valid for an element that already carries the
+         animation being re-listed. */
+      .tab-exit .page {
+        animation: pageIn .38s var(--spring), tabPageOut .14s cubic-bezier(.45,0,.9,.4) both; }
+      .tab-enter .page {
+        animation: pageIn .38s var(--spring), tabPageIn .42s cubic-bezier(.16,.86,.3,1) both; }
+      .tab-exit .board-page, .tab-exit .tab-page {
+        animation: tabPageOut .14s cubic-bezier(.45,0,.9,.4) both; }
+      .tab-enter .board-page, .tab-enter .tab-page {
+        animation: tabPageIn .42s cubic-bezier(.16,.86,.3,1) both; }
+      /* ---- and every one of these pins opacity ----
+         .page is keyed on the tab, so React gives it a NEW element on every
+         switch and pageIn starts fresh on it — the container fading up from
+         nothing over the whole move, under blocks that are doing their own fade.
+         Re-listing pageIn cannot preserve what was never running.
+
+         Pinning opacity here is what settles it: these sit after pageIn in the
+         list, so they win on opacity as well as transform for as long as they
+         run, and pageIn is finished before they are. The container never fades,
+         the blocks still do, and when the move classes come off pageIn is at
+         index 0, already over, and does not restart. */
+      @keyframes tabPageOut {
+        from { transform:none; opacity:1; }
+        to   { transform: translateX(calc(var(--tabx-out) * .34)); opacity:1; }
+      }
+      @keyframes tabPageIn {
+        from { transform: translateX(calc(var(--tabx-in) * .34)); opacity:1; }
+        to   { transform:none; opacity:1; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tab-move .page > *, .tab-move .board-page > *, .tab-move .tab-page > * { animation-duration:.12s !important; }
+      }
+
+      /* ---- the streaks that cross between them ---- */
+      .warp { position:fixed; inset:0; z-index:8000; pointer-events:none; overflow:hidden; }
+      .warp i { position:absolute; display:block; border-radius:2px; opacity:0; }
+      .warp-r i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
+      .warp-l i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      @keyframes warpR {
+        0%   { transform: translateX(0);              opacity:0; }
+        30%  {                                        opacity:.9; }
+        100% { transform: translateX(calc(100vw + 760px)); opacity:0; }
+      }
+      @keyframes warpL {
+        0%   { transform: translateX(0);              opacity:0; }
+        30%  {                                        opacity:.9; }
+        100% { transform: translateX(calc(-100vw - 760px)); opacity:0; }
+      }
+
+      /* ---- a metric card blooms from the dot that was pressed ---- */
+      .mdial-pop { transform-origin: bottom center; }
+      .mdial:hover .mdial-pop, .mdial.popped .mdial-pop {
+        animation: mBloom .42s cubic-bezier(.34,1.5,.64,1) both; }
+      @keyframes mBloom {
+        from { opacity:0; transform: translateX(-50%) scale(.24); }
+        to   { opacity:1; transform: translateX(-50%) scale(1); }
+      }
+
+      /* ---- a person's detail rises from their row, its cards behind it ---- */
+      /* The real class is .detail — the sheet a row opens into. */
+      .detail { animation: sheetRise .42s cubic-bezier(.34,1.4,.64,1) both; }
+      .detail > * { animation: saArrive .34s cubic-bezier(.34,1.4,.64,1) both; }
+      /* Used by the detail sheet's inner cards, and only there now: the arrival's
+         landing flies its blocks out of a point instead (see saRadial), so this
+         is no longer part of that sequence. */
+      @keyframes saArrive {
+        from { opacity:0; transform: scale(.94); }
+        to   { opacity:1; transform:none; }
+      }
+      .detail > *:nth-child(1) { animation-delay:.06s; }
+      .detail > *:nth-child(2) { animation-delay:.12s; }
+      .detail > *:nth-child(3) { animation-delay:.18s; }
+      .detail > *:nth-child(n+4) { animation-delay:.24s; }
+      @keyframes sheetRise {
+        from { opacity:0; transform: translateY(-10px) scaleY(.96); transform-origin: top center; }
+        to   { opacity:1; transform:none; }
+      }
+
+      /* ---- saving: one dot, pulsing ---- */
+      .save-dot { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--ink-3);
+        animation:none; }
+      .save-dot::before { content:""; width:7px; height:7px; border-radius:50%; background:#2F7F72;
+        animation: saveDot .9s ease-in-out infinite; }
+      @keyframes saveDot {
+        0%, 100% { opacity:.25; transform:scale(.8); }
+        50%      { opacity:1;   transform:scale(1.15); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .warp, .detail, .detail > *, .mdial-pop { animation:none !important; }
+        .save-dot::before { animation-duration:2.4s !important; }
+      }
+
+      /* ---- the arrival ----
+         Every selector below points at something that was already on the screen.
+         There is no overlay and no second mark: the thing that gathers and flies
+         apart is the sign-in screen itself. */
+
+      /* Hold: the form goes, the mark stays. It is the only thing that survives
+         into the jump, so it is the only thing that does not fade. */
+      .sage-beat-hold .login-card > *:not(.login-logo),
+      .sage-beat-gather .login-card > *:not(.login-logo),
+      .sage-beat-stretch .login-card > *:not(.login-logo),
+      .sage-beat-flash .login-card > *:not(.login-logo) {
+        opacity:0; pointer-events:none; transition: opacity .42s ease; }
+      /* ---- the wave has to STOP, and .login-card is why this selector is long ----
+         Pressing Sign in sets .login-busy, which runs markWork across the mark.
+         .login-busy .login-logo circle and .sage-beat-stretch .login-logo
+         circle have identical specificity and the login block is further down
+         this sheet, so the wave won.
+
+         That is not a cosmetic loss. A RUNNING ANIMATION beats a declared
+         transform outright, whatever the specificity — so every streak rule below
+         was silently ignored and the mark sat pulsing while the layer around it
+         scaled. The whole jump had no mark in it. Adding .login-card takes this
+         to four classes against three, the wave stops, and the transforms below
+         are free to apply.
+
+         It only shows up on the real press path: setting the beat classes by hand
+         never sets .login-busy, so every harness run of this looked right. */
+      .sage-beat-hold .login-card .login-logo circle, .sage-beat-gather .login-card .login-logo circle,
+      .sage-beat-stretch .login-card .login-logo circle, .sage-beat-flash .login-card .login-logo circle {
+        animation: none;
+        /* And the origin with it, for the same reason: the breathe sets it to
+           center, further down this sheet, and a streak scaled about its middle
+           grows out of both ends and detaches from the mark. It has to pivot on
+           the near end. */
+        transform-origin: left center; }
+      /* Nothing may clip the streaks: they leave the mark's box within about
+         80ms and the frame within 900. */
+      .sage-beat-hold .login, .sage-beat-gather .login,
+      .sage-beat-stretch .login, .sage-beat-flash .login { overflow: visible; }
+      .login-logo svg { overflow: visible; }
+
+      /* ---- the mark's own dots become the streaks ----
+         Rotated to each dot's angle out of the middle of the mark, origin at the
+         near end, scaled along X only. No translate in the stretch: the near end
+         stays exactly where the dot was, so nothing detaches from the mark and
+         re-attaches somewhere else.
+
+         --a, --d and --dr are published by SageMark for every dot: its angle out
+         of the centre, its distance from it and its radius, all in viewBox units.
+         The length each streak has to travel is worked out from those, so the
+         geometry is the mark's and the motion is the stylesheet's.
+
+         The mark on this screen is small — 64px tall, sitting above centre — and
+         that is deliberately where the streaks start, because that is where the
+         logo is. A dot 300 user units long clears a 1440x900 frame from anywhere
+         inside it, and the far ends are gone well before anything snaps. */
+      .login-logo circle { transform-box: fill-box; transform-origin: left center; }
+      /* ---- the whole lockup condenses as one ----
+         The gather used to draw each dot in along its own radius, scaled by how
+         far it sat from the middle of the lockup — and that middle falls inside
+         the "a", so the S was always the thing furthest out and always the thing
+         pulled hardest. Capping the distance helped and did not fix it: any
+         per-dot pull distorts the word, because the letters are not equidistant
+         from its centre.
+
+         So there is no per-dot pull at all now. The mark condenses at ONE rate,
+         as a single piece, toward the point the streaks come out of — which is
+         its own centre, which is what the layer's scale already does. Each dot
+         still squashes along its own axis by the same amount, priming the streak
+         it is about to become, and that is uniform so it cannot distort anything. */
+      .sage-beat-gather .login-logo circle {
+        transform: rotate(var(--a)) scaleX(.70);
+        transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      /* .login-busy also runs loginLogoRise on the wrapper; same collision, same
+         cure, so the mark's layer can be scaled by the beats. */
+      .sage-beat-hold .login-card .login-logo, .sage-beat-gather .login-card .login-logo,
+      .sage-beat-stretch .login-card .login-logo, .sage-beat-flash .login-card .login-logo {
+        animation: none; }
+      .sage-beat-gather .login-logo svg {
+        transform: scale(.84); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
+        transform: rotate(var(--a)) scaleX(calc((900 + var(--d) * 2.4) / var(--dr) / 2));
+        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      .sage-beat-stretch .login-logo svg {
+        transform: scale(2.6); transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      /* And out. The near end of every streak is pinned to its dot, so the layer
+         is the only thing that can carry them off the frame — at 2.6 they were
+         still anchored to the middle of the screen when the beat ended, and a
+         starburst that stops is what reads as the stutter. It keeps going through
+         the flash, which is under the white by then. */
+      .sage-beat-flash .login-logo svg {
+        transform: scale(9); transition: transform .34s cubic-bezier(.5,0,.85,.4); }
+      /* ---- and then it stops being painted ----
+         73 streaks, each the size of the screen and then some, are expensive to
+         rasterise, and they carry on costing that for the whole flash even though
+         the white is over them and their far ends left the frame long ago.
+         Measured in the built app, it is not a rounding error: 505ms of blocked
+         main thread with the mark still painting against 28-61ms with it hidden.
+         That single number was most of the pause at the join.
+
+         Hidden rather than faded, and 90ms late rather than at once: the white
+         reaches full at 88ms, so this lands just behind it and nothing is seen to
+         go. visibility, so the transition delay can hold it — display cannot be
+         timed this way. */
+      .sage-beat-flash .login-logo {
+        visibility:hidden; transition: visibility 0s linear .09s; }
+      /* The eyebrow is not part of the mark and should not fly with it. */
+      .sage-beat-stretch .login-eyebrow, .sage-beat-flash .login-eyebrow { opacity:0; }
+
+      /* ---- the flash across the snap ----
+         At the root, above both screens: the handover it covers IS the moment one
+         replaces the other, so mounted inside either it would be destroyed by the
+         swap it exists to hide. */
+      .sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
+        pointer-events:none; z-index:9500; }
+      /* ---- the white lasts as long as what it is covering ----
+         It used to be a fixed 420ms from the flash beat, and the thing it exists
+         to hide is not fixed at all: mounting the dashboard took 680ms, so the
+         white rose, fell, and was long gone before the page arrived. What you saw
+         was the streaks stop, a flash, the flash clear to reveal the SAME stopped
+         streaks, and then the page. That is the stutter at the join.
+
+         So it rises and holds, and only starts to clear once the dashboard is
+         actually there — .sage-assemble is added on the frame it mounts. Both
+         rules fill forwards and the out starts from full, so the handover
+         between them cannot show a seam however long the mount takes. */
+      .sage-beat-flash .sage-flash, .sage-flash-hold .sage-flash {
+        animation: saFlashUp .34s ease-out both; }
+      @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+      .sage-assemble .sage-flash { animation: saFlashOut .5s ease-in both; }
+      @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
+
+      /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
+         Written as animations, with the field's own 28s drift kept first in every
+         list. It has to be: the drift is an ANIMATION on transform, and an
+         animation beats a declared transform and a transition alike, so the first
+         version of these rules did nothing at all — the field sat still through
+         the whole jump while the mark flew apart around it. Same trap as the page
+         mount animation, same way out: keep the running one at index 0 so it is
+         never cancelled, and put the beat's animation after it, where it wins. */
+      .sage-beat-gather .sg-field {
+        animation: sgFieldDrift 28s ease-in-out infinite alternate,
+                   fieldGather .5s cubic-bezier(.32,0,.4,1) both; }
+      @keyframes fieldGather { from { transform:none; } to { transform:scale(.86); } }
+      /* ---- the blobs part like cloud ----
+         Each one moves OUT of the frame in the direction it already sits, rather
+         than the four of them scaling together as one sheet. A sheet that grows
+         is a zoom; four masses drifting apart and thinning is weather being
+         pushed aside, which is what flying through it should look like.
+
+         Written as animations with each blob's own 34-52s drift kept first in the
+         list, for the same reason the field's rules are: sgDrift is an animation
+         on transform, so a plain transform here would have been ignored outright.
+         And the corner each one is pushed toward is the corner it lives in — see
+         the .sg-blob geometry above. */
+      .sage-beat-gather .sg-blobs { transform:scale(.85); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-stretch .sg-blob, .sage-beat-flash .sg-blob {
+        animation: sgDrift 40s ease-in-out infinite alternate,
+                   blobPart .88s cubic-bezier(.44,0,.7,.5) both; }
+      /* Each blob keeps its OWN drift duration alongside the new one. The
+         shorthand above would otherwise reset all four to 40s, and changing a
+         running animation's duration moves it to a different point on its own
+         timeline — the blobs would jump before they parted. */
+      .sage-beat-stretch .sg-blob.b1, .sage-beat-flash .sg-blob.b1 { --bx:-38%; --by:-30%; animation-duration:34s,.88s; }
+      .sage-beat-stretch .sg-blob.b2, .sage-beat-flash .sg-blob.b2 { --bx: 38%; --by: 32%; animation-duration:52s,.88s; }
+      .sage-beat-stretch .sg-blob.b3, .sage-beat-flash .sg-blob.b3 { --bx: 34%; --by:-34%; animation-duration:44s,.88s; }
+      .sage-beat-stretch .sg-blob.b4, .sage-beat-flash .sg-blob.b4 { --bx:-34%; --by: 36%; animation-duration:38s,.88s; }
+      /* They thin, they do not disappear. At 0.14 and pushed 58% out, all four
+         had left the frame by the peak of the jump and the ground under the
+         streaks went flat white. Cloud that has been pushed aside is still
+         cloud. */
+      @keyframes blobPart {
+        from { transform: translate3d(0,0,0) scale(1); opacity:1; }
+        to   { transform: translate3d(var(--bx,0), var(--by,0), 0) scale(1.5); opacity:.34; }
+      }
+      /* And back in as the dashboard lands, on the same deceleration as the rest
+         of the ground, so the weather closes over the join rather than snapping
+         back into place after it. */
+      .sage-beat-assemble .sg-blob {
+        animation: sgDrift 40s ease-in-out infinite alternate,
+                   blobGather 1.3s cubic-bezier(.12,.78,.28,1) both; }
+      .sage-beat-assemble .sg-blob.b1 { animation-duration:34s,1.3s; }
+      .sage-beat-assemble .sg-blob.b2 { animation-duration:52s,1.3s; }
+      .sage-beat-assemble .sg-blob.b3 { animation-duration:44s,1.3s; }
+      .sage-beat-assemble .sg-blob.b4 { animation-duration:38s,1.3s; }
+      @keyframes blobGather {
+        from { transform: translate3d(var(--bx,0), var(--by,0), 0) scale(1.5); opacity:.34; }
+        to   { transform: translate3d(0,0,0) scale(1); opacity:1; }
+      }
+      /* No stretch rules for the DOM field at all: at that beat it is not in the
+         document, having handed the whole thing over to the canvas. */
+
+      /* ---- square corners for the length of the jump ----
+         This one line is the difference between the arrival running and the
+         arrival being a slideshow. A field dot is a 2.6px circle, and a circle is
+         border-radius:50% — so a dot stretched eighty times along its own axis is
+         a long thin ELLIPSE, and 660 large ellipses have to be rasterised every
+         frame. Measured in the built app, three runs each: as shipped, 39-47
+         frames with stalls of 667-883ms; with the radius dropped, 59-61 frames
+         and not one stall over 200ms, against 82-85 frames with no field at all.
+         Every stall came from the corners.
+
+         Nothing is lost. At 2.6px tall the rounding was never visible, and it is
+         only dropped while the dots are streaks; the idle field keeps its
+         circles. This is the same cost the handoff hit from the other side, when
+         it cut the streaking dots to a third to buy the frames back — the corners
+         are the cheaper thing to give up, and they buy more. */
+      /* ---- a streak, not a stretched dot ----
+         The handoff draws every streak as a pill, tapering to nothing at both
+         ends, and a scaled square dot is a blunt dash instead. Neither shape can
+         be afforded as 660 DOM elements though — measured in the built app,
+         gradient-tapered it managed 23-38 frames a jump with stalls up to a
+         second, as pills 44-47, and only as flat rectangles did it run clean.
+         So for the beat that needs them the streaks are drawn on a canvas
+         instead, properly tapered and at frame rate. See SageStreaks. */
+      .sg-streaks { position:fixed; left:0; top:0; z-index:0; pointer-events:none; }
+
+      /* The blobs stretch too, rather than merely swelling: pulled long along
+         the direction of travel and left bright enough to be the colour the
+         streaks are flying through. */
+
+
+      /* ---- and out the other side ----
+         Coming out of lightspeed rather than cutting to a still page: the field
+         and the blobs decelerate back to rest over the same window the dashboard
+         lands in, so the last beat is one continuous move instead of a stop
+         followed by a start. */
+      /* No landing rules for the field: it does not survive the handover, so
+         there is nothing to bring back. Decelerating 660 dots out of full streak
+         while React mounted the dashboard is what made the landing choppy —
+         measured in the built app, stalls of 467-983ms with the field there and
+         none at all without it. */
+
+
+      /* Only the bright eighth streaks. The rest ride the layer's own scale,
+         which is what bought the density back. */
+      .sage-beat-gather .sg-dot { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.70);
+        transition: transform .5s cubic-bezier(.32,0,.4,1); }
+
+      /* ---- the dashboard coming out of the jump ----
+         Built outward from the middle of the FRAME. The first version had every
+         element rise from below, which is the app's ordinary mount and reads as a
+         page loading normally after an animation rather than as the end of one.
+         The second oversized the page and shrank it back, which pulls everything
+         INWARD — the opposite of assembling out of a centre — and, anchored at
+         the page's own middle rather than the viewport's, dragged the top of the
+         layout off the screen. That is the clipped nav.
+
+         So: contracted toward one point and expanding away from it, with the
+         origin at half the viewport height rather than half the page's. The page
+         starts at scroll 0 when this runs, so 50vh from the top of the container
+         is the middle of what the eye is looking at, whatever the page's own
+         height turns out to be. Everything travels outward from there. */
+      /* ---- the dashboard comes out of the point the streaks left from ----
+         Not a fade, and not a scale in place. Every block starts AT the vanishing
+         point, small, and flies out along its own line to where it belongs — the
+         near ones first, the far ones sweeping out behind them. Coming out of
+         lightspeed rather than a page loading after an animation.
+
+         --rx/--ry are the vector from the block to that point, measured once when
+         the dashboard mounts (see radialAssemble); --rd is its turn, by distance.
+         Held invisible until then, so nothing is seen sitting in its final place
+         before it has been given its line.
+
+         The page itself no longer moves. It used to scale out of the middle of
+         the frame, and a parent transform would have scaled these vectors along
+         with it — the blocks would have flown to the wrong places. */
+      /* No class holding the blocks invisible any more, because nothing is
+         waiting: they are measured and given their lines in a layout effect,
+         before the browser paints them for the first time. Anything that skips
+         the radial pass — reduced motion, an empty selector — simply gets the
+         blocks as they are, rather than a screen of nothing. */
+      /* The page holds still while its blocks fly. It has a mount animation of
+         its own — pageIn, a lift from below — and it was running underneath the
+         landing, so the whole layout drifted upward while every block inside it
+         was travelling outward. Two movements, different directions, which is the
+         choppiness. saStill sits after pageIn in the list and pins the properties
+         they share; pageIn stays at index 0 so that dropping .sage-assemble at
+         the end does not restart it. */
+      .sage-assemble .page, .sage-assemble .board-page, .sage-assemble .tab-page {
+        animation: pageIn .38s var(--spring), saStill 1.5s linear both; }
+      @keyframes saStill { from, to { transform:none; opacity:1; filter:none; } }
+      /* The handoff's own landing spring, cubic-bezier(.34,1.6,.64,1) — the one it
+         uses for every dot that lands. 1.6 overshoots: each block flies past
+         where it belongs and is pulled back, which is what makes it read as
+         having been thrown out of the point rather than eased into place. The
+         curve it replaced had no overshoot at all. */
+      .sage-assemble .sa-radial {
+        opacity:0;
+        animation: saRadial 1s cubic-bezier(.34,1.6,.64,1) both;
+        animation-delay: var(--rd, 0ms); }
+      @keyframes saRadial {
+        0%   { opacity:0; transform: translate3d(var(--rx,0), var(--ry,0), 0) scale(.04); }
+        14%  { opacity:1; }
+        100% { opacity:1; transform: none; }
+      }
+      .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .5s both; }
+
+      /* ---- the little light they come out of ----
+         Sits at the vanishing point once the streaks have gone, swells, and is
+         gone by the time the blocks have cleared it. */
+      .sage-spark { position:fixed; left:var(--jx,50%); top:var(--jy,50%); width:10px; height:10px;
+        margin:-5px 0 0 -5px; border-radius:50%; opacity:0; pointer-events:none; z-index:9400;
+        background: radial-gradient(circle, #fff 0%, rgba(143,189,178,.85) 42%, rgba(143,189,178,0) 72%); }
+      /* Keyed to the assemble alone: under a held flash the spark would be
+         invisible anyway, and it is the thing the blocks come out of, so it
+         belongs on the far side of the white with them. */
+      .sage-assemble .sage-spark {
+        animation: saSpark .72s cubic-bezier(.2,.7,.3,1) both; }
+      @keyframes saSpark {
+        0%   { opacity:0; transform: scale(.2); }
+        18%  { opacity:1; transform: scale(2.6); }
+        55%  { opacity:.9; transform: scale(5); }
+        100% { opacity:0; transform: scale(13); }
+      }
+
+      @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
+
+      @media (prefers-reduced-motion: reduce) {
+        /* Everything collapses to a cross-fade. The order is kept; the movement
+           goes. */
+        .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
+        .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
+        .sage-flash { animation:none !important; }
+        .sage-assemble .sa-radial, .sage-assemble .hero-ring-fill,
+        .sage-spark { animation-duration:.18s !important; animation-timing-function:linear !important; }
+
+      }
+
+      /* ---- the sign-in layer ----
+         Sits over the app rather than instead of it, so the dashboard can be
+         mounting underneath while the streaks are still flying. Transparent: the
+         ground belongs to the app's shell and shows straight through, which is
+         also why there is only ever one set of blobs and they never jump at the
+         handover. Everything else under it is hidden — visibility rather than
+         display, so the layout is real and the blocks can be measured for their
+         landing while they are still out of sight. */
+      .signin-over { position:fixed; inset:0; z-index:200; overflow:auto; }
+      html.jump-under .lpc > *:not(.sage-ground) { visibility:hidden; }
+      /* Gone the instant the handover happens, rather than when React next
+         renders: the beats that were hiding the form come off at the same moment,
+         and without this the sign-in form would reappear over the landing. */
+      html.signin-gone .signin-over { display:none; }
+
+      .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }
+      /* No card. The form sits on the ground, 340px wide, centred. */
+      .login-card { width:340px; text-align:center; background:none; border:0; box-shadow:none; padding:26px 0;
+        animation: loginIn .5s var(--spring); }
+      .login-eyebrow { font-family:var(--font-mono); font-size:11.5px; letter-spacing:.16em;
+        text-transform:uppercase; color:#6E6E76; margin:0 0 22px; }
       @keyframes loginIn { from { opacity:0; transform: translateY(16px) scale(.97); } to { opacity:1; transform:none; } }
       /* Signing in: the form and the card chrome gracefully fade out, leaving just the
          spinning speedometer and title — so the jump to the full loading screen is seamless. */
-      .login-card.login-busy { background:transparent; border-color:transparent; box-shadow:none;
-        backdrop-filter:none; -webkit-backdrop-filter:none; transition: background .5s ease, box-shadow .5s ease, border-color .5s ease; }
+      .login-card.login-busy { background:transparent; border-color:transparent; box-shadow:none; }
       .login-card.login-busy > *:not(.login-logo):not(.login-title):not(.login-sub) {
         opacity:0; pointer-events:none; transition: opacity .4s ease; max-height:0; overflow:hidden; }
       .login-card.login-busy .login-logo { animation: loginLogoRise .5s var(--spring) both; }
       @keyframes loginLogoRise { from { transform: translateY(0); } to { transform: translateY(-4px) scale(1.05); } }
+
+      /* ---- the mark is alive on this screen ----
+         Every dot carries --i, its own place in the mark's left-to-right order,
+         so a wave can cross the wordmark without the stylesheet knowing anything
+         about the pattern. Idle it breathes; signing in it runs, which is what
+         replaced the spinner.
+
+         Scale, never opacity: a dot the form has not reached yet is drawn at
+         opacity 0, and animating opacity here would light up the part of the
+         word that is meant to be still dark. */
+      .login-logo circle { transform-box: fill-box; transform-origin: center;
+        /* Each dot fades up as the form reaches it rather than appearing on the
+           keystroke. Straight from the handoff, which puts opacity 240ms ease on
+           every dot of the build. */
+        transition: opacity .24s ease;
+        animation: markBreathe 4.2s ease-in-out infinite;
+        animation-delay: calc(var(--i) * -58ms); }
+      @keyframes markBreathe {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(.86); }
+      }
+      /* Signing in: one pass of the wave every 1.15s, left to right across the
+         word, so the wait has a direction instead of a spin. */
+      .login-busy .login-logo circle {
+        animation: markWork 1.15s cubic-bezier(.4,0,.3,1) infinite;
+        animation-delay: calc(var(--i) * 11ms); }
+      @keyframes markWork {
+        0%, 62%, 100% { transform: scale(1); }
+        24%           { transform: scale(1.34); }
+      }
+
+      /* ---- underline fields ---- */
+      /* Two selectors deep: .login-card label already sets display:block at the
+         same specificity, and the row would lose the coin toss. */
+      .login-card .lf-label { display:block; text-align:left; font-size:12px; font-weight:600;
+        color:#7A7A80; margin:22px 0 0; }
+      .login-card .lf-label-row { display:flex; align-items:baseline; justify-content:space-between; }
+      .lf-forgot { background:none; border:0; padding:0; cursor:pointer; font:inherit;
+        font-size:12px; font-weight:600; color:#6B8E5A; }
+      .lf-forgot:hover { text-decoration:underline; }
+      /* Same reason. The app's global input rule paints a bordered, rounded field
+         and a focus ring around it; underline-only has to outrank both. */
+      .login-card input.lf-in { width:100%; box-sizing:border-box; background:none; border:0;
+        border-bottom:1.5px solid #C9CBC9; border-radius:0; padding:0 0 9px; margin:6px 0 0;
+        font-size:16px; color:#2E3A32; outline:none; box-shadow:none;
+        transition: border-color .2s var(--ease); }
+      .login-card input.lf-in:focus { border:0; border-bottom:1.5px solid #2F7F72;
+        outline:none; box-shadow:none; }
+      .login .lf-in::placeholder { color:#B4B6B4; }
+
+      /* ---- the button, and the five dots that fill with the mark ---- */
+      .lf-go { display:flex; align-items:center; justify-content:space-between; gap:14px;
+        width:100%; margin-top:30px; padding:15px 22px; border:0; border-radius:999px; cursor:pointer;
+        background:#2E3A32; color:#F1F2EE; font-family:inherit; font-size:15px; font-weight:600;
+        box-shadow:0 6px 18px rgba(46,58,50,0.18);
+        transition: background .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease); }
+      .lf-go:hover:not(:disabled) { background:#3A4A3E; transform:translateY(-1px);
+        box-shadow:0 10px 26px rgba(46,58,50,0.24); }
+      .lf-go:disabled { opacity:.72; cursor:default; }
+      .lf-dots { display:inline-flex; gap:5px; }
+      .lf-dots i { width:5px; height:5px; border-radius:50%; background:rgba(241,242,238,.3);
+        transition: background .3s var(--ease); }
+      .lf-dots i.on { background:#F1F2EE; }
+      .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
+        font:inherit; font-size:13px; color:#6E6E76; }
+      .lf-alt:hover { color:#2E3A32; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .sg-dot, .sg-field, .sg-blob, .login-logo circle { animation:none !important; }
+      }
       .login-logo { display:flex; justify-content:center; margin-bottom:12px; }
       .login-card h2 { font-size:22px; font-weight:700; letter-spacing:-.02em; margin:0 0 2px; }
       .login-card label { display:block; text-align:left; font-size:12px; font-weight:600; margin:16px 0 6px; color:var(--ink-2); }
@@ -25677,14 +27079,12 @@ function Style() {
         .lpc::before, .lpc::after { animation: none !important; transform: none !important; }
         /* leave the logo in its finished state rather than mid-sweep */
         .logo-anim { animation: none !important; transform: none !important; }
-        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; animation: none !important; }
-        .logo-anim .logo-needle { transform: rotate(0deg) !important; animation: none !important; }
         .dz-icon, .star-badge { animation: none !important; }
         /* hero holds its finished state instead of animating in */
         .hero-band, .hero-band::after, .tile, .hero-strip { animation: none !important; transform: none !important; }
         .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
         .chip-warn .chip-dot, .leader-crown { animation: none !important; }
-        .logo-loading .logo-spin, .logo-loading .logo-trail, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
+        .sage-loading i, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
         /* the flow already refuses to cycle under reduce-motion; this is the
            draw-in and the pop that are pure decoration */
         .flow-draw { animation:none !important; stroke-dashoffset:0 !important; }
@@ -25700,8 +27100,6 @@ function Style() {
         .lpc::before, .lpc::after { display:none !important; }
         .version-stamp { display:none; }
         .logo-anim, .dz-icon, .star-badge { animation:none !important; }
-        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
-        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
       }
 
       /* =====================================================================
@@ -27548,6 +28946,24 @@ function Style() {
 .f-map-ev{flex:1;font-weight:600;}
 .f-map-custom{color:#0f9d76;font-weight:700;font-size:11px;}
 
-    `}</style>
-  );
+    `;
+
+let styleNode = null;
+function ensureStyle() {
+  if (typeof document === "undefined" || styleNode) return;
+  styleNode = document.createElement("style");
+  styleNode.setAttribute("data-sage", "");
+  styleNode.textContent = SAGE_CSS;
+  document.head.appendChild(styleNode);
+}
+/* At module load, so the sheet is in place before the first render rather than
+   arriving with it. */
+ensureStyle();
+
+/* Kept as a component because a dozen call sites render it, and it is easier to
+   read a screen that still says where its styles come from than to explain the
+   absence. It mounts nothing. */
+function Style() {
+  ensureStyle();
+  return null;
 }

@@ -19,6 +19,7 @@
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
  */
 import { createClient } from "@supabase/supabase-js";
+import { supabaseUrl, anonKey, envGap } from "./_env.mjs";
 
 const FIELDS = ["apns_token", "apns_pts_token", "activity_token", "fcm_token"];
 
@@ -36,14 +37,18 @@ export default async function handler(req, res) {
 
   /* Who the session actually belongs to. Asking Supabase rather than decoding
      the token here means an expired or revoked session is refused for us. */
-  const asUser = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  /* Both names for all three, and a sentence naming whichever is missing rather
+     than a throw the phone cannot explain. See _env.mjs. */
+  const gap = envGap({ anon: true });
+  if (gap) return res.status(500).json({ error: gap });
+  const asUser = createClient(supabaseUrl(), anonKey(), {
     auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
   });
   const { data: who, error: whoErr } = await asUser.auth.getUser();
   if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid" });
   const userId = who.user.id;
 
-  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+  const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
   /* The account is not the person. The line is written with ROSTER ids, so a

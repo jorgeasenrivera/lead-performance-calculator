@@ -27,8 +27,28 @@
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
  */
 import { createClient } from "@supabase/supabase-js";
+import { supabaseUrl, anonKey, envGap } from "./_env.mjs";
+
+/* Same guard as /api/link-person, and for the same reason: without it anything
+   that throws comes back as the platform's bare 500 with no JSON in it, and the
+   browser has nothing to print but the number. See the note there. */
+function fail(res, code, error, err) {
+  const detail = err && (err.message || err.details || err.hint || String(err));
+  if (err) console.error("floor-account:", error, err);
+  return res.status(code).json({ error: detail ? error + " (" + detail + ")" : error });
+}
 
 export default async function handler(req, res) {
+  try {
+    return await run(req, res);
+  } catch (e) {
+    return fail(res, 500, "That account could not be changed", e);
+  }
+}
+
+async function run(req, res) {
+  const gap = envGap({ anon: true });
+  if (gap) return fail(res, 500, gap);
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
 
   const auth = String(req.headers.authorization || "");
@@ -42,13 +62,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "action must be deactivate or activate" });
   }
 
-  const asUser = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  const asUser = createClient(supabaseUrl(), anonKey(), {
     auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
   });
   const { data: who, error: whoErr } = await asUser.auth.getUser();
   if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid" });
 
-  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY,
+  const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
 
   const { data: me } = await db.from("profiles").select("role, stores").eq("id", who.user.id).maybeSingle();
@@ -81,7 +101,7 @@ export default async function handler(req, res) {
 
   const { error } = await db.from("profiles")
     .update({ active: action === "activate" }).eq("id", userId);
-  if (error) return res.status(500).json({ error: "could not change that account" });
+  if (error) return fail(res, 500, "Could not change that account", error);
 
   return res.status(200).json({ ok: true, active: action === "activate" });
 }
