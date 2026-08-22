@@ -162,13 +162,53 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The flicker going side to side had a cause, and it was not the transition.**
+`.page` carries its own mount animation. Replacing the animation on it for the
+length of a move *cancels* that one, and putting it back when the move ends starts
+it again from zero: the instant a slide finished, the page dropped to opacity 0 and
+lifted ten pixels off the bottom a second time. Measured frame by frame, that
+second unasked-for mount begins on the exact frame the move classes come off. An
+animation is matched to the one it replaces by name and position in the list, so
+every move rule now re-lists `pageIn` first and puts its own animation after it:
+`pageIn` is never cancelled, never restarted, long finished by then, and the move's
+animation sits later in the list and wins on the properties they share.
+
+**Section tabs move in two beats now, like tools.** They had one: the new tab's
+blocks slid in from the side while the old ones were simply gone, because the
+content was swapped in the same click that started the animation. Half a move is
+what a flicker *is* — what the eye wants is the thing it was looking at leaving. So
+the swap waits 130ms for the exit. The strip itself does not wait: the thumb and
+the active label follow the tab that was *pressed*, so the control answers the
+finger while the page underneath is still on its way out. The phone's section chips
+got the same treatment; they were a hard cut with nothing travelling at all.
+
+**And the reveal could still blink at the end.** Cards fade up as they scroll into
+view, and until the observer has marked one it sits at opacity 0 — so a block
+animated into place could drop straight back out on the frame after the move ended.
+Anything on screen when a move finishes is by definition in view, so the move says
+so before letting go of it.
+
 **Waiting screens are held, not flashed.** A loading screen that appears for 80ms and vanishes
 is a flicker, not information: the eye catches a flash of something it cannot read, which is
 worse than a beat of nothing. `useHeld` applies two rules that are opposites on purpose — do
 not show it at all until the wait has lasted long enough to be a wait (170ms), and once shown
-keep it long enough to be read (480ms). The three call sites render *while waiting or while
-held*, so the hold survives the condition clearing. A fast load shows nothing; a slow one shows
-a steady screen; nothing in between flickers.
+keep it long enough to be read. The three call sites render *while waiting or while held*, so
+the hold survives the condition clearing.
+
+The delay is deliberately most of a second, because Jorge's rule for waiting is that motion
+beats a panel: if something is taking a moment, slow the move down and let it settle rather
+than dropping a loading screen over it. So the screen is the last resort, for a wait long
+enough that showing nothing would look broken, and every ordinary wait finishes underneath it
+unseen. Nothing that says "loading" is allowed to appear inside a move at all, tool or tab.
+
+**The sign-in screen lost its spinner too.** Signing in used to swap the wordmark for a loading
+indicator, which is a different object appearing in the place of the thing you were looking at.
+The mark stays and goes to work instead: the same 73 dots, running a wave left to right, and
+breathing gently the rest of the time. Each dot now carries its place in the mark's own
+left-to-right order as a custom property, so a stylesheet can send a wave across the wordmark
+without knowing anything about how the letters are drawn. Scale, never opacity — a dot the form
+has not reached yet is drawn transparent, and animating opacity would light up the part of the
+word that is meant to still be dark.
 
 **One deliberate deviation.** The handoff gives tool hues and calls them "the existing pill
 colours"; they are close to, but not the same as, the values in this file (`#0E9F6E` against

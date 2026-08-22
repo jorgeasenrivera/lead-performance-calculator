@@ -2957,7 +2957,10 @@ export default function LeadPerformanceCalculator() {
       root.classList.remove("tool-exit");
       root.classList.add("tool-enter");
       applyTool(mod);
-      toolTimers.push(setTimeout(clearToolMove, 560));
+      /* The last block starts 66ms in and runs 560ms, so the classes have to
+         outlast 626ms or the animation is stripped off mid-landing and the block
+         snaps the rest of the way. That snap is the "no landing" note. */
+      toolTimers.push(setTimeout(clearToolMove, 700));
     }, TOOL_EXIT));
   };
 
@@ -3439,34 +3442,68 @@ function DeliveryGuideModal({ onClose }) {
    up from the bottom. It travels the way the strip does now — shorter and
    quicker than a tool switch, because it is a smaller move and should not cost
    the same. */
-const TAB_MOVE = 260;
-let tabTimer = null;
-function tabMove(dir) {
+/* Two beats, the same shape as a tool switch and shorter. The first version had
+   one: the new tab's blocks slid in from the side while the old ones were simply
+   gone, because the content was swapped in the same click that started the
+   animation. Half a move reads as a flicker, however well the arriving half is
+   drawn — what the eye wants is the thing it was looking at LEAVING. So the
+   swap now waits for the exit, and `apply` is what does it. */
+const TAB_EXIT = 130;
+const TAB_ENTER = 400;
+let tabTimers = [];
+function clearTabMove() {
+  tabTimers.forEach(clearTimeout);
+  tabTimers = [];
   if (typeof document === "undefined") return;
+  settleReveals();
+  document.documentElement.classList.remove("tab-move", "tab-exit", "tab-enter", "tab-dir-r", "tab-dir-l");
+}
+function tabMove(dir, apply) {
+  const run = typeof apply === "function" ? apply : () => {};
+  if (typeof document === "undefined") { run(); return; }
   try {
-    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { run(); return; }
   } catch (e) {}
   const root = document.documentElement;
-  clearTimeout(tabTimer);
-  root.classList.remove("tab-move", "tab-dir-r", "tab-dir-l");
+  clearTabMove();
   /* Read once, so the class lands in its own frame rather than being added and
      removed inside one and never painting. */
   void root.offsetWidth;
-  root.classList.add("tab-move", "tab-dir-" + dir);
-  tabTimer = setTimeout(() => root.classList.remove("tab-move", "tab-dir-r", "tab-dir-l"), TAB_MOVE + 60);
+  root.classList.add("tab-move", "tab-dir-" + dir, "tab-exit");
+  tabTimers.push(setTimeout(() => {
+    run();
+    root.classList.remove("tab-exit");
+    root.classList.add("tab-enter");
+    tabTimers.push(setTimeout(clearTabMove, TAB_ENTER + 120));
+  }, TAB_EXIT));
 }
 
 function SegControl({ items, value, onChange, renderExtra, attentionId }) {
+  /* The strip answers the finger straight away even though the page underneath
+     waits 130ms for its exit: the thumb and the active label follow `shown`,
+     which is the tab that was pressed, not the tab that has arrived. Without it
+     the control would look 130ms slower than it is. */
+  const [pending, setPending] = useState(null);
+  useEffect(() => { setPending(null); }, [value]);
+  /* And released even if it never arrives. A parent is free to ignore an onChange
+     it does not like, and without this the strip would sit lit on a tab the page
+     never went to. */
+  useEffect(() => {
+    if (pending === null) return undefined;
+    const t = setTimeout(() => setPending(null), TAB_EXIT + 400);
+    return () => clearTimeout(t);
+  }, [pending]);
+  const shown = pending !== null && items.some((it) => it[0] === pending) ? pending : value;
   const wrapRef = useRef(null);
   const btnRefs = useRef({});
   const [thumb, setThumb] = useState({ left: 0, width: 0, ready: false });
 
   const measure = useCallback(() => {
-    const btn = btnRefs.current[value];
+    const btn = btnRefs.current[shown];
     const wrap = wrapRef.current;
     if (!btn || !wrap) return;
     setThumb({ left: btn.offsetLeft, width: btn.offsetWidth, ready: true });
-  }, [value]);
+  }, [shown]);
 
   useEffect(() => {
     measure();
@@ -3478,7 +3515,7 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
        on mount, so every page carrying one opened slightly scrolled. Setting
        scrollLeft touches the horizontal axis of this element only, which is all
        that was ever wanted. */
-    const btn = btnRefs.current[value];
+    const btn = btnRefs.current[shown];
     const wrap = wrapRef.current;
     if (btn && wrap && wrap.scrollWidth > wrap.clientWidth + 1) {
       const want = btn.offsetLeft - (wrap.clientWidth - btn.offsetWidth) / 2;
@@ -3487,7 +3524,7 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
     }
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [value, measure]);
+  }, [shown, measure]);
 
   // re-measure once fonts settle
   useEffect(() => { const t = setTimeout(measure, 150); return () => clearTimeout(t); }, [measure]);
@@ -3497,14 +3534,15 @@ function SegControl({ items, value, onChange, renderExtra, attentionId }) {
       <div className={"seg-thumb" + (thumb.ready ? " ready" : "")} style={{ transform: `translateX(${thumb.left}px)`, width: thumb.width }} />
       {items.map(([id, label]) => (
         <button key={id} ref={(el) => (btnRefs.current[id] = el)}
-          className={"seg-btn" + (value === id ? " active" : "") + (attentionId === id && value !== id ? " seg-wave" : "")}
+          className={"seg-btn" + (shown === id ? " active" : "") + (attentionId === id && shown !== id ? " seg-wave" : "")}
           onClick={() => {
             /* Which way along the strip, from the strip itself rather than from
                a list somebody has to keep in step with it. */
-            const from = items.findIndex((it) => it[0] === value);
+            const from = items.findIndex((it) => it[0] === shown);
             const to = items.findIndex((it) => it[0] === id);
-            if (to !== from) tabMove(to > from ? "r" : "l");
-            onChange(id);
+            if (to === from) { onChange(id); return; }
+            setPending(id);
+            tabMove(to > from ? "r" : "l", () => onChange(id));
           }}>
           {label}
           {renderExtra && renderExtra(id)}
@@ -7096,10 +7134,12 @@ function Login({ config, onBack, onAuthed, onArrival }) {
     <div className="login">
       <div className={"login-card " + (busy ? "login-busy" : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
+        {/* No spinner here any more. Signing in used to swap the wordmark for a
+            loading indicator, which is a different object appearing in the place
+            of the thing you were looking at. The mark stays and goes to work
+            instead: the same 73 dots, running a wave left to right. */}
         <div className="login-logo">
-          {busy
-            ? <SageLoading size={44} />
-            : <SageMark word size={64} revealed={mode === "signin" ? revealed : undefined} />}
+          <SageMark word size={64} revealed={mode === "signin" && !busy ? revealed : undefined} />
         </div>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
@@ -7192,15 +7232,30 @@ function Login({ config, onBack, onAuthed, onArrival }) {
    the finger just left is the thing the eye is carrying, so the app's own value
    is the one that matches it. */
 const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
-/* How long the outgoing page has to leave before the streaks cross. Long enough
-   for four staggered blocks at 40ms apart to be gone, short enough that the whole
-   switch stays under a second. */
-const TOOL_EXIT = 190;
+/* How long the outgoing page has to leave before the streaks cross. It is not a
+   taste number: the last staggered block starts at 66ms and its exit runs 190ms,
+   so anything below 256 cuts a block off mid-exit, and a block that vanishes
+   halfway through leaving is exactly what reads as a flicker. */
+const TOOL_EXIT = 260;
 let toolTimers = [];
+/* Cards fade up as they scroll into view, and until the observer has marked one
+   it sits at opacity 0. A block that has just been animated into place has not
+   been through that yet, so the frame after a move ended it could drop straight
+   back out — a landing followed by a blink. Anything on screen when a move
+   finishes is, by definition, in view: say so before letting go of it. */
+function settleReveals() {
+  if (typeof document === "undefined") return;
+  const h = window.innerHeight || 0;
+  document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    if (r.top < h && r.bottom > 0) el.classList.add("is-in");
+  });
+}
 function clearToolMove() {
   toolTimers.forEach(clearTimeout);
   toolTimers = [];
   if (typeof document === "undefined") return;
+  settleReveals();
   document.documentElement.classList.remove("tool-move", "tool-exit", "tool-enter", "tool-dir-r", "tool-dir-l");
 }
 const WARP_HUE = { perf: "#404E44", activity: "#404E44", board: "#404E44",
@@ -18428,7 +18483,17 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
   return (
     <div className="sect-strip no-print" ref={ref}>
       {shown.map(([id, label]) => (
-        <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => onChange(id)}>
+        /* The same sideways move the wide-screen strip makes. This is the phone's
+           section control and it was a hard cut: the page was replaced under the
+           finger with nothing travelling anywhere, which is the flicker at its
+           plainest. Direction comes from the strip's own order, as everywhere
+           else. */
+        <button key={id} className={"sect-chip" + (value === id ? " on" : "")} onClick={() => {
+          const from = shown.findIndex((it) => it[0] === value);
+          const to = shown.findIndex((it) => it[0] === id);
+          if (to === from) { onChange(id); return; }
+          tabMove(to > from ? "r" : "l", () => onChange(id));
+        }}>
           {NAV_SHORT[id] || label}
           {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
         </button>
@@ -18545,8 +18610,14 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
      once shown, keep it long enough to be read
 
    So a fast load shows nothing and a slow one shows a steady screen. Nothing in
-   between flickers. */
-function useHeld(active, { delay = 170, hold = 480 } = {}) {
+   between flickers.
+
+   The delay is deliberately long — most of a second. Jorge's rule for waiting is
+   that motion is better than a screen: if something is taking a moment, slow the
+   move down and let it settle rather than dropping a loading panel over it. So
+   this is the last resort, for a wait long enough that showing nothing at all
+   would look broken, and every ordinary wait finishes underneath it unseen. */
+function useHeld(active, { delay = 900, hold = 600 } = {}) {
   const [on, setOn] = useState(false);
   const shownAt = useRef(0);
   useEffect(() => {
@@ -24567,13 +24638,15 @@ function Style() {
       .tool-exit .page > *, .tool-exit .board-page > *, .tool-exit .tab-page > * {
         animation: toolOut .19s cubic-bezier(.5,0,.95,.35) both; }
       .tool-enter .page > *, .tool-enter .board-page > *, .tool-enter .tab-page > * {
-        animation: toolIn .5s cubic-bezier(.2,.9,.3,1) both; }
+        animation: toolIn .56s cubic-bezier(.16,.86,.3,1) both; }
       /* Element by element, and tighter than the first version: 22ms apart, so
-         the blocks land in sequence without the last one arriving late. */
+         the blocks land in sequence without the last one arriving late. The last
+         block's exit finishes at 66 + 190 = 256ms, which is what TOOL_EXIT is
+         set from: swapping before that cut the last block mid-flight, and a
+         block that disappears halfway through leaving is a flicker. */
       .tool-move .page > *:nth-child(2), .tool-move .board-page > *:nth-child(2), .tool-move .tab-page > *:nth-child(2) { animation-delay:.022s; }
       .tool-move .page > *:nth-child(3), .tool-move .board-page > *:nth-child(3), .tool-move .tab-page > *:nth-child(3) { animation-delay:.044s; }
-      .tool-move .page > *:nth-child(4), .tool-move .board-page > *:nth-child(4), .tool-move .tab-page > *:nth-child(4) { animation-delay:.066s; }
-      .tool-move .page > *:nth-child(n+5), .tool-move .board-page > *:nth-child(n+5), .tool-move .tab-page > *:nth-child(n+5) { animation-delay:.088s; }
+      .tool-move .page > *:nth-child(n+4), .tool-move .board-page > *:nth-child(n+4), .tool-move .tab-page > *:nth-child(n+4) { animation-delay:.066s; }
       /* Going right: the old page leaves to the left and the new one comes in
          from the right. Going left, the mirror. */
       .tool-dir-r { --tx-out:-64px; --tx-in:64px; }
@@ -24586,25 +24659,41 @@ function Style() {
          travel at the moment of impact, then let go. */
       @keyframes toolIn {
         0%   { opacity:0; transform: translateX(var(--tx-in)) scaleX(1); }
-        62%  { opacity:1; transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.012); }
-        82%  { transform: translateX(calc(var(--tx-in) * .04)) scaleX(.996); }
+        30%  { opacity:1; }
+        62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
+        82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
+        92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
         100% { opacity:1; transform:none; }
       }
       /* Nothing that says "loading" belongs in the middle of a move. The new
          tool is fetching underneath, and a spinner appearing between the streaks
          and the page arriving is the join made visible — which is the one thing
          the whole sequence exists to hide. */
-      .tool-move .loadscreen, .tool-move .loading, .tool-move .sage-loading { opacity:0 !important; }
+      .tool-move .loadscreen, .tool-move .loading, .tool-move .sage-loading,
+      .tab-move .loadscreen, .tab-move .loading, .tab-move .sage-loading { opacity:0 !important; }
 
       /* Whole pages move too, not only their blocks. An animation rather than a
          transition: .page carries its own mount animation, and an animation wins
          over a transition on the same property, so a transition here would have
          been silently ignored on exactly the pages it was written for. */
       .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page {
-        animation: pageOut .3s cubic-bezier(.4,0,.9,.3) both; }
+        animation: pageIn .38s var(--spring), pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
       @keyframes pageOut {
         from { transform:none; }
         to   { transform: translateX(calc(var(--tx-out) * .35)); }
+      }
+      /* And the same on the way in. This was the missing half: the page's own
+         mount animation, pageIn, a lift from the bottom, was still running
+         underneath blocks that were arriving from the side, so the page rose
+         while its contents slid — two moves at once, in different directions,
+         which is what read as a flicker rather than a landing. The whole page
+         now travels the same axis as its blocks and decelerates into place with
+         them. */
+      .tool-enter .page, .tool-enter .board-page, .tool-enter .tab-page {
+        animation: pageIn .38s var(--spring), pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
+      @keyframes pageLand {
+        from { transform: translateX(calc(var(--tx-in) * .35)); }
+        to   { transform:none; }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -24613,23 +24702,63 @@ function Style() {
         .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page { animation:none !important; }
       }
 
-      /* ---- a section tab: the same move, smaller ---- */
-      .tab-dir-r { --tabx: 26px; }
-      .tab-dir-l { --tabx: -26px; }
-      .tab-move .page > *, .tab-move .board-page > *, .tab-move .tab-page > * {
-        animation: tabIn .26s cubic-bezier(.2,.9,.3,1) both; }
+      /* ---- a section tab: the same move, smaller ----
+         Two beats now, matching a tool switch: out, swap, in. It used to be one,
+         and half a move is what a flicker IS — the old content vanished on the
+         click and only the arriving half was drawn. */
+      .tab-dir-r { --tabx-out:-26px; --tabx-in:26px; }
+      .tab-dir-l { --tabx-out:26px;  --tabx-in:-26px; }
+      .tab-exit .page > *, .tab-exit .board-page > *, .tab-exit .tab-page > * {
+        animation: tabOut .14s cubic-bezier(.45,0,.9,.4) both; }
+      .tab-enter .page > *, .tab-enter .board-page > *, .tab-enter .tab-page > * {
+        animation: tabIn .4s cubic-bezier(.16,.86,.3,1) both; }
       .tab-move .page > *:nth-child(2), .tab-move .board-page > *:nth-child(2), .tab-move .tab-page > *:nth-child(2) { animation-delay:.016s; }
       .tab-move .page > *:nth-child(3), .tab-move .board-page > *:nth-child(3), .tab-move .tab-page > *:nth-child(3) { animation-delay:.032s; }
       .tab-move .page > *:nth-child(n+4), .tab-move .board-page > *:nth-child(n+4), .tab-move .tab-page > *:nth-child(n+4) { animation-delay:.048s; }
-      /* Sideways only. The page's own mount animation lifts from the bottom,
-         which is right when a page arrives and wrong when it slides one step
-         along a strip, so this overrides it for the length of the move. */
+      @keyframes tabOut {
+        from { opacity:1; transform:none; }
+        to   { opacity:0; transform: translateX(var(--tabx-out)); }
+      }
+      /* Overshoots a little and is pulled back, so it lands rather than stops.
+         No opacity step after the first: fading a block in while it is still
+         travelling is what made the arrival read as a dissolve. */
       @keyframes tabIn {
-        0%   { opacity:0; transform: translateX(var(--tabx)); }
-        70%  { opacity:1; transform: translateX(calc(var(--tabx) * -.1)); }
+        0%   { opacity:0; transform: translateX(var(--tabx-in)); }
+        34%  { opacity:1; }
+        72%  { transform: translateX(calc(var(--tabx-in) * -.08)); }
         100% { opacity:1; transform:none; }
       }
-      .tab-move .page { animation:none !important; }
+      /* Sideways only. The page's own mount animation lifts from the bottom,
+         which is right when a page arrives and wrong when it slides one step
+         along a strip. The whole page travels with its blocks instead, a third
+         of their distance, so the move has a body under it and not only edges.
+         All three page classes: naming only .page was why a board still jumped
+         up from the bottom mid-slide. */
+      /* ---- why every one of these rules re-lists pageIn first ----
+         .page carries its own mount animation. Replacing the animation on it for
+         the length of a move CANCELS that one, and putting it back when the move
+         ends starts it AGAIN from zero: the page fell to opacity 0 and lifted ten
+         pixels off the bottom the instant the slide finished, every single time.
+         That second, unasked-for mount is what read as a flicker at the end of a
+         side-to-side move, and it is why the landing never landed.
+
+         An animation is matched to the one it replaces BY NAME and position in
+         the list, so keeping pageIn at index 0 and adding the move's animation
+         after it means pageIn is never cancelled and never restarted; it is long
+         finished by then and contributes nothing, while the move's animation sits
+         later in the list and wins on the properties they share. */
+      .tab-exit .page, .tab-exit .board-page, .tab-exit .tab-page {
+        animation: pageIn .38s var(--spring), tabPageOut .14s cubic-bezier(.45,0,.9,.4) both; }
+      .tab-enter .page, .tab-enter .board-page, .tab-enter .tab-page {
+        animation: pageIn .38s var(--spring), tabPageIn .42s cubic-bezier(.16,.86,.3,1) both; }
+      @keyframes tabPageOut {
+        from { transform:none; }
+        to   { transform: translateX(calc(var(--tabx-out) * .34)); }
+      }
+      @keyframes tabPageIn {
+        from { transform: translateX(calc(var(--tabx-in) * .34)); }
+        to   { transform:none; }
+      }
       @media (prefers-reduced-motion: reduce) {
         .tab-move .page > *, .tab-move .board-page > *, .tab-move .tab-page > * { animation-duration:.12s !important; }
       }
@@ -24821,6 +24950,32 @@ function Style() {
       .login-card.login-busy .login-logo { animation: loginLogoRise .5s var(--spring) both; }
       @keyframes loginLogoRise { from { transform: translateY(0); } to { transform: translateY(-4px) scale(1.05); } }
 
+      /* ---- the mark is alive on this screen ----
+         Every dot carries --i, its own place in the mark's left-to-right order,
+         so a wave can cross the wordmark without the stylesheet knowing anything
+         about the pattern. Idle it breathes; signing in it runs, which is what
+         replaced the spinner.
+
+         Scale, never opacity: a dot the form has not reached yet is drawn at
+         opacity 0, and animating opacity here would light up the part of the
+         word that is meant to be still dark. */
+      .login-logo circle { transform-box: fill-box; transform-origin: center;
+        animation: markBreathe 4.2s ease-in-out infinite;
+        animation-delay: calc(var(--i) * -58ms); }
+      @keyframes markBreathe {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(.86); }
+      }
+      /* Signing in: one pass of the wave every 1.15s, left to right across the
+         word, so the wait has a direction instead of a spin. */
+      .login-busy .login-logo circle {
+        animation: markWork 1.15s cubic-bezier(.4,0,.3,1) infinite;
+        animation-delay: calc(var(--i) * 11ms); }
+      @keyframes markWork {
+        0%, 62%, 100% { transform: scale(1); }
+        24%           { transform: scale(1.34); }
+      }
+
       /* ---- underline fields ---- */
       /* Two selectors deep: .login-card label already sets display:block at the
          same specificity, and the row would lose the coin toss. */
@@ -24858,7 +25013,7 @@ function Style() {
       .lf-alt:hover { color:#2E3A32; }
 
       @media (prefers-reduced-motion: reduce) {
-        .sg-dot, .sg-field, .sg-blob { animation:none !important; }
+        .sg-dot, .sg-field, .sg-blob, .login-logo circle { animation:none !important; }
       }
       .login-logo { display:flex; justify-content:center; margin-bottom:12px; }
       .login-card h2 { font-size:22px; font-weight:700; letter-spacing:-.02em; margin:0 0 2px; }

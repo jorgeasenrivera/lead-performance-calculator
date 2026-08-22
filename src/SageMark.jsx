@@ -118,6 +118,12 @@ export default function SageMark({
   /* Left to right, then down: the order the mark builds in. */
   const order = [...cells].sort((a, b) => a.c - b.c || a.r - b.r);
   const shown = revealed === undefined ? null : new Set(order.slice(0, Math.max(0, revealed)).map((d) => d.r + "-" + d.c));
+  /* Each dot's place in that same left-to-right order, published as a custom
+     property so a stylesheet can stagger anything across the mark without
+     needing to know how the pattern is laid out. Second addition to the
+     handoff's file, for the same reason as `revealed`: the order belongs to
+     the mark. */
+  const rank = new Map(order.map((d, i) => [d.r + "-" + d.c, i]));
 
   const dots = cells.map(({ r, c }) => (
     <circle
@@ -130,6 +136,7 @@ export default function SageMark({
          it fills and the streaks later have every dot to start from. */
       opacity={shown && !shown.has(r + "-" + c) ? 0 : undefined}
       data-dot={r + "-" + c}
+      style={{ "--i": rank.get(r + "-" + c), "--n": order.length }}
     />
   ));
 
