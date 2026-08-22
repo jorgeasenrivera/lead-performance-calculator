@@ -1925,6 +1925,17 @@ export default function LeadPerformanceCalculator() {
   const [introPlaying, setIntroPlaying] = useState(false);
   /* True while the sign-in screen is taking itself apart. See where it is read. */
   const [jumpHold, setJumpHold] = useState(false);
+  /* Holds the dashboard's mount until the jump's cruise. The session lands a
+     third of a second after the press, and mounting the whole app tree right
+     then blocks the main thread in the middle of the ratchet — the canvas
+     freezes and the most watched beat of the animation stutters. The cruise is
+     the loading zone; the heavy work belongs inside it. */
+  const [holdMount, setHoldMount] = useState(false);
+  useEffect(() => {
+    const on = (e) => { if (e.detail === "cruise" || e.detail === "off") setHoldMount(false); };
+    document.addEventListener(JUMP_PHASE, on);
+    return () => document.removeEventListener(JUMP_PHASE, on);
+  }, []);
   /* Hides the app while the sign-in layer is over it. A LAYOUT effect, so the
      class is gone in the same commit that drops the layer — an ordinary effect
      runs after paint and would show one frame of an un-animated dashboard right
@@ -2256,16 +2267,42 @@ export default function LeadPerformanceCalculator() {
      land on, and holding the tunnel for data that is never coming would just be
      a spinner with better art. The destination sign is the store's own name and
      brand colour, from config. */
+  const [iconWave, setIconWave] = useState(0);
+  const iconCache = useRef({});
   useEffect(() => {
     if (!jumpHold) { tellArrivalReady(false, null); return; }
     const atStore = view !== "admin" && view !== "combined";
     const store = atStore ? (config?.stores || []).find((x) => x.id === view) : null;
-    const landable = !!session && !!config
+    /* The landing has to arrive COMPLETE: a store icon that pops in a beat
+       after the page defeats the whole point of holding the tunnel. The icon is
+       fetched during the cruise and the landing waits for it — bounded, so a
+       broken image can never hold the jump. */
+    let iconReady = true;
+    const src = store && store.icon;
+    if (src) {
+      const st = iconCache.current[src];
+      if (st !== "ok") {
+        iconReady = false;
+        if (!st) {
+          iconCache.current[src] = "pending";
+          const done = () => {
+            if (iconCache.current[src] === "ok") return;
+            iconCache.current[src] = "ok";
+            setIconWave((w) => w + 1);
+          };
+          const img = new Image();
+          img.onload = done; img.onerror = done;
+          img.src = src;
+          setTimeout(done, 1800);
+        }
+      }
+    }
+    const landable = !!session && !!config && iconReady
       && (!atStore || !!storeData || !!storeMismatch || storeLoadFailed);
     tellArrivalReady(landable, store
       ? { name: store.name, color: (store.brand && store.brand.primary) || "#2F7F72" }
       : null);
-  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed]);
+  }, [jumpHold, session, config, view, storeData, storeMismatch, storeLoadFailed, iconWave]);
   useEffect(() => {
     if (!config || view === "admin" || view === "combined" || !session) return;
     /* A load takes two round trips now (the document, then the split day rows), so
@@ -3014,7 +3051,7 @@ export default function LeadPerformanceCalculator() {
   const signInLayer = config && (!session || jumpHold) ? (
     <div className="signin-over" key="signin">
       <Login config={config}
-        onJump={setJumpHold}
+        onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
         onHandover={() => {
           const undo = landDashboard();
           /* And the tidying, once the landing is over and a render is free. */
@@ -3022,6 +3059,7 @@ export default function LeadPerformanceCalculator() {
             undo();
             jumpOwnsEntrance = false;
             setJumpHold(false);
+            setHoldMount(false);   // belt and braces: the gate must never outlive the jump
             setIntroDone(true);
           }, ARRIVAL.assemble);
         }}
@@ -3047,7 +3085,7 @@ export default function LeadPerformanceCalculator() {
      cannot be seen. */
   /* Nothing but the ground while there is no session: the sign-in screen itself
      is the layer above, and it is already on screen. */
-  if (!session) return wrap(<Shell><Style /></Shell>);
+  if (!session || holdMount) return wrap(<Shell><Style /></Shell>);
 
   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
   if (!session.active) {
@@ -7661,6 +7699,14 @@ const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruis
    handover cannot tear it down mid-flight. */
 let arrivalReady = false;
 let arrivalDest = null;   // { name, color } for the travel sign, or null
+/* The engine announces its beats so the root can schedule the expensive work
+   into the right one: the dashboard mounts during the CRUISE, which is the
+   loading zone, instead of during the ratchet, which is the most watched
+   moment of the whole animation. */
+const JUMP_PHASE = "sage-jump-phase";
+const tellPhase = (ph) => {
+  try { document.dispatchEvent(new CustomEvent(JUMP_PHASE, { detail: ph })); } catch (e) {}
+};
 function tellArrivalReady(ready, dest) {
   arrivalReady = !!ready;
   if (dest !== undefined) arrivalDest = dest;
@@ -7724,7 +7770,10 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   } catch (e) {}
   if (reduce) {
-    /* The order is kept and the movement goes: straight to the handover. */
+    /* The order is kept and the movement goes: straight to the handover. The
+       mount gate still needs its cue, or the app would sit unrendered under
+       the white until the hold cleared. */
+    tellPhase("cruise");
     const t = setTimeout(() => { onFlash(); onDone(); }, 180);
     return () => clearTimeout(t);
   }
@@ -7944,6 +7993,16 @@ function runJump({ onFlash, onDone, lead = 0 }) {
 
   const frame = (now) => {
     if (stopped || flashing) return;
+    /* When the main thread is taken for a while (the dashboard mounting is the
+       big one), a time-based animation SKIPS to where it would have been, and a
+       skip in the middle of the reform reads as a stutter. Hold the clocks
+       instead: shift every reference point forward by the lost time, so the
+       animation resumes from the frame it was on. A brief hold, not a jump. */
+    const lost = now - lastNow;
+    if (lost > 120) {
+      const shift = lost - 16;
+      t0 += shift; if (cruiseT0) cruiseT0 += shift; if (burstT0) burstT0 += shift;
+    }
     const dt = Math.min(0.05, (now - lastNow) / 1000);
     lastNow = now;
     const t = now - t0;
@@ -8060,9 +8119,9 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     }
 
     /* ---- phase transitions ---- */
-    if (phase === "ratchet" && t >= JUMP_T.ratchet) { phase = "reform"; t0 = now; }
-    else if (phase === "reform" && t >= JUMP_T.reform) { phase = "streaks"; t0 = now; }
-    else if (phase === "streaks" && t >= JUMP_T.streaks) { phase = "cruise"; t0 = now; cruiseT0 = now; }
+    if (phase === "ratchet" && t >= JUMP_T.ratchet) { phase = "reform"; t0 = now; tellPhase("reform"); }
+    else if (phase === "reform" && t >= JUMP_T.reform) { phase = "streaks"; t0 = now; tellPhase("streaks"); }
+    else if (phase === "streaks" && t >= JUMP_T.streaks) { phase = "cruise"; t0 = now; cruiseT0 = now; tellPhase("cruise"); }
     else if (phase === "cruise") {
       const tc = now - cruiseT0;
       if ((arrivalReady && tc >= JUMP_T.cruiseMin) || tc >= JUMP_T.cruiseCap) {
@@ -8086,6 +8145,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     root.classList.remove("sage-cv", "sage-beat-flash");
     if (cv.parentNode) cv.parentNode.removeChild(cv);
     jumpOwnsEntrance = false;
+    tellPhase("off");   // release the mount gate: this jump is not landing
   };
 }
 
