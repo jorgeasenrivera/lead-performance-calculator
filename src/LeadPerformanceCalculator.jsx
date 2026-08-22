@@ -1624,8 +1624,22 @@ async function apiCall(path, { method = "GET", body = null } = {}) {
       headers: { Authorization: `Bearer ${t.access_token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
-    const json = await r.json().catch(() => ({}));
-    if (!r.ok) return { error: json.error || json.message || `That failed (${r.status}).` };
+    /* Read it as text first. A function that THREW rather than returning does not
+       reply with JSON at all — the platform sends its own error page — and parsing
+       that away left the browser with nothing but a status code to show. "That
+       failed (500)." is what a manager saw for every distinct cause there is.
+
+       So the body is kept: put in the console whole, and the first line of it
+       shown when the server had nothing better to say. */
+    const text = await r.text();
+    let json = {};
+    try { json = text ? JSON.parse(text) : {}; } catch (e) { json = {}; }
+    if (!r.ok) {
+      if (!json.error && !json.message) console.error("apiCall", path, r.status, text);
+      const raw = String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+      return { error: json.error || json.message
+        || (raw ? `That failed (${r.status}). ${raw}` : `That failed (${r.status}).`) };
+    }
     return json;
   } catch (e) {
     return { error: "The server could not be reached." };

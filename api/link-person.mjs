@@ -21,7 +21,33 @@
 import { createClient } from "@supabase/supabase-js";
 import { checkLink } from "./_people-link.mjs";
 
+/* ---- why every failure below now says what went wrong ----
+   This handler had no try/catch, so anything that threw — a malformed body, a
+   missing env var, Supabase being unreachable — came back as the platform's bare
+   500 with no JSON in it at all. The browser prints `That failed (500).` in that
+   case for exactly one reason: there was no `error` field to print instead. A
+   manager sees a number and nobody, including the next person to read the logs,
+   can tell which of a dozen things it was.
+
+   Every handled failure now carries a `detail`, and everything unhandled is
+   caught and reported the same way. It is a manager-only endpoint and the detail
+   is a database message, not a secret; the cost of hiding it is a bug that can
+   only be guessed at. */
+function fail(res, code, error, err) {
+  const detail = err && (err.message || err.details || err.hint || String(err));
+  if (err) console.error("link-person:", error, err);
+  return res.status(code).json({ error: detail ? error + " (" + detail + ")" : error });
+}
+
 export default async function handler(req, res) {
+  try {
+    return await run(req, res);
+  } catch (e) {
+    return fail(res, 500, "The link could not be saved", e);
+  }
+}
+
+async function run(req, res) {
   const reading = req.method === "GET";
   if (!reading && req.method !== "POST") return res.status(405).json({ error: "GET or POST only" });
 
@@ -29,7 +55,14 @@ export default async function handler(req, res) {
   const jwt = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!jwt) return res.status(401).json({ error: "sign in first" });
 
-  const body = reading ? {} : (typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}));
+  let body = {};
+  if (!reading) {
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    } catch (e) {
+      return fail(res, 400, "That request was not readable", e);
+    }
+  }
   const store = reading ? String(req.query.store || "") : body.store;
   const { person_id: personId, user_id: userId, unlink } = body;
   if (!store) return res.status(400).json({ error: "store is required" });
@@ -59,7 +92,7 @@ export default async function handler(req, res) {
        no use for it and it is the one part of this worth stealing. */
     const { data: links, error: linkErr } = await db.from("floor_people")
       .select("user_id, person_id, linked_by, updated_at").eq("store", store);
-    if (linkErr) return res.status(500).json({ error: "could not read the links" });
+    if (linkErr) return fail(res, 500, "Could not read the links", linkErr);
 
     const { data: devices } = await db.from("device_tokens")
       .select("person_id, platform, updated_at").eq("store", store);
@@ -84,7 +117,7 @@ export default async function handler(req, res) {
     const { data: cur } = await db.from("floor_people")
       .select("person_id").eq("user_id", userId).eq("store", store).maybeSingle();
     const { error } = await db.from("floor_people").delete().eq("user_id", userId).eq("store", store);
-    if (error) return res.status(500).json({ error: "could not unlink" });
+    if (error) return fail(res, 500, "Could not unlink", error);
     if (cur && cur.person_id) {
       try { await db.from("device_tokens").delete().eq("store", store).eq("person_id", cur.person_id); }
       catch { /* the link is gone, which is the part that matters */ }
@@ -95,7 +128,7 @@ export default async function handler(req, res) {
   if (!personId) return res.status(400).json({ error: "person_id is required" });
 
   const { data: links, error: readErr } = await db.from("floor_people").select("*").eq("store", store);
-  if (readErr) return res.status(500).json({ error: "could not read the current links" });
+  if (readErr) return fail(res, 500, "Could not read the current links", readErr);
 
   const complaint = checkLink({ links: links || [], userId, store, personId });
   if (complaint) return res.status(409).json({ error: complaint });
@@ -103,7 +136,7 @@ export default async function handler(req, res) {
   const { error } = await db.from("floor_people").upsert(
     { id: `${store}:${userId}`, user_id: userId, store, person_id: personId,
       linked_by: who.user.id, updated_at: new Date().toISOString() }, { onConflict: "id" });
-  if (error) return res.status(500).json({ error: "could not save the link" });
+  if (error) return fail(res, 500, "Could not save the link", error);
 
   return res.status(200).json({ ok: true });
 }
