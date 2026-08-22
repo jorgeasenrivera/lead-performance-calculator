@@ -162,6 +162,46 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The streaks are drawn on a canvas now, because a real streak could not be
+afforded as DOM.** The handoff draws every one as a pill — `border-radius:50%`
+with the origin on its left edge — so a dot scaled along its own axis becomes a
+spindle that tapers to nothing. Square corners made them blunt dashes instead, and
+that was not a free choice: 660 large tapered elements cannot be composited at
+frame rate. Measured in the built app, three configurations:
+
+| streak shape | frames a jump | worst gap | stalls over 200ms |
+|---|---|---|---|
+| gradient taper | 23-38 | 700-1017ms | 2-5 |
+| pill, border-radius 50% | 44-47 | 633-917ms | 2-3 |
+| flat rectangle | 64-65 | 150-167ms | 0 |
+| **canvas** | **69-74** | **117-167ms** | **0** |
+
+The taper was never the problem, the element count was. So for the one beat that
+needs them the streaks stop being elements: one canvas, one texture upload a frame,
+each streak drawn as a spike that is full dot width at the near end and tapers to a
+point at the far one. Paths are batched by colour, so a frame is five fills rather
+than six hundred and sixty. It beats even the flat rectangles it replaced. Only for
+the stretch — at rest the dots stay ordinary elements with a CSS twinkle, which
+costs nothing.
+
+The canvas has to pick up where the gather left off, pulled in toward the origin by
+the field layer's own scale, or the whole field snaps outward on the frame the
+streaks begin.
+
+**And one stray brace hid all of it.** Removing the old `fieldStretch` keyframes
+left their closing `}` behind, and the rule that followed — the one making the
+canvas `position:fixed` — never applied. So the canvas was laid out as a flex item
+inside the sign-in screen and shoved the card 720px to the right: the mark was
+measured at x=1341 on a 1440px screen, and the two sets of streaks appeared to fly
+from different vanishing points. The lesson is the cheap one: check the computed
+value, not the source.
+
+**The landing spring is the handoff's own.** `cubic-bezier(.34,1.6,.64,1)`, the
+curve it uses for every dot that lands. 1.6 overshoots, so each block flies past
+where it belongs and is pulled back. The curve it replaced had no overshoot at all,
+which is why the landing read as soft. The gather was deepened to match: the mark
+to 0.84, its dots to 0.70, the field to 0.86, the blobs to 0.85.
+
 **The mark's build got the beat it was always missing.** The handoff opens its
 table with "Hurry | 0 | 320ms | Only if the form is not finished" and this file
 had never implemented it. A saved password fills both fields in one go, so the

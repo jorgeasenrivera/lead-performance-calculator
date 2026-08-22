@@ -7775,6 +7775,103 @@ function SageGround({ beat = "idle" }) {
 
    Rendered by the sign-in screen, so it is held for the whole jump and goes with
    that screen at the handover, underneath the white. */
+/* ---------------- the streaks, on a canvas ----------------
+   The field is 660 dots, and for the length of the stretch each one is a streak
+   the size of the screen. As DOM elements that cannot be drawn at frame rate and
+   it is not close: measured in the built app, tapered with a gradient it managed
+   23-38 frames with stalls up to a second, as pills 44-47, and only as flat
+   rectangles did it run clean at 64. The taper is not the problem, the element
+   count is — 660 large composited layers is simply too many to paint.
+
+   So for the one beat that needs them, the streaks stop being elements. One
+   canvas, one texture upload a frame, and each streak drawn as a spike: full dot
+   width at the near end, tapering to a point at the far one, which is what a
+   streak looks like and what a scaled dot never did. Paths are batched by colour,
+   so a frame is five fills rather than six hundred and sixty.
+
+   Only for the stretch. At rest the dots are ordinary elements with a CSS
+   twinkle, which costs nothing and keeps the sign-in screen still. */
+function SageStreaks({ dots, origin, w, h }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return undefined;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    const ctx = cv.getContext("2d");
+    ctx.scale(dpr, dpr);
+    /* Grouped once, so a frame sets fillStyle five times rather than 660. */
+    /* The canvas takes over mid-move, so it has to start where the gather left
+       the dots: pulled in toward the origin by the field layer's own scale.
+       Starting from their resting places would snap the whole field outward on
+       the frame the streaks begin. */
+    const ox = origin ? origin.x : w / 2, oy = origin ? origin.y : h / 2;
+    const G = 0.86;
+    const byTint = new Map();
+    for (const d of dots) {
+      const a = (d.angle * Math.PI) / 180;
+      const arr = byTint.get(d.tint) || [];
+      arr.push({
+        x: ox + (d.x - ox) * G, y: oy + (d.y - oy) * G,
+        ux: Math.cos(a), uy: Math.sin(a), r: (d.size / 2) * G, dist: d.dist,
+      });
+      byTint.set(d.tint, arr);
+    }
+    const groups = [...byTint.entries()];
+    const t0 = performance.now();
+    let raf = 0;
+    const ease = (t) => {
+      /* The handoff's stretch curve, cubic-bezier(.6,0,.9,.24), close enough for
+         a value we only ever sample forwards. */
+      return t * t * (3 - 2 * t) * t;
+    };
+    const draw = () => {
+      const p = Math.min(1, (performance.now() - t0) / ARRIVAL.stretch);
+      const e = ease(p);
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalAlpha = 1 - 0.15 * p;
+      for (const [tint, arr] of groups) {
+        ctx.fillStyle = tint;
+        ctx.beginPath();
+        for (const d of arr) {
+          /* The near end leaves too, so the field opens out of the origin
+             instead of stretching from a standstill. */
+          const lead = e * (40 + d.dist * 0.55);
+          const len = e * (120 + d.dist * 1.9);
+          const nx = d.x + d.ux * lead, ny = d.y + d.uy * lead;
+          const fx = nx + d.ux * len, fy = ny + d.uy * len;
+          const px = -d.uy * d.r, py = d.ux * d.r;
+          ctx.moveTo(nx + px, ny + py);
+          ctx.lineTo(nx - px, ny - py);
+          ctx.lineTo(fx, fy);
+        }
+        ctx.fill();
+      }
+      if (p < 1) raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [dots, origin, w, h]);
+  return <canvas ref={ref} className="sg-streaks" style={{ width: w, height: h }} aria-hidden="true" />;
+}
+
+/* Whether the jump is at the beat that needs the canvas. Read off the document
+   because that is where the beats live; see runJump. */
+function useStretching() {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const root = document.documentElement;
+    const read = () => setOn(root.classList.contains("sage-beat-stretch")
+      || root.classList.contains("sage-beat-flash"));
+    read();
+    const mo = new MutationObserver(read);
+    mo.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, []);
+  return on;
+}
+
 function SageField() {
   const [size, setSize] = useState(() => ({
     w: typeof window === "undefined" ? 1440 : window.innerWidth,
@@ -7800,12 +7897,16 @@ function SageField() {
      per render. Rebuilding it per render was the handoff's second performance
      note and it still holds. */
   const dots = useMemo(() => buildField(size.w, size.h, origin), [size.w, size.h, origin]);
+  const stretching = useStretching();
+  if (stretching) {
+    return <SageStreaks dots={dots} origin={origin} w={size.w} h={size.h} />;
+  }
   return (
     <div className="sg-field" aria-hidden="true">
       {dots.map((d, i) => (
         <i key={i} className={"sg-dot" + (d.bright ? " bright" : "")}
           style={{
-            left: d.x, top: d.y, width: d.size, height: d.size, background: d.tint,
+            left: d.x, top: d.y, width: d.size, height: d.size, color: d.tint,
             animationDuration: d.dur + "ms", animationDelay: d.delay + "ms",
             /* Read by the jump; set here so nothing has to be measured later.
                --d carries how far this dot sits from the origin, so the ones near
@@ -24950,6 +25051,7 @@ function Style() {
         to   { transform: translate3d(-26px,-16px,0); }
       }
       .sg-dot { position:absolute; display:block; border-radius:50%; opacity:.26;
+        background: currentColor;
         transform: translate(-50%,-50%);
         animation: sgTwinkle 4s ease-in-out infinite alternate; }
       @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
@@ -25219,7 +25321,7 @@ function Style() {
          come in less than the ones further out, and the lockup contracts evenly.
          The uniform part of the contraction is the layer's own scale(.90). */
       .sage-beat-gather .login-logo circle {
-        transform: rotate(var(--a)) translateX(calc((-4 - min(var(--d), 64) * .12) * 1px)) scaleX(.78);
+        transform: rotate(var(--a)) translateX(calc((-7 - min(var(--d), 64) * .16) * 1px)) scaleX(.70);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
       /* .login-busy also runs loginLogoRise on the wrapper; same collision, same
          cure, so the mark's layer can be scaled by the beats. */
@@ -25227,7 +25329,7 @@ function Style() {
       .sage-beat-stretch .login-card .login-logo, .sage-beat-flash .login-card .login-logo {
         animation: none; }
       .sage-beat-gather .login-logo svg {
-        transform: scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+        transform: scale(.84); transition: transform .5s cubic-bezier(.32,0,.4,1); }
       .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
         transform: rotate(var(--a)) scaleX(calc((900 + var(--d) * 2.4) / var(--dr) / 2));
         transition: transform .88s cubic-bezier(.6,0,.9,.24); }
@@ -25264,7 +25366,7 @@ function Style() {
       .sage-beat-gather .sg-field {
         animation: sgFieldDrift 28s ease-in-out infinite alternate,
                    fieldGather .5s cubic-bezier(.32,0,.4,1) both; }
-      @keyframes fieldGather { from { transform:none; } to { transform:scale(.92); } }
+      @keyframes fieldGather { from { transform:none; } to { transform:scale(.86); } }
       /* ---- the blobs part like cloud ----
          Each one moves OUT of the frame in the direction it already sits, rather
          than the four of them scaling together as one sheet. A sheet that grows
@@ -25276,7 +25378,7 @@ function Style() {
          on transform, so a plain transform here would have been ignored outright.
          And the corner each one is pushed toward is the corner it lives in — see
          the .sg-blob geometry above. */
-      .sage-beat-gather .sg-blobs { transform:scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-gather .sg-blobs { transform:scale(.85); transition: transform .5s cubic-bezier(.32,0,.4,1); }
       .sage-beat-stretch .sg-blob, .sage-beat-flash .sg-blob {
         animation: sgDrift 40s ease-in-out infinite alternate,
                    blobPart .88s cubic-bezier(.44,0,.7,.5) both; }
@@ -25310,28 +25412,9 @@ function Style() {
         from { transform: translate3d(var(--bx,0), var(--by,0), 0) scale(1.5); opacity:.34; }
         to   { transform: translate3d(0,0,0) scale(1); opacity:1; }
       }
-      /* The field flies WITH the mark rather than disappearing while it does.
-         It used to fade to nothing halfway through the stretch, which is why the
-         peak of the jump felt empty: the one moment that should be full of
-         travelling light was 73 streaks on a bare page. */
-      .sage-beat-stretch .sg-field, .sage-beat-flash .sg-field {
-        animation: sgFieldDrift 28s ease-in-out infinite alternate,
-                   fieldStretch .88s cubic-bezier(.6,0,.9,.24) both,
-                   fieldGo .24s ease-in .82s both; }
-      /* The handoff fades the field out at the very end of the stretch and not
-         before: opacity 240ms ease-in, delayed 820ms of the 900. It is the last
-         thing to go, right as the white arrives, and it does not come back — the
-         field belongs to the screen that is leaving. */
-      @keyframes fieldGo { from { opacity:1; } to { opacity:0; } }
-      /* 2.0, not 3.2. At 3.2 the layer alone carried every dot past the edge
-         before the beat was over, so the last fifth of the jump was a blank page
-         waiting for the flash — the streaks had all left and nothing had arrived.
-         The layer moves less now and the per-dot streaks do the travelling, which
-         keeps something crossing the frame the whole way through. */
-      @keyframes fieldStretch {
-        from { transform:scale(.92); opacity:1; }
-        to   { transform:scale(2.0); opacity:.85; }
-      }
+      /* No stretch rules for the DOM field at all: at that beat it is not in the
+         document, having handed the whole thing over to the canvas. */
+
       /* ---- square corners for the length of the jump ----
          This one line is the difference between the arrival running and the
          arrival being a slideshow. A field dot is a 2.6px circle, and a circle is
@@ -25347,24 +25430,16 @@ function Style() {
          circles. This is the same cost the handoff hit from the other side, when
          it cut the streaking dots to a third to buy the frames back — the corners
          are the cheaper thing to give up, and they buy more. */
-      [class*="sage-beat"] .sg-dot { border-radius:0; }
+      /* ---- a streak, not a stretched dot ----
+         The handoff draws every streak as a pill, tapering to nothing at both
+         ends, and a scaled square dot is a blunt dash instead. Neither shape can
+         be afforded as 660 DOM elements though — measured in the built app,
+         gradient-tapered it managed 23-38 frames a jump with stalls up to a
+         second, as pills 44-47, and only as flat rectangles did it run clean.
+         So for the beat that needs them the streaks are drawn on a canvas
+         instead, properly tapered and at frame rate. See SageStreaks. */
+      .sg-streaks { position:fixed; left:0; top:0; z-index:0; pointer-events:none; }
 
-      /* Every dot, not the bright third. They all leave along their own line out
-         of the logo, and the far ones go further than the near ones, so the field
-         opens out of that point instead of sliding past as a sheet. */
-      /* Pinned at the near end, exactly like the mark's dots: the streak grows
-         away from the origin rather than out of the dot's middle in both
-         directions. Same trajectory, same vanishing point. */
-      [class*="sage-beat"] .sg-dot { transform-origin: left center; }
-      .sage-beat-stretch .sg-dot, .sage-beat-flash .sg-dot {
-        transform: translate(-50%,-50%) rotate(var(--a))
-                   scaleX(calc(14 + var(--d, 400) * .09));
-        /* Staggered by distance: the dots out at the corners go first and the
-           ones close to the logo hold back up to 160ms, so the field empties
-           outward from the mark instead of all at once. Without it the whole
-           field left together and took the middle of the jump with it. */
-        transition: transform .88s cubic-bezier(.6,0,.9,.24);
-        transition-delay: max(0ms, calc((900 - var(--d, 400)) * .18ms)); }
       /* The blobs stretch too, rather than merely swelling: pulled long along
          the direction of travel and left bright enough to be the colour the
          streaks are flying through. */
@@ -25384,7 +25459,7 @@ function Style() {
 
       /* Only the bright eighth streaks. The rest ride the layer's own scale,
          which is what bought the density back. */
-      .sage-beat-gather .sg-dot { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.80);
+      .sage-beat-gather .sg-dot { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.70);
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
 
       /* ---- the dashboard coming out of the jump ----
@@ -25433,13 +25508,18 @@ function Style() {
       .sage-assemble .page, .sage-assemble .board-page, .sage-assemble .tab-page {
         animation: pageIn .38s var(--spring), saStill 1.5s linear both; }
       @keyframes saStill { from, to { transform:none; opacity:1; filter:none; } }
+      /* The handoff's own landing spring, cubic-bezier(.34,1.6,.64,1) — the one it
+         uses for every dot that lands. 1.6 overshoots: each block flies past
+         where it belongs and is pulled back, which is what makes it read as
+         having been thrown out of the point rather than eased into place. The
+         curve it replaced had no overshoot at all. */
       .sage-assemble .sa-radial {
         opacity:0;
-        animation: saRadial .92s cubic-bezier(.16,.86,.28,1) both;
+        animation: saRadial 1s cubic-bezier(.34,1.6,.64,1) both;
         animation-delay: var(--rd, 0ms); }
       @keyframes saRadial {
-        0%   { opacity:0; transform: translate3d(var(--rx,0), var(--ry,0), 0) scale(.05); }
-        16%  { opacity:1; }
+        0%   { opacity:0; transform: translate3d(var(--rx,0), var(--ry,0), 0) scale(.04); }
+        14%  { opacity:1; }
         100% { opacity:1; transform: none; }
       }
       .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .5s both; }
