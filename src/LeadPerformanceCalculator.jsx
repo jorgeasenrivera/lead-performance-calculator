@@ -14886,16 +14886,34 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
     <div ref={cardRef}
       className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "") + (picked ? " is-picked" : "")}>
       <div className="assoc-row" onClick={() => (picking ? onPick() : setOpen(!open))}>
-        {picking && (
-          <input type="checkbox" className="assoc-pick" checked={!!picked} readOnly
-            aria-label={`Select ${a.name}`} />
-        )}
-        {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
-        <span className="assoc-name">{a.name}</span>
-        {star && <span className="star-badge" title="Wildly surpassing standard">
-          <PixIcon glyph="star" size={12} /> Crushing it
+        {/* ---- who, as ONE cell ----
+            The rank badge, the crushing-it badge and the incomplete flag all come
+            and go, and each of them used to be a child of the row's grid — so a
+            row with a badge on it pushed everything after it into the next track
+            and the dials stopped lining up the moment somebody had a good month.
+            One cell that holds all of them keeps the columns fixed however many
+            things are in it. */}
+        <span className="assoc-who">
+          {picking && (
+            <input type="checkbox" className="assoc-pick" checked={!!picked} readOnly
+              aria-label={`Select ${a.name}`} />
+          )}
+          {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
+          <span className="assoc-name">{a.name}</span>
+        {/* ---- the people carrying the floor ----
+            Forty per cent over every requirement they have, which is not a good
+            month, it is a different league. It had one small green line down the
+            left of the card, the same green everybody clearing standard gets, and
+            was otherwise indistinguishable from a month that scraped past.
+
+            Gold, and the whole row wears it: the edge, the badge, and their lead
+            bar. It costs nothing to say well done properly, and this is the only
+            state on the board that is unambiguously somebody's own doing. */}
+        {star && <span className="star-badge" title="Forty per cent or more over every requirement">
+          <PixIcon glyph="trophy" size={12} /> Crushing it
         </span>}
-        {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+          {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+        </span>
         {/* ---- the lead bar, in the row and running most of its length ----
             It used to sit under the row at a fifth of the tile's width with a
             sentence beneath it saying in fifteen words what the bar and the
@@ -14913,7 +14931,11 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           </span>
         )}
         {showDials && <MetricStrip ev={ev} stats={stats} />}
-        <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
+        {/* Two sub-columns, not one right-aligned string: "74 / 80" and "82 / 100"
+            are different widths, so aligning the whole thing put the slash in a
+            different place on every row. The number ends where every other number
+            ends and the cap starts where every other cap starts. */}
+        <span className="assoc-leads"><b>{ev.opps ?? 0}</b><span className="of-cap">/ {ev.cap ?? "-"}</span></span>
         {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
           {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
           {softFail && <span className="verdict verdict-grace">Early month</span>}
@@ -24282,28 +24304,36 @@ function Style() {
          anybody's verdict says. The bar takes whatever is left, which on a
          desktop is most of the row. */
       .assoc-row { display:grid; align-items:center; gap:10px; cursor:grab;
-        grid-template-columns: auto minmax(120px, 212px) minmax(80px, 1fr) auto 62px 186px; }
-      /* One line, so every row is the same height and the eye runs down the
-         column instead of stepping over it. */
-      .assoc-row .verdict { white-space:nowrap; }
-      /* Without a pick box or a rank there is nothing in the first track, and the
-         grid must not reserve a column for it. */
-      .assoc-row > .assoc-name:first-child { grid-column: 2; }
+        grid-template-columns: minmax(170px, 300px) minmax(80px, 1fr) auto 82px 196px; }
+      /* Everything that identifies the person, in the first track. */
+      .assoc-who { display:flex; align-items:center; gap:9px; min-width:0; }
+      .assoc-who .assoc-name { flex:0 1 auto; }
+      /* One line and one width, so they make a column rather than a ragged edge.
+         The track is sized for the longest of them ("Below standard, room left"),
+         and every pill fills it. */
+      .assoc-row .verdict { white-space:nowrap; width:100%; min-width:0; box-sizing:border-box;
+        font-size:11.5px; padding:5px 8px; }
+
       /* Six tracks need about 1200px. Below that the row wraps instead, with the
          bar on a line of its own under the name — still long, still first thing
          the eye lands on, and nothing is pushed off the right-hand edge. */
       @media (max-width: 1200px) {
         .assoc-row { display:flex; flex-wrap:wrap; align-items:center; }
-        .assoc-row .assoc-name { flex:1 1 180px; }
+        .assoc-row .assoc-who { flex:1 1 180px; min-width:0; }
         .assoc-row .assoc-gauge { order:9; flex:1 1 100%; }
         .assoc-row .mstrip { margin-left:auto; }
+        /* Still one width when the row wraps, so the pills stay a column. */
+        .assoc-row .verdict { width:196px; flex:0 0 196px; }
       }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
-      .assoc-name { font-weight:650; font-size:15.5px; flex:0 0 212px; letter-spacing:-.015em; }
+      .assoc-name { font-weight:650; font-size:15.5px; letter-spacing:-.015em;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .flag { font-size:11px; color:var(--amber); background:rgba(255,159,10,.14); padding:3px 9px; border-radius:20px; font-weight:600; }
-      .assoc-leads { text-align:right; font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
-      .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; }
+      .assoc-leads { display:grid; grid-template-columns:34px 44px; align-items:baseline; gap:4px;
+        font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+      .assoc-leads > b { text-align:right; font-weight:700; }
+      .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; text-align:left; }
       .verdict { font-size:12px; font-weight:700; padding:5px 12px; border-radius:20px; min-width:118px; text-align:center;
         transition: transform .2s var(--spring); }
       .verdict.sm { min-width:0; font-size:11px; padding:3px 9px; }
@@ -24562,8 +24592,9 @@ function Style() {
       .rank-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
       .rank-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
       .star-badge { display:inline-flex; align-items:center; gap:5px; flex:0 0 auto;
-        font-size:11px; font-weight:800; letter-spacing:.01em; color:#146B41;
-        background:rgba(48,177,85,.16); padding:4px 11px; border-radius:20px;
+        font-size:11px; font-weight:800; letter-spacing:.01em; color:#5A3B00;
+        background:linear-gradient(150deg,#FFE595,#F0BC3C); padding:4px 11px; border-radius:20px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
         animation: starGlow 3.2s ease-in-out infinite; }
       /* A cleared month used to look identical to a failing one apart from one small
          pill at the far end of the row. The people doing well are the ones a floor
@@ -24572,10 +24603,23 @@ function Style() {
       .assoc-card.pass::before { content:""; position:absolute; left:-10px; top:6px; bottom:6px;
         width:3px; border-radius:2px; background:#30B155; opacity:.55; }
       .assoc-card.pass .assoc-name { color:#12212F; font-weight:700; }
-      .assoc-card.pass:has(.star-badge)::before { opacity:1; width:4px; }
+      /* ---- and the row itself ----
+         A wash that fades out before it reaches the figures, a gold edge instead
+         of the green everybody clearing standard gets, and their lead bar in the
+         same gold. Nothing moves position and nothing else changes size: it is
+         the same row, wearing something. */
+      .assoc-card:has(.star-badge) {
+        background:linear-gradient(100deg, rgba(240,188,60,.17), rgba(240,188,60,.05) 38%, transparent 62%); }
+      .assoc-card.pass:has(.star-badge)::before {
+        opacity:1; width:4px; background:linear-gradient(180deg,#FFE595,#E0A100); }
+      .assoc-card:has(.star-badge) .gauge-fill {
+        background:linear-gradient(90deg,#E0A100,#FFD166); }
+      .assoc-card:has(.star-badge) .assoc-name { color:#3E2C00; }
+      .assoc-card:has(.star-badge) .verdict-pass {
+        background:linear-gradient(150deg,rgba(255,229,149,.55),rgba(240,188,60,.4)); color:#5A3B00; }
       @keyframes starGlow {
-        0%,100% { box-shadow: 0 0 0 0 rgba(48,177,85,0); }
-        50%     { box-shadow: 0 0 0 3px rgba(48,177,85,.10); }
+        0%,100% { box-shadow: 0 0 0 0 rgba(240,188,60,0); }
+        50%     { box-shadow: 0 0 0 3px rgba(240,188,60,.22); }
       }
       .assoc-card.incomplete { opacity:.55; filter:grayscale(.75); }
       .assoc-card.incomplete .verdict { visibility:hidden; }

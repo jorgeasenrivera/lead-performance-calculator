@@ -167,6 +167,22 @@ real shortfall against that requirement and still counts.
   has it on hover; the page is not nine paragraphs long. What is left under a row is the one
   thing that was never a restatement: the Confirm-removed-from-leads action.
 - Below 1200px the row wraps instead, bar on its own line, so nothing is pushed off the edge.
+- **The lead count is two sub-columns**, not one right-aligned string: "74 / 80" and "82 / 100"
+  are different widths, so aligning the whole thing put the slash somewhere different on every
+  row. The number ends where every number ends; the cap starts where every cap starts.
+- **Every verdict pill is one width**, so they read as a column rather than a ragged edge.
+- **Everything that identifies a person is one grid cell.** The rank badge, the crushing-it
+  badge and the incomplete flag come and go, and each used to be a child of the row's grid —
+  so a row with a badge pushed everything after it into the next track and the dials fell out
+  of line the moment somebody had a good month.
+
+### Crushing it, in gold
+
+Forty per cent over every requirement is not a good month, it is a different league, and it
+had the same small green line down the card that everybody clearing standard gets. It is gold
+now, and the whole row wears it: the edge, the badge, their lead bar, and their verdict pill.
+Nothing moves and nothing changes size — the same row, wearing something. It costs nothing to
+say well done properly.
 
 ### Next: more pictures, fewer words, everywhere else
 
