@@ -12646,6 +12646,23 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* `shell` is the chrome the app already has on hand — who is signed in, how to
    sign out, the help node — passed as one object so this module doesn't grow
    six props it only forwards. */
+/* ---- the floor tools' loading beat ----
+   Live Floor, The Line and Online fetch their store before they can draw a
+   board, and that wait used to be a bare line of text. The seven dots run
+   while it loads; the moment the data lands they all light together and pop,
+   so the animation visibly COMPLETES, and the page populates behind that
+   beat of done. */
+function FloorLoading({ store, finishing }) {
+  return (
+    <div className={"checkout floor-load" + (finishing ? " finish" : "")}>
+      <div className="floor-load-inner">
+        <Logo size={64} loading />
+        <p className="muted">{finishing ? "Ready" : "Loading " + (store?.name || "store") + "\u2026"}</p>
+      </div>
+    </div>
+  );
+}
+
 function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onImport, shell }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => {
@@ -12656,6 +12673,17 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   useEffect(() => { setSubtab("board"); }, [queue]);   // switching queue always lands on the board
   const [data, setData] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  /* loading -> finish (the dots complete and pop) -> done (the board is shown).
+     The finish beat runs whether the load took three seconds or thirty
+     milliseconds: the completion is the point, not the wait. */
+  const [loadBeat, setLoadBeat] = useState("loading");
+  const dataLoaded = data !== null;
+  useEffect(() => {
+    if (!dataLoaded) { setLoadBeat("loading"); return undefined; }
+    setLoadBeat("finish");
+    const t = setTimeout(() => setLoadBeat("done"), 540);
+    return () => clearTimeout(t);
+  }, [dataLoaded]);
   const [saving, setSaving] = useState(false);
   const store = stores.find((s) => s.id === storeId) || stores[0] || null;
 
@@ -12782,8 +12810,8 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
       <div key={(store?.id || "none") + queue + effSub} className="page">
         {!store ? (
           <div className="checkout"><p className="muted">No store available.</p></div>
-        ) : data === null ? (
-          <div className="checkout"><p className="muted">Loading {store.name}…</p></div>
+        ) : data === null || loadBeat !== "done" ? (
+          <FloorLoading store={store} finishing={loadBeat === "finish"} />
         ) : queue === "line" || queue === "online" ? (
           <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} variant={LEAD_VARIANTS[queue]} />
         ) : effSub === "settings" && isAdmin ? (
@@ -24522,6 +24550,20 @@ const SAGE_CSS = `
       @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
       /* the speedometer needle + its gradient trail spin together */
       .sage-loading i { animation: sageDot 1.05s ease-in-out infinite; }
+      /* The floor tools' loader, and its completion. The !important shorthand is
+         load-bearing: each dot carries an inline animation-delay for the wave,
+         and the finish has to override it or the pop would stagger over a
+         second instead of landing as one beat. */
+      .floor-load { display:flex; align-items:center; justify-content:center; min-height:46vh; }
+      .floor-load-inner { display:flex; flex-direction:column; align-items:center; gap:16px; }
+      .floor-load.finish .sage-loading i { animation: sageDotDone .38s cubic-bezier(.2,.7,.3,1) both !important; }
+      @keyframes sageDotDone {
+        0%   { opacity:.4; transform:scale(.9); }
+        55%  { opacity:1;  transform:scale(1.18); }
+        100% { opacity:1;  transform:scale(1); }
+      }
+      .floor-load.finish { animation: floorLoadOut .22s ease .34s both; }
+      @keyframes floorLoadOut { to { opacity:0; } }
       .loadscreen-label { margin-top:2px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
 
       /* ---- board launcher ---- */
@@ -26228,12 +26270,12 @@ const SAGE_CSS = `
       /* ---- the streaks that cross between them ---- */
       .warp { position:fixed; inset:0; z-index:8000; pointer-events:none; overflow:hidden; }
       .warp i { position:absolute; display:block; border-radius:2px; opacity:0; }
-      /* The streaks fly WITH the travel, like wind trails drawn behind the
-         move itself: head right along the bar and the whoosh goes right.
-         Jorge's call, and the cartoon reading is the point: the trails belong
-         to the motion, not to the scenery. */
-      .warp-r i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
-      .warp-l i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      /* Jorge's spec, verbatim: "if the button is selected on the right the
+         streaks would start from the right of the screen and then end left
+         screen and vice versa." So travelling right along the bar, the trails
+         enter from the right edge and sweep across to the left. */
+      .warp-r i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      .warp-l i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
       @keyframes warpR {
         0%   { transform: translateX(0);              opacity:0; }
         30%  {                                        opacity:.9; }
