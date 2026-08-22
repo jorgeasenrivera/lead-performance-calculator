@@ -111,6 +111,47 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## Fewer words, more picture — STARTED 2026-08-22
+
+> reducing the "wordiness" of the page … I want more visuals throughout the website instead of
+> words
+
+This app explains itself, and that is deliberate: half of what it does is a judgement about a
+person's month, and a screen that makes one without saying why is a screen nobody should
+trust. The cost crept up on it — **3,905 words of prose permanently on the manager's screens**,
+so the page read every morning is mostly sentences somebody read once, in March.
+
+### The rule
+
+- If the sentence tells you something **the screen already shows**, it goes entirely.
+- If it carries **a decision somebody would otherwise get wrong** — a leaver keeps their cars,
+  a fold cannot be split back apart — it goes behind `<Explain>`: one line always visible, the
+  paragraph one click away.
+- **Empty states stay.** "Nothing on the list yet, paste the drawer of dealer plates above" is
+  the only thing on the screen at that moment; deleting it leaves a blank rectangle.
+- **Rarely-used destructive screens keep their prose.** Backup, Repair and the store wizard are
+  where a wrong click costs a store its records, and they are read by somebody who has not been
+  there in six months. Explanation earns its place there and nowhere is it more expensive to
+  have folded away.
+
+`<Explain>` is a native `<details>`: keyboard-accessible and findable by in-page search for
+free, and no state for a screen full of them to hold.
+
+### Done so far
+
+| screen | permanent prose |
+|---|---|
+| People | 566 → 69 words |
+| Plates | 193 → 81 |
+| Import | 175 → 131 |
+| Coaching | 109 → 76 |
+
+3,905 → 3,219 across the app. Still to do, in the order a manager meets them: Own Your
+Outcome (205), Floor Config (203), Baseline Import (126), Tickets (111), Missed Standards (104,
+mine — written last week and already too long), Help (91).
+
+---
+
 ## History and Summary — REWORKED 2026-08-21
 
 > I feel like we haven't given any recent love to the history and summary tabs

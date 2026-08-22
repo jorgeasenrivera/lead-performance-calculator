@@ -13537,12 +13537,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       {masterOpen && (
         <div className="card">
           <h3>Master plate list</h3>
-          <p className="hint">
+          <Explain label="What the list is for">
             Every plate the store owns. This is what the one-click row suggests from, and what a
             typed tag is checked against, so a number that is one character off gets questioned
             rather than quietly becoming a second plate. Retiring keeps the history and stops the
             suggestions; removing takes it off the list entirely.
-          </p>
+          </Explain>
           <div className="inline-form">
             <textarea className="plate-bulk" value={bulk} onChange={(e) => setBulk(e.target.value)}
               placeholder={"Paste or type plates, one per line or comma separated\ne.g. DLR-1042, DLR-1043"} rows={2} />
@@ -13607,10 +13607,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             {freeTags.length > 18 && <span className="hint">and {freeTags.length - 18} more, type to find them</span>}
           </div>
         )}
-        <p className="hint">
+        <Explain label="How the log works">
           The time taken is logged automatically when you add a plate. You can adjust it afterward if it was entered late. Anyone not on the roster can still be typed in by hand.
           {standing ? " It stays with them until somebody marks it returned or hands it on." : ""}
-        </p>
+          {" "}Handing a plate straight to somebody else closes the current trip and opens a new one, so the
+          log never says the wrong person had it.
+        </Explain>
       </div>
       {standing && (
         <div className="card">
@@ -13656,7 +13658,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
               </tbody>
             </table>
           )}
-          <p className="hint">Handing a plate straight to somebody else closes the current trip and opens a new one, so the log never says the wrong person had it.</p>
+
         </div>
       )}
       {standing && (
@@ -16529,10 +16531,11 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
       ) : (
       <div className="card">
         <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
-        <p className="hint">
-          Top third by units delivered this month ({top.length} of {withData.length} with activity on file), averaged
-          across every day imported. This is the bar, drawn from your own floor rather than a number someone made up.
-        </p>
+        <p className="hint">Top third by units delivered, {top.length} of {withData.length}.</p>
+        <Explain label="Where this bar comes from">
+          Averaged across every day imported, and drawn from your own floor rather than a number someone
+          made up. It moves when the floor moves.
+        </Explain>
         <div className="bench-grid">
           {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
             <div key={b.id} className="bench-tile">
@@ -19449,7 +19452,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
         <UploadHistory data={data} onChange={onChange} />
-        <p className="hint">Each day's activity is saved separately so the Check Out sheet and history stay accurate day to day.</p>
+
       </div>
     );
   }
@@ -19523,7 +19526,12 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         </div>
       )}
       <UploadHistory data={data} onChange={onChange} />
-      <p className="hint">Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the previous numbers for that report. Imports are recorded in the audit log.</p>
+      <Explain label="What an import does to the numbers">
+        Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the
+        previous numbers for that report rather than adding to them, and every import is recorded in the
+        audit log. A day's activity is saved separately from the month, so the Check Out sheet and the
+        history stay accurate day to day.
+      </Explain>
     </div>
   );
 }
@@ -20251,6 +20259,36 @@ function StandardsEditor({ config, storeId, onChange }) {
    never earned them. Collapsing those two into "remove" is how a month that
    delivered 85 came to read 84.5.
    ========================================================================= */
+/* ---- the long explanation, folded away ------------------------------------
+   This app explains itself, and that is deliberate: half of what it does is a
+   judgement about a person's month, and a screen that makes one without saying
+   why is a screen nobody should trust. The cost crept up on it — near four
+   thousand words of prose across the manager's screens, permanently on, so the
+   page a manager reads every morning is mostly sentences they read for the first
+   time in March.
+
+   Jorge, on the board: "reducing the wordiness of the page ... I want more
+   visuals throughout the website instead of words."
+
+   So the reasoning stays and stops shouting. One line is always visible — what
+   this is — and the paragraph that says why is one click away. A <details> rather
+   than a state hook because it is keyboard-accessible and searchable-in-page for
+   free, and because a screen full of these would otherwise be a screen full of
+   state nobody needs to hold.
+
+   The rule for what stays visible: if the sentence tells you something the screen
+   already shows, it goes entirely. If it carries a decision somebody would
+   otherwise get wrong — a leaver keeps their cars, folding is not splittable —
+   it goes in here. Nothing is deleted that a person could act wrongly without. */
+function Explain({ children, label = "Why this matters" }) {
+  return (
+    <details className="explain">
+      <summary>{label}</summary>
+      <div className="explain-body">{children}</div>
+    </details>
+  );
+}
+
 /* ---- what each position looks like ---------------------------------------
    Jorge: "I'd like there to be a visual difference between job types like BDC
    and sales and so on and group them accordingly, keep it fun."
@@ -20572,14 +20610,15 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <h3>
             {wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}
           </h3>
-          <p className="hint">
-            These are your own people with something stuck to their name: a column heading the reader did
-            not recognise, or a name the report printed twice. Each one is sitting in the books as a
-            stranger while their real row carries the rest of their month. Merging puts the figures back
-            together and remembers the spelling, so the next report needs no repair.
-            {" "}Anything that looks like two people welded into one is not offered here: it could be split
-            two ways and both would be wrong.
-          </p>
+          <p className="hint">Your own people with something stuck to their name. Merging puts the figures
+            back together and remembers the spelling.</p>
+          <Explain>
+            A column heading the reader did not recognise, or a name the report printed twice. Each one is
+            sitting in the books as a stranger while their real row carries the rest of their month, so the
+            store's totals are split across two spellings of one person. Merging teaches the spelling as
+            well, and the next report needs no repair. Anything that looks like two people welded into one
+            is never offered here: it could be split two ways and both would be wrong.
+          </Explain>
           <div className="pp-batch">
             <button className="btn" onClick={() => {
               const cars = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
@@ -20631,10 +20670,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           </h3>
           <p className="hint">
             A report named {waiting.length === 1 ? "somebody" : "these"} who {waiting.length === 1 ? "is" : "are"} not
-            on this store's people list, so nothing was added to the books. Their figures are kept exactly as they
-            arrived and nothing is lost either way: say they work here and everything folds in, or say they do not
-            and it goes with them. Until then the store's totals are unaffected.
+            on this store's people list. Nothing was added to the books, and their figures are held exactly
+            as they arrived.
           </p>
+          <Explain>
+            Nothing is lost whichever way you answer: say they work here and everything folds in, say they
+            do not and it goes with them. Until somebody says, the store's totals are unaffected, which is
+            why a name can sit here safely for a week.
+          </Explain>
           <BatchBar rows={waiting}
             onAll={() => setBatch(new Set(waiting.map((w) => norm(w.name))))}
             onNone={() => setBatch(new Set())}>
@@ -20703,13 +20746,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               ? "One name has figures here but is not one of your people"
               : `${strangers.length} names have figures here but are not your people`}
           </h3>
-          <p className="hint">
-            Something credited these with work at {storeName || "this store"} and they are on none of your
-            lists. That is what another dealership's report looks like after it has been filed in the wrong
-            place, and it is also what a heading looks like when the reader mistook it for a person. Say
-            which each one is. <b>Not ours</b> takes their figures out of this store's totals; <b>they work
-            here</b> puts them on the floor and leaves the figures alone.
-          </p>
+          <p className="hint">Credited with work at {storeName || "this store"}, and on none of your lists.</p>
+          <Explain>
+            That is what another dealership's report looks like after it has been filed in the wrong place,
+            and it is also what a heading looks like when the reader mistook it for a person. <b>Not ours</b>
+            takes their figures out of this store's totals. <b>They work here</b> puts them on the floor and
+            leaves the figures alone. <b>Same as someone</b> folds them into a person you already have.
+          </Explain>
           <BatchBar rows={strangers}
             onAll={() => setBatch(new Set(strangers.map((x) => norm(x.name))))}
             onNone={() => setBatch(new Set())}>
@@ -20764,11 +20807,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             <span className="pp-count">{counts.ignored} not ours</span>
           </div>
         </div>
-        <p className="hint">
-          Who this store employs, whatever has happened to them. Somebody who leaves keeps the cars they
-          sold in the month they sold them. The store did sell those. Somebody who was never here loses
-          theirs, because it never earned them. That difference is why both exist.
-        </p>
+        <Explain label="Left, and not ours: what the difference costs">
+          Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
+          did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
+          delivered. Somebody who was <b>never here</b> loses theirs, because the store never earned them
+          and they are inflating its totals. That difference is the whole reason both exist.
+        </Explain>
 
         <div className="pp-bar">
           <input className="help-in pp-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a name…" />
@@ -21037,13 +21081,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   </div>
                   {!l ? (
                     <>
-                      <p className="hint">
-                        Nobody signs in as {p.name} yet. They sign up on this site with a dealership address
-                        like anybody else; leave their stores unticked and they stay off the dashboard while
-                        still having an account to be joined to. Then pick it here. This is what decides
-                        whose phone buzzes when their customer walks in, which is why a manager sets it and
-                        not the salesperson.
-                      </p>
+                      <p className="hint">Nobody signs in as {p.name} yet.</p>
+                      <Explain label="How somebody gets an account">
+                        They sign up on this site with a dealership address like anybody else; leave their
+                        stores unticked and they stay off the dashboard while still having an account to be
+                        joined to. Then pick it here. This is what decides whose phone buzzes when their
+                        customer walks in, which is why a manager sets it and not the salesperson.
+                      </Explain>
                       <div className="pp-move-row">
                         <select className="q-flag-sel" value="" disabled={acctBusy === key}
                           onChange={(e) => e.target.value && acctDo(key, () => linkFloorPerson(storeId, e.target.value, p.id), "Joined to their account.")}>
@@ -21081,12 +21125,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                           onClick={() => acctDo(key, () => unlinkFloorPerson(storeId, l.user_id),
                             "Unjoined. Their phones were unregistered with it.")}>Unjoin this account</button>
                       </div>
-                      <p className="hint">
-                        Switching an account off stops them signing in and leaves everything they have done
-                        exactly where it is; it is the one to reach for when somebody is let go. Unjoining
-                        only breaks the link between the account and this person, and takes their registered
-                        phones with it so nothing keeps buzzing about a floor they are not on.
-                      </p>
+                      <Explain label="Switch off, or unjoin?">
+                        <b>Switching off</b> stops them signing in and leaves everything they have done
+                        exactly where it is; it is the one to reach for when somebody is let go.
+                        <b> Unjoining</b> only breaks the link between the account and this person, and takes
+                        their registered phones with it so nothing keeps buzzing about a floor they are not on.
+                      </Explain>
                     </>
                   )}
                   {acctSaid && acctSaid.key === key && (
@@ -21113,11 +21157,11 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                       onPick={(to) => onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }),
                         { action: "Folded a duplicate person", detail: `${p.name} → ${to}` })} />
                   </div>
-                  <p className="hint">
+                  <Explain label="When to use this">
                     Only when they are genuinely one person under two spellings. {p.name} comes off this
                     store's lists and their cars move across. Two people who happen to share a name are
                     not this, and merging them puts one person's month onto the other.
-                  </p>
+                  </Explain>
                 </div>
               );
             })()}
@@ -21130,12 +21174,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
         {moving && (
           <div className="pp-move">
             <div className="pp-move-head">Move <b>{moving.name}</b> to another store</div>
-            <p className="hint">
+            <Explain label="What moves with them, and what does not">
               They go on the new store's floor with everything {storeName || "this store"} knows about them
               carried across, so a manager there can see how they have been doing. Their record is kept beside
               that store's books rather than inside them: cars sold here are this store's and stay in its month,
               and adding them to another store's total is the exact mistake all of this exists to stop.
-            </p>
+            </Explain>
             <div className="pp-move-row">
               <select className="q-flag-sel" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}>
                 <option value="">Which store?</option>
@@ -21166,14 +21210,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             </button>
             {showFolds && (
               <div className="pp-folds">
-                <p className="hint">
-                  Each of these is a spelling a report used that this store has said belongs to
-                  somebody. Reports file it under them automatically and it stays off every list.
-                  Undoing one frees the spelling again, from the next report onwards. <b>It does not
-                  split the figures back apart</b>: they were added together when the fold was made
-                  and nothing records which half came from where, so the months already merged stay
-                  merged.
-                </p>
+                <p className="hint">Spellings this store has said belong to somebody. Reports file them
+                  under that person automatically.</p>
+                <Explain label="What undoing one does, and does not do">
+                  Undoing frees the spelling from the next report onwards, and it can be claimed or
+                  marked not-yours like any other name. <b>It does not split the figures back apart</b>:
+                  they were added together when the fold was made and nothing records which half came
+                  from where, so the months already merged stay merged.
+                </Explain>
                 {foldList.map((f) => {
                   /* An alias is stored as the flattened key both sides match on,
                      so there is no cased spelling to show. The person it points at
@@ -23684,6 +23728,21 @@ function Style() {
       .hist-key .hist-pip { margin-left:9px; }
       .hist-key .hist-pip:first-child { margin-left:0; }
       @media (max-width:1100px) { .hist-trail-h, .hist-table td:last-child { display:none; } }
+
+      /* The disclosure that holds the reasoning. Quiet enough to ignore, obvious
+         enough to find on the day somebody needs it. */
+      .explain { margin:6px 0 0; }
+      .explain > summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+        font-size:11.5px; font-weight:700; letter-spacing:.01em; color:var(--blue);
+        list-style:none; padding:3px 0; }
+      .explain > summary::-webkit-details-marker { display:none; }
+      .explain > summary::before { content:"?"; display:inline-grid; place-items:center;
+        width:15px; height:15px; border-radius:50%; font-size:10px; font-weight:800;
+        background:rgba(42,94,155,.12); color:var(--blue); }
+      .explain[open] > summary::before { content:"\\2212"; }
+      .explain > summary:hover { text-decoration:underline; }
+      .explain-body { font-size:12.5px; line-height:1.6; color:var(--ink-2); max-width:78ch;
+        margin:6px 0 2px; animation: pageIn .25s var(--spring); }
 
       .pp-folds { margin-top:10px; display:grid; gap:6px; }
       .pp-folds .hint { margin:0 0 8px; max-width:78ch; }
