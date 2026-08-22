@@ -191,6 +191,113 @@ test("every name a server file calls is one it has or imports", () => {
   assert.deepEqual(bad, [], "called but never defined or imported");
 });
 
+test("no component reads a state variable that belongs to another one", () => {
+  /* The Line went white in production, and this is why: a toolbar button was
+     added to the wrong one of two components that draw an almost identical
+     toolbar. It read `behindCount`, which is a useState in the Live Floor board
+     and does not exist in the phone line, so the whole tab threw on render.
+
+     Nothing caught it. The build is happy — the name is perfectly valid syntax —
+     and every check in this suite reads the api files, where the app itself is
+     26,000 lines of one file with dozens of components that look like each other
+     on purpose. A blank screen on a screen a store uses every hour is the most
+     expensive fault this app has, and the fault before it (`squash is not
+     defined`) was the same shape one layer down.
+
+     So: every `const [x, setX] = useState(...)` belongs to exactly one component.
+     If another component mentions that name and has no useState of its own for
+     it and no local binding, it is reaching into a scope it does not have.
+
+     Narrow on purpose. A general undefined-name check over JSX is a research
+     project and a noisy one; this covers the exact shape that reached production,
+     and costs nothing. */
+  const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+  /* Sliced on the RAW file, and only then stripped of comments and strings.
+     The first version stripped first, and the scanner does not preserve line
+     structure, so `^function` matched a fraction of the file: the check found 99
+     components out of two hundred, QueueTab was not one of them, and it passed
+     on the bug it was written for by simply never looking at it. */
+  const lines = APP.split("\n");
+  const heads = [];
+  lines.forEach((ln, i) => {
+    const m = /^function ([A-Za-z_$][\w$]*)\s*\(/.exec(ln);
+    if (m) heads.push({ name: m[1], at: i });
+  });
+  const bodies = heads.map((h, k) => ({
+    name: h.name,
+    text: codeOnly(lines.slice(h.at, k + 1 < heads.length ? heads[k + 1].at : lines.length).join("\n")),
+  }));
+
+  /* Vacuity guard. Every check in here that reads the app by shape can be made
+     to pass by finding nothing, and that is the one failure a suite must not
+     have. */
+  assert.ok(bodies.length > 150, `only found ${bodies.length} components; the file has moved`);
+  for (const must of ["QueueTab", "FloorBoard", "MyDay", "StorePeoplePanel"]) {
+    assert.ok(bodies.some((b) => b.name === must), `${must} is not being looked at`);
+  }
+
+  /* Who declares what. Both halves of the pair, since either one being read from
+     the wrong place is the same fault. */
+  const ownerOf = new Map();
+  for (const b of bodies) {
+    for (const m of b.text.matchAll(/const\s*\[\s*([A-Za-z_$][\w$]*)\s*,\s*([A-Za-z_$][\w$]*)\s*\]\s*=\s*useState/g)) {
+      for (const nm of [m[1], m[2]]) {
+        if (!ownerOf.has(nm)) ownerOf.set(nm, new Set());
+        ownerOf.get(nm).add(b.name);
+      }
+    }
+  }
+
+  /* Names this file also uses for something that is not a variable read: a prop
+     passed down (`storeId={...}`), or a key in an object (`storeId: st.id`). Two
+     different things wearing one name is ordinary and fine, and telling them
+     apart properly needs a parser rather than a regex — so they are skipped, and
+     the check says plainly that it covers the distinctive ones. That still leaves
+     it catching the fault it exists for: nothing in this file passes a
+     `behindCount` prop or stores a `behindCount` key. */
+  /* Read raw, deliberately. A name mentioned only in a comment counts as
+     ambiguous and is skipped, which costs a little coverage; running it through
+     the scanner instead cost more, because the scanner does not keep the file's
+     shape and half the JSX attributes stopped being findable. */
+  const whole = APP;
+  const ambiguous = new Set();
+  for (const nm of ownerOf.keys()) {
+    if (new RegExp("\\b" + nm + "\\s*[:=][^=]").test(whole)) ambiguous.add(nm);
+  }
+
+  const bad = [];
+  for (const b of bodies) {
+    /* What this component genuinely BINDS. Deliberately not "any name after an
+       open brace": the first version of this check used that, and `{behindCount`
+       in the JSX counted as a declaration of behindCount, so the check passed on
+       the exact bug it was written for. A usage is not a binding. */
+    const own = new Set();
+    const names = (blob) => blob.split(",").map((x) => x.split(/[:=]/)[0].replace(/[^\w$]/g, "").trim()).filter(Boolean);
+    for (const m of b.text.matchAll(/(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/g)) own.add(m[1]);
+    // destructuring, either shape, on the left of an assignment
+    for (const m of b.text.matchAll(/(?:const|let|var)\s*[[{]([^\]}]*)[\]}]\s*=/g)) for (const n of names(m[1])) own.add(n);
+    // parameters: a function's own list, and an arrow's
+    for (const m of b.text.matchAll(/function\s*[A-Za-z_$\w$]*\s*\(([^)]*)\)/g)) for (const n of names(m[1])) own.add(n);
+    for (const m of b.text.matchAll(/\(([^()]*)\)\s*=>/g)) for (const n of names(m[1])) own.add(n);
+    for (const m of b.text.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) own.add(m[1]);
+    for (const m of b.text.matchAll(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)/g)) own.add(m[1]);
+    for (const m of b.text.matchAll(/\b(?:of|in)\s+([A-Za-z_$][\w$]*)/g)) own.add(m[1]);
+    for (const [nm, owners] of ownerOf) {
+      if (owners.has(b.name) || own.has(nm)) continue;
+      /* Distinctive names only: two words, camelCase, long enough to belong to
+         one component rather than being the sort of name every map callback
+         uses. `behindCount` and `showBehind` are this; `row`, `view` and `tab`
+         are not, and chasing those would make the check noise a person learns to
+         skip past. */
+      if (!/^[a-z]+[A-Z][\w$]*$/.test(nm) || nm.length < 7) continue;
+      if (ambiguous.has(nm)) continue;
+      if (!new RegExp("(^|[^.\\w$])" + nm + "\\b").test(b.text)) continue;
+      bad.push(`${b.name} reads ${nm}, which is ${[...owners].join("/")}'s state`);
+    }
+  }
+  assert.deepEqual(bad, [], "a component reaching into another component's state:\n  " + bad.join("\n  "));
+});
+
 test("no check reaches for a path on somebody's machine", () => {
   /* The first version of the routing test read ingest.mjs off disk by absolute
      path. It passed here and failed the moment it ran anywhere else, which is
