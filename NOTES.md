@@ -5,6 +5,56 @@ Separate from the HANDOFF files on purpose: those describe a session, this outli
 
 ---
 
+## Sage — the identity, and the arrival (a Claude Design handoff)
+
+Jorge brought a full design package: the Lead Performance Calculator becomes **Sage**, with
+a new mark, a rebuilt sign-in screen, a 2.7-second arrival into the dashboard, and five
+smaller transitions. The handoff is exact — every colour, timing and easing measured — and it
+ships one file meant to be used as-is, `SageMark.jsx`.
+
+### Part 1 — the identity — BUILT 2026-08-22
+
+The mark is one drawing on a 9x9 grid, which is **the same grid `PixIcon` already uses**, so
+the identity and the app's own iconography come off one ruler rather than merely sitting next
+to each other. The assets are all generated from that single pattern, so any size can be
+regenerated rather than redrawn.
+
+- `public/` carries the SVGs and PNGs; `index.html` declares the favicon, the 32px raster and
+  the Apple touch icon; the title is Sage.
+- The old `useFavicon` painted an icon in at runtime from an inline copy of the old logo. It
+  would now overwrite the real favicon with a second-best version of it a moment after load,
+  so it is gone; only the title-setting is kept.
+- `Logo` is kept as the name every call site uses and now renders the mark. Its two states
+  survive: `animated` is the float, and `loading` is the identity's **seven dots lighting one
+  at a time** rather than the old spinner — which is Part 4's loading pattern, brought
+  forward because it is what the old spinner was standing in for.
+- The old mark's arc, needle and spinner CSS is deleted rather than left orphaned, including
+  its reduced-motion overrides.
+
+**One deviation from "ships as-is":** `SageMark.jsx` is JSX with no React import, which works
+under the automatic JSX runtime this app's Vite build uses and throws under a classic
+transform — including the harness every screen here is checked in. Imported rather than
+assumed; costs nothing either way.
+
+**One thing deliberately not renamed:** the *Lead Performance Summary* report, and its CSV
+filename `Lead-Performance-Summary_YYYY-MM.csv`. That is the name of a document managers have
+folders of, and renaming it silently breaks their filing. Worth deciding on purpose.
+
+### Parts 2-4 — still to build
+
+- **Part 2, the sign-in screen.** No card, form on the ground, drifting blobs and a 925-dot
+  field, and the mark building dot by dot as the form is typed.
+- **Part 3, the arrival.** 2.7s: hold, gather, stretch, flash, assemble. **This overlaps an
+  existing feature** — the app already plays a cinematic on the first sign-in of each calendar
+  day, with the same per-device per-day `localStorage` key. The arrival replaces it; two of
+  them stacked would be a minute of animation before anybody sees a number.
+- **Part 4, the smaller transitions.** Tool warp, tab pill, metric bloom, person sheet,
+  loading and saving dots. The loading dots are done.
+
+The handoff's performance notes are worth keeping verbatim; they were expensive to find.
+
+---
+
 ## Goal accountability, with a hard stop — BUILT 2026-08-21
 
 **Asked for 2026-08-21, in Jorge's words:**

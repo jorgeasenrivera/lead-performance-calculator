@@ -2,6 +2,11 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMe
 import { createPortal } from "react-dom";
 import Papa from "papaparse";
 import { createClient } from "@supabase/supabase-js";
+/* The mark. One drawing on the same 9x9 grid PixIcon uses, so the identity and
+   the app's iconography come off one ruler. Its own file because it is shipped
+   artwork rather than a screen: every size, plate and print form is generated
+   from the single pattern inside it. */
+import SageMark, { SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED, SAGE_PRINT } from "./SageMark.jsx";
 /* The reader for the scheduled reports, shared verbatim with the pipeline that
    reads the emailed ones. It used to be a second copy of the same code with a
    comment promising they matched; they did not, and every way they differed was
@@ -921,56 +926,42 @@ const DEFAULT_CONFIG = {
 
 /* ---------------- Logo + favicon ---------------- */
 
-function Logo({ size = 40, animated = false, loading = false }) {
+/* ---------------- The mark ----------------
+   The app is Sage now, and the mark is one drawing on the same 9x9 grid the
+   PixIcon glyphs are drawn on — so the identity and the app's own iconography
+   come off the same ruler rather than merely sitting next to each other.
+
+   `Logo` is kept as the name every call site already uses, and it keeps both of
+   the states those call sites pass:
+
+     animated   a slow float, which the old mark had and which costs nothing
+     loading    seven dots lighting one at a time, which is the identity's own
+                loading pattern rather than a spinner borrowed from elsewhere
+
+   The colour pair is fixed and identical in every store: the store palettes
+   paint identity elsewhere and the status colours are reserved, so neither ever
+   touches the mark. */
+function Logo({ size = 40, animated = false, loading = false, word = false, ...rest }) {
+  if (loading) return <SageLoading size={size} />;
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className={(animated ? "logo-anim " : "") + (loading ? "logo-loading" : "")}>
-      <defs>
-        <linearGradient id="lpcg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#2A5E9B" />
-          <stop offset="100%" stopColor="#1D4674" />
-        </linearGradient>
-        {/* the "whoosh" gradient — blue → lime, the same one the loading bar used */}
-        <linearGradient id="lpc-trail" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#88C6EA" />
-          <stop offset="55%" stopColor="#2A5E9B" />
-          <stop offset="100%" stopColor="#C1D730" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lpcg)" />
-      {/* full ring track (light blue) */}
-      <circle cx="32" cy="32" r="17" fill="none" stroke="rgba(136,198,234,.5)" strokeWidth="5" />
-      {loading ? (
-        <>
-          {/* a gradient arc that spins as the needle's trail */}
-          <g className="logo-trail" style={{ transformOrigin: "32px 32px" }}>
-            <path d="M 32 15 A 17 17 0 0 1 47.7 25.2" fill="none" stroke="url(#lpc-trail)" strokeWidth="5" strokeLinecap="round" pathLength="100" />
-          </g>
-          {/* the needle, spinning with the trail */}
-          <g className="logo-spin" style={{ transformOrigin: "32px 32px" }}>
-            <line x1="32" y1="32" x2="32" y2="15" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-          </g>
-          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
-        </>
-      ) : (
-        <>
-          {/* soft rounded start for the lime (a butt-capped path would cut flat here) */}
-          <circle className="logo-arc-start" cx="15" cy="32" r="2.5" fill="#C1D730" />
-          {/* Lime sweeps 180° → 320.2°: the SAME angular span as the needle, so the two tips
-              travel together. A butt cap ends it flat on the needle's centerline, whereas a round cap
-              would bulge sideways past the needle. The white needle is drawn on top of the seam. */}
-          <path className="logo-arc" d="M 15 32 A 17 17 0 0 1 45.06 21.12" fill="none" stroke="#C1D730" strokeWidth="5" strokeLinecap="butt" pathLength="100" />
-          {/* needle: width 5 so its round tip reaches the arc's outer edge (r=19.5) and covers the seam */}
-          <g className="logo-needle" style={{ transformOrigin: "32px 32px" }}>
-            <line x1="32" y1="32" x2="45.06" y2="21.12" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-          </g>
-          <circle cx="32" cy="32" r="4.5" fill="#FFFFFF" />
-        </>
-      )}
-    </svg>
+    <SageMark word={word} size={size} className={animated ? "logo-anim" : undefined} {...rest} />
   );
 }
 
-const LOGO_SVG = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0%' stop-color='#2A5E9B'/><stop offset='100%' stop-color='#1D4674'/></linearGradient></defs><rect x='2' y='2' width='60' height='60' rx='15' fill='url(#g)'/><circle cx='32' cy='32' r='17' fill='none' stroke='rgba(136,198,234,.5)' stroke-width='5'/><circle cx='15' cy='32' r='2.5' fill='#C1D730'/><path d='M 15 32 A 17 17 0 0 1 45.06 21.12' fill='none' stroke='#C1D730' stroke-width='5' stroke-linecap='butt'/><line x1='32' y1='32' x2='45.06' y2='21.12' stroke='#FFF' stroke-width='5' stroke-linecap='round'/><circle cx='32' cy='32' r='4.5' fill='#FFF'/></svg>`;
+/* Seven dots, lighting one at a time, 150ms apart. The same dot the mark is made
+   of, doing the one job a spinner used to do. */
+function SageLoading({ size = 40 }) {
+  const d = Math.max(4, Math.round(size / 7));
+  return (
+    <span className="sage-loading" aria-label="Loading" role="img"
+      style={{ gap: Math.round(d * 0.7) + "px" }}>
+      {Array.from({ length: 7 }, (_, i) => (
+        <i key={i} style={{ width: d, height: d, animationDelay: i * 150 + "ms" }} />
+      ))}
+    </span>
+  );
+}
+
 
 // Set at module scope, before anything paints. Reveal-on-scroll hides elements
 // until they are observed, so it must only ever engage when this bundle is live.
@@ -1096,11 +1087,12 @@ function useLivingBackground() {
 function useFavicon() {
   useEffect(() => {
     try {
-      const href = "data:image/svg+xml," + encodeURIComponent(LOGO_SVG);
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
-      link.href = href;
-      document.title = "Lead Performance Calculator";
+      /* The favicon is declared in index.html now — an SVG, a 32px raster and the
+         Apple touch icon, all generated from the same 9x9 pattern as the mark.
+         This used to paint one in at runtime from an inline copy of the old logo,
+         which would now overwrite the real one with a second-best version of it a
+         moment after the page loaded. */
+      document.title = "Sage";
       // Type system, loaded as a stylesheet link rather than an @import so it never
       // blocks first paint. Space Grotesk is the same face The Board uses on the TV.
       if (!document.getElementById("lpc-fonts")) {
@@ -2885,7 +2877,7 @@ export default function LeadPerformanceCalculator() {
   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
   if (!session.active) {
     return <Shell><div className="login"><div className="login-card">
-      <div className="login-logo"><Logo size={64} animated /></div>
+      <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
       <h1 className="login-title">Account paused</h1>
       <p className="setup-note">This account has been deactivated. Contact your group admin.</p>
       <button className="btn wide" onClick={signOut}>Sign out</button>
@@ -5613,7 +5605,10 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
     <div className="brand" ref={ref}>
       <button className={"brand-btn" + (open ? " on" : "")} onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu" aria-expanded={open} title={session?.name || "Account"}>
-        <Logo size={36} />
+        {/* The app-icon form: the mark reversed on its ink plate, which is the one
+            place in the app the plate appears at all. */}
+        <SageMark plate={SAGE_PLATE} base={SAGE_BASE_REVERSED} cap={SAGE_CAP_REVERSED}
+          size={36} radius={30} pad={16} />
       </button>
       {open && (
         <div className="brand-menu" role="menu">
@@ -5624,7 +5619,7 @@ function BrandMenu({ session, isOverseer, isAdmin, onSignOut, onReplayIntro, onH
               <span className="bm-role">{isAdmin ? "Administrator" : isOverseer ? "BDC Oversight" : "Manager"}</span>
             </span>
           </div>
-          <div className="bm-app">Lead Performance</div>
+          <div className="bm-app">Sage</div>
           {onHelp && <button className="bm-item" onClick={() => { setOpen(false); onHelp(); }}>Get help</button>}
           {onReplayIntro && (
             <button className="bm-item" onClick={() => { setOpen(false); onReplayIntro(); }}>Replay intro</button>
@@ -6436,7 +6431,7 @@ function HelpPanel({ config, who, store, context, figures, onClose }) {
                 {s.role && <span className="help-role">{s.role}</span>}
               </span>
             </div>
-            {s.email && <a className="help-link" href={`mailto:${s.email}?subject=${encodeURIComponent("Lead Performance help" + (store ? " (" + store + ")" : ""))}`}>{s.email}</a>}
+            {s.email && <a className="help-link" href={`mailto:${s.email}?subject=${encodeURIComponent("Sage help" + (store ? " (" + store + ")" : ""))}`}>{s.email}</a>}
             {s.phone && <a className="help-link" href={`tel:${String(s.phone).replace(/[^\d+]/g, "")}`}>{s.phone}</a>}
             {s.note && <p className="hint">{s.note}</p>}
             {!s.email && !s.phone && <p className="hint">No contact details have been set yet. Use Report a problem and it will still reach an administrator.</p>}
@@ -7115,8 +7110,10 @@ function Login({ config, onBack, onAuthed }) {
           covers the join, and contracts away as the app builds. */}
       {leaving && <div className="login-wash" />}
       <div className={"login-card " + (busy ? "login-busy" : "")}>
-        <div className="login-logo"><Logo size={64} animated={!busy && !leaving} loading={busy && !leaving} /></div>
-        <h1 className="login-title">Lead Performance</h1>
+        <div className="login-logo">
+          {busy && !leaving ? <SageLoading size={44} /> : <SageMark word size={56} className="logo-anim" />}
+        </div>
+        <h1 className="login-title">Sage</h1>
         <p className="login-sub">{busy ? "Signing you in…" : "Sign in to continue"}</p>
 
         {!AUTH_ENABLED && <p className="setup-note">This is a preview. Real sign-in works on the hosted site.</p>}
@@ -7187,7 +7184,7 @@ function PendingScreen({ profile, onSignOut }) {
   return (
     <div className="login">
       <div className="login-card">
-        <div className="login-logo"><Logo size={64} animated /></div>
+        <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
         <h1 className="login-title">Almost there</h1>
         <p className="setup-note">
           Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
@@ -15197,7 +15194,7 @@ function WelcomeCard({ store, onDismiss }) {
   return (
     <div className="card welcome">
       <div className="welcome-head">
-        <h3>Welcome to the Lead Performance Tracker</h3>
+        <h3>Welcome to Sage</h3>
         <button className="btn-x" onClick={onDismiss} aria-label="Dismiss">Got it <PixIcon glyph="close" size={12} /></button>
       </div>
       <p className="welcome-lede">
@@ -15379,7 +15376,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
       try { data = JSON.parse(r.result); }
       catch { setMsg("That file isn't valid JSON."); return; }
       if (data.app !== "lead-performance-calculator" || !data.config) {
-        setMsg("That doesn't look like a Lead Performance backup file."); return;
+        setMsg("That doesn't look like a Sage backup file."); return;
       }
       const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
       if (!window.confirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`)) return;
@@ -22117,22 +22114,15 @@ function Style() {
 
       /* ---- living logo: needle sweeps left→right, lime arc draws in behind it ---- */
       .logo-anim { animation: logoFloat 7s ease-in-out 1.8s infinite; will-change: transform; }
-      .logo-anim .logo-arc {
-        stroke-dasharray: 100;
-        stroke-dashoffset: 100;
-        animation: arcDraw 1.5s var(--spring) .25s forwards;
-      }
-      .logo-anim .logo-needle {
-        transform: rotate(-140.2deg);
-        animation: needleSweep 1.5s var(--spring) .25s forwards;
-      }
-      @keyframes arcDraw { to { stroke-dashoffset: 0; } }
-      /* needle sweeps from the arc's start (180°) to its resting angle (320.2°).
-         No overshoot: backing off even a few degrees exposed the lime arc behind the tip. */
-      @keyframes needleSweep {
-        from { transform: rotate(-140.2deg); }
-        to   { transform: rotate(0deg); }
-      }
+      /* The arc and the needle went with the old mark. What is left is the float,
+         which belongs to the mark rather than to any part of it. */
+      /* Seven dots, one at a time, 150ms apart: the identity's own loading
+         pattern, made of the same dot everything else here is made of. */
+      .sage-loading { display:inline-flex; align-items:center; }
+      .sage-loading i { display:block; border-radius:50%; background:#2F7F72; opacity:.22;
+        animation: sageDot 1.05s ease-in-out infinite; }
+      @keyframes sageDot { 0%, 72%, 100% { opacity:.22; transform:scale(.86); }
+        18% { opacity:1; transform:scale(1); } }
       @keyframes logoFloat {
         0%, 100% { transform: translateY(0) scale(1); }
         50%      { transform: translateY(-3px) scale(1.015); }
@@ -22749,9 +22739,7 @@ function Style() {
         filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
       @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
       /* the speedometer needle + its gradient trail spin together */
-      .logo-loading .logo-spin { animation: needleSpin 1s linear infinite; }
-      .logo-loading .logo-trail { animation: needleSpin 1s linear infinite; opacity:.9; }
-      @keyframes needleSpin { to { transform: rotate(360deg); } }
+      .sage-loading i { animation: sageDot 1.05s ease-in-out infinite; }
       .loadscreen-label { margin-top:2px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
 
       /* ---- board launcher ---- */
@@ -22861,12 +22849,10 @@ function Style() {
 
         /* nothing loops forever behind a scrolling surface */
         .logo-anim, .hero-band::after, .qsel-pill::before, .dz-icon, .star-badge,
-        .chip-warn .chip-dot, .leader-crown, .logo-loading .logo-spin, .logo-loading .logo-trail {
+        .chip-warn .chip-dot, .leader-crown, .sage-loading i {
           animation: none !important;
         }
         /* leave the logo in its finished state rather than mid-sweep */
-        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
-        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
 
         /* the sticky blurred header was the other half of the jump */
         .topbar {
@@ -25677,14 +25663,12 @@ function Style() {
         .lpc::before, .lpc::after { animation: none !important; transform: none !important; }
         /* leave the logo in its finished state rather than mid-sweep */
         .logo-anim { animation: none !important; transform: none !important; }
-        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; animation: none !important; }
-        .logo-anim .logo-needle { transform: rotate(0deg) !important; animation: none !important; }
         .dz-icon, .star-badge { animation: none !important; }
         /* hero holds its finished state instead of animating in */
         .hero-band, .hero-band::after, .tile, .hero-strip { animation: none !important; transform: none !important; }
         .hero-ring-fill { animation: none !important; stroke-dashoffset: 0 !important; }
         .chip-warn .chip-dot, .leader-crown { animation: none !important; }
-        .logo-loading .logo-spin, .logo-loading .logo-trail, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
+        .sage-loading i, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
         /* the flow already refuses to cycle under reduce-motion; this is the
            draw-in and the pop that are pure decoration */
         .flow-draw { animation:none !important; stroke-dashoffset:0 !important; }
@@ -25700,8 +25684,6 @@ function Style() {
         .lpc::before, .lpc::after { display:none !important; }
         .version-stamp { display:none; }
         .logo-anim, .dz-icon, .star-badge { animation:none !important; }
-        .logo-anim .logo-arc { stroke-dashoffset: 0 !important; }
-        .logo-anim .logo-needle { transform: rotate(0deg) !important; }
       }
 
       /* =====================================================================
