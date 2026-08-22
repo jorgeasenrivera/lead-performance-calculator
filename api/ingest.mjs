@@ -256,7 +256,10 @@ function applyToStore(data, entries, sourceLabel) {
 
   const snapCopy = JSON.parse(JSON.stringify({
     roster: next.roster, months: next.months, activity: next.activity,
-    plates: next.plates, restrictions: next.restrictions, aliases: next.aliases,
+    plates: next.plates, restrictions: next.restrictions,
+    /* The folds and both of their stamps. Without the stamps a restore puts the
+       aliases back and loses the record of which ones somebody had undone. */
+    aliases: next.aliases, aliasesAt: next.aliasesAt, aliasesGone: next.aliasesGone,
     stars: next.stars, goals: next.goals, baselines: next.baselines, qualified: next.qualified,
     excluded: next.excluded, departed: next.departed,
     daysOff: next.daysOff, daysOffAt: next.daysOffAt,

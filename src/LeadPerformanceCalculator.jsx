@@ -26,7 +26,7 @@ import { doorCheck } from "../api/_geofence.mjs";
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
   packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn,
-  manglings, mergeManglings, foldAliases } from "../api/_people-status.mjs";
+  manglings, mergeManglings, foldAliases, folds, unfold } from "../api/_people-status.mjs";
 /* Two copies of a store, folded into one. Out here rather than in this file so
    that it can be imported and checked; see the note at the top of it. */
 import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
@@ -1224,6 +1224,24 @@ function evaluateAssociate(stats, tiers) {
   let tierIndex = sorted.findIndex((t) => (opps ?? 0) <= t.cap);
   if (tierIndex === -1) tierIndex = sorted.length - 1;
   const tier = sorted[tierIndex];
+
+  /* ---- nothing to judge is not the same as judged and found wanting ----
+     A missing figure counted as a failed requirement, so anybody the month's
+     reports never mentioned came out as "restrict": a new hire in their first
+     week, somebody on leave, a store whose report had not landed yet. It is the
+     same unfairness the day-off rule exists to prevent, and it lands on the
+     person least able to argue with a screen.
+
+     Judged on what we have, and where we have nothing at all, said so. Note the
+     bar: EVERY required figure absent. One missing number out of four is a real
+     shortfall against that requirement and still counts. */
+  const measurable = tier.requirements.filter((r) => stats?.[r.metric] != null);
+  if (!measurable.length) {
+    return { status: "no-data", failures: [], tier, tierIndex, cap: tier.cap,
+      opps: opps ?? 0, atCap: false, capUse: tier.cap > 0 ? (opps ?? 0) / tier.cap : 0,
+      nextCap: sorted[tierIndex + 1]?.cap ?? null, surpass: 0 };
+  }
+
   const failures = [];
   let marginSum = 0, marginCount = 0;
   for (const req of tier.requirements) {
@@ -1278,10 +1296,15 @@ const VERDICT = {
   room:     { key: "room",     label: "Below standard, room left", short: "Room left", icon: "\u25CB", cls: "watch" },
   grace:    { key: "grace",    label: "Working toward standard", short: "Working",  icon: "\u25D0", cls: "grace" },
   none:     { key: "none",     label: "No standards",           short: "—",        icon: "\u00B7", cls: "dim" },
+  nodata:   { key: "nodata",   label: "No figures yet",         short: "No figures", icon: "\u00B7", cls: "dim" },
 };
 function verdictOf(ev, { restricted = false, inGrace = false } = {}) {
   if (restricted) return VERDICT.off;
   if (!ev || ev.status === "no-standards") return VERDICT.none;
+  /* Nothing to judge. Falling through to the bottom of this function would have
+     called it "below standard, room left", which is a verdict on figures nobody
+     has. */
+  if (ev.status === "no-data") return VERDICT.nodata;
   if (ev.status === "pass") return VERDICT.cleared;
   // status === "fail"
   if (inGrace) return VERDICT.grace;
@@ -3217,15 +3240,15 @@ export default function LeadPerformanceCalculator() {
                       onIgnore={ignoreNames} />
                   </div>
                 )}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
-                {tab === "gm" && <GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} />}
-                {tab === "history" && <HistoryPanel config={config} store={currentStore} data={storeData} />}
-                {tab === "standards" && isAdmin && <StandardsEditor config={config} storeId={view} onChange={persistConfig} />}
+                {/* The gutter the Dashboard has had all along. These four were
+                    rendered straight into .page, which carries no padding, so they
+                    ran edge to edge on anything wider than a laptop. */}
+                {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
+                {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
+                {tab === "standards" && isAdmin && <div className="tab-page"><StandardsEditor config={config} storeId={view} onChange={persistConfig} /></div>}
                 {tab === "roster" && (
-                  /* The gutter the Dashboard has had all along. This tab was
-                     rendered straight into .page, which carries no padding, so it
-                     ran edge to edge on anything wider than a laptop. */
-                  <div className="pp-page">
+                  <div className="tab-page">
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
                       storeName={currentStore?.name} allStores={accessibleStores}
                       onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />
@@ -14842,6 +14865,17 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
      Anybody who is graded gets their dials. */
   const showDials = !incomplete && !restrictedNow && (ev.status === "fail" || ev.status === "pass");
 
+  /* The sentence that was printed under every bar. Kept, as the bar's own title:
+     a manager who wants the wording has it on hover, and the page is not
+     nine paragraphs long. */
+  const capNote = ev.cap == null ? "" :
+    restrictedNow ? `Off leads. ${ev.opps ?? 0} of ${ev.cap} leads this month.`
+    : ev.status === "pass" ? `${ev.opps ?? 0} of ${ev.cap} leads. Cleared${ev.nextCap ? `, and cleared up to ${ev.nextCap}` : ""}.`
+    : ev.status === "fail" && ev.atCap ? `At the lead cap and below standard, so leads are restricted.`
+    : ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
+    : ev.status === "fail" ? `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`
+    : `${ev.opps ?? 0} of ${ev.cap} leads this month.`;
+
   const confirmRestrict = () => {
     const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
     onSetRestriction({ since: new Date().toISOString(), until, reasons: failureText(ev) });
@@ -14852,18 +14886,56 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
     <div ref={cardRef}
       className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "") + (picked ? " is-picked" : "")}>
       <div className="assoc-row" onClick={() => (picking ? onPick() : setOpen(!open))}>
-        {picking && (
-          <input type="checkbox" className="assoc-pick" checked={!!picked} readOnly
-            aria-label={`Select ${a.name}`} />
-        )}
-        {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
-        <span className="assoc-name">{a.name}</span>
-        {star && <span className="star-badge" title="Wildly surpassing standard">
-          <PixIcon glyph="star" size={12} /> Crushing it
+        {/* ---- who, as ONE cell ----
+            The rank badge, the crushing-it badge and the incomplete flag all come
+            and go, and each of them used to be a child of the row's grid — so a
+            row with a badge on it pushed everything after it into the next track
+            and the dials stopped lining up the moment somebody had a good month.
+            One cell that holds all of them keeps the columns fixed however many
+            things are in it. */}
+        <span className="assoc-who">
+          {picking && (
+            <input type="checkbox" className="assoc-pick" checked={!!picked} readOnly
+              aria-label={`Select ${a.name}`} />
+          )}
+          {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
+          <span className="assoc-name">{a.name}</span>
+        {/* ---- the people carrying the floor ----
+            Forty per cent over every requirement they have, which is not a good
+            month, it is a different league. It had one small green line down the
+            left of the card, the same green everybody clearing standard gets, and
+            was otherwise indistinguishable from a month that scraped past.
+
+            Gold, and the whole row wears it: the edge, the badge, and their lead
+            bar. It costs nothing to say well done properly, and this is the only
+            state on the board that is unambiguously somebody's own doing. */}
+        {star && <span className="star-badge" title="Forty per cent or more over every requirement">
+          <PixIcon glyph="trophy" size={12} /> Crushing it
         </span>}
-        {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+          {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+        </span>
+        {/* ---- the lead bar, in the row and running most of its length ----
+            It used to sit under the row at a fifth of the tile's width with a
+            sentence beneath it saying in fifteen words what the bar and the
+            verdict beside it already say: "Approaching the cap (83 of 100).
+            Leads pause at the cap unless these improve."
+
+            A bar is a picture of exactly one thing — how much of your allowance
+            is gone — and it was the smallest object on a row that had room for
+            it to be the largest. The sentence is now the bar's own title, so it
+            is one hover away rather than on the page nine times over. */}
+        {ev.cap != null && (
+          <span className="assoc-gauge" title={capNote}>
+            <span className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")}
+              style={{ width: pct + "%" }} />
+          </span>
+        )}
         {showDials && <MetricStrip ev={ev} stats={stats} />}
-        <span className="assoc-leads">{ev.opps ?? 0}<span className="of-cap"> / {ev.cap ?? "-"}</span></span>
+        {/* Two sub-columns, not one right-aligned string: "74 / 80" and "82 / 100"
+            are different widths, so aligning the whole thing put the slash in a
+            different place on every row. The number ends where every other number
+            ends and the cap starts where every other cap starts. */}
+        <span className="assoc-leads"><b>{ev.opps ?? 0}</b><span className="of-cap">/ {ev.cap ?? "-"}</span></span>
         {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
           {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
           {softFail && <span className="verdict verdict-grace">Early month</span>}
@@ -14875,13 +14947,9 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
                 : <span className="verdict verdict-watch">Below standard, room left</span>
           )}
           {ev.status === "no-standards" && <span className="verdict verdict-dim">No standards</span>}
+          {ev.status === "no-data" && <span className="verdict verdict-dim" title="No figures for this person in this month's reports, so there is nothing to judge them on.">No figures yet</span>}
         </>)}
       </div>
-      {ev.cap != null && (
-        <div className="gauge">
-          <div className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")} style={{ width: pct + "%" }} />
-        </div>
-      )}
       {incomplete && (
         <div className="reasons gray-note">
           Not all reports are in yet for this associate. {missing.length > 0 ? `Waiting on: ${missing.join(", ")}.` : "Some required numbers are blank."} The status stays on hold until the file is complete.
@@ -14894,20 +14962,11 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           {!readOnly && <button className="btn-x" onClick={() => onSetRestriction(null)}>Put back on leads</button>}
         </div>
       )}
-      {softFail && !restrictedNow && (
-        <div className="reasons watch-note">
-          <div className="reason-lead">Working toward standard. No restriction recommended during the grace period.</div>
-        </div>
-      )}
       {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
         <div className="reasons">
-          <div className="reason-lead">
-            {ev.atCap
-              ? "At the lead cap and below standard, so leads are restricted."
-              : (ev.capUse ?? 0) >= 0.8
-                ? `Approaching the cap (${ev.opps} of ${ev.cap}). Leads pause at the cap unless these improve.`
-                : `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`}
-          </div>
+          {/* No sentence here any more: the verdict beside the name says it in
+              three words and the bar shows it. What is left is the one thing on
+              this block that is not a restatement — the action. */}
           {!readOnly && ev.atCap && (!showRestrict ? (
             <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
           ) : (
@@ -14920,11 +14979,6 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
               <span className="hint">{days > 0 ? `Comes back up for review on ${new Date(Date.now() + days * 86400000).toLocaleDateString()}. Set 0 for no auto date.` : "No automatic re-evaluation date."}</span>
             </div>
           ))}
-        </div>
-      )}
-      {ev.status === "pass" && ev.nextCap && !restrictedNow && (
-        <div className="reasons pass-note">
-          {star ? "Blowing past every requirement. " : `Tier ${ev.tierIndex + 1} requirements met. `}Cleared up to {ev.nextCap} leads.
         </div>
       )}
       {open && !picking && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
@@ -19844,8 +19898,39 @@ function GMSummary({ config, data, stores }) {
       </div>
       <div className="gm-head">
         <h2>Lead Performance Summary <span className="section-sub">{monthLabel(month)}</span></h2>
-        <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()} · {restricted.length} restricted · {trending.length > 0 ? `${trending.length} in grace period · ` : ""}{cleared.length} cleared to grab leads</p>
+        <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()}</p>
       </div>
+
+      {/* ---- the four numbers this page is actually read for ----
+          They were a run-on sentence under the title -- "4 restricted · 2 in grace
+          period · 9 cleared to grab leads" -- which is the shape of a caption, not
+          of a headline, and the whole page is a headline. The tile is the site's
+          own, already drawn on the Dashboard.
+
+          "Paused right now" is deliberately its own number rather than a subset
+          quietly folded into "restricted": it is the only one of the four where
+          somebody is not being handed leads THIS MINUTE, and that is the thing a
+          manager acts on before lunch. */}
+      {rows.length > 0 && (
+        <div className="hero-tiles gm-tiles">
+          <div className={"tile " + (restricted.length ? "tile-bad" : "tile-flat")}>
+            <div className="tile-num">{restricted.length}<span className="tile-of">/{rows.length}</span></div>
+            <div className="tile-label">Below standard</div>
+          </div>
+          <div className={"tile " + (paused.length ? "tile-bad" : "tile-flat")}>
+            <div className="tile-num">{paused.length}</div>
+            <div className="tile-label">Paused right now</div>
+          </div>
+          <div className={"tile " + (trending.length ? "tile-warn" : "tile-flat")}>
+            <div className="tile-num">{trending.length}</div>
+            <div className="tile-label">Inside grace</div>
+          </div>
+          <div className={"tile " + (cleared.length ? "tile-good" : "tile-flat")}>
+            <div className="tile-num">{cleared.length}</div>
+            <div className="tile-label">Holding standard</div>
+          </div>
+        </div>
+      )}
       {rows.length === 0 && <div className="empty">No data for this month yet.</div>}
 
       <TrendsPanel config={config} stores={stores} data={data} />
@@ -19884,7 +19969,9 @@ function GMSummary({ config, data, stores }) {
             <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Because of</th></tr></thead>
             <tbody>
               {paused.map((r, i) => (
-                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td><td>{r.role}</td><td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
+                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td>
+                  <td><RoleBadge role={(config.roles || []).find((x) => x.name === r.role)} /></td>
+                  <td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -19908,19 +19995,100 @@ function GMSummary({ config, data, stores }) {
   );
 }
 
-/* ---------------- History ---------------- */
+/* ---------------- History ----------------
+   A history tab that showed no history.
+
+   It listed one month's figures in a table and let you change which month with a
+   dropdown, so every month looked exactly like every other one and the only way
+   to know whether somebody was climbing or sliding was to write the numbers down
+   and change the dropdown. The one question a history is for — is this getting
+   better? — was the one thing it could not answer.
+
+   Two things fix that, and neither invents a number:
+
+     every figure carries its move since the month before, with the board's own
+     0.5-point deadband so a rounding wobble is never dressed up as a trend
+
+     every person carries the verdict trail: how they were judged each month,
+     under the standards that were in force at the time, oldest to newest. A run
+     of restricts that turns into a run of cleared is a coaching story, and it
+     was in the data all along with nothing drawing it
+   ========================================================================= */
+
+/* Judged under the standards THAT month, not today's. A store that raised its bar
+   in June would otherwise appear to have had a terrible spring. */
+function verdictIn(data, config, storeId, monthKey, person) {
+  const M = (data.months || {})[monthKey];
+  if (!M) return null;
+  const s = M.stats?.[norm(person.name)];
+  if (!s) return null;
+  const frozen = monthKey !== ym() ? M.standardsSnapshot?.[person.roleId]?.tiers : null;
+  const tiers = frozen || config.standards?.[storeId]?.[person.roleId]?.tiers;
+  const ev = evaluateAssociate(s, tiers);
+  return ev.status === "pass" ? "pass" : ev.status === "fail" ? "fail" : null;
+}
+
+/* A percentage against the same figure a month earlier. Points, not percent of a
+   percent: "up 4 points" is what a manager says out loud, and it is the only one
+   of the two readings that cannot be argued with. */
+const HIST_DEADBAND = 0.5;
+function moveOn(now, before) {
+  if (now == null || before == null) return null;
+  const d = (now - before) * 100;
+  if (d > HIST_DEADBAND) return { dir: "up", txt: "+" + d.toFixed(1) };
+  if (d < -HIST_DEADBAND) return { dir: "down", txt: d.toFixed(1) };
+  return { dir: "flat", txt: "" };
+}
+
+/** One figure and how it moved. */
+function HistCell({ now, before }) {
+  const mv = moveOn(now, before);
+  return (
+    <span className="hist-cell">
+      <b>{fmtPct(now)}</b>
+      {mv && mv.dir !== "flat" && (
+        <i className={"hist-move " + mv.dir}>
+          <PixIcon glyph={mv.dir === "up" ? "triup" : "tridown"} size={8} />{mv.txt}
+        </i>
+      )}
+    </span>
+  );
+}
+
 function HistoryPanel({ config, store, data }) {
   const months = Object.keys(data.months || {}).sort().reverse();
   const [month, setMonth] = useState(months[0] || ym());
   if (months.length === 0) return <div className="empty">History builds itself month by month. Nothing here yet.</div>;
   const M = data.months[month];
+  /* The month before the one being read, wherever it is in the list. Not "last
+     month" by the calendar: a store that imported nothing in July should compare
+     August with June rather than with nothing at all. */
+  const prevKey = months[months.indexOf(month) + 1] || null;
+  const prevStats = prevKey ? (data.months[prevKey].stats || {}) : {};
+  /* Oldest to newest, so the trail reads left to right the way time does. */
+  const trail = months.slice(0, 8).reverse();
+  const before = (name, field) => (prevStats[norm(name)] || {})[field];
+
   return (
     <div className="history">
       <div className="gm-toolbar">
         <select value={month} onChange={(e) => setMonth(e.target.value)}>
           {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
         </select>
-        {month !== ym() && <span className="hint">{M.standardsSnapshot ? "Verdicts shown under the standards that were in effect that month." : "This month predates standards snapshots, so verdicts are recalculated with today's standards."}</span>}
+        <span className="hint">
+          {prevKey
+            ? <>Every figure against {monthLabel(prevKey)}, in points.</>
+            : <>The first month on record, so there is nothing to compare it with yet.</>}
+          {month !== ym() && (M.standardsSnapshot
+            ? " Verdicts are under the standards that were in effect that month."
+            : " This month predates standards snapshots, so verdicts use today's standards.")}
+        </span>
+        {/* Said once, at the top, rather than under every position on the page. */}
+        <span className="hist-key">
+          <i className="hist-pip pass" />cleared
+          <i className="hist-pip fail" />restricted
+          <i className="hist-pip none" />no figures
+        </span>
       </div>
       {config.roles.map((role) => {
         const frozen = month !== ym() ? M.standardsSnapshot?.[role.id]?.tiers : null;
@@ -19929,20 +20097,40 @@ function HistoryPanel({ config, store, data }) {
         if (!people.length) return null;
         return (
           <div key={role.id} className="card role-section" style={{ "--role": role.color }}>
-            <h3 className="role-header"><span className="role-swatch" />{role.name}</h3>
-            <table className="gm-table">
-              <thead><tr><th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th><th>Engaged %</th><th>BH %</th><th>Verdict</th></tr></thead>
+            <h3 className="role-header"><RoleBadge role={role} count={people.length} big /></h3>
+            <table className="gm-table hist-table">
+              <thead><tr>
+                <th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th>
+                <th>Engaged %</th><th>BH %</th><th>Verdict</th><th className="hist-trail-h">Since {monthLabel(trail[0])}</th>
+              </tr></thead>
               <tbody>
                 {people.map((a) => {
-                  const s = M.stats?.[norm(a.name)];
-                  const ev = evaluateAssociate(s, tiers);
+                  const st = M.stats?.[norm(a.name)];
+                  const ev = evaluateAssociate(st, tiers);
                   return (
                     <tr key={a.id}>
                       <td><b>{a.name}</b></td>
                       <td>{ev.opps ?? 0} / {ev.cap ?? "-"}</td>
-                      <td>{fmtPct(s?.deliveredPct)}</td><td>{fmtPct(s?.apptVideoDayPct)}</td>
-                      <td>{fmtPct(s?.engagedVideoPct)}</td><td>{fmtPct(s?.bhVideoPct)}</td>
-                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span> : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span> : "-"}</td>
+                      <td><HistCell now={st?.deliveredPct} before={before(a.name, "deliveredPct")} /></td>
+                      <td><HistCell now={st?.apptVideoDayPct} before={before(a.name, "apptVideoDayPct")} /></td>
+                      <td><HistCell now={st?.engagedVideoPct} before={before(a.name, "engagedVideoPct")} /></td>
+                      <td><HistCell now={st?.bhVideoPct} before={before(a.name, "bhVideoPct")} /></td>
+                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span>
+                        : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span>
+                        : ev.status === "no-data" ? <span className="verdict verdict-dim sm">No figures</span> : "-"}</td>
+                      {/* The whole point of the tab: what has been happening to this
+                          person, month by month, rather than one month in isolation. */}
+                      <td>
+                        <span className="hist-trail">
+                          {trail.map((m) => {
+                            const v = verdictIn(data, config, store.id, m, a);
+                            return (
+                              <i key={m} className={"hist-pip " + (v || "none") + (m === month ? " here" : "")}
+                                title={`${monthLabel(m)}: ${v === "pass" ? "cleared" : v === "fail" ? "restricted" : "no figures"}`} />
+                            );
+                          })}
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -20369,6 +20557,8 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   };
 
   const wrongRead = useMemo(() => manglings(data), [data]);
+  const foldList = useMemo(() => folds(data), [data]);
+  const [showFolds, setShowFolds] = useState(false);
 
   return (
     <>
@@ -20956,6 +21146,64 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               </button>
               <button className="btn-quiet" onClick={() => setMoving(null)}>Cancel</button>
             </div>
+          </div>
+        )}
+
+        {/* ---- the folds, and the way back out of one ----
+            While a name is an alias it cannot be on any list at all, which is
+            right — this store has decided which person that spelling means — and
+            it left one case with no way back: somebody genuinely called what a
+            misspelling was folded into. A new hire named the same as a heading a
+            reader mangled is not a hypothetical; that is where these spellings
+            come from.
+
+            Behind a fold-out, because it is a list of settled decisions rather
+            than anything anybody has to act on. */}
+        {foldList.length > 0 && (
+          <div className="pp-logwrap">
+            <button className="btn-quiet" onClick={() => setShowFolds((v) => !v)}>
+              {showFolds ? "Hide folded spellings" : `Spellings folded into people (${foldList.length})`}
+            </button>
+            {showFolds && (
+              <div className="pp-folds">
+                <p className="hint">
+                  Each of these is a spelling a report used that this store has said belongs to
+                  somebody. Reports file it under them automatically and it stays off every list.
+                  Undoing one frees the spelling again, from the next report onwards. <b>It does not
+                  split the figures back apart</b>: they were added together when the fold was made
+                  and nothing records which half came from where, so the months already merged stay
+                  merged.
+                </p>
+                {foldList.map((f) => {
+                  /* An alias is stored as the flattened key both sides match on,
+                     so there is no cased spelling to show. The person it points at
+                     is on a list and has one; the misspelling never was, and the
+                     reports that wrote it are gone. Title case is a fair rendering
+                     of how it arrived and is only ever shown, never matched on. */
+                  const cased = (k) => String(k || "").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+                  const target = people.find((x) => x.key === f.to);
+                  return (
+                  <div key={f.key} className="pp-fold-row">
+                    <span className="pp-nm pp-was">{cased(f.from)}</span>
+                    <span className="pp-arrow">&rarr;</span>
+                    <span className="pp-nm">{target ? target.name : cased(f.to)}</span>
+                    {f.at && <span className="pp-log-when">{new Date(f.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                    <button className="pp-act" onClick={() => {
+                      if (!window.confirm(
+                        `Stop folding "${cased(f.from)}" into ${target ? target.name : cased(f.to)}?\n\n` +
+                        `From the next report onwards it is a name of its own again, and you can put it ` +
+                        `on the floor or mark it as not yours.\n\nThe figures already merged stay merged: ` +
+                        `there is no record of which of them came from which spelling.`)) return;
+                      onChange(unfold(data, f.from, { by: userName }),
+                        { action: "Undid a fold", detail: `${cased(f.from)} is no longer ${target ? target.name : cased(f.to)}` });
+                    }}>
+                      <PixIcon glyph="swap" size={11} /><span>Not the same person</span>
+                    </button>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -22569,7 +22817,8 @@ function Style() {
         .store-item-actions { justify-content:flex-start; }
         .store-item-actions .btn-ghost, .store-item-actions .btn-x { flex:1 1 auto; text-align:center; }
 
-        .assoc-row { flex-wrap:wrap; gap:6px; }
+        .assoc-row { display:flex; flex-wrap:wrap; gap:6px; }
+        .assoc-row .assoc-gauge { order:9; flex:1 0 100%; }
         .assoc-leads { margin-left:auto; }
         .wiz-body { grid-template-columns:1fr; }
         .wiz { max-height:94vh; border-radius:18px; }
@@ -23403,13 +23652,45 @@ function Style() {
          person. */
 
       /* ---- room at the edges ----
-         Every other manager tab that carries a page of its own sits in .board-page,
-         which is 32px of gutter and a 1440 ceiling. The People tab was rendered
-         bare into .page, which has no padding at all, so on a wide monitor the
-         card ran from one edge of the glass to the other and the buttons finished
-         hard against the right-hand side. */
-      .pp-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
-      @media (max-width:900px) { .pp-page { padding:16px 16px 0; } }
+         The Dashboard sits in .board-page: 32px of gutter and a 1440 ceiling.
+         Every other tab in this module was rendered bare into .page, which has no
+         padding at all, so on a wide monitor a card ran from one edge of the glass
+         to the other and its buttons finished hard against the right-hand side.
+         The same gutter, under a name any tab can wear.
+
+         Deliberately applied per tab rather than to .page itself: the activity
+         module's tracker is a dense table that has always had the full width, and
+         putting a 1440 ceiling on it would change a screen nobody asked about. */
+      .tab-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
+      @media (max-width:900px) { .tab-page { padding:16px 16px 0; } }
+      /* ---- history: the figure and its move ---- */
+      .gm-tiles { margin:4px 0 20px; }
+      .hist-cell { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
+      .hist-cell b { font-weight:600; font-variant-numeric:tabular-nums; }
+      .hist-move { display:inline-flex; align-items:center; gap:2px; font-style:normal;
+        font-family:var(--font-mono); font-size:10.5px; font-weight:600; }
+      .hist-move.up { color:#1E7A3C; } .hist-move.down { color:#C13529; }
+      /* The trail. Small on purpose: it is a shape to be read across a row at a
+         glance, not eight more numbers to take in. */
+      .hist-trail { display:inline-flex; gap:3px; align-items:center; }
+      .hist-pip { width:9px; height:9px; border-radius:3px; display:inline-block; }
+      .hist-pip.pass { background:#30B155; }
+      .hist-pip.fail { background:#E5473C; }
+      .hist-pip.none { background:rgba(16,32,52,.13); }
+      .hist-pip.here { outline:2px solid rgba(16,32,52,.35); outline-offset:1px; }
+      .hist-trail-h { white-space:nowrap; }
+      .hist-key { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-3);
+        margin-left:auto; white-space:nowrap; }
+      .hist-key .hist-pip { margin-left:9px; }
+      .hist-key .hist-pip:first-child { margin-left:0; }
+      @media (max-width:1100px) { .hist-trail-h, .hist-table td:last-child { display:none; } }
+
+      .pp-folds { margin-top:10px; display:grid; gap:6px; }
+      .pp-folds .hint { margin:0 0 8px; max-width:78ch; }
+      .pp-fold-row { display:flex; flex-wrap:wrap; gap:9px; align-items:center; padding:9px 12px;
+        border-radius:11px; background:rgba(16,32,52,.035); }
+      .pp-fold-row .pp-act { margin-left:auto; }
+
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }
@@ -24012,13 +24293,47 @@ function Style() {
          came back. The button is a <button>, so the last div is still the last
          card. */
       .assoc-card:last-of-type { border-bottom:none; }
-      .assoc-row { display:flex; align-items:center; gap:10px; cursor:grab; flex-wrap:wrap; }
+      /* ---- one line, and every column under the one above it ----
+         It was a flex row with TWO auto margins in it — one before the dials and
+         one before the lead count — so the free space split between them and the
+         dials landed wherever the verdict's wording left them. "Nearing the
+         limit" and "Below standard, room left" are different widths, so no two
+         rows agreed and a manager could not read down a column of dials at all.
+
+         Fixed tracks, so column four is under column four on every row whatever
+         anybody's verdict says. The bar takes whatever is left, which on a
+         desktop is most of the row. */
+      .assoc-row { display:grid; align-items:center; gap:10px; cursor:grab;
+        grid-template-columns: minmax(170px, 300px) minmax(80px, 1fr) auto 82px 196px; }
+      /* Everything that identifies the person, in the first track. */
+      .assoc-who { display:flex; align-items:center; gap:9px; min-width:0; }
+      .assoc-who .assoc-name { flex:0 1 auto; }
+      /* One line and one width, so they make a column rather than a ragged edge.
+         The track is sized for the longest of them ("Below standard, room left"),
+         and every pill fills it. */
+      .assoc-row .verdict { white-space:nowrap; width:100%; min-width:0; box-sizing:border-box;
+        font-size:11.5px; padding:5px 8px; }
+
+      /* Six tracks need about 1200px. Below that the row wraps instead, with the
+         bar on a line of its own under the name — still long, still first thing
+         the eye lands on, and nothing is pushed off the right-hand edge. */
+      @media (max-width: 1200px) {
+        .assoc-row { display:flex; flex-wrap:wrap; align-items:center; }
+        .assoc-row .assoc-who { flex:1 1 180px; min-width:0; }
+        .assoc-row .assoc-gauge { order:9; flex:1 1 100%; }
+        .assoc-row .mstrip { margin-left:auto; }
+        /* Still one width when the row wraps, so the pills stay a column. */
+        .assoc-row .verdict { width:196px; flex:0 0 196px; }
+      }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
-      .assoc-name { font-weight:650; font-size:15.5px; flex:0 0 212px; letter-spacing:-.015em; }
+      .assoc-name { font-weight:650; font-size:15.5px; letter-spacing:-.015em;
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .flag { font-size:11px; color:var(--amber); background:rgba(255,159,10,.14); padding:3px 9px; border-radius:20px; font-weight:600; }
-      .assoc-leads { margin-left:auto; font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
-      .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; }
+      .assoc-leads { display:grid; grid-template-columns:34px 44px; align-items:baseline; gap:4px;
+        font-weight:700; font-size:17px; font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+      .assoc-leads > b { text-align:right; font-weight:700; }
+      .of-cap { color:var(--ink-3); font-size:13px; font-weight:600; text-align:left; }
       .verdict { font-size:12px; font-weight:700; padding:5px 12px; border-radius:20px; min-width:118px; text-align:center;
         transition: transform .2s var(--spring); }
       .verdict.sm { min-width:0; font-size:11px; padding:3px 9px; }
@@ -24029,6 +24344,14 @@ function Style() {
       /* blue: below standard but plenty of headroom, so nothing is paused yet */
       .verdict-watch { background:rgba(42,94,155,.12); color:#1D4674; }
       .verdict-dim { background:#F2F2F4; color:var(--ink-2); }
+      /* In the row now, and long. A bar is a picture of exactly one thing — how
+         much of the allowance is gone — and it was the smallest object on a row
+         with room for it to be the largest. */
+      .assoc-gauge { position:relative; display:block; height:10px; background:#E9E9EB;
+        border-radius:6px; overflow:hidden; min-width:80px; }
+      /* Both of these are spans so they can sit in the row's grid. An inline
+         child ignores height:100%, which drew every bar as an empty track. */
+      .assoc-gauge > .gauge-fill { display:block; }
       .gauge { position:relative; height:8px; background:#E9E9EB; border-radius:5px; margin:9px 0 0 23px; max-width:520px; }
       .gauge-fill { height:100%; border-radius:5px; background:linear-gradient(90deg, #2A5E9B, #C1D730);
         transition: width .6s var(--spring); }
@@ -24045,8 +24368,7 @@ function Style() {
       .mstrip { display:grid; grid-auto-flow:column; grid-auto-columns:88px; gap:10px 14px; justify-content:start; }
       /* On the associate row the dials ride to the right of the name and stay
          together as one unit; the row itself wraps them if the screen is narrow. */
-      .assoc-row .mstrip { margin-left:auto; gap:10px; }
-      .mstrip + .assoc-leads { margin-left:14px; }
+      .assoc-row .mstrip { gap:10px; }
       .mdial { width:88px; text-align:center; position:relative; }
       /* Present for the column, not being graded. Quiet enough that the eye goes
          to the ones with a target on them. */
@@ -24256,7 +24578,9 @@ function Style() {
         padding:3px 10px; border-radius:99px; }
       .lb-std.ok { color:#1E7A3C; background:rgba(48,177,85,.13); }
       .lb-std.part { color:#95600A; background:rgba(255,159,10,.15); }
-      .unassigned-row { gap:14px; }
+      /* Not a graded row: a name and a picker, and the six-track grid would
+         strand the picker in column three. */
+      .unassigned-row { display:flex; align-items:center; gap:14px; }
       .assign-select { margin-left:auto; }
       @media (max-width:560px){ .lb-row { grid-template-columns:1fr; } }
 
@@ -24268,8 +24592,9 @@ function Style() {
       .rank-2 { background:linear-gradient(150deg,#F4F7FA,#B2BFCB); color:#38434E; }
       .rank-3 { background:linear-gradient(150deg,#F2C298,#C0764A); color:#4A2410; }
       .star-badge { display:inline-flex; align-items:center; gap:5px; flex:0 0 auto;
-        font-size:11px; font-weight:800; letter-spacing:.01em; color:#146B41;
-        background:rgba(48,177,85,.16); padding:4px 11px; border-radius:20px;
+        font-size:11px; font-weight:800; letter-spacing:.01em; color:#5A3B00;
+        background:linear-gradient(150deg,#FFE595,#F0BC3C); padding:4px 11px; border-radius:20px;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
         animation: starGlow 3.2s ease-in-out infinite; }
       /* A cleared month used to look identical to a failing one apart from one small
          pill at the far end of the row. The people doing well are the ones a floor
@@ -24278,10 +24603,23 @@ function Style() {
       .assoc-card.pass::before { content:""; position:absolute; left:-10px; top:6px; bottom:6px;
         width:3px; border-radius:2px; background:#30B155; opacity:.55; }
       .assoc-card.pass .assoc-name { color:#12212F; font-weight:700; }
-      .assoc-card.pass:has(.star-badge)::before { opacity:1; width:4px; }
+      /* ---- and the row itself ----
+         A wash that fades out before it reaches the figures, a gold edge instead
+         of the green everybody clearing standard gets, and their lead bar in the
+         same gold. Nothing moves position and nothing else changes size: it is
+         the same row, wearing something. */
+      .assoc-card:has(.star-badge) {
+        background:linear-gradient(100deg, rgba(240,188,60,.17), rgba(240,188,60,.05) 38%, transparent 62%); }
+      .assoc-card.pass:has(.star-badge)::before {
+        opacity:1; width:4px; background:linear-gradient(180deg,#FFE595,#E0A100); }
+      .assoc-card:has(.star-badge) .gauge-fill {
+        background:linear-gradient(90deg,#E0A100,#FFD166); }
+      .assoc-card:has(.star-badge) .assoc-name { color:#3E2C00; }
+      .assoc-card:has(.star-badge) .verdict-pass {
+        background:linear-gradient(150deg,rgba(255,229,149,.55),rgba(240,188,60,.4)); color:#5A3B00; }
       @keyframes starGlow {
-        0%,100% { box-shadow: 0 0 0 0 rgba(48,177,85,0); }
-        50%     { box-shadow: 0 0 0 3px rgba(48,177,85,.10); }
+        0%,100% { box-shadow: 0 0 0 0 rgba(240,188,60,0); }
+        50%     { box-shadow: 0 0 0 3px rgba(240,188,60,.22); }
       }
       .assoc-card.incomplete { opacity:.55; filter:grayscale(.75); }
       .assoc-card.incomplete .verdict { visibility:hidden; }
@@ -25482,7 +25820,10 @@ function Style() {
         .gauge, .reasons { margin-left:0; }
 
         /* --- associate rows stack instead of spanning a wide line --- */
-        .assoc-row { flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
+        /* Below this the six tracks cannot all fit, so the row goes back to
+           wrapping: the bar takes a line of its own under the name. */
+        .assoc-row { display:flex; flex-wrap:wrap; gap:8px 10px; padding:12px 4px; }
+        .assoc-row .assoc-gauge { order:9; flex:1 0 100%; }
         .assoc-name { flex:1 1 60%; font-size:15px; }
         .assoc-leads { margin-left:auto; }
         .mstrip + .assoc-leads { margin-left:auto; }

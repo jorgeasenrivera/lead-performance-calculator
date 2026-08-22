@@ -443,6 +443,11 @@ export function sameAs(data, heldName, personName, opts = {}) {
   next.activity = next.activity || {};
   next.peopleLog = next.peopleLog || [];
   next.aliases[from] = to;
+  /* Stamped, so that folding a spelling BACK after somebody unfolded it wins on
+     time rather than on which tab saved last. */
+  next.aliasesAt = next.aliasesAt || {};
+  next.aliasesAt[from] = opts.at || new Date().toISOString();
+  if (next.aliasesGone) delete next.aliasesGone[from];
 
   const holdRec = (next.pendingPeople || {})[from];
   if (holdRec) {
@@ -503,6 +508,57 @@ export function sameAs(data, heldName, personName, opts = {}) {
     note: opts.note ? `${opts.note} · same as ${personName}` : `same as ${personName}` });
   next.peopleLog = next.peopleLog.slice(0, 500);
   return next;
+}
+
+/**
+ * Undo a fold: this spelling is not that person after all.
+ *
+ * Wanted for the case the fold cannot handle by design — somebody genuinely
+ * called what a misspelling was folded into. While a name is an alias it cannot
+ * be on any list at all, so until now there was no way back at all.
+ *
+ * ---- what it can and cannot give back ----
+ * The spelling stops being folded: future reports file under it again, and it can
+ * be put on a list, claimed or ignored like any other name. The FIGURES do not
+ * come back apart. They were added together when the fold happened -- five and
+ * three became eight -- and nothing anywhere records which of the eight came from
+ * where. Pretending otherwise would mean guessing at somebody's month, so the
+ * screen says plainly that the past stays merged.
+ *
+ * ---- and it is written down, not deleted ----
+ * `aliases` is a union in the merge, so that a tab which has never heard of a
+ * fold cannot drop it. Which means deleting a key here would be undone by the
+ * first save from any other tab -- the eighth instance of the fault this system
+ * has had seven of. So an unfold is a stamp, compared by time, like every other
+ * removal in this file.
+ */
+export function unfold(data, spelling, opts = {}) {
+  const k = nm(spelling);
+  if (!k) return data;
+  const next = JSON.parse(JSON.stringify(data || {}));
+  const was = (next.aliases || {})[k];
+  if (!was) return next;
+  const at = opts.at || new Date().toISOString();
+  next.aliasesGone = next.aliasesGone || {};
+  next.aliasesGone[k] = at;
+  delete next.aliases[k];
+  /* A stale note that the fold was made must not outrank the note undoing it. */
+  if (next.aliasesAt) delete next.aliasesAt[k];
+  next.peopleLog = next.peopleLog || [];
+  next.peopleLog.unshift({ at, by: opts.by || "", name: spelling,
+    from: "same person", to: "unknown",
+    note: opts.note || `no longer folded into ${was}. Figures already merged stay merged.` });
+  next.peopleLog = next.peopleLog.slice(0, 500);
+  return next;
+}
+
+/** Every fold this store has made, newest decision first. */
+export function folds(data) {
+  const out = [];
+  for (const [from, to] of Object.entries((data && data.aliases) || {})) {
+    out.push({ key: from, from, to, at: ((data && data.aliasesAt) || {})[from] || null });
+  }
+  return out.sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")) || a.from.localeCompare(b.from));
 }
 
 /**

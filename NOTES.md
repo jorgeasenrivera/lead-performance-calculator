@@ -111,6 +111,85 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## History and Summary — REWORKED 2026-08-21
+
+> I feel like we haven't given any recent love to the history and summary tabs
+
+### History showed no history
+
+It listed one month's figures in a table and let you change which month with a dropdown, so
+every month looked exactly like every other one. The one question a history tab is for — is
+this getting better? — was the one thing it could not answer, and the only way to find out
+was to write the numbers down and change the dropdown.
+
+- **Every figure now carries its move** since the month before, in points, with a 0.5-point
+  deadband so a rounding wobble is never dressed up as a trend. Points rather than percent of
+  a percent, because "up four points" is what a manager says out loud.
+- **The month it compares against is the previous month ON RECORD**, not last month by the
+  calendar. A store that imported nothing in July should be read against June rather than
+  against nothing.
+- **The verdict trail**: how each person was judged in each of the last eight months, oldest
+  on the left, each month under the standards that were in force at the time. A run of reds
+  turning green is a coaching story, and it was in the data all along with nothing drawing it.
+- The first month on record says so and draws no arrows, rather than comparing against zero.
+
+### Summary led with a caption
+
+The four numbers the page is read for were a run-on sentence under the title — "4 restricted ·
+2 in grace period · 9 cleared". They are tiles now, the site's own, already used on the
+Dashboard. **Paused right now** is deliberately its own number rather than folded into
+"below standard": it is the only one where somebody is not being handed leads this minute.
+
+### Nothing to judge is not the same as judged and found wanting — FIXED
+
+Somebody with NO figures at all in a month was judged **Restrict**, because a missing value
+counted as a failed requirement: a new hire in their first week, somebody on leave, a store
+whose report had not landed. Jorge asked for it fixed on both screens, so it is fixed in
+`evaluateAssociate` where both read it — a new `no-data` status, shown as **No figures yet**.
+
+The bar is deliberately EVERY required figure absent. One missing number out of four is a
+real shortfall against that requirement and still counts.
+
+### The board row, restructured — same day
+
+> Remove the words on the bar underneath. The speedometers are not lined up with each other.
+> I want the lead bar to take up a longer length within the tile.
+
+- **The dials never lined up** because the row was a flex line with TWO auto margins in it —
+  one before the dials, one before the lead count — so free space split between them and the
+  dials landed wherever the verdict's wording left them. "Nearing the limit" and "Below
+  standard, room left" are different widths, so no two rows agreed. It is a grid of fixed
+  tracks now: column four is under column four on every row.
+- **The bar is in the row** and takes whatever is left, which is most of it. It used to sit
+  under the row capped at 520px — the smallest object on a line with room for it to be the
+  largest — with a sentence beneath restating what it and the verdict already said.
+- **The sentences are gone**, kept as the bar's own `title`. A manager who wants the wording
+  has it on hover; the page is not nine paragraphs long. What is left under a row is the one
+  thing that was never a restatement: the Confirm-removed-from-leads action.
+- Below 1200px the row wraps instead, bar on its own line, so nothing is pushed off the edge.
+- **The lead count is two sub-columns**, not one right-aligned string: "74 / 80" and "82 / 100"
+  are different widths, so aligning the whole thing put the slash somewhere different on every
+  row. The number ends where every number ends; the cap starts where every cap starts.
+- **Every verdict pill is one width**, so they read as a column rather than a ragged edge.
+- **Everything that identifies a person is one grid cell.** The rank badge, the crushing-it
+  badge and the incomplete flag come and go, and each used to be a child of the row's grid —
+  so a row with a badge pushed everything after it into the next track and the dials fell out
+  of line the moment somebody had a good month.
+
+### Crushing it, in gold
+
+Forty per cent over every requirement is not a good month, it is a different league, and it
+had the same small green line down the card that everybody clearing standard gets. It is gold
+now, and the whole row wears it: the edge, the badge, their lead bar, and their verdict pill.
+Nothing moves and nothing changes size — the same row, wearing something. It costs nothing to
+say well done properly.
+
+### Next: more pictures, fewer words, everywhere else
+
+Jorge's follow-up, not yet started: the same pass over the rest of the site.
+
+---
+
 ## Positions, told apart — BUILT 2026-08-21
 
 > I'd like there to be a visual difference between job types like BDC and sales and so on
@@ -163,10 +242,15 @@ came to make; the list is something they came to read.
 On a phone the labels stay and the row wraps. Dropping them to icons fits the row and turns
 four unlabelled marks into a guessing game, one of which is destructive.
 
-And the tab had no gutter at all: every other manager page sits in `.board-page` (32px sides,
-1440 ceiling) and this one was rendered bare into `.page`, which carries no padding, so on a
-wide monitor it ran from one edge of the glass to the other. Worth checking whether Summary,
-History and Import have the same gap.
+And the tab had no gutter at all: the Dashboard sits in `.board-page` (32px sides, 1440
+ceiling) and every other tab in this module was rendered bare into `.page`, which carries no
+padding, so on a wide monitor a card ran from one edge of the glass to the other. Import,
+Summary, History, Standards and People now share one `.tab-page` gutter.
+
+Deliberately per tab rather than on `.page` itself: the activity module's tracker is a dense
+table that has always had the full width, and a 1440 ceiling would change a screen nobody
+asked about. The admin tabs are still bare for the same reason — nobody has complained, and
+guessing is how a screen somebody relies on gets narrowed overnight.
 
 "No position yet" is a real state and a common one — every name a report brings in arrives
 without one — so it gets its own grey identity rather than being lumped in with the first
@@ -219,8 +303,19 @@ The check now seeds the name on **every list a store keeps**, not the two that w
 "We fixed the two in the report" is what produced instances two through six.
 
 One consequence worth knowing: while a name is an alias it cannot be on any list. Somebody
-genuinely called that would need the alias removed first — which is right, but there is no
-screen that removes an alias today.
+genuinely called that would need the alias removed first — which is right, and there is now a
+screen for it: **Spellings folded into people**, under the People list.
+
+**Undoing a fold is a stamp, not a deletion** — instance eight, pre-empted. `aliases` is a
+union so that a tab which has never heard of a fold cannot drop it, which means deleting a
+key would be undone by the first save from any other tab. So `aliasesAt` and `aliasesGone` are
+a stamped pair, settled by time in both directions, and an alias with no stamp predates
+anybody's decision to undo it, so the undo wins.
+
+What an undo can and cannot give back: the spelling is free from the next report onwards and
+can be claimed or ignored like any other name. The FIGURES do not come apart — five and three
+became eight when the fold was made and nothing records which of the eight came from where.
+The screen says so rather than guessing at somebody's month.
 
 ---
 
