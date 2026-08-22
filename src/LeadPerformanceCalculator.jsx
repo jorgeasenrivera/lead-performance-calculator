@@ -3466,7 +3466,11 @@ function DeliveryGuideModal({ onClose }) {
    animation. Half a move reads as a flicker, however well the arriving half is
    drawn — what the eye wants is the thing it was looking at LEAVING. So the
    swap now waits for the exit, and `apply` is what does it. */
-const TAB_EXIT = 130;
+/* The last block starts 48ms in and its exit runs 140, so the swap cannot happen
+   before 188 without cutting it off mid-flight — and a block that vanishes halfway
+   through leaving is exactly what reads as a flicker. Same arithmetic as
+   TOOL_EXIT. */
+const TAB_EXIT = 190;
 const TAB_ENTER = 400;
 let tabTimers = [];
 function clearTabMove() {
@@ -25123,11 +25127,13 @@ function Style() {
          transition: .page carries its own mount animation, and an animation wins
          over a transition on the same property, so a transition here would have
          been silently ignored on exactly the pages it was written for. */
-      .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page {
+      .tool-exit .page {
         animation: pageIn .38s var(--spring), pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
+      .tool-exit .board-page, .tool-exit .tab-page {
+        animation: pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
       @keyframes pageOut {
-        from { transform:none; }
-        to   { transform: translateX(calc(var(--tx-out) * .35)); }
+        from { transform:none; opacity:1; }
+        to   { transform: translateX(calc(var(--tx-out) * .35)); opacity:1; }
       }
       /* And the same on the way in. This was the missing half: the page's own
          mount animation, pageIn, a lift from the bottom, was still running
@@ -25136,11 +25142,13 @@ function Style() {
          which is what read as a flicker rather than a landing. The whole page
          now travels the same axis as its blocks and decelerates into place with
          them. */
-      .tool-enter .page, .tool-enter .board-page, .tool-enter .tab-page {
+      .tool-enter .page {
         animation: pageIn .38s var(--spring), pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
+      .tool-enter .board-page, .tool-enter .tab-page {
+        animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
       @keyframes pageLand {
-        from { transform: translateX(calc(var(--tx-in) * .35)); }
-        to   { transform:none; }
+        from { transform: translateX(calc(var(--tx-in) * .35)); opacity:1; }
+        to   { transform:none; opacity:1; }
       }
 
       @media (prefers-reduced-motion: reduce) {
@@ -25194,17 +25202,39 @@ function Style() {
          after it means pageIn is never cancelled and never restarted; it is long
          finished by then and contributes nothing, while the move's animation sits
          later in the list and wins on the properties they share. */
-      .tab-exit .page, .tab-exit .board-page, .tab-exit .tab-page {
+      /* ---- and pageIn is re-listed for .page ONLY ----
+         Because .page is the only one that has it. Naming .board-page and
+         .tab-page here did not preserve a running animation, it INTRODUCED one:
+         pageIn starts from opacity 0, so the board faded in from transparent
+         every time a tab was pressed, over the whole move. That is the flicker.
+         The trick is only ever valid for an element that already carries the
+         animation being re-listed. */
+      .tab-exit .page {
         animation: pageIn .38s var(--spring), tabPageOut .14s cubic-bezier(.45,0,.9,.4) both; }
-      .tab-enter .page, .tab-enter .board-page, .tab-enter .tab-page {
+      .tab-enter .page {
         animation: pageIn .38s var(--spring), tabPageIn .42s cubic-bezier(.16,.86,.3,1) both; }
+      .tab-exit .board-page, .tab-exit .tab-page {
+        animation: tabPageOut .14s cubic-bezier(.45,0,.9,.4) both; }
+      .tab-enter .board-page, .tab-enter .tab-page {
+        animation: tabPageIn .42s cubic-bezier(.16,.86,.3,1) both; }
+      /* ---- and every one of these pins opacity ----
+         .page is keyed on the tab, so React gives it a NEW element on every
+         switch and pageIn starts fresh on it — the container fading up from
+         nothing over the whole move, under blocks that are doing their own fade.
+         Re-listing pageIn cannot preserve what was never running.
+
+         Pinning opacity here is what settles it: these sit after pageIn in the
+         list, so they win on opacity as well as transform for as long as they
+         run, and pageIn is finished before they are. The container never fades,
+         the blocks still do, and when the move classes come off pageIn is at
+         index 0, already over, and does not restart. */
       @keyframes tabPageOut {
-        from { transform:none; }
-        to   { transform: translateX(calc(var(--tabx-out) * .34)); }
+        from { transform:none; opacity:1; }
+        to   { transform: translateX(calc(var(--tabx-out) * .34)); opacity:1; }
       }
       @keyframes tabPageIn {
-        from { transform: translateX(calc(var(--tabx-in) * .34)); }
-        to   { transform:none; }
+        from { transform: translateX(calc(var(--tabx-in) * .34)); opacity:1; }
+        to   { transform:none; opacity:1; }
       }
       @media (prefers-reduced-motion: reduce) {
         .tab-move .page > *, .tab-move .board-page > *, .tab-move .tab-page > * { animation-duration:.12s !important; }

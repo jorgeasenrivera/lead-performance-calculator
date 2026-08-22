@@ -488,6 +488,29 @@ the mark flew apart around it. Same trap as the page mount animation, same way o
 keep the drift at index 0 of the animation list so it is never cancelled, and put
 the beat's animation after it, where it wins.
 
+**And then the side-to-side move flickered again, from the fix for the first one.**
+Re-listing `pageIn` at index 0 keeps a running animation from being cancelled and
+restarted — but only on an element that already carries it. `.page` does;
+`.board-page` and `.tab-page` do not. Naming them in those rules did not preserve
+anything, it INTRODUCED pageIn, which starts from opacity 0: the board faded up
+from transparent every time a tab was pressed, for the whole length of the move.
+
+`.page` had the same problem from the other end. It is keyed on the tab, so React
+gives it a new element on every switch and pageIn starts fresh on that whatever the
+list says. Re-listing cannot preserve what was never running.
+
+Both are settled by the page-level move animations pinning `opacity:1`. They sit
+after pageIn in the list, so they win on opacity as well as transform for as long
+as they run, and pageIn is finished before they are: the container never fades, the
+blocks still do their own, and when the move classes come off pageIn is at index 0,
+already over, and does not restart. Measured in the built app, a tab switch now
+holds the page at opacity 1 throughout while the block runs 1 → 0.92 → 0.64 out,
+swaps, and comes back 0 → 0.88 → 1.
+
+The exit was also being cut: the last block starts 48ms in and runs 140, so a swap
+at 130ms took it away mid-flight. TAB_EXIT is 190 now, the same arithmetic as
+TOOL_EXIT.
+
 **The flicker going side to side had a cause, and it was not the transition.**
 `.page` carries its own mount animation. Replacing the animation on it for the
 length of a move *cancels* that one, and putting it back when the move ends starts
