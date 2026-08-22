@@ -1898,8 +1898,9 @@ export default function LeadPerformanceCalculator() {
   // Watch the intro on demand rather than waiting for tomorrow. Clearing the mark
   // means the next sign-in plays it as well, which is what makes it possible to
   // review the whole handover end to end.
+  /* Kept for the account menu, which has always had it, though with the arrival
+     playing every time there is far less for it to do. */
   const replayIntro = () => {
-    try { localStorage.removeItem(ARRIVAL_KEY); } catch (e) {}
     setIntroDone(false);
     setIntroPlaying(true);
   };
@@ -1966,9 +1967,14 @@ export default function LeadPerformanceCalculator() {
   // Swapping one full screen for another was the hard cut; a curtain lifting is not.
   useEffect(() => {
     if (!session || !session.active || entered) return;
-    // Wait for the sign-in handover to clear before this begins. Overlapping the
-    // two reads as one animation interrupting another rather than a sequence.
-    if (!arrivalPlayedToday(session.userId || session.id)) setTimeout(() => setIntroPlaying(true), 240);
+    /* Straight away, in the same commit that lets the app in. The 240ms wait
+       here was inherited from the cinematic that used to follow the sign-in
+       handover, and against the arrival it is exactly the wrong shape: the app
+       painted, the store started loading, and a quarter of a second later a
+       full-screen animation dropped over the top of it. The arrival is not
+       something that happens after the app loads, it is the thing the loading
+       happens behind. */
+    setIntroPlaying(true);
     setAppModule("perf");
     setEntered(true);
   }, [session, entered]);
@@ -2856,6 +2862,7 @@ export default function LeadPerformanceCalculator() {
   // Signed out: splash first, then the sign-in card.
   if (!session) {
     return <Shell><Login config={config}
+      onArrival={() => setIntroPlaying(true)}
       onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
   }
 
@@ -2897,9 +2904,39 @@ export default function LeadPerformanceCalculator() {
 
      This is the first step of collapsing the three shells into one: agree on the
      behaviour before moving the markup. */
+  /* ---- one tool leaves before the next arrives ----
+     Jorge: "the old page should transition away element by element, then
+     transition, then the next page would hit ... when the movement is side by
+     side, elements should move side to side and pages should move side to side."
+
+     So a switch is three beats, not one. The page leaves a block at a time in
+     the direction of travel, the streaks cross, and only then does the new tool
+     mount and come in from the other side. The old version fired the streaks
+     over a page that was already changing underneath them, which is why it read
+     as a flash on top of a cut rather than as a move.
+
+     Driven through the document's class list rather than React state, and for
+     the same reason the streaks are: the switch remounts a large tree, and the
+     animation covering that mount must not be waiting in the same render queue.
+
+     The timers are module-level so a second switch mid-move cancels the first
+     rather than leaving the page half-exited. */
   const switchTool = (mod) => {
     if (mod === appModule) return;
-    warpTo(appModule, mod);
+    const root = document.documentElement;
+    const dir = WARP_ORDER.indexOf(mod) >= WARP_ORDER.indexOf(appModule) ? "r" : "l";
+    clearToolMove();
+    root.classList.add("tool-move", "tool-dir-" + dir, "tool-exit");
+    toolTimers.push(setTimeout(() => {
+      warpTo(appModule, mod);
+      root.classList.remove("tool-exit");
+      root.classList.add("tool-enter");
+      applyTool(mod);
+      toolTimers.push(setTimeout(clearToolMove, 560));
+    }, TOOL_EXIT));
+  };
+
+  const applyTool = (mod) => {
     // These four render their own shell and take no tab.
     if (mod === "board" || mod === "floor" || mod === "line" || mod === "online") {
       setAppModule(mod);
@@ -2912,6 +2949,7 @@ export default function LeadPerformanceCalculator() {
     setAppModule(mod);
     setTab(mod === "activity" ? "checkout" : "board");
   };
+
 
   /* The bar's centre button. Importing is the same act in every tool, so the
      button is always there and always means the same thing — but only two
@@ -3256,7 +3294,6 @@ export default function LeadPerformanceCalculator() {
       {introPlaying && (
         <SageArrival
           onComplete={() => {
-            markArrivalPlayed(session.userId || session.id);
             setIntroDone(true);
             setIntroPlaying(false);
           }} />
@@ -6922,7 +6959,7 @@ function TicketsPanel({ config, onChange }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed }) {
+function Login({ config, onBack, onAuthed, onArrival }) {
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -6931,11 +6968,9 @@ function Login({ config, onBack, onAuthed }) {
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
-  // "leaving" runs the deconstruction. The card does not simply disappear: its
-  // parts leave in different directions at different moments, and the mark stays
-  // put and travels, so the eye has something continuous to hold on to while the
-  // app assembles behind it.
-  const [leaving, setLeaving] = useState(false);
+  /* The card's own 760ms deconstruction is gone with the handover it belonged
+     to. The arrival takes the screen apart now, from the press, so there is
+     nothing left here to run. */
 
   const domains = config.approvedDomains || [];
   const canRegister = config.registrationOpen && domains.length > 0;
@@ -6946,12 +6981,15 @@ function Login({ config, onBack, onAuthed }) {
     setBusy(true);
     const res = await authSignIn(email.trim().toLowerCase(), password);
     if (res.error) { setBusy(false); setErr(res.error); return; }
-    // Authenticated. Take the card apart, THEN hand over: the app mounting
-    // underneath is what the deconstruction is uncovering.
-    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq && mq.matches) { setBusy(false); onAuthed(); return; }
-    setLeaving(true);
-    setTimeout(() => { setBusy(false); onAuthed(); }, 760);
+    /* Authenticated, and the arrival starts HERE — not after the app has
+       rendered. It used to take the card apart over 760ms and hand over
+       afterwards, which put a second of screen between the press and the
+       animation and let the dashboard paint in the gap. The arrival's own first
+       beats are the taking-apart, so there is nothing left for that pause to do
+       and everything to be gained by covering the mount with it. */
+    if (onArrival) onArrival();
+    setBusy(false);
+    onAuthed();
   };
 
   const signUp = async () => {
@@ -6995,12 +7033,12 @@ function Login({ config, onBack, onAuthed }) {
   const filled = Math.min(5, Math.round((typed / 34) * 5));
 
   return (
-    <div className={"login" + (leaving ? " is-leaving" : "")}>
-      <SageGround beat={leaving ? "gather" : "idle"} />
+    <div className="login">
+      <SageGround />
       <div className={"login-card " + (busy ? "login-busy" : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         <div className="login-logo">
-          {busy && !leaving
+          {busy
             ? <SageLoading size={44} />
             : <SageMark word size={64} revealed={mode === "signin" ? revealed : undefined} />}
         </div>
@@ -7095,6 +7133,17 @@ function Login({ config, onBack, onAuthed }) {
    the finger just left is the thing the eye is carrying, so the app's own value
    is the one that matches it. */
 const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
+/* How long the outgoing page has to leave before the streaks cross. Long enough
+   for four staggered blocks at 40ms apart to be gone, short enough that the whole
+   switch stays under a second. */
+const TOOL_EXIT = 300;
+let toolTimers = [];
+function clearToolMove() {
+  toolTimers.forEach(clearTimeout);
+  toolTimers = [];
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.remove("tool-move", "tool-exit", "tool-enter", "tool-dir-r", "tool-dir-l");
+}
 const WARP_HUE = { perf: "#404E44", activity: "#404E44", board: "#404E44",
   floor: "#10B981", line: "#5566F0", online: "#8B5CF6" };
 
@@ -7145,14 +7194,14 @@ function warpTo(from, to) {
    layer at its full scaled extent. 1664ms stall against a 21ms median without.
    ------------------------------------------------------------------- */
 const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
-const ARRIVAL_KEY = "lpc:arrival";
-function arrivalPlayedToday(userId) {
-  try { return localStorage.getItem(ARRIVAL_KEY) === `${today()}:${userId || "anon"}`; }
-  catch (e) { return false; }
-}
-function markArrivalPlayed(userId) {
-  try { localStorage.setItem(ARRIVAL_KEY, `${today()}:${userId || "anon"}`); } catch (e) {}
-}
+/* ---- every time, not once a day ----
+   The handoff asked for the first sign-in of the day, like the morning round-up,
+   and Jorge changed it: it plays on every arrival now. So there is no stored key
+   and nothing to reset — which also means it plays on a page RELOAD, because a
+   reload restores the session and that is an arrival as far as this app is
+   concerned. That is the honest reading of "every time"; if a refresh at the
+   desk should go straight in, the trigger moves from "a session appeared" to
+   "the sign-in button was pressed" and this comment is where to start. */
 
 function SageArrival({ onComplete }) {
   const [beat, setBeat] = useState("hold");
@@ -24385,7 +24434,57 @@ function Style() {
         animation: sgTwinkle 4s ease-in-out infinite alternate; }
       @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
 
-      /* ---- switching tools ---- */
+      /* ---- switching tools ----
+         Three beats. The page leaves a block at a time in the direction of
+         travel, the streaks cross, and the new tool arrives from the other side.
+         Side to side, because the tools sit side by side in the bar. */
+      .tool-move .page > *, .tool-move .board-page > *, .tool-move .tab-page > * {
+        will-change: auto; }
+      .tool-exit .page > *, .tool-exit .board-page > *, .tool-exit .tab-page > * {
+        animation: toolOut .3s cubic-bezier(.4,0,.9,.3) both; }
+      .tool-enter .page > *, .tool-enter .board-page > *, .tool-enter .tab-page > * {
+        animation: toolIn .42s cubic-bezier(.16,.84,.36,1) both; }
+      /* Element by element rather than the page as one slab. */
+      .tool-move .page > *:nth-child(2), .tool-move .board-page > *:nth-child(2), .tool-move .tab-page > *:nth-child(2) { animation-delay:.04s; }
+      .tool-move .page > *:nth-child(3), .tool-move .board-page > *:nth-child(3), .tool-move .tab-page > *:nth-child(3) { animation-delay:.08s; }
+      .tool-move .page > *:nth-child(4), .tool-move .board-page > *:nth-child(4), .tool-move .tab-page > *:nth-child(4) { animation-delay:.12s; }
+      .tool-move .page > *:nth-child(n+5), .tool-move .board-page > *:nth-child(n+5), .tool-move .tab-page > *:nth-child(n+5) { animation-delay:.16s; }
+      /* Going right: the old page leaves to the left and the new one comes in
+         from the right. Going left, the mirror. */
+      .tool-dir-r { --tx-out:-64px; --tx-in:64px; }
+      .tool-dir-l { --tx-out:64px;  --tx-in:-64px; }
+      @keyframes toolOut {
+        from { opacity:1; transform:none; }
+        to   { opacity:0; transform: translateX(var(--tx-out)); }
+      }
+      @keyframes toolIn {
+        from { opacity:0; transform: translateX(var(--tx-in)); }
+        to   { opacity:1; transform:none; }
+      }
+      /* Nothing that says "loading" belongs in the middle of a move. The new
+         tool is fetching underneath, and a spinner appearing between the streaks
+         and the page arriving is the join made visible — which is the one thing
+         the whole sequence exists to hide. */
+      .tool-move .loadscreen, .tool-move .loading, .tool-move .sage-loading { opacity:0 !important; }
+
+      /* Whole pages move too, not only their blocks. An animation rather than a
+         transition: .page carries its own mount animation, and an animation wins
+         over a transition on the same property, so a transition here would have
+         been silently ignored on exactly the pages it was written for. */
+      .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page {
+        animation: pageOut .3s cubic-bezier(.4,0,.9,.3) both; }
+      @keyframes pageOut {
+        from { transform:none; }
+        to   { transform: translateX(calc(var(--tx-out) * .35)); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .tool-exit .page > *, .tool-enter .page > *, .tool-exit .board-page > *, .tool-enter .board-page > *,
+        .tool-exit .tab-page > *, .tool-enter .tab-page > * { animation-duration:.14s !important; }
+        .tool-exit .page, .tool-exit .board-page, .tool-exit .tab-page { animation:none !important; }
+      }
+
+      /* ---- the streaks that cross between them ---- */
       .warp { position:fixed; inset:0; z-index:8000; pointer-events:none; overflow:hidden; }
       .warp i { position:absolute; display:block; border-radius:2px; opacity:0; }
       .warp-r i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }

@@ -80,6 +80,37 @@ other reason to know about it would be worse.
 The day key is `lpc:arrival` rather than `lpc:intro-played`, so everybody sees the new arrival
 once even if they had already seen the old one today.
 
+### After the preview — 2026-08-22
+
+Two things Jorge saw on the preview build that the handoff could not have told me.
+
+**"It's loading first then playing the animation — it's supposed to just start."** Exactly
+right, and there were two pauses stacked in front of it: the sign-in card's own 760ms
+deconstruction before it handed over, and a 240ms wait inherited from the cinematic that used
+to follow that handover. So the app painted, the store began loading, and a quarter-second
+later a full-screen animation dropped over the top of it. **The arrival now starts on the
+press**, from inside the sign-in, and the auth round-trip and the mount both happen behind it.
+The card's deconstruction is deleted: the arrival's own first beats are that.
+
+**Every time, not once a day.** No stored key and nothing to reset. It therefore plays on a
+page reload too, because a reload restores the session and that is an arrival as far as this
+app is concerned — the honest reading of "every time", and noted in the code in case a refresh
+at the desk should one day go straight in.
+
+**And the tool switch became three beats, not one.** Jorge: *"the old page should transition
+away element by element, then transition, then the next page would hit ... when the movement
+is side by side, elements should move side to side and pages should move side to side."* The
+first version fired the streaks over a page that was already changing underneath them, which
+reads as a flash on top of a cut. Now the page leaves a block at a time in the direction of
+travel, the streaks cross, and only then does the new tool mount and come in from the other
+side. Anything that says "loading" is hidden for the length of it: a spinner between the
+streaks and the page arriving is the join made visible, which is the one thing the sequence
+exists to hide.
+
+One trap worth keeping: the whole-page slide had to be an **animation**, not a transition.
+`.page` carries its own mount animation, and an animation wins over a transition on the same
+property — so a transition was being silently ignored on exactly the pages it was written for.
+
 ### Part 4 — the smaller transitions — BUILT 2026-08-22
 
 - **Tool switching**: 34 streaks in the destination tool's hue, travelling the way the eye
