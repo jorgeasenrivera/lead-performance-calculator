@@ -1958,6 +1958,11 @@ export default function LeadPerformanceCalculator() {
   const storeStampRef = useRef(null);
   const savingRef = useRef(false);
   const [storeLoadFailed, setStoreLoadFailed] = useState(false);
+  /* The words the failure itself used. A screen that says "not loading" sends
+     somebody reloading at a problem a reload cannot touch; the message the load
+     actually raised is the one thing that tells them, or whoever they ask, what
+     went wrong. */
+  const [storeLoadError, setStoreLoadError] = useState("");
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
@@ -2253,8 +2258,16 @@ export default function LeadPerformanceCalculator() {
       setStoreData(null);
       setStoreLoadFailed(false);
       setStoreMismatch(null);
+      setStoreLoadError("");
       try {
-        const d = await loadStore(view, emptyStoreData(), true); // throw on a real load error
+        /* A request that never answers used to leave this screen loading for ever:
+           there was no failure to catch, so nothing downstream ever ran. Twelve
+           seconds is past any honest load and inside the stuck-screen watchdog,
+           so a hung connection ends as a stated failure rather than a spinner. */
+        const d = await Promise.race([
+          loadStore(view, emptyStoreData(), true), // throw on a real load error
+          new Promise((_, rej) => setTimeout(() => rej(new Error("The store took too long to answer (12s).")), 12000)),
+        ]);
         if (dead || want !== view) return;
         try { storeStampRef.current = await loadStoreStamp(storeKey(want)); } catch (e) { storeStampRef.current = null; }
         if (dead || want !== view) return;
@@ -2275,10 +2288,12 @@ export default function LeadPerformanceCalculator() {
         }
         setStoreMismatch(null);
         d.__storeId = want;   // only ever stamps a document that arrived without one
-        setStoreData(d); setStoreLoadFailed(false);
+        setStoreData(d); setStoreLoadFailed(false); setStoreLoadError("");
       } catch (e) {
         if (dead || want !== view) return;
+        console.error("store load failed", { key: want, error: e });
         // A failed load must NOT masquerade as an empty store, or the next save wipes it.
+        setStoreLoadError(String((e && e.message) || e || "Unknown error"));
         setStoreData(emptyStoreData()); setStoreLoadFailed(true);
       }
       if (!dead && want === view) setTab("board");
@@ -3298,13 +3313,19 @@ export default function LeadPerformanceCalculator() {
         </>
       ) : accessibleStores.length === 0 ? (
         <NoAccessPanel session={session} config={config} onRecheck={refreshProfile} />
+      ) : storeMismatch ? (
+        /* This has to be tested BEFORE the loading branch. A mismatch sets storeData
+           to null on purpose, so the banner further down — which renders inside the
+           loaded board — could never be reached: the store simply appeared never to
+           load, and the screen asked for a reload at a problem no reload can touch. */
+        <StoreMismatch config={config} mismatch={storeMismatch} />
       ) : (!storeData || storeHeld) ? (
         /* A spinner with no end is the worst thing this screen can show: it says
            "wait" for ever and gives nobody, including whoever is asked about it
            later, anything to act on. After fifteen seconds it stops claiming to be
            loading and says what it knows. */
         storeLoadStuck
-          ? <StoreStuck store={currentStore} onRetry={() => window.location.reload()} />
+          ? <StoreStuck store={currentStore} detail={storeLoadError} onRetry={() => window.location.reload()} />
           : storeHeld ? <LoadingScreen label={`Loading ${currentStore?.name || "store"}`} /> : null
       ) : isOverseer ? (
         <>
@@ -3352,16 +3373,13 @@ export default function LeadPerformanceCalculator() {
               <AssocSearch value={assocQuery} onChange={setAssocQuery} store={currentStore} />}
           </nav>
           <div key={view + tab + appModule} className="page">
-            {storeMismatch ? (
-              /* Say exactly what is wrong. "Didn't load" would send somebody
-                 reloading forever at a problem a reload cannot touch. */
+            {storeLoadFailed && (
               <div className="load-warn">
-                The record saved for {config.stores.find((x) => x.id === storeMismatch.want)?.name || storeMismatch.want} says
-                it belongs to {config.stores.find((x) => x.id === storeMismatch.claims)?.name || storeMismatch.claims}.
-                Nothing is shown and nothing can be saved here, because the alternative is one store's people under another
-                store's name. This needs the record repaired rather than a reload.
+                This store's data didn't load fully, so changes are paused to protect your records. Reload the page,
+                confirm everything is showing, then continue.
+                {storeLoadError ? <> The load reported: {storeLoadError}</> : null}
               </div>
-            ) : storeLoadFailed && <div className="load-warn">This store's data didn't load fully, so changes are paused to protect your records. Reload the page, confirm everything is showing, then continue.</div>}
+            )}
             {appModule === "activity" ? (
               <>
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} />}
@@ -19296,17 +19314,37 @@ function NoAccessPanel({ session, config, onRecheck }) {
    It names the store and the account, because the two causes seen in the wild are
    a document filed under another store's key and access granted to a second
    account for the same person — and neither is guessable from a spinner. */
-function StoreStuck({ store, onRetry }) {
+function StoreStuck({ store, detail, onRetry }) {
   return (
     <div className="noaccess">
       <h2 className="noaccess-title">{store?.name || "This store"} is not loading</h2>
       <p className="noaccess-lead">
         The data for this store has not come back. Reloading fixes a dropped connection.
-        If it happens again, tell your admin which store it was: it usually means this
-        store's document is filed under another store's key, which has to be put right
-        rather than waited out.
+        If it happens again, tell your admin which store it was, along with the line below.
       </p>
+      {detail ? <p className="noaccess-lead"><code>{detail}</code></p> : null}
       <button className="btn" onClick={onRetry}>Reload</button>
+    </div>
+  );
+}
+
+/* A store's document claiming to belong to a different store. Shown in place of the
+   board, never alongside it: one store's people under another store's name is worse
+   than showing nothing, and this is not something a reload can mend. */
+function StoreMismatch({ config, mismatch }) {
+  const named = (id) => (config?.stores || []).find((x) => x.id === id)?.name || id;
+  return (
+    <div className="noaccess">
+      <h2 className="noaccess-title">{named(mismatch.want)} can't be opened</h2>
+      <p className="noaccess-lead">
+        The record saved under {named(mismatch.want)} says it belongs to {named(mismatch.claims)}.
+        Nothing is shown and nothing can be saved here, because the alternative is one store's
+        people under another store's name.
+      </p>
+      <p className="noaccess-lead">
+        This needs the record repaired rather than a reload. Send your admin these two keys:
+        {" "}<code>{mismatch.want}</code> and <code>{mismatch.claims}</code>.
+      </p>
     </div>
   );
 }
