@@ -1980,8 +1980,14 @@ export default function LeadPerformanceCalculator() {
        painted, the store started loading, and a quarter of a second later a
        full-screen animation dropped over the top of it. The arrival is not
        something that happens after the app loads, it is the thing the loading
-       happens behind. */
-    setIntroPlaying(true);
+       happens behind.
+
+       And only when somebody actually pressed Sign in. A session appearing is not
+       the same event: a page reload restores one with no sign-in screen anywhere,
+       so there is no mark to streak and no form to fade, and the arrival would
+       have to invent both. Jorge's call is that a refresh at the desk goes
+       straight in. */
+    if (signInPressed) { signInPressed = false; setIntroPlaying(true); }
     setAppModule("perf");
     setEntered(true);
   }, [session, entered]);
@@ -7073,21 +7079,66 @@ function Login({ config, onBack, onAuthed, onArrival }) {
   const domains = config.approvedDomains || [];
   const canRegister = config.registrationOpen && domains.length > 0;
 
+  /* ---- the press starts the jump, and the network runs underneath it ----
+     The jump used to wait for the sign-in call to come back, which is why it read
+     as "loading first, then the animation". It starts on the press now, and the
+     420ms hold and 520ms gather are spent while the request is in flight, so by
+     the time the streaks are gone the answer is nearly always already here. Two
+     things have to be true and are:
+
+       if the sign-in FAILS, the jump is cancelled and the form comes back — the
+       error is more important than the animation and arrives well inside the
+       first beat
+
+       if the sign-in is SLOW, the flash holds white until it lands rather than
+       handing over to a screen that is not ready */
+  const jumping = useRef(null);
+  const abortJump = () => { if (jumping.current) { jumping.current(); jumping.current = null; } };
+  useEffect(() => abortJump, []);
+
   const signIn = async () => {
     setErr(""); setOk("");
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
-    const res = await authSignIn(email.trim().toLowerCase(), password);
-    if (res.error) { setBusy(false); setErr(res.error); return; }
-    /* Authenticated, and the arrival starts HERE — not after the app has
-       rendered. It used to take the card apart over 760ms and hand over
-       afterwards, which put a second of screen between the press and the
-       animation and let the dashboard paint in the gap. The arrival's own first
-       beats are the taking-apart, so there is nothing left for that pause to do
-       and everything to be gained by covering the mount with it. */
-    if (onArrival) onArrival();
-    setBusy(false);
-    onAuthed();
+    signInPressed = true;
+    let authed = null;                       // null = still in flight
+    let flashed = false;
+    const handOver = () => {
+      if (!flashed || authed !== true) return;
+      if (onArrival) onArrival();
+      onAuthed();
+    };
+    jumping.current = runJump({
+      onFlash: () => {
+        flashed = true;
+        /* Nothing to hand over to yet: hold the flash rather than dropping back
+           onto a sign-in screen that has already taken itself apart. */
+        if (authed === null) document.documentElement.classList.add("sage-flash-hold");
+        handOver();
+      },
+      onDone: () => {},
+    });
+    /* A THROW has to land here as well as a returned error. It is not a
+       hypothetical: the flash holds white while it waits for an answer, so an
+       exception escaping this call leaves a white screen with nothing behind it
+       and no way back. Anything that is not a clean success puts the form back. */
+    let res;
+    try {
+      res = await authSignIn(email.trim().toLowerCase(), password);
+    } catch (e) {
+      res = { error: "Couldn't reach sign-in. Check your connection and try again." };
+    }
+    if (!res || res.error) {
+      abortJump();
+      signInPressed = false;
+      document.documentElement.classList.remove("sage-flash-hold");
+      authed = false;
+      setBusy(false); setErr((res && res.error) || "Sign-in didn't complete. Try again.");
+      return;
+    }
+    authed = true;
+    document.documentElement.classList.remove("sage-flash-hold");
+    handOver();
   };
 
   const signUp = async () => {
@@ -7328,100 +7379,85 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    desk should go straight in, the trigger moves from "a session appeared" to
    "the sign-in button was pressed" and this comment is where to start. */
 
-function SageArrival({ onComplete }) {
-  const [beat, setBeat] = useState("hold");
-  const done = useRef(onComplete);
-  done.current = onComplete;
+/* ---- the jump runs ON the sign-in screen, not over it ----
+   The first build of this was a fixed, opaque panel at z-index 9000 with its own
+   360px copy of the wordmark at dead viewport centre. It painted over the sign-in
+   screen the instant the button was pressed, so the form never faded, the dot
+   field and the blobs never gathered, and the streaks fired from the middle of
+   the frame off a mark that was neither the size nor in the place of the one the
+   eye was on. Nothing of the sign-in screen ever left, because nothing of it was
+   ever in the animation.
 
-  /* The ground is at the root now, above this component in the tree, so the beat
-     travels to it the same way the assemble beat travels to the dashboard. */
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.add("sage-beat-" + beat);
-    return () => root.classList.remove("sage-beat-" + beat);
-  }, [beat]);
+   So there is no overlay any more. The beats are classes on the document, and
+   every rule they carry points at the real elements: the real form fades, the
+   real dot field and the real blobs pull in and blow out, and the streaks are the
+   real mark's own dots, where they sit, at the size they are. What is left here
+   is only the clock.
 
-  useEffect(() => {
-    const reduce = typeof window !== "undefined" && window.matchMedia
-      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      /* The assembly order is kept; only the movement goes. */
-      document.documentElement.classList.add("sage-assemble");
-      const t = setTimeout(() => done.current(), 320);
-      return () => { clearTimeout(t); document.documentElement.classList.remove("sage-assemble"); };
-    }
-    const ts = [];
-    const at = (ms, fn) => ts.push(setTimeout(fn, ms));
-    at(ARRIVAL.hold, () => setBeat("gather"));
-    at(ARRIVAL.hold + ARRIVAL.gather, () => setBeat("stretch"));
-    at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => setBeat("flash"));
-    at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140, () => {
-      setBeat("assemble");
-      /* The dashboard is above this overlay in the tree, so the beat reaches it
-         as a class on the root rather than as a prop threaded through six
-         components that have no other reason to know about it. */
-      document.documentElement.classList.add("sage-assemble");
-    });
-    at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140 + ARRIVAL.assemble, () => done.current());
-    return () => {
-      ts.forEach(clearTimeout);
-      document.documentElement.classList.remove("sage-assemble");
-    };
-  }, []);
-
-  /* The mark's own geometry, from the mark's own file. Built once. */
-  const art = useMemo(() => sageDots({ word: true }), []);
-  const cx = art.w / 2, cy = art.h / 2;
-  const streaks = useMemo(() => art.dots.map((d) => {
-    const dx = d.x - cx, dy = d.y - cy;
-    const dist = Math.hypot(dx, dy);
-    return { ...d, dist,
-      angle: (Math.atan2(dy, dx) * 180) / Math.PI,
-      /* Long enough that every far end clears an 849px half-diagonal. */
-      scale: (520 + dist * 2.4) / (d.r * 2),
-      pull: -7 - dist * 0.12 };
-  }), [art]);
-
-  return (
-    <div className={"sage-arrival beat-" + beat} aria-hidden="true">
-      <div className="sa-mark">
-        <svg viewBox={`0 0 ${art.w} ${art.h}`} width="360">
-          {streaks.map((d, i) => (
-            <g key={i} className="sa-streak"
-              style={{ "--a": d.angle + "deg", "--sx": d.scale, "--pull": d.pull + "px",
-                transformOrigin: `${d.x}px ${d.y}px` }}>
-              <rect x={d.x} y={d.y - d.r} width={d.r * 2} height={d.r * 2} rx={d.r} fill={d.fill} />
-            </g>
-          ))}
-        </svg>
-      </div>
-      <div className="sa-flash" />
-    </div>
-  );
+   The white flash is the one piece that cannot live on this screen, because the
+   sign-in screen is gone by the time it peaks: it is mounted at the root, where
+   the ground is, for the same reason. */
+function runJump({ onFlash, onDone }) {
+  const root = typeof document === "undefined" ? null : document.documentElement;
+  const beats = ["hold", "gather", "stretch", "flash"];
+  const clear = () => beats.forEach((b) => root && root.classList.remove("sage-beat-" + b));
+  if (!root) { onFlash(); onDone(); return () => {}; }
+  let reduce = false;
+  try {
+    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {}
+  if (reduce) {
+    /* The order is kept and the movement goes: straight to the handover. */
+    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
+    return () => clearTimeout(t);
+  }
+  const ts = [];
+  const beat = (b) => { clear(); root.classList.add("sage-beat-" + b); };
+  beat("hold");
+  const at = (ms, fn) => ts.push(setTimeout(fn, ms));
+  at(ARRIVAL.hold, () => beat("gather"));
+  at(ARRIVAL.hold + ARRIVAL.gather, () => beat("stretch"));
+  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => { beat("flash"); onFlash(); });
+  at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140, () => onDone());
+  return () => { ts.forEach(clearTimeout); clear(); };
 }
 
-/* ---------------- The ground ----------------
-   Four drifting blobs and a field of dots, behind BOTH the sign-in screen and
-   the dashboard. One layer that continues through the arrival rather than being
-   swapped for another at the join, which is what makes the jump read as one
-   move rather than two screens changing places.
+/* Set by the sign-in button and read where the session lands. A page RELOAD
+   restores a session without anyone pressing anything, and there is no sign-in
+   screen for the jump to start from — no mark to streak, no form to fade. Jorge's
+   call: a refresh at the desk goes straight in. So the trigger is the press, not
+   the session. */
+let signInPressed = false;
 
-   The handoff's performance notes are load-bearing here and cost real time to
-   find, so they are honoured exactly:
+function SageArrival({ onComplete }) {
+  const done = useRef(onComplete);
+  done.current = onComplete;
+  /* Only the last beat is left here. Everything before it happened on the sign-in
+     screen, which is gone by the time this mounts — that is what the flash is
+     covering. The beat reaches the dashboard as a class on the document rather
+     than as a prop threaded through six components that have no other reason to
+     know about it. */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("sage-assemble");
+    let reduce = false;
+    try {
+      reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    } catch (e) {}
+    const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
+    return () => { clearTimeout(t); root.classList.remove("sage-assemble", "sage-beat-flash"); };
+  }, []);
+  return null;
+}
 
-     the field is built ONCE and memoised. Rebuilding 925 dot objects and their
-     style strings on every render stalled the main thread for over a second
+/* The white flash across the snap. It sits at the root, above the sign-in screen
+   AND above the dashboard, because the handover it covers is the moment one is
+   replaced by the other: mounted inside either one it would be destroyed by the
+   very swap it exists to hide. Same reason the ground moved up here. */
+function SageFlash() {
+  return <div className="sage-flash" aria-hidden="true" />;
+}
 
-     only the bright minority (about 12%) gets its own streak in the jump. The
-     other 88% ride the layer's scale, which is what bought the density back
-
-     no will-change on the streaks. Scaling a 10px dot to 177x with it made the
-     browser hold 74 promoted layers at full scaled extent: a 1664ms stall
-     against a 21ms median without it
-   ------------------------------------------------------------------- */
-/* The same words the dashboard hero opens with, so the eyebrow on the sign-in
-   screen and the line waiting on the other side of it are one greeting rather
-   than two that happen to agree. */
 function greetingFor(d = new Date()) {
   const h = d.getHours();
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
@@ -22303,6 +22339,7 @@ function Shell({ children, entering, style }) {
           through the join rather than being swapped at it. */}
       <SageGround />
       {children}
+      <SageFlash />
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
 
@@ -24816,43 +24853,99 @@ function Style() {
         .save-dot::before { animation-duration:2.4s !important; }
       }
 
-      /* ---- the arrival ---- */
-      .sage-arrival { position:fixed; inset:0; z-index:9000; background:#F5F5F7; overflow:hidden; }
-      .sa-mark { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-        transition: transform .5s cubic-bezier(.32,0,.4,1); }
-      .sa-mark svg { overflow:visible; }
-      /* Rotated to its own angle out of the centre, origin at the near end, and
-         scaled along X only. No translate: the near end stays pinned to the dot. */
-      .sa-streak { transform: rotate(var(--a)) translateX(0) scaleX(1);
-        transition: transform .5s cubic-bezier(.32,0,.4,1); }
-      .beat-gather .sa-mark { transform:translate(-50%,-50%) scale(.90); }
-      .beat-gather .sa-streak { transform: rotate(var(--a)) translateX(var(--pull)) scaleX(.78); }
-      .beat-stretch .sa-mark, .beat-flash .sa-mark, .beat-assemble .sa-mark {
-        transform:translate(-50%,-50%) scale(2.6);
-        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
-      .beat-stretch .sa-streak, .beat-flash .sa-streak, .beat-assemble .sa-streak {
-        transform: rotate(var(--a)) scaleX(var(--sx));
-        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
-      .sa-flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; }
-      /* The same animation on both beats, so the class changing 140ms into the
-         flash does not cut it short — an identical shorthand keeps the running
-         animation rather than restarting it. */
-      .beat-flash .sa-flash, .beat-assemble .sa-flash { animation: saFlash .42s ease-out both; }
-      @keyframes saFlash { 0% { opacity:0; } 26% { opacity:1; } 100% { opacity:0; } }
-      /* Held until the flash has peaked, and then cleared slowly enough to be
-         part of the landing rather than a cut in the middle of it. The ground it
-         used to carry is at the root now, so nothing disappears with it. */
-      .beat-assemble { background:transparent; transition: opacity .55s ease .28s; opacity:0; pointer-events:none; }
+      /* ---- the arrival ----
+         Every selector below points at something that was already on the screen.
+         There is no overlay and no second mark: the thing that gathers and flies
+         apart is the sign-in screen itself. */
 
-      /* The ground goes with it: gathered in, blown out, then back to drifting. */
-      .sage-beat-gather .sg-field { transform:scale(.92); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      /* Hold: the form goes, the mark stays. It is the only thing that survives
+         into the jump, so it is the only thing that does not fade. */
+      .sage-beat-hold .login-card > *:not(.login-logo),
+      .sage-beat-gather .login-card > *:not(.login-logo),
+      .sage-beat-stretch .login-card > *:not(.login-logo),
+      .sage-beat-flash .login-card > *:not(.login-logo) {
+        opacity:0; pointer-events:none; transition: opacity .42s ease; }
+      /* The wave the mark runs while it is signing in stops the moment the jump
+         starts, and it stops where it is rather than snapping: a dot caught
+         mid-swell at 1.34 jumping to 1 in one frame is a visible flick right at
+         the top of the sequence. */
+      .sage-beat-hold .login-logo circle, .sage-beat-gather .login-logo circle,
+      .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
+        animation: none; }
+      /* Nothing may clip the streaks: they leave the mark's box within about
+         80ms and the frame within 900. */
+      .sage-beat-hold .login, .sage-beat-gather .login,
+      .sage-beat-stretch .login, .sage-beat-flash .login { overflow: visible; }
+      .login-logo svg { overflow: visible; }
+
+      /* ---- the mark's own dots become the streaks ----
+         Rotated to each dot's angle out of the middle of the mark, origin at the
+         near end, scaled along X only. No translate in the stretch: the near end
+         stays exactly where the dot was, so nothing detaches from the mark and
+         re-attaches somewhere else.
+
+         --a, --d and --dr are published by SageMark for every dot: its angle out
+         of the centre, its distance from it and its radius, all in viewBox units.
+         The length each streak has to travel is worked out from those, so the
+         geometry is the mark's and the motion is the stylesheet's.
+
+         The mark on this screen is small — 64px tall, sitting above centre — and
+         that is deliberately where the streaks start, because that is where the
+         logo is. A dot 300 user units long clears a 1440x900 frame from anywhere
+         inside it, and the far ends are gone well before anything snaps. */
+      .login-logo circle { transform-box: fill-box; transform-origin: left center; }
+      .sage-beat-gather .login-logo circle {
+        transform: rotate(var(--a)) translateX(calc((-4 - var(--d) * .12) * 1px)) scaleX(.78);
+        transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-gather .login-logo svg {
+        transform: scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-beat-stretch .login-logo circle, .sage-beat-flash .login-logo circle {
+        transform: rotate(var(--a)) scaleX(calc((900 + var(--d) * 2.4) / var(--dr) / 2));
+        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      .sage-beat-stretch .login-logo svg, .sage-beat-flash .login-logo svg {
+        transform: scale(2.6); transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      /* The eyebrow is not part of the mark and should not fly with it. */
+      .sage-beat-stretch .login-eyebrow, .sage-beat-flash .login-eyebrow { opacity:0; }
+
+      /* ---- the flash across the snap ----
+         At the root, above both screens: the handover it covers IS the moment one
+         replaces the other, so mounted inside either it would be destroyed by the
+         swap it exists to hide. */
+      .sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
+        pointer-events:none; z-index:9500; }
+      .sage-beat-flash .sage-flash, .sage-assemble .sage-flash {
+        animation: saFlash .42s ease-out both; }
+      @keyframes saFlash { 0% { opacity:0; } 26% { opacity:1; } 100% { opacity:0; } }
+      /* Held white while a slow sign-in finishes. Better a held flash than the
+         dashboard arriving half-built, or the sign-in screen coming back after it
+         has already flown apart. */
+      .sage-flash-hold .sage-flash { animation: saFlashHold .42s ease-out both; }
+      @keyframes saFlashHold { 0% { opacity:0; } 26%, 100% { opacity:1; } }
+
+      /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
+         Written as animations, with the field's own 28s drift kept first in every
+         list. It has to be: the drift is an ANIMATION on transform, and an
+         animation beats a declared transform and a transition alike, so the first
+         version of these rules did nothing at all — the field sat still through
+         the whole jump while the mark flew apart around it. Same trap as the page
+         mount animation, same way out: keep the running one at index 0 so it is
+         never cancelled, and put the beat's animation after it, where it wins. */
+      .sage-beat-gather .sg-field {
+        animation: sgFieldDrift 28s ease-in-out infinite alternate,
+                   fieldGather .5s cubic-bezier(.32,0,.4,1) both; }
+      @keyframes fieldGather { from { transform:none; } to { transform:scale(.92); } }
       .sage-beat-gather .sg-blobs { transform:scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
       /* The field flies WITH the mark rather than disappearing while it does.
          It used to fade to nothing halfway through the stretch, which is why the
          peak of the jump felt empty: the one moment that should be full of
          travelling light was 73 streaks on a bare page. */
       .sage-beat-stretch .sg-field, .sage-beat-flash .sg-field {
-        transform:scale(3.2); opacity:.85; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+        animation: sgFieldDrift 28s ease-in-out infinite alternate,
+                   fieldStretch .88s cubic-bezier(.6,0,.9,.24) both; }
+      @keyframes fieldStretch {
+        from { transform:scale(.92); opacity:1; }
+        to   { transform:scale(3.2); opacity:.85; }
+      }
       .sage-beat-stretch .sg-dot.bright, .sage-beat-flash .sg-dot.bright {
         transform: translate(-50%,-50%) rotate(var(--a)) scaleX(17);
         transition: transform .88s cubic-bezier(.6,0,.9,.24); }
@@ -24867,7 +24960,9 @@ function Style() {
          and the blobs decelerate back to rest over the same window the dashboard
          lands in, so the last beat is one continuous move instead of a stop
          followed by a start. */
-      .sage-beat-assemble .sg-field { animation: groundLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
+      .sage-beat-assemble .sg-field {
+        animation: sgFieldDrift 28s ease-in-out infinite alternate,
+                   groundLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
       .sage-beat-assemble .sg-dot.bright { animation: dotLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
       .sage-beat-assemble .sg-blobs { animation: blobLand 1.3s cubic-bezier(.12,.78,.28,1) both; }
       @keyframes groundLand {
@@ -24888,16 +24983,28 @@ function Style() {
         transition: transform .5s cubic-bezier(.32,0,.4,1); }
 
       /* ---- the dashboard coming out of the jump ----
-         The first version had every element rise from below, which is the app's
-         ordinary mount and reads as a page loading normally after an animation
-         rather than as the end of one. Out of lightspeed instead: the whole page
-         resolves from beyond the frame, blurred and oversized, and decelerates
-         into place while its blocks fade up from the middle. */
+         Built outward from the middle of the FRAME. The first version had every
+         element rise from below, which is the app's ordinary mount and reads as a
+         page loading normally after an animation rather than as the end of one.
+         The second oversized the page and shrank it back, which pulls everything
+         INWARD — the opposite of assembling out of a centre — and, anchored at
+         the page's own middle rather than the viewport's, dragged the top of the
+         layout off the screen. That is the clipped nav.
+
+         So: contracted toward one point and expanding away from it, with the
+         origin at half the viewport height rather than half the page's. The page
+         starts at scroll 0 when this runs, so 50vh from the top of the container
+         is the middle of what the eye is looking at, whatever the page's own
+         height turns out to be. Everything travels outward from there. */
       .sage-assemble .page, .sage-assemble .board-page, .sage-assemble .tab-page {
-        animation: warpLand 1.05s cubic-bezier(.12,.78,.28,1) both; }
+        transform-origin: 50% 50vh;
+        animation: warpLand 1.15s cubic-bezier(.34,1.5,.64,1) both; }
+      /* The handoff's assemble easing, spring and all, on the page as a whole:
+         it expands past its resting size by a few percent and is pulled back, so
+         the layout arrives with weight instead of stopping dead on the number. */
       @keyframes warpLand {
-        from { opacity:.25; transform:scale(1.16); filter: blur(7px); }
-        60%  { filter: blur(0); }
+        from { opacity:.25; transform:scale(.84); filter: blur(5px); }
+        55%  { filter: blur(0); }
         to   { opacity:1; transform:none; filter: blur(0); }
       }
       .sage-assemble .hero { animation: saArrive .76s cubic-bezier(.34,1.5,.64,1) both; }
@@ -24921,14 +25028,18 @@ function Style() {
         from { opacity:0; transform: scale(.94); }
         to   { opacity:1; transform:none; }
       }
+      /* The header sits outside the page and does not scale with it, so it gets
+         the same outward move on its own: down from the top edge is the one
+         direction that would read as a page loading rather than as an assembly. */
+      .sage-assemble .app-header, .sage-assemble .topbar { transform-origin: 50% 50vh; }
       @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
 
       @media (prefers-reduced-motion: reduce) {
         /* Everything collapses to a cross-fade. The order is kept; the movement
            goes. */
-        .sa-mark, .sa-streak, .sage-ground .sg-field, .sage-ground .sg-blobs,
+        .login-logo circle, .login-logo svg, .sage-ground .sg-field, .sage-ground .sg-blobs,
         .sage-ground .sg-dot { transition-duration:.18s !important; animation:none !important; }
-        .sage-arrival .sa-flash { animation:none !important; }
+        .sage-flash { animation:none !important; }
         .sage-assemble .hero, .sage-assemble .seg-wrap, .sage-assemble .board-page > .card,
         .sage-assemble .assoc-card, .sage-assemble .app-header, .sage-assemble .topbar,
         .sage-assemble .brand, .sage-assemble .hero-ring-fill {

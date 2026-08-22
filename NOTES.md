@@ -162,6 +162,55 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The arrival ran OVER the sign-in screen, not on it.** The first build was a
+fixed opaque panel at z-index 9000 with its own 360px copy of the wordmark at dead
+viewport centre. It painted over the sign-in screen the instant the button was
+pressed, so the form never faded, the dot field and the blobs never gathered, and
+the streaks fired from the middle of the frame off a mark that was neither the size
+nor in the place of the one the eye was on. Nothing of the sign-in screen ever
+left, because nothing of it was ever in the animation — it was only hidden. The
+handoff says the opposite on every count: Hold is "form fades out", Gather pulls in
+the mark *and* the field *and* the blobs, and the blobs "live behind both the
+sign-in screen and the dashboard, the same layer continuing through the transition
+rather than being swapped".
+
+So the overlay is gone. The beats are classes on the document and every rule they
+carry points at something that was already on the screen. The streaks are the real
+mark's own dots: SageMark publishes each dot's angle out of the centre, its
+distance from it and its radius, and the stylesheet rotates each one to its own
+radius, pins the origin at the near end and scales along X. Jorge's call was that
+they fire from exactly where the logo sits, at the size it is, so they start 64px
+tall above centre and still clear the frame from there.
+
+The jump also starts on the PRESS now, with the network running underneath it, so
+the 420ms hold and 520ms gather are spent while the request is in flight. Two
+things had to be true and are: a failed sign-in cancels the jump and brings the
+form back (a thrown error too, not only a returned one, or the held flash leaves a
+white screen with nothing behind it), and a slow one holds the flash white rather
+than handing over to a dashboard that is not ready.
+
+**Not on a reload.** A session appearing is not the same event as somebody pressing
+Sign in: a refresh restores one with no sign-in screen anywhere, so there is no mark
+to streak and no form to fade, and the arrival would have to invent both. Jorge's
+call is that a refresh at the desk goes straight in, so the trigger is the press.
+
+**The dashboard assembles outward from the middle of the FRAME.** The first version
+lifted every element from below, which is the app's ordinary mount and reads as a
+page loading after an animation rather than as the end of one. The second oversized
+the page and shrank it back, which pulls everything *inward* — the opposite of
+building out of a centre — and, anchored at the page's own middle rather than the
+viewport's, dragged the top of the layout off the screen. That is the clipped nav in
+Jorge's screenshot. It now starts contracted and expands away from `50% 50vh`, which
+at scroll 0 is the middle of what the eye is looking at whatever the page's height
+turns out to be.
+
+**And the dot field was sitting the jump out.** Its 28s drift is an *animation* on
+transform, and an animation beats a declared transform and a transition alike, so
+the gather and stretch rules on it did nothing at all — the field held still while
+the mark flew apart around it. Same trap as the page mount animation, same way out:
+keep the drift at index 0 of the animation list so it is never cancelled, and put
+the beat's animation after it, where it wins.
+
 **The flicker going side to side had a cause, and it was not the transition.**
 `.page` carries its own mount animation. Replacing the animation on it for the
 length of a move *cancels* that one, and putting it back when the move ends starts

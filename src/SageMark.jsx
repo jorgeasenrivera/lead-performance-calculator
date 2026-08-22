@@ -124,6 +124,12 @@ export default function SageMark({
      handoff's file, for the same reason as `revealed`: the order belongs to
      the mark. */
   const rank = new Map(order.map((d, i) => [d.r + "-" + d.c, i]));
+  /* And where each dot sits relative to the middle of the mark: the angle out of
+     the centre and the distance from it, in viewBox units. The sign-in arrival
+     turns every dot of the REAL mark into a streak flying along its own radius,
+     and it does that in CSS, on the mark as drawn, rather than over a second copy
+     of it somewhere else. That only works if the geometry travels with the dots. */
+  const midX = (cols * PITCH) / 2, midY = (rows * PITCH) / 2;
 
   const dots = cells.map(({ r, c }) => (
     <circle
@@ -136,7 +142,16 @@ export default function SageMark({
          it fills and the streaks later have every dot to start from. */
       opacity={shown && !shown.has(r + "-" + c) ? 0 : undefined}
       data-dot={r + "-" + c}
-      style={{ "--i": rank.get(r + "-" + c), "--n": order.length }}
+      style={(() => {
+        const dx = (c + 0.5) * PITCH - midX, dy = (r + 0.5) * PITCH - midY;
+        return {
+          "--i": rank.get(r + "-" + c),
+          "--n": order.length,
+          "--a": ((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(2) + "deg",
+          "--d": Math.hypot(dx, dy).toFixed(2),
+          "--dr": (((riseOn ? WEIGHT[r] : 1) * CELL * fillOn) / 2).toFixed(3),
+        };
+      })()}
     />
   ));
 
