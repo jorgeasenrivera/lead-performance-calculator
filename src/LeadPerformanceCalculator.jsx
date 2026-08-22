@@ -2077,6 +2077,24 @@ export default function LeadPerformanceCalculator() {
     if (list[0]) setView(list[0].id);
   }, [appModule, view, config, session]);
 
+  /* ---- the config a signed-out boot sees is not to be trusted ----
+     Row-level security hides app_data from an unauthenticated read, and a hidden
+     row is indistinguishable from a missing one: the boot concluded "brand new
+     install" and ran the whole session on DEFAULT_CONFIG. That is why a fresh
+     sign-in landed on a hero wearing the standard blue and the Sage logo, and a
+     refresh — which boots with the session already in hand — wore the store's
+     own. So a config adopted while signed out is marked provisional and fetched
+     again the moment a session exists; the cruise absorbs the re-read the same
+     way it absorbs everything else. */
+  const cfgProvisional = useRef(false);
+  const [cfgWave, setCfgWave] = useState(0);
+  const sessionRef = useRef(null);
+  sessionRef.current = session;
+  useEffect(() => {
+    if (!session || !cfgProvisional.current) return;
+    cfgProvisional.current = false;
+    setCfgWave((w) => w + 1);
+  }, [session]);
   useEffect(() => {
     (async () => {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
@@ -2143,10 +2161,17 @@ export default function LeadPerformanceCalculator() {
           for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
         }
       }
-      await saveShared(CONFIG_KEY, cfg);
+      if (sessionRef.current) {
+        /* Genuinely new install, confirmed by an authenticated read: create it. */
+        await saveShared(CONFIG_KEY, cfg);
+      } else {
+        /* Signed out, row invisible: run the login on defaults, write nothing,
+           and re-read the moment a session exists. */
+        cfgProvisional.current = true;
+      }
       setConfig(cfg);
     })().catch(() => setLoadErr(true));
-  }, []);
+  }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
     if (!config || !session) return;
@@ -26151,8 +26176,13 @@ const SAGE_CSS = `
       /* ---- the streaks that cross between them ---- */
       .warp { position:fixed; inset:0; z-index:8000; pointer-events:none; overflow:hidden; }
       .warp i { position:absolute; display:block; border-radius:2px; opacity:0; }
-      .warp-r i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
-      .warp-l i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      /* The streaks sweep AGAINST the direction of travel, because they are the
+         world going past: head right along the bar and the scenery flies left.
+         They used to fly WITH the travel, which put them in a head-on argument
+         with the page itself: the outgoing blocks exit left while the streaks
+         crossed right, one transition moving two ways at once. */
+      .warp-r i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      .warp-l i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
       @keyframes warpR {
         0%   { transform: translateX(0);              opacity:0; }
         30%  {                                        opacity:.9; }
