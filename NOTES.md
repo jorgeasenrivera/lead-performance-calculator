@@ -162,6 +162,36 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The landing now comes out of the point the streaks left from.** Jorge's
+description: the streaks go, a little dot is left in the distance, and the store's
+elements grow out of it and land radially, like coming out of lightspeed. That is
+not a fade and not a scale in place, and it cannot be written in CSS: each block's
+direction and distance depend on where it sits relative to a point that moves with
+the sign-in mark. So every block is measured once, on the frame the dashboard
+mounts, and handed its own `--rx`/`--ry`/`--rd` — the vector back to the vanishing
+point and its turn in the sweep, nearest first. After that it is an ordinary
+composited transform. One read pass before any write, so it costs a single forced
+reflow rather than one per element.
+
+The dot itself is a static element in index.html, placed from `--jx`/`--jy` that
+the sign-in screen measures off its own mark, for the same reason the flash is
+static: it has to outlive the swap between the signed-out and signed-in trees.
+
+Three things had to be taken out of its way. The page's own `pageIn` mount was
+running underneath the landing, so the whole layout drifted upward while every
+block inside it travelled outward — two movements in different directions, which
+is the choppiness; `saStill` now pins it, sitting after `pageIn` in the animation
+list so dropping the class at the end cannot restart it. The section strip is
+`display:none` above phone width, so its rect was all zeros: it was handed a vector
+to the corner of the screen and, being the "furthest" element, set the scale every
+other block's delay was measured against — one invisible element was compressing
+the whole stagger. And the blocks are held invisible until they have been measured,
+by a class armed for exactly one frame, which is its own class rather than part of
+`.sage-assemble` so that neither reduced motion nor an empty selector can strand
+the dashboard at opacity 0.
+
+Landing frames, three runs: median 33ms, worst 100-150ms, no stall over 150ms.
+
 **The landing was segmented because the app has an entrance of its own.**
 `.lpc.is-entering` — the bar dropping in from `translateY(-100%)`, the hero and
 every card rising from below on their own staggered delays — is keyed off the

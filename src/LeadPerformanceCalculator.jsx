@@ -7544,11 +7544,26 @@ function SageArrival({ onComplete }) {
     try {
       reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     } catch (e) {}
+    /* Measured on the next frame, not this one: this effect runs inside the
+       commit that mounts the dashboard, and the blocks have no layout yet. The
+       frame's wait costs nothing because .sage-assemble is already holding them
+       invisible. */
+    let undo = () => {};
+    let raf = 0;
+    if (!reduce) {
+      root.classList.add("sage-arming");
+      raf = requestAnimationFrame(() => {
+        undo = radialAssemble();
+        root.classList.remove("sage-arming");
+      });
+    }
     const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
     return () => {
       clearTimeout(t);
+      cancelAnimationFrame(raf);
+      undo();
       jumpOwnsEntrance = false;
-      root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash");
+      root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash", "sage-arming");
     };
   }, []);
   return null;
@@ -7586,7 +7601,70 @@ function tellJumpOrigin(el) {
   if (typeof document === "undefined" || !el) return;
   const r = el.getBoundingClientRect();
   lastJumpOrigin = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  /* Published on the document as well as broadcast, because the spark that marks
+     the far end of the jump is a static element in index.html and has no other
+     way to know where the vanishing point is. */
+  const root = document.documentElement;
+  root.style.setProperty("--jx", lastJumpOrigin.x + "px");
+  root.style.setProperty("--jy", lastJumpOrigin.y + "px");
   document.dispatchEvent(new CustomEvent(JUMP_ORIGIN, { detail: lastJumpOrigin }));
+}
+
+/* ---------------- coming out of lightspeed ----------------
+   The dashboard does not fade up and it does not scale up in place. It comes out
+   of the point the streaks converged on: every block starts at that point, small,
+   and flies out along its own line to where it belongs, the near ones landing
+   first and the far ones sweeping out after them.
+
+   That vector cannot be written in CSS. Each block's direction and distance
+   depend on where it happens to sit relative to a point that moves with the
+   sign-in mark, so each one is measured once, on the frame the dashboard mounts,
+   and handed its own --rx/--ry/--rd. After that it is an ordinary composited
+   transform like everything else here.
+
+   Measured once and never again: this reads layout for every block in one pass
+   before writing anything back, so it costs a single forced reflow rather than
+   one per element. */
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip";
+function radialAssemble() {
+  if (typeof document === "undefined") return () => {};
+  const o = lastJumpOrigin || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  const els = Array.from(document.querySelectorAll(RADIAL_PARTS));
+  if (!els.length) return () => {};
+  /* Read everything first. Interleaving reads and writes here is the classic way
+     to turn one reflow into forty. */
+  const plan = [];
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    /* Anything not actually laid out is skipped. The section strip is
+       display:none above phone width, so its rect is all zeros — it was being
+       handed a vector to the top-left corner of the screen and, being the
+       furthest "element" on the page, it set the scale that every other block's
+       delay was measured against. One invisible element was compressing the
+       whole stagger. */
+    if (r.width < 1 || r.height < 1) continue;
+    const dx = o.x - (r.left + r.width / 2);
+    const dy = o.y - (r.top + r.height / 2);
+    plan.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
+  }
+  if (!plan.length) return () => {};
+  const far = Math.max(1, ...plan.map((p) => p.dist));
+  for (const p of plan) {
+    p.el.style.setProperty("--rx", p.dx.toFixed(1) + "px");
+    p.el.style.setProperty("--ry", p.dy.toFixed(1) + "px");
+    /* Nearest out first, so the screen opens from the point rather than arriving
+       as one sheet. Capped so the last block is not left behind. */
+    p.el.style.setProperty("--rd", Math.round((p.dist / far) * 260) + "ms");
+    p.el.classList.add("sa-radial");
+  }
+  return () => {
+    for (const p of plan) {
+      p.el.classList.remove("sa-radial");
+      p.el.style.removeProperty("--rx");
+      p.el.style.removeProperty("--ry");
+      p.el.style.removeProperty("--rd");
+    }
+  };
 }
 
 function buildField(w, h, origin) {
@@ -24998,6 +25076,13 @@ function Style() {
       /* The real class is .detail — the sheet a row opens into. */
       .detail { animation: sheetRise .42s cubic-bezier(.34,1.4,.64,1) both; }
       .detail > * { animation: saArrive .34s cubic-bezier(.34,1.4,.64,1) both; }
+      /* Used by the detail sheet's inner cards, and only there now: the arrival's
+         landing flies its blocks out of a point instead (see saRadial), so this
+         is no longer part of that sequence. */
+      @keyframes saArrive {
+        from { opacity:0; transform: scale(.94); }
+        to   { opacity:1; transform:none; }
+      }
       .detail > *:nth-child(1) { animation-delay:.06s; }
       .detail > *:nth-child(2) { animation-delay:.12s; }
       .detail > *:nth-child(3) { animation-delay:.18s; }
@@ -25258,62 +25343,64 @@ function Style() {
          starts at scroll 0 when this runs, so 50vh from the top of the container
          is the middle of what the eye is looking at, whatever the page's own
          height turns out to be. Everything travels outward from there. */
-      .sage-assemble .page, .sage-assemble .board-page, .sage-assemble .tab-page {
-        transform-origin: 50% 50vh;
-        animation: warpLand 1.15s cubic-bezier(.34,1.5,.64,1) both; }
-      /* The handoff's assemble easing, spring and all, on the page as a whole:
-         it expands past its resting size by a few percent and is pulled back, so
-         the layout arrives with weight instead of stopping dead on the number. */
-      @keyframes warpLand {
-        from { opacity:.25; transform:scale(.84); filter: blur(5px); }
-        55%  { filter: blur(0); }
-        to   { opacity:1; transform:none; filter: blur(0); }
-      }
-      /* ---- one entrance, not two ----
-         The app has an arrival of its own, .lpc.is-entering, and it was running
-         underneath this one: the bar slammed down from translateY(-100%), the
-         hero and every card rose from below on their own staggered delays, all
-         while the page was scaling out of the middle of the frame. Two entrances
-         with different origins and unrelated timings is what "segmented" means,
-         and between them nothing came from the centre — appBar comes from the top
-         edge and appRise from the bottom.
+      /* ---- the dashboard comes out of the point the streaks left from ----
+         Not a fade, and not a scale in place. Every block starts AT the vanishing
+         point, small, and flies out along its own line to where it belongs — the
+         near ones first, the far ones sweeping out behind them. Coming out of
+         lightspeed rather than a page loading after an animation.
 
-         .lpc.is-entering .hero is three classes, so every rule here leads with
-         html to outrank it. The arrival owns the entrance while it is playing;
-         the app's own one is what happens on an ordinary sign-in with no jump. */
-      .sage-assemble .hero { animation: saArrive .76s cubic-bezier(.34,1.5,.64,1) both; }
-      .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .28s both; }
-      .sage-assemble .seg-wrap { animation: saArrive .6s cubic-bezier(.34,1.5,.64,1) .2s both; }
-      .sage-assemble .card,
-      .sage-assemble .checkout-split > *,
-      .sage-assemble .dash-split > * { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .3s both; }
-      .sage-assemble .card:nth-of-type(2) { animation-delay:.38s; }
-      .sage-assemble .card:nth-of-type(3) { animation-delay:.44s; }
-      .sage-assemble .card:nth-of-type(n+4) { animation-delay:.5s; }
-      .sage-assemble .assoc-card { animation: saArrive .4s cubic-bezier(.34,1.5,.64,1) both; }
-      .sage-assemble .roster-card .assoc-card:nth-child(1) { animation-delay:.56s; }
-      .sage-assemble .roster-card .assoc-card:nth-child(2) { animation-delay:.656s; }
-      .sage-assemble .roster-card .assoc-card:nth-child(3) { animation-delay:.752s; }
-      .sage-assemble .roster-card .assoc-card:nth-child(4) { animation-delay:.848s; }
-      .sage-assemble .roster-card .assoc-card:nth-child(n+5) { animation-delay:.944s; }
-      .sage-assemble .app-header, .sage-assemble .topbar {
-        animation: saArrive .62s cubic-bezier(.34,1.5,.64,1) .18s both; }
-      .sage-assemble .brand { animation: saArrive .56s cubic-bezier(.34,1.5,.64,1) .42s both; }
-      /* From the middle: scaled up out of the centre of the page rather than
-         lifted from underneath it. The rise belongs to an ordinary page load and
-         this is not one. */
-      @keyframes saArrive {
-        from { opacity:0; transform: scale(.94); }
-        to   { opacity:1; transform:none; }
+         --rx/--ry are the vector from the block to that point, measured once when
+         the dashboard mounts (see radialAssemble); --rd is its turn, by distance.
+         Held invisible until then, so nothing is seen sitting in its final place
+         before it has been given its line.
+
+         The page itself no longer moves. It used to scale out of the middle of
+         the frame, and a parent transform would have scaled these vectors along
+         with it — the blocks would have flown to the wrong places. */
+      /* Armed for exactly one frame: added when the dashboard mounts and dropped
+         the moment every block has been measured and given its line. It is its
+         own class rather than part of .sage-assemble so that the two ways this
+         can be skipped — reduced motion, or nothing matching the selector — can
+         never leave the dashboard holding at opacity 0. */
+      .sage-arming .topbar, .sage-arming .app-header, .sage-arming .seg-wrap,
+      .sage-arming .hero, .sage-arming .card, .sage-arming .assoc-card,
+      .sage-arming .empty, .sage-arming .sect-strip { opacity:0; }
+      /* The page holds still while its blocks fly. It has a mount animation of
+         its own — pageIn, a lift from below — and it was running underneath the
+         landing, so the whole layout drifted upward while every block inside it
+         was travelling outward. Two movements, different directions, which is the
+         choppiness. saStill sits after pageIn in the list and pins the properties
+         they share; pageIn stays at index 0 so that dropping .sage-assemble at
+         the end does not restart it. */
+      .sage-assemble .page, .sage-assemble .board-page, .sage-assemble .tab-page {
+        animation: pageIn .38s var(--spring), saStill 1.5s linear both; }
+      @keyframes saStill { from, to { transform:none; opacity:1; filter:none; } }
+      .sage-assemble .sa-radial {
+        opacity:0;
+        animation: saRadial .92s cubic-bezier(.16,.86,.28,1) both;
+        animation-delay: var(--rd, 0ms); }
+      @keyframes saRadial {
+        0%   { opacity:0; transform: translate3d(var(--rx,0), var(--ry,0), 0) scale(.05); }
+        16%  { opacity:1; }
+        100% { opacity:1; transform: none; }
       }
-      /* The header sits outside the page and does not scale with it, so it gets
-         the same outward move on its own: down from the top edge is the one
-         direction that would read as a page loading rather than as an assembly.
-         Its delay came down from .95s to .18s at the same time — the handoff put
-         the header near the end because its prototype built a dashboard from
-         nothing, and here the bar is already the frame around a page that is
-         arriving inside it. Waiting a second for it just left a gap at the top. */
-      .sage-assemble .app-header, .sage-assemble .topbar { transform-origin: 50% 50vh; }
+      .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .5s both; }
+
+      /* ---- the little light they come out of ----
+         Sits at the vanishing point once the streaks have gone, swells, and is
+         gone by the time the blocks have cleared it. */
+      .sage-spark { position:fixed; left:var(--jx,50%); top:var(--jy,50%); width:10px; height:10px;
+        margin:-5px 0 0 -5px; border-radius:50%; opacity:0; pointer-events:none; z-index:9400;
+        background: radial-gradient(circle, #fff 0%, rgba(143,189,178,.85) 42%, rgba(143,189,178,0) 72%); }
+      .sage-beat-flash .sage-spark, .sage-assemble .sage-spark {
+        animation: saSpark .72s cubic-bezier(.2,.7,.3,1) both; }
+      @keyframes saSpark {
+        0%   { opacity:0; transform: scale(.2); }
+        18%  { opacity:1; transform: scale(2.6); }
+        55%  { opacity:.9; transform: scale(5); }
+        100% { opacity:0; transform: scale(13); }
+      }
+
       @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
 
       @media (prefers-reduced-motion: reduce) {
@@ -25322,10 +25409,13 @@ function Style() {
         .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
         .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
         .sage-flash { animation:none !important; }
-        .sage-assemble .hero, .sage-assemble .seg-wrap, .sage-assemble .card,
-        .sage-assemble .assoc-card, .sage-assemble .app-header, .sage-assemble .topbar,
-        .sage-assemble .brand, .sage-assemble .hero-ring-fill {
-          animation-duration:.18s !important; animation-timing-function:linear !important; }
+        .sage-assemble .sa-radial, .sage-assemble .hero-ring-fill,
+        .sage-spark { animation-duration:.18s !important; animation-timing-function:linear !important; }
+        /* And nothing is left armed: the radial pass does not run at all under
+           reduced motion, so the class that hides the blocks must not bite. */
+        .sage-arming .topbar, .sage-arming .app-header, .sage-arming .seg-wrap,
+        .sage-arming .hero, .sage-arming .card, .sage-arming .assoc-card,
+        .sage-arming .empty, .sage-arming .sect-strip { opacity:1 !important; }
       }
 
       .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }
