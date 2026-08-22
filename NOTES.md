@@ -40,18 +40,49 @@ assumed; costs nothing either way.
 filename `Lead-Performance-Summary_YYYY-MM.csv`. That is the name of a document managers have
 folders of, and renaming it silently breaks their filing. Worth deciding on purpose.
 
-### Parts 2-4 — still to build
+### Part 2 — the sign-in screen — BUILT 2026-08-22
 
-- **Part 2, the sign-in screen.** No card, form on the ground, drifting blobs and a 925-dot
-  field, and the mark building dot by dot as the form is typed.
-- **Part 3, the arrival.** 2.7s: hold, gather, stretch, flash, assemble. **This overlaps an
-  existing feature** — the app already plays a cinematic on the first sign-in of each calendar
-  day, with the same per-device per-day `localStorage` key. The arrival replaces it; two of
-  them stacked would be a minute of animation before anybody sees a number.
-- **Part 4, the smaller transitions.** Tool warp, tab pill, metric bloom, person sheet,
-  loading and saving dots. The loading dots are done.
+No card. The form on the ground, the time-of-day eyebrow shared with the dashboard hero, and
+the mark building as it is filled — 73 dots against 34 characters, driven off the input
+**values** rather than keystrokes so a password manager lands where a person lands.
 
-The handoff's performance notes are worth keeping verbatim; they were expensive to find.
+The ground is a **fixed layer behind both screens**, not something the sign-in owns. That is
+the whole trick of the arrival: the same blobs and dots continue through the join instead of
+one backdrop being swapped for another.
+
+The dot count differs from the handoff and the pitch does not. At a 44px pitch, 1440x900 gives
+660 dots rather than the ~925 quoted; the two numbers cannot both hold. Pitch is the one that
+sets the visual rhythm, so pitch won.
+
+### Part 3 — the arrival — BUILT 2026-08-22
+
+Hold, gather, stretch, flash, assemble. Measured in the browser against the handoff's table:
+gather at 487ms (spec 420), stretch 919 (940), flash 1840 (1820), assemble 1993 (1960).
+
+Each dot of the mark becomes a streak: rotated to its own angle out of the centre, origin at
+the near end, scaled along X only. **No translate**, so the near end stays pinned exactly
+where the dot was and nothing detaches. Each streak keeps its own dot's colour, so the teal
+rows fly teal and the sage rows fly sage.
+
+Two things the beat table does not say out loud, found by building it:
+
+- The flash and the assemble **overlap by 140ms**, so a `.beat-flash`-only rule cuts the flash
+  short. Both beats carry the identical animation shorthand, which keeps the running animation
+  rather than restarting it.
+- The overlay's own fade has to be **held until the flash has peaked**, or it takes the white
+  with it and the snap shows through.
+
+The assemble beat reaches the dashboard as a class on the document root, because the dashboard
+is above the overlay in the tree and threading a prop through six components that have no
+other reason to know about it would be worse.
+
+**The old cinematic is gone**, along with 200 lines of CSS for the stand-in dashboard it drew.
+The day key is `lpc:arrival` rather than `lpc:intro-played`, so everybody sees the new arrival
+once even if they had already seen the old one today.
+
+### Part 4 — still to build
+
+Tool warp, tab pill, metric bloom, person sheet, saving dot. The loading dots are done.
 
 ---
 

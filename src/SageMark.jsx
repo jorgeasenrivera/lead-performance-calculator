@@ -51,6 +51,31 @@ export const SAGE_CAP_REVERSED = "#AEC79E";
 export const SAGE_PLATE = "#2E3A32";
 export const SAGE_PRINT = "#2E3A32";     // one flat colour, print and PDF only
 
+/* The artwork as geometry, in viewBox units, for anything that has to move the
+   dots individually rather than draw them — the arrival turns every one of them
+   into a streak. Exported so the mark stays the only place the pattern lives:
+   a second copy of it in the transition would drift the first time the S is
+   touched. */
+export function sageDots({ word = false, rise = true, fill, base = SAGE_BASE, cap = SAGE_CAP, flat } = {}) {
+  const pattern = word ? WORDMARK : ICON_S;
+  const cols = pattern[0].length, rows = pattern.length;
+  const fillOn = fill === undefined ? FILL : fill;
+  const out = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (pattern[r][c] !== "o") continue;
+      out.push({
+        x: (c + 0.5) * PITCH,
+        y: (r + 0.5) * PITCH,
+        r: ((rise ? WEIGHT[r] : 1) * CELL * fillOn) / 2,
+        fill: flat || mix(base, cap, rows > 1 ? 1 - r / (rows - 1) : 0),
+      });
+    }
+  }
+  out.sort((a, b) => a.x - b.x || a.y - b.y);
+  return { dots: out, w: cols * PITCH, h: rows * PITCH };
+}
+
 export default function SageMark({
   word = false,
   size = 32,

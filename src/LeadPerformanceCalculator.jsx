@@ -6,7 +6,7 @@ import { createClient } from "@supabase/supabase-js";
    the app's iconography come off one ruler. Its own file because it is shipped
    artwork rather than a screen: every size, plate and print form is generated
    from the single pattern inside it. */
-import SageMark, { SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED, SAGE_PRINT } from "./SageMark.jsx";
+import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED, SAGE_PRINT } from "./SageMark.jsx";
 /* The reader for the scheduled reports, shared verbatim with the pipeline that
    reads the emailed ones. It used to be a second copy of the same code with a
    comment promising they matched; they did not, and every way they differed was
@@ -309,27 +309,12 @@ const STORE_TZ = "America/New_York";
 const dayIn = (d = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(d); // YYYY-MM-DD
 const today = () => dayIn();
 
-// The cinematic loading sequence plays only on the first sign-in of each calendar
-// day, per person. After that, sign-ins during the same day skip straight into the
-// app so it never becomes tedious. Keyed by dealership day + user so it resets at
-// midnight and is independent per account on a shared machine.
-const INTRO_KEY = "lpc:intro-played";
-function introPlayedToday(userId) {
-  try { return localStorage.getItem(INTRO_KEY) === `${today()}:${userId || "anon"}`; }
-  catch (e) { return false; }
-}
-function markIntroPlayed(userId) {
-  try { localStorage.setItem(INTRO_KEY, `${today()}:${userId || "anon"}`); } catch (e) {}
-}
-// How many times someone has seen the intro overall — used to reveal a "Skip" affordance
-// only after the novelty has worn off (first few plays stay unskippable for the wow).
-const INTRO_COUNT_KEY = "lpc:intro-count";
-function introSeenCount() {
-  try { return parseInt(localStorage.getItem(INTRO_COUNT_KEY) || "0", 10) || 0; } catch (e) { return 0; }
-}
-function bumpIntroCount() {
-  try { const n = introSeenCount() + 1; localStorage.setItem(INTRO_COUNT_KEY, String(n)); return n; } catch (e) { return 0; }
-}
+/* The arrival plays only on the first sign-in of each calendar day, per person:
+   keyed by dealership day plus user, so it resets at midnight and is independent
+   per account on a shared machine. The key is `lpc:arrival` rather than the old
+   `lpc:intro-played`, which means everybody sees the new arrival once even if
+   they had already seen the old cinematic today — which is the right way round,
+   since it is the thing they have not seen. */
 const ym = () => today().slice(0, 7);
 const prevYm = () => {
   const [y, m] = today().split("-").map(Number);
@@ -1914,7 +1899,7 @@ export default function LeadPerformanceCalculator() {
   // means the next sign-in plays it as well, which is what makes it possible to
   // review the whole handover end to end.
   const replayIntro = () => {
-    try { localStorage.removeItem(INTRO_KEY); } catch (e) {}
+    try { localStorage.removeItem(ARRIVAL_KEY); } catch (e) {}
     setIntroDone(false);
     setIntroPlaying(true);
   };
@@ -1983,7 +1968,7 @@ export default function LeadPerformanceCalculator() {
     if (!session || !session.active || entered) return;
     // Wait for the sign-in handover to clear before this begins. Overlapping the
     // two reads as one animation interrupting another rather than a sequence.
-    if (!introPlayedToday(session.userId || session.id)) setTimeout(() => setIntroPlaying(true), 240);
+    if (!arrivalPlayedToday(session.userId || session.id)) setTimeout(() => setIntroPlaying(true), 240);
     setAppModule("perf");
     setEntered(true);
   }, [session, entered]);
@@ -3268,12 +3253,9 @@ export default function LeadPerformanceCalculator() {
         <DeliveryGuideModal onClose={() => setShowHelp(false)} />
       )}
       {introPlaying && (
-        <LoadingSequence
-          storeName={currentStore?.name || (isAdmin ? "your stores" : "your board")}
-          brand={currentStore?.brand}
-          showStorePicker={accessibleStores.length + (isAdmin ? 1 : 0) + (hasOverview ? 1 : 0) >= 2}
+        <SageArrival
           onComplete={() => {
-            markIntroPlayed(session.userId || session.id);
+            markArrivalPlayed(session.userId || session.id);
             setIntroDone(true);
             setIntroPlaying(false);
           }} />
@@ -4972,110 +4954,9 @@ function brandFontFor(name) {
   return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
 }
 
-function LoadingSequence({ storeName, brand, showStorePicker, onComplete }) {
-  const [seen] = useState(() => introSeenCount());
-  const [exiting, setExiting] = useState(false);
-  const doneRef = useRef(false);
-  const onDone = useRef(onComplete);
-  onDone.current = onComplete;
-
-  const finish = useCallback(() => {
-    if (doneRef.current) return;
-    doneRef.current = true;
-    setExiting(true);
-    setTimeout(() => onDone.current(), 620);   // must match the ldxOut duration
-  }, []);
-
-  useEffect(() => {
-    bumpIntroCount();
-    const mq = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq && mq.matches) { doneRef.current = true; onDone.current(); return; }
-    const t = setTimeout(finish, 3550);
-    return () => clearTimeout(t);
-  }, [finish]);
-
-  // Same tokens the real hero uses, so the gradient is identical rather than similar.
-  const vars = {
-    "--sp": (brand && brand.primary) || "#2A5E9B",
-    "--sd": (brand && brand.deep) || "#1D4674",
-    "--sa": (brand && brand.accent) || "#C1D730",
-  };
-
-  const bf = brandFontFor(storeName);
-  useEffect(() => {
-    if (!bf) return;
-    const id = "brandfont-" + bf.spec;
-    if (document.getElementById(id)) return;
-    const l = document.createElement("link");
-    l.id = id; l.rel = "stylesheet";
-    l.href = `https://fonts.googleapis.com/css2?family=${bf.spec}:${bf.axis}&display=swap`;
-    document.head.appendChild(l);
-  }, [bf && bf.spec]); // eslint-disable-line
-
-  return (
-    <div className={"ldx" + (exiting ? " is-exiting" : "")} style={vars}>
-      {/* the glow the mark throws as it opens up */}
-      <div className="ldx-bloom" />
-      <div className="ldx-bloom two" />
-
-      {/* the page assembling itself, in the page's own shapes */}
-      <div className="ldx-page">
-        <div className="ldx-bar">
-          <span className="ldx-mark-slot" />
-          <span className="ldx-pills"><i /><i /><i /></span>
-          <span className="ldx-queues"><i /><i /><i /></span>
-          {showStorePicker && <span className="ldx-store" />}
-        </div>
-        {/* The sub-nav and its search. Leaving these out was what let the hero ride
-            up the page: the skeleton has to reserve the same rows the app does. */}
-        {/* Same container the dashboard uses: 1440 max, 32px gutters, centred. The
-            skeleton has to land on the real layout, not near it. */}
-        <div className="ldx-board">
-          {/* The sub-nav and its search. Leaving these out was what let the hero ride
-              up the page: the skeleton has to reserve the same rows the app does. */}
-          <div className="ldx-nav">
-            <span className="ldx-tabs"><i /><i /><i /><i /><i /><i /></span>
-            <span className="ldx-search" />
-          </div>
-          <div className="ldx-hero">
-            <div className="ldx-hero-id">
-              <div className="ldx-hero-logo" />
-              <div className="ldx-hero-text"><span className="w1" /><span className="w2" /><span className="w3" /></div>
-            </div>
-            <div className="ldx-hero-right">
-              <div className="ldx-ring"><svg viewBox="0 0 100 100"><circle className="ldx-ring-bg" cx="50" cy="50" r="42" /><circle className="ldx-ring-fg" cx="50" cy="50" r="42" /></svg></div>
-              <div className="ldx-hero-side"><span className="s1" /><span className="s2" /><span className="s3" /></div>
-            </div>
-          </div>
-          <div className="ldx-cards">
-            <div className="ldx-card tall">
-            <span className="t1" /><span className="t2" />
-            <span className="ldx-meter"><i /></span>
-            <span className="t3" />
-          </div>
-            <div className="ldx-card wide"><i /><i /><i /></div>
-          </div>
-        </div>
-      </div>
-
-      {/* the mark itself: the one thing carried over from the login card */}
-      {/* The mark does not fade. It travels to where it will live in the header,
-          which is what stitches this screen to the one it becomes. */}
-      <div className="ldx-mark"><Logo size={72} /></div>
-      {/* The name drops in on a pill in the store's own colour, holds, then lifts
-          away just before the mark leaves for the header. */}
-      <div className="ldx-word">
-        <span className="ldx-pill" style={{
-          background: `linear-gradient(120deg, ${vars["--sp"]}, ${vars["--sd"]})`,
-          color: inkOn(vars["--sp"]),
-          ...(bf ? { fontFamily: `'${bf.family}', var(--font-display)` } : null),
-        }}>{storeName || "your board"}</span>
-      </div>
-
-      {seen >= 3 && <button className="ldx-skip" onClick={finish}>Skip</button>}
-    </div>
-  );
-}
+/* The cinematic that used to live here is gone: SageArrival replaced it. It
+   drew a stand-in dashboard of invented shapes for three and a half seconds,
+   which the new one does not need because it hands over to the real one. */
 
 /* ---------------- Board launcher (after sign-in, role-aware) ---------------- */
 function BoardLauncher({ config, session, onLaunch, onBack }) {
@@ -7192,6 +7073,104 @@ function Login({ config, onBack, onAuthed }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- The arrival ----------------
+   Press Sign in and the mark gathers, every dot of it stretches into a streak
+   past the frame, a flash covers the snap, and the dashboard builds outward from
+   the centre. 2.7 seconds, once a day.
+
+   ---- what this replaces ----
+   The app already played a cinematic on the first sign-in of each calendar day,
+   keyed the same way, per device and per person. Jorge chose to replace it: two
+   of them would be a minute of animation before anybody sees a number, and the
+   old one ended by drawing a stand-in dashboard that this one does not need
+   because it hands over to the real one.
+
+   ---- why the streaks pin at the near end ----
+   Each dot's wrapper is rotated to its own angle out of the mark's centre with
+   the origin at the near end, and scaled along X. There is no translate: the
+   near end stays exactly where the dot was, so nothing detaches from the mark
+   and re-attaches somewhere else. The layer around them carries them off frame.
+
+   ---- and why no will-change ----
+   Straight from the handoff, which found it the expensive way: scaling a 10px
+   dot to 177x with will-change made the browser hold every streak as a promoted
+   layer at its full scaled extent. 1664ms stall against a 21ms median without.
+   ------------------------------------------------------------------- */
+const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
+const ARRIVAL_KEY = "lpc:arrival";
+function arrivalPlayedToday(userId) {
+  try { return localStorage.getItem(ARRIVAL_KEY) === `${today()}:${userId || "anon"}`; }
+  catch (e) { return false; }
+}
+function markArrivalPlayed(userId) {
+  try { localStorage.setItem(ARRIVAL_KEY, `${today()}:${userId || "anon"}`); } catch (e) {}
+}
+
+function SageArrival({ onComplete }) {
+  const [beat, setBeat] = useState("hold");
+  const done = useRef(onComplete);
+  done.current = onComplete;
+
+  useEffect(() => {
+    const reduce = typeof window !== "undefined" && window.matchMedia
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      /* The assembly order is kept; only the movement goes. */
+      document.documentElement.classList.add("sage-assemble");
+      const t = setTimeout(() => done.current(), 320);
+      return () => { clearTimeout(t); document.documentElement.classList.remove("sage-assemble"); };
+    }
+    const ts = [];
+    const at = (ms, fn) => ts.push(setTimeout(fn, ms));
+    at(ARRIVAL.hold, () => setBeat("gather"));
+    at(ARRIVAL.hold + ARRIVAL.gather, () => setBeat("stretch"));
+    at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch, () => setBeat("flash"));
+    at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140, () => {
+      setBeat("assemble");
+      /* The dashboard is above this overlay in the tree, so the beat reaches it
+         as a class on the root rather than as a prop threaded through six
+         components that have no other reason to know about it. */
+      document.documentElement.classList.add("sage-assemble");
+    });
+    at(ARRIVAL.hold + ARRIVAL.gather + ARRIVAL.stretch + 140 + ARRIVAL.assemble, () => done.current());
+    return () => {
+      ts.forEach(clearTimeout);
+      document.documentElement.classList.remove("sage-assemble");
+    };
+  }, []);
+
+  /* The mark's own geometry, from the mark's own file. Built once. */
+  const art = useMemo(() => sageDots({ word: true }), []);
+  const cx = art.w / 2, cy = art.h / 2;
+  const streaks = useMemo(() => art.dots.map((d) => {
+    const dx = d.x - cx, dy = d.y - cy;
+    const dist = Math.hypot(dx, dy);
+    return { ...d, dist,
+      angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+      /* Long enough that every far end clears an 849px half-diagonal. */
+      scale: (520 + dist * 2.4) / (d.r * 2),
+      pull: -7 - dist * 0.12 };
+  }), [art]);
+
+  return (
+    <div className={"sage-arrival beat-" + beat} aria-hidden="true">
+      <SageGround beat={beat} />
+      <div className="sa-mark">
+        <svg viewBox={`0 0 ${art.w} ${art.h}`} width="360">
+          {streaks.map((d, i) => (
+            <g key={i} className="sa-streak"
+              style={{ "--a": d.angle + "deg", "--sx": d.scale, "--pull": d.pull + "px",
+                transformOrigin: `${d.x}px ${d.y}px` }}>
+              <rect x={d.x} y={d.y - d.r} width={d.r * 2} height={d.r * 2} rx={d.r} fill={d.fill} />
+            </g>
+          ))}
+        </svg>
+      </div>
+      <div className="sa-flash" />
     </div>
   );
 }
@@ -23380,208 +23359,8 @@ function Style() {
          padding, .board-page is max-width 1440 with 32px gutters, .hero-band is 30px/34px
          with a 24px radius and the same gradient tokens. The point is that the last
          frame of this and the first frame of the app are the same picture. */
-      .ldx { position:fixed; inset:0; z-index:400; overflow:hidden; contain:paint;
-        background:var(--bg); animation: ldxIn .45s var(--ease) both; transform:translateZ(0); }
-      .ldx.is-exiting { animation: ldxOut .62s cubic-bezier(.34,1.3,.64,1) forwards;
-        will-change:opacity, transform; }
-      /* Everything inside holds its position and fades together. Nothing moves on
-         the way out, so there is nothing to catch the eye except the layer thinning. */
-      .ldx.is-exiting * { animation-play-state:paused !important; }
-      @keyframes ldxIn  { from { opacity:0; } to { opacity:1; } }
-      @keyframes ldxOut {
-        0%   { opacity:1; transform:scale(1); }
-        40%  { opacity:.62; transform:scale(1.008); }
-        100% { opacity:0; transform:scale(1.022); }
-      }
+      /* The cinematic's 200 lines of stand-in dashboard went with it. */
 
-      /* The glow the mark throws as it opens: the page's own aurora, brought
-         forward rather than invented for the occasion. */
-      .ldx-bloom { position:absolute; left:50%; top:42%; width:120vmax; height:120vmax;
-        margin:-60vmax 0 0 -60vmax; pointer-events:none; border-radius:50%;
-        background:radial-gradient(circle, color-mix(in srgb, var(--sp) 40%, transparent) 0%,
-          color-mix(in srgb, var(--sp) 14%, transparent) 34%, transparent 62%);
-        animation: ldxBloom 3.4s cubic-bezier(.34,1.4,.64,1) both; }
-      .ldx-bloom.two { background:radial-gradient(circle, color-mix(in srgb, var(--sa) 32%, transparent) 0%,
-          color-mix(in srgb, var(--sa) 10%, transparent) 30%, transparent 58%);
-        animation-delay:.1s; animation-duration:3.4s; }
-      @keyframes ldxBloom {
-        0%   { transform:scale(.02); opacity:0; }
-        10%  { opacity:1; }
-        56%  { transform:scale(.98); opacity:.95; }
-        /* swell, then pull in with the pill, finishing before the mark sets off */
-        62%  { transform:scale(1.06); opacity:1; }
-        70%  { transform:scale(.28); opacity:.4; }
-        74%  { transform:scale(.08); opacity:0; }
-        100% { transform:scale(.08); opacity:0; }
-      }
-
-      /* The mark travels to the exact spot it occupies in the header: 24px in from
-         the left, centred in a 60px bar, at 36px against the 72px it starts at.
-         Transform only, so it moves smoothly. */
-      .ldx-mark { position:fixed; left:0; top:0; z-index:4; width:72px; height:72px; transform-origin:0 0;
-        filter:drop-shadow(0 18px 40px color-mix(in srgb, var(--sp) 42%, transparent));
-        animation: ldxMark 3.4s var(--ease) both; }
-      /* With the origin at the top left, the centre hold needs the half-size offset
-         written in, and the landing is simply the header's own coordinates: 30px in
-         from the left, 12px down, at half of 72 to make 36. */
-      @keyframes ldxMark {
-        0%   { transform:translate(calc(50vw - 27px), calc(42vh - 18px)) scale(.5); opacity:0; }
-        9%   { transform:translate(calc(50vw - 49px), calc(42vh - 40px)) scale(1.12); opacity:1; }
-        20%  { transform:translate(calc(50vw - 45px), calc(42vh - 36px)) scale(1); opacity:1; }
-        /* holds while the name comes and goes, then leaves once the glow is gone */
-        74%  { transform:translate(calc(50vw - 45px), calc(42vh - 36px)) scale(1); opacity:1; }
-        94%  { transform:translate(17px, 9px) scale(.5); opacity:1;
-               filter:drop-shadow(0 0 0 transparent); }
-        100% { transform:translate(17px, 9px) scale(.5); opacity:1;
-               filter:drop-shadow(0 0 0 transparent); }
-      }
-      .ldx-word { position:fixed; left:0; right:0; top:calc(42vh + 52px); z-index:4; text-align:center; }
-      .ldx-pill { display:inline-block; padding:11px 26px; border-radius:999px;
-        font-family:var(--font-display); font-weight:700; font-size:24px; letter-spacing:-.015em;
-        box-shadow:0 16px 34px -16px rgba(16,32,52,.5), inset 0 1px 0 rgba(255,255,255,.22);
-        transform-origin:50% 0;
-        animation: ldxPill 3.4s cubic-bezier(.34,1.56,.64,1) both; }
-      /* Drops in past its resting point, settles, then springs back up and out just
-         before the mark leaves for the header. */
-      @keyframes ldxPill {
-        0%    { opacity:0; transform:translateY(-30px) scale(.86); }
-        9%    { opacity:1; transform:translateY(7px) scale(1.03); }
-        16%   { transform:translateY(0) scale(1); }
-        56%   { opacity:1; transform:translateY(0) scale(1); }
-        61%   { transform:translateY(5px) scale(1.03); }
-        70%   { opacity:0; transform:translateY(-30px) scale(.88); }
-        100%  { opacity:0; transform:translateY(-30px) scale(.88); }
-      }
-
-      /* ---- the dashboard's own shapes ---- */
-      .ldx-page { position:absolute; inset:0; z-index:2; }
-      .ldx-bar { position:absolute; top:0; left:0; right:0; height:60px;
-        background:rgba(255,255,255,.9); border-bottom:1px solid rgba(16,32,52,.06);
-        display:flex; align-items:center; gap:12px; padding:12px 24px; box-sizing:border-box;
-        animation: ldxBar .6s var(--ease) both; animation-delay:.5s; }
-      .ldx-mark-slot { width:36px; height:36px; border-radius:11px; background:transparent; flex:0 0 auto; }
-      .ldx-pills, .ldx-queues { display:flex; gap:8px; align-items:center; }
-      .ldx-pills { margin-left:auto; background:rgba(16,32,52,.05); border-radius:10px; padding:3px; }
-      .ldx-bar > :last-child { margin-right:0; }
-      .ldx-pills i { height:28px; border-radius:8px; background:rgba(16,32,52,.08); }
-      .ldx-pills i:nth-child(1) { width:99px; background:#fff; }
-      .ldx-pills i:nth-child(2) { width:93px; }
-      .ldx-pills i:nth-child(3) { width:79px; }
-      .ldx-pills i:first-child { background:#fff; }
-      .ldx-queues i { height:28px; border-radius:999px; position:relative; overflow:hidden; }
-      .ldx-queues i:nth-child(1) { width:103px; }
-      .ldx-queues i:nth-child(2) { width:94px; }
-      .ldx-queues i:nth-child(3) { width:84px; }
-      .ldx-queues i:nth-child(1) { background:#10B981; }
-      .ldx-queues i:nth-child(2) { background:#5566F0; }
-      .ldx-queues i:nth-child(3) { background:#8B5CF6; }
-      .ldx-store { width:274px; height:29px; border-radius:10px; border:1px solid rgba(16,32,52,.14);
-        background:#fff; margin-left:12px; flex:0 0 auto; }
-      @keyframes ldxBar { from { transform:translateY(-100%); opacity:0; } to { transform:none; opacity:1; } }
-
-      .ldx-board { position:absolute; top:60px; left:0; right:0;
-        padding:20px 0 0; box-sizing:border-box; }
-
-      /* the sub-nav row: the top bar's gutters, not the dashboard's */
-      .ldx-nav { display:flex; align-items:center; justify-content:space-between; gap:20px;
-        padding:0 21px; margin-bottom:33px; }
-      .ldx-nav { animation: ldxRise .5s var(--ease) both; animation-delay:.62s; }
-      .ldx-tabs { display:flex; align-items:center; gap:5px; padding:6px;
-        background:rgba(16,32,52,.05); border-radius:14px; }
-      .ldx-tabs i { height:36px; border-radius:9px; background:transparent; }
-      .ldx-tabs i:first-child { background:#fff; box-shadow:0 4px 14px -8px rgba(16,32,52,.45); width:102px; }
-      .ldx-tabs i:nth-child(2) { width:103px; }
-      .ldx-tabs i:nth-child(3) { width:96px; }
-      .ldx-tabs i:nth-child(4) { width:72px; }
-      .ldx-tabs i:nth-child(5) { width:94px; }
-      .ldx-tabs i:nth-child(6) { width:70px; }
-      .ldx-search { width:301px; height:36px; border-radius:13px; background:rgba(16,32,52,.06); flex:0 0 auto; }
-
-      .ldx-hero { position:relative; display:flex; align-items:center; justify-content:space-between;
-        gap:32px; margin:0 clamp(24px, 4.75vw, 96px); padding:30px 34px; border-radius:24px;
-        height:182px; box-sizing:border-box;
-        background: linear-gradient(120deg, var(--sp) 0%, var(--sp) 40%, var(--sd) 100%);
-        box-shadow: 0 12px 34px rgba(29,70,116,.30), inset 0 1px 0 rgba(255,255,255,.18);
-        animation: ldxHero .75s var(--spring) both; animation-delay:.74s; }
-      .ldx-hero-id { display:flex; align-items:center; gap:20px; }
-      .ldx-hero-logo { width:62px; height:62px; border-radius:17px; background:rgba(255,255,255,.92); flex:0 0 auto; }
-      .ldx-hero-text { display:flex; flex-direction:column; gap:9px; }
-      .ldx-hero-text span { display:block; border-radius:7px; background:rgba(255,255,255,.34); }
-      .ldx-hero-text .w1 { width:165px; height:9px; }
-      .ldx-hero-text .w2 { width:362px; height:24px; background:rgba(255,255,255,.86); }
-      .ldx-hero-text .w3 { width:112px; height:9px; }
-      .ldx-hero-right { display:flex; align-items:center; gap:21px; }
-      .ldx-ring { width:98px; height:98px; flex:0 0 auto; }
-      .ldx-ring svg { width:100%; height:100%; transform:rotate(-90deg); }
-      .ldx-ring-bg { fill:none; stroke:rgba(255,255,255,.22); stroke-width:7.5; }
-      .ldx-ring-fg { fill:none; stroke:var(--sa); stroke-width:7.5; stroke-linecap:round;
-        stroke-dasharray:264; stroke-dashoffset:264;
-        animation: ldxRing 1.4s var(--ease) both; animation-delay:.9s; }
-      @keyframes ldxRing { to { stroke-dashoffset:78; } }
-      .ldx-hero-side { display:flex; flex-direction:column; gap:8px; }
-      .ldx-hero-side span { display:block; border-radius:7px; background:rgba(255,255,255,.3); }
-      .ldx-hero-side .s1 { width:245px; height:14px; background:rgba(255,255,255,.8); }
-      .ldx-hero-side .s2 { width:264px; height:9px; }
-      .ldx-hero-side .s3 { width:202px; height:9px; }
-      @keyframes ldxHero {
-        from { transform:translateY(24px) scale(.975); opacity:0; filter:blur(5px); }
-        to   { transform:none; opacity:1; filter:blur(0); }
-      }
-
-      .ldx-cards { display:flex; gap:18px; margin:18px clamp(24px, 4.75vw, 96px) 0; }
-      .ldx-card { border-radius:20px; animation: ldxRise .6s var(--ease) both; }
-      .ldx-card.tall { width:332px; height:175px; flex:0 0 auto; padding:21px 22px; box-sizing:border-box;
-        display:flex; flex-direction:column; justify-content:flex-start; gap:11px;
-        background:linear-gradient(150deg,#F09A3E,#E2622B);
-        box-shadow:0 18px 40px -26px rgba(226,98,43,.6); animation-delay:.84s; }
-      .ldx-card.wide { flex:1; height:175px; padding:24px 26px; box-sizing:border-box;
-        display:flex; flex-direction:column; justify-content:center; gap:21px;
-        background:rgba(255,255,255,.72); box-shadow:0 18px 40px -30px rgba(16,32,52,.45);
-        animation-delay:.94s; }
-      .ldx-card.wide i { display:block; height:12px; border-radius:8px; background:rgba(16,32,52,.08); }
-      .ldx-card.wide i:nth-child(1) { width:58%; }
-      .ldx-card.wide i:nth-child(2) { width:48%; }
-      .ldx-card.wide i:nth-child(3) { width:53%; }
-      .ldx-card.tall span { display:block; border-radius:6px; background:rgba(255,255,255,.34); }
-      .ldx-card.tall .t1 { width:106px; height:8px; }
-      .ldx-card.tall .t2 { width:171px; height:14px; background:rgba(255,255,255,.9); margin-top:2px; }
-      .ldx-card.tall .t3 { width:104px; height:8px; }
-      /* The weakest-standard bar fills rather than sitting there finished, for the
-         same reason the health ring draws itself: a number that arrives is read,
-         a number that is simply present is skipped. */
-      .ldx-meter { width:100%; height:6px; border-radius:999px; background:rgba(255,255,255,.3) !important;
-        overflow:hidden; margin-top:8px; }
-      .ldx-meter i { display:block; height:100%; width:0; border-radius:999px; background:#fff;
-        animation: ldxMeter 1.3s var(--ease) both; animation-delay:1.06s; }
-      @keyframes ldxMeter { to { width:62%; } }
-
-      /* The queue buttons carry the same light sweep they do in the header, so the
-         two screens behave the same as well as look the same. */
-      .ldx-queues i::after { content:""; position:absolute; inset:0;
-        background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.5) 50%, transparent 74%);
-        transform:translateX(-130%); animation: ldxSweep 1.5s var(--ease) both; }
-      .ldx-queues i:nth-child(1)::after { animation-delay:.86s; }
-      .ldx-queues i:nth-child(2)::after { animation-delay:1.02s; }
-      .ldx-queues i:nth-child(3)::after { animation-delay:1.18s; }
-      @keyframes ldxSweep {
-        0%   { transform:translateX(-130%); }
-        55%,100% { transform:translateX(130%); }
-      }
-      @keyframes ldxRise { from { transform:translateY(20px); opacity:0; } to { transform:none; opacity:1; } }
-
-      .ldx-skip { position:absolute; right:20px; bottom:18px; z-index:5; font-family:inherit; font-size:12.5px;
-        font-weight:700; padding:7px 14px; border-radius:999px; border:0; cursor:pointer;
-        background:rgba(16,32,52,.08); color:var(--ink-2); }
-      @media (max-width: 900px) {
-        .ldx-store, .ldx-pills { display:none; }
-        .ldx-hero { flex-wrap:wrap; margin:0 20px; }
-        .ldx-cards { margin:20px; }
-        .ldx-hero-side { display:none; }
-        .ldx-cards { flex-direction:column; }
-        .ldx-card.tall, .ldx-card.wide { width:auto; height:120px; }
-        .ldx-search { display:none; }
-      }
-      @media (prefers-reduced-motion: reduce) { .ldx, .ldx * { animation:none !important; } }
 
       /* ---------- sign-in handover ----------
          One continuous move in three overlapping beats. Nothing waits its turn
@@ -24558,6 +24337,81 @@ function Style() {
         transform: translate(-50%,-50%);
         animation: sgTwinkle 4s ease-in-out infinite alternate; }
       @keyframes sgTwinkle { from { opacity:.26; } to { opacity:1; } }
+
+      /* ---- the arrival ---- */
+      .sage-arrival { position:fixed; inset:0; z-index:9000; background:#F5F5F7; overflow:hidden; }
+      .sa-mark { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+        transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sa-mark svg { overflow:visible; }
+      /* Rotated to its own angle out of the centre, origin at the near end, and
+         scaled along X only. No translate: the near end stays pinned to the dot. */
+      .sa-streak { transform: rotate(var(--a)) translateX(0) scaleX(1);
+        transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .beat-gather .sa-mark { transform:translate(-50%,-50%) scale(.90); }
+      .beat-gather .sa-streak { transform: rotate(var(--a)) translateX(var(--pull)) scaleX(.78); }
+      .beat-stretch .sa-mark, .beat-flash .sa-mark, .beat-assemble .sa-mark {
+        transform:translate(-50%,-50%) scale(2.6);
+        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      .beat-stretch .sa-streak, .beat-flash .sa-streak, .beat-assemble .sa-streak {
+        transform: rotate(var(--a)) scaleX(var(--sx));
+        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      .sa-flash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; }
+      /* The same animation on both beats, so the class changing 140ms into the
+         flash does not cut it short — an identical shorthand keeps the running
+         animation rather than restarting it. */
+      .beat-flash .sa-flash, .beat-assemble .sa-flash { animation: saFlash .42s ease-out both; }
+      @keyframes saFlash { 0% { opacity:0; } 26% { opacity:1; } 100% { opacity:0; } }
+      /* Held until the flash has peaked, so the overlay clears behind the white
+         rather than taking it with it. */
+      .beat-assemble { background:transparent; transition: opacity .3s ease .28s; opacity:0; pointer-events:none; }
+
+      /* The ground goes with it: gathered in, blown out, then back to drifting. */
+      .sage-ground.beat-gather .sg-field { transform:scale(.92); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-ground.beat-gather .sg-blobs { transform:scale(.90); transition: transform .5s cubic-bezier(.32,0,.4,1); }
+      .sage-ground.beat-stretch .sg-field, .sage-ground.beat-flash .sg-field {
+        transform:scale(3.2); opacity:0; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+      .sage-ground.beat-stretch .sg-dot.bright, .sage-ground.beat-flash .sg-dot.bright {
+        transform: translate(-50%,-50%) rotate(var(--a)) scaleX(17);
+        transition: transform .88s cubic-bezier(.6,0,.9,.24); }
+      .sage-ground.beat-stretch .sg-blobs, .sage-ground.beat-flash .sg-blobs {
+        transform:scale(1.9); opacity:.12; transition: transform .88s cubic-bezier(.6,0,.9,.24), opacity .88s linear; }
+      /* Only the bright eighth streaks. The rest ride the layer's own scale,
+         which is what bought the density back. */
+      .sage-ground.beat-gather .sg-dot.bright { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(.80);
+        transition: transform .5s cubic-bezier(.32,0,.4,1); }
+
+      /* ---- the dashboard building outward from the centre ---- */
+      .sage-assemble .hero { animation: saArrive .76s cubic-bezier(.34,1.5,.64,1) both; }
+      .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .28s both; }
+      .sage-assemble .seg-wrap { animation: saArrive .6s cubic-bezier(.34,1.5,.64,1) .2s both; }
+      .sage-assemble .board-page > .card:nth-of-type(1) { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .3s both; }
+      .sage-assemble .board-page > .card:nth-of-type(2) { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .42s both; }
+      .sage-assemble .board-page > .card:nth-of-type(3) { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .46s both; }
+      .sage-assemble .assoc-card { animation: saArrive .4s cubic-bezier(.34,1.5,.64,1) both; }
+      .sage-assemble .roster-card .assoc-card:nth-child(1) { animation-delay:.56s; }
+      .sage-assemble .roster-card .assoc-card:nth-child(2) { animation-delay:.656s; }
+      .sage-assemble .roster-card .assoc-card:nth-child(3) { animation-delay:.752s; }
+      .sage-assemble .roster-card .assoc-card:nth-child(4) { animation-delay:.848s; }
+      .sage-assemble .roster-card .assoc-card:nth-child(n+5) { animation-delay:.944s; }
+      .sage-assemble .app-header, .sage-assemble .topbar { animation: saArrive .62s cubic-bezier(.34,1.5,.64,1) .95s both; }
+      .sage-assemble .brand { animation: saArrive .56s cubic-bezier(.34,1.5,.64,1) 1.25s both; }
+      @keyframes saArrive {
+        from { opacity:0; transform: translateY(14px) scale(.965); }
+        to   { opacity:1; transform:none; }
+      }
+      @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
+
+      @media (prefers-reduced-motion: reduce) {
+        /* Everything collapses to a cross-fade. The order is kept; the movement
+           goes. */
+        .sa-mark, .sa-streak, .sage-ground .sg-field, .sage-ground .sg-blobs,
+        .sage-ground .sg-dot { transition-duration:.18s !important; animation:none !important; }
+        .sage-arrival .sa-flash { animation:none !important; }
+        .sage-assemble .hero, .sage-assemble .seg-wrap, .sage-assemble .board-page > .card,
+        .sage-assemble .assoc-card, .sage-assemble .app-header, .sage-assemble .topbar,
+        .sage-assemble .brand, .sage-assemble .hero-ring-fill {
+          animation-duration:.18s !important; animation-timing-function:linear !important; }
+      }
 
       .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }
       /* No card. The form sits on the ground, 340px wide, centred. */
