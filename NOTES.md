@@ -189,10 +189,40 @@ was actually doing said the opposite. Frames from a screencast prove what was
 The self-labelling colour patch — a fixed div tinted by the current beat, sampled
 out of each captured frame — is what finally made the recording trustworthy.
 
-**What is left is the mount itself.** The dashboard blocks the main thread for over
-a second in the built app, and the held white is what covers it. The honest fix is
-to mount it under the streaks rather than after them, which is a change to the
-root's branching, not to any of this.
+**The dashboard is mounted under the streaks now, and the pause is gone.** Four
+things were in the way, and each was measured on the built app as the worst
+main-thread block in the 2.5s after the flash beat. It started at 1205ms.
+
+1. **The stylesheet was being re-parsed on every branch change.** Every branch of
+   the root rendered its own `<Style />`, so signing in tore down 353KB of CSS and
+   mounted 353KB of identical CSS — not one interpolation in any of it. It is
+   appended to the head once on load now and never touched. **1205ms → ~470ms**,
+   and the same saving applies to any branch change, including tool switches.
+2. **The sign-in screen became a layer rather than a branch.** The app underneath
+   did not exist until the handover, so the dashboard mounted after the streaks
+   had gone. It renders as soon as the session arrives, about 250ms into the hold,
+   with the sign-in screen over the top: measured, the shell is up at ~100ms and
+   the hero at ~400ms, against a flash at ~1780ms. The layer has to sit at a fixed
+   index in every branch's output, because React reconciles by index — index 0
+   changes type as the app comes up and remounts, index 1 does not, so the jump
+   running inside the sign-in screen is never interrupted.
+3. **The handover does no React work.** Changing state on the root re-renders the
+   whole tree, and this tree is very large: a 490ms task for a dashboard that was
+   not changing. The handover is four class names and the geometry of six blocks
+   now; the state settles a second and a half later, when a render costs nothing
+   anyone can see.
+4. **The mark stops being painted at the flash.** 73 streaks, each larger than the
+   screen, are expensive to rasterise and were still costing that for the whole
+   flash — under a white overlay, with their far ends long gone. **505ms with the
+   mark painting against 28-61ms without it.** That single number was most of what
+   remained.
+
+Worst block after the flash, three runs: **36ms, 48ms, 81ms.** From 1205ms.
+
+One thing this exposed: the session now lands in the middle of the jump, so the
+effect that used to start the arrival when a session appeared was mounting the
+whole landing on a dashboard nobody could see, a second before the streaks had
+finished. The jump hands over on its own clock.
 
 **The streaks are drawn on a canvas now, because a real streak could not be
 afforded as DOM.** The handoff draws every one as a pill — `border-radius:50%`

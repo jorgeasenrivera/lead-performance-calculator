@@ -1893,6 +1893,15 @@ export default function LeadPerformanceCalculator() {
   const [introPlaying, setIntroPlaying] = useState(false);
   /* True while the sign-in screen is taking itself apart. See where it is read. */
   const [jumpHold, setJumpHold] = useState(false);
+  /* Hides the app while the sign-in layer is over it. A LAYOUT effect, so the
+     class is gone in the same commit that drops the layer — an ordinary effect
+     runs after paint and would show one frame of an un-animated dashboard right
+     where the landing is supposed to begin. */
+  useLayoutEffect(() => {
+    const under = !session || jumpHold;
+    document.documentElement.classList.toggle("jump-under", under);
+    return () => document.documentElement.classList.remove("jump-under");
+  }, [session, jumpHold]);
   // True for the length of the build-in only. Set the moment a session appears, so
   // the regions animate in while the sign-in wash is still clearing over the top.
   const [entering, setEntering] = useState(false);
@@ -1987,12 +1996,16 @@ export default function LeadPerformanceCalculator() {
        something that happens after the app loads, it is the thing the loading
        happens behind.
 
-       And only when somebody actually pressed Sign in. A session appearing is not
-       the same event: a page reload restores one with no sign-in screen anywhere,
-       so there is no mark to streak and no form to fade, and the arrival would
-       have to invent both. Jorge's call is that a refresh at the desk goes
-       straight in. */
-    if (signInPressed) { signInPressed = false; setIntroPlaying(true); }
+       And the arrival is NOT started from here. The session now lands in the
+       middle of the jump — about 250ms in, while the mark is still gathering —
+       because the dashboard is mounted under the streaks rather than after them.
+       Setting introPlaying here mounted SageArrival at that moment and ran the
+       whole landing on a dashboard nobody could see, a second before the streaks
+       had finished. The jump hands over on its own clock; see landDashboard.
+
+       The flag is still consumed, because a page RELOAD restores a session with
+       no sign-in screen anywhere and must not be treated as an arrival. */
+    signInPressed = false;
     setAppModule("perf");
     setEntered(true);
   }, [session, entered]);
@@ -2887,7 +2900,45 @@ export default function LeadPerformanceCalculator() {
     return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} /><Style /></Shell>;
   }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
-  if (!config || !authReady || bootHeld) return <Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>;
+  /* ---- the sign-in screen is a LAYER, not a branch ----
+     It used to be one of this component's early returns, which meant the app
+     underneath it did not exist until the jump handed over — so the dashboard
+     mounted after the streaks had gone, and the white flash had to sit there
+     covering half a second of React. Measured at 407-519ms of blocked main
+     thread, on top of the 1.2s it was before the stylesheet stopped being
+     re-parsed on every branch change.
+
+     Now the app renders as soon as the session arrives, about 250ms into the
+     hold, with this layer over the top of it: the mount happens under the
+     streaks, while there is something to look at, and the handover is a state
+     flip onto a dashboard that has already been built.
+
+     It has to be at a fixed position in every branch's output — always the second
+     child of the same fragment — because React reconciles by index. The element
+     at index 0 changes type as the app comes up and remounts; index 1 does not,
+     so the sign-in screen carries on and the jump running inside it is never
+     interrupted. Returning it as a branch of its own is exactly what would tear
+     it down at the moment the session lands. */
+  const signInLayer = config && (!session || jumpHold) ? (
+    <div className="signin-over" key="signin">
+      <Login config={config}
+        onJump={setJumpHold}
+        onHandover={() => {
+          const undo = landDashboard();
+          /* And the tidying, once the landing is over and a render is free. */
+          setTimeout(() => {
+            undo();
+            jumpOwnsEntrance = false;
+            setJumpHold(false);
+            setIntroDone(true);
+          }, ARRIVAL.assemble);
+        }}
+        onAuthed={async () => { await refreshProfile(); }} />
+    </div>
+  ) : null;
+  const wrap = (node) => <>{node}{signInLayer}</>;
+
+  if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
     await authSignOut();
@@ -2902,24 +2953,21 @@ export default function LeadPerformanceCalculator() {
      into the first beat. The jump releases the hold on the frame the flash is
      covering, which is the only frame where swapping one screen for the other
      cannot be seen. */
-  if (!session || jumpHold) {
-    return <Shell><Login config={config}
-      onJump={setJumpHold}
-      onArrival={() => setIntroPlaying(true)}
-      onAuthed={async () => { await refreshProfile(); }} /><Style /></Shell>;
-  }
+  /* Nothing but the ground while there is no session: the sign-in screen itself
+     is the layer above, and it is already on screen. */
+  if (!session) return wrap(<Shell><Style /></Shell>);
 
   // Signed in, but the admin hasn't granted a store yet (or the account was switched off).
   if (!session.active) {
-    return <Shell><div className="login"><div className="login-card">
+    return wrap(<Shell><div className="login"><div className="login-card">
       <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
       <h1 className="login-title">Account paused</h1>
       <p className="setup-note">This account has been deactivated. Contact your group admin.</p>
       <button className="btn wide" onClick={signOut}>Sign out</button>
-    </div></div><Style /></Shell>;
+    </div></div><Style /></Shell>);
   }
   if (session.role !== "admin" && session.pending) {
-    return <Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>;
+    return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>);
   }
 
   // The Tools chooser is gone. Signing in drops the person straight into the
@@ -3047,7 +3095,7 @@ export default function LeadPerformanceCalculator() {
   );
 
   if (appModule === "board") {
-    return (
+    return wrap(
       <AppShell entering={entering}
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
@@ -3063,7 +3111,7 @@ export default function LeadPerformanceCalculator() {
 
   // ---- Live Floor: its own self-contained module (walk-in / showroom queue) ----
   if (appModule === "floor" || appModule === "line" || appModule === "online") {
-    return (
+    return wrap(
       <FloorModule
         queue={appModule}
         config={config}
@@ -3116,7 +3164,7 @@ export default function LeadPerformanceCalculator() {
     navOnChange = setTab;
   }
 
-  return (
+  return wrap(
     <AppShell entering={entering}
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
@@ -7079,7 +7127,7 @@ function TicketsPanel({ config, onChange }) {
 }
 
 /* ---------------- Login (real accounts) ---------------- */
-function Login({ config, onBack, onAuthed, onArrival, onJump }) {
+function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -7165,11 +7213,9 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
     const handOver = () => {
       if (handedOver || !flashed || authed !== true) return;
       handedOver = true;
-      if (onArrival) onArrival();
-      /* Released here and not before: this is the frame the white is covering.
-         Nothing else happens on this line — the profile is already loaded — so
-         the swap is the only work the browser has to do under the flash. */
-      if (heldRef.current) heldRef.current(false);
+      /* This is the frame the white is covering, and it is a handful of class
+         names: the dashboard has been mounted and laid out since the hold. */
+      if (onHandover) onHandover();
     };
     jumping.current = runJump({
       lead: short ? RUSH : 0,
@@ -7677,6 +7723,37 @@ function tellJumpOrigin(el) {
    before writing anything back, so it costs a single forced reflow rather than
    one per element. */
 const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip";
+
+/* ---- the handover does no React work at all ----
+   Everything the dashboard needs in order to appear is a class on the document
+   and a transform on a handful of blocks — and the dashboard itself has been
+   mounted and laid out since the hold. So the handover is done here, imperatively,
+   rather than by setting state.
+
+   It was state, and the cost was a single 490ms task measured right after the
+   flash: changing anything on the root re-renders the whole app tree, and this
+   tree is very large. The mount had already been moved under the streaks by then,
+   so what was left was React reconciling a dashboard that was not changing. Now
+   the frame that reveals it touches four class names and reads the geometry of six
+   blocks, and the state is settled a second and a half later when a re-render
+   costs nothing anyone can see. */
+function landDashboard() {
+  if (typeof document === "undefined") return () => {};
+  const root = document.documentElement;
+  /* One style change: the app comes out of hiding, the sign-in layer goes, and the
+     landing rules come on together. */
+  root.classList.remove("jump-under", "sage-beat-flash");
+  root.classList.add("sage-assemble", "sage-beat-assemble", "signin-gone");
+  let reduce = false;
+  try {
+    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {}
+  const undo = reduce ? () => {} : radialAssemble();
+  return () => {
+    undo();
+    root.classList.remove("sage-assemble", "sage-beat-assemble", "signin-gone");
+  };
+}
 function radialAssemble() {
   if (typeof document === "undefined") return () => {};
   const o = lastJumpOrigin || { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -22823,9 +22900,20 @@ function AppShell({
   );
 }
 
-function Style() {
-  return (
-    <style>{`
+/* ---------------- The stylesheet ----------------
+   Appended to the head once, on load, and never touched again — rather than
+   rendered as a <style> element inside whichever screen happens to be up.
+
+   It was the second: every branch of this component rendered its own <Style />,
+   so signing in tore down 353KB of CSS and mounted 353KB of identical CSS, and
+   the browser reparsed all of it and recalculated every style on the page. That
+   is a large part of the second-long block that the white flash at the end of the
+   arrival was covering, and it was being paid on any branch change — every tool
+   switch that swapped shells too.
+
+   There is nothing dynamic in here to justify the cost: not one interpolation in
+   353KB. So it goes in once and stays. */
+const SAGE_CSS = `
       :root {
         --bg: #F5F5F7; --card: #FFFFFF; --ink: #1D1D1F; --ink-2: #6E6E73; --ink-3: #AEAEB2;
         --line: rgba(0,0,0,.08); --blue: #2A5E9B; --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
@@ -25392,7 +25480,20 @@ function Style() {
          the flash, which is under the white by then. */
       .sage-beat-flash .login-logo svg {
         transform: scale(9); transition: transform .34s cubic-bezier(.5,0,.85,.4); }
-      .sage-beat-flash .login-logo circle { opacity:0; transition: opacity .3s ease-in .1s; }
+      /* ---- and then it stops being painted ----
+         73 streaks, each the size of the screen and then some, are expensive to
+         rasterise, and they carry on costing that for the whole flash even though
+         the white is over them and their far ends left the frame long ago.
+         Measured in the built app, it is not a rounding error: 505ms of blocked
+         main thread with the mark still painting against 28-61ms with it hidden.
+         That single number was most of the pause at the join.
+
+         Hidden rather than faded, and 90ms late rather than at once: the white
+         reaches full at 88ms, so this lands just behind it and nothing is seen to
+         go. visibility, so the transition delay can hold it — display cannot be
+         timed this way. */
+      .sage-beat-flash .login-logo {
+        visibility:hidden; transition: visibility 0s linear .09s; }
       /* The eyebrow is not part of the mark and should not fly with it. */
       .sage-beat-stretch .login-eyebrow, .sage-beat-flash .login-eyebrow { opacity:0; }
 
@@ -25615,6 +25716,21 @@ function Style() {
         .sage-spark { animation-duration:.18s !important; animation-timing-function:linear !important; }
 
       }
+
+      /* ---- the sign-in layer ----
+         Sits over the app rather than instead of it, so the dashboard can be
+         mounting underneath while the streaks are still flying. Transparent: the
+         ground belongs to the app's shell and shows straight through, which is
+         also why there is only ever one set of blobs and they never jump at the
+         handover. Everything else under it is hidden — visibility rather than
+         display, so the layout is real and the blocks can be measured for their
+         landing while they are still out of sight. */
+      .signin-over { position:fixed; inset:0; z-index:200; overflow:auto; }
+      html.jump-under .lpc > *:not(.sage-ground) { visibility:hidden; }
+      /* Gone the instant the handover happens, rather than when React next
+         renders: the beats that were hiding the form come off at the same moment,
+         and without this the sign-in form would reappear over the landing. */
+      html.signin-gone .signin-over { display:none; }
 
       .login { position:relative; z-index:1; display:flex; justify-content:center; padding:80px 20px; min-height:100vh; }
       /* No card. The form sits on the ground, 340px wide, centred. */
@@ -28801,6 +28917,24 @@ function Style() {
 .f-map-ev{flex:1;font-weight:600;}
 .f-map-custom{color:#0f9d76;font-weight:700;font-size:11px;}
 
-    `}</style>
-  );
+    `;
+
+let styleNode = null;
+function ensureStyle() {
+  if (typeof document === "undefined" || styleNode) return;
+  styleNode = document.createElement("style");
+  styleNode.setAttribute("data-sage", "");
+  styleNode.textContent = SAGE_CSS;
+  document.head.appendChild(styleNode);
+}
+/* At module load, so the sheet is in place before the first render rather than
+   arriving with it. */
+ensureStyle();
+
+/* Kept as a component because a dozen call sites render it, and it is easier to
+   read a screen that still says where its styles come from than to explain the
+   absence. It mounts nothing. */
+function Style() {
+  ensureStyle();
+  return null;
 }
