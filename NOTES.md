@@ -111,6 +111,36 @@ set is how this ends up costing a sale a year from now.
 
 ---
 
+## The Line went white — 2026-08-22
+
+A toolbar button added to the wrong one of two components that draw an almost identical
+toolbar. It read `behindCount`, which is a `useState` in the Live Floor board and does not
+exist in the phone line, so **the whole tab threw on render and the screen went blank.**
+
+Nothing caught it. The build is happy — the name is valid syntax — and every static check in
+the suite reads the `api/` files, while the app is 26,000 lines of one file with dozens of
+components that look like each other on purpose. The fault before this one (`squash is not
+defined`) was the same shape one layer down.
+
+**The guard**: every `const [x, setX] = useState(...)` belongs to exactly one component. If
+another component mentions that name and has no local binding for it, it is reaching into a
+scope it does not have. Deliberately narrow — a general undefined-name check over JSX is a
+research project and a noisy one — and it catches the exact shape that reached production.
+
+Three things went wrong while writing the check, all worth keeping:
+
+- It stripped comments before slicing components, and the scanner does not preserve line
+  structure, so `^function` matched 99 of ~200 components. **QueueTab was not one of them: the
+  check passed on the bug it was written for by never looking at it.** It slices raw and
+  strips per body now, with a vacuity guard asserting it sees 150+ components including
+  QueueTab by name.
+- "Any name after an open brace" counted as a declaration, so `{behindCount` in the JSX
+  declared behindCount. A usage is not a binding.
+- A JSX prop (`storeId={...}`) and an object key (`storeId: st.id`) are not variable reads.
+  Names used that way anywhere in the file are skipped rather than guessed at.
+
+---
+
 ## Fewer words, more picture — STARTED 2026-08-22
 
 > reducing the "wordiness" of the page … I want more visuals throughout the website instead of

@@ -9113,14 +9113,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
-          {/* Same rule as the off-lot button: shown only when there is somebody in
-              it. A button reading "Behind · 0" every morning is how a manager
-              learns to stop looking at the place they are meant to look. */}
-          {behindCount > 0 && (
-            <button className={"btn" + (showBehind ? "" : " f-bl-btn")} onClick={() => setShowBehind((v) => !v)}>
-              {showBehind ? "Hide behind" : `Behind · ${behindCount}`}
-            </button>
-          )}
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
           <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
@@ -10307,6 +10299,14 @@ function FloorBoard({ config, store, data, onData, userName }) {
           {backlogCount > 0 && (
             <button className={"btn" + (showBacklog ? "" : " f-bl-btn")} onClick={() => setShowBacklog((v) => !v)}>
               {showBacklog ? "Hide off-lot" : `Off-lot · ${backlogCount}`}
+            </button>
+          )}
+          {/* Same rule as the off-lot button: shown only when there is somebody in
+              it. A button reading "Behind · 0" every morning is how a manager
+              learns to stop looking at the place they are meant to look. */}
+          {behindCount > 0 && (
+            <button className={"btn" + (showBehind ? "" : " f-bl-btn")} onClick={() => setShowBehind((v) => !v)}>
+              {showBehind ? "Hide behind" : `Behind · ${behindCount}`}
             </button>
           )}
           <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
