@@ -16281,6 +16281,94 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
     setOrphans((list) => (list || []).filter((x) => x.id !== o.id));
   };
 
+  /* ---- putting ONE store back ----
+     A store's row can end up holding another store's document. Rolling back the
+     whole backup would fix it and undo twelve other stores' work along with it, so
+     this reads each daily backup's copy of the one store, says what is in it, and
+     writes only that row. Nothing is chosen automatically: whose people are in a
+     snapshot is a question for somebody who knows the floor. */
+  const [recStore, setRecStore] = useState("");
+  const [recRows, setRecRows] = useState(null);
+  const [recLive, setRecLive] = useState(null);
+  const [recSaid, setRecSaid] = useState("");
+  const [recDays, setRecDays] = useState(null);
+
+  const describe = (d, want) => {
+    if (!d) return { missing: true };
+    const months = Object.keys(d.months || {}).sort();
+    return {
+      missing: false,
+      stamp: d.__storeId || "",
+      foreign: !!(d.__storeId && d.__storeId !== want),
+      roster: (d.roster || []).length,
+      names: (d.roster || []).slice(0, 4).map((a) => a && a.name).filter(Boolean),
+      months: months.length,
+      firstMonth: months[0] || "",
+      lastMonth: months[months.length - 1] || "",
+    };
+  };
+
+  const scanStoreBackups = async () => {
+    setBusy(true); setRecSaid(""); setRecRows(null);
+    try {
+      const want = recStore;
+      setRecLive(describe(await loadShared(storeKey(want), null), want));
+      const out = [];
+      for (const b of (autoList || [])) {
+        const d = await loadShared(backupStoreKey(want, b.id), null);
+        out.push({ id: b.id, t: b.t, data: d, ...describe(d, want) });
+      }
+      setRecRows(out);
+      /* Recent days do not live in the document: they are rows of their own, and on
+         load they WIN over the document's copy. So a recovery that only replaced the
+         document would be quietly undone for those days by whatever is in the rows.
+         They are counted and named here rather than touched, because whose activity
+         they hold is the same question as before and the same person should answer it. */
+      try {
+        const rows = await loadActivityRows(want);
+        const days = Object.keys(rows).sort();
+        const who = new Set();
+        for (const day of days) for (const n of Object.keys(rows[day] || {})) who.add(n);
+        setRecDays({ count: days.length, first: days[0] || "", last: days[days.length - 1] || "",
+          names: [...who].slice(0, 6) });
+      } catch (e) { setRecDays(null); }
+    } catch (e) {
+      setRecSaid(`Could not read the backups: ${String(e.message || e)}`);
+    } finally { setBusy(false); }
+  };
+
+  const recoverFrom = async (row) => {
+    const want = recStore;
+    const name = config.stores.find((x) => x.id === want)?.name || want;
+    if (!window.confirm(
+      `Put ${name} back to the copy from ${new Date(row.t).toLocaleString()}?\n\n` +
+      `That copy has ${row.roster} on the roster${row.names.length ? ": " + row.names.join(", ") : ""}.\n\n` +
+      `Only ${name} is written. Every other store is left alone, and the row as it stands right now is ` +
+      `saved first so this can be undone.`)) return;
+    setBusy(true); setRecSaid("");
+    try {
+      /* Keep what is there now before overwriting it, whosever it turns out to be.
+         A recovery that cannot itself be undone is not a recovery. */
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const live = await loadShared(storeKey(want), null);
+      if (live) {
+        const kept = await saveShared(backupStoreKey(want, `before-recover-${stamp}`), live);
+        if (!kept) { setRecSaid(`Stopped: the current row could not be saved first, so nothing was overwritten. ${lastSaveError || ""}`); return; }
+      }
+      /* Stamped as it is written, so the row says what it is from this moment on
+         and the guard that caught this has something true to check against. */
+      const put = { ...JSON.parse(JSON.stringify(row.data)), __storeId: want };
+      const ok = await saveShared(storeKey(want), put);
+      if (!ok) { setRecSaid(`Could not write: ${lastSaveError || "unknown"}`); return; }
+      await appendAudit({ user: session?.name, action: "Recovered store from backup",
+        detail: `${name} ← ${new Date(row.t).toLocaleString()}` });
+      setRecSaid(`${name} has been put back to ${new Date(row.t).toLocaleString()}. Reload the page to open it. The row as it was is kept as before-recover-${stamp}.`);
+      setRecLive(describe(put, want));
+    } catch (e) {
+      setRecSaid(`Could not write: ${String(e.message || e)}`);
+    } finally { setBusy(false); }
+  };
+
   const downloadAuto = async (b) => {
     setBusy(true);
     const data = await fetchAuto(b);
@@ -16429,6 +16517,62 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
           from a bad import or an accidental delete, but not from losing the Supabase project itself.
           Download a copy now and then and keep it somewhere else.
         </p>
+      </div>
+
+      <div className="card">
+        <h3>Recover one store</h3>
+        <p className="hint">
+          Restoring a whole backup rolls back every store to that date, which is far too much when
+          one store is wrong and the other twelve are fine. This puts a single store back and leaves
+          the rest untouched. Every daily backup is read first and shown, so you can see whose people
+          are in each one before choosing.
+        </p>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select className="inp" value={recStore} onChange={(e) => { setRecStore(e.target.value); setRecRows(null); }}>
+            <option value="">Choose a store</option>
+            {config.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button className="btn" disabled={busy || !recStore} onClick={scanStoreBackups}>Read every backup</button>
+        </div>
+        {recRows === null ? null : recRows.length === 0 ? (
+          <p className="hint">No copy of that store in any backup.</p>
+        ) : (
+          <div className="snap-list" style={{ marginLeft: 0 }}>
+            <p className="hint">
+              Live now: {recLive
+                ? <>stamped <code>{recLive.stamp || "unstamped"}</code>, {recLive.roster} on the roster{recLive.names.length ? <>: {recLive.names.join(", ")}</> : null}</>
+                : "nothing saved"}
+            </p>
+            {recDays && recDays.count > 0 ? (
+              <p className="hint">
+                <b>Read this before restoring.</b> {recDays.count} day{recDays.count === 1 ? "" : "s"} of activity
+                {recDays.first ? ` (${recDays.first} to ${recDays.last})` : ""} are stored as separate rows for this
+                store, and those rows are used in preference to whatever is in the document. Putting the document
+                back will not change them. The names in them are:{" "}
+                {recDays.names.join(", ")}{recDays.names.length >= 6 ? ", and others" : ""}. If those are the wrong
+                store's people, say so before restoring: the rows have to be dealt with too, or they will put that
+                store's days straight back on top.
+              </p>
+            ) : null}
+            {recRows.map((r) => (
+              <div key={r.id} className="snap-row">
+                <span className="snap-when">{new Date(r.t).toLocaleString()}</span>
+                <span className="snap-reason">
+                  {r.missing ? "not in this backup" : <>
+                    stamped <code>{r.stamp || "unstamped"}</code>; {r.roster} on the roster
+                    {r.names.length ? <>: {r.names.join(", ")}</> : null}
+                    {r.months ? `; ${r.months} months (${r.firstMonth} to ${r.lastMonth})` : ""}
+                    {r.foreign ? "  ← belongs to another store" : ""}
+                  </>}
+                </span>
+                {!r.missing && (
+                  <button className="btn-x" disabled={busy} onClick={() => recoverFrom(r)}>Put this back</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {recSaid ? <p className="hint">{recSaid}</p> : null}
       </div>
 
       <div className="card">
