@@ -1910,6 +1910,9 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     if (!session || sawSession.current) return;
     sawSession.current = true;
+    /* Unless the arrival is already doing this. See jumpOwnsEntrance: two
+       entrances at once is what made the landing segmented. */
+    if (jumpOwnsEntrance) return;
     setEntering(true);
     const t = setTimeout(() => setEntering(false), 1100);
     return () => clearTimeout(t);
@@ -7225,6 +7228,9 @@ function Login({ config, onBack, onAuthed, onArrival, onJump }) {
 
   return (
     <div className="login">
+      {/* The field belongs to this screen and lives as long as it does: held for
+          the whole jump, gone with it at the handover, underneath the white. */}
+      <SageField />
       <div className={"login-card " + (busy ? "login-busy" : "")}>
         <p className="login-eyebrow">{greetingFor()}</p>
         {/* No spinner here any more. Signing in used to swap the wordmark for a
@@ -7455,6 +7461,7 @@ function runJump({ onFlash, onDone }) {
   }
   const ts = [];
   const beat = (b) => { clear(); root.classList.add("sage-beat-" + b); };
+  jumpOwnsEntrance = true;
   beat("hold");
   const at = (ms, fn) => ts.push(setTimeout(fn, ms));
   let flashing = false;
@@ -7489,8 +7496,21 @@ function runJump({ onFlash, onDone }) {
      stripped the flash off the frame it was drawn for — the swap went uncovered
      and the white fired late, over the assembly. The flash belongs to the far
      side now; SageArrival clears it. */
-  return () => { ts.forEach(clearTimeout); if (!flashing) clear(); };
+  return () => {
+    ts.forEach(clearTimeout);
+    if (!flashing) { jumpOwnsEntrance = false; clear(); }
+  };
 }
+
+/* True from the press until the arrival has finished. The app has an entrance of
+   its own — .lpc.is-entering, the bar dropping in from above and the cards rising
+   from below — and it is keyed off the session appearing, which now happens in the
+   middle of the jump. Both ran, with different origins and unrelated timings, and
+   that is what made the landing read as segmented: nothing came from the centre
+   because appBar comes from the top edge and appRise from the bottom. Out-ranking
+   it in CSS is a losing game (.lpc.is-entering .hero is three classes), so the
+   app's entrance simply does not start when the arrival owns the screen. */
+let jumpOwnsEntrance = false;
 
 /* Set by the sign-in button and read where the session lands. A page RELOAD
    restores a session without anyone pressing anything, and there is no sign-in
@@ -7527,6 +7547,7 @@ function SageArrival({ onComplete }) {
     const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
     return () => {
       clearTimeout(t);
+      jumpOwnsEntrance = false;
       root.classList.remove("sage-assemble", "sage-beat-assemble", "sage-beat-flash");
     };
   }, []);
@@ -7606,56 +7627,77 @@ function buildField(w, h, origin) {
   return dots;
 }
 
+/* The blobs, and only the blobs. These are the layer the handoff says continues
+   through the transition rather than being swapped, so they are mounted once at
+   the root and outlive both screens. The dot field is the sign-in screen's; see
+   SageField. */
 function SageGround({ beat = "idle" }) {
-  const [size, setSize] = useState(() => ({
-    w: typeof window === "undefined" ? 1440 : window.innerWidth,
-    h: typeof window === "undefined" ? 900 : window.innerHeight,
-  }));
-  /* Null until the sign-in screen says where its mark is; the field's own centre
-     until then, which is right for every screen that has no mark on it. */
-  const [origin, setOrigin] = useState(lastJumpOrigin);
-  useEffect(() => {
-    const onOrigin = (e) => setOrigin(e.detail);
-    document.addEventListener(JUMP_ORIGIN, onOrigin);
-    return () => document.removeEventListener(JUMP_ORIGIN, onOrigin);
-  }, []);
-  useEffect(() => {
-    /* Re-measured on resize, and only on resize. A field rebuilt per render was
-       the second of the handoff's performance notes. */
-    let t = null;
-    const onResize = () => {
-      clearTimeout(t);
-      t = setTimeout(() => setSize({ w: window.innerWidth, h: window.innerHeight }), 220);
-    };
-    window.addEventListener("resize", onResize);
-    return () => { window.removeEventListener("resize", onResize); clearTimeout(t); };
-  }, []);
-  /* Rebuilt when the origin arrives, and only then: once per sign-in, not once
-     per render. Rebuilding it per render was the handoff's second performance
-     note and it still holds. */
-  const dots = useMemo(() => buildField(size.w, size.h, origin), [size.w, size.h, origin]);
-
   return (
     <div className={"sage-ground beat-" + beat} aria-hidden="true">
       <div className="sg-blobs">
         <i className="sg-blob b1" /><i className="sg-blob b2" />
         <i className="sg-blob b3" /><i className="sg-blob b4" />
       </div>
-      <div className="sg-field">
-        {dots.map((d, i) => (
-          <i key={i} className={"sg-dot" + (d.bright ? " bright" : "")}
-            style={{
-              left: d.x, top: d.y, width: d.size, height: d.size, background: d.tint,
-              animationDuration: d.dur + "ms", animationDelay: d.delay + "ms",
-              /* Read by the jump; set here so nothing has to be measured later.
-                 --d carries how far this dot sits from the origin, so the ones
-                 near the logo travel less than the ones out at the corners and
-                 the whole field opens rather than sliding as a sheet. */
-              "--a": d.angle + "deg",
-              "--d": d.dist.toFixed(1),
-            }} />
-        ))}
-      </div>
+    </div>
+  );
+}
+
+/* ---------------- The dot field ----------------
+   The sign-in screen's, and nobody else's. The handoff builds it under "The
+   sign-in screen" and its prototype keys the whole thing off whether that screen
+   is visible — `signinVisible ? ... : "off"` — while saying of the BLOBS, and only
+   the blobs, that they "live behind both the sign-in screen and the dashboard,
+   the same layer continuing through the transition rather than being swapped".
+   Two different lifetimes, and this file had given both of them the longer one.
+
+   That cost more than tidiness. 660 dots left on the dashboard meant 660 dots
+   decelerating out of full streak while React mounted the dashboard, and the
+   landing was measurably the worse for it: stalls of 467-983ms with the field
+   there against none at all without it. The choppy landing and the drift Jorge
+   could see on the dashboard are the same mistake seen from two sides.
+
+   Rendered by the sign-in screen, so it is held for the whole jump and goes with
+   that screen at the handover, underneath the white. */
+function SageField() {
+  const [size, setSize] = useState(() => ({
+    w: typeof window === "undefined" ? 1440 : window.innerWidth,
+    h: typeof window === "undefined" ? 900 : window.innerHeight,
+  }));
+  const [origin, setOrigin] = useState(lastJumpOrigin);
+  useEffect(() => {
+    let t = null;
+    const onResize = () => {
+      clearTimeout(t);
+      t = setTimeout(() => setSize({ w: window.innerWidth, h: window.innerHeight }), 220);
+    };
+    const onOrigin = (e) => setOrigin(e.detail);
+    window.addEventListener("resize", onResize);
+    document.addEventListener(JUMP_ORIGIN, onOrigin);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      document.removeEventListener(JUMP_ORIGIN, onOrigin);
+      clearTimeout(t);
+    };
+  }, []);
+  /* Rebuilt when the origin arrives, and only then: once per sign-in, not once
+     per render. Rebuilding it per render was the handoff's second performance
+     note and it still holds. */
+  const dots = useMemo(() => buildField(size.w, size.h, origin), [size.w, size.h, origin]);
+  return (
+    <div className="sg-field" aria-hidden="true">
+      {dots.map((d, i) => (
+        <i key={i} className={"sg-dot" + (d.bright ? " bright" : "")}
+          style={{
+            left: d.x, top: d.y, width: d.size, height: d.size, background: d.tint,
+            animationDuration: d.dur + "ms", animationDelay: d.delay + "ms",
+            /* Read by the jump; set here so nothing has to be measured later.
+               --d carries how far this dot sits from the origin, so the ones near
+               the logo travel less than the ones out at the corners and the whole
+               field opens rather than sliding as a sheet. */
+            "--a": d.angle + "deg",
+            "--d": d.dist.toFixed(1),
+          }} />
+      ))}
     </div>
   );
 }
@@ -24759,7 +24801,12 @@ function Style() {
          the join. Fixed rather than absolute so it does not scroll away from the
          form on a short window. */
       .sage-ground { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-      .sg-blobs, .sg-field { position:absolute; inset:0; }
+      .sg-blobs { position:absolute; inset:0; }
+      /* Fixed, not absolute: the field is rendered by the sign-in screen now
+         rather than by the ground, so it positions itself against the viewport
+         instead of against a card that is 340px wide. Behind the form, above the
+         blobs. */
+      .sg-field { position:fixed; inset:0; z-index:0; pointer-events:none; }
       .sg-blob { position:absolute; display:block; border-radius:50%;
         animation: sgDrift 40s ease-in-out infinite alternate; }
       .sg-blob.b1 { width:760px; height:620px; left:-80px; top:-120px; animation-duration:34s;
@@ -25130,7 +25177,13 @@ function Style() {
          travelling light was 73 streaks on a bare page. */
       .sage-beat-stretch .sg-field, .sage-beat-flash .sg-field {
         animation: sgFieldDrift 28s ease-in-out infinite alternate,
-                   fieldStretch .88s cubic-bezier(.6,0,.9,.24) both; }
+                   fieldStretch .88s cubic-bezier(.6,0,.9,.24) both,
+                   fieldGo .24s ease-in .82s both; }
+      /* The handoff fades the field out at the very end of the stretch and not
+         before: opacity 240ms ease-in, delayed 820ms of the 900. It is the last
+         thing to go, right as the white arrives, and it does not come back — the
+         field belongs to the screen that is leaving. */
+      @keyframes fieldGo { from { opacity:1; } to { opacity:0; } }
       /* 2.0, not 3.2. At 3.2 the layer alone carried every dot past the edge
          before the beat was over, so the last fifth of the jump was a blank page
          waiting for the flash — the streaks had all left and nothing had arrived.
@@ -25179,19 +25232,12 @@ function Style() {
          and the blobs decelerate back to rest over the same window the dashboard
          lands in, so the last beat is one continuous move instead of a stop
          followed by a start. */
-      .sage-beat-assemble .sg-field {
-        animation: sgFieldDrift 28s ease-in-out infinite alternate,
-                   groundLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
-      .sage-beat-assemble .sg-dot { animation: dotLand 1.15s cubic-bezier(.12,.78,.28,1) both; }
+      /* No landing rules for the field: it does not survive the handover, so
+         there is nothing to bring back. Decelerating 660 dots out of full streak
+         while React mounted the dashboard is what made the landing choppy —
+         measured in the built app, stalls of 467-983ms with the field there and
+         none at all without it. */
 
-      @keyframes groundLand {
-        from { transform:scale(2.0); opacity:.85; }
-        to   { transform:none; opacity:1; }
-      }
-      @keyframes dotLand {
-        from { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(calc(14 + var(--d, 400) * .09)); }
-        to   { transform: translate(-50%,-50%) rotate(var(--a)) scaleX(1); }
-      }
 
       /* Only the bright eighth streaks. The rest ride the layer's own scale,
          which is what bought the density back. */
@@ -25223,20 +25269,36 @@ function Style() {
         55%  { filter: blur(0); }
         to   { opacity:1; transform:none; filter: blur(0); }
       }
+      /* ---- one entrance, not two ----
+         The app has an arrival of its own, .lpc.is-entering, and it was running
+         underneath this one: the bar slammed down from translateY(-100%), the
+         hero and every card rose from below on their own staggered delays, all
+         while the page was scaling out of the middle of the frame. Two entrances
+         with different origins and unrelated timings is what "segmented" means,
+         and between them nothing came from the centre — appBar comes from the top
+         edge and appRise from the bottom.
+
+         .lpc.is-entering .hero is three classes, so every rule here leads with
+         html to outrank it. The arrival owns the entrance while it is playing;
+         the app's own one is what happens on an ordinary sign-in with no jump. */
       .sage-assemble .hero { animation: saArrive .76s cubic-bezier(.34,1.5,.64,1) both; }
       .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .28s both; }
       .sage-assemble .seg-wrap { animation: saArrive .6s cubic-bezier(.34,1.5,.64,1) .2s both; }
-      .sage-assemble .board-page > .card:nth-of-type(1) { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .3s both; }
-      .sage-assemble .board-page > .card:nth-of-type(2) { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .42s both; }
-      .sage-assemble .board-page > .card:nth-of-type(3) { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .46s both; }
+      .sage-assemble .card,
+      .sage-assemble .checkout-split > *,
+      .sage-assemble .dash-split > * { animation: saArrive .7s cubic-bezier(.34,1.5,.64,1) .3s both; }
+      .sage-assemble .card:nth-of-type(2) { animation-delay:.38s; }
+      .sage-assemble .card:nth-of-type(3) { animation-delay:.44s; }
+      .sage-assemble .card:nth-of-type(n+4) { animation-delay:.5s; }
       .sage-assemble .assoc-card { animation: saArrive .4s cubic-bezier(.34,1.5,.64,1) both; }
       .sage-assemble .roster-card .assoc-card:nth-child(1) { animation-delay:.56s; }
       .sage-assemble .roster-card .assoc-card:nth-child(2) { animation-delay:.656s; }
       .sage-assemble .roster-card .assoc-card:nth-child(3) { animation-delay:.752s; }
       .sage-assemble .roster-card .assoc-card:nth-child(4) { animation-delay:.848s; }
       .sage-assemble .roster-card .assoc-card:nth-child(n+5) { animation-delay:.944s; }
-      .sage-assemble .app-header, .sage-assemble .topbar { animation: saArrive .62s cubic-bezier(.34,1.5,.64,1) .95s both; }
-      .sage-assemble .brand { animation: saArrive .56s cubic-bezier(.34,1.5,.64,1) 1.25s both; }
+      .sage-assemble .app-header, .sage-assemble .topbar {
+        animation: saArrive .62s cubic-bezier(.34,1.5,.64,1) .18s both; }
+      .sage-assemble .brand { animation: saArrive .56s cubic-bezier(.34,1.5,.64,1) .42s both; }
       /* From the middle: scaled up out of the centre of the page rather than
          lifted from underneath it. The rise belongs to an ordinary page load and
          this is not one. */
@@ -25246,17 +25308,21 @@ function Style() {
       }
       /* The header sits outside the page and does not scale with it, so it gets
          the same outward move on its own: down from the top edge is the one
-         direction that would read as a page loading rather than as an assembly. */
+         direction that would read as a page loading rather than as an assembly.
+         Its delay came down from .95s to .18s at the same time — the handoff put
+         the header near the end because its prototype built a dashboard from
+         nothing, and here the bar is already the frame around a page that is
+         arriving inside it. Waiting a second for it just left a gap at the top. */
       .sage-assemble .app-header, .sage-assemble .topbar { transform-origin: 50% 50vh; }
       @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
 
       @media (prefers-reduced-motion: reduce) {
         /* Everything collapses to a cross-fade. The order is kept; the movement
            goes. */
-        .login-logo circle, .login-logo svg, .sage-ground .sg-field, .sage-ground .sg-blobs,
-        .sage-ground .sg-dot { transition-duration:.18s !important; animation:none !important; }
+        .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
+        .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
         .sage-flash { animation:none !important; }
-        .sage-assemble .hero, .sage-assemble .seg-wrap, .sage-assemble .board-page > .card,
+        .sage-assemble .hero, .sage-assemble .seg-wrap, .sage-assemble .card,
         .sage-assemble .assoc-card, .sage-assemble .app-header, .sage-assemble .topbar,
         .sage-assemble .brand, .sage-assemble .hero-ring-fill {
           animation-duration:.18s !important; animation-timing-function:linear !important; }

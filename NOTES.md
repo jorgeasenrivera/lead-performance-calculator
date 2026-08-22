@@ -162,6 +162,39 @@ fly *with* the mark — stretched, still bright — and decelerate back to rest 
 the dashboard lands in, so the last beat is one continuous move instead of a stop followed by
 a start. One streak in three is bright rather than one in eight.
 
+**The landing was segmented because the app has an entrance of its own.**
+`.lpc.is-entering` — the bar dropping in from `translateY(-100%)`, the hero and
+every card rising from below on their own staggered delays — is keyed off the
+session appearing, which now happens in the middle of the jump. So both entrances
+ran, with different origins and unrelated timings. That is what "segmented" meant,
+and it is also why nothing came from the centre: `appBar` comes from the top edge
+and `appRise` from the bottom, whatever the page underneath them is doing.
+
+Out-ranking it in CSS is a losing game — `.lpc.is-entering .hero` is three classes,
+and `html.sage-assemble .hero` is two classes and a type, which loses. So the app's
+own entrance simply does not start when the arrival owns the screen.
+
+**And the dot field belongs to the sign-in screen, not to the app.** The handoff
+builds it under "The sign-in screen" and its prototype keys the whole thing off
+whether that screen is visible — `signinVisible ? ... : "off"` — while saying of the
+BLOBS, and only the blobs, that they "live behind both the sign-in screen and the
+dashboard, the same layer continuing through the transition rather than being
+swapped". Two different lifetimes, and this file had given both of them the longer
+one. Jorge saw it as a drift on the dashboard that should not have been there.
+
+It cost more than tidiness. 660 dots left on the dashboard meant 660 dots
+decelerating out of full streak while React mounted it: measured in the built app,
+stalls of 467-983ms with the field there and none at all without it. The choppy
+landing and the drift on the dashboard were the same mistake seen from two sides.
+The field is rendered by the sign-in screen now, so it is held for the whole jump
+and goes with that screen at the handover, underneath the white — and it fades on
+the handoff's own schedule, `opacity 240ms ease-in` delayed 820ms of the 900ms
+stretch, rather than trying to land. The sideways drift itself is exactly as
+specified: `translate3d(-26px,-16px,0)` over 28s, alternating.
+
+Landing frames after both fixes, three runs: median 33ms, worst 100ms, no stall
+over 150ms. Before: worst 983ms with three.
+
 **And it still did not run, because the field was too expensive to draw.** Three
 attempts to fix this were verified against a harness of extracted components, and
 all three were wrong about the app. So the app itself was built, served, and driven
