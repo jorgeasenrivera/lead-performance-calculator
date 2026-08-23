@@ -25028,8 +25028,16 @@ const SAGE_CSS = `
       /* Without overscroll-behavior a flick at either end of this list hands the
          scroll to the board underneath, so closing the sheet left the page sitting
          further down than it started. Same guard the help sheet already carries. */
-      .ru-sheet-body { flex:1; overflow-y:auto; overscroll-behavior:contain;
-        -webkit-overflow-scrolling:touch; }
+      /* Hidden, not auto: the sheet is designed to fit without scrolling, and
+         with auto every entering block's 14px translate momentarily pushed the
+         content past the container - a scrollbar flashing for the length of the
+         stagger. Short screens, where the content genuinely cannot fit, get a
+         real scrollbar with its gutter reserved so nothing shifts. */
+      .ru-sheet-body { flex:1; overflow:hidden; }
+      @media (max-height: 700px) {
+        .ru-sheet-body { overflow-y:auto; overscroll-behavior:contain;
+          -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
+      }
       /* The head is the store's own hero in miniature: the same gradient sweep,
          the same identity, so the sheet reads as the store speaking rather than
          the app interrupting. */
