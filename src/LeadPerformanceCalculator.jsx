@@ -8421,7 +8421,10 @@ function radialAssemble() {
        ACROSS the viewport on its way home — blocks raining through the page
        from outside the frame. Off-screen elements simply take their places;
        the impact belongs to what the eye can actually see land. */
-    if (r.bottom < -40 || r.top > vh + 40 || r.right < -40 || r.left > vw + 40) continue;
+    /* Generous margins: an element straddling the fold still deserves its
+       journey, and on a phone most of the page straddles something. Only what
+       is a good half-screen away takes its place without the flight. */
+    if (r.bottom < -vh * 0.5 || r.top > vh * 1.5 || r.right < -vw * 0.5 || r.left > vw * 1.5) continue;
     const dx = o.x - (r.left + r.width / 2);
     const dy = o.y - (r.top + r.height / 2);
     plan.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
