@@ -2077,6 +2077,24 @@ export default function LeadPerformanceCalculator() {
     if (list[0]) setView(list[0].id);
   }, [appModule, view, config, session]);
 
+  /* ---- the config a signed-out boot sees is not to be trusted ----
+     Row-level security hides app_data from an unauthenticated read, and a hidden
+     row is indistinguishable from a missing one: the boot concluded "brand new
+     install" and ran the whole session on DEFAULT_CONFIG. That is why a fresh
+     sign-in landed on a hero wearing the standard blue and the Sage logo, and a
+     refresh — which boots with the session already in hand — wore the store's
+     own. So a config adopted while signed out is marked provisional and fetched
+     again the moment a session exists; the cruise absorbs the re-read the same
+     way it absorbs everything else. */
+  const cfgProvisional = useRef(false);
+  const [cfgWave, setCfgWave] = useState(0);
+  const sessionRef = useRef(null);
+  sessionRef.current = session;
+  useEffect(() => {
+    if (!session || !cfgProvisional.current) return;
+    cfgProvisional.current = false;
+    setCfgWave((w) => w + 1);
+  }, [session]);
   useEffect(() => {
     (async () => {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
@@ -2143,10 +2161,17 @@ export default function LeadPerformanceCalculator() {
           for (const r of cfg.roles) cfg.standards[s.id][r.id] = { tiers: JSON.parse(JSON.stringify(DEFAULT_TIERS)) };
         }
       }
-      await saveShared(CONFIG_KEY, cfg);
+      if (sessionRef.current) {
+        /* Genuinely new install, confirmed by an authenticated read: create it. */
+        await saveShared(CONFIG_KEY, cfg);
+      } else {
+        /* Signed out, row invisible: run the login on defaults, write nothing,
+           and re-read the moment a session exists. */
+        cfgProvisional.current = true;
+      }
       setConfig(cfg);
     })().catch(() => setLoadErr(true));
-  }, []);
+  }, [cfgWave]); // eslint-disable-line
 
   useEffect(() => {
     if (!config || !session) return;
@@ -3149,14 +3174,21 @@ export default function LeadPerformanceCalculator() {
     clearToolMove();
     root.classList.add("tool-move", "tool-dir-" + dir, "tool-exit");
     toolTimers.push(setTimeout(() => {
+      /* Three beats in order, per Jorge: the page moves out FIRST, THEN the
+         streaks cross on their own, THEN the new page slides in and lands.
+         tool-exit stays on through the streak beat - its fill is what holds the
+         departed page off screen - and comes off in the same breath the new
+         tool arrives. */
       warpTo(appModule, mod);
-      root.classList.remove("tool-exit");
-      root.classList.add("tool-enter");
-      applyTool(mod);
-      /* The last block starts 66ms in and runs 560ms, so the classes have to
-         outlast 626ms or the animation is stripped off mid-landing and the block
-         snaps the rest of the way. That snap is the "no landing" note. */
-      toolTimers.push(setTimeout(clearToolMove, 700));
+      toolTimers.push(setTimeout(() => {
+        root.classList.remove("tool-exit");
+        root.classList.add("tool-enter");
+        applyTool(mod);
+        /* The last block starts 66ms in and runs 560ms, so the classes have to
+           outlast 626ms or the animation is stripped off mid-landing and the
+           block snaps the rest of the way. That snap is the "no landing" note. */
+        toolTimers.push(setTimeout(clearToolMove, 700));
+      }, 240));
     }, TOOL_EXIT));
   };
 
@@ -7707,9 +7739,14 @@ const JUMP_PHASE = "sage-jump-phase";
 const tellPhase = (ph) => {
   try { document.dispatchEvent(new CustomEvent(JUMP_PHASE, { detail: ph })); } catch (e) {}
 };
+let activeEngineSend = null;   // set by runJump while a jump is flying
 function tellArrivalReady(ready, dest) {
   arrivalReady = !!ready;
   if (dest !== undefined) arrivalDest = dest;
+  if (activeEngineSend) {
+    activeEngineSend({ type: "ready", ready: arrivalReady });
+    activeEngineSend({ type: "dest", dest: arrivalDest });
+  }
 }
 /* ---- every time, not once a day ----
    The handoff asked for the first sign-in of the day, like the morning round-up,
@@ -7747,167 +7784,35 @@ function tellArrivalReady(ready, dest) {
    if the form is not finished", and "add 320ms to every figure when the hurry runs
    first". */
 const RUSH = 320;
-function runJump({ onFlash, onDone, lead = 0 }) {
-  /* ---- the arrival engine ----
-     One canvas owns every moving dot from the press to the flash: the mark's
-     ratchet, the whole wordmark pouring pixel by pixel into a compact S at the
-     centre of the screen, the field pulled in (with the half-screen of dots
-     beyond every edge dragged into view), the streaks that reach the frame's
-     edge before contracting off, the passing-star tunnel with the destination
-     store's sign, and the burst. One owner is the point: every earlier version
-     of this animation that split the dots between two systems — CSS here,
-     canvas there — eventually had the two disagree about where a dot was, and
-     that disagreement is what a flicker is.
+/* ---- the arrival engine's core ----
+   Every moving dot of the jump, drawn from one self-contained function. Self-
+   contained is load-bearing: this function is stringified and run inside a
+   Worker against an OffscreenCanvas, so the tunnel keeps flowing at full frame
+   rate while the main thread mounts the dashboard — the "slow down in the
+   middle of the animation" was exactly that mount freezing a main-thread
+   canvas. It must not touch the DOM and must not reference anything outside
+   its own arguments. The same function drives the main-thread fallback where
+   OffscreenCanvas does not exist, so there is one copy of this math, ever.
 
-     The engine waits in the tunnel until the root says the dashboard under the
-     streaks is actually standing (tellArrivalReady), so the landing can never
-     beat the data. The cruise absorbs a slow load as scenery instead of a
-     broken beat. */
-  const root = typeof document === "undefined" ? null : document.documentElement;
-  if (!root) { onFlash(); onDone(); return () => {}; }
-  let reduce = false;
-  try {
-    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch (e) {}
-  if (reduce) {
-    /* The order is kept and the movement goes: straight to the handover. The
-       mount gate still needs its cue, or the app would sit unrendered under
-       the white until the hold cleared. */
-    tellPhase("cruise");
-    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
-    return () => clearTimeout(t);
-  }
-  jumpOwnsEntrance = true;
-  jumpLanded = false;
-
-  const W = window.innerWidth, H = window.innerHeight;
+   ctx: a 2d context (offscreen or not). world: geometry measured at the press.
+   post(type, data): reports "phase" and "flash" back to the driver. */
+function arrivalEngineCore(ctx, world, post) {
+  const { W, H, dpr, T, FP, mk, field, tunnel, font } = world;
   const cx = W / 2, cy = H / 2;
-  /* Everything converges on the middle of the screen now — the reform carries
-     the mark there — so the middle is the origin every later piece (the spark,
-     the radial landing) measures from. */
-  lastJumpOrigin = { x: cx, y: cy };
-  root.style.setProperty("--jx", cx + "px");
-  root.style.setProperty("--jy", cy + "px");
-
-  /* ---- the mark, measured where it actually sits ---- */
-  const gWord = sageDots({ word: true });
-  let mk = [];
-  if (lastMarkEl) {
-    const mr = lastMarkEl.getBoundingClientRect();
-    const scale = Math.min(mr.width / gWord.w, mr.height / gWord.h) || 1;
-    const ox = mr.left + (mr.width - gWord.w * scale) / 2;
-    const oy = mr.top + (mr.height - gWord.h * scale) / 2;
-    const gS = sageDots({ word: false });
-    const seatScale = scale * 0.62;
-    const seats = gS.dots.map((d) => ({
-      x: cx + (d.x - gS.w / 2) * seatScale,
-      y: cy + (d.y - gS.h / 2) * seatScale,
-      r: d.r * seatScale,
-    })).sort((a, b) => a.x - b.x || a.y - b.y);
-    const home = gWord.dots.map((d) => ({ x: ox + d.x * scale, y: oy + d.y * scale, r: d.r * scale, fill: d.fill }))
-      .sort((a, b) => a.x - b.x || a.y - b.y);
-    const spanX = (home[home.length - 1].x - home[0].x) || 1;
-    /* Every dot of the word gets a seat in the compact S — many dots folding
-       into few seats is what "pixel by pixel" looks like. jit is each dot's own
-       moment to leave when the streaks go. */
-    mk = home.map((d, i) => {
-      const seat = seats[Math.round((i * (seats.length - 1)) / (home.length - 1))] || { x: cx, y: cy, r: d.r };
-      return { hx: d.x, hy: d.y, hr: d.r, fill: d.fill,
-        sx: seat.x, sy: seat.y, sr: seat.r,
-        delay: (d.x - home[0].x) / spanX, jit: Math.random() };
-    });
-  }
-
-  /* ---- the field: the page's own grid, continued past every edge ----
-     The in-view dots are generated by the same loop as the DOM field, in the
-     same order, so position, size and tint all agree at the moment the canvas
-     takes over — continuity by construction, not by tuning. The ring beyond the
-     edges is what the pull drags INTO view: the sky compressing into the
-     window, so the launch has far more to throw than the screen held. */
-  const field = [];
-  {
-    let i = 0;
-    for (let y = GROUND_PITCH / 2; y < H; y += GROUND_PITCH)
-      for (let x = GROUND_PITCH / 2; x < W; x += GROUND_PITCH) {
-        const bright = i % 3 === 0;
-        field.push({ x, y, size: bright ? 4.4 : 2.6, tint: GROUND_TINTS[i % GROUND_TINTS.length], jit: Math.random() });
-        i++;
-      }
-    const padX = W * 0.5, padY = H * 0.5;
-    for (let y = GROUND_PITCH / 2 - padY; y < H + padY; y += GROUND_PITCH)
-      for (let x = GROUND_PITCH / 2 - padX; x < W + padX; x += GROUND_PITCH) {
-        if (x > 0 && x < W && y > 0 && y < H) continue; // in-view dots already placed
-        const bright = i % 3 === 0;
-        field.push({ x, y, size: bright ? 4.4 : 2.6, tint: GROUND_TINTS[i % GROUND_TINTS.length], jit: Math.random() });
-        i++;
-      }
-  }
-
-  /* ---- the tunnel: born at the centre, reborn at the centre ----
-     Seeded mid-life so the sky is in steady state from its first frame:
-     identical speeds and simultaneous births are what waves are made of. */
   const maxR = Math.hypot(W, H) / 2 + 160;
-  const tunnel = [];
-  {
-    const n = Math.round((W * H) / 7800);
-    for (let i = 0; i < n; i++) {
-      const waiting = Math.random() < 0.18;
-      const r = waiting ? 2 : Math.pow(Math.random(), 1.7) * maxR;
-      tunnel.push({
-        ang: Math.random() * Math.PI * 2, r,
-        t: Math.max(0, r - (200 + Math.random() * 160)),
-        wait: waiting ? Math.random() * 0.9 : 0,
-        v: 0.55 + Math.random() * 0.9,
-        size: 1.4 + Math.random() * 2.2,
-        tint: GROUND_TINTS[Math.floor(Math.random() * GROUND_TINTS.length)],
-      });
-    }
-  }
-
-  /* The canvas lives on the document, not in React: the handover tears the
-     sign-in tree down and the engine must not go with it. */
-  const cv = document.createElement("canvas");
-  cv.className = "sage-jump-canvas";
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-  cv.style.width = W + "px"; cv.style.height = H + "px";
-  document.body.appendChild(cv);
-  const ctx = cv.getContext("2d");
   ctx.scale(dpr, dpr);
-  root.classList.add("sage-cv");
-
-  const card = document.querySelector(".login-card");
-  const blobs = Array.from(document.querySelectorAll(".sg-blob")).map((el) => {
-    const r = el.getBoundingClientRect();
-    const bx = r.left + r.width / 2, by = r.top + r.height / 2;
-    const dx = bx - cx, dy = by - cy, dist = Math.hypot(dx, dy) || 1;
-    return { el, ux: dx / dist, uy: dy / dist };
-  });
-  const restoreDom = () => {
-    if (card) { card.style.opacity = ""; card.style.transform = ""; }
-    for (const b of blobs) { b.el.style.transform = ""; b.el.style.opacity = ""; }
-  };
-
-  const bodyFont = (() => {
-    try { return getComputedStyle(document.body).fontFamily || "sans-serif"; }
-    catch (e) { return "sans-serif"; }
-  })();
-
   const pow = (p, k) => Math.pow(Math.min(1, Math.max(0, p)), k);
   const ease = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
   const easeInOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
-  const FP = 0.5;   // how far the pull draws the field toward the centre
 
-  let phase = "ratchet", t0 = performance.now() + lead, lastNow = t0;
-  let cruiseT0 = 0, burstT0 = 0, raf = 0, flashing = false, stopped = false;
+  let phase = "ratchet", t0 = 0, lastNow = 0, cruiseT0 = 0, burstT0 = 0;
+  let ready = false, dest = null, done = false;
 
   const drawTunnel = (dt, S) => {
     for (const q of tunnel) {
       if (q.wait > 0) { q.wait -= dt * Math.max(1, S * 0.6); continue; }
       if (q.r <= maxR) {
         q.r += (40 + q.r * 2.1) * S * q.v * dt;
-        /* extend from the centre until the line has its body, then the tail
-           lets go and the whole streak flies to the edge as one piece */
         q.t = Math.max(0, q.r - (200 + q.size * 55));
       } else {
         q.t += (30 + q.t * 1.9) * S * q.v * dt * 1.7;
@@ -7929,17 +7834,14 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     ctx.globalAlpha = 1;
   };
 
-  /* The destination as a travel sign: the store's own colour, drawing slowly
-     nearer through the cruise, swept past in the burst. */
   const drawSign = (now, mode) => {
-    const dest = arrivalDest;
     if (!dest || !dest.name) return;
     let scale = 1, alpha = 1;
     if (mode === "cruise") {
       alpha = Math.min(1, (now - cruiseT0) / 400);
       scale = 0.82 + 0.18 * ease(Math.min(1, (now - cruiseT0) / 1600)) + 0.012 * Math.sin(now / 420);
     } else {
-      const p = pow((now - burstT0) / (JUMP_T.burst * 0.7), 1.6);
+      const p = pow((now - burstT0) / (T.burst * 0.7), 1.6);
       scale = 1 + p * 1.9; alpha = Math.max(0, 1 - p);
     }
     if (alpha <= 0) return;
@@ -7948,7 +7850,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 190);
     g.addColorStop(0, color + "3A"); g.addColorStop(1, color + "00");
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 190, 0, 7); ctx.fill();
-    ctx.font = "600 24px " + bodyFont;
+    ctx.font = "600 24px " + font;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     const tw = ctx.measureText(dest.name).width, padX = 26, h = 52, w = tw + padX * 2;
     ctx.shadowColor = color + "66"; ctx.shadowBlur = 26;
@@ -7973,31 +7875,11 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     ctx.globalAlpha = 1;
   };
 
-  const toFlash = () => {
-    flashing = true;
-    restoreDom();
-    root.classList.add("sage-beat-flash");
-    root.classList.remove("sage-cv");
-    if (cv.parentNode) cv.parentNode.removeChild(cv);
-    onFlash();
-    /* Two rAFs: the first is the frame the class lands in, the second only runs
-       after that frame has painted. The white is up before the swap begins. */
-    let frames = 0;
-    const painted = () => {
-      if (stopped) return;
-      if (++frames < 2) { requestAnimationFrame(painted); return; }
-      setTimeout(() => { if (!stopped) onDone(); }, 20);
-    };
-    requestAnimationFrame(painted);
-  };
-
-  const frame = (now) => {
-    if (stopped || flashing) return;
-    /* When the main thread is taken for a while (the dashboard mounting is the
-       big one), a time-based animation SKIPS to where it would have been, and a
-       skip in the middle of the reform reads as a stutter. Hold the clocks
-       instead: shift every reference point forward by the lost time, so the
-       animation resumes from the frame it was on. A brief hold, not a jump. */
+  const tick = (now) => {
+    if (done) return;
+    if (!t0) { t0 = now + (world.lead || 0); lastNow = now; }
+    /* A long gap between frames means the thread was taken (only possible in
+       the main-thread fallback). Hold the clocks rather than skipping. */
     const lost = now - lastNow;
     if (lost > 120) {
       const shift = lost - 16;
@@ -8006,18 +7888,19 @@ function runJump({ onFlash, onDone, lead = 0 }) {
     const dt = Math.min(0.05, (now - lastNow) / 1000);
     lastNow = now;
     const t = now - t0;
-    if (t < 0) { raf = requestAnimationFrame(frame); return; }  // the hurry's lead
+    if (t < 0) return;   // the hurry's lead
     ctx.clearRect(0, 0, W, H);
 
-    /* ---- field + tunnel ---- */
     if (phase === "ratchet") drawFieldDots(0);
-    else if (phase === "reform") drawFieldDots(ease(t / JUMP_T.reform) * FP);
+    else if (phase === "reform") drawFieldDots(ease(t / T.reform) * FP);
     else if (phase === "streaks") {
-      const p = t / JUMP_T.streaks;
+      const p = t / T.streaks;
       const mR = Math.hypot(W, H) / 2 + 120;
       for (const d of field) {
-        /* each dot on its own clock, so departures scatter and so do endings */
-        const pd = Math.min(1, Math.max(0, (p - d.jit * 0.34) / 0.66));
+        /* Each dot on its own WIDE clock: departures scatter across half the
+           beat, so the endings scatter just as far — nothing leaves or finishes
+           in formation. */
+        const pd = Math.min(1, Math.max(0, (p - d.jit * 0.5) / 0.5));
         const dx = d.x - cx, dy = d.y - cy, dist = Math.hypot(dx, dy) || 1;
         const ux = dx / dist, uy = dy / dist;
         const r0 = dist * (1 - FP);
@@ -8026,8 +7909,6 @@ function runJump({ onFlash, onDone, lead = 0 }) {
           ctx.beginPath(); ctx.arc(cx + ux * r0, cy + uy * r0, d.size / 2, 0, 7); ctx.fill();
           continue;
         }
-        /* the far end reaches the edge FIRST — a full line drawn to the
-           horizon — and only then does the near end lift off and chase it */
         const pFar = pow(Math.min(1, pd / 0.62), 1.7);
         const pNear = pow(Math.max(0, (pd - 0.38) / 0.62), 2.0);
         const rNear = r0 + pNear * (mR - r0), rFar = r0 + 2 + pFar * (mR - r0);
@@ -8039,44 +7920,11 @@ function runJump({ onFlash, onDone, lead = 0 }) {
         ctx.lineTo(cx + ux * rFar, cy + uy * rFar);
         ctx.stroke();
       }
-      if (p > 0.5) drawTunnel(dt, 0.6 * ((p - 0.5) / 0.5));
-    } else if (phase === "cruise") {
-      drawTunnel(dt, 1);
-      drawSign(now, "cruise");
-    } else if (phase === "burst") {
-      drawTunnel(dt, 1 + pow(t / JUMP_T.burst, 1.6) * 7);
-      drawSign(now, "burst");
-    }
-
-    /* ---- the mark ---- */
-    if (phase === "ratchet" && mk.length) {
-      /* a click runs through the whole word, left to right */
-      const p = t / JUMP_T.ratchet;
+      if (p > 0.45) drawTunnel(dt, 0.6 * ((p - 0.45) / 0.55));
+      /* the mark leaves the same way, each dot at its own moment */
+      const mRk = mR;
       for (const d of mk) {
-        const w = p * 1.35 - d.delay * 0.35;
-        const k = Math.max(0, Math.sin(Math.min(1, Math.max(0, w)) * Math.PI));
-        ctx.fillStyle = d.fill;
-        ctx.beginPath(); ctx.arc(d.hx + k * 2.5, d.hy, d.hr * (1 + k * 0.5), 0, 7); ctx.fill();
-      }
-    } else if (phase === "reform" && mk.length) {
-      /* pixel by pixel: every dot leaves its place in the word and takes its
-         seat in the compact S at centre, sagging downward on the way */
-      const p = t / JUMP_T.reform;
-      for (const d of mk) {
-        const lp = easeInOut(Math.min(1, Math.max(0, (p - d.delay * 0.3) / 0.7)));
-        const mx = (d.hx + d.sx) / 2, my = Math.max(d.hy, d.sy) + 90;
-        const ix = (1 - lp) * (1 - lp) * d.hx + 2 * (1 - lp) * lp * mx + lp * lp * d.sx;
-        const iy = (1 - lp) * (1 - lp) * d.hy + 2 * (1 - lp) * lp * my + lp * lp * d.sy;
-        ctx.fillStyle = d.fill;
-        ctx.beginPath(); ctx.arc(ix, iy, d.hr + (d.sr - d.hr) * lp, 0, 7); ctx.fill();
-      }
-    } else if (phase === "streaks" && mk.length) {
-      /* the assembled S goes to light the same way — dot by dot, each holding
-         its seat until its own moment */
-      const p = t / JUMP_T.streaks;
-      const mR = Math.hypot(W, H) / 2 + 120;
-      for (const d of mk) {
-        const pd = Math.min(1, Math.max(0, (p - d.jit * 0.32) / 0.68));
+        const pd = Math.min(1, Math.max(0, (p - d.jit * 0.45) / 0.55));
         const dx = d.sx - cx, dy = d.sy - cy, dist = Math.hypot(dx, dy) || 1;
         const ux = dx / dist, uy = dy / dist;
         if (pd <= 0) {
@@ -8086,7 +7934,7 @@ function runJump({ onFlash, onDone, lead = 0 }) {
         }
         const pFar = pow(Math.min(1, pd / 0.55), 1.6);
         const pNear = pow(Math.max(0, (pd - 0.3) / 0.7), 2.0);
-        const rNear = dist + pNear * (mR - dist), rFar = dist + 2 + pFar * (mR - dist);
+        const rNear = dist + pNear * (mRk - dist), rFar = dist + 2 + pFar * (mRk - dist);
         if (rNear >= rFar) continue;
         ctx.strokeStyle = d.fill; ctx.lineWidth = d.sr * 2; ctx.lineCap = "round";
         ctx.beginPath();
@@ -8094,11 +7942,250 @@ function runJump({ onFlash, onDone, lead = 0 }) {
         ctx.lineTo(cx + ux * rFar, cy + uy * rFar);
         ctx.stroke();
       }
+    } else if (phase === "cruise") {
+      drawTunnel(dt, 1);
+      drawSign(now, "cruise");
+    } else if (phase === "burst") {
+      drawTunnel(dt, 1 + pow(t / T.burst, 1.6) * 7);
+      drawSign(now, "burst");
     }
 
-    /* ---- the form recedes and the clouds are pulled with it ---- */
-    if (phase === "reform") {
-      const k = ease(t / JUMP_T.reform);
+    if (phase === "ratchet" && mk.length && t <= T.ratchet) {
+      const p = t / T.ratchet;
+      for (const d of mk) {
+        const w = p * 1.35 - d.delay * 0.35;
+        const k = Math.max(0, Math.sin(Math.min(1, Math.max(0, w)) * Math.PI));
+        ctx.fillStyle = d.fill;
+        ctx.beginPath(); ctx.arc(d.hx + k * 2.5, d.hy, d.hr * (1 + k * 0.5), 0, 7); ctx.fill();
+      }
+    } else if (phase === "reform" && mk.length) {
+      const p = t / T.reform;
+      for (const d of mk) {
+        const lp = easeInOut(Math.min(1, Math.max(0, (p - d.delay * 0.3) / 0.7)));
+        const mx = (d.hx + d.sx) / 2, my = Math.max(d.hy, d.sy) + 90;
+        const ix = (1 - lp) * (1 - lp) * d.hx + 2 * (1 - lp) * lp * mx + lp * lp * d.sx;
+        const iy = (1 - lp) * (1 - lp) * d.hy + 2 * (1 - lp) * lp * my + lp * lp * d.sy;
+        ctx.fillStyle = d.fill;
+        ctx.beginPath(); ctx.arc(ix, iy, d.hr + (d.sr - d.hr) * lp, 0, 7); ctx.fill();
+      }
+    }
+
+    if (phase === "ratchet" && t >= T.ratchet) { phase = "reform"; t0 = now; post("phase", "reform"); }
+    else if (phase === "reform" && t >= T.reform) { phase = "streaks"; t0 = now; post("phase", "streaks"); }
+    else if (phase === "streaks" && t >= T.streaks) { phase = "cruise"; t0 = now; cruiseT0 = now; post("phase", "cruise"); }
+    else if (phase === "cruise") {
+      const tc = now - cruiseT0;
+      if ((ready && tc >= T.cruiseMin) || tc >= T.cruiseCap) {
+        phase = "burst"; t0 = now; burstT0 = now; post("phase", "burst");
+      }
+    } else if (phase === "burst" && t >= T.burst) { done = true; post("flash"); }
+  };
+
+  return {
+    tick,
+    msg: (m) => {
+      if (m.type === "ready") ready = !!m.ready;
+      if (m.type === "dest") dest = m.dest;
+      if (m.type === "stop") done = true;
+    },
+  };
+}
+
+function runJump({ onFlash, onDone, lead = 0 }) {
+  /* The driver. Measures the world at the press, hands the drawing to
+     arrivalEngineCore — inside a Worker with an OffscreenCanvas wherever the
+     browser has one, so the tunnel keeps its frame rate while the main thread
+     mounts the dashboard — and keeps for itself the two jobs a worker cannot
+     do: choreographing the DOM (the card's fade, the clouds' pull and blow-out)
+     and the flash handover. */
+  const root = typeof document === "undefined" ? null : document.documentElement;
+  if (!root) { onFlash(); onDone(); return () => {}; }
+  let reduce = false;
+  try {
+    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {}
+  if (reduce) {
+    tellPhase("cruise");
+    const t = setTimeout(() => { onFlash(); onDone(); }, 180);
+    return () => clearTimeout(t);
+  }
+  jumpOwnsEntrance = true;
+  jumpLanded = false;
+
+  const W = window.innerWidth, H = window.innerHeight;
+  const cx = W / 2, cy = H / 2;
+  lastJumpOrigin = { x: cx, y: cy };
+  root.style.setProperty("--jx", cx + "px");
+  root.style.setProperty("--jy", cy + "px");
+
+  /* ---- the mark, measured where it actually sits ---- */
+  const gWord = sageDots({ word: true });
+  let mk = [];
+  if (lastMarkEl) {
+    const mr = lastMarkEl.getBoundingClientRect();
+    const scale = Math.min(mr.width / gWord.w, mr.height / gWord.h) || 1;
+    const ox = mr.left + (mr.width - gWord.w * scale) / 2;
+    const oy = mr.top + (mr.height - gWord.h * scale) / 2;
+    const gS = sageDots({ word: false });
+    const seatScale = scale * 0.62;
+    const seats = gS.dots.map((d) => ({
+      x: cx + (d.x - gS.w / 2) * seatScale,
+      y: cy + (d.y - gS.h / 2) * seatScale,
+      r: d.r * seatScale,
+    })).sort((a, b) => a.x - b.x || a.y - b.y);
+    const home = gWord.dots.map((d) => ({ x: ox + d.x * scale, y: oy + d.y * scale, r: d.r * scale, fill: d.fill }))
+      .sort((a, b) => a.x - b.x || a.y - b.y);
+    const spanX = (home[home.length - 1].x - home[0].x) || 1;
+    mk = home.map((d, i) => {
+      const seat = seats[Math.round((i * (seats.length - 1)) / (home.length - 1))] || { x: cx, y: cy, r: d.r };
+      return { hx: d.x, hy: d.y, hr: d.r, fill: d.fill,
+        sx: seat.x, sy: seat.y, sr: seat.r,
+        delay: (d.x - home[0].x) / spanX, jit: Math.random() };
+    });
+  }
+
+  /* ---- the field: the page's own grid, continued past every edge ---- */
+  const field = [];
+  {
+    let i = 0;
+    for (let y = GROUND_PITCH / 2; y < H; y += GROUND_PITCH)
+      for (let x = GROUND_PITCH / 2; x < W; x += GROUND_PITCH) {
+        const bright = i % 3 === 0;
+        field.push({ x, y, size: bright ? 4.4 : 2.6, tint: GROUND_TINTS[i % GROUND_TINTS.length], jit: Math.random() });
+        i++;
+      }
+    const padX = W * 0.5, padY = H * 0.5;
+    for (let y = GROUND_PITCH / 2 - padY; y < H + padY; y += GROUND_PITCH)
+      for (let x = GROUND_PITCH / 2 - padX; x < W + padX; x += GROUND_PITCH) {
+        if (x > 0 && x < W && y > 0 && y < H) continue;
+        const bright = i % 3 === 0;
+        field.push({ x, y, size: bright ? 4.4 : 2.6, tint: GROUND_TINTS[i % GROUND_TINTS.length], jit: Math.random() });
+        i++;
+      }
+  }
+
+  /* ---- the tunnel: seeded mid-life so the sky starts in steady state ---- */
+  const maxR = Math.hypot(W, H) / 2 + 160;
+  const tunnel = [];
+  {
+    const n = Math.round((W * H) / 7800);
+    for (let i = 0; i < n; i++) {
+      const waiting = Math.random() < 0.18;
+      const r = waiting ? 2 : Math.pow(Math.random(), 1.7) * maxR;
+      tunnel.push({
+        ang: Math.random() * Math.PI * 2, r,
+        t: Math.max(0, r - (200 + Math.random() * 160)),
+        wait: waiting ? Math.random() * 0.9 : 0,
+        v: 0.55 + Math.random() * 0.9,
+        size: 1.4 + Math.random() * 2.2,
+        tint: GROUND_TINTS[Math.floor(Math.random() * GROUND_TINTS.length)],
+      });
+    }
+  }
+
+  const cv = document.createElement("canvas");
+  cv.className = "sage-jump-canvas";
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = W + "px"; cv.style.height = H + "px";
+  document.body.appendChild(cv);
+  root.classList.add("sage-cv");
+
+  const card = document.querySelector(".login-card");
+  const blobs = Array.from(document.querySelectorAll(".sg-blob")).map((el) => {
+    const r = el.getBoundingClientRect();
+    const bx = r.left + r.width / 2, by = r.top + r.height / 2;
+    const dx = bx - cx, dy = by - cy, dist = Math.hypot(dx, dy) || 1;
+    return { el, ux: dx / dist, uy: dy / dist };
+  });
+  const restoreDom = () => {
+    if (card) { card.style.opacity = ""; card.style.transform = ""; }
+    for (const b of blobs) { b.el.style.transform = ""; b.el.style.opacity = ""; }
+  };
+  const bodyFont = (() => {
+    try { return getComputedStyle(document.body).fontFamily || "sans-serif"; }
+    catch (e) { return "sans-serif"; }
+  })();
+
+  const world = { W, H, dpr, T: JUMP_T, FP: 0.5, mk, field, tunnel, font: bodyFont, lead };
+
+  let flashing = false, stopped = false, raf = 0, domRaf = 0;
+  let worker = null, engine = null;
+
+  const toFlash = () => {
+    if (flashing || stopped) return;
+    flashing = true;
+    activeEngineSend = null;
+    restoreDom();
+    root.classList.add("sage-beat-flash");
+    root.classList.remove("sage-cv");
+    if (worker) { try { worker.terminate(); } catch (e) {} worker = null; }
+    if (cv.parentNode) cv.parentNode.removeChild(cv);
+    onFlash();
+    let frames = 0;
+    const painted = () => {
+      if (stopped) return;
+      if (++frames < 2) { requestAnimationFrame(painted); return; }
+      setTimeout(() => { if (!stopped) onDone(); }, 20);
+    };
+    requestAnimationFrame(painted);
+  };
+
+  const onPost = (type, data) => {
+    if (stopped) return;
+    if (type === "phase") tellPhase(data);
+    else if (type === "flash") toFlash();
+  };
+
+  /* Worker where the browser has one; the same core on the main thread where
+     it does not. Either way the maths exists once. */
+  let usingWorker = false;
+  try {
+    if (typeof OffscreenCanvas !== "undefined" && cv.transferControlToOffscreen && typeof Worker !== "undefined") {
+      const off = cv.transferControlToOffscreen();
+      const src = "let eng=null;self.onmessage=function(e){var m=e.data;" +
+        "if(m.type==='init'){var ctx=m.canvas.getContext('2d');" +
+        "var core=(" + arrivalEngineCore.toString() + ");" +
+        "eng=core(ctx,m.world,function(t,d){self.postMessage({type:t,data:d});});" +
+        "var loop=function(now){if(!eng)return;eng.tick(now);requestAnimationFrame(loop);};" +
+        "requestAnimationFrame(loop);}else if(eng){eng.msg(m);}};";
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+      worker.onmessage = (e) => onPost(e.data.type, e.data.data);
+      worker.postMessage({ type: "init", canvas: off, world }, [off]);
+      usingWorker = true;
+    }
+  } catch (e) { try { if (worker) worker.terminate(); } catch (e2) {} worker = null; usingWorker = false; }
+  if (!usingWorker) {
+    const ctx = cv.getContext("2d");
+    engine = arrivalEngineCore(ctx, world, onPost);
+    const loop = (now) => {
+      if (stopped || flashing) return;
+      engine.tick(now);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+  }
+  activeEngineSend = (m) => {
+    if (worker) worker.postMessage(m);
+    else if (engine) engine.msg(m);
+  };
+  activeEngineSend({ type: "ready", ready: arrivalReady });
+  activeEngineSend({ type: "dest", dest: arrivalDest });
+
+  /* ---- the DOM's own choreography, on a matching clock ----
+     The card's fade and the clouds' pull and blow-out are DOM work, which a
+     worker cannot touch. They run here, done before the cruise begins — which
+     is exactly why the dashboard mount was moved INTO the cruise: by then the
+     main thread has nothing visual left to animate. */
+  const ease3 = (p) => 1 - Math.pow(1 - Math.min(1, Math.max(0, p)), 3);
+  const pw = (p, k) => Math.pow(Math.min(1, Math.max(0, p)), k);
+  const domT0 = performance.now() + lead;
+  const R = JUMP_T.ratchet, F = JUMP_T.reform, S = JUMP_T.streaks;
+  const domLoop = (now) => {
+    if (stopped || flashing) return;
+    const t = now - domT0;
+    if (t >= R && t < R + F) {
+      const k = ease3((t - R) / F);
       if (card) {
         card.style.opacity = String(Math.max(0, 1 - k * 1.15));
         card.style.transform = "scale(" + (1 - k * 0.08) + ")";
@@ -8107,40 +8194,30 @@ function runJump({ onFlash, onDone, lead = 0 }) {
         b.el.style.transform = "translate(" + (-b.ux * k * 150) + "px," + (-b.uy * k * 150) + "px) scale(" + (1 - k * 0.1) + ")";
         b.el.style.opacity = String(1 - k * 0.3);
       }
-    } else if (phase === "streaks") {
-      /* blown out past the frame: flying through cloud on the way out */
-      const k = pow(t / JUMP_T.streaks, 1.8);
+    } else if (t >= R + F && t < R + F + S) {
+      const k = pw((t - R - F) / S, 1.8);
       const out = k * Math.max(W, H) * 0.75;
+      if (card) card.style.opacity = "0";
       for (const b of blobs) {
         b.el.style.transform = "translate(" + (b.ux * (out - 150 * (1 - k))) + "px," + (b.uy * (out - 150 * (1 - k))) + "px) scale(" + (0.9 + k * 0.5) + ")";
         b.el.style.opacity = String(Math.max(0, 0.7 - k * 1.1));
       }
-      if (card && t < 40) card.style.opacity = "0";
+    } else if (t >= R + F + S) {
+      if (card) card.style.opacity = "0";
+      for (const b of blobs) b.el.style.opacity = "0";
+      return;   // nothing left for the main thread to animate
     }
-
-    /* ---- phase transitions ---- */
-    if (phase === "ratchet" && t >= JUMP_T.ratchet) { phase = "reform"; t0 = now; tellPhase("reform"); }
-    else if (phase === "reform" && t >= JUMP_T.reform) { phase = "streaks"; t0 = now; tellPhase("streaks"); }
-    else if (phase === "streaks" && t >= JUMP_T.streaks) { phase = "cruise"; t0 = now; cruiseT0 = now; tellPhase("cruise"); }
-    else if (phase === "cruise") {
-      const tc = now - cruiseT0;
-      if ((arrivalReady && tc >= JUMP_T.cruiseMin) || tc >= JUMP_T.cruiseCap) {
-        phase = "burst"; t0 = now; burstT0 = now;
-      }
-    } else if (phase === "burst" && t >= JUMP_T.burst) { toFlash(); return; }
-
-    raf = requestAnimationFrame(frame);
+    domRaf = requestAnimationFrame(domLoop);
   };
-  raf = requestAnimationFrame(frame);
+  domRaf = requestAnimationFrame(domLoop);
 
-  /* The cleanup runs on the sign-in screen's unmount, which IS the handover.
-     Once the flash is up the engine has already put everything back itself;
-     before it (a failed sign-in) this is the abort, and the screen returns to
-     rest exactly as it was. */
   return () => {
     if (flashing) return;
     stopped = true;
-    cancelAnimationFrame(raf);
+    activeEngineSend = null;
+    cancelAnimationFrame(raf); cancelAnimationFrame(domRaf);
+    if (worker) { try { worker.postMessage({ type: "stop" }); worker.terminate(); } catch (e) {} worker = null; }
+    if (engine) engine.msg({ type: "stop" });
     restoreDom();
     root.classList.remove("sage-cv", "sage-beat-flash");
     if (cv.parentNode) cv.parentNode.removeChild(cv);
@@ -8329,6 +8406,7 @@ function radialAssemble() {
   /* Read everything first. Interleaving reads and writes here is the classic way
      to turn one reflow into forty. */
   const plan = [];
+  const vw = window.innerWidth, vh = window.innerHeight;
   for (const el of els) {
     const r = el.getBoundingClientRect();
     /* Anything not actually laid out is skipped. The section strip is
@@ -8338,6 +8416,12 @@ function radialAssemble() {
        delay was measured against. One invisible element was compressing the
        whole stagger. */
     if (r.width < 1 || r.height < 1) continue;
+    /* And anything outside the viewport is skipped too. A card two screens down
+       was handed a vector to the centre of the visible screen, so it flew
+       ACROSS the viewport on its way home — blocks raining through the page
+       from outside the frame. Off-screen elements simply take their places;
+       the impact belongs to what the eye can actually see land. */
+    if (r.bottom < -40 || r.top > vh + 40 || r.right < -40 || r.left > vw + 40) continue;
     const dx = o.x - (r.left + r.width / 2);
     const dy = o.y - (r.top + r.height / 2);
     plan.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
@@ -12569,6 +12653,23 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* `shell` is the chrome the app already has on hand — who is signed in, how to
    sign out, the help node — passed as one object so this module doesn't grow
    six props it only forwards. */
+/* ---- the floor tools' loading beat ----
+   Live Floor, The Line and Online fetch their store before they can draw a
+   board, and that wait used to be a bare line of text. The seven dots run
+   while it loads; the moment the data lands they all light together and pop,
+   so the animation visibly COMPLETES, and the page populates behind that
+   beat of done. */
+function FloorLoading({ store, finishing }) {
+  return (
+    <div className={"checkout floor-load" + (finishing ? " finish" : "")}>
+      <div className="floor-load-inner">
+        <Logo size={64} loading />
+        <p className="muted">{finishing ? "Ready" : "Loading " + (store?.name || "store") + "\u2026"}</p>
+      </div>
+    </div>
+  );
+}
+
 function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmin, queue, onSaveConfig, onToolChange, onImport, shell }) {
   const stores = accessibleStores || [];
   const [storeId, setStoreId] = useState(() => {
@@ -12579,6 +12680,17 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   useEffect(() => { setSubtab("board"); }, [queue]);   // switching queue always lands on the board
   const [data, setData] = useState(null);
   const [loadFailed, setLoadFailed] = useState(false);
+  /* loading -> finish (the dots complete and pop) -> done (the board is shown).
+     The finish beat runs whether the load took three seconds or thirty
+     milliseconds: the completion is the point, not the wait. */
+  const [loadBeat, setLoadBeat] = useState("loading");
+  const dataLoaded = data !== null;
+  useEffect(() => {
+    if (!dataLoaded) { setLoadBeat("loading"); return undefined; }
+    setLoadBeat("finish");
+    const t = setTimeout(() => setLoadBeat("done"), 540);
+    return () => clearTimeout(t);
+  }, [dataLoaded]);
   const [saving, setSaving] = useState(false);
   const store = stores.find((s) => s.id === storeId) || stores[0] || null;
 
@@ -12705,8 +12817,8 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
       <div key={(store?.id || "none") + queue + effSub} className="page">
         {!store ? (
           <div className="checkout"><p className="muted">No store available.</p></div>
-        ) : data === null ? (
-          <div className="checkout"><p className="muted">Loading {store.name}…</p></div>
+        ) : data === null || loadBeat !== "done" ? (
+          <FloorLoading store={store} finishing={loadBeat === "finish"} />
         ) : queue === "line" || queue === "online" ? (
           <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} variant={LEAD_VARIANTS[queue]} />
         ) : effSub === "settings" && isAdmin ? (
@@ -15496,7 +15608,20 @@ function buildDigest(args) {
   for (const c of channelRates(M, roster)) {
     if (c.seen) ch[c.id] = { u: +c.units.toFixed(3), l: Math.round(c.leads) };
   }
-  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch };
+  /* Total units and the vehicle split, month-to-date. Stored cumulative rather
+     than daily on purpose: a missed day costs one comparison, not the series,
+     and yesterday's figure is always the difference of two rows. */
+  let u = 0, nu = null, uu = null;
+  for (const a of roster) {
+    const st = M?.stats?.[norm(a.name)];
+    if (!st) continue;
+    u += unitsOf(st);
+    if (st.newUnits != null || st.usedUnits != null) {
+      nu = (nu || 0) + (st.newUnits ?? 0);
+      uu = (uu || 0) + (st.usedUnits ?? 0);
+    }
+  }
+  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch, u, nu, uu };
 }
 
 /* The digest closest to `back` days ago, so a missed day degrades to the
@@ -15754,16 +15879,72 @@ function RoundUp({ config, store, data, M }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [full]);
 
+  /* ---- everything the new sheet draws, computed once ----
+     The pace line, yesterday's units, the close rates and the activity trends,
+     all through the end of yesterday. Anything the data cannot honestly say is
+     absent rather than zero. */
+  const ru2 = useMemo(() => {
+    const mk = ym();
+    const days = Object.entries(digests || {})
+      .filter(([day]) => day.slice(0, 7) === mk && day <= today())
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    const cumOf = (row) => row.u != null ? row.u
+      : Object.values(row.ch || {}).reduce((n, c) => n + (c.u || 0), 0);
+    const pacePts = days.map(([day, row]) => ({ day: +day.slice(8, 10), v: cumOf(row) }));
+    const sold = (() => {   // month to date, live, exact
+      let n = 0;
+      for (const a of data.roster || []) n += unitsOf(M?.stats?.[norm(a.name)]);
+      return Math.round(n * 10) / 10;
+    })();
+    const g = store.goal || {};
+    const goal = (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0);
+    const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    const elapsed = Math.max(1, dayOfMonth() - 1);   // through yesterday
+    const onPaceFor = Math.round((sold / elapsed) * dim);
+    const paceDelta = goal > 0 ? Math.round(((onPaceFor - goal) / goal) * 100) : null;
+
+    const last = days[days.length - 1] ? days[days.length - 1][1] : null;
+    const prior = days[days.length - 2] ? days[days.length - 2][1] : null;
+    const soldY = last && prior && last.nu != null && prior.nu != null
+      ? { nw: Math.round(((last.nu ?? 0) - (prior.nu ?? 0)) * 10) / 10,
+          us: Math.round(((last.uu ?? 0) - (prior.uu ?? 0)) * 10) / 10 }
+      : null;
+
+    const close = CHANNEL_LIST.map((c) => {
+      const cur = last && last.ch && last.ch[c.id];
+      const prev = prior && prior.ch && prior.ch[c.id];
+      const pct = cur && cur.l > 0 ? Math.round((cur.u / cur.l) * 100) : null;
+      const prevPct = prev && prev.l > 0 ? Math.round((prev.u / prev.l) * 100) : null;
+      return { id: c.id, label: c.label + " close", pct,
+        delta: pct != null && prevPct != null ? pct - prevPct : null };
+    }).filter((c) => c.pct != null);
+
+    const trendDays = ruDays(data, RU_WEEK).slice().reverse();   // oldest first
+    const trends = RU_TRENDS.map((t) => {
+      const bars = trendDays.map((day) => ruSum(data, [day], t));
+      const move = ruMove(data, t, RU_DAY, 1);
+      const yesterday = bars.length ? bars[bars.length - 1] : 0;
+      return { key: t.key, label: t.label, v: yesterday, bars,
+        pct: move ? Math.round(move.pct * 100) : null };
+    }).filter((t) => t.bars.some((b) => b > 0));
+
+    let up = 0, down = 0;
+    for (const t of trends) { if (t.pct != null) { if (t.pct > 0) up++; else if (t.pct < 0) down++; } }
+    for (const c of close) { if (c.delta != null) { if (c.delta > 0) up++; else if (c.delta < 0) down++; } }
+    return { pacePts, sold, goal, onPaceFor, paceDelta, dim, soldY, close, trends, up, down };
+  }, [digests, data, M, store.goal]); // eslint-disable-line
+
   if (!ru.any) return null;
 
   if (full) {
-    let d = 420;
     return (
       <Overlay>
         <div className="ru-scrim" onClick={close}>
           <div className="ru-sheet" role="dialog" aria-label="Your round-up" onClick={(e) => e.stopPropagation()}>
             <div className="ru-sheet-body">
-              <div className="ru-sheet-head">
+              <div className="ru-sheet-head"
+                style={(() => { const b = store.brand || DEFAULT_BRAND;
+                  return { "--rup": b.primary, "--rud": b.deep || b.primary }; })()}>
                 <p className="ru-eyebrow">Your round-up</p>
                 <div className="ru-sheet-store">{store.name}</div>
                 {/* The date the round-up COVERS, not the date it is being read on.
@@ -15773,23 +15954,106 @@ function RoundUp({ config, store, data, M }) {
                 <div className="ru-sheet-date">
                   Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
                 </div>
-              </div>
-              {RU_SECTIONS.map((s) => {
-                const items = ru[s.key];
-                if (!items.length) return null;
-                const head = d; d += 70;
-                return (
-                  <div className="ru-sec" key={s.key}>
-                    <div className="ru-sec-h" style={{ animationDelay: head + "ms" }}>
-                      <h4>{s.label}</h4><span className="ru-count">{items.length}</span>
-                    </div>
-                    {items.map((it, i) => { const at = d; d += 70; return <RuFinding key={i} item={it} tone={s.tone} delay={at} />; })}
+                {(ru2.up + ru2.down) > 0 && (
+                  <div className="ru-verdict">
+                    <div className="ru-verdict-word">{ru2.up >= ru2.down ? "Trending up \u25B2" : "Trending down \u25BC"}</div>
+                    <div className="ru-verdict-sub">{ru2.up} of {ru2.up + ru2.down} measures improved</div>
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              {/* ---- the month, as the Performance page draws it ---- */}
+              {ru2.goal > 0 && (
+                <div className="ru2-pace" style={{ animationDelay: "120ms" }}>
+                  <div className="ru2-pace-head">
+                    <span className="ru2-cap">Monthly pace</span>
+                    <span className="ru2-pace-line">
+                      <b><CountUp value={ru2.sold} delay={350} /></b>&nbsp;delivered&nbsp;&middot;&nbsp;on
+                      pace for <b>{fmtNum(ru2.onPaceFor)}</b>&nbsp;/&nbsp;<b>{fmtNum(ru2.goal)}</b> goal
+                      {ru2.paceDelta != null && (
+                        <span className={"ru-chip " + (ru2.paceDelta >= 0 ? "ru-up" : "ru-down")}>
+                          {ru2.paceDelta >= 0 ? "+" : ""}{ru2.paceDelta}%</span>
+                      )}
+                    </span>
+                  </div>
+                  {ru2.pacePts.length >= 2 && (() => {
+                    const W = 560, H = 96, PL = 6, PR = 10, PT = 8, PB = 14;
+                    const top = Math.max(ru2.goal, ...ru2.pacePts.map((p) => p.v)) || 1;
+                    const x = (day) => PL + (W - PL - PR) * (day / ru2.dim);
+                    const y = (v) => PT + (H - PT - PB) * (1 - v / top);
+                    const pts = ru2.pacePts.map((p) => x(p.day).toFixed(1) + "," + y(p.v).toFixed(1)).join(" ");
+                    const end = ru2.pacePts[ru2.pacePts.length - 1];
+                    return (
+                      <svg className="ru2-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+                        <path d={`M ${x(0)} ${y(0)} L ${x(ru2.dim)} ${y(ru2.goal)}`} className="ru2-goal" />
+                        <polyline points={pts} className="ru2-line" pathLength="100" />
+                        <circle cx={x(end.day)} cy={y(end.v)} r="4" className="ru2-dot" />
+                      </svg>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ---- yesterday's business: plain numbers ---- */}
+              {(ru2.soldY || ru2.close.length > 0) && (
+                <div className="ru2-stats">
+                  {ru2.soldY && (
+                    <div className="ru2-stat ru2-new" style={{ animationDelay: "180ms" }}>
+                      <div className="ru2-stat-name">New sold yesterday</div>
+                      <div className="ru2-stat-num"><CountUp value={ru2.soldY.nw} delay={260} /></div>
+                    </div>
+                  )}
+                  {ru2.soldY && (
+                    <div className="ru2-stat ru2-used" style={{ animationDelay: "240ms" }}>
+                      <div className="ru2-stat-name">Used sold yesterday</div>
+                      <div className="ru2-stat-num"><CountUp value={ru2.soldY.us} delay={320} /></div>
+                    </div>
+                  )}
+                  {ru2.close.map((c, i) => (
+                    <div className="ru2-stat" key={c.id} style={{ animationDelay: (300 + i * 60) + "ms" }}>
+                      <div className="ru2-stat-name">{c.label}</div>
+                      <div className="ru2-stat-row">
+                        <span className="ru2-stat-num">{c.pct}%</span>
+                        {c.delta != null && c.delta !== 0 && (
+                          <span className={"ru-chip " + (c.delta > 0 ? "ru-up" : "ru-down")}>
+                            {c.delta > 0 ? "+" : ""}{c.delta}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- yesterday's activity, with the week behind it ---- */}
+              {ru2.trends.length > 0 && (
+                <div className="ru2-grid">
+                  {ru2.trends.map((t, i) => {
+                    const mx = Math.max(1, ...t.bars);
+                    return (
+                      <div className={"ru2-tile " + (t.pct == null ? "" : t.pct >= 0 ? "ru2-up" : "ru2-down")}
+                        key={t.key} style={{ animationDelay: (380 + i * 70) + "ms" }}>
+                        <div className="ru2-stat-name">{t.label}</div>
+                        <div className="ru2-tile-row">
+                          <span className="ru2-tile-num"><CountUp value={t.v} delay={420 + i * 70} /></span>
+                          {t.pct != null && (
+                            <span className={"ru-chip " + (t.pct >= 0 ? "ru-up" : "ru-down")}>
+                              {t.pct >= 0 ? "+" : ""}{t.pct}%</span>
+                          )}
+                        </div>
+                        <span className="ru2-spark">
+                          {t.bars.map((b, j) => (
+                            <i key={j} style={{ height: Math.max(10, Math.round((b / mx) * 100)) + "%",
+                              animationDelay: (430 + i * 70 + j * 40) + "ms" }} />
+                          ))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div className="ru-sheet-foot" style={{ animationDelay: d + 60 + "ms" }}>
-              <button className="ru-btn" onClick={close}>Open the board</button>
+            <div className="ru-sheet-foot" style={{ animationDelay: "760ms" }}>
+              <button className="ru-btn" onClick={close}>Open the dashboard</button>
             </div>
           </div>
         </div>
@@ -20008,7 +20272,7 @@ function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
     const reduce = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce || !target) { setV(target || 0); return; }
-    let raf, startT = null;
+    let raf, startT = null, iv = null;
     const tick = (t) => {
       if (startT === null) startT = t;
       const elapsed = t - startT - delay;
@@ -20019,8 +20283,22 @@ function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
       setV(Math.round(target * eased * f) / f);
       if (p < 1) raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    /* The dashboard mounts under the streaks now, and a count that starts at
+       the mount finishes before anyone can see it: the page landed on numbers
+       already standing still. The count belongs to the landing, so if this
+       mounts hidden it waits for the reveal and rolls up on screen. */
+    const root = typeof document !== "undefined" ? document.documentElement : null;
+    if (root && root.classList.contains("jump-under")) {
+      iv = setInterval(() => {
+        if (!root.classList.contains("jump-under")) {
+          clearInterval(iv); iv = null;
+          raf = requestAnimationFrame(tick);
+        }
+      }, 80);
+    } else {
+      raf = requestAnimationFrame(tick);
+    }
+    return () => { cancelAnimationFrame(raf); if (iv) clearInterval(iv); };
   }, [target, ms, delay, decimals]);
   return v;
 }
@@ -20808,7 +21086,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
               <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
                 strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
-                style={{ "--c": dash }} />
+                style={{ "--c": dash, "--cc": C }} />
             </svg>
             <div className="hero-ring-label">
               <div className="hero-ring-pct">{nPct}<span>%</span></div>
@@ -24445,6 +24723,20 @@ const SAGE_CSS = `
       @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
       /* the speedometer needle + its gradient trail spin together */
       .sage-loading i { animation: sageDot 1.05s ease-in-out infinite; }
+      /* The floor tools' loader, and its completion. The !important shorthand is
+         load-bearing: each dot carries an inline animation-delay for the wave,
+         and the finish has to override it or the pop would stagger over a
+         second instead of landing as one beat. */
+      .floor-load { display:flex; align-items:center; justify-content:center; min-height:46vh; }
+      .floor-load-inner { display:flex; flex-direction:column; align-items:center; gap:16px; }
+      .floor-load.finish .sage-loading i { animation: sageDotDone .38s cubic-bezier(.2,.7,.3,1) both !important; }
+      @keyframes sageDotDone {
+        0%   { opacity:.4; transform:scale(.9); }
+        55%  { opacity:1;  transform:scale(1.18); }
+        100% { opacity:1;  transform:scale(1); }
+      }
+      .floor-load.finish { animation: floorLoadOut .22s ease .34s both; }
+      @keyframes floorLoadOut { to { opacity:0; } }
       .loadscreen-label { margin-top:2px; font-size:12.5px; color:var(--ink-2); font-weight:600; letter-spacing:.03em; }
 
       /* ---- board launcher ---- */
@@ -24654,7 +24946,13 @@ const SAGE_CSS = `
          app's own: --ease-bloop for anything that arrives, --ease for anything
          that travels. */
       @keyframes ruBloop { from { opacity:0; transform:translateY(14px) scale(.95); } to { opacity:1; transform:none; } }
-      @keyframes ruSheetUp { from { transform:translateY(100%); } to { transform:none; } }
+      /* From the middle, not the bottom: the sheet is a thing appearing where
+         the eye already is, growing into place with a breath of overshoot. */
+      @keyframes ruSheetUp {
+        0%   { transform:scale(.9); opacity:0; }
+        60%  { transform:scale(1.015); opacity:1; }
+        100% { transform:none; opacity:1; }
+      }
       @keyframes ruScrim { from { opacity:0; } to { opacity:1; } }
 
       .ru-up { color:var(--green); } .ru-down { color:var(--red); } .ru-watch { color:var(--amber); }
@@ -24694,24 +24992,77 @@ const SAGE_CSS = `
          sheet has to restate what it left behind. */
       .ru-scrim { font-family:var(--font-ui); font-size:14px; color:var(--ink);
         -webkit-font-smoothing:antialiased; }
-      .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.42);
-        backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+      /* No backdrop blur: blurring the entire board is the single most
+         expensive thing this overlay could ask for, and it lands at the exact
+         moment the arrival is settling - that was the slowdown when the sheet
+         appeared. A deeper tint reads as the same focus for none of the cost. */
+      .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.5);
         display:flex; align-items:center; justify-content:center; padding:24px;
         animation:ruScrim .3s var(--ease) both; }
       .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
-        width:min(560px, 100%); max-height:min(760px, 88vh); display:flex; flex-direction:column;
-        overflow:hidden; animation:ruSheetUp .55s var(--ease) both; }
+        width:min(660px, 100%); max-height:min(820px, 92vh); display:flex; flex-direction:column;
+        overflow:hidden; animation:ruSheetUp .42s var(--ease-bloop, cubic-bezier(.2,.7,.3,1)) both; }
       /* Without overscroll-behavior a flick at either end of this list hands the
          scroll to the board underneath, so closing the sheet left the page sitting
          further down than it started. Same guard the help sheet already carries. */
       .ru-sheet-body { flex:1; overflow-y:auto; overscroll-behavior:contain;
         -webkit-overflow-scrolling:touch; }
-      .ru-sheet-head { padding:24px 24px 4px; }
+      /* The head is the store's own hero in miniature: the same gradient sweep,
+         the same identity, so the sheet reads as the store speaking rather than
+         the app interrupting. */
+      .ru-sheet-head { padding:20px 24px 16px; color:#fff; position:relative;
+        background:linear-gradient(130deg, var(--rup, #2A5E9B) 0%, var(--rup, #2A5E9B) 42%, var(--rud, #1D4674) 100%); }
+      .ru-verdict { position:absolute; right:24px; top:22px; text-align:right;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) .3s both; }
+      .ru-verdict-word { font-family:var(--font-display); font-size:15px; font-weight:700; }
+      .ru-verdict-sub { font-size:11px; opacity:.78; margin-top:2px; }
+      /* ---- the pace chart, in the Performance page's own vocabulary ---- */
+      .ru2-cap { font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); }
+      .ru2-pace { margin:14px 20px 0; border:1px solid var(--line); border-radius:14px; padding:11px 13px 7px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru2-pace-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .ru2-pace-line { font-size:12.5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .ru2-pace-line b { font-weight:700; font-variant-numeric:tabular-nums; }
+      .ru2-chart { display:block; width:100%; height:92px; margin-top:5px; }
+      .ru2-goal { fill:none; stroke:var(--ink-3); stroke-width:1.5; stroke-dasharray:5 5; opacity:.55; }
+      .ru2-line { fill:none; stroke:var(--rup, #2A5E9B); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round;
+        stroke-dasharray:100 100; stroke-dashoffset:100; animation:ru2Draw 1.1s cubic-bezier(.2,.7,.3,1) .35s forwards; }
+      @keyframes ru2Draw { to { stroke-dashoffset:0; } }
+      .ru2-dot { fill:var(--rup, #2A5E9B); opacity:0; animation:ru2DotIn .3s ease 1.4s both; }
+      @keyframes ru2DotIn { to { opacity:1; } }
+      /* ---- yesterday's business: plain numbers ---- */
+      .ru2-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(108px, 1fr)); gap:8px; padding:10px 20px 0; }
+      .ru2-stat { border:1px solid var(--line); border-radius:13px; padding:9px 11px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      /* New and used carry their own plates, no direction: they are yesterday's
+         facts, not judgements. */
+      .ru2-stat.ru2-new { background:#EAF1FB; border-color:#D4E2F6; }
+      .ru2-stat.ru2-used { background:#FBF3E4; border-color:#F1E3C6; }
+      .ru2-stat-name { font-size:10px; font-weight:600; color:var(--ink-2); line-height:1.25; min-height:24px; }
+      .ru2-stat-row { display:flex; align-items:baseline; gap:6px; }
+      .ru2-stat-num { font-family:var(--font-display); font-size:21px; font-weight:700; letter-spacing:-.02em;
+        font-variant-numeric:tabular-nums; }
+      .ru-chip.ru-up { background:rgba(30,138,76,.12); }
+      .ru-chip.ru-down { background:rgba(192,58,43,.12); }
+      /* ---- yesterday's activity with the week behind it ---- */
+      .ru2-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:9px; padding:12px 20px 4px; }
+      .ru2-tile { border:1px solid var(--line); border-radius:14px; padding:10px 12px 8px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru2-tile-row { display:flex; align-items:baseline; gap:7px; margin-top:2px; }
+      .ru2-tile-num { font-family:var(--font-display); font-size:23px; font-weight:700; letter-spacing:-.02em;
+        font-variant-numeric:tabular-nums; }
+      .ru2-spark { display:flex; align-items:flex-end; gap:3px; height:22px; margin-top:7px; }
+      .ru2-spark i { flex:1; border-radius:2px 2px 0 0; background:rgba(16,32,52,.10); min-height:3px;
+        transform:scaleY(0); transform-origin:bottom; animation:ru2Bar .5s cubic-bezier(.2,.7,.3,1) both; }
+      .ru2-up .ru2-spark i:last-child { background:var(--green); }
+      .ru2-down .ru2-spark i:last-child { background:var(--red); }
+      @keyframes ru2Bar { to { transform:scaleY(1); } }
+      @media (max-width: 560px) { .ru2-grid { grid-template-columns:repeat(2, 1fr); } }
       .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
-        color:var(--ink-3); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
+        color:rgba(255,255,255,.72); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
       .ru-sheet-store { font-family:var(--font-display); font-size:25px; letter-spacing:-.02em; line-height:1.12;
-        margin-top:3px; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
-      .ru-sheet-date { font-size:13px; color:var(--ink-2); margin-top:2px;
+        margin-top:3px; color:#fff; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
+      .ru-sheet-date { font-size:13px; color:rgba(255,255,255,.78); margin-top:2px;
         opacity:0; animation:ruBloop .6s var(--ease-bloop) .24s both; }
       .ru-sec { padding:14px 24px 4px; }
       .ru-sec-h { display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -26008,17 +26359,20 @@ const SAGE_CSS = `
       .tool-move .page > *:nth-child(n+4), .tool-move .board-page > *:nth-child(n+4), .tool-move .tab-page > *:nth-child(n+4) { animation-delay:.066s; }
       /* Going right: the old page leaves to the left and the new one comes in
          from the right. Going left, the mirror. */
-      .tool-dir-r { --tx-out:-64px; --tx-in:64px; }
-      .tool-dir-l { --tx-out:64px;  --tx-in:-64px; }
+      .tool-dir-r { --tx-out:-64px; --tx-in:64px; --tx-slide:180px; }
+      .tool-dir-l { --tx-out:64px;  --tx-in:-64px; --tx-slide:-180px; }
       @keyframes toolOut {
         from { opacity:1; transform:none; }
         to   { opacity:0; transform: translateX(var(--tx-out)); }
       }
       /* The crash: past the resting point, squashed along the direction of
          travel at the moment of impact, then let go. */
+      /* A slide, not a fade-and-appear: the travel is long enough to read as
+         motion and the opacity is up almost immediately, so the movement is
+         the event and the fade is only the first frame's courtesy. */
       @keyframes toolIn {
-        0%   { opacity:0; transform: translateX(var(--tx-in)) scaleX(1); }
-        30%  { opacity:1; }
+        0%   { opacity:.12; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
+        18%  { opacity:1; }
         62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
         82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
         92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
@@ -26151,8 +26505,12 @@ const SAGE_CSS = `
       /* ---- the streaks that cross between them ---- */
       .warp { position:fixed; inset:0; z-index:8000; pointer-events:none; overflow:hidden; }
       .warp i { position:absolute; display:block; border-radius:2px; opacity:0; }
-      .warp-r i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
-      .warp-l i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      /* Jorge's spec, verbatim: "if the button is selected on the right the
+         streaks would start from the right of the screen and then end left
+         screen and vice versa." So travelling right along the bar, the trails
+         enter from the right edge and sweep across to the left. */
+      .warp-r i { right:-720px; animation: warpL .3s cubic-bezier(.4,0,.2,1) both; }
+      .warp-l i { left:-720px; animation: warpR .3s cubic-bezier(.4,0,.2,1) both; }
       @keyframes warpR {
         0%   { transform: translateX(0);              opacity:0; }
         30%  {                                        opacity:.9; }
@@ -26530,7 +26888,17 @@ const SAGE_CSS = `
          animation shorthand here would flatten all four to one clock. */
       .sage-assemble .sg-blobs { animation: saClouds 1.15s cubic-bezier(.2,.6,.25,1) .18s backwards; }
       @keyframes saClouds { from { transform: translateY(-90px); opacity:0; } to { transform: none; opacity:1; } }
-      .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .5s both; }
+      /* ---- the health ring's landing flourish ----
+         Jorge's spec: when it lands it fills all the way up, empties back to
+         zero, and then fills to the real percentage. ringIn is kept at index 0
+         so the ordinary mount animation is never cancelled and restarted by the
+         class flip - it finished under the streaks and simply holds - while
+         saRing rides on top for exactly the landing window and hands back to
+         the finished ringIn when the assemble classes come off. The old version
+         swapped animations twice and snapped both times; that was the glitch. */
+      .sage-assemble .hero-ring-fill {
+        animation: ringIn 1.5s var(--spring) .3s both,
+                   saRing 1.25s ease-in-out .08s both; }
 
       /* ---- the little light they come out of ----
          Sits at the vanishing point once the streaks have gone, swells, and is
@@ -26550,7 +26918,14 @@ const SAGE_CSS = `
         100% { opacity:0; transform: scale(13); }
       }
 
-      @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
+      @keyframes saRing {
+        0%   { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: var(--cc); }
+        34%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: 0; }
+        42%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: 0; }
+        68%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: var(--cc); }
+        74%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: var(--cc); }
+        100% { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: calc(var(--cc) - var(--c)); }
+      }
 
       @media (prefers-reduced-motion: reduce) {
         /* Everything collapses to a cross-fade. The order is kept; the movement
