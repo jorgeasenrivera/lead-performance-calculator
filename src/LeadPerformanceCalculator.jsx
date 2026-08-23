@@ -8416,18 +8416,21 @@ function radialAssemble() {
        delay was measured against. One invisible element was compressing the
        whole stagger. */
     if (r.width < 1 || r.height < 1) continue;
-    /* And anything outside the viewport is skipped too. A card two screens down
-       was handed a vector to the centre of the visible screen, so it flew
-       ACROSS the viewport on its way home — blocks raining through the page
-       from outside the frame. Off-screen elements simply take their places;
-       the impact belongs to what the eye can actually see land. */
-    /* Generous margins: an element straddling the fold still deserves its
-       journey, and on a phone most of the page straddles something. Only what
-       is a good half-screen away takes its place without the flight. */
-    if (r.bottom < -vh * 0.5 || r.top > vh * 1.5 || r.right < -vw * 0.5 || r.left > vw * 1.5) continue;
-    const dx = o.x - (r.left + r.width / 2);
-    const dy = o.y - (r.top + r.height / 2);
-    plan.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
+    /* ---- every element flies, but nothing crosses the screen ----
+       Two failed versions taught this shape. Letting every block fly the full
+       94% of its vector sent below-the-fold cards raining across the viewport.
+       Skipping the off-screen blocks instead meant most of a real board simply
+       appeared, and the impact read as not happening at all. So the TRAVEL is
+       capped: everything takes the same radial journey out of the centre's
+       direction, and a block whose home is far away takes a short hop along
+       that line rather than a screen-crossing flight. The radial identity is
+       everywhere; the chaos is nowhere. */
+    let dx = o.x - (r.left + r.width / 2);
+    let dy = o.y - (r.top + r.height / 2);
+    const dist = Math.hypot(dx, dy) || 1;
+    const cap = Math.min(vw, vh) * 0.55;
+    if (dist > cap) { dx = (dx / dist) * cap; dy = (dy / dist) * cap; }
+    plan.push({ el, dx, dy, dist: Math.min(dist, cap) });
   }
   if (!plan.length) return () => {};
   const far = Math.max(1, ...plan.map((p) => p.dist));
