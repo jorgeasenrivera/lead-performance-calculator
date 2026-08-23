@@ -26415,8 +26415,14 @@ const SAGE_CSS = `
          transition: .page carries its own mount animation, and an animation wins
          over a transition on the same property, so a transition here would have
          been silently ignored on exactly the pages it was written for. */
+      /* No pageIn in these lists. On a tool switch the page is FRESHLY MOUNTED,
+         so listing pageIn first does not preserve a running animation - it
+         INTRODUCES one: a ten-pixel rise and a .38s fade running against the
+         slide. That was the "still rising, still fading in" on the blocks that
+         are not cards. The moved page slides; the rise belongs to ordinary
+         mounts only. */
       .tool-exit .page {
-        animation: pageIn .38s var(--spring), pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
+        animation: pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
       .tool-exit .board-page, .tool-exit .tab-page {
         animation: pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
       @keyframes pageOut {
@@ -26431,7 +26437,7 @@ const SAGE_CSS = `
          now travels the same axis as its blocks and decelerates into place with
          them. */
       .tool-enter .page {
-        animation: pageIn .38s var(--spring), pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
+        animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
       .tool-enter .board-page, .tool-enter .tab-page {
         animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
       @keyframes pageLand {
@@ -26920,17 +26926,14 @@ const SAGE_CSS = `
          drift kept at index 0 so it is never cancelled, and every clock here
          ends well before the landing classes come off - an animation cut
          mid-flight by the cleanup is the other click. */
+      /* The clouds do not fade AT ALL. Every faded version had the same tell:
+         while a translucent cloud descends over the saturated living background,
+         the region reads as the background's colour first and the cloud's pastel
+         second - one colour switching to another. Full colour from the first
+         frame, only the descent animating, and the white flash covers the mount.
+         The blobs' own drifts are never touched, so nothing is cancelled. */
       .sage-assemble .sg-blobs { animation: saCloudDrop 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
       @keyframes saCloudDrop { from { transform: translateY(-190px) scale(1.05); } to { transform: none; } }
-      .sage-assemble .sg-blob.b1 { animation: sgDrift 34s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
-      .sage-assemble .sg-blob.b2 { animation: sgDrift 52s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
-      .sage-assemble .sg-blob.b3 { animation: sgDrift 44s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
-      .sage-assemble .sg-blob.b4 { animation: sgDrift 38s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
-      /* Visible from the very first frame and DESCENDING - the old fade held
-         the clouds invisible for a third of a second and then rushed them to
-         full, which read as appearing out of nowhere: the click. Coming down
-         for a landing means being seen coming. */
-      @keyframes saCloudFade { 0% { opacity:.35; } 55% { opacity:1; } 100% { opacity:1; } }
       /* ---- the health ring's landing flourish ----
          Jorge's spec: when it lands it fills all the way up, empties back to
          zero, and then fills to the real percentage. ringIn is kept at index 0
