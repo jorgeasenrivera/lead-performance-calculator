@@ -26395,12 +26395,10 @@ const SAGE_CSS = `
       }
       /* The crash: past the resting point, squashed along the direction of
          travel at the moment of impact, then let go. */
-      /* A slide, not a fade-and-appear: the travel is long enough to read as
-         motion and the opacity is up almost immediately, so the movement is
-         the event and the fade is only the first frame's courtesy. */
+      /* A slide, full stop. No fade at all: the page arrives whole from the
+         side it was sent from, and opacity never enters into it. */
       @keyframes toolIn {
-        0%   { opacity:.12; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
-        18%  { opacity:1; }
+        0%   { opacity:1; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
         62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
         82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
         92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
@@ -26922,13 +26920,17 @@ const SAGE_CSS = `
          drift kept at index 0 so it is never cancelled, and every clock here
          ends well before the landing classes come off - an animation cut
          mid-flight by the cleanup is the other click. */
-      .sage-assemble .sg-blobs { animation: saCloudDrop 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
-      @keyframes saCloudDrop { from { transform: translateY(-90px); } to { transform: none; } }
-      .sage-assemble .sg-blob.b1 { animation: sgDrift 34s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
-      .sage-assemble .sg-blob.b2 { animation: sgDrift 52s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
-      .sage-assemble .sg-blob.b3 { animation: sgDrift 44s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
-      .sage-assemble .sg-blob.b4 { animation: sgDrift 38s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
-      @keyframes saCloudFade { from { opacity:0; } to { opacity:1; } }
+      .sage-assemble .sg-blobs { animation: saCloudDrop 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
+      @keyframes saCloudDrop { from { transform: translateY(-190px) scale(1.05); } to { transform: none; } }
+      .sage-assemble .sg-blob.b1 { animation: sgDrift 34s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
+      .sage-assemble .sg-blob.b2 { animation: sgDrift 52s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
+      .sage-assemble .sg-blob.b3 { animation: sgDrift 44s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
+      .sage-assemble .sg-blob.b4 { animation: sgDrift 38s ease-in-out infinite alternate, saCloudFade 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
+      /* Visible from the very first frame and DESCENDING - the old fade held
+         the clouds invisible for a third of a second and then rushed them to
+         full, which read as appearing out of nowhere: the click. Coming down
+         for a landing means being seen coming. */
+      @keyframes saCloudFade { 0% { opacity:.35; } 55% { opacity:1; } 100% { opacity:1; } }
       /* ---- the health ring's landing flourish ----
          Jorge's spec: when it lands it fills all the way up, empties back to
          zero, and then fills to the real percentage. ringIn is kept at index 0
