@@ -3174,14 +3174,21 @@ export default function LeadPerformanceCalculator() {
     clearToolMove();
     root.classList.add("tool-move", "tool-dir-" + dir, "tool-exit");
     toolTimers.push(setTimeout(() => {
+      /* Three beats in order, per Jorge: the page moves out FIRST, THEN the
+         streaks cross on their own, THEN the new page slides in and lands.
+         tool-exit stays on through the streak beat - its fill is what holds the
+         departed page off screen - and comes off in the same breath the new
+         tool arrives. */
       warpTo(appModule, mod);
-      root.classList.remove("tool-exit");
-      root.classList.add("tool-enter");
-      applyTool(mod);
-      /* The last block starts 66ms in and runs 560ms, so the classes have to
-         outlast 626ms or the animation is stripped off mid-landing and the block
-         snaps the rest of the way. That snap is the "no landing" note. */
-      toolTimers.push(setTimeout(clearToolMove, 700));
+      toolTimers.push(setTimeout(() => {
+        root.classList.remove("tool-exit");
+        root.classList.add("tool-enter");
+        applyTool(mod);
+        /* The last block starts 66ms in and runs 560ms, so the classes have to
+           outlast 626ms or the animation is stripped off mid-landing and the
+           block snaps the rest of the way. That snap is the "no landing" note. */
+        toolTimers.push(setTimeout(clearToolMove, 700));
+      }, 240));
     }, TOOL_EXIT));
   };
 
@@ -15868,7 +15875,9 @@ function RoundUp({ config, store, data, M }) {
         <div className="ru-scrim" onClick={close}>
           <div className="ru-sheet" role="dialog" aria-label="Your round-up" onClick={(e) => e.stopPropagation()}>
             <div className="ru-sheet-body">
-              <div className="ru-sheet-head">
+              <div className="ru-sheet-head"
+                style={(() => { const b = store.brand || DEFAULT_BRAND;
+                  return { "--rup": b.primary, "--rud": b.deep || b.primary }; })()}>
                 <p className="ru-eyebrow">Your round-up</p>
                 <div className="ru-sheet-store">{store.name}</div>
                 {/* The date the round-up COVERS, not the date it is being read on.
@@ -24773,7 +24782,13 @@ const SAGE_CSS = `
          app's own: --ease-bloop for anything that arrives, --ease for anything
          that travels. */
       @keyframes ruBloop { from { opacity:0; transform:translateY(14px) scale(.95); } to { opacity:1; transform:none; } }
-      @keyframes ruSheetUp { from { transform:translateY(100%); } to { transform:none; } }
+      /* From the middle, not the bottom: the sheet is a thing appearing where
+         the eye already is, growing into place with a breath of overshoot. */
+      @keyframes ruSheetUp {
+        0%   { transform:scale(.9); opacity:0; }
+        60%  { transform:scale(1.015); opacity:1; }
+        100% { transform:none; opacity:1; }
+      }
       @keyframes ruScrim { from { opacity:0; } to { opacity:1; } }
 
       .ru-up { color:var(--green); } .ru-down { color:var(--red); } .ru-watch { color:var(--amber); }
@@ -24813,24 +24828,31 @@ const SAGE_CSS = `
          sheet has to restate what it left behind. */
       .ru-scrim { font-family:var(--font-ui); font-size:14px; color:var(--ink);
         -webkit-font-smoothing:antialiased; }
-      .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.42);
-        backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px);
+      /* No backdrop blur: blurring the entire board is the single most
+         expensive thing this overlay could ask for, and it lands at the exact
+         moment the arrival is settling - that was the slowdown when the sheet
+         appeared. A deeper tint reads as the same focus for none of the cost. */
+      .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.5);
         display:flex; align-items:center; justify-content:center; padding:24px;
         animation:ruScrim .3s var(--ease) both; }
       .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
         width:min(560px, 100%); max-height:min(760px, 88vh); display:flex; flex-direction:column;
-        overflow:hidden; animation:ruSheetUp .55s var(--ease) both; }
+        overflow:hidden; animation:ruSheetUp .42s var(--ease-bloop, cubic-bezier(.2,.7,.3,1)) both; }
       /* Without overscroll-behavior a flick at either end of this list hands the
          scroll to the board underneath, so closing the sheet left the page sitting
          further down than it started. Same guard the help sheet already carries. */
       .ru-sheet-body { flex:1; overflow-y:auto; overscroll-behavior:contain;
         -webkit-overflow-scrolling:touch; }
-      .ru-sheet-head { padding:24px 24px 4px; }
+      /* The head is the store's own hero in miniature: the same gradient sweep,
+         the same identity, so the sheet reads as the store speaking rather than
+         the app interrupting. */
+      .ru-sheet-head { padding:22px 24px 18px; color:#fff;
+        background:linear-gradient(130deg, var(--rup, #2A5E9B) 0%, var(--rup, #2A5E9B) 42%, var(--rud, #1D4674) 100%); }
       .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
-        color:var(--ink-3); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
+        color:rgba(255,255,255,.72); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
       .ru-sheet-store { font-family:var(--font-display); font-size:25px; letter-spacing:-.02em; line-height:1.12;
-        margin-top:3px; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
-      .ru-sheet-date { font-size:13px; color:var(--ink-2); margin-top:2px;
+        margin-top:3px; color:#fff; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
+      .ru-sheet-date { font-size:13px; color:rgba(255,255,255,.78); margin-top:2px;
         opacity:0; animation:ruBloop .6s var(--ease-bloop) .24s both; }
       .ru-sec { padding:14px 24px 4px; }
       .ru-sec-h { display:flex; align-items:center; justify-content:space-between; gap:10px;
