@@ -20122,7 +20122,7 @@ function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
     const reduce = typeof window !== "undefined" && window.matchMedia
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce || !target) { setV(target || 0); return; }
-    let raf, startT = null;
+    let raf, startT = null, iv = null;
     const tick = (t) => {
       if (startT === null) startT = t;
       const elapsed = t - startT - delay;
@@ -20133,8 +20133,22 @@ function useCountUp(target, ms = 1000, delay = 150, decimals = 0) {
       setV(Math.round(target * eased * f) / f);
       if (p < 1) raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    /* The dashboard mounts under the streaks now, and a count that starts at
+       the mount finishes before anyone can see it: the page landed on numbers
+       already standing still. The count belongs to the landing, so if this
+       mounts hidden it waits for the reveal and rolls up on screen. */
+    const root = typeof document !== "undefined" ? document.documentElement : null;
+    if (root && root.classList.contains("jump-under")) {
+      iv = setInterval(() => {
+        if (!root.classList.contains("jump-under")) {
+          clearInterval(iv); iv = null;
+          raf = requestAnimationFrame(tick);
+        }
+      }, 80);
+    } else {
+      raf = requestAnimationFrame(tick);
+    }
+    return () => { cancelAnimationFrame(raf); if (iv) clearInterval(iv); };
   }, [target, ms, delay, decimals]);
   return v;
 }
@@ -26149,17 +26163,20 @@ const SAGE_CSS = `
       .tool-move .page > *:nth-child(n+4), .tool-move .board-page > *:nth-child(n+4), .tool-move .tab-page > *:nth-child(n+4) { animation-delay:.066s; }
       /* Going right: the old page leaves to the left and the new one comes in
          from the right. Going left, the mirror. */
-      .tool-dir-r { --tx-out:-64px; --tx-in:64px; }
-      .tool-dir-l { --tx-out:64px;  --tx-in:-64px; }
+      .tool-dir-r { --tx-out:-64px; --tx-in:64px; --tx-slide:180px; }
+      .tool-dir-l { --tx-out:64px;  --tx-in:-64px; --tx-slide:-180px; }
       @keyframes toolOut {
         from { opacity:1; transform:none; }
         to   { opacity:0; transform: translateX(var(--tx-out)); }
       }
       /* The crash: past the resting point, squashed along the direction of
          travel at the moment of impact, then let go. */
+      /* A slide, not a fade-and-appear: the travel is long enough to read as
+         motion and the opacity is up almost immediately, so the movement is
+         the event and the fade is only the first frame's courtesy. */
       @keyframes toolIn {
-        0%   { opacity:0; transform: translateX(var(--tx-in)) scaleX(1); }
-        30%  { opacity:1; }
+        0%   { opacity:.12; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
+        18%  { opacity:1; }
         62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
         82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
         92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
