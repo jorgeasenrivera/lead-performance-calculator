@@ -20922,7 +20922,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
               <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
                 strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
-                style={{ "--c": dash }} />
+                style={{ "--c": dash, "--cc": C }} />
             </svg>
             <div className="hero-ring-label">
               <div className="hero-ring-pct">{nPct}<span>%</span></div>
@@ -26675,7 +26675,17 @@ const SAGE_CSS = `
          animation shorthand here would flatten all four to one clock. */
       .sage-assemble .sg-blobs { animation: saClouds 1.15s cubic-bezier(.2,.6,.25,1) .18s backwards; }
       @keyframes saClouds { from { transform: translateY(-90px); opacity:0; } to { transform: none; opacity:1; } }
-      .sage-assemble .hero-ring-fill { animation: saRing 1.25s cubic-bezier(.34,1.5,.64,1) .5s both; }
+      /* ---- the health ring's landing flourish ----
+         Jorge's spec: when it lands it fills all the way up, empties back to
+         zero, and then fills to the real percentage. ringIn is kept at index 0
+         so the ordinary mount animation is never cancelled and restarted by the
+         class flip - it finished under the streaks and simply holds - while
+         saRing rides on top for exactly the landing window and hands back to
+         the finished ringIn when the assemble classes come off. The old version
+         swapped animations twice and snapped both times; that was the glitch. */
+      .sage-assemble .hero-ring-fill {
+        animation: ringIn 1.5s var(--spring) .3s both,
+                   saRing 1.25s ease-in-out .08s both; }
 
       /* ---- the little light they come out of ----
          Sits at the vanishing point once the streaks have gone, swells, and is
@@ -26695,7 +26705,14 @@ const SAGE_CSS = `
         100% { opacity:0; transform: scale(13); }
       }
 
-      @keyframes saRing { from { stroke-dashoffset: var(--ring-len, 1000); } }
+      @keyframes saRing {
+        0%   { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: var(--cc); }
+        34%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: 0; }
+        42%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: 0; }
+        68%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: var(--cc); }
+        74%  { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: var(--cc); }
+        100% { stroke-dasharray: var(--cc) var(--cc); stroke-dashoffset: calc(var(--cc) - var(--c)); }
+      }
 
       @media (prefers-reduced-motion: reduce) {
         /* Everything collapses to a cross-fade. The order is kept; the movement
