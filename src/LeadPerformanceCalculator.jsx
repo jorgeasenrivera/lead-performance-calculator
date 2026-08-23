@@ -15608,7 +15608,20 @@ function buildDigest(args) {
   for (const c of channelRates(M, roster)) {
     if (c.seen) ch[c.id] = { u: +c.units.toFixed(3), l: Math.round(c.leads) };
   }
-  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch };
+  /* Total units and the vehicle split, month-to-date. Stored cumulative rather
+     than daily on purpose: a missed day costs one comparison, not the series,
+     and yesterday's figure is always the difference of two rows. */
+  let u = 0, nu = null, uu = null;
+  for (const a of roster) {
+    const st = M?.stats?.[norm(a.name)];
+    if (!st) continue;
+    u += unitsOf(st);
+    if (st.newUnits != null || st.usedUnits != null) {
+      nu = (nu || 0) + (st.newUnits ?? 0);
+      uu = (uu || 0) + (st.usedUnits ?? 0);
+    }
+  }
+  return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch, u, nu, uu };
 }
 
 /* The digest closest to `back` days ago, so a missed day degrades to the
@@ -15866,10 +15879,64 @@ function RoundUp({ config, store, data, M }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [full]);
 
+  /* ---- everything the new sheet draws, computed once ----
+     The pace line, yesterday's units, the close rates and the activity trends,
+     all through the end of yesterday. Anything the data cannot honestly say is
+     absent rather than zero. */
+  const ru2 = useMemo(() => {
+    const mk = ym();
+    const days = Object.entries(digests || {})
+      .filter(([day]) => day.slice(0, 7) === mk && day <= today())
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    const cumOf = (row) => row.u != null ? row.u
+      : Object.values(row.ch || {}).reduce((n, c) => n + (c.u || 0), 0);
+    const pacePts = days.map(([day, row]) => ({ day: +day.slice(8, 10), v: cumOf(row) }));
+    const sold = (() => {   // month to date, live, exact
+      let n = 0;
+      for (const a of data.roster || []) n += unitsOf(M?.stats?.[norm(a.name)]);
+      return Math.round(n * 10) / 10;
+    })();
+    const g = store.goal || {};
+    const goal = (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0);
+    const dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    const elapsed = Math.max(1, dayOfMonth() - 1);   // through yesterday
+    const onPaceFor = Math.round((sold / elapsed) * dim);
+    const paceDelta = goal > 0 ? Math.round(((onPaceFor - goal) / goal) * 100) : null;
+
+    const last = days[days.length - 1] ? days[days.length - 1][1] : null;
+    const prior = days[days.length - 2] ? days[days.length - 2][1] : null;
+    const soldY = last && prior && last.nu != null && prior.nu != null
+      ? { nw: Math.round(((last.nu ?? 0) - (prior.nu ?? 0)) * 10) / 10,
+          us: Math.round(((last.uu ?? 0) - (prior.uu ?? 0)) * 10) / 10 }
+      : null;
+
+    const close = CHANNEL_LIST.map((c) => {
+      const cur = last && last.ch && last.ch[c.id];
+      const prev = prior && prior.ch && prior.ch[c.id];
+      const pct = cur && cur.l > 0 ? Math.round((cur.u / cur.l) * 100) : null;
+      const prevPct = prev && prev.l > 0 ? Math.round((prev.u / prev.l) * 100) : null;
+      return { id: c.id, label: c.label + " close", pct,
+        delta: pct != null && prevPct != null ? pct - prevPct : null };
+    }).filter((c) => c.pct != null);
+
+    const trendDays = ruDays(data, RU_WEEK).slice().reverse();   // oldest first
+    const trends = RU_TRENDS.map((t) => {
+      const bars = trendDays.map((day) => ruSum(data, [day], t));
+      const move = ruMove(data, t, RU_DAY, 1);
+      const yesterday = bars.length ? bars[bars.length - 1] : 0;
+      return { key: t.key, label: t.label, v: yesterday, bars,
+        pct: move ? Math.round(move.pct * 100) : null };
+    }).filter((t) => t.bars.some((b) => b > 0));
+
+    let up = 0, down = 0;
+    for (const t of trends) { if (t.pct != null) { if (t.pct > 0) up++; else if (t.pct < 0) down++; } }
+    for (const c of close) { if (c.delta != null) { if (c.delta > 0) up++; else if (c.delta < 0) down++; } }
+    return { pacePts, sold, goal, onPaceFor, paceDelta, dim, soldY, close, trends, up, down };
+  }, [digests, data, M, store.goal]); // eslint-disable-line
+
   if (!ru.any) return null;
 
   if (full) {
-    let d = 420;
     return (
       <Overlay>
         <div className="ru-scrim" onClick={close}>
@@ -15887,23 +15954,106 @@ function RoundUp({ config, store, data, M }) {
                 <div className="ru-sheet-date">
                   Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
                 </div>
-              </div>
-              {RU_SECTIONS.map((s) => {
-                const items = ru[s.key];
-                if (!items.length) return null;
-                const head = d; d += 70;
-                return (
-                  <div className="ru-sec" key={s.key}>
-                    <div className="ru-sec-h" style={{ animationDelay: head + "ms" }}>
-                      <h4>{s.label}</h4><span className="ru-count">{items.length}</span>
-                    </div>
-                    {items.map((it, i) => { const at = d; d += 70; return <RuFinding key={i} item={it} tone={s.tone} delay={at} />; })}
+                {(ru2.up + ru2.down) > 0 && (
+                  <div className="ru-verdict">
+                    <div className="ru-verdict-word">{ru2.up >= ru2.down ? "Trending up \u25B2" : "Trending down \u25BC"}</div>
+                    <div className="ru-verdict-sub">{ru2.up} of {ru2.up + ru2.down} measures improved</div>
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              {/* ---- the month, as the Performance page draws it ---- */}
+              {ru2.goal > 0 && (
+                <div className="ru2-pace" style={{ animationDelay: "120ms" }}>
+                  <div className="ru2-pace-head">
+                    <span className="ru2-cap">Monthly pace</span>
+                    <span className="ru2-pace-line">
+                      <b><CountUp value={ru2.sold} delay={350} /></b>&nbsp;delivered&nbsp;&middot;&nbsp;on
+                      pace for <b>{fmtNum(ru2.onPaceFor)}</b>&nbsp;/&nbsp;<b>{fmtNum(ru2.goal)}</b> goal
+                      {ru2.paceDelta != null && (
+                        <span className={"ru-chip " + (ru2.paceDelta >= 0 ? "ru-up" : "ru-down")}>
+                          {ru2.paceDelta >= 0 ? "+" : ""}{ru2.paceDelta}%</span>
+                      )}
+                    </span>
+                  </div>
+                  {ru2.pacePts.length >= 2 && (() => {
+                    const W = 560, H = 96, PL = 6, PR = 10, PT = 8, PB = 14;
+                    const top = Math.max(ru2.goal, ...ru2.pacePts.map((p) => p.v)) || 1;
+                    const x = (day) => PL + (W - PL - PR) * (day / ru2.dim);
+                    const y = (v) => PT + (H - PT - PB) * (1 - v / top);
+                    const pts = ru2.pacePts.map((p) => x(p.day).toFixed(1) + "," + y(p.v).toFixed(1)).join(" ");
+                    const end = ru2.pacePts[ru2.pacePts.length - 1];
+                    return (
+                      <svg className="ru2-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+                        <path d={`M ${x(0)} ${y(0)} L ${x(ru2.dim)} ${y(ru2.goal)}`} className="ru2-goal" />
+                        <polyline points={pts} className="ru2-line" pathLength="100" />
+                        <circle cx={x(end.day)} cy={y(end.v)} r="4" className="ru2-dot" />
+                      </svg>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* ---- yesterday's business: plain numbers ---- */}
+              {(ru2.soldY || ru2.close.length > 0) && (
+                <div className="ru2-stats">
+                  {ru2.soldY && (
+                    <div className="ru2-stat ru2-new" style={{ animationDelay: "180ms" }}>
+                      <div className="ru2-stat-name">New sold yesterday</div>
+                      <div className="ru2-stat-num"><CountUp value={ru2.soldY.nw} delay={260} /></div>
+                    </div>
+                  )}
+                  {ru2.soldY && (
+                    <div className="ru2-stat ru2-used" style={{ animationDelay: "240ms" }}>
+                      <div className="ru2-stat-name">Used sold yesterday</div>
+                      <div className="ru2-stat-num"><CountUp value={ru2.soldY.us} delay={320} /></div>
+                    </div>
+                  )}
+                  {ru2.close.map((c, i) => (
+                    <div className="ru2-stat" key={c.id} style={{ animationDelay: (300 + i * 60) + "ms" }}>
+                      <div className="ru2-stat-name">{c.label}</div>
+                      <div className="ru2-stat-row">
+                        <span className="ru2-stat-num">{c.pct}%</span>
+                        {c.delta != null && c.delta !== 0 && (
+                          <span className={"ru-chip " + (c.delta > 0 ? "ru-up" : "ru-down")}>
+                            {c.delta > 0 ? "+" : ""}{c.delta}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- yesterday's activity, with the week behind it ---- */}
+              {ru2.trends.length > 0 && (
+                <div className="ru2-grid">
+                  {ru2.trends.map((t, i) => {
+                    const mx = Math.max(1, ...t.bars);
+                    return (
+                      <div className={"ru2-tile " + (t.pct == null ? "" : t.pct >= 0 ? "ru2-up" : "ru2-down")}
+                        key={t.key} style={{ animationDelay: (380 + i * 70) + "ms" }}>
+                        <div className="ru2-stat-name">{t.label}</div>
+                        <div className="ru2-tile-row">
+                          <span className="ru2-tile-num"><CountUp value={t.v} delay={420 + i * 70} /></span>
+                          {t.pct != null && (
+                            <span className={"ru-chip " + (t.pct >= 0 ? "ru-up" : "ru-down")}>
+                              {t.pct >= 0 ? "+" : ""}{t.pct}%</span>
+                          )}
+                        </div>
+                        <span className="ru2-spark">
+                          {t.bars.map((b, j) => (
+                            <i key={j} style={{ height: Math.max(10, Math.round((b / mx) * 100)) + "%",
+                              animationDelay: (430 + i * 70 + j * 40) + "ms" }} />
+                          ))}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div className="ru-sheet-foot" style={{ animationDelay: d + 60 + "ms" }}>
-              <button className="ru-btn" onClick={close}>Open the board</button>
+            <div className="ru-sheet-foot" style={{ animationDelay: "760ms" }}>
+              <button className="ru-btn" onClick={close}>Open the dashboard</button>
             </div>
           </div>
         </div>
@@ -24850,7 +25000,7 @@ const SAGE_CSS = `
         display:flex; align-items:center; justify-content:center; padding:24px;
         animation:ruScrim .3s var(--ease) both; }
       .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
-        width:min(560px, 100%); max-height:min(760px, 88vh); display:flex; flex-direction:column;
+        width:min(660px, 100%); max-height:min(820px, 92vh); display:flex; flex-direction:column;
         overflow:hidden; animation:ruSheetUp .42s var(--ease-bloop, cubic-bezier(.2,.7,.3,1)) both; }
       /* Without overscroll-behavior a flick at either end of this list hands the
          scroll to the board underneath, so closing the sheet left the page sitting
@@ -24860,8 +25010,54 @@ const SAGE_CSS = `
       /* The head is the store's own hero in miniature: the same gradient sweep,
          the same identity, so the sheet reads as the store speaking rather than
          the app interrupting. */
-      .ru-sheet-head { padding:22px 24px 18px; color:#fff;
+      .ru-sheet-head { padding:20px 24px 16px; color:#fff; position:relative;
         background:linear-gradient(130deg, var(--rup, #2A5E9B) 0%, var(--rup, #2A5E9B) 42%, var(--rud, #1D4674) 100%); }
+      .ru-verdict { position:absolute; right:24px; top:22px; text-align:right;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) .3s both; }
+      .ru-verdict-word { font-family:var(--font-display); font-size:15px; font-weight:700; }
+      .ru-verdict-sub { font-size:11px; opacity:.78; margin-top:2px; }
+      /* ---- the pace chart, in the Performance page's own vocabulary ---- */
+      .ru2-cap { font-size:10.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); }
+      .ru2-pace { margin:14px 20px 0; border:1px solid var(--line); border-radius:14px; padding:11px 13px 7px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru2-pace-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+      .ru2-pace-line { font-size:12.5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+      .ru2-pace-line b { font-weight:700; font-variant-numeric:tabular-nums; }
+      .ru2-chart { display:block; width:100%; height:92px; margin-top:5px; }
+      .ru2-goal { fill:none; stroke:var(--ink-3); stroke-width:1.5; stroke-dasharray:5 5; opacity:.55; }
+      .ru2-line { fill:none; stroke:var(--rup, #2A5E9B); stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round;
+        stroke-dasharray:100 100; stroke-dashoffset:100; animation:ru2Draw 1.1s cubic-bezier(.2,.7,.3,1) .35s forwards; }
+      @keyframes ru2Draw { to { stroke-dashoffset:0; } }
+      .ru2-dot { fill:var(--rup, #2A5E9B); opacity:0; animation:ru2DotIn .3s ease 1.4s both; }
+      @keyframes ru2DotIn { to { opacity:1; } }
+      /* ---- yesterday's business: plain numbers ---- */
+      .ru2-stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(108px, 1fr)); gap:8px; padding:10px 20px 0; }
+      .ru2-stat { border:1px solid var(--line); border-radius:13px; padding:9px 11px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      /* New and used carry their own plates, no direction: they are yesterday's
+         facts, not judgements. */
+      .ru2-stat.ru2-new { background:#EAF1FB; border-color:#D4E2F6; }
+      .ru2-stat.ru2-used { background:#FBF3E4; border-color:#F1E3C6; }
+      .ru2-stat-name { font-size:10px; font-weight:600; color:var(--ink-2); line-height:1.25; min-height:24px; }
+      .ru2-stat-row { display:flex; align-items:baseline; gap:6px; }
+      .ru2-stat-num { font-family:var(--font-display); font-size:21px; font-weight:700; letter-spacing:-.02em;
+        font-variant-numeric:tabular-nums; }
+      .ru-chip.ru-up { background:rgba(30,138,76,.12); }
+      .ru-chip.ru-down { background:rgba(192,58,43,.12); }
+      /* ---- yesterday's activity with the week behind it ---- */
+      .ru2-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:9px; padding:12px 20px 4px; }
+      .ru2-tile { border:1px solid var(--line); border-radius:14px; padding:10px 12px 8px;
+        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
+      .ru2-tile-row { display:flex; align-items:baseline; gap:7px; margin-top:2px; }
+      .ru2-tile-num { font-family:var(--font-display); font-size:23px; font-weight:700; letter-spacing:-.02em;
+        font-variant-numeric:tabular-nums; }
+      .ru2-spark { display:flex; align-items:flex-end; gap:3px; height:22px; margin-top:7px; }
+      .ru2-spark i { flex:1; border-radius:2px 2px 0 0; background:rgba(16,32,52,.10); min-height:3px;
+        transform:scaleY(0); transform-origin:bottom; animation:ru2Bar .5s cubic-bezier(.2,.7,.3,1) both; }
+      .ru2-up .ru2-spark i:last-child { background:var(--green); }
+      .ru2-down .ru2-spark i:last-child { background:var(--red); }
+      @keyframes ru2Bar { to { transform:scaleY(1); } }
+      @media (max-width: 560px) { .ru2-grid { grid-template-columns:repeat(2, 1fr); } }
       .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
         color:rgba(255,255,255,.72); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
       .ru-sheet-store { font-family:var(--font-display); font-size:25px; letter-spacing:-.02em; line-height:1.12;
