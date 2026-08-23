@@ -3184,6 +3184,18 @@ export default function LeadPerformanceCalculator() {
         root.classList.remove("tool-exit");
         root.classList.add("tool-enter");
         applyTool(mod);
+        /* When the classes come off at the end of the move, the page's
+           animation list will change from pageLand back to the base pageIn -
+           and pageIn, being NEW to the list at that moment, would RESTART: a
+           flash to transparent and a ten-pixel lift, a full second after the
+           slide finished. Neutralised inline on this page instance just before
+           the cleanup, which outranks the base rule for as long as this element
+           lives. The next genuinely mounted page is a fresh element with no
+           inline style, so its ordinary rise is untouched. */
+        toolTimers.push(setTimeout(() => {
+          document.querySelectorAll(".page, .board-page, .tab-page")
+            .forEach((el) => { el.style.animation = "none"; });
+        }, 640));
         /* The new page's cards must be marked in-view BEFORE their first paint:
            a card painted even one frame unmarked sits at translateY(20px), and
            the .8s transition then rises it - vertical motion inside a sideways
