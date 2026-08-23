@@ -26906,13 +26906,22 @@ const SAGE_CSS = `
       .sage-assemble .lpc { animation: saBreath .34s cubic-bezier(.2,.6,.3,1) .12s both;
         transform-origin: var(--jx, 50%) var(--jy, 46%); }
       @keyframes saBreath { from { transform: scale(1.022); } to { transform: none; } }
-      /* And the clouds settle back down around the landing — the blob layer
-         drifts in from above, slower than the furniture, the way cloud comes
-         down around something arriving. One layer, not four blobs, because each
-         blob carries its own infinite drift at its own duration and an
-         animation shorthand here would flatten all four to one clock. */
-      .sage-assemble .sg-blobs { animation: saClouds 1.15s cubic-bezier(.2,.6,.25,1) .18s backwards; }
-      @keyframes saClouds { from { transform: translateY(-90px); opacity:0; } to { transform: none; opacity:1; } }
+      /* And the clouds settle back down around the landing - drifting in from
+         above, slower than the furniture, the way cloud comes down around
+         something arriving. The container carries ONLY the drop: putting
+         opacity on it flattened all four blobs into one texture for the length
+         of the animation, and the snap back to separate layers at the end was
+         a visible click. Each blob fades itself instead, its own infinite
+         drift kept at index 0 so it is never cancelled, and every clock here
+         ends well before the landing classes come off - an animation cut
+         mid-flight by the cleanup is the other click. */
+      .sage-assemble .sg-blobs { animation: saCloudDrop 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
+      @keyframes saCloudDrop { from { transform: translateY(-90px); } to { transform: none; } }
+      .sage-assemble .sg-blob.b1 { animation: sgDrift 34s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
+      .sage-assemble .sg-blob.b2 { animation: sgDrift 52s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
+      .sage-assemble .sg-blob.b3 { animation: sgDrift 44s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
+      .sage-assemble .sg-blob.b4 { animation: sgDrift 38s ease-in-out infinite alternate, saCloudFade 1s cubic-bezier(.2,.6,.25,1) .12s backwards; }
+      @keyframes saCloudFade { from { opacity:0; } to { opacity:1; } }
       /* ---- the health ring's landing flourish ----
          Jorge's spec: when it lands it fills all the way up, empties back to
          zero, and then fills to the real percentage. ringIn is kept at index 0
