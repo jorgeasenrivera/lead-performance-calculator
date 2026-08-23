@@ -3184,12 +3184,14 @@ export default function LeadPerformanceCalculator() {
         root.classList.remove("tool-exit");
         root.classList.add("tool-enter");
         applyTool(mod);
-        /* The new page's cards must be marked in-view BEFORE their first paint,
-           or they sit hidden through the slide and then hop 20px UP when the
-           reveal observer finds them - vertical motion inside a sideways move,
-           on everything but the hero. Two frames: one for React to commit the
-           new tree, one to mark it. */
-        requestAnimationFrame(() => requestAnimationFrame(settleReveals));
+        /* The new page's cards must be marked in-view BEFORE their first paint:
+           a card painted even one frame unmarked sits at translateY(20px), and
+           the .8s transition then rises it - vertical motion inside a sideways
+           move. The microtask runs after React's batched commit and before any
+           paint; the rAF is the backstop, and rAF callbacks also run pre-paint.
+           The double-rAF this replaces was the bug: its first frame PAINTED. */
+        queueMicrotask(settleReveals);
+        requestAnimationFrame(settleReveals);
         /* The last block starts 66ms in and runs 560ms, so the classes have to
            outlast 626ms or the animation is stripped off mid-landing and the
            block snaps the rest of the way. That snap is the "no landing" note. */
@@ -26290,6 +26292,11 @@ const SAGE_CSS = `
         border-radius:inherit;
         background: radial-gradient(108% 82% at 0% 0%, var(--tint, transparent), transparent 62%); }
       .js-anim .card:not(.is-in) { opacity:0; transform: translateY(20px); }
+      /* And during a tool move the reveal TRANSITION is off entirely: if a card
+         is ever marked late, it snaps into place inside the slide - invisible -
+         instead of rising twenty pixels over most of a second. The vertical
+         rise belongs to scrolling, never to a sideways move. */
+      .tool-move .card { transition: box-shadow .4s var(--ease); }
       .card.is-in { opacity:1; transform:none; }
       .card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.92), var(--shadow-3); }
       .section-title { font-size:28px; font-weight:700; letter-spacing:-.035em; margin:4px 0 22px; }
