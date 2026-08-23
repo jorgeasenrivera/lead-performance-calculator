@@ -3184,6 +3184,12 @@ export default function LeadPerformanceCalculator() {
         root.classList.remove("tool-exit");
         root.classList.add("tool-enter");
         applyTool(mod);
+        /* The new page's cards must be marked in-view BEFORE their first paint,
+           or they sit hidden through the slide and then hop 20px UP when the
+           reveal observer finds them - vertical motion inside a sideways move,
+           on everything but the hero. Two frames: one for React to commit the
+           new tree, one to mark it. */
+        requestAnimationFrame(() => requestAnimationFrame(settleReveals));
         /* The last block starts 66ms in and runs 560ms, so the classes have to
            outlast 626ms or the animation is stripped off mid-landing and the
            block snaps the rest of the way. That snap is the "no landing" note. */
@@ -8441,10 +8447,19 @@ function radialAssemble() {
        as one sheet. Capped so the last block is not left behind. */
     p.el.style.setProperty("--rd", Math.round((p.dist / far) * 260) + "ms");
     p.el.classList.add("sa-radial");
+    /* The shadows follow the landing rather than clicking in after it: none
+       while a block is in flight, bloomed in over a breath the moment ITS OWN
+       animation ends, each block on its own clock like everything else here. */
+    p.onEnd = (e) => {
+      if (e.target !== p.el || e.animationName !== "saRadial") return;
+      p.el.classList.add("sa-shadowin");
+    };
+    p.el.addEventListener("animationend", p.onEnd);
   }
   return () => {
     for (const p of plan) {
-      p.el.classList.remove("sa-radial");
+      p.el.removeEventListener("animationend", p.onEnd);
+      p.el.classList.remove("sa-radial", "sa-shadowin");
       p.el.style.removeProperty("--rx");
       p.el.style.removeProperty("--ry");
       p.el.style.removeProperty("--rd");
@@ -26875,6 +26890,10 @@ const SAGE_CSS = `
         opacity:0;
         animation: saRadial .68s cubic-bezier(.16,0,.3,1) both;
         animation-delay: var(--rd, 0ms); }
+      /* No shadow while a block is in flight - a scaled shadow re-rasterising at
+         the end is the "click" - and a soft bloom the moment it lands. */
+      .sage-assemble .sa-radial:not(.sa-shadowin) { box-shadow:none !important; }
+      .sa-radial.sa-shadowin { transition: box-shadow .45s ease; }
       @keyframes saRadial {
         0%   { opacity:0; transform: translate3d(calc(var(--rx,0px) * .94), calc(var(--ry,0px) * .94), 0) scale(.10); }
         12%  { opacity:1; transform: translate3d(calc(var(--rx,0px) * .83), calc(var(--ry,0px) * .83), 0) scale(.20);
