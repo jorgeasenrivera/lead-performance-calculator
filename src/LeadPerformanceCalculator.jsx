@@ -20637,6 +20637,105 @@ function flowMarks(days) {
   return out;
 }
 
+/* The hero spotlight's delivery chart: the drafts' three-channel format fed by
+   the daily digests, so the lines rise and fall day by day the way the old card
+   did. The viewBox is built at the measured width of the card, so nothing is
+   stretched: a pixel of stroke is a pixel of stroke at any size. Falls back to
+   the month documents, dashed, until two daily readings are on file. */
+function S2DeliveryChart({ digests, thr, moTrail, drawKey }) {
+  const wrapRef = useRef(null);
+  const [w, setW] = useState(560);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((es) => {
+      const cw = es[0]?.contentRect?.width;
+      if (cw && cw > 60) setW(Math.round(cw));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const [pick, setPick] = useState(null);
+  const series = useMemo(() => dailySeries(digests, thr), [digests, thr]);
+  const daily = !!series;
+
+  const SER = { internet: "var(--s1)", phone: "var(--s2)", showroom: "var(--s3)" };
+  const ids = ["internet", "phone", "showroom"];
+  // one shape for both resolutions: columns, a label per column, a value per channel
+  const cols = daily ? series[0].days : moTrail.map((m) => m.k);
+  const colLbl = daily ? flowDay : (k) => { const m = moTrail.find((t) => t.k === k); return m ? m.lbl : k; };
+  const valAt = (id, i) => daily
+    ? (series.find((s) => s.id === id)?.pts[i]?.pct ?? null)
+    : (moTrail[i]?.[id] ?? null);
+  if (!cols.length) return <div className="s2-none">No delivery history on file yet.</div>;
+
+  const H = 110, PT = 10, PB = 20, PL = 4, PR = 8;
+  const vals = [];
+  for (const id of ids) for (let i = 0; i < cols.length; i++) { const v = valAt(id, i); if (v != null) vals.push(v); }
+  const top = Math.max(10, ...vals, ...ids.map((id) => thr[id].green)) * 1.12;
+  const y = (v) => PT + (1 - v / top) * (H - PT - PB);
+  const x = (i) => PL + (cols.length === 1 ? 0.5 : i / (cols.length - 1)) * (w - PL - PR);
+  const marks = daily ? flowMarks(cols) : [];
+  const pickAt = (clientX) => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const i = Math.round(((clientX - r.left - PL) / Math.max(1, r.width - PL - PR)) * (cols.length - 1));
+    const key = cols[Math.max(0, Math.min(cols.length - 1, i))];
+    setPick((p) => (p === key ? null : key));
+  };
+  const pi = pick ? cols.indexOf(pick) : -1;
+
+  return (<>
+    <div className="s2-chwrap" ref={wrapRef} onClick={(e) => pickAt(e.clientX)}>
+      <svg key={"draw" + drawKey} className="s2-mchart" viewBox={`0 0 ${w} ${H}`} style={{ height: H }}>
+        {ids.map((id) => (
+          <line key={"t" + id} x1={PL} x2={w - PR} y1={y(thr[id].green)} y2={y(thr[id].green)}
+            stroke={SER[id]} strokeOpacity=".3" strokeDasharray="4 4" strokeWidth="1" />
+        ))}
+        {marks.map((m) => (
+          <line key={"m" + m.i} x1={x(m.i)} x2={x(m.i)} y1={PT} y2={H - PB}
+            stroke="rgba(16,32,52,.09)" strokeWidth={m.kind === "month" ? 1.4 : 1}
+            strokeDasharray={m.kind === "month" ? undefined : "2 4"} />
+        ))}
+        {pi >= 0 && <line x1={x(pi)} x2={x(pi)} y1={PT} y2={H - PB} stroke="var(--sandInk)" strokeOpacity=".55" strokeWidth="1.5" />}
+        {ids.map((id, ci) => {
+          const pts = cols.map((k, i) => { const v = valAt(id, i); return v == null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`; }).filter(Boolean);
+          if (!pts.length) return null;
+          const last = pts[pts.length - 1].split(",");
+          return (
+            <g key={id}>
+              {pts.length > 1 && (
+                <polyline pathLength="1" points={pts.join(" ")} fill="none" stroke={SER[id]}
+                  strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
+                  strokeDasharray={daily ? undefined : "3 4"} style={{ animationDelay: `${ci * 140}ms` }} />
+              )}
+              <circle cx={last[0]} cy={last[1]} r="2.6" fill={SER[id]} />
+            </g>
+          );
+        })}
+        <text className="s2-ax" x={PL} y={H - 6}>{colLbl(cols[0])}</text>
+        {marks.filter((m) => m.kind === "month").map((m) => (
+          <text key={"ml" + m.i} className="s2-ax" x={x(m.i) + 4} y={PT + 8}>{m.label}</text>
+        ))}
+        {cols.length > 1 && <text className="s2-ax" x={w - PR} y={H - 6} textAnchor="end">{colLbl(cols[cols.length - 1])}</text>}
+      </svg>
+    </div>
+    <div className="s2-leg">
+      {ids.map((id) => <span key={id}><i style={{ background: SER[id] }} />{CHANNELS[id]}</span>)}
+      <span className="s2-leg-note">dashed = target</span>
+    </div>
+    <div className="s2-detail">
+      {pi >= 0
+        ? <><b>{colLbl(cols[pi])}</b>{ids.map((id) => {
+            const v = valAt(id, pi);
+            return <React.Fragment key={id}> · {CHANNELS[id]} {v == null ? "–" : Math.round(v * 10) / 10 + "%"}</React.Fragment>;
+          })}</>
+        : daily ? "Day by day, last 30 days · faint ticks are Mondays · click a day to see it"
+        : "Month over month until two daily readings are on file · click a month to see it"}
+    </div>
+  </>);
+}
+
 function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
   /* Daily when there is enough of it, month over month until then. */
   const series = useMemo(() => dailySeries(digests, thr) || deliverySeries(data, roster, thr),
@@ -21275,7 +21374,6 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
       return out;
     });
   }, [data, roster]);
-  const [moPick, setMoPick] = useState(null);
   // the rotating display under the hero: the chart, then who to talk to
   const [spotOn, setSpotOn] = useState(0);
   const spotTimer = useRef(null); const swipeX = useRef(null);
@@ -21548,51 +21646,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           }}>
           <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
             <div className="s2-scap"><PixIcon glyph="chart" size={12} /> Delivery against target · all three channels</div>
-            {moTrail.length === 0 ? <div className="s2-none">No months on file yet.</div> : (() => {
-              const SER = { internet: "var(--s1)", phone: "var(--s2)", showroom: "var(--s3)" };
-              const ids = ["internet", "phone", "showroom"];
-              const tops = moTrail.flatMap((m) => ids.map((id) => m[id])).filter((v) => v != null)
-                .concat(ids.map((id) => thr[id].green));
-              const top = Math.max(10, ...tops) * 1.15;
-              const y = (v) => 70 - (v / top) * 62;
-              const x = (i) => (moTrail.length === 1 ? 160 : (i / (moTrail.length - 1)) * 320);
-              const pk = moPick && moTrail.find((m) => m.k === moPick);
-              return (<>
-                <div className="s2-chwrap">
-                  {/* keyed by the slide so the lines redraw themselves each rotation */}
-                  <svg key={"draw" + spotOn} className="s2-mchart" viewBox="0 0 320 74" preserveAspectRatio="none">
-                    {ids.map((id) => (
-                      <line key={"t" + id} x1="0" y1={y(thr[id].green)} x2="320" y2={y(thr[id].green)}
-                        stroke={SER[id]} strokeOpacity=".3" strokeDasharray="4 4" strokeWidth="1" />
-                    ))}
-                    {ids.map((id, ci) => {
-                      const pts = moTrail.map((m, i) => (m[id] == null ? null : `${x(i).toFixed(1)},${y(m[id]).toFixed(1)}`)).filter(Boolean);
-                      if (!pts.length) return null;
-                      const last = pts[pts.length - 1].split(",");
-                      return (<g key={id}>
-                        <polyline pathLength="1" points={pts.join(" ")} fill="none" stroke={SER[id]}
-                          strokeWidth="2" strokeLinejoin="round" style={{ animationDelay: `${ci * 140}ms` }} />
-                        <circle cx={last[0]} cy={last[1]} r="2.6" fill={SER[id]} />
-                      </g>);
-                    })}
-                  </svg>
-                  {moTrail.map((m, i) => (
-                    <button key={m.k} className={"s2-chhot" + (moPick === m.k ? " on" : "")}
-                      style={{ left: `${moTrail.length === 1 ? 50 : (i / (moTrail.length - 1)) * 100}%`,
-                        transform: moTrail.length > 1 && i === 0 ? "translateX(0)"
-                          : moTrail.length > 1 && i === moTrail.length - 1 ? "translateX(-100%)" : undefined }}
-                      onClick={() => setMoPick(moPick === m.k ? null : m.k)}><em>{m.lbl}</em></button>
-                  ))}
-                </div>
-                <div className="s2-leg">
-                  {ids.map((id) => <span key={id}><i style={{ background: SER[id] }} />{CHANNELS[id]}</span>)}
-                  <span className="s2-leg-note">dashed = target</span>
-                </div>
-                <div className="s2-detail">{pk
-                  ? <><b>{pk.lbl}</b>{ids.map((id) => <React.Fragment key={id}> · {CHANNELS[id]} {pk[id] == null ? "–" : Math.round(pk[id] * 10) / 10 + "%"}</React.Fragment>)}</>
-                  : "Click a month to see it"}</div>
-              </>);
-            })()}
+            <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={spotOn} />
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
             <div className="s2-scap"><PixIcon glyph="bolt" size={12} /> Talk to these first</div>
@@ -31080,8 +31134,10 @@ const SAGE_CSS = `
         box-shadow:0 4px 12px -6px rgba(12,24,18,.4); }
       .s2-ru:hover { transform:translateY(-1px); }
       /* the delivery chart: three channel lines drawing themselves each rotation */
-      .s2-chwrap { position:relative; margin-top:8px; padding-bottom:18px; }
-      .s2-mchart { display:block; width:100%; height:100px; overflow:visible; }
+      .s2-chwrap { position:relative; margin-top:8px; cursor:pointer; }
+      .s2-mchart { display:block; width:100%; overflow:visible; }
+      .s2-ax { font:700 8.5px var(--font-mono); letter-spacing:.07em; text-transform:uppercase;
+        fill:var(--ink-3); }
       .s2-mchart polyline { stroke-dasharray:1; stroke-dashoffset:1; animation:s2draw .9s ease forwards; }
       @keyframes s2draw { to { stroke-dashoffset:0; } }
       .s2-chhot { position:absolute; bottom:-4px; transform:translateX(-50%); border:0; background:none;
