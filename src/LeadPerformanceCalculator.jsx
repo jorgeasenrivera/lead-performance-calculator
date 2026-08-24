@@ -565,7 +565,7 @@ function reportFreshness(store, rows, now = new Date()) {
 
 
 const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40,
-  repeatDays: 3, repeatWindow: 5 };
+  repeatDays: 3, repeatWindow: 5, taskBar: 80 };
 
 // ---- Days off + the Check Out point system ----
 // Off-days live in data.daysOff, keyed by association id, as a set of YYYY-MM-DD.
@@ -12989,6 +12989,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const [day, setDay] = useState(today());
   const [showSchedule, setShowSchedule] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showLosers, setShowLosers] = useState(false);
   useDailyReportOpener(useCallback(() => setShowReport(true), []));
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
   const outreach = showsOutreach(store);
@@ -13073,12 +13074,19 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   };
   const monthDays = activityDays.filter((d) => d.startsWith(ym()));
 
-  // Month-to-date points per person, for the Top Offenders panel.
+  // Month-to-date points per person, with the miss breakdown the podium reads out.
   const mtdPoints = {};
+  const mtdMiss = {};
   for (const a of roster) {
     let pts = 0;
-    for (const d of monthDays) pts += dayPoints(data, a, d, std).points;
+    const miss = { calls: 0, videos: 0, rocked: 0 };
+    for (const d of monthDays) {
+      const dp = dayPoints(data, a, d, std);
+      pts += dp.points;
+      for (const m of dp.missed) miss[m]++;
+    }
     mtdPoints[a.id] = pts;
+    mtdMiss[a.id] = miss;
   }
 
   const rows = roster.map((a) => {
@@ -13100,223 +13108,244 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     };
   }).filter((r) => !q || norm(r.a.name).includes(q));
 
-  // Top Offenders: most month-to-date points first. Only people with points show.
+  // Biggest Loser: most month-to-date points first. Only people with points show.
   const offenders = roster
-    .map((a) => ({ a, points: mtdPoints[a.id] || 0, worked: daysWorkedThisMonth(data, a) }))
+    .map((a) => ({ a, points: mtdPoints[a.id] || 0, worked: daysWorkedThisMonth(data, a), miss: mtdMiss[a.id] }))
     .filter((r) => r.points > 0)
     .sort((x, y) => y.points - x.points);
+  const missLine = (r) => {
+    const parts = [];
+    if (r.miss.calls) parts.push(`calls ${r.miss.calls}`);
+    if (r.miss.videos) parts.push(`videos ${r.miss.videos}`);
+    if (r.miss.rocked) parts.push(`RockEd ${r.miss.rocked}`);
+    return parts.length ? "missed " + parts.join(" · ") : "";
+  };
 
   const rockedCount = rows.filter((r) => r.hasData && r.points === 0).length;
   const withData = rows.filter((r) => r.hasData);
-  const todayOff = rows.filter((r) => r.off).length;
+
+  /* The three shelves of the day. Off is only truly off: somebody scheduled off
+     who shows activity or signs into a floor tool has worked, and lands on the
+     middle shelf so the schedule and the day can disagree out loud. */
+  const scheduledOffToday = (a) => (data.daysOff?.[a.id] || []).includes(day);
+  const onRows = rows.filter((r) => !r.off && !scheduledOffToday(r.a));
+  const anywayRows = rows.filter((r) => !r.off && scheduledOffToday(r.a));
+  const offRows = rows.filter((r) => r.off);
+
+  // Team totals for the day, set against the previous day with numbers.
+  const sumFor = (d) => {
+    const recs = data.activity?.[d] || {};
+    let c = 0, v = 0;
+    for (const a of roster) { const r = recs[norm(a.name)]; if (r) { c += r.calls || 0; v += r.video || 0; } }
+    return { c, v };
+  };
+  const tNow = sumFor(day);
+  const prevDay = activityDays[activityDays.indexOf(day) + 1];
+  const tPrev = prevDay ? sumFor(prevDay) : null;
+  const shift = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
+  const dCalls = tPrev ? shift(tNow.c, tPrev.c) : null;
+  const dVideos = tPrev ? shift(tNow.v, tPrev.v) : null;
+  const atMin = withData.filter((r) => r.callsMet && r.videoMet).length;
+  const qualToday = withData.filter((r) => r.rockedMet).length;
+  const taskBar = Math.min(1, Math.max(0.05, (std.taskBar ?? 80) / 100));
+
+  const fresh = reportFreshness(store, (data.activity || {})[day]);
+  const freshLine = fresh.missed ? `nothing has landed · past ${fresh.cutoffLabel}`
+    : fresh.waiting ? "no activity report for this day yet"
+    : fresh.lateButCounted ? `numbers as of ${fmtClock(fresh.lastAt)} · after the ${fresh.cutoffLabel} cutoff`
+    : `numbers as of ${fmtClock(fresh.lastAt)}`;
+  const dayLabel = new Date(day + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const monthName = new Date().toLocaleDateString("en-US", { month: "long" });
 
   if (activityDays.length === 0)
     return <div className="empty">No Daily Activity imported yet. Drop today's Standard Daily Activity report in the Import tab to build the checkout sheet.</div>;
 
-  return (
-    <div className="checkout">
-      <div className="gm-toolbar">
-        <select value={day} onChange={(e) => setDay(e.target.value)}>
-          {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
-        </select>
-        {/* Both of these leave the top row on a phone. The daily report is the
-            bar's centre button, and the schedule is a once-a-month job that was
-            taking the most valuable strip on the screen — it moves to the foot
-            of the page, where a monthly job belongs. */}
-        <button className="btn secondary co-sched" onClick={() => setShowSchedule(true)}>Upload monthly schedule</button>
-        <button className="btn secondary co-report" onClick={() => setShowReport(true)}>Daily report</button>
+  const kpiChip = (d) => d == null ? null
+    : <span className={"da-chip " + (d >= 0 ? "up" : "dn")}><PixIcon glyph={d >= 0 ? "triup" : "tridown"} size={8} />{d >= 0 ? "+" : ""}{d}%</span>;
 
-        {/* When these numbers last moved. Without it a quiet sheet is ambiguous: it
-            could be a slow morning or an import that never landed. */}
-        {(() => {
-          const f = reportFreshness(store, (data.activity || {})[day]);
-          const bad = f.missed;
-          return (
-            <span className={"hint co-stamp" + (bad ? " co-stamp-none" : "")}
-              title={`This store expects the last report by ${f.cutoffLabel}.`}>
-              {f.missed ? `Nothing has landed and it is past ${f.cutoffLabel}`
-                : f.waiting ? "No activity report has landed for this day yet"
-                : f.lateButCounted ? `Numbers as of ${fmtClock(f.lastAt)}, just after the ${f.cutoffLabel} cutoff`
-                : `Numbers as of ${fmtClock(f.lastAt)}`}
-            </span>
-          );
-        })()}
+  const sheetRow = (r, sub) => {
+    const tone = !r.hasData ? "dim" : r.points === 0 ? "g" : r.points === 3 ? "r" : "a";
+    return (
+      <div key={r.a.id} className="da-row">
+        <span className={"da-stripe st-" + tone} aria-hidden="true" />
+        <span className="da-name">
+          <b>{r.a.name}<StreakIcon data={data} a={r.a} std={std} /></b>
+          {sub ? <span className="da-sub">{sub}</span> : null}
+        </span>
+        <span className="da-cell">
+          <em>Tasks</em>
+          <b className={r.tasksPosted > 0 && (r.tasks || 0) / r.tasksPosted >= taskBar ? "cg" : ""}>
+            <TaskDial done={r.tasks} posted={r.tasksPosted} target={taskBar} size={26} />
+            {r.tasksPosted > 0 ? <>{r.tasks ?? 0}<i>/{r.tasksPosted}</i></> : <i>–</i>}
+          </b>
+        </span>
+        <span className="da-cell">
+          <em>Calls</em>
+          {r.hasData
+            ? <b className={r.callsMet ? "cg" : "cr"}><PixIcon glyph={r.callsMet ? "check" : "close"} size={9} /> {r.calls ?? 0}<i>/{std.minCalls}</i></b>
+            : <b><i>–</i></b>}
+        </span>
+        <span className="da-cell">
+          <em>Videos</em>
+          {r.hasData
+            ? <b className={r.videoMet ? "cg" : "cr"}><PixIcon glyph={r.videoMet ? "check" : "close"} size={9} /> {r.video ?? 0}<i>/{std.minVideos}</i></b>
+            : <b><i>–</i></b>}
+        </span>
+        {/* Not graded and deliberately unmarked: a number the manager can see
+            and ask about, nothing more. */}
+        {outreach && <>
+          <span className="da-cell da-out"><em>Texts</em><b>{r.hasData ? (r.text ?? "–") : "–"}</b></span>
+          <span className="da-cell da-out"><em>Emails</em><b>{r.hasData ? (r.email ?? "–") : "–"}</b></span>
+        </>}
+        <span className="da-flex" />
+        <button className="da-markoff" onClick={() => toggleOff(r.a)} title="Mark this person off for the day.">Mark off</button>
+        <span className="da-cell da-qualcell">
+          <em style={{ textTransform: "none" }}>RockEd</em>
+          <button className={"da-qual " + (r.qual === "yes" ? "yes" : "no")} onClick={() => cycleQualified(norm(r.a.name))}
+            title="RockEd: tap to mark Qualified, tap again for Not yet.">
+            {r.qual === "yes" ? <><PixIcon glyph="check" size={10} /> Qualified</> : <><PixIcon glyph="close" size={10} /> Not yet</>}
+          </button>
+        </span>
+        <span className="da-cell da-ptcell">
+          <em>Points</em>
+          {!r.hasData ? <span className="da-ptb off">no data</span>
+            : <span className={"da-ptb" + (r.points === 0 ? " p0" : "")} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>
+                <PixIcon glyph={r.points === 0 ? "check" : "close"} size={9} /> {r.points} {r.points === 1 ? "pt" : "pts"}
+              </span>}
+        </span>
       </div>
-      {noShowSuspects.length > 0 && (
-        <div className="co-callout">
-          <div className="co-callout-head">
-            <b>Nothing logged today for {noShowSuspects.length === 1 ? noShowSuspects[0].a.name : noShowSuspects.length + " people"}</b>
-            <span className="hint">The schedule has them in today, the activity report has run, and there are no calls, videos or line sign-in against their name. Say which it is: off means the day stops counting against them, and here means it counts as normal and they will not be asked about again today. Leave it and it will be closed out as a day off after midnight.</span>
+    );
+  };
+
+  const section = (glyph, label, list, renderRow) => list.length > 0 && (
+    <div className="da-tbl">
+      <div className="warmhead"><PixIcon glyph={glyph} size={16} style={{ color: "#D0821E" }} />{label} <span className="da-count">{list.length}</span></div>
+      {list.map(renderRow)}
+    </div>
+  );
+
+  return (
+    <div className="checkout da-page">
+      <div className="s2-hero da-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
+          <div className="s2-idtx">
+            <div className="s2-greet">Daily Activity · {dayLabel} · {freshLine}</div>
+            <h2 className="s2-store">{store.name}</h2>
           </div>
-          <div className="co-callout-list">
+          <div className="s2-chips">
+            <select className="da-daysel" value={day} onChange={(e) => setDay(e.target.value)} aria-label="Which day to read">
+              {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
+            </select>
+            <button className="da-hbtn" onClick={() => setShowReport(true)}><PixIcon glyph="doc" size={11} /> Daily report</button>
+            <button className="da-hbtn" onClick={() => setShowSchedule(true)}><PixIcon glyph="calendar" size={11} /> Upload schedule</button>
+          </div>
+        </div>
+        <div className="da-kpis">
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="phone" size={10} /> Team calls</div>
+            <div className="da-krow"><span className="da-knum">{fmtNum(tNow.c)}</span>{kpiChip(dCalls)}</div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="doc" size={10} /> Team videos</div>
+            <div className="da-krow"><span className="da-knum">{fmtNum(tNow.v)}</span>{kpiChip(dVideos)}</div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> At minimums</div>
+            <div className="da-krow"><span className="da-knum">{atMin}<span className="da-ksub">/{withData.length}</span></span></div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="trophy" size={10} /> <span style={{ textTransform: "none" }}>RockEd</span></div>
+            <div className="da-krow"><span className="da-knum">{qualToday}</span><span className="da-ksub">qualified</span></div></div>
+          {noShowSuspects.length > 0
+            ? <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="question" size={10} /> Unanswered</div>
+                <div className="da-krow"><span className="da-knum">{noShowSuspects.length}</span><span className="da-ksub">no log yet</span></div></div>
+            : <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="bolt" size={10} /> Clean sheets</div>
+                <div className="da-krow"><span className="da-knum">{rockedCount}</span><span className="da-ksub">0 pts today</span></div></div>}
+        </div>
+      </div>
+
+      <div className="sec-cap da-seccap"><PixIcon glyph="tridown" size={12} style={{ color: "#C2361F" }} /> Biggest Loser · most points this month</div>
+      {offenders.length === 0 ? (
+        <div className="da-panel">
+          <div className="da-pcap"><PixIcon glyph="check" size={13} /> No points this month</div>
+          <p className="da-hint">Nobody has accrued a point yet. Worth saying out loud.</p>
+        </div>
+      ) : offenders.length >= 3 ? (
+        <div className="da-podium">
+          {offenders.slice(0, 3).map((r, i) => (
+            <button key={r.a.id} type="button" className={"da-pod" + (i === 0 ? " first" : "")} onClick={() => setShowLosers(true)}
+              title="Open the full leaderboard">
+              <span className={"da-medal m" + (i + 1)}>{i + 1}</span>
+              <span className="da-pname">{r.a.name}{i === 0 && missLine(r) ? <span className="da-sub">{missLine(r)}</span> : null}</span>
+              <span className="da-pval">{r.points} pts</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="da-panel da-loserlist">
+          {offenders.map((r, i) => (
+            <button key={r.a.id} type="button" className="da-lbrow" onClick={() => setShowLosers(true)}>
+              <span className={"da-medal m" + (i + 1)}>{i + 1}</span>
+              <span className="da-lbn">{r.a.name}{missLine(r) ? <span className="da-sub">{missLine(r)}</span> : null}</span>
+              <span className="da-ptb">{r.points} pts</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {noShowSuspects.length > 0 && (
+        <div className="da-panel da-askpanel">
+          <div className="da-pcap"><PixIcon glyph="question" size={13} /> Nothing logged today · say which it is</div>
+          <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>
+          <div className="da-asks">
             {noShowSuspects.map((r) => (
-              <span key={r.a.id} className="co-ask">
-                <b>{r.a.name}</b>
-                <button className="co-callout-btn" onClick={() => toggleOff(r.a)}>Off Today</button>
-                <button className="co-callout-btn co-on" onClick={() => confirmOn(r.a)}>On Today</button>
+              <span key={r.a.id} className="da-ask">
+                {r.a.name}
+                <button className="da-askbtn" onClick={() => toggleOff(r.a)}>Off</button>
+                <button className="da-askbtn on" onClick={() => confirmOn(r.a)}>On</button>
               </span>
             ))}
           </div>
         </div>
       )}
-      <div className="checkout-summary">
-        <span className="stat-pass"><PixIcon glyph="check" size={13} /> {rockedCount} clean</span>
-        <span className="stat-fail">● {withData.length - rockedCount} with points</span>
-        {todayOff > 0 && <span className="stat-dim">{todayOff} off today</span>}
-        <span className="stat-dim">{withData.length} of {rows.length} with data</span>
+
+      {section("users", "On today", onRows, (r) => sheetRow(r))}
+      {section("user", "Scheduled off, in anyway", anywayRows, (r) => sheetRow(r, "scheduled off · worked"))}
+      {offRows.length > 0 && (
+        <div className="da-tbl">
+          <div className="warmhead"><PixIcon glyph="clock" size={16} style={{ color: "#D0821E" }} />Off today <span className="da-count">{offRows.length}</span></div>
+          {offRows.map((r) => (
+            <div key={r.a.id} className="da-row da-offrow">
+              <span className="da-stripe st-dim" aria-hidden="true" />
+              <span className="da-name"><b>{r.a.name}</b><span className="da-sub">day off</span></span>
+              <span className="da-offchip">Off</span>
+              <span className="da-flex" />
+              <span className="da-ptb off">–</span>
+              <button className="da-pbo" onClick={() => toggleOff(r.a)}><PixIcon glyph="triup" size={10} /> Put back on</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="da-legend">
+        <span><b>{std.minCalls}</b> calls</span>
+        <span><b>{std.minVideos}</b> videos</span>
+        <span><b>RockEd</b> qualified</span>
+        <span><b>{Math.round(taskBar * 100)}%</b> tasks</span>
+        <i>One point per miss. Days off excluded.</i>
       </div>
-      <div className="checkout-split">
-        <div className="card checkout-card">
-          <table className="checkout-table">
-            <thead><tr>
-              <th>Name</th><th>Tasks</th><th>Calls</th><th>Videos</th>
-              {outreach && <><th>Texts</th><th>Emails</th></>}
-              <th>RockEd</th><th>Points</th>
-            </tr></thead>
-            <tbody>
-              {/* On today first, off today underneath. Reading a single alphabetical
-                  list means holding in your head who is even in the building; split,
-                  the top block is simply everyone you can act on. */}
-              {[["on", rows.filter((r) => !r.off)], ["off", rows.filter((r) => r.off)]]
-                .filter(([, list]) => list.length)
-                .flatMap(([which, list]) => [
-                  /* Built to read like a role header over in Performance: a colour
-                     swatch, the name at heading weight, and the count as a pill. Two
-                     different section treatments in one tool made the tracker feel
-                     like a different product one tab across. */
-                  <tr key={"h-" + which} className={"co-sep co-sep-" + which}>
-                    <td colSpan={outreach ? 8 : 6} data-col="sep">
-                      <span className="co-sep-head">
-                        <span className="co-sep-swatch" />
-                        {which === "on" ? "On today" : "Off today"}
-                        <span className="co-sep-count">{list.length}</span>
-                      </span>
-                    </td>
-                  </tr>,
-                  ...list.map((r) => (
-                <tr key={r.a.id} className={r.off ? "co-off" : !r.hasData ? "co-nodata" : r.points === 0 ? "co-rocked" : "co-miss"}>
-                  <td className="co-namecell" data-col="name"><b>{r.a.name}</b><StreakIcon data={data} a={r.a} std={std} />
-                    {r.off && <span className="co-off-tag">Off</span>}
-                    {/* Kept out of the row until it is wanted: a column of buttons the
-                        eye has to skip past on every row, for something used once or
-                        twice a day, was costing more than it earned. */}
-                    <button className="co-off-hover" onClick={() => toggleOff(r.a)}
-                      title={r.off ? "Marked off. Click to put them back on." : "Mark this person off for the day."}>
-                      {r.off ? "Put back on" : "Mark off"}
-                    </button>
-                    {/* Scheduled off, but they made calls or sent videos. Say so, rather
-                        than quietly counting the day and leaving the manager to wonder
-                        why the schedule looks like it skipped them. */}
-                    {!r.off && (data.daysOff?.[r.a.id] || []).includes(day) &&
-                      <span className="co-off-tag co-worked" title="Scheduled off, but calls or videos were logged, so the day counts. Mark them off to override.">Off · worked</span>}
-                  </td>
-                  {/* Tasks first: it is the pile they arrive to, and it frames whether
-                      the rest of the day was ever going to happen. */}
-                  <td className="co-tasks" data-col="tasks" data-label="Tasks">
-                    <TaskDial done={r.tasks} posted={r.tasksPosted} />
-                  </td>
-                  <td data-col="calls" data-label="Calls"
-                    className={r.off ? "" : r.hasData ? (r.callsMet ? "cell-g" : "cell-r") : ""}>
-                    {r.hasData && <span className="cell-mark"><PixIcon glyph={r.callsMet ? "check" : "close"} size={13} /></span>}
-                    {r.calls ?? "-"}{r.hasData && <span className="cell-need"> / {std.minCalls}</span>}
-                  </td>
-                  <td data-col="videos" data-label="Videos"
-                    className={r.off ? "" : r.hasData ? (r.videoMet ? "cell-g" : "cell-r") : ""}>
-                    {r.hasData && <span className="cell-mark"><PixIcon glyph={r.videoMet ? "check" : "close"} size={13} /></span>}
-                    {r.video ?? "-"}{r.hasData && <span className="cell-need"> / {std.minVideos}</span>}
-                  </td>
-                  {/* Not graded and deliberately unmarked: no tick, no cross, no target.
-                      A number the manager can see and ask about, nothing more. */}
-                  {outreach && <>
-                    <td className="co-out" data-col="text" data-label="Texts">{r.hasData ? (r.text ?? "-") : "-"}</td>
-                    <td className="co-out" data-col="email" data-label="Emails">{r.hasData ? (r.email ?? "-") : "-"}</td>
-                  </>}
-                  {/* RockEd: a simple Qualified toggle. Tap to cycle unset → Qualified → Not. */}
-                  <td data-col="rocked" data-label="RockEd">
-                    <button className={"qual-toggle " + (r.qual === "yes" ? "yes" : "no")}
-                      disabled={r.off} onClick={() => cycleQualified(norm(r.a.name))}
-                      title="RockEd: tap to mark Qualified, tap again for Not yet.">
-                      {/* Nobody is qualified until somebody says so, so an untouched
-                          row reads as Not yet rather than as an unanswered question. */}
-                      {r.qual === "yes" ? <><PixIcon glyph="check" size={12} /> Qualified</>
-                        : <><PixIcon glyph="close" size={12} /> Not yet</>}
-                    </button>
-                  </td>
-                  <td data-col="points" data-label="Points">
-                    {r.off ? <span className="pt-badge off">—</span>
-                      : !r.hasData ? <span className="pt-badge dim">no data</span>
-                      : <span className={"pt-badge pt-" + r.points} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>
-                          <PixIcon glyph={r.points === 0 ? "check" : "close"} size={12} />
-                          {r.points} {r.points === 1 ? "pt" : "pts"}
-                        </span>}
-                  </td>
-                </tr>
-                  )),
-                ])}
-            </tbody>
-          </table>
-          {/* The same job, at the end of the page, for a phone. Rendered rather
-              than reordered because CSS cannot move a control out of the toolbar
-              and into the page; only one of the two is ever displayed, so only
-              one is ever in the accessibility tree. */}
-          <button className="btn secondary co-sched-foot" onClick={() => setShowSchedule(true)}>
-            Upload monthly schedule
-          </button>
-          <div className="co-legend">
-            <span><b>{std.minCalls}</b> calls</span>
-            <span><b>{std.minVideos}</b> videos</span>
-            <span><b>RockEd</b> qualified</span>
-            <i>One point per miss. Days off excluded.</i>
+
+      {showLosers && (
+        <div className="da-scrim" onClick={(e) => { if (e.target === e.currentTarget) setShowLosers(false); }}>
+          <div className="da-modal" role="dialog" aria-label="Biggest Loser leaderboard">
+            <button className="da-x" onClick={() => setShowLosers(false)} aria-label="Close">×</button>
+            <div className="da-mtitle">Biggest Loser · {monthName}</div>
+            <div className="da-msub">one point per missed standard per day · low score wins</div>
+            {offenders.map((r, i) => (
+              <div key={r.a.id} className="da-lbrow">
+                <span className={"da-medal " + (i < 3 ? "m" + (i + 1) : "mx")}>{i + 1}</span>
+                <span className="da-lbn">{r.a.name}{missLine(r) ? <span className="da-sub">{missLine(r)}</span> : null}</span>
+                <span className="da-ptb">{r.points} pts</span>
+              </div>
+            ))}
           </div>
         </div>
-
-        <aside className="checkout-side">
-          <div className={"card offender-card " + (offenders.length === 0 ? "offender-clear" : "")}>
-            <h3 className="off-title">
-              {offenders.length === 0 ? "No points this month" : "Biggest Loser"}
-              <span className="section-sub">{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
-            </h3>
-            {offenders.length === 0 ? (
-              <p className="hint">Nobody has accrued a point this month. Worth saying out loud.</p>
-            ) : (
-              <>
-                <p className="hint">Month to date.</p>
-                {/* The podium the report image has drawn all along, which the screen
-                    the managers actually work on never did. Same three, same order,
-                    same figure: one picture of the month, not two. Only stands when
-                    there are three to stand on it. */}
-                {offenders.length >= 3 && (
-                  <div className="bl-podium">
-                    {[1, 0, 2].map((k) => {
-                      const r = offenders[k];
-                      return (
-                        <div key={r.a.id} className={"bl-slot bl-" + (k + 1)}>
-                          <span className="bl-name">{r.a.name.split(" ")[0]}</span>
-                          <span className="bl-block">
-                            <b>{r.points}</b>
-                            <i>#{k + 1}</i>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                <ol className="offender-rank">
-                  {offenders.slice(offenders.length >= 3 ? 3 : 0).map((r, i0) => {
-                  const i = i0 + (offenders.length >= 3 ? 3 : 0);
-                  return (
-                    <div key={r.a.id} className="offender-rank-row">
-                      <span className="orr-rank">{i + 1}</span>
-                      <b className="orr-name">{r.a.name}</b>
-                      <span className={"orr-points pt-" + Math.min(3, Math.ceil(r.points / Math.max(1, r.worked)))}>{r.points}</span>
-                    </div>
-                  );})}
-                </ol>
-              </>
-            )}
-          </div>
-        </aside>
-      </div>
+      )}
 
       {showSchedule && (
         <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />
@@ -15609,6 +15638,9 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
         <div className="stepper-row">
           <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
           <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
+          {/* The completion line on the tasks dial, so one store can clear at 80%
+              while another asks for 75%. Read as a percent of posted tasks. */}
+          <Stepper label="Tasks cleared" field="taskBar" value={std.taskBar ?? 80} hint="% of posted tasks" />
         </div>
         <div className="preset-row">
           <span className="hint">Quick set:</span>
@@ -30708,6 +30740,143 @@ const SAGE_CSS = `
       @media (prefers-reduced-motion: reduce) {
         .s2-imp, .s2-vdot, .s2-rtag::before, .s2-hcol i, .s2-dialrev { animation:none !important; }
         .s2-hero.s2-chswitch, .s2-hero.s2-chswitch .s2-noise { animation:none !important; }
+      }
+
+      /* ================= Daily Activity, redesigned =================
+         The check-out sheet in the Garden language: the same hero identity card,
+         the day's vitals as tiles on the green, the Biggest Loser podium in the
+         shame colours, and the sheet itself split across three warm-headed
+         shelves: on today, scheduled off but in anyway, and off. */
+      .da-hero { padding:20px 22px 18px; }
+      .da-daysel { appearance:none; -webkit-appearance:none; border:0; border-radius:10px; background:#fff;
+        color:var(--ink); font:600 11px var(--font-display); padding:8px 26px 8px 13px; cursor:pointer;
+        box-shadow:0 4px 12px -6px rgba(12,24,18,.4);
+        background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='5'><path d='M0 0l4 5 4-5z' fill='%235A6472'/></svg>");
+        background-repeat:no-repeat; background-position:right 10px center; }
+      .da-hbtn { display:inline-flex; align-items:center; gap:6px; background:#fff; border:0; border-radius:10px;
+        padding:8px 13px; font:600 11px var(--font-display); color:var(--ink); cursor:pointer;
+        box-shadow:0 4px 12px -6px rgba(12,24,18,.4); }
+      .da-hbtn:hover { transform:translateY(-1px); }
+      .da-kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(148px, 1fr)); gap:10px; margin-top:16px; }
+      .da-kpi { background:#fff; border-radius:12px; padding:9px 12px 8px; color:var(--ink);
+        box-shadow:0 8px 20px -12px rgba(12,24,18,.5); }
+      .da-kcap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
+        display:flex; align-items:center; gap:5px; }
+      .da-krow { display:flex; align-items:baseline; gap:6px; margin-top:3px; }
+      .da-knum { font:700 19px var(--font-mono); letter-spacing:-.02em; }
+      .da-ksub { font-size:9.5px; color:var(--ink-2); }
+      .da-chip { display:inline-flex; align-items:center; gap:3px; font:700 10px var(--font-mono);
+        border-radius:99px; padding:2px 7px; }
+      .da-chip.up { color:#1E8A4C; background:rgba(30,138,76,.12); }
+      .da-chip.dn { color:#C2361F; background:rgba(194,54,31,.1); }
+      .da-seccap { margin:18px 2px 10px; }
+      /* the Biggest Loser podium wears the shame colours, not the trophy ones */
+      .da-podium { display:flex; gap:8px; }
+      .da-pod { flex:1; display:flex; align-items:center; gap:9px; background:var(--card); border:1px solid var(--line);
+        border-radius:14px; padding:13px 16px; cursor:pointer; text-align:left; font:inherit; color:var(--ink);
+        transition:transform .18s ease; min-width:0; }
+      .da-pod:hover { transform:translateY(-2px); }
+      .da-pod.first { flex:1.35; background:linear-gradient(115deg,#F9DFD9,#FDF6F4 70%); border-color:rgba(163,37,23,.4); }
+      .da-medal { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+        font:700 11px var(--font-mono); color:#fff; flex:0 0 auto; }
+      .da-medal.m1 { background:linear-gradient(140deg,#D9503C,#A32517); box-shadow:0 3px 8px -3px rgba(163,37,23,.7); }
+      .da-medal.m2 { background:linear-gradient(140deg,#D98A6B,#B85B3A); box-shadow:0 3px 8px -3px rgba(184,91,58,.6); }
+      .da-medal.m3 { background:linear-gradient(140deg,#D8A98C,#BE8055); box-shadow:0 3px 8px -3px rgba(190,128,85,.55); }
+      .da-medal.mx { background:rgba(16,32,52,.14); color:var(--ink-2); }
+      .da-pname { flex:1; min-width:0; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .da-pod.first .da-pname { font-size:13px; white-space:normal; }
+      .da-pval { font:700 19px var(--font-mono); color:#C2361F; flex:0 0 auto; }
+      .da-panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 14px; }
+      .da-pcap { font:700 9px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
+        margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+      .da-hint { margin:0 0 8px; font-size:11px; color:var(--ink-2); line-height:1.5; }
+      .da-loserlist { display:flex; flex-direction:column; }
+      .da-askpanel { margin-top:12px; }
+      .da-asks { display:flex; gap:8px; flex-wrap:wrap; }
+      .da-ask { display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:99px;
+        padding:4px 6px 4px 12px; font-size:11.5px; font-weight:600; }
+      .da-askbtn { border:0; border-radius:99px; padding:6px 12px; font:700 10.5px var(--font-mono); cursor:pointer;
+        background:rgba(16,32,52,.07); color:var(--ink-2); }
+      .da-askbtn.on { background:rgba(30,138,76,.12); color:#1E8A4C; }
+      /* the sheet: one warm-headed card per shelf */
+      .da-tbl { background:var(--card); border:1px solid var(--line); border-radius:14px; margin-top:12px; overflow:hidden; }
+      .da-count { display:inline-flex; align-items:center; font:700 10.5px var(--font-mono); border-radius:99px;
+        padding:2px 8px; background:rgba(16,32,52,.07); color:var(--ink-2); margin-left:2px; }
+      .da-row { position:relative; display:flex; align-items:center; gap:12px; padding:9px 16px; border-top:1px solid var(--line); }
+      .da-row:first-of-type { border-top:0; }
+      .da-row > :not(.da-stripe) { position:relative; }
+      .da-stripe { position:absolute; inset:0; pointer-events:none;
+        background:linear-gradient(90deg, var(--dasc, transparent), transparent 55%); opacity:.5; }
+      .da-stripe.st-g { --dasc:rgba(30,138,76,.14); }
+      .da-stripe.st-a { --dasc:rgba(201,138,0,.14); }
+      .da-stripe.st-r { --dasc:rgba(194,54,31,.14); }
+      .da-stripe.st-dim { --dasc:rgba(16,32,52,.06); }
+      .da-name { width:170px; flex:0 0 auto; min-width:0; }
+      .da-name b { display:flex; align-items:center; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .da-sub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400; }
+      .da-flex { flex:1; }
+      .da-cell { display:flex; flex-direction:column; gap:1px; flex:1 1 0; max-width:118px; min-width:62px; }
+      .da-cell em { font:700 7.5px var(--font-mono); font-style:normal; letter-spacing:.08em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .da-cell b { font:700 12px var(--font-mono); display:flex; align-items:center; gap:4px; color:var(--ink); }
+      .da-cell b i { font-style:normal; font-weight:500; font-size:9.5px; color:var(--ink-3); }
+      .da-cell b.cg { color:#1E8A4C; }
+      .da-cell b.cr { color:#C2361F; }
+      .da-out b { color:var(--ink-2); }
+      .da-out em { opacity:.8; }
+      .da-qualcell, .da-ptcell { flex:0 0 auto; max-width:none; min-width:0; }
+      .da-qual { display:inline-flex; align-items:center; gap:5px; border-radius:99px; border:1px solid var(--line);
+        padding:5px 0; width:100px; justify-content:center; font:600 10px var(--font-display); cursor:pointer;
+        flex:0 0 auto; background:var(--card); color:var(--ink-2); }
+      .da-qual.yes { background:rgba(30,138,76,.1); color:#1E8A4C; border-color:rgba(30,138,76,.4); }
+      .da-ptb { display:inline-flex; align-items:center; gap:4px; font:700 10px var(--font-mono); border-radius:99px;
+        padding:4px 0; width:64px; justify-content:center; background:rgba(194,54,31,.1); color:#C2361F; flex:0 0 auto; }
+      .da-ptb.p0 { background:rgba(30,138,76,.12); color:#1E8A4C; }
+      .da-ptb.off { background:rgba(16,32,52,.05); color:var(--ink-3); width:auto; padding:4px 10px; }
+      .da-markoff { border:1px solid var(--line); border-radius:99px; background:var(--card); color:var(--ink-2);
+        font:600 10px var(--font-display); padding:5px 11px; cursor:pointer; opacity:0; transition:opacity .15s ease; flex:0 0 auto; }
+      .da-row:hover .da-markoff, .da-markoff:focus-visible { opacity:1; }
+      .da-offchip { display:inline-flex; font:700 10.5px var(--font-mono); border-radius:99px; padding:3px 10px;
+        background:rgba(16,32,52,.07); color:var(--ink-2); flex:0 0 auto; }
+      /* putting somebody back on should be the loudest thing on the shelf */
+      .da-pbo { display:inline-flex; align-items:center; gap:6px; border:0; border-radius:11px; padding:10px 18px;
+        font:700 11.5px var(--font-display); cursor:pointer; color:#4A3300; flex:0 0 auto;
+        background:linear-gradient(140deg,#F2C14E,#E0A62B); box-shadow:0 5px 14px -6px rgba(224,166,43,.7); }
+      .da-pbo:hover { transform:translateY(-1px); }
+      .da-legend { display:flex; gap:16px; align-items:center; flex-wrap:wrap; margin:14px 4px 0;
+        font-size:10.5px; color:var(--ink-2); }
+      .da-legend i { font-style:normal; color:var(--ink-3); }
+      /* the leaderboard modal: out of focus behind, not dark */
+      .da-scrim { position:fixed; inset:0; z-index:400; display:flex; align-items:center; justify-content:center;
+        background:rgba(245,245,247,.45); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); padding:20px; }
+      .da-modal { position:relative; background:#fff; border-radius:16px; padding:16px 18px; width:min(380px, 100%);
+        max-height:80vh; overflow:auto; box-shadow:0 30px 80px -20px rgba(10,20,14,.45); }
+      .da-x { position:absolute; top:10px; right:12px; border:0; background:none; font-size:20px; line-height:1;
+        color:var(--ink-3); cursor:pointer; }
+      .da-mtitle { font:700 15px var(--font-display); }
+      .da-msub { font-size:10.5px; color:var(--ink-2); margin:2px 0 10px; }
+      .da-lbrow { display:flex; align-items:center; gap:11px; padding:7px 0; border-bottom:1px dashed var(--line);
+        background:none; border-left:0; border-right:0; border-top:0; width:100%; text-align:left; font:inherit; color:var(--ink); }
+      button.da-lbrow { cursor:pointer; }
+      .da-lbrow:last-child { border-bottom:0; }
+      .da-lbn { flex:1; font-size:12px; font-weight:600; min-width:0; }
+      /* phone: identity and points on the first line, the sheet cells below */
+      @media (max-width:640px) {
+        .da-hero { padding:16px 15px 15px; }
+        .da-kpis { grid-template-columns:repeat(2, 1fr); }
+        .da-podium { flex-direction:column; }
+        .da-row { flex-wrap:wrap; row-gap:7px; padding:11px 14px; }
+        .da-row::after { content:""; width:100%; order:2; }
+        .da-name { width:auto; flex:1 1 auto; min-width:0; order:0; }
+        .da-flex { display:none; }
+        .da-cell { order:3; flex:0 0 auto; width:70px; }
+        .da-qualcell { order:4; width:auto; margin-left:auto; }
+        .da-ptcell { order:1; width:auto; margin-left:auto; }
+        .da-markoff { order:5; opacity:1; padding:8px 14px; }
+        .da-askbtn { padding:8px 14px; font-size:12px; }
+        .da-offrow .da-offchip { order:1; margin-left:auto; }
+        .da-offrow .da-ptb.off { display:none; }
+        .da-pbo { order:3; }
       }
 
     `;
