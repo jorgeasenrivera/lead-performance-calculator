@@ -3184,6 +3184,26 @@ export default function LeadPerformanceCalculator() {
         root.classList.remove("tool-exit");
         root.classList.add("tool-enter");
         applyTool(mod);
+        /* When the classes come off at the end of the move, the page's
+           animation list will change from pageLand back to the base pageIn -
+           and pageIn, being NEW to the list at that moment, would RESTART: a
+           flash to transparent and a ten-pixel lift, a full second after the
+           slide finished. Neutralised inline on this page instance just before
+           the cleanup, which outranks the base rule for as long as this element
+           lives. The next genuinely mounted page is a fresh element with no
+           inline style, so its ordinary rise is untouched. */
+        toolTimers.push(setTimeout(() => {
+          document.querySelectorAll(".page, .board-page, .tab-page")
+            .forEach((el) => { el.style.animation = "none"; });
+        }, 640));
+        /* The new page's cards must be marked in-view BEFORE their first paint:
+           a card painted even one frame unmarked sits at translateY(20px), and
+           the .8s transition then rises it - vertical motion inside a sideways
+           move. The microtask runs after React's batched commit and before any
+           paint; the rAF is the backstop, and rAF callbacks also run pre-paint.
+           The double-rAF this replaces was the bug: its first frame PAINTED. */
+        queueMicrotask(settleReveals);
+        requestAnimationFrame(settleReveals);
         /* The last block starts 66ms in and runs 560ms, so the classes have to
            outlast 626ms or the animation is stripped off mid-landing and the
            block snaps the rest of the way. That snap is the "no landing" note. */
@@ -8416,15 +8436,21 @@ function radialAssemble() {
        delay was measured against. One invisible element was compressing the
        whole stagger. */
     if (r.width < 1 || r.height < 1) continue;
-    /* And anything outside the viewport is skipped too. A card two screens down
-       was handed a vector to the centre of the visible screen, so it flew
-       ACROSS the viewport on its way home — blocks raining through the page
-       from outside the frame. Off-screen elements simply take their places;
-       the impact belongs to what the eye can actually see land. */
-    if (r.bottom < -40 || r.top > vh + 40 || r.right < -40 || r.left > vw + 40) continue;
-    const dx = o.x - (r.left + r.width / 2);
-    const dy = o.y - (r.top + r.height / 2);
-    plan.push({ el, dx, dy, dist: Math.hypot(dx, dy) });
+    /* ---- every element flies, but nothing crosses the screen ----
+       Two failed versions taught this shape. Letting every block fly the full
+       94% of its vector sent below-the-fold cards raining across the viewport.
+       Skipping the off-screen blocks instead meant most of a real board simply
+       appeared, and the impact read as not happening at all. So the TRAVEL is
+       capped: everything takes the same radial journey out of the centre's
+       direction, and a block whose home is far away takes a short hop along
+       that line rather than a screen-crossing flight. The radial identity is
+       everywhere; the chaos is nowhere. */
+    let dx = o.x - (r.left + r.width / 2);
+    let dy = o.y - (r.top + r.height / 2);
+    const dist = Math.hypot(dx, dy) || 1;
+    const cap = Math.min(vw, vh) * 0.55;
+    if (dist > cap) { dx = (dx / dist) * cap; dy = (dy / dist) * cap; }
+    plan.push({ el, dx, dy, dist: Math.min(dist, cap) });
   }
   if (!plan.length) return () => {};
   const far = Math.max(1, ...plan.map((p) => p.dist));
@@ -8435,10 +8461,19 @@ function radialAssemble() {
        as one sheet. Capped so the last block is not left behind. */
     p.el.style.setProperty("--rd", Math.round((p.dist / far) * 260) + "ms");
     p.el.classList.add("sa-radial");
+    /* The shadows follow the landing rather than clicking in after it: none
+       while a block is in flight, bloomed in over a breath the moment ITS OWN
+       animation ends, each block on its own clock like everything else here. */
+    p.onEnd = (e) => {
+      if (e.target !== p.el || e.animationName !== "saRadial") return;
+      p.el.classList.add("sa-shadowin");
+    };
+    p.el.addEventListener("animationend", p.onEnd);
   }
   return () => {
     for (const p of plan) {
-      p.el.classList.remove("sa-radial");
+      p.el.removeEventListener("animationend", p.onEnd);
+      p.el.classList.remove("sa-radial", "sa-shadowin");
       p.el.style.removeProperty("--rx");
       p.el.style.removeProperty("--ry");
       p.el.style.removeProperty("--rd");
@@ -25005,8 +25040,16 @@ const SAGE_CSS = `
       /* Without overscroll-behavior a flick at either end of this list hands the
          scroll to the board underneath, so closing the sheet left the page sitting
          further down than it started. Same guard the help sheet already carries. */
-      .ru-sheet-body { flex:1; overflow-y:auto; overscroll-behavior:contain;
-        -webkit-overflow-scrolling:touch; }
+      /* Hidden, not auto: the sheet is designed to fit without scrolling, and
+         with auto every entering block's 14px translate momentarily pushed the
+         content past the container - a scrollbar flashing for the length of the
+         stagger. Short screens, where the content genuinely cannot fit, get a
+         real scrollbar with its gutter reserved so nothing shifts. */
+      .ru-sheet-body { flex:1; overflow:hidden; }
+      @media (max-height: 700px) {
+        .ru-sheet-body { overflow-y:auto; overscroll-behavior:contain;
+          -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
+      }
       /* The head is the store's own hero in miniature: the same gradient sweep,
          the same identity, so the sheet reads as the store speaking rather than
          the app interrupting. */
@@ -26269,6 +26312,11 @@ const SAGE_CSS = `
         border-radius:inherit;
         background: radial-gradient(108% 82% at 0% 0%, var(--tint, transparent), transparent 62%); }
       .js-anim .card:not(.is-in) { opacity:0; transform: translateY(20px); }
+      /* And during a tool move the reveal TRANSITION is off entirely: if a card
+         is ever marked late, it snaps into place inside the slide - invisible -
+         instead of rising twenty pixels over most of a second. The vertical
+         rise belongs to scrolling, never to a sideways move. */
+      .tool-move .card { transition: box-shadow .4s var(--ease); }
       .card.is-in { opacity:1; transform:none; }
       .card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.92), var(--shadow-3); }
       .section-title { font-size:28px; font-weight:700; letter-spacing:-.035em; margin:4px 0 22px; }
@@ -26367,12 +26415,10 @@ const SAGE_CSS = `
       }
       /* The crash: past the resting point, squashed along the direction of
          travel at the moment of impact, then let go. */
-      /* A slide, not a fade-and-appear: the travel is long enough to read as
-         motion and the opacity is up almost immediately, so the movement is
-         the event and the fade is only the first frame's courtesy. */
+      /* A slide, full stop. No fade at all: the page arrives whole from the
+         side it was sent from, and opacity never enters into it. */
       @keyframes toolIn {
-        0%   { opacity:.12; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
-        18%  { opacity:1; }
+        0%   { opacity:1; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
         62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
         82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
         92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
@@ -26389,8 +26435,14 @@ const SAGE_CSS = `
          transition: .page carries its own mount animation, and an animation wins
          over a transition on the same property, so a transition here would have
          been silently ignored on exactly the pages it was written for. */
+      /* No pageIn in these lists. On a tool switch the page is FRESHLY MOUNTED,
+         so listing pageIn first does not preserve a running animation - it
+         INTRODUCES one: a ten-pixel rise and a .38s fade running against the
+         slide. That was the "still rising, still fading in" on the blocks that
+         are not cards. The moved page slides; the rise belongs to ordinary
+         mounts only. */
       .tool-exit .page {
-        animation: pageIn .38s var(--spring), pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
+        animation: pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
       .tool-exit .board-page, .tool-exit .tab-page {
         animation: pageOut .26s cubic-bezier(.4,0,.9,.3) both; }
       @keyframes pageOut {
@@ -26405,7 +26457,7 @@ const SAGE_CSS = `
          now travels the same axis as its blocks and decelerates into place with
          them. */
       .tool-enter .page {
-        animation: pageIn .38s var(--spring), pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
+        animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
       .tool-enter .board-page, .tool-enter .tab-page {
         animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
       @keyframes pageLand {
@@ -26869,6 +26921,10 @@ const SAGE_CSS = `
         opacity:0;
         animation: saRadial .68s cubic-bezier(.16,0,.3,1) both;
         animation-delay: var(--rd, 0ms); }
+      /* No shadow while a block is in flight - a scaled shadow re-rasterising at
+         the end is the "click" - and a soft bloom the moment it lands. */
+      .sage-assemble .sa-radial:not(.sa-shadowin) { box-shadow:none !important; }
+      .sa-radial.sa-shadowin { transition: box-shadow .45s ease; }
       @keyframes saRadial {
         0%   { opacity:0; transform: translate3d(calc(var(--rx,0px) * .94), calc(var(--ry,0px) * .94), 0) scale(.10); }
         12%  { opacity:1; transform: translate3d(calc(var(--rx,0px) * .83), calc(var(--ry,0px) * .83), 0) scale(.20);
@@ -26881,13 +26937,23 @@ const SAGE_CSS = `
       .sage-assemble .lpc { animation: saBreath .34s cubic-bezier(.2,.6,.3,1) .12s both;
         transform-origin: var(--jx, 50%) var(--jy, 46%); }
       @keyframes saBreath { from { transform: scale(1.022); } to { transform: none; } }
-      /* And the clouds settle back down around the landing — the blob layer
-         drifts in from above, slower than the furniture, the way cloud comes
-         down around something arriving. One layer, not four blobs, because each
-         blob carries its own infinite drift at its own duration and an
-         animation shorthand here would flatten all four to one clock. */
-      .sage-assemble .sg-blobs { animation: saClouds 1.15s cubic-bezier(.2,.6,.25,1) .18s backwards; }
-      @keyframes saClouds { from { transform: translateY(-90px); opacity:0; } to { transform: none; opacity:1; } }
+      /* And the clouds settle back down around the landing - drifting in from
+         above, slower than the furniture, the way cloud comes down around
+         something arriving. The container carries ONLY the drop: putting
+         opacity on it flattened all four blobs into one texture for the length
+         of the animation, and the snap back to separate layers at the end was
+         a visible click. Each blob fades itself instead, its own infinite
+         drift kept at index 0 so it is never cancelled, and every clock here
+         ends well before the landing classes come off - an animation cut
+         mid-flight by the cleanup is the other click. */
+      /* The clouds do not fade AT ALL. Every faded version had the same tell:
+         while a translucent cloud descends over the saturated living background,
+         the region reads as the background's colour first and the cloud's pastel
+         second - one colour switching to another. Full colour from the first
+         frame, only the descent animating, and the white flash covers the mount.
+         The blobs' own drifts are never touched, so nothing is cancelled. */
+      .sage-assemble .sg-blobs { animation: saCloudDrop 1.15s cubic-bezier(.16,.6,.22,1) .05s backwards; }
+      @keyframes saCloudDrop { from { transform: translateY(-190px) scale(1.05); } to { transform: none; } }
       /* ---- the health ring's landing flourish ----
          Jorge's spec: when it lands it fills all the way up, empties back to
          zero, and then fills to the real percentage. ringIn is kept at index 0
