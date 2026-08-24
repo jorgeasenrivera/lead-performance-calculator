@@ -3651,7 +3651,8 @@ export default function LeadPerformanceCalculator() {
                       }} />
                     )}
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
-                      filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc} />
+                      filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc}
+                      canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig} />
                     {/* The delivery chart now lives inside the hero's rotating display. */}
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
@@ -16708,6 +16709,16 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
     : ev.status === "fail" ? `Below standard, but still has room (${ev.opps} of ${ev.cap}). Fix these before the cap and nothing pauses.`
     : `${ev.opps ?? 0} of ${ev.cap} leads this month.`;
 
+  /* The quiet line under the name: what this person is actually doing, in a few
+     words, rather than the paragraph the row used to carry underneath it. */
+  const capSub = restrictedNow ? `off leads${daysLeft != null ? ` · ${daysLeft} days left` : ""}`
+    : incomplete ? "waiting on a report"
+    : ev.status === "no-data" ? "no figures this month"
+    : ev.status === "no-standards" ? "no standards set"
+    : ev.status === "pass" ? (() => { const q = qualityOf(ev); return `${q.met}/${q.total} standards above bar`; })()
+    : ev.status === "fail" && ev.failures?.length ? `${ev.failures.length} standard${ev.failures.length === 1 ? "" : "s"} below bar`
+    : "";
+
   const confirmRestrict = () => {
     const until = days > 0 ? new Date(Date.now() + days * 86400000).toISOString() : null;
     onSetRestriction({ since: new Date().toISOString(), until, reasons: failureText(ev) });
@@ -16739,7 +16750,11 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
               aria-label={`Select ${a.name}`} />
           )}
           {rank && <span className={"rank-badge rank-" + rank}>{rank}</span>}
-          <span className="assoc-name">{a.name}</span>
+          {/* name over its own quiet line, the way every row in the drafts reads */}
+          <span className="assoc-nameblock">
+            <span className="assoc-name">{a.name}</span>
+            <span className="assoc-sub">{capSub}</span>
+          </span>
         {/* ---- the people carrying the floor ----
             Forty per cent over every requirement they have, which is not a good
             month, it is a different league. It had one small green line down the
@@ -16773,6 +16788,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           </span>
         )}
         {showDials && <MetricStrip ev={ev} stats={stats} />}
+        <span className="assoc-spacer" />
         {/* Two sub-columns, not one right-aligned string: "74 / 80" and "82 / 100"
             are different widths, so aligning the whole thing put the slash in a
             different place on every row. The number ends where every other number
@@ -21044,7 +21060,7 @@ function TapMark() {
   return <span className="tapmark" aria-hidden="true"><PixIcon glyph="tap" size={13} /></span>;
 }
 
-function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus }) {
+function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus, canSetGoal, onSaveConfig }) {
   /* The panel hangs off the bottom of this card, and on a short window the last
      of it — the new-and-used split — simply left the screen. A share of the
      screen height cannot fix that on its own, because it says nothing about how
@@ -21175,9 +21191,6 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 
   // numbers roll up rather than just appearing
   const nPct = useCountUp(pct, 1100, 300);
-  const nCleared = useCountUp(cleared, 800, 250);
-  const nAttention = useCountUp(attention, 800, 320);
-  const nOff = useCountUp(offLeads, 800, 390);
   const nRoster = useCountUp(roster.length, 800, 460);
   const nOpps = useCountUp(oppsUsed, 900, 530);
 
@@ -21396,6 +21409,23 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     return () => clearTimeout(t);
   }, [totalUnits]);
   useEffect(() => { installBloopManager(); }, []);
+  /* A store with no goal has no pace, no par tick and no bar to hit, and until
+     now the only way to give it one was three screens deep in the store editor.
+     The number belongs where it is read, so the hero asks for it. It writes this
+     month's figure and the standing fallback in one go. */
+  const [goalDraft, setGoalDraft] = useState("");
+  const [goalOpen, setGoalOpen] = useState(false);
+  const saveGoal = () => {
+    const n = Math.max(0, parseInt(goalDraft, 10) || 0);
+    if (!n || !onSaveConfig) { setGoalOpen(false); return; }
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === store.id);
+    if (!s) return;
+    const g = s.goal || {};
+    s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [ym()]: n } };
+    onSaveConfig(next, { store: store.id, action: "Set the monthly unit goal", detail: `${store.name}: ${n} units` });
+    setGoalOpen(false);
+  };
   const paceTone = storePace.tooEarly || !storePace.goal ? "dim" : storePace.tone;
   const paceCol = { g: "#8FE3B3", y: "#F2C57C", r: "#FFA294", dim: "rgba(255,255,255,.6)" }[paceTone];
 
@@ -21486,7 +21516,16 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="s2-cap"><PixIcon glyph="car" size={11} /> Units this month</div>
             <div className="s2-big">
               <DotNum value={String(totalUnits)} dot={6} color="#fff" />
-              {storePace.goal && <span className="s2-den">/ {fmtNum(storePace.goal.bar)} to hit</span>}
+              {storePace.goal
+                ? <span className="s2-den">/ {fmtNum(storePace.goal.bar)} to hit</span>
+                : canSetGoal && (goalOpen
+                  ? <span className="s2-goalset">
+                      <input type="number" min="0" autoFocus value={goalDraft} placeholder="85"
+                        onChange={(e) => setGoalDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveGoal(); if (e.key === "Escape") setGoalOpen(false); }} />
+                      <button onClick={saveGoal}>Set</button>
+                    </span>
+                  : <button className="s2-den s2-goalask" onClick={() => setGoalOpen(true)}>/ set a goal</button>)}
             </div>
             {storePace.goal && (
               <div className="s2-pacewrap bloop-host" tabIndex={0}>
@@ -21547,20 +21586,13 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 )}
               </div>
             )}
+            {/* One line, as the drafts have it: the floor's health, then what the
+                board is holding. The bucket chips are gone; the board itself is
+                the list, and search is how you narrow it. */}
             <div className="s2-vitals">
               <span className={"s2-vdot s2-v-" + (pct >= 75 ? "g" : pct >= 55 ? "y" : "r")} />
               {healthWord}{attN > 0 ? <> · <b>{nPct}%</b> of standard</> : null}
-            </div>
-            <div className="s2-filters">
-              <button className={"s2-fchip ok" + (filter === "cleared" ? " on" : "")}
-                onClick={() => onFilter(filter === "cleared" ? null : "cleared")}><b>{nCleared}</b> cleared</button>
-              <button className={"s2-fchip bad" + (filter === "attention" ? " on" : "")}
-                onClick={() => onFilter(filter === "attention" ? null : "attention")}><b>{nAttention}</b> {inGrace ? "working toward" : "need attention"}</button>
-              {offLeads > 0 && (
-                <button className={"s2-fchip dim" + (filter === "off" ? " on" : "")}
-                  onClick={() => onFilter(filter === "off" ? null : "off")}><b>{nOff}</b> off leads</button>
-              )}
-              <span className="s2-meta">{nRoster} on the board · <b>{nOpps}</b>/{capTotal || "-"} leads held</span>
+              {" · "}{nRoster} on the board · <b>{nOpps}</b>/{capTotal || "-"} leads held
             </div>
           </div>
           <div className="s2-right">
@@ -27583,11 +27615,23 @@ const SAGE_CSS = `
          Fixed tracks, so column four is under column four on every row whatever
          anybody's verdict says. The bar takes whatever is left, which on a
          desktop is most of the row. */
-      .assoc-row { display:grid; align-items:center; gap:10px; cursor:grab; position:relative;
-        grid-template-columns: minmax(170px, 300px) minmax(80px, 1fr) auto 82px 196px 12px; }
+      /* The drafts' row: fixed columns, packed left to right, so a manager reads
+         DOWN a column instead of hunting for it on each line. The lead bar is a
+         fixed 150px picture of the allowance, not a stretched track. */
+      .assoc-row { display:flex; align-items:center; gap:13px; cursor:pointer; position:relative;
+        padding:11px 16px 11px 19px; }
       /* the verdict fade bleeds in from the left edge; everything rides above it */
       .assoc-row > :not(.da-stripe) { position:relative; }
       .assoc-row .da-stripe { border-radius:10px; }
+      .assoc-row .assoc-who { width:190px; flex:0 0 auto; }
+      .assoc-row .assoc-name { font-size:13px; font-weight:600; }
+      .assoc-row .assoc-gauge { width:150px; flex:0 0 auto; height:7px; border-radius:4px; min-width:0; }
+      .assoc-row .mstrip { flex:0 0 auto; }
+      .assoc-row .assoc-spacer { flex:1 1 auto; min-width:0; }
+      .assoc-row .assoc-leads { width:76px; flex:0 0 auto; display:block; text-align:right;
+        font:700 17px var(--font-mono); }
+      .assoc-row .assoc-leads .of-cap { font:500 10.5px var(--font-mono); color:var(--ink-3); margin-left:2px; }
+      .assoc-row .vpill { width:170px; flex:0 0 auto; }
       /* Everything that identifies the person, in the first track. */
       .assoc-who { display:flex; align-items:center; gap:9px; min-width:0; }
       .assoc-who .assoc-name { flex:0 1 auto; }
@@ -27600,15 +27644,19 @@ const SAGE_CSS = `
       /* Six tracks need about 1200px. Below that the row wraps instead, with the
          bar on a line of its own under the name — still long, still first thing
          the eye lands on, and nothing is pushed off the right-hand edge. */
+      /* Under the draft's desk width the row wraps rather than scrolls: identity
+         and verdict on the first line, the instruments on the second. */
       @media (max-width: 1200px) {
-        .assoc-row { display:flex; flex-wrap:wrap; align-items:center; }
-        .assoc-row .assoc-who { flex:1 1 180px; min-width:0; }
-        .assoc-row .assoc-gauge { order:9; flex:1 1 100%; }
-        .assoc-row .mstrip { margin-left:auto; }
-        /* Still one width when the row wraps, so the pills stay a column. */
+        .assoc-row { flex-wrap:wrap; row-gap:9px; }
+        .assoc-row .assoc-who { flex:1 1 180px; width:auto; order:0; }
+        .assoc-row .assoc-spacer { display:none; }
+        .assoc-row .assoc-leads { order:1; width:auto; }
+        .assoc-row .vpill { order:2; }
+        .assoc-row .s2-rgo { order:3; }
+        .assoc-row::after { content:""; width:100%; order:4; }
+        .assoc-row .assoc-gauge { order:5; }
+        .assoc-row .mstrip { order:6; }
         .assoc-row .verdict { width:196px; flex:0 0 196px; }
-        .assoc-row .vpill { width:172px; flex:0 0 172px; }
-        .assoc-row .s2-rgo { flex:0 0 auto; }
       }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
@@ -30846,10 +30894,13 @@ const SAGE_CSS = `
       .s2-sw-grid > span.e { background:transparent; pointer-events:none; }
       .s2-sw-grid > span.f { opacity:.35; pointer-events:none; }
       .s2-sw-grid > span.sel { outline:2px solid var(--p3); outline-offset:1px; }
-      .s2-vitals { display:flex; align-items:center; gap:7px; margin-top:14px; font-size:10.5px;
+      /* one sentence that wraps like a sentence, not a row of flex items each
+         breaking on its own */
+      .s2-vitals { display:block; margin-top:14px; font-size:10.5px; line-height:1.7;
         color:rgba(255,255,255,.82); }
       .s2-vitals b { font-family:var(--font-mono); color:#fff; }
-      .s2-vdot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; animation:s2vpulse 2.6s ease-in-out infinite; }
+      .s2-vdot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px;
+        vertical-align:baseline; animation:s2vpulse 2.6s ease-in-out infinite; }
       .s2-v-g { background:#8FE3B3; --vglow:rgba(143,227,179,.5); }
       .s2-v-y { background:#F2C57C; --vglow:rgba(242,197,124,.5); }
       .s2-v-r { background:#FFA294; --vglow:rgba(255,162,148,.5); }
@@ -31152,8 +31203,8 @@ const SAGE_CSS = `
       /* the four standards on every associate row, in the drafts' speedometer */
       .s2g4 { width:88px; display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; }
       .s2g4 svg { width:46px; height:27px; display:block; }
-      .s2g4-l { font:700 8px var(--font-mono); letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2);
-        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:88px; }
+      .s2g4-l { font:700 7.5px var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3);
+        white-space:nowrap; }
       .s2g4-l i { font-style:normal; color:var(--ink-3); font-weight:600; }
       /* verdict pill: one width, never resized by its words */
       .vpill { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:99px;
@@ -31167,7 +31218,26 @@ const SAGE_CSS = `
       .vpill.grace { background:var(--sandHead); color:#8A5A00; }
       .vpill.off { background:rgba(16,32,52,.08); color:var(--ink-2); }
       .vpill.dim { background:#F2F2F4; color:var(--ink-2); }
-      .s2-rgo { color:var(--ink-3); font-size:16px; line-height:1; justify-self:end; }
+      .s2-rgo { color:var(--ink-3); font-size:17px; line-height:1; flex:0 0 auto; }
+      .assoc-nameblock { min-width:0; display:block; }
+      .assoc-sub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      /* every chip in the hero head is one height, whatever it holds */
+      .s2-chips > * { height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
+      .s2-ru, .s2-imp, .s2-rota { border-radius:12px; }
+      .s2-rota { padding:0 14px; }
+      .s2-imp { padding:0 14px; }
+      .s2-ru { padding:0 16px; }
+      /* the goal, asked for where it is read */
+      .s2-goalask { background:none; border:1px dashed rgba(255,255,255,.5); border-radius:8px;
+        padding:3px 9px; cursor:pointer; font:inherit; color:rgba(255,255,255,.75); }
+      .s2-goalask:hover { color:#fff; border-color:#fff; }
+      .s2-goalset { display:inline-flex; align-items:center; gap:5px; }
+      .s2-goalset input { width:62px; border:0; border-radius:8px; padding:5px 8px;
+        font:700 13px var(--font-mono); background:rgba(255,255,255,.94); color:var(--ink); }
+      .s2-goalset button { border:0; border-radius:8px; padding:6px 11px; cursor:pointer;
+        font:700 10.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
+        background:var(--sandTick); color:#4A3300; }
       @media (max-width:760px) {
         .vpill .vp-l { display:none; }
         .vpill .vp-s { display:inline; }
