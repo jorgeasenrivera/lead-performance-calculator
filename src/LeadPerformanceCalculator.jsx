@@ -787,6 +787,48 @@ function pixSvgString(glyph, size = 18, color = "currentColor") {
     if (rows[y][x] === "1") dots += `<circle cx="${((x + 0.5) * cell).toFixed(1)}" cy="${((y + 0.5) * cell).toFixed(1)}" r="${r}"/>`;
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" fill="${color}">${dots}</svg>`;
 }
+/* 5x7 scoreboard digits for the redesign's hero numerals. LedNumber (the floor
+   board's glow font) is a different instrument: that one is a lit sign on a dark
+   wall, this one is the print face of the mark, drawn with the same round dot
+   the PixIcon grid uses so a "62" and the icons beside it share one grain. */
+const DOT_DIGITS = {
+  "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+  "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+  "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+  "3": ["11111", "00010", "00100", "00010", "00001", "10001", "01110"],
+  "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+  "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+  "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+  "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+  "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+  "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+  "%": ["11001", "11010", "00010", "00100", "01000", "01011", "10011"],
+};
+function DotNum({ value, dot = 6, color = "currentColor" }) {
+  const chars = String(value).split("");
+  return (
+    <span className="dotnum" style={{ display: "inline-flex", alignItems: "center", gap: dot * 1.1 }} aria-label={String(value)}>
+      {chars.map((ch, di) => {
+        const rows = DOT_DIGITS[ch];
+        if (!rows) return null;
+        const dots = [];
+        for (let y = 0; y < 7; y++) for (let x = 0; x < 5; x++)
+          if (rows[y][x] === "1") dots.push(<circle key={y * 5 + x} cx={(x + 0.5) * dot} cy={(y + 0.5) * dot} r={+(dot * 0.42).toFixed(2)} />);
+        return <svg key={di} width={5 * dot} height={7 * dot} viewBox={`0 0 ${5 * dot} ${7 * dot}`} fill={color}>{dots}</svg>;
+      })}
+    </span>
+  );
+}
+/* Four goal tiers, everywhere a number is judged against a target: way below
+   (deep red, glowing), below (amber, quiet), above (green, glowing), and way
+   above (bright emerald, haloed). The class pairs with the .tier-* glow rules. */
+function goalTier(v, t) {
+  const r = v / t;
+  if (r < 0.6) return { col: "#C2361F", cls: "tier-miss" };
+  if (r < 1) return { col: "#C98A00", cls: "" };
+  if (r < 1.25) return { col: "#1E8A4C", cls: "tier-hit" };
+  return { col: "#0BB25F", cls: "tier-hit2" };
+}
 function StreakIcon({ data, a, std, min = 3 }) {
   const { dir, len } = currentStreak(data, a, std);
   if (!dir || len < min) return null;
@@ -24043,6 +24085,13 @@ const SAGE_CSS = `
         --font-ui: 'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
         --font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
         --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+        /* Garden sage: the redesign's palette. Structure comes from these four
+           greens, warmth from the sand pair, and the three series colors are
+           reserved for chart data so they stay loud against the sage. */
+        --p1: #A9C4AC; --p2: #6E9678; --p2d: #567D61; --p3: #2E4A38;
+        --hA: #7FA98A; --hB: #55795F; --hC: #26382C;
+        --sandHead: #F6E3C3; --sandCap: #EDE0BE; --sandTick: #E4C98D; --sandInk: #D0821E;
+        --s1: #2E7DE0; --s2: #E88600; --s3: #17A054;
       }
 
       /* ---- Android's own idea of how big your text should be ----
@@ -26350,14 +26399,16 @@ const SAGE_CSS = `
         /* Rasterised once and then only transformed. Without this each of the
            four is a large radial gradient repainted every frame it moves. */
         will-change: transform; }
+      /* The four clouds are light members of the Garden palette, so the sky the
+         sign-in drifts under is the same sky the dashboard lands on. */
       .sg-blob.b1 { width:760px; height:620px; left:-80px; top:-120px; animation-duration:34s;
-        background: radial-gradient(circle at 40% 40%, rgba(196,220,196,0.62), transparent 68%); }
+        background: radial-gradient(circle at 40% 40%, rgba(203,220,205,0.62), transparent 68%); }
       .sg-blob.b2 { width:820px; height:680px; right:-120px; bottom:-140px; animation-duration:52s;
-        background: radial-gradient(circle at 55% 50%, rgba(178,208,214,0.58), transparent 68%); }
+        background: radial-gradient(circle at 55% 50%, rgba(206,219,209,0.58), transparent 68%); }
       .sg-blob.b3 { width:620px; height:520px; right:60px; top:-180px; animation-duration:44s;
-        background: radial-gradient(circle at 50% 50%, rgba(226,224,182,0.50), transparent 66%); }
+        background: radial-gradient(circle at 50% 50%, rgba(244,236,216,0.55), transparent 66%); }
       .sg-blob.b4 { width:680px; height:560px; left:180px; bottom:-200px; animation-duration:38s;
-        background: radial-gradient(circle at 50% 50%, rgba(200,206,226,0.46), transparent 68%); }
+        background: radial-gradient(circle at 50% 50%, rgba(222,233,224,0.50), transparent 68%); }
       @keyframes sgDrift {
         from { transform: translate3d(0,0,0) scale(1); }
         to   { transform: translate3d(26px,18px,0) scale(1.12); }
@@ -30269,6 +30320,71 @@ const SAGE_CSS = `
 .f-map-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-top:1px solid rgba(0,0,0,.06);}
 .f-map-ev{flex:1;font-weight:600;}
 .f-map-custom{color:#0f9d76;font-weight:700;font-size:11px;}
+
+      /* ================= redesign foundation =================
+         The shared vocabulary the page redesigns build on: the warm section
+         header, the dotted-leader caption, the sand divider, the goal-tier
+         glows, and the bloop popup machinery. Tokens live in :root above.
+         Nothing in this block restyles an existing screen on its own; a class
+         has to be worn before any of it draws. */
+      .warmhead { display:flex; align-items:center; gap:9px; padding:12px 16px;
+        background:linear-gradient(90deg, var(--sandHead), rgba(246,227,195,0) 72%);
+        font-family:var(--font-display); font-weight:700; font-size:14.5px;
+        border-bottom:1px solid var(--line); }
+      .wdiv { border:0; height:2px; border-radius:1px; margin:18px 2px 14px;
+        background:linear-gradient(90deg, rgba(232,176,75,0), rgba(232,176,75,.6) 18%, rgba(208,130,30,.45) 50%, rgba(232,176,75,0)); }
+      .sec-cap { font:700 9.5px var(--font-mono); letter-spacing:.11em; text-transform:uppercase; color:var(--ink-2);
+        margin:14px 2px 7px; display:flex; align-items:center; gap:8px; }
+      .sec-cap::after { content:""; flex:1; height:2px; opacity:.3;
+        background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
+      /* goal tiers: the glow is how "at goal" and "in trouble" are felt */
+      .tier-hit svg, svg.tier-hit { filter:drop-shadow(0 0 6px rgba(15,163,90,.55)); }
+      .tier-hit2 svg, svg.tier-hit2 { filter:drop-shadow(0 0 9px rgba(11,178,95,.75)); }
+      .tier-miss svg, svg.tier-miss { filter:drop-shadow(0 0 5px rgba(194,54,31,.45)); }
+      /* a pill that lives in a column takes its width from the column, never its text */
+      .wfix { width:64px; flex:0 0 auto; justify-content:center; text-align:center; }
+      .ghost { visibility:hidden; }
+      /* ---- bloops: popups that grow out of their anchor and shrink back into it.
+         Hover drives them on a mouse; on touch a tap manager toggles .open, so the
+         hover rules are gated off where hover would stick. ---- */
+      .bloop-host { position:relative; }
+      .bloopwin { position:absolute; bottom:calc(100% + 9px); left:50%; width:242px; text-align:left; color:var(--ink);
+        background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px;
+        box-shadow:0 20px 44px -18px rgba(16,32,52,.5); z-index:45; will-change:transform; pointer-events:none;
+        transform-origin:50% calc(100% + 26px);
+        opacity:0; transform:translate(-50%,6px) scale(.5);
+        transition:opacity .34s ease, transform .48s cubic-bezier(.3,1.3,.35,1); }
+      .bloopwin.r { left:auto; right:-8px; transform:translate(0,6px) scale(.5); transform-origin:85% calc(100% + 26px); }
+      .bloopwin.dn { bottom:auto; top:calc(100% + 9px); transform-origin:50% -22px; transform:translate(-50%,-6px) scale(.5); }
+      .bloopwin.dn.r { transform:translate(0,-6px) scale(.5); transform-origin:85% -22px; }
+      .bloop-host:hover > .bloopwin, .bloop-host:focus-within > .bloopwin { opacity:1; transform:translate(-50%,0) scale(1); }
+      .bloop-host:hover > .bloopwin.r, .bloop-host:focus-within > .bloopwin.r { transform:translate(0,0) scale(1); }
+      .bw-title { font:700 9.5px var(--font-mono); letter-spacing:.05em; text-transform:uppercase; color:var(--bw, var(--p3)); }
+      .bw-big { font:700 21px var(--font-mono); letter-spacing:-.02em; margin-top:3px; color:var(--ink); }
+      .bw-big small { font:500 10px var(--font-mono); color:var(--ink-2); letter-spacing:0; }
+      .bw-sub { font-size:10px; color:var(--ink-2); margin-top:2px; }
+      .bw-desc { font-size:9.5px; color:var(--ink-2); line-height:1.55; margin-top:7px;
+        border-top:1px dashed var(--line); padding-top:7px; }
+      /* the frosted layer behind a pinned bloop: out of focus, not dark, and it
+         eats the next tap so a tap "anywhere" closes rather than chain-opening */
+      .popscrim { position:fixed; inset:0; z-index:25; background:rgba(245,245,247,.28);
+        -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+        opacity:0; pointer-events:none; transition:opacity .3s ease; }
+      .popscrim.show { opacity:1; pointer-events:auto; }
+      .bloop-host.open > .bloopwin { opacity:1; pointer-events:auto; transform:translate(-50%,0) scale(1); z-index:46; }
+      .bloop-host.open > .bloopwin.r { transform:translate(0,0) scale(1); }
+      @media (hover: none) {
+        /* hover sticks on touch: taps manage .open instead */
+        .bloop-host:hover > .bloopwin, .bloop-host:focus-within > .bloopwin { opacity:0; pointer-events:none; }
+        .bloop-host.open > .bloopwin { opacity:1; pointer-events:auto;
+          position:fixed; left:50%; top:50%; right:auto; bottom:auto;
+          width:min(320px, calc(100vw - 56px)); transform-origin:center;
+          transform:translate(-50%,-50%) scale(1);
+          box-shadow:0 30px 80px -20px rgba(10,20,14,.65); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bloopwin { transition:none; }
+      }
 
     `;
 
