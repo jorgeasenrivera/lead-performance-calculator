@@ -16623,89 +16623,45 @@ function MetricStrip({ ev, stats }) {
      requirement must never be hidden just because it is unusual. */
   const columns = [...STRIP_METRICS, ...reqs.map((r) => r.metric).filter((m) => !STRIP_METRICS.includes(m))];
 
-  // 180-degree dial: centre (38,40), radius 30. The target sits at 70% of the
-  // sweep rather than the end, so beating it still has somewhere to travel.
-  const CX = 38, CY = 40, R = 30, TARGET_T = 0.7;
-  const pt = (t, r) => {
-    const th = Math.PI * (1 - t);
-    return [CX + r * Math.cos(th), CY - r * Math.sin(th)];
-  };
-  const arc = `M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`;
-  const [tx1, ty1] = pt(TARGET_T, R - 7);
-  const [tx2, ty2] = pt(TARGET_T, R + 7);
-
+  /* The drafts' little speedometer: the sweep is the value against 1.6x the
+     target so beating the bar still has road left, the needle marks the target,
+     the tier colour and glow carry the verdict, and the full DriveCentric
+     wording rides in the glance popup. An ungraded metric keeps its place in
+     the column, drawn grey, so the dials always line up person to person. */
+  const L = 50.27;
   return (
     <div className="mstrip">
-      {columns.map((metric, i) => {
+      {columns.map((metric, gi) => {
         const req = need.get(metric);
         const def = METRICS[metric];
         if (!def) return null;
         const v = stats?.[metric];
-
-        /* Shown, but not graded. This tier does not ask for it, so there is no
-           target and therefore no scale: a sweep would be inventing one. The
-           figure and the empty dial keep the column, which is what it is here
-           for, and say plainly that nothing is being measured against. */
-        if (!req) {
-          return (
-            <div key={metric} className="mdial mdial-off">
-              <svg viewBox="0 0 76 48" aria-hidden="true">
-                <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
-                <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">
-                  {v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v))}
-                </text>
-              </svg>
-              <div className="mdial-label">
-                {METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")}{" "}
-                {/* Short because the column is 88px and the metric name already
-                    fills most of it. The hover card carries the full sentence. */}
-                <span className="mdial-need">n/a</span>
-              </div>
-              <div className="mdial-pop">
-                <div className="mp-title">{def.label}</div>
-                <div className="mp-desc">
-                  This tier does not ask for it, so nothing is being measured against.
-                  The figure is here so the row lines up with the ones that are.
-                </div>
-              </div>
-            </div>
-          );
-        }
-        const want = def.kind === "pct" ? req.min / 100 : req.min;
-        const ratio = (v == null || want <= 0) ? 0 : v / want;
-        const t = Math.max(0, Math.min(1, ratio * TARGET_T));
-        const state = v == null ? "nodata" : ratio >= 1 ? "ok" : ratio >= 0.8 ? "near" : "under";
-        const shown = v == null ? "\u2014" : (def.kind === "pct" ? fmtPct(v) : fmtNum(v));
-        const targetTxt = def.kind === "pct" ? req.min + "%" : req.min;
-        const lbl = METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "");
-        // How far off target, in the metric's own units, for the hover card.
-        const shortBy = (v == null || ratio >= 1) ? null
-          : (def.kind === "pct" ? ((want - v) * 100).toFixed(1) + " points" : fmtNum(want - v));
-        const [nx, ny] = pt(t, R);
+        const na = !req;
+        const vShow = v == null ? null : def.kind === "pct" ? Math.round(v * 1000) / 10 : v;
+        const tgt = req ? req.min : null;
+        const t = !na && vShow != null ? goalTier(vShow, tgt) : null;
+        const col = na || vShow == null ? "#C9CDD3" : t.col;
+        const frac = na || vShow == null ? 0 : Math.max(0.04, Math.min(1, vShow / (tgt * 1.6)));
+        const shown = vShow == null ? "\u2013" : def.kind === "pct" ? vShow + "%" : fmtNum(vShow);
         return (
-          <div key={metric} className={"mdial mdial-" + state}>
-            <svg viewBox="0 0 76 48" aria-hidden="true">
-              <path className="md-track" d={arc} fill="none" strokeWidth="7" strokeLinecap="round" />
-              <path className="md-fill" d={arc} fill="none" strokeWidth="7" strokeLinecap="round"
-                pathLength="100" strokeDasharray={`${(t * 100).toFixed(1)} 100`} />
-              <line className="md-target" x1={tx1} y1={ty1} x2={tx2} y2={ty2} strokeWidth="2.5" strokeLinecap="round" />
-              {v != null && <circle className="md-dot" cx={nx} cy={ny} r="3.6" />}
-              <text className="md-val" x={CX} y={CY - 1} textAnchor="middle">{shown}</text>
+          <span key={metric} className={"s2g4 bloop-host" + (t ? " " + t.cls : "")} tabIndex={0}>
+            <svg viewBox="0 0 40 24" aria-hidden="true">
+              <path d="M4 20 A16 16 0 0 1 36 20" fill="none" stroke="rgba(16,32,52,.09)" strokeWidth="4.6" strokeLinecap="round" />
+              {frac > 0 && (
+                <path d="M4 20 A16 16 0 0 1 36 20" fill="none" stroke={col} strokeWidth="4.6" strokeLinecap="round"
+                  strokeDasharray={`${(frac * L).toFixed(1)} ${L.toFixed(1)}`} />
+              )}
+              <line x1="24.9" y1="8.4" x2="27.7" y2="1.7" stroke={na ? "#C9CDD3" : "var(--ink-2)"} strokeWidth="1.6" strokeLinecap="round" />
+              <text x="20" y="20.5" textAnchor="middle" style={{ font: "700 7.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
             </svg>
-            <div className="mdial-label">{lbl} <span className="mdial-need">{targetTxt}</span></div>
-            <div className="mdial-pop">
-              <div className="mp-title">{def.label}</div>
-              <div className="mp-desc">{METRIC_DESC[req.metric] || "Measured month to date."}</div>
-              <div className="mp-req">
-                <b className="mp-now">{shown}</b>
-                <span className="mp-sep">now, against a target of</span>
-                <b className="mp-target">{targetTxt}</b>
-                <span className={"mp-verdict mp-" + state}>
-                  {v == null ? "no data yet" : shortBy ? `${shortBy} short` : "target met"}
-                </span>
-              </div>
+            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i></span>
+            <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
+              <div className="bw-title">{def.label}</div>
+              <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
+                <small>{na ? "no target for this associate" : `of ${def.kind === "pct" ? tgt + "%" : tgt} target`}</small></div>
+              <div className="bw-desc">{METRIC_DESC[metric] || "Measured month to date."}</div>
             </div>
-          </div>
+          </span>
         );
       })}
     </div>
@@ -16761,7 +16717,15 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
   return (
     <div ref={cardRef}
       className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "") + (picked ? " is-picked" : "")}>
-      <div className="assoc-row" onClick={() => (picking ? onPick() : setOpen(!open))}>
+      <div className="assoc-row" onClick={(e) => {
+        // a tap on a gauge is a glance, not a request to unfold the whole row
+        if (e.target.closest && e.target.closest(".bloop-host")) return;
+        picking ? onPick() : setOpen(!open);
+      }}>
+        <span className={"da-stripe st-" + (restrictedNow || incomplete ? "dim"
+          : ev.status === "pass" ? "g"
+          : ev.status === "fail" ? (!grace && ev.atCap ? "r" : "a")
+          : "dim")} aria-hidden="true" />
         {/* ---- who, as ONE cell ----
             The rank badge, the crushing-it badge and the incomplete flag all come
             and go, and each of them used to be a child of the row's grid — so a
@@ -16802,8 +16766,10 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             is one hover away rather than on the page nine times over. */}
         {ev.cap != null && (
           <span className="assoc-gauge" title={capNote}>
-            <span className={"gauge-fill " + (ev.status === "fail" && !grace && ev.atCap ? "gauge-red" : "")}
-              style={{ width: pct + "%" }} />
+            {/* the bar heats up as the allowance goes: sage, amber at 85%, red at 95% */}
+            <span className="gauge-fill"
+              style={{ width: pct + "%",
+                background: pct >= 95 ? "#C2361F" : pct >= 85 ? "#C98A00" : "var(--p2)" }} />
           </span>
         )}
         {showDials && <MetricStrip ev={ev} stats={stats} />}
@@ -16812,19 +16778,24 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             different place on every row. The number ends where every other number
             ends and the cap starts where every other cap starts. */}
         <span className="assoc-leads"><b>{ev.opps ?? 0}</b><span className="of-cap">/ {ev.cap ?? "-"}</span></span>
-        {restrictedNow ? <span className="verdict verdict-off">Off leads{daysLeft != null ? ` · ${daysLeft}d left` : ""}</span> : (<>
-          {ev.status === "pass" && <span className="verdict verdict-pass">Cleared to Grab Leads</span>}
-          {softFail && <span className="verdict verdict-grace">Early month</span>}
-          {ev.status === "fail" && !grace && (
-            ev.atCap
-              ? <span className="verdict verdict-fail">Restrict leads</span>
-              : (ev.capUse ?? 0) >= 0.8
-                ? <span className="verdict verdict-warn">Nearing the limit</span>
-                : <span className="verdict verdict-watch">Below standard, room left</span>
-          )}
-          {ev.status === "no-standards" && <span className="verdict verdict-dim">No standards</span>}
-          {ev.status === "no-data" && <span className="verdict verdict-dim" title="No figures for this person in this month's reports, so there is nothing to judge them on.">No figures yet</span>}
-        </>)}
+        {/* One pill, one width: the verdict never resizes the row. The long
+            wording rides on desks, the short one on phones. */}
+        {(() => {
+          const V = restrictedNow ? ["off", `Off leads${daysLeft != null ? ` · ${daysLeft}d left` : ""}`, "Off leads", "close"]
+            : ev.status === "pass" ? ["std", "Cleared to Grab Leads", "Cleared", "check"]
+            : softFail ? ["grace", "Early month", "Early", "clock"]
+            : ev.status === "fail" && !grace ? (ev.atCap ? ["stop", "Restrict leads", "Restrict", "warn"]
+              : (ev.capUse ?? 0) >= 0.8 ? ["limit", "Nearing the limit", "Limit", "warn"]
+              : ["room", "Below standard, room left", "Room left", "triup"])
+            : ev.status === "no-standards" ? ["dim", "No standards", "No std", "question"]
+            : ["dim", "No figures yet", "No figures", "question"];
+          return (
+            <span className={"vpill " + V[0]} title={V[1]}>
+              <PixIcon glyph={V[3]} size={10} /> <span className="vp-l">{V[1]}</span><span className="vp-s">{V[2]}</span>
+            </span>
+          );
+        })()}
+        <span className="s2-rgo" aria-hidden="true">›</span>
       </div>
       {incomplete && (
         <div className="reasons gray-note">
@@ -21292,6 +21263,19 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
       : null)
     .filter(Boolean);
   const [dayPick, setDayPick] = useState(null);
+  /* The delivery-against-target chart: every channel's close rate, month by
+     month, against the store's targets. Built from the month documents so the
+     trail is as long as the store's history, capped at four so the lines and
+     labels stay readable. */
+  const moTrail = useMemo(() => {
+    const keys = Object.keys(data.months || {}).sort().slice(-4);
+    return keys.map((k) => {
+      const out = { k, lbl: new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short" }) };
+      for (const c of channelRates(data.months[k], roster)) out[c.id] = c.pct == null ? null : c.pct * 100;
+      return out;
+    });
+  }, [data, roster]);
+  const [moPick, setMoPick] = useState(null);
   // the rotating display under the hero: the chart, then who to talk to
   const [spotOn, setSpotOn] = useState(0);
   const spotTimer = useRef(null); const swipeX = useRef(null);
@@ -21319,7 +21303,6 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
-  const dateChip = chipOn(b.primary);
 
   return (
     <div className="hero" style={brandVars}>
@@ -21334,10 +21317,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <h1 className="s2-store">{store.name}</h1>
           </div>
           <div className="s2-chips">
-            <button className="hero-datechip" style={{ color: dateChip.ink, background: dateChip.plate }} onClick={openRoundUp}>
-              <PixIcon glyph="calendar" size={11} />
-              {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-              <PixIcon glyph="tap" size={11} className="datechip-tap" />
+            {/* The calendar is the only thing that says the date now; this is just
+                the door to the round-up, not a second copy of the day. */}
+            <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
+              <PixIcon glyph="star" size={11} /> Round-up
             </button>
             <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
               <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
@@ -21564,7 +21547,52 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             if (Math.abs(dx) > 40) { setSpotOn((i) => (i + (dx < 0 ? 1 : SPOT_N - 1)) % SPOT_N); armSpot(); }
           }}>
           <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
-            <DeliveryCard config={config} store={store} data={data} />
+            <div className="s2-scap"><PixIcon glyph="chart" size={12} /> Delivery against target · all three channels</div>
+            {moTrail.length === 0 ? <div className="s2-none">No months on file yet.</div> : (() => {
+              const SER = { internet: "var(--s1)", phone: "var(--s2)", showroom: "var(--s3)" };
+              const ids = ["internet", "phone", "showroom"];
+              const tops = moTrail.flatMap((m) => ids.map((id) => m[id])).filter((v) => v != null)
+                .concat(ids.map((id) => thr[id].green));
+              const top = Math.max(10, ...tops) * 1.15;
+              const y = (v) => 70 - (v / top) * 62;
+              const x = (i) => (moTrail.length === 1 ? 160 : (i / (moTrail.length - 1)) * 320);
+              const pk = moPick && moTrail.find((m) => m.k === moPick);
+              return (<>
+                <div className="s2-chwrap">
+                  {/* keyed by the slide so the lines redraw themselves each rotation */}
+                  <svg key={"draw" + spotOn} className="s2-mchart" viewBox="0 0 320 74" preserveAspectRatio="none">
+                    {ids.map((id) => (
+                      <line key={"t" + id} x1="0" y1={y(thr[id].green)} x2="320" y2={y(thr[id].green)}
+                        stroke={SER[id]} strokeOpacity=".3" strokeDasharray="4 4" strokeWidth="1" />
+                    ))}
+                    {ids.map((id, ci) => {
+                      const pts = moTrail.map((m, i) => (m[id] == null ? null : `${x(i).toFixed(1)},${y(m[id]).toFixed(1)}`)).filter(Boolean);
+                      if (!pts.length) return null;
+                      const last = pts[pts.length - 1].split(",");
+                      return (<g key={id}>
+                        <polyline pathLength="1" points={pts.join(" ")} fill="none" stroke={SER[id]}
+                          strokeWidth="2" strokeLinejoin="round" style={{ animationDelay: `${ci * 140}ms` }} />
+                        <circle cx={last[0]} cy={last[1]} r="2.6" fill={SER[id]} />
+                      </g>);
+                    })}
+                  </svg>
+                  {moTrail.map((m, i) => (
+                    <button key={m.k} className={"s2-chhot" + (moPick === m.k ? " on" : "")}
+                      style={{ left: `${moTrail.length === 1 ? 50 : (i / (moTrail.length - 1)) * 100}%`,
+                        transform: moTrail.length > 1 && i === 0 ? "translateX(0)"
+                          : moTrail.length > 1 && i === moTrail.length - 1 ? "translateX(-100%)" : undefined }}
+                      onClick={() => setMoPick(moPick === m.k ? null : m.k)}><em>{m.lbl}</em></button>
+                  ))}
+                </div>
+                <div className="s2-leg">
+                  {ids.map((id) => <span key={id}><i style={{ background: SER[id] }} />{CHANNELS[id]}</span>)}
+                  <span className="s2-leg-note">dashed = target</span>
+                </div>
+                <div className="s2-detail">{pk
+                  ? <><b>{pk.lbl}</b>{ids.map((id) => <React.Fragment key={id}> · {CHANNELS[id]} {pk[id] == null ? "–" : Math.round(pk[id] * 10) / 10 + "%"}</React.Fragment>)}</>
+                  : "Click a month to see it"}</div>
+              </>);
+            })()}
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
             <div className="s2-scap"><PixIcon glyph="bolt" size={12} /> Talk to these first</div>
@@ -27501,8 +27529,11 @@ const SAGE_CSS = `
          Fixed tracks, so column four is under column four on every row whatever
          anybody's verdict says. The bar takes whatever is left, which on a
          desktop is most of the row. */
-      .assoc-row { display:grid; align-items:center; gap:10px; cursor:grab;
-        grid-template-columns: minmax(170px, 300px) minmax(80px, 1fr) auto 82px 196px; }
+      .assoc-row { display:grid; align-items:center; gap:10px; cursor:grab; position:relative;
+        grid-template-columns: minmax(170px, 300px) minmax(80px, 1fr) auto 82px 196px 12px; }
+      /* the verdict fade bleeds in from the left edge; everything rides above it */
+      .assoc-row > :not(.da-stripe) { position:relative; }
+      .assoc-row .da-stripe { border-radius:10px; }
       /* Everything that identifies the person, in the first track. */
       .assoc-who { display:flex; align-items:center; gap:9px; min-width:0; }
       .assoc-who .assoc-name { flex:0 1 auto; }
@@ -27522,6 +27553,8 @@ const SAGE_CSS = `
         .assoc-row .mstrip { margin-left:auto; }
         /* Still one width when the row wraps, so the pills stay a column. */
         .assoc-row .verdict { width:196px; flex:0 0 196px; }
+        .assoc-row .vpill { width:172px; flex:0 0 172px; }
+        .assoc-row .s2-rgo { flex:0 0 auto; }
       }
       .assoc-row:active { cursor:grabbing; }
       .grip { color:var(--ink-3); font-size:13px; }
@@ -30743,9 +30776,10 @@ const SAGE_CSS = `
       .s2-pace-lbl { display:flex; justify-content:space-between; font-size:9.5px;
         color:rgba(255,255,255,.78); margin-top:5px; }
       .s2-splitwrap { margin-top:13px; cursor:default; }
-      .s2-split { display:flex; height:15px; border-radius:8px; overflow:hidden; }
-      .s2-split .nw { background:#E5C689; }
-      .s2-split .us { background:var(--p1); }
+      .s2-split { display:flex; height:15px; border-radius:8px; overflow:hidden;
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.3); }
+      .s2-split .nw { background:#E8C87E; }
+      .s2-split .us { background:#9ECFAB; }
       .s2-split-lbl { display:flex; justify-content:space-between; font-size:10px;
         color:rgba(255,255,255,.78); margin-top:5px; }
       .s2-split-lbl b { font-family:var(--font-mono); color:#fff; }
@@ -31035,6 +31069,55 @@ const SAGE_CSS = `
         .sm-hero { display:none; }
         .sm-printhead { display:block; }
         .sm-spark i { background:#9DB8A2; }
+      }
+
+      /* ================= Performance page, draft alignment =================
+         The round-up door, the three-channel chart in the spotlight, and the
+         associate rows in the drafts' language. */
+      .s2-ru { display:inline-flex; align-items:center; gap:6px; border:0; border-radius:99px;
+        background:rgba(255,255,255,.92); color:var(--p3); font:700 10.5px var(--font-mono);
+        letter-spacing:.06em; text-transform:uppercase; padding:8px 14px; cursor:pointer;
+        box-shadow:0 4px 12px -6px rgba(12,24,18,.4); }
+      .s2-ru:hover { transform:translateY(-1px); }
+      /* the delivery chart: three channel lines drawing themselves each rotation */
+      .s2-chwrap { position:relative; margin-top:8px; padding-bottom:18px; }
+      .s2-mchart { display:block; width:100%; height:100px; overflow:visible; }
+      .s2-mchart polyline { stroke-dasharray:1; stroke-dashoffset:1; animation:s2draw .9s ease forwards; }
+      @keyframes s2draw { to { stroke-dashoffset:0; } }
+      .s2-chhot { position:absolute; bottom:-4px; transform:translateX(-50%); border:0; background:none;
+        cursor:pointer; padding:2px 6px; }
+      .s2-chhot em { font:700 8.5px var(--font-mono); font-style:normal; letter-spacing:.08em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .s2-chhot.on em, .s2-chhot:hover em { color:var(--sandInk); }
+      .s2-leg { display:flex; align-items:center; gap:8px 14px; flex-wrap:wrap; margin-top:10px; font-size:10px; color:var(--ink-2); }
+      .s2-leg span { display:inline-flex; align-items:center; gap:5px; }
+      .s2-leg i { width:9px; height:9px; border-radius:3px; }
+      .s2-leg-note { margin-left:auto; color:var(--ink-3); }
+      /* the four standards on every associate row, in the drafts' speedometer */
+      .s2g4 { width:88px; display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; }
+      .s2g4 svg { width:46px; height:27px; display:block; }
+      .s2g4-l { font:700 8px var(--font-mono); letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2);
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:88px; }
+      .s2g4-l i { font-style:normal; color:var(--ink-3); font-weight:600; }
+      /* verdict pill: one width, never resized by its words */
+      .vpill { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:99px;
+        padding:6px 10px; font:700 11px var(--font-display); white-space:nowrap; width:100%; box-sizing:border-box; }
+      .vpill .vp-s { display:none; }
+      .vpill.std { background:linear-gradient(90deg,#128A47,#22A85E); color:#fff;
+        box-shadow:0 4px 12px -5px rgba(18,138,71,.6); }
+      .vpill.limit { background:rgba(201,138,0,.16); color:#95600A; box-shadow:0 4px 12px -6px rgba(176,119,0,.5); }
+      .vpill.stop { background:rgba(194,54,31,.14); color:#C13529; }
+      .vpill.room { background:rgba(42,94,155,.12); color:#1D4674; }
+      .vpill.grace { background:var(--sandHead); color:#8A5A00; }
+      .vpill.off { background:rgba(16,32,52,.08); color:var(--ink-2); }
+      .vpill.dim { background:#F2F2F4; color:var(--ink-2); }
+      .s2-rgo { color:var(--ink-3); font-size:16px; line-height:1; justify-self:end; }
+      @media (max-width:760px) {
+        .vpill .vp-l { display:none; }
+        .vpill .vp-s { display:inline; }
+        .assoc-row .vpill { width:auto; flex:0 0 auto; padding:8px 14px; }
+        .s2-rgo { display:none; }
+        .s2g4 { width:auto; }
       }
 
     `;
