@@ -803,6 +803,7 @@ const DOT_DIGITS = {
   "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
   "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
   "%": ["11001", "11010", "00010", "00100", "01000", "01011", "10011"],
+  ".": ["00000", "00000", "00000", "00000", "00000", "01100", "01100"],
 };
 function DotNum({ value, dot = 6, color = "currentColor" }) {
   const chars = String(value).split("");
@@ -828,6 +829,82 @@ function goalTier(v, t) {
   if (r < 1) return { col: "#C98A00", cls: "" };
   if (r < 1.25) return { col: "#1E8A4C", cls: "tier-hit" };
   return { col: "#0BB25F", cls: "tier-hit2" };
+}
+/* ---- The touch side of the bloop system. ----
+   On a mouse the popups are pure hover and this manager never fires a rule; on
+   touch, hover sticks, so taps drive them instead: tap a host to open, tap
+   another to swap, tap the frosted layer (or anywhere outside) to close. On the
+   phone the window is fixed to screen centre, so it is flown out of the tapped
+   element and back into it rather than teleporting. Installed once, lazily, by
+   the first screen that renders a bloop host. */
+function installBloopManager() {
+  if (typeof document === "undefined" || installBloopManager.done) return;
+  installBloopManager.done = true;
+  const scrim = document.createElement("div");
+  scrim.className = "popscrim";
+  document.body.appendChild(scrim);
+  const openSel = ".bloop-host.open";
+  const sync = () => scrim.classList.toggle("show", !!document.querySelector(openSel));
+  const winOf = (host) => host.querySelector(":scope > .bloopwin");
+  const mid = (r) => [r.left + r.width / 2, r.top + r.height / 2];
+  /* On touch the pinned copy cannot simply be the popup itself: the app lives
+     inside an isolated stacking context (.lpc), so nothing inside it can rise
+     above the frost, which sits on <body>. A throwaway clone on <body> can.
+     The popups are read-only glances, so a static copy is faithful. */
+  const touch = () => matchMedia("(hover: none)").matches;
+  let clone = null, cloneHost = null;
+  const towardHost = (el, host) => {
+    const [px, py] = mid(el.getBoundingClientRect()), [hx, hy] = mid(host.getBoundingClientRect());
+    return `translate(calc(-50% + ${(hx - px).toFixed(0)}px), calc(-50% + ${(hy - py).toFixed(0)}px)) scale(.15)`;
+  };
+  const openHost = (host) => {
+    host.classList.add("open"); sync();
+    if (!touch()) return;
+    const pop = winOf(host); if (!pop) return;
+    clone = pop.cloneNode(true);
+    clone.classList.add("bloopclone");
+    cloneHost = host;
+    document.body.appendChild(clone);
+    clone.style.transition = "none";
+    clone.style.transform = towardHost(clone, host);
+    clone.style.opacity = "0";
+    void clone.offsetWidth;
+    clone.style.transition = ""; clone.style.transform = ""; clone.style.opacity = "";
+  };
+  const closeHost = (host) => {
+    if (clone && cloneHost === host) {
+      const c = clone; clone = null; cloneHost = null;
+      c.style.transform = towardHost(c, host);
+      c.style.opacity = "0";
+      setTimeout(() => c.remove(), 450);
+    }
+    host.classList.remove("open"); sync();
+  };
+  scrim.addEventListener("click", () => document.querySelectorAll(openSel).forEach(closeHost));
+  document.addEventListener("click", (e) => {
+    // click, not pointerdown: a press that turns into a scroll must not open anything
+    if (!matchMedia("(hover: none)").matches) return;
+    if (e.target.closest(".bloopwin")) return;
+    const host = e.target.closest(".bloop-host");
+    document.querySelectorAll(openSel).forEach((x) => { if (x !== host) closeHost(x); });
+    if (host) { host.classList.contains("open") ? closeHost(host) : openHost(host); }
+  });
+}
+/* A small goal dial for the hero: the ring is the value against its bar, the
+   colour and glow are the tier, and at goal the stroke thickens like a needle
+   pressed to the peg. Drawn for a dark ground. */
+function S2Dial({ value, ratio, size = 56 }) {
+  const t = goalTier(ratio, 1);
+  const p = Math.min(100, ratio * 100);
+  const sw = ratio >= 1 ? 4.6 : 3.4;
+  return (
+    <svg className={t.cls} viewBox="0 0 36 36" style={{ width: size, height: size, display: "block" }}>
+      <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={sw} />
+      <circle className="s2-dialrev" cx="18" cy="18" r="15.9" fill="none" stroke={t.col} strokeWidth={sw}
+        strokeLinecap="round" strokeDasharray={`${p} 100`} transform="rotate(-90 18 18)" />
+      <text x="18" y="21.2" textAnchor="middle" style={{ font: "700 8px var(--font-mono)", fill: "#fff" }}>{value}%</text>
+    </svg>
+  );
 }
 function StreakIcon({ data, a, std, min = 3 }) {
   const { dir, len } = currentStreak(data, a, std);
@@ -3575,7 +3652,7 @@ export default function LeadPerformanceCalculator() {
                     )}
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
                       filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc} />
-                    <DeliveryCard config={config} store={currentStore} data={storeData} />
+                    {/* The delivery chart now lives inside the hero's rotating display. */}
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
                       filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
@@ -21126,273 +21203,303 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     return { pct: units / leads, units, leads, target: want / leads };
   })();
 
+  /* ---- The redesigned hero pulls a few more threads ---- */
+  const digests = useDigests(store.id);
+  // per-day units out of the cumulative digest trail; a day only appears when
+  // both its row and the one before carry a month total to difference
+  const dayUnits = useMemo(() => {
+    if (!digests) return {};
+    const keys = Object.keys(digests).sort();
+    const out = {};
+    let prev = null;
+    for (const k of keys) {
+      const r = digests[k];
+      if (r && r.u != null && prev && prev.u != null && r.u >= prev.u) {
+        out[k] = {
+          u: r.u - prev.u,
+          nu: r.nu != null && prev.nu != null ? Math.max(0, r.nu - prev.nu) : null,
+          uu: r.uu != null && prev.uu != null ? Math.max(0, r.uu - prev.uu) : null,
+        };
+      }
+      prev = r;
+    }
+    return out;
+  }, [digests]);
+  // how each channel's close moved between the last two digest days
+  const chDelta = useMemo(() => {
+    if (!digests) return {};
+    const keys = Object.keys(digests).sort();
+    const o = {};
+    for (const id of ["internet", "phone", "showroom"]) {
+      const usable = keys.filter((k) => { const r = digests[k]?.ch?.[id]; return r && r.l > 0; });
+      if (usable.length < 2) continue;
+      const ra = digests[usable[usable.length - 2]].ch[id], rb = digests[usable[usable.length - 1]].ch[id];
+      o[id] = Math.round(((rb.u / rb.l) - (ra.u / ra.l)) * 1000) / 10;
+    }
+    return o;
+  }, [digests]);
+  const offToday = roster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
+  const onCount = roster.length - offToday.length;
+  const mcal = useMemo(() => {
+    const mk = ym();
+    const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
+    const off = new Date(mk + "-01T12:00").getDay();
+    const dNow = +today().slice(8, 10);
+    let satsLeft = 0;
+    for (let d = dNow; d <= dim; d++)
+      if (new Date(`${mk}-${String(d).padStart(2, "0")}T12:00`).getDay() === 6) satsLeft++;
+    let best = null;
+    for (const [k, v] of Object.entries(dayUnits))
+      if (k.slice(0, 7) === mk && v.u != null && (!best || v.u > best.u)) best = { d: k, u: v.u };
+    return { mk, dim, off, dNow, satsLeft, best };
+  }, [dayUnits]);
+  const lastImport = (data.importLog || [])[0] || null;
+  const videoDials = ["apptVideoDayPct", "bhVideoPct", "engagedVideoPct"]
+    .map((m) => metricRoll[m]
+      ? { m, mean: metricRoll[m].sum / metricRoll[m].total, below: metricRoll[m].below, total: metricRoll[m].total }
+      : null)
+    .filter(Boolean);
+  const [dayPick, setDayPick] = useState(null);
+  // the rotating display under the hero: the chart, then who to talk to
+  const [spotOn, setSpotOn] = useState(0);
+  const spotTimer = useRef(null); const swipeX = useRef(null);
+  const SPOT_N = 2;
+  const armSpot = () => {
+    clearInterval(spotTimer.current);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    spotTimer.current = setInterval(() => setSpotOn((i) => (i + 1) % SPOT_N), 6000);
+  };
+  useEffect(() => { armSpot(); return () => clearInterval(spotTimer.current); }, []);
+  // fresh numbers arrive like flipping the channel on a tube
+  const heroRef = useRef(null); const prevUnitsRef = useRef(null);
+  useEffect(() => {
+    const prev = prevUnitsRef.current; prevUnitsRef.current = totalUnits;
+    if (prev == null || prev === totalUnits) return;
+    const el = heroRef.current;
+    if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.classList.remove("s2-chswitch"); void el.offsetWidth; el.classList.add("s2-chswitch");
+    const t = setTimeout(() => el.classList.remove("s2-chswitch"), 700);
+    return () => clearTimeout(t);
+  }, [totalUnits]);
+  useEffect(() => { installBloopManager(); }, []);
+  const paceTone = storePace.tooEarly || !storePace.goal ? "dim" : storePace.tone;
+  const paceCol = { g: "#8FE3B3", y: "#F2C57C", r: "#FFA294", dim: "rgba(255,255,255,.6)" }[paceTone];
+
   const b = store.brand || DEFAULT_BRAND;
   const brandVars = { "--sp": b.primary, "--sd": b.deep, "--sa": b.accent };
   const dateChip = chipOn(b.primary);
-  const bandRef = useRef(null);
-  // Parallax removed: nothing else in the app drifts on scroll, so the hero stays put.
 
   return (
     <div className="hero" style={brandVars}>
-      <div className="hero-band" ref={bandRef}>
-        <div className="hero-id">
-          <div className="hero-logo">
-            {store.icon ? <img src={store.icon} alt="" /> : <Logo size={54} animated />}
+      <div className="s2-hero" ref={heroRef}>
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava">
+            {store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}
           </div>
-          <div className="hero-text">
-            {/* The date reads as a stamp on the card rather than a third line of
-                prose under the store name — asked for, and it buys back the line. */}
-            {/* The chip is a translucent plate on the store's own gradient, so it
-                cannot assume white text — see chipOn, which computes both
-                directions and takes the one that actually reads. */}
-            <button className="hero-datechip" style={{ color: dateChip.ink, background: dateChip.plate }}
-              onClick={openRoundUp}>
+          <div className="s2-idtx">
+            <div className="s2-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
+            <h1 className="s2-store">{store.name}</h1>
+          </div>
+          <div className="s2-chips">
+            <button className="hero-datechip" style={{ color: dateChip.ink, background: dateChip.plate }} onClick={openRoundUp}>
               <PixIcon glyph="calendar" size={11} />
               {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
               <PixIcon glyph="tap" size={11} className="datechip-tap" />
             </button>
-            <div className="hero-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
-            <h1 className="hero-store">{store.name}</h1>
-          </div>
-        </div>
-
-        <div className="hero-health" onMouseEnter={fitPop} onFocusCapture={fitPop}>
-          <TapMark />
-          <div className="hero-ring-wrap" style={{ width: SIZE, height: SIZE }}>
-            <svg className="hero-ring" width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
-              <circle cx={CX} cy={CX} r={R} fill="none" stroke="rgba(255,255,255,.28)" strokeWidth={SW} />
-              <circle className="hero-ring-fill" cx={CX} cy={CX} r={R} fill="none" stroke={b.accent} strokeWidth={SW}
-                strokeLinecap="round" strokeDasharray={`${dash} ${C}`} transform={`rotate(-90 ${CX} ${CX})`}
-                style={{ "--c": dash, "--cc": C }} />
-            </svg>
-            <div className="hero-ring-label">
-              <div className="hero-ring-pct">{nPct}<span>%</span></div>
-              <div className="hero-ring-cap">Health</div>
-            </div>
-          </div>
-          <div className="hh-facts">
-            <div className="hh-verdict">{healthWord}</div>
-            <div className="hh-sub">How close the floor sits to its standards, month to date.</div>
-            <div className="hh-rows">
-              <button className={"hh-row ok" + (filter === "cleared" ? " on" : "")}
-                onClick={() => onFilter(filter === "cleared" ? null : "cleared")}>
-                <b>{nCleared}</b> cleared
-              </button>
-              <button className={"hh-row bad" + (filter === "attention" ? " on" : "")}
-                onClick={() => onFilter(filter === "attention" ? null : "attention")}>
-                <b>{nAttention}</b> {inGrace ? "working toward" : "need attention"}
-              </button>
-              {offLeads > 0 && (
-                <button className={"hh-row dim" + (filter === "off" ? " on" : "")}
-                  onClick={() => onFilter(filter === "off" ? null : "off")}>
-                  <b>{nOff}</b> off leads
-                </button>
-              )}
-            </div>
-            <div className="hh-meta">
-              {nRoster} on the board · <b>{nOpps}</b><span>/{capTotal || "-"}</span> leads held
-            </div>
-          </div>
-
-          <div className="health-pop">
-            {/* Two columns, because the panel got wide enough to earn them. The
-                month and the closing rates are read side by side rather than one
-                under the other, which is what took the bottom of this panel off
-                the screen and put a scrollbar on a thing you glance at. */}
-            <div className="hp-cols">
-            {/* ---- The month, against what the store was asked for ----
-                First, because it is the question the rest of this popup was being
-                used to answer the long way round. The track is the whole goal; the
-                solid line on it is the number that counts as hitting; the marker is
-                where a level month would have the store standing today. */}
-            <div className="hp-goal">
-              <div className="mp-title">The month</div>
-              {storePace.goal ? (
-                <>
-                  <div className="hp-goal-top">
-                    <div className="hp-goal-now">
-                      <b>{fmtNum(totalUnits)}</b>
-                      <span>of {fmtNum(storePace.goal.bar)} to hit</span>
-                    </div>
-                    <div className="hp-goal-of">
-                      {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}
-                    </div>
+            <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
+              <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
+              <span className="s2-imp-tx">
+                <b>{missing.length ? (missing.length === 1 ? "Import due" : "Imports due") : "Imports in"}</b>
+                <i>{missing.length ? missing.join(" and ") : `${done.length} of ${need.length} reports today`}</i>
+              </span>
+              <PixIcon glyph="arrow" size={11} />
+            </button>
+            <div className="s2-rota bloop-host" tabIndex={0}>
+              <b>{onCount} on{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
+              <div className="bloopwin dn r s2-rotawin">
+                <div className="bw-title">On today · {onCount}</div>
+                <div className="s2-names">
+                  {roster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
+                    <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
+                  ))}
+                </div>
+                {offToday.length > 0 && (<>
+                  <div className="bw-title" style={{ marginTop: 10 }}>Off today · {offToday.length}</div>
+                  <div className="s2-names">
+                    {offToday.map((a) => (<s key={a.id} className="off"><i className="s2-pdot off" />{a.name}</s>))}
                   </div>
-
-                  {(() => {
-                    const g = storePace.goal;
-                    const pos = (v) => `${Math.max(0, Math.min(100, (v / g.units) * 100))}%`;
-                    const tone = storePace.tooEarly ? "dim" : storePace.tone;
-                    return (
-                      <>
-                        <div className={"hp-bar hp-bar-" + tone}>
-                          <div className="hp-bar-fill" style={{ width: pos(totalUnits) }} />
-                          <div className="hp-bar-hit" style={{ left: pos(g.bar) }} title={`${g.pct}% of ${fmtNum(g.units)} is ${fmtNum(g.bar)}`} />
-                          {!storePace.tooEarly && (
-                            <div className="hp-bar-par" style={{ left: pos(storePace.parToday) }}
-                              title={`A level month would be at ${Math.round(storePace.parToday)} by now`} />
-                          )}
-                        </div>
-                        <div className="hp-bar-legend">
-                          <span><i className="hp-key hp-key-fill" />delivered</span>
-                          <span><i className="hp-key hp-key-hit" />{fmtNum(g.bar)} to hit</span>
-                          {!storePace.tooEarly && <span><i className="hp-key hp-key-par" />today</span>}
-                          <span className="hp-bar-end">{fmtNum(g.units)}</span>
-                        </div>
-                      </>
-                    );
-                  })()}
-
-                  {storePace.tooEarly ? (
-                    <div className="hp-goal-sub">
-                      Too early in the month to project. One strong Saturday at the start throws a
-                      month's projection further than it is worth reading.
-                    </div>
-                  ) : (
-                    <>
-                      <div className={"hp-goal-verdict hp-v-" + storePace.tone}>
-                        {storePace.willHit
-                          ? <>On for <b>{Math.round(storePace.projected)}</b></>
-                          : <>Pacing <b>{Math.round(storePace.projected)}</b></>}
-                        <span className="hp-goal-gap">
-                          {storePace.aheadBy >= 0
-                            ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
-                            : `${fmtNum(Math.round(-storePace.aheadBy * 10) / 10)} behind where today should be`}
-                        </span>
-                      </div>
-                      {storePace.short > 0 && storePace.daysLeft > 0 && (
-                        <div className="hp-goal-need">
-                          <b>{(Math.round(storePace.needPerDay * 10) / 10).toFixed(1)}</b> a day for the last{" "}
-                          {storePace.daysLeft} {storePace.daysLeft === 1 ? "day" : "days"} to get there
-                          <span className="hp-goal-sofar">running {(Math.round(storePace.perDay * 10) / 10).toFixed(1)} a day so far</span>
-                        </div>
-                      )}
-                      {storePace.short === 0 && (
-                        <div className="hp-goal-need hp-goal-done">
-                          Already there, with {storePace.daysLeft} {storePace.daysLeft === 1 ? "day" : "days"} still to run.
-                        </div>
-                      )}
-                    </>
-                  )}
-                </>
-              ) : (
-                <div className="hp-goal-none">
-                  {storePace.tooEarly
-                    ? <>Too early in the month to project.</>
-                    : <>Pacing <b>{Math.round(storePace.projected)}</b> for the month, at{" "}
-                       {(Math.round(storePace.perDay * 10) / 10).toFixed(1)} a day.</>}
-                  <span className="hp-goal-sofar">
-                    Set this store's monthly goal under Stores to see it against a target.
-                  </span>
-                </div>
-              )}
-              <div className="hp-goal-days">
-                {storePace.daysDone} of {storePace.daysAll} days counted
-                {monthHolidays.length > 0 && (
-                  <span title={monthHolidays.map((h) => `${h.date}${h.name ? " · " + h.name : ""}`).join("\n")}>
-                    {" · "}{monthHolidays.length} {monthHolidays.length === 1 ? "holiday" : "holidays"} taken out
-                  </span>
+                </>)}
+              </div>
+            </div>
+            <div className="s2-mcal bloop-host" tabIndex={0}>
+              <div className="s2-mc-cap"><PixIcon glyph="calendar" size={10} /> {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}</div>
+              <div className="s2-mc-grid">
+                {Array.from({ length: mcal.off }, (_, i) => <i key={"e" + i} className="e" />)}
+                {Array.from({ length: mcal.dim }, (_, i) => {
+                  const d = i + 1;
+                  return <i key={d} className={d < mcal.dNow ? "p" : d === mcal.dNow ? "t" : ""}
+                    onClick={(e) => { e.stopPropagation(); setDayPick(`${mcal.mk}-${String(d).padStart(2, "0")}`); }} />;
+                })}
+              </div>
+              <div className="s2-mc-sub">{storePace.daysLeft} selling {storePace.daysLeft === 1 ? "day" : "days"} left</div>
+              <div className="bloopwin dn r s2-calwin">
+                <div className="bw-title">{new Date().toLocaleDateString("en-US", { month: "long" })} at a glance</div>
+                {!storePace.tooEarly && storePace.goal && storePace.short > 0 && storePace.daysLeft > 0 && (
+                  <div className="s2-cw"><PixIcon glyph="bolt" size={11} style={{ color: "#C98A00" }} />
+                    <span>Need <b>{(Math.round(storePace.needPerDay * 10) / 10).toFixed(1)}</b> a day the rest of the way</span></div>
                 )}
-                <span className="hp-goal-note" title="Deliveries arrive on the next morning's report, so today's cars are not in the month total yet and today is not in the denominator either.">
-                  {" · "}through yesterday
-                </span>
+                {mcal.best && (
+                  <div className="s2-cw"><PixIcon glyph="trophy" size={11} style={{ color: "#C99700" }} />
+                    <span>Best day so far: {new Date(mcal.best.d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <b>{fmtNum(mcal.best.u)}</b> units</span></div>
+                )}
+                <div className="s2-cw"><PixIcon glyph="calendar" size={11} style={{ color: "var(--p2)" }} />
+                  <span><b>{mcal.satsLeft}</b> {mcal.satsLeft === 1 ? "Saturday" : "Saturdays"} left{monthHolidays.length ? <> · {monthHolidays.length} {monthHolidays.length === 1 ? "holiday" : "holidays"} out</> : null}</span></div>
+                {lastImport && lastImport.t && (
+                  <div className="s2-cw"><PixIcon glyph="doc" size={11} style={{ color: "#8B93A2" }} />
+                    <span>Last import: <b>{new Date(lastImport.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</b></span></div>
+                )}
+                <div className="s2-detail">{dayPick
+                  ? (dayUnits[dayPick] && dayUnits[dayPick].u != null
+                    ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold</>
+                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · no day record</>)
+                  : "Click a day dot to see it"}</div>
               </div>
             </div>
-
-            <div className="hp-col">
-            {/* The heading carried a sentence explaining that a closing rate is
-                units over leads. Anyone reading this panel knows, and it cost a
-                line in the one place that has to be readable at a glance. */}
-            <div className="mp-title">Store closing rates</div>
-            <div className="hp-rows">
-              {closing.map((c) => (
-                <div key={c.id} className="hp-row">
-                  <span className="hp-ch">{c.label}</span>
-                  <span className={"hp-pct hp-" + chanTone(c.id, c.pct)}>
-                    {c.pct == null ? "\u2014" : fmtPct(c.pct)}
-                  </span>
-                  <span className="hp-sub">
-                    {fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : "\u2014"} leads
-                  </span>
-                </div>
-              ))}
-              {campaignUnits > 0 && (
-                <div className="hp-row">
-                  <span className="hp-ch">Campaign</span>
-                  <span className="hp-pct hp-dim">units only</span>
-                  <span className="hp-sub">{fmtNum(campaignUnits)} delivered</span>
-                </div>
-              )}
+          </div>
+        </div>
+        <div className="s2-body">
+          <div className="s2-left">
+            <div className="s2-cap"><PixIcon glyph="car" size={11} /> Units this month</div>
+            <div className="s2-big">
+              <DotNum value={String(totalUnits)} dot={6} color="#fff" />
+              {storePace.goal && <span className="s2-den">/ {fmtNum(storePace.goal.bar)} to hit</span>}
             </div>
-            {/* The floor's own rate, under the three it is made of. Some stores run
-                on the store number rather than the channel ones, and working it out
-                by hand from three rows and three lead counts is not something
-                anybody does standing at a screen. */}
-            {storeClose && (
-              <div className="hp-store">
-                <div className="hp-store-head">
-                  <span className="hp-store-cap">Store closing rate</span>
-                  <span className={"hp-store-pct hp-" +
-                    (storeClose.pct >= storeClose.target ? "g"
-                      : storeClose.pct >= storeClose.target * 0.75 ? "y" : "r")}>
-                    {fmtPct(storeClose.pct)}
+            {storePace.goal && (
+              <div className="s2-pacewrap bloop-host" tabIndex={0}>
+                <div className="s2-led"><i style={{ width: `${Math.min(100, (totalUnits / storePace.goal.units) * 100)}%` }} /></div>
+                {!storePace.tooEarly && <span className="s2-tick" style={{ left: `${Math.min(100, (storePace.parToday / storePace.goal.units) * 100)}%`, background: paceCol }} />}
+                <span className="s2-goalmark" style={{ left: `calc(${Math.min(100, (storePace.goal.bar / storePace.goal.units) * 100)}% - 2px)` }} />
+                <div className="s2-pace-lbl">
+                  <span>today</span>
+                  <span style={{ color: paceCol, fontWeight: 700 }}>
+                    {storePace.tooEarly ? "too early to project" : `pace ${Math.round(storePace.projected)}`}
                   </span>
+                  <span>{fmtNum(storePace.goal.bar)} to hit</span>
                 </div>
-                <div className="hp-store-sub">
-                  {fmtNum(storeClose.units)} from {Math.round(storeClose.leads)} opportunities across all three channels
-                  {" · "}blended target {fmtPct(storeClose.target)}
-                </div>
-              </div>
-            )}
-            </div>
-            </div>
-            <div className="hp-total"><b>{fmtNum(totalUnits)}</b> units delivered this month</div>
-            {/* The month's projection used to sit here, worked out over six-day
-                weeks. It has moved to the top of this popup and is now worked over
-                the days the doors are actually open, which is every day bar the
-                holidays. Two projections of the same number, differing by a sixth,
-                is worse than either one alone. */}
-
-            {/* This used to spell out, name by name, why the total is what it is.
-                Five paragraphs to read before reaching the number underneath is not
-                a glance. Whatever is missing from the total is now one short line,
-                and the names behind it live on the People screen where they can
-                actually be fixed. */}
-            {(halves.odd || halves.ignoredWithUnits.length > 0) && (
-              <div className="hp-why">
-                <div className="hp-why-line">
-                  {halves.ignoredWithUnits.length > 0 && (
-                    <><b>{fmtNum(halves.ignoredUnits)} {halves.ignoredUnits === 1 ? "unit" : "units"}</b> sit on{" "}
-                    {halves.ignoredWithUnits.length === 1
-                      ? "an ignored name"
-                      : `${halves.ignoredWithUnits.length} ignored names`} and are not counted.{" "}</>
+                <div className="bloopwin dn s2-pacewin">
+                  <div className="bw-title">The month, against the ask</div>
+                  <div className="bw-big">{fmtNum(totalUnits)} <small>of {fmtNum(storePace.goal.bar)} · {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}</small></div>
+                  {!storePace.tooEarly && (
+                    <div className="bw-sub">{storePace.aheadBy >= 0
+                      ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
+                      : `${fmtNum(Math.round(-storePace.aheadBy * 10) / 10)} behind where today should be`}</div>
                   )}
-                  {halves.odd && <>The .5 is half of a split deal.</>}
+                  {vehicleSplit.seen && vehicleSplit.known > 0 && !storePace.tooEarly && (
+                    <div className="bw-desc">By stock, at today's mix: new pace <b>{Math.round(storePace.projected * vehicleSplit.newPct)}</b> · used pace <b>{Math.round(storePace.projected * vehicleSplit.usedPct)}</b></div>
+                  )}
+                  <div className="bw-desc">{storePace.daysDone} of {storePace.daysAll} days counted · through yesterday</div>
                 </div>
               </div>
             )}
-
-            {/* New against used. Sits under the channel rows because it cuts the same
-                units a second way rather than adding more of them. */}
             {vehicleSplit.seen && vehicleSplit.known > 0 && (
-              <div className="hp-mix">
-                <div className="hp-mix-cap">New and used</div>
-                <div className="hp-mix-bar">
-                  <i className="hp-mix-new" style={{ width: (vehicleSplit.newPct * 100) + "%" }} />
-                  <i className="hp-mix-used" style={{ width: (vehicleSplit.usedPct * 100) + "%" }} />
+              <div className="s2-splitwrap bloop-host" tabIndex={0}>
+                <div className="s2-split">
+                  <i className="nw" style={{ flex: Math.max(vehicleSplit.nw, 0.01) }} />
+                  <i className="us" style={{ flex: Math.max(vehicleSplit.us, 0.01) }} />
                 </div>
-                <div className="hp-mix-keys">
-                  <span className="hp-mix-k hp-mix-kn">
-                    <b>{fmtNum(vehicleSplit.nw)}</b> new
-                    <i>{Math.round(vehicleSplit.newPct * 100)}%</i>
-                  </span>
-                  <span className="hp-mix-k hp-mix-ku">
-                    <b>{fmtNum(vehicleSplit.us)}</b> used
-                    <i>{Math.round(vehicleSplit.usedPct * 100)}%</i>
-                  </span>
-                  {vehicleSplit.other > 0 && (
-                    <span className="hp-mix-k hp-mix-ko"><b>{fmtNum(vehicleSplit.other)}</b> other</span>
-                  )}
+                <div className="s2-split-lbl"><span><b>{fmtNum(vehicleSplit.nw)}</b> new</span><span><b>{fmtNum(vehicleSplit.us)}</b> used</span></div>
+                {Object.keys(dayUnits).length > 0 && (
+                  <div className="bloopwin dn s2-salewin">
+                    <div className="bw-title">Sold by day · {new Date().toLocaleDateString("en-US", { month: "long" })}</div>
+                    <div className="s2-sw-grid">
+                      {Array.from({ length: mcal.off }, (_, i) => <span key={"e" + i} className="e" />)}
+                      {Array.from({ length: mcal.dim }, (_, i) => {
+                        const d = i + 1, key = `${mcal.mk}-${String(d).padStart(2, "0")}`;
+                        const v = dayUnits[key];
+                        if (d >= mcal.dNow) return <span key={d} className="f"><em>{d}</em><b>·</b></span>;
+                        return (
+                          <span key={d} className={dayPick === key ? "sel" : ""}
+                            style={{ background: v && v.u ? `color-mix(in srgb, var(--p2) ${Math.min(52, v.u * 9)}%, #fff)` : undefined }}
+                            onClick={(e) => { e.stopPropagation(); setDayPick(key); }}>
+                            <em>{d}</em><b>{v && v.u != null ? fmtNum(v.u) : "·"}</b>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div className="s2-detail">{dayPick && dayUnits[dayPick]
+                      ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold{dayUnits[dayPick].nu != null ? <> · {fmtNum(dayUnits[dayPick].nu)} new / {fmtNum(dayUnits[dayPick].uu)} used</> : null}</>
+                      : "Click a day to see it"}</div>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="s2-vitals">
+              <span className={"s2-vdot s2-v-" + (pct >= 75 ? "g" : pct >= 55 ? "y" : "r")} />
+              {healthWord}{attN > 0 ? <> · <b>{nPct}%</b> of standard</> : null}
+            </div>
+            <div className="s2-filters">
+              <button className={"s2-fchip ok" + (filter === "cleared" ? " on" : "")}
+                onClick={() => onFilter(filter === "cleared" ? null : "cleared")}><b>{nCleared}</b> cleared</button>
+              <button className={"s2-fchip bad" + (filter === "attention" ? " on" : "")}
+                onClick={() => onFilter(filter === "attention" ? null : "attention")}><b>{nAttention}</b> {inGrace ? "working toward" : "need attention"}</button>
+              {offLeads > 0 && (
+                <button className={"s2-fchip dim" + (filter === "off" ? " on" : "")}
+                  onClick={() => onFilter(filter === "off" ? null : "off")}><b>{nOff}</b> off leads</button>
+              )}
+              <span className="s2-meta">{nRoster} on the board · <b>{nOpps}</b>/{capTotal || "-"} leads held</span>
+            </div>
+          </div>
+          <div className="s2-right">
+            <div className="s2-group">
+              <span className="s2-gcap"><PixIcon glyph="globe" size={10} /> Channels</span>
+              <div className="s2-hbars">
+                {closing.map((c, i) => {
+                  const target = thr[c.id].green;
+                  const pctV = c.pct == null ? null : c.pct * 100;
+                  const t = pctV == null ? null : goalTier(pctV, target);
+                  const h = pctV == null ? 0 : Math.min(pctV / target * 100, 120) / 1.2;
+                  const d = chDelta[c.id];
+                  return (
+                    <div key={c.id} className="s2-hbar bloop-host" tabIndex={0}>
+                      <b>{pctV == null ? "–" : fmtPct(c.pct)}</b>
+                      <span className="s2-hmid">
+                        <span className="s2-hcol">
+                          <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: t ? t.col : "rgba(255,255,255,.3)" }} />
+                        </span>
+                        {d != null && (
+                          <span className={"s2-hd " + (d >= 0 ? "up" : "dn")}>
+                            <PixIcon glyph={d >= 0 ? "triup" : "tridown"} size={9} />{d >= 0 ? "+" : ""}{d}
+                          </span>
+                        )}
+                      </span>
+                      <span className="s2-mklbl">{c.label}</span>
+                      <div className={"bloopwin" + (i === closing.length - 1 ? " r" : "")} style={{ "--bw": t ? t.col : undefined }}>
+                        <div className="bw-title">{(METRICS[c.id + "Pct"] && METRICS[c.id + "Pct"].label) || c.label}</div>
+                        <div className="bw-big">{pctV == null ? "no data yet" : fmtPct(c.pct)} {pctV != null && <small>of {target}% target</small>}</div>
+                        <div className="bw-sub">{fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : 0} leads</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {videoDials.length > 0 && (
+              <div className="s2-group">
+                <span className="s2-gcap"><PixIcon glyph="check" size={10} /> The video standards</span>
+                <div className="s2-marks">
+                  {videoDials.map((v, i) => (
+                    <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
+                      <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} />
+                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
+                      <div className={"bloopwin" + (i >= videoDials.length - 1 ? " r" : "")} style={{ "--bw": goalTier(v.mean, 1).col }}>
+                        <div className="bw-title">{METRICS[v.m].label}</div>
+                        <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
+                        <div className="bw-sub">{v.below} of {v.total} below target</div>
+                        <div className="bw-desc">{METRIC_DESC[v.m] || "Measured month to date."}</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -21400,59 +21507,54 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         </div>
       </div>
 
-      {(weakest || urgent.length > 0) && (
-        <div className="hero-focus">
-          {weakest && (
-            <div className="hf-block hf-fix">
-              <TapMark />
-              <div className="hf-cap">Weakest standard</div>
-              <div className="hf-metric">{METRICS[weakest.metric].label}</div>
-              <div className="hf-bar"><div className="hf-fill" style={{ width: Math.round(weakest.mean * 100) + "%" }} /></div>
-              <div className="hf-sub">{weakest.below} of {weakest.total} below target</div>
-              <div className="hf-pop">
-                <div className="mp-title">{METRIC_FIX[weakest.metric]?.play || METRICS[weakest.metric].label}</div>
-                <div className="mp-desc">{METRIC_DESC[weakest.metric] || "Measured month to date."}</div>
-                <div className="mp-req">
-                  <b className="mp-now">{Math.round(weakest.mean * 100)}%</b>
-                  <span className="mp-sep">of target on average ·</span>
-                  <b className="mp-target">{weakest.below} of {weakest.total}</b>
-                  <span className="mp-verdict mp-under">below target</span>
-                </div>
-              </div>
+      <div className="s2-focusgrid">
+        {weakest && (
+          <div className="s2-ansq bloop-host" tabIndex={0}>
+            <div className="s2-an-cap"><PixIcon glyph="warn" size={13} /> Weakest standard</div>
+            <div className="s2-an-name">{METRICS[weakest.metric].label}</div>
+            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>of target on average</small></div>
+            <div className="s2-an-sub">{weakest.below} of {weakest.total} below · mouse over for the play</div>
+            <div className="bloopwin dn s2-answin">
+              <div className="bw-title">The play</div>
+              <div className="bw-sub" style={{ marginTop: 4 }}>{(METRIC_FIX[weakest.metric] && METRIC_FIX[weakest.metric].play) || METRICS[weakest.metric].label}</div>
+              <div className="bw-desc">{METRIC_DESC[weakest.metric] || "Measured month to date."}</div>
+              {urgent.length > 0 && (
+                <div className="bw-desc">Start with {urgent.slice(0, 2).map((u) => u.name).join(" and ")}, then work down the list.</div>
+              )}
             </div>
-          )}
-          {urgent.length > 0 && (
-            <div className="hf-block hf-wide">
-              <div className="hf-cap">Talk to these first</div>
-              <div className="hf-list">
-                {urgent.slice(0, 3).map((u) => (
-                  <button key={u.name} className="hf-person" onClick={() => onFocus && onFocus(u.name)}>
-                    <span className="hf-name">{u.name}</span>
-                    <span className="hf-why">
-                      {u.worst.def.short} {u.worst.val == null ? "no data"
-                        : (u.worst.def.kind === "pct" ? fmtPct(u.worst.val) : fmtNum(u.worst.val))}
-                      {" vs "}{u.worst.def.kind === "pct" ? u.worst.min + "%" : u.worst.min}
-                    </span>
-                    <span className={"hf-tag " + (u.atCap ? "now" : "soon")}>
-                      {u.atCap ? "at cap" : `${u.opps} / ${u.cap}`}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="hero-strip">
-        {missing.length > 0 && (
-          <button className="strip-chip chip-warn" onClick={() => onGoTab("import")}>
-            <span className="chip-dot" />
-            Waiting on {missing.join(" and ")}. Import now.
-          </button>
+          </div>
         )}
-        {inGrace && <span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span>}
+        <div className="s2-spot"
+          onPointerDown={(e) => { swipeX.current = e.clientX; }}
+          onPointerUp={(e) => {
+            if (swipeX.current == null) return;
+            const dx = e.clientX - swipeX.current; swipeX.current = null;
+            if (Math.abs(dx) > 40) { setSpotOn((i) => (i + (dx < 0 ? 1 : SPOT_N - 1)) % SPOT_N); armSpot(); }
+          }}>
+          <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
+            <DeliveryCard config={config} store={store} data={data} />
+          </div>
+          <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
+            <div className="s2-scap"><PixIcon glyph="bolt" size={12} /> Talk to these first</div>
+            {urgent.length === 0 && <div className="s2-none">Nobody below standard right now.</div>}
+            {urgent.slice(0, 3).map((u) => (
+              <button key={u.name} className="s2-person" onClick={() => onFocus && onFocus(u.name)}>
+                <span className="s2-pname">{u.name}</span>
+                <span className="s2-pwhy">
+                  {u.worst.def.short} {u.worst.val == null ? "no data"
+                    : (u.worst.def.kind === "pct" ? fmtPct(u.worst.val) : fmtNum(u.worst.val))}
+                  {" vs "}{u.worst.def.kind === "pct" ? u.worst.min + "%" : u.worst.min}
+                </span>
+                <span className={"s2-ptag " + (u.atCap ? "now" : "soon")}>{u.atCap ? "at cap" : `${u.opps} / ${u.cap}`}</span>
+              </button>
+            ))}
+          </div>
+          <div className="s2-dots">{Array.from({ length: SPOT_N }, (_, i) => <i key={i} className={spotOn === i ? "on" : ""} />)}</div>
+          <div className="s2-rtag">rotating</div>
+        </div>
       </div>
+
+      {inGrace && <div className="hero-strip"><span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span></div>}
     </div>
   );
 }
@@ -30374,16 +30476,238 @@ const SAGE_CSS = `
       .bloop-host.open > .bloopwin { opacity:1; pointer-events:auto; transform:translate(-50%,0) scale(1); z-index:46; }
       .bloop-host.open > .bloopwin.r { transform:translate(0,0) scale(1); }
       @media (hover: none) {
-        /* hover sticks on touch: taps manage .open instead */
-        .bloop-host:hover > .bloopwin, .bloop-host:focus-within > .bloopwin { opacity:0; pointer-events:none; }
-        .bloop-host.open > .bloopwin { opacity:1; pointer-events:auto;
-          position:fixed; left:50%; top:50%; right:auto; bottom:auto;
-          width:min(320px, calc(100vw - 56px)); transform-origin:center;
-          transform:translate(-50%,-50%) scale(1);
-          box-shadow:0 30px 80px -20px rgba(10,20,14,.65); }
+        /* hover sticks on touch: taps manage .open instead, and the pinned copy
+           is a clone on <body> (see installBloopManager) so it can sit above the
+           frost, which the app's isolated stacking context would otherwise cover */
+        .bloop-host:hover > .bloopwin, .bloop-host:focus-within > .bloopwin,
+        .bloop-host.open > .bloopwin { opacity:0; pointer-events:none; }
       }
+      .bloopclone { position:fixed; left:50%; top:50%; right:auto; bottom:auto;
+        opacity:1; pointer-events:auto; z-index:26;
+        width:min(320px, calc(100vw - 56px)); transform-origin:center;
+        transform:translate(-50%,-50%) scale(1);
+        box-shadow:0 30px 80px -20px rgba(10,20,14,.65); }
       @media (prefers-reduced-motion: reduce) {
         .bloopwin { transition:none; }
+      }
+
+      /* ================= the Performance hero, redesigned =================
+         One saturated Garden card that is the landing spot: identity and the
+         day's controls up top, the month on the left, the instruments on the
+         right, and the weakest standard and rotating display underneath. */
+      .s2-hero { position:relative; border-radius:24px; color:#fff; overflow:visible;
+        padding:22px 28px 26px; margin-bottom:12px; display:flex; flex-direction:column; gap:18px;
+        background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 42%, var(--hC) 100%);
+        box-shadow:0 18px 44px -20px rgba(18,34,26,.55); transform-origin:50% 50%; }
+      /* CRT glass: scanlines, a centre bulge, corner falloff */
+      .s2-hero::before { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+        background:
+          radial-gradient(120% 85% at 50% 40%, rgba(255,255,255,.09), transparent 58%),
+          radial-gradient(145% 125% at 50% 50%, transparent 60%, rgba(8,16,10,.3) 100%),
+          repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px); }
+      .s2-hero.s2-chswitch { animation:s2crt .64s linear both; }
+      @keyframes s2crt {
+        0% { transform:none; filter:none; }
+        10% { transform:scaleY(.94); filter:brightness(1.5) saturate(1.4); }
+        16% { transform:scaleY(.012); filter:brightness(3); }
+        24% { transform:scaleY(.018); filter:brightness(2.4); }
+        33% { transform:scaleY(1.045); filter:brightness(1.4) hue-rotate(9deg); }
+        44% { transform:scaleY(.988) translateY(2px); filter:brightness(1.12); }
+        58% { transform:scaleY(1.006) translateY(-1px); filter:none; }
+        100% { transform:none; filter:none; }
+      }
+      .s2-noise { position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0; z-index:3;
+        background:repeating-linear-gradient(0deg, rgba(255,255,255,.2) 0 1px, transparent 1px 3px),
+          repeating-linear-gradient(90deg, rgba(255,255,255,.09) 0 2px, rgba(0,0,0,.12) 2px 5px); }
+      .s2-hero.s2-chswitch .s2-noise { animation:s2noise .64s steps(7); }
+      @keyframes s2noise {
+        0%,100% { opacity:0; background-position:0 0, 0 0; }
+        14% { opacity:.5; background-position:0 3px, 4px 0; }
+        26% { opacity:.8; background-position:0 9px, 9px 0; }
+        40% { opacity:.45; background-position:0 5px, 2px 0; }
+        62% { opacity:.15; background-position:0 12px, 6px 0; }
+      }
+      .s2-head { display:flex; align-items:center; gap:15px; flex-wrap:wrap; }
+      .s2-ava { position:relative; width:58px; height:58px; border-radius:50%; flex:0 0 auto; background:#fff;
+        display:flex; align-items:center; justify-content:center; overflow:hidden;
+        box-shadow:0 10px 24px -10px rgba(12,24,18,.5); }
+      .s2-ava img { width:100%; height:100%; object-fit:cover; }
+      .s2-ava::after { content:""; position:absolute; inset:-9px; border-radius:50%;
+        border:2px dotted rgba(255,255,255,.55); }
+      .s2-idtx { min-width:0; }
+      .s2-greet { font-size:11px; color:rgba(255,255,255,.78); }
+      .s2-store { margin:0; font-family:var(--font-display); font-size:22px; font-weight:700;
+        letter-spacing:-.02em; color:#fff; line-height:1.15; }
+      .s2-chips { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+      .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
+        border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
+        font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
+      .s2-imp:hover { transform:translateY(-2px); }
+      .s2-imp.done { animation:none; }
+      .s2-imp-ico { width:26px; height:26px; border-radius:8px; background:#F2C14E; color:#5A3D00; flex:0 0 auto;
+        display:flex; align-items:center; justify-content:center; }
+      .s2-imp.done .s2-imp-ico { background:#BFE6CE; color:#14683B; }
+      .s2-imp-tx b { display:block; font-size:11px; font-weight:700; line-height:1.25; }
+      .s2-imp-tx i { display:block; font-style:normal; font-size:8.5px; color:var(--ink-2); line-height:1.3;
+        max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      @keyframes s2flash { 0%,100% { box-shadow:0 0 0 0 rgba(242,193,78,0); }
+        50% { box-shadow:0 0 14px 4px rgba(242,193,78,.65); } }
+      .s2-rota { display:flex; align-items:center; cursor:default;
+        background:rgba(255,255,255,.15); border-radius:12px; padding:9px 13px; }
+      .s2-rota > b { font:700 10.5px var(--font-mono); color:#fff; white-space:nowrap; }
+      .s2-rota > b i { font-style:normal; color:rgba(255,255,255,.6); }
+      .s2-rotawin, .s2-calwin { width:252px; }
+      .s2-names { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+      .s2-names s { text-decoration:none; display:inline-flex; align-items:center; gap:5px;
+        font-size:10px; font-weight:600; color:var(--ink); background:rgba(16,32,52,.05);
+        border-radius:99px; padding:3px 9px; }
+      .s2-names s.off { color:var(--ink-3); }
+      .s2-pdot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; background:var(--green); }
+      .s2-pdot.off { background:var(--ink-3); }
+      .s2-mcal { display:flex; flex-direction:column; gap:3px; align-items:flex-end; cursor:default; }
+      .s2-mc-cap { font:700 8px var(--font-mono); letter-spacing:.09em; text-transform:uppercase;
+        color:var(--sandCap); display:flex; gap:4px; align-items:center; }
+      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,8px); gap:2.4px; justify-items:center; }
+      .s2-mc-grid i { width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.26); cursor:pointer; }
+      .s2-mc-grid i.p { background:rgba(255,255,255,.72); }
+      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 6px var(--sandTick); transform:scale(1.4); }
+      .s2-mc-grid i.e { background:transparent; pointer-events:none; }
+      .s2-mc-sub { font-size:8.5px; color:rgba(255,255,255,.7); }
+      .s2-cw { display:flex; align-items:flex-start; gap:8px; font-size:10px; color:var(--ink);
+        line-height:1.45; padding:3.5px 0; }
+      .s2-cw b { font-family:var(--font-mono); }
+      .s2-detail { margin-top:8px; padding-top:7px; border-top:1px dashed var(--line);
+        font:600 10px var(--font-mono); color:var(--ink-2); }
+      .s2-body { display:flex; gap:30px; align-items:center; }
+      .s2-left { flex:0 0 auto; min-width:230px; max-width:300px; position:relative; z-index:1; }
+      .s2-cap { font:700 9.5px var(--font-mono); letter-spacing:.12em; text-transform:uppercase;
+        color:var(--sandCap); display:flex; align-items:center; gap:6px; }
+      .s2-big { display:flex; align-items:flex-end; gap:9px; margin-top:6px; }
+      .s2-den { font:500 14px var(--font-mono); color:rgba(255,255,255,.6); padding-bottom:3px; }
+      .s2-pacewrap { margin-top:14px; cursor:default; }
+      .s2-led { position:relative; height:11px; border-radius:5px; background:rgba(255,255,255,.22);
+        -webkit-mask-image:radial-gradient(circle, #000 2.7px, transparent 3.1px);
+        -webkit-mask-size:9px 100%; -webkit-mask-position:left center;
+        mask-image:radial-gradient(circle, #000 2.7px, transparent 3.1px);
+        mask-size:9px 100%; mask-position:left center; }
+      .s2-led i { position:absolute; left:0; top:0; bottom:0; border-radius:5px;
+        background:linear-gradient(90deg,#F2F7F0,var(--p1)); }
+      .s2-pacewrap { position:relative; }
+      .s2-tick { position:absolute; top:-3px; width:2px; height:16px; border-radius:1px; }
+      .s2-goalmark { position:absolute; top:-3px; width:2px; height:16px; border-radius:1px; background:#fff; }
+      .s2-pace-lbl { display:flex; justify-content:space-between; font-size:9.5px;
+        color:rgba(255,255,255,.78); margin-top:5px; }
+      .s2-splitwrap { margin-top:13px; cursor:default; }
+      .s2-split { display:flex; height:15px; border-radius:8px; overflow:hidden; }
+      .s2-split .nw { background:#E5C689; }
+      .s2-split .us { background:var(--p1); }
+      .s2-split-lbl { display:flex; justify-content:space-between; font-size:10px;
+        color:rgba(255,255,255,.78); margin-top:5px; }
+      .s2-split-lbl b { font-family:var(--font-mono); color:#fff; }
+      .s2-salewin { width:266px; }
+      .s2-sw-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-top:5px; }
+      .s2-sw-grid > span { border-radius:6px; padding:3px 0 4px; text-align:center;
+        background:rgba(16,32,52,.04); cursor:pointer; }
+      .s2-sw-grid > span em { display:block; font:400 6.5px var(--font-mono); font-style:normal; color:var(--ink-3); }
+      .s2-sw-grid > span b { display:block; font:700 10.5px var(--font-mono); line-height:1.2; color:var(--ink); }
+      .s2-sw-grid > span.e { background:transparent; pointer-events:none; }
+      .s2-sw-grid > span.f { opacity:.35; pointer-events:none; }
+      .s2-sw-grid > span.sel { outline:2px solid var(--p3); outline-offset:1px; }
+      .s2-vitals { display:flex; align-items:center; gap:7px; margin-top:14px; font-size:10.5px;
+        color:rgba(255,255,255,.82); }
+      .s2-vitals b { font-family:var(--font-mono); color:#fff; }
+      .s2-vdot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; animation:s2vpulse 2.6s ease-in-out infinite; }
+      .s2-v-g { background:#8FE3B3; --vglow:rgba(143,227,179,.5); }
+      .s2-v-y { background:#F2C57C; --vglow:rgba(242,197,124,.5); }
+      .s2-v-r { background:#FFA294; --vglow:rgba(255,162,148,.5); }
+      @keyframes s2vpulse { 0%,100% { box-shadow:0 0 0 0 var(--vglow, transparent); }
+        55% { box-shadow:0 0 0 6px transparent; } }
+      .s2-filters { display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+      .s2-fchip { border:0; border-radius:99px; padding:5px 11px; cursor:pointer;
+        font:600 10px var(--font-ui); background:rgba(255,255,255,.15); color:#fff; }
+      .s2-fchip b { font-family:var(--font-mono); }
+      .s2-fchip.ok.on { background:#BFE6CE; color:#14683B; }
+      .s2-fchip.bad.on { background:#F9D2CB; color:#8E2517; }
+      .s2-fchip.dim.on { background:rgba(255,255,255,.85); color:var(--ink); }
+      .s2-meta { font-size:9.5px; color:rgba(255,255,255,.65); }
+      .s2-meta b { font-family:var(--font-mono); color:rgba(255,255,255,.9); }
+      .s2-right { flex:1; display:flex; flex-direction:column; gap:16px; min-width:0; position:relative; z-index:1; }
+      .s2-group { display:flex; flex-direction:column; gap:9px; }
+      .s2-gcap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+        color:var(--sandCap); display:flex; align-items:center; gap:6px; }
+      .s2-gcap::after { content:""; flex:1; height:2px; opacity:.35;
+        background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
+      .s2-hbars { display:flex; gap:26px; justify-content:space-evenly; align-items:stretch; height:112px; }
+      .s2-hbar { display:flex; flex-direction:column; align-items:center; cursor:default; }
+      .s2-hbar > b { font:700 12px var(--font-mono); color:#fff; }
+      .s2-hmid { display:flex; align-items:stretch; gap:6px; flex:1; margin-top:4px; }
+      .s2-hcol { position:relative; width:30px; display:flex; align-items:flex-end;
+        background:rgba(255,255,255,.15); border-radius:9px; }
+      .s2-hcol::after { content:""; position:absolute; left:-5px; right:-5px; bottom:83.33%;
+        border-top:2px dashed rgba(255,255,255,.55); pointer-events:none; }
+      .s2-hcol i { width:100%; border-radius:9px; transform-origin:bottom;
+        animation:s2barup .8s cubic-bezier(.22,.68,.32,1.12) both;
+        filter:drop-shadow(0 0 8px rgba(255,255,255,.25)); }
+      @keyframes s2barup { from { transform:scaleY(0); } to { transform:scaleY(1); } }
+      .s2-hd { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+        font:700 9px var(--font-mono); }
+      .s2-hd.up { color:#7FE3AC; } .s2-hd.dn { color:#FFB3A6; }
+      .s2-mklbl { font:700 9px var(--font-mono); letter-spacing:.07em; text-transform:uppercase;
+        color:rgba(255,255,255,.78); white-space:nowrap; margin-top:6px; }
+      .s2-marks { display:flex; gap:14px; justify-content:space-evenly; align-items:center; }
+      .s2-mark { display:flex; flex-direction:column; align-items:center; cursor:default; }
+      .s2-dialrev { animation:s2dialrev .95s cubic-bezier(.32,.8,.35,1.28) both; }
+      @keyframes s2dialrev { from { stroke-dasharray:0 100; } }
+      /* weakest standard and the rotating display, side by side */
+      .s2-focusgrid { display:grid; grid-template-columns:288px 1fr; gap:12px; align-items:stretch;
+        margin-bottom:14px; }
+      .s2-ansq { border:0; border-radius:16px; padding:16px 18px 14px; color:#fff; cursor:default;
+        background:linear-gradient(150deg,#D14434,#A32517); box-shadow:0 16px 38px -18px rgba(163,37,23,.6);
+        display:flex; flex-direction:column; gap:4px; }
+      .s2-an-cap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+        color:rgba(255,255,255,.85); display:flex; align-items:center; gap:6px; }
+      .s2-an-name { font:700 14px var(--font-display); }
+      .s2-an-big { display:flex; align-items:flex-end; gap:8px; margin:6px 0 0; }
+      .s2-an-big small { font:500 11px var(--font-mono); color:rgba(255,255,255,.7); padding-bottom:2px; }
+      .s2-an-sub { font-size:10px; color:rgba(255,255,255,.82); margin-top:6px; }
+      .s2-answin { width:300px; }
+      .s2-spot { position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
+        padding:15px 19px 34px; min-height:216px; overflow:hidden; touch-action:pan-y; }
+      .s2-slide { position:absolute; inset:15px 19px 34px; opacity:0; transform:translateY(10px);
+        transition:opacity .65s var(--ease), transform .65s var(--ease); pointer-events:none; overflow:hidden; }
+      .s2-slide.on { opacity:1; transform:none; pointer-events:auto; }
+      .s2-slide .flow-card, .s2-slide .card { border:0; box-shadow:none; padding:0; margin:0; background:none; }
+      .s2-dots { position:absolute; bottom:11px; left:19px; display:flex; gap:5px; }
+      .s2-dots i { width:6px; height:6px; border-radius:50%; background:rgba(16,32,52,.15); transition:background .35s; }
+      .s2-dots i.on { background:var(--sandInk); }
+      .s2-rtag { position:absolute; bottom:8px; right:14px; font:700 8.5px var(--font-mono); letter-spacing:.09em;
+        text-transform:uppercase; color:var(--ink-3); display:flex; align-items:center; gap:5px; }
+      .s2-rtag::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--sandInk);
+        animation:s2blink 1.2s steps(2,start) infinite; }
+      @keyframes s2blink { to { visibility:hidden; } }
+      .s2-scap { font:700 9px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+        color:var(--ink-3); display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+      .s2-none { font-size:11px; color:var(--ink-2); }
+      .s2-person { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:0;
+        background:none; cursor:pointer; padding:7px 2px; border-bottom:1px dashed var(--line);
+        font-family:var(--font-ui); color:var(--ink); }
+      .s2-person:last-of-type { border-bottom:0; }
+      .s2-pname { font-weight:700; font-size:12.5px; flex:0 0 auto; }
+      .s2-pwhy { font-size:10.5px; color:var(--ink-2); flex:1; min-width:0; }
+      .s2-ptag { font:700 9.5px var(--font-mono); border-radius:99px; padding:3px 9px; flex:0 0 auto; }
+      .s2-ptag.now { background:var(--redbg, #FBE3E1); color:#A32517; }
+      .s2-ptag.soon { background:rgba(16,32,52,.06); color:var(--ink-2); }
+      @media (max-width: 860px) {
+        .s2-body { flex-direction:column; align-items:stretch; gap:18px; }
+        .s2-left { max-width:none; }
+        .s2-chips { margin-left:0; width:100%; }
+        .s2-mcal { display:none; }
+        .s2-focusgrid { grid-template-columns:1fr; }
+        .s2-hbars { height:104px; gap:12px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .s2-imp, .s2-vdot, .s2-rtag::before, .s2-hcol i, .s2-dialrev { animation:none !important; }
+        .s2-hero.s2-chswitch, .s2-hero.s2-chswitch .s2-noise { animation:none !important; }
       }
 
     `;
