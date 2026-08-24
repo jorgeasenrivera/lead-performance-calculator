@@ -22119,107 +22119,220 @@ function GMSummary({ config, data, stores }) {
     downloadCSV(`Lead-Performance-Summary_${month}.csv`, out);
   };
 
+  /* ---- the channel panels and month-over-month table, per the drafts ---- */
+  const single = stores.length === 1 ? stores[0] : null;
+  const thr = single ? normThresholds(single.thresholds) : null;
+  const chFor = (mKey) => {
+    const acc = {};
+    for (const s of stores) {
+      const d = data[s.id]; const M = d?.months?.[mKey]; if (!d || !M) continue;
+      for (const c of channelRates(M, d.roster || [])) {
+        const a = (acc[c.id] = acc[c.id] || { units: 0, leads: 0, seen: false });
+        if (c.seen) { a.seen = true; a.units += c.units; a.leads += c.leads; }
+      }
+    }
+    return CHANNEL_LIST.map((c) => {
+      const a = acc[c.id] || { units: 0, leads: 0, seen: false };
+      return { id: c.id, label: c.label, ...a, pct: a.leads > 0 ? a.units / a.leads : null };
+    });
+  };
+  const channels = chFor(month);
+  const trail = monthOptions.filter((m) => m <= month).sort().slice(-4);
+  const trailPct = {};
+  for (const m of trail) for (const c of chFor(m)) (trailPct[c.id] = trailPct[c.id] || []).push(c.pct);
+  const moLabel = (m) => new Date(m + "-15T12:00").toLocaleDateString("en-US", { month: "short" });
+
+  const totalUnits = rows.reduce((n, r) => n + (r.stats?.unitsDelivered || 0), 0);
+  const measureFor = (mKey) => {
+    let any = false; const t = { units: 0, opps: 0, appts: 0, shows: 0, videos: 0, calls: 0 };
+    for (const s of stores) {
+      const d = data[s.id]; if (!d) continue;
+      const M = d.months?.[mKey];
+      if (M) for (const a of d.roster || []) {
+        const st = M.stats?.[norm(a.name)]; if (!st) continue;
+        any = true; t.units += st.unitsDelivered || 0; t.opps += st.opps || 0;
+      }
+      for (const [dy, rec] of Object.entries(d.activity || {})) {
+        if (!dy.startsWith(mKey)) continue;
+        for (const r of Object.values(rec)) {
+          if (!r) continue; any = true;
+          t.calls += r.calls || 0; t.videos += r.video || 0;
+          t.appts += r.apptCreated || 0; t.shows += r.apptShow || 0;
+        }
+      }
+    }
+    return { any, ...t };
+  };
+  const [py, pmo] = month.split("-").map(Number);
+  const prevMonth = `${pmo === 1 ? py - 1 : py}-${String(pmo === 1 ? 12 : pmo - 1).padStart(2, "0")}`;
+  const mNow = measureFor(month), mPrev = measureFor(prevMonth);
+  const MEASURES = [
+    ["Units delivered", "units"], ["Total opportunities", "opps"],
+    ["Appointments set", "appts"], ["Appointments shown", "shows"],
+    ["Videos sent", "videos"], ["Calls made", "calls"],
+  ];
+  const move = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
+  const Spark = ({ vals }) => {
+    const xs = vals.map((v) => (v == null ? 0 : v * 100));
+    const mx = Math.max(...xs, 1);
+    return (
+      <span className="sm-spark">
+        {xs.map((v, i) => <i key={i} className={i === xs.length - 1 ? "hot" : ""} style={{ height: `${Math.max(8, (v / mx) * 100)}%` }} />)}
+      </span>
+    );
+  };
+
   return (
-    <div className="gm print-area">
-      <div className="gm-toolbar no-print">
-        <select value={month} onChange={(e) => setMonth(e.target.value)}>
-          {(monthOptions.length ? monthOptions : [ym()]).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
-        <button className="btn" onClick={() => window.print()}>Print</button>
-        <button className="btn secondary" onClick={exportCSV}>Export CSV</button>
-      </div>
-      <div className="gm-head">
-        <h2>Lead Performance Summary <span className="section-sub">{monthLabel(month)}</span></h2>
-        <p className="gm-sub">{stores.map((s) => s.name).join(" · ")} · Generated {new Date().toLocaleDateString()}</p>
-      </div>
-
-      {/* ---- the four numbers this page is actually read for ----
-          They were a run-on sentence under the title -- "4 restricted · 2 in grace
-          period · 9 cleared to grab leads" -- which is the shape of a caption, not
-          of a headline, and the whole page is a headline. The tile is the site's
-          own, already drawn on the Dashboard.
-
-          "Paused right now" is deliberately its own number rather than a subset
-          quietly folded into "restricted": it is the only one of the four where
-          somebody is not being handed leads THIS MINUTE, and that is the thing a
-          manager acts on before lunch. */}
-      {rows.length > 0 && (
-        <div className="hero-tiles gm-tiles">
-          <div className={"tile " + (restricted.length ? "tile-bad" : "tile-flat")}>
-            <div className="tile-num">{restricted.length}<span className="tile-of">/{rows.length}</span></div>
-            <div className="tile-label">Below standard</div>
+    <div className="gm print-area sm-page">
+      {/* the printed page keeps its plain title; the green hero is for the screen */}
+      <div className="sm-printhead">Lead Performance Summary · {monthLabel(month)} · {stores.map((s) => s.name).join(" · ")}</div>
+      <div className="s2-hero da-hero sm-hero no-print">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava">{single && single.icon ? <img src={single.icon} alt="" /> : <Logo size={40} />}</div>
+          <div className="s2-idtx">
+            <div className="s2-greet">Summary · {monthLabel(month)} · generated {new Date().toLocaleDateString()}</div>
+            <h2 className="s2-store">{single ? single.name : `${stores.length} stores`}</h2>
           </div>
-          <div className={"tile " + (paused.length ? "tile-bad" : "tile-flat")}>
-            <div className="tile-num">{paused.length}</div>
-            <div className="tile-label">Paused right now</div>
-          </div>
-          <div className={"tile " + (trending.length ? "tile-warn" : "tile-flat")}>
-            <div className="tile-num">{trending.length}</div>
-            <div className="tile-label">Inside grace</div>
-          </div>
-          <div className={"tile " + (cleared.length ? "tile-good" : "tile-flat")}>
-            <div className="tile-num">{cleared.length}</div>
-            <div className="tile-label">Holding standard</div>
+          <div className="s2-chips">
+            <select className="da-daysel" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Which month">
+              {(monthOptions.length ? monthOptions : [ym()]).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+            <button className="da-hbtn" onClick={() => window.print()}><PixIcon glyph="doc" size={11} /> Print</button>
+            <button className="da-hbtn" onClick={exportCSV}><PixIcon glyph="arrowdown" size={11} /> Export CSV</button>
           </div>
         </div>
-      )}
+        {rows.length > 0 && (
+          <div className="da-kpis">
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="car" size={10} /> Units delivered</div>
+              <div className="da-krow"><span className="da-knum">{fmtNum(totalUnits)}</span>
+                {single?.goal?.units ? <span className="da-ksub">goal {fmtNum(single.goal.units)}</span> : null}</div></div>
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Below standard</div>
+              <div className="da-krow"><span className="da-knum">{restricted.length}<span className="da-ksub">/{rows.length}</span></span></div></div>
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="close" size={10} /> Paused right now</div>
+              <div className="da-krow"><span className="da-knum">{paused.length}</span><span className="da-ksub">leads held</span></div></div>
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="clock" size={10} /> Inside grace</div>
+              <div className="da-krow"><span className="da-knum">{trending.length}</span></div></div>
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> Holding standard</div>
+              <div className="da-krow"><span className="da-knum">{cleared.length}</span></div></div>
+          </div>
+        )}
+      </div>
       {rows.length === 0 && <div className="empty">No data for this month yet.</div>}
+
+      {channels.some((c) => c.pct != null) && (
+        <div className="sm-grid3">
+          {channels.map((c) => {
+            const pctV = c.pct == null ? null : c.pct * 100;
+            const target = thr ? thr[c.id].green : null;
+            const d = pctV != null && target != null ? Math.round((pctV - target) * 10) / 10 : null;
+            return (
+              <div key={c.id} className="da-panel sm-ch">
+                <div className="da-pcap">{c.label}</div>
+                <div className="sm-chrow">
+                  <span className="sm-chpct">{pctV == null ? "–" : fmtPct(c.pct)}</span>
+                  {target != null && <span className="da-ksub">target {target}%</span>}
+                  {d != null && <span className={"da-chip " + (d >= 0 ? "up" : "dn")}>{d >= 0 ? "+" : ""}{d}</span>}
+                </div>
+                {pctV != null && target != null && (
+                  <span className="sm-bullet"><i style={{ width: `${Math.min(100, (pctV / target) * 80)}%` }} /><b style={{ left: "80%" }} /></span>
+                )}
+                {trail.length > 1 && <>
+                  <div className="sm-leg">{trail.map(moLabel).join(" · ")}</div>
+                  <Spark vals={trailPct[c.id] || []} />
+                </>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {mNow.any && (
+        <div className="da-tbl sm-mo">
+          <div className="warmhead"><PixIcon glyph="calendar" size={16} style={{ color: "#D0821E" }} />Month over month</div>
+          <div className="sm-mhead">
+            <span className="sm-mname">Measure</span><span className="sm-mval">{moLabel(month)}</span>
+            <span className="sm-mval dim">{moLabel(prevMonth)}</span><span className="da-flex" /><span className="sm-mmove">Move</span>
+          </div>
+          {MEASURES.map(([label, k]) => {
+            const a = mNow[k], b = mPrev.any ? mPrev[k] : null;
+            const mv = b != null ? move(a, b) : null;
+            const tone = mv == null ? "dim" : mv >= 0 ? "g" : "r";
+            return (
+              <div key={k} className="da-row sm-mrow">
+                <span className={"da-stripe st-" + tone} aria-hidden="true" />
+                <span className="sm-mname">{label}</span>
+                <span className="sm-mval">{fmtNum(a)}</span>
+                <span className="sm-mval dim">{b == null ? "–" : fmtNum(b)}</span>
+                <span className="da-flex" />
+                {mv == null ? <span className="da-chip wfix dim">–</span>
+                  : <span className={"da-chip wfix " + (mv >= 0 ? "up" : "dn")}><PixIcon glyph={mv >= 0 ? "triup" : "tridown"} size={9} /> {mv >= 0 ? "+" : ""}{mv}%</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <TrendsPanel config={config} stores={stores} data={data} />
 
       {byStandard.length > 0 && (
-        <div className="card gm-card">
-          <h3 className="gm-section fail">Where the floor is losing standard</h3>
-          <p className="hint">Grouped by the standard rather than by the person, so a pattern across the floor is obvious and one conversation can fix several people at once.</p>
-          {byStandard.map((g) => (
-            <div key={g.metric} className="std-group">
-              <div className="std-group-head">
-                <span className="std-group-name">{METRICS[g.metric].label}</span>
-                <span className="std-group-count">{g.people.length} below</span>
+        <div className="da-tbl sm-sec">
+          <div className="warmhead"><PixIcon glyph="warn" size={16} style={{ color: "#D0821E" }} />Where the floor is losing standard</div>
+          <div className="sm-secbody">
+            {byStandard.map((g) => (
+              <div key={g.metric} className="std-group">
+                <div className="std-group-head">
+                  <span className="std-group-name">{METRICS[g.metric].label}</span>
+                  <span className="std-group-count">{g.people.length} below</span>
+                </div>
+                <div className="std-people">
+                  {g.people.map((r, i) => (
+                    <div key={i} className="std-person">
+                      <b>{r.name}</b>
+                      {stores.length > 1 && <span className="std-store">{r.store}</span>}
+                      <span className="std-val">{r.shown} <em>vs {r.need}</em></span>
+                      {r.grace && <span className="std-tag">grace</span>}
+                      {r.atCap && <span className="std-tag hot">at cap</span>}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="std-people">
-                {g.people.map((r, i) => (
-                  <div key={i} className="std-person">
-                    <b>{r.name}</b>
-                    {stores.length > 1 && <span className="std-store">{r.store}</span>}
-                    <span className="std-val">{r.shown} <em>vs {r.need}</em></span>
-                    {r.grace && <span className="std-tag">grace</span>}
-                    {r.atCap && <span className="std-tag hot">at cap</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       {paused.length > 0 && (
-        <div className="card gm-card">
-          <h3 className="gm-section fail">Leads paused right now ({paused.length})</h3>
-          <p className="hint">At their cap and below standard, so the tool is holding their next lead.</p>
-          <table className="gm-table">
-            <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Because of</th></tr></thead>
-            <tbody>
-              {paused.map((r, i) => (
-                <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td>
-                  <td><RoleBadge role={(config.roles || []).find((x) => x.name === r.role)} /></td>
-                  <td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="da-tbl sm-sec">
+          <div className="warmhead"><PixIcon glyph="close" size={16} style={{ color: "#D0821E" }} />Leads paused right now <span className="da-count">{paused.length}</span></div>
+          <div className="sm-secbody">
+            <p className="da-hint">At their cap and below standard, so the tool is holding their next lead.</p>
+            <table className="gm-table">
+              <thead><tr><th>Store</th><th>Associate</th><th>Position</th><th>Leads</th><th>Because of</th></tr></thead>
+              <tbody>
+                {paused.map((r, i) => (
+                  <tr key={i}><td>{r.store}</td><td><b>{r.name}</b></td>
+                    <td><RoleBadge role={(config.roles || []).find((x) => x.name === r.role)} /></td>
+                    <td>{r.ev.opps} / {r.ev.cap}</td><td>{failureText(r.ev)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {cleared.length > 0 && (
-        <div className="card gm-card">
-          <h3 className="gm-section pass">Holding standard ({cleared.length})</h3>
-          <div className="std-people">
-            {cleared.map((r, i) => (
-              <div key={i} className="std-person ok">
-                <b>{r.name}</b>
-                <span className="std-val">{r.ev.opps} / {r.ev.cap} <em>leads</em></span>
-              </div>
-            ))}
+        <div className="da-tbl sm-sec">
+          <div className="warmhead"><PixIcon glyph="check" size={16} style={{ color: "#D0821E" }} />Holding standard <span className="da-count">{cleared.length}</span></div>
+          <div className="sm-secbody">
+            <div className="std-people">
+              {cleared.map((r, i) => (
+                <div key={i} className="std-person ok">
+                  <b>{r.name}</b>
+                  <span className="std-val">{r.ev.opps} / {r.ev.cap} <em>leads</em></span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -30877,6 +30990,51 @@ const SAGE_CSS = `
         .da-offrow .da-offchip { order:1; margin-left:auto; }
         .da-offrow .da-ptb.off { display:none; }
         .da-pbo { order:3; }
+      }
+
+      /* ================= the Summary, redesigned =================
+         The same hero identity card, the month's verdict as tiles on the green,
+         the three channels as panels with their recent months behind them, and
+         the month-over-month table under a warm header. The printed page keeps
+         its plain title instead of the hero. */
+      .sm-printhead { display:none; font:700 17px var(--font-display); margin-bottom:12px; }
+      .sm-grid3 { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-top:14px; }
+      .sm-chrow { display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
+      .sm-chpct { font:700 23px var(--font-mono); letter-spacing:-.02em; }
+      .sm-bullet { position:relative; display:block; height:8px; border-radius:5px; margin-top:8px;
+        background:rgba(16,32,52,.08); overflow:hidden; }
+      .sm-bullet i { position:absolute; inset:0 auto 0 0; border-radius:5px; background:var(--p2); }
+      .sm-bullet b { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--sandInk); }
+      .sm-leg { font-size:9px; color:var(--ink-3); margin-top:9px; }
+      .sm-spark { display:flex; align-items:flex-end; gap:4px; height:26px; margin-top:3px; }
+      .sm-spark i { flex:1; border-radius:2px 2px 0 0; background:color-mix(in srgb, var(--p2) 32%, transparent); }
+      .sm-spark i.hot { background:var(--p2); }
+      .sm-mo { margin-top:14px; }
+      .sm-mhead { display:flex; align-items:center; gap:12px; padding:8px 16px 6px;
+        font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+      .sm-mname { width:190px; flex:0 0 auto; font-size:12.5px; font-weight:600; }
+      .sm-mhead .sm-mname { font:inherit; }
+      .sm-mval { width:64px; text-align:right; flex:0 0 auto; font:700 12.5px var(--font-mono); }
+      .sm-mval.dim { color:var(--ink-3); font-weight:500; }
+      .sm-mmove { flex:0 0 auto; }
+      .sm-mrow { padding:8px 16px; }
+      .da-chip.dim { color:var(--ink-3); background:rgba(16,32,52,.06); }
+      .sm-sec { margin-top:14px; }
+      .sm-secbody { padding:12px 16px 14px; }
+      .sm-page .trends-card, .sm-page .card.gm-card { margin-top:14px; }
+      @media (max-width:760px) {
+        .sm-grid3 { grid-template-columns:1fr; }
+        .sm-mname { width:auto; flex:1 1 auto; min-width:0; }
+        .sm-mrow .da-flex, .sm-mhead .da-flex { display:none; }
+        .sm-mval { width:52px; font-size:11.5px; }
+        /* the daily sheet's two-line wrap does not apply to the measure rows */
+        .sm-mrow { flex-wrap:nowrap; padding:9px 14px; }
+        .sm-mrow::after { display:none; }
+      }
+      @media print {
+        .sm-hero { display:none; }
+        .sm-printhead { display:block; }
+        .sm-spark i { background:#9DB8A2; }
       }
 
     `;
