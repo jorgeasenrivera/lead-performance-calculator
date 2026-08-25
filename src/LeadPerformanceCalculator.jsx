@@ -387,7 +387,23 @@ const DEFAULT_THRESHOLDS = {
   internet: { green: 20, yellow: 10 },
   phone:    { green: 25, yellow: 12 },
   showroom: { green: 30, yellow: 15 },
+  /* The two video standards sit in the same list, because the store is run on
+     five figures and splitting three of them into "thresholds" and two into
+     "whatever the first tier happens to ask for" is how the two drifted apart.
+     A tier can still require a video figure; this is what good looks like. */
+  apptVideoDayPct:  { green: 60, yellow: 45 },
+  engagedVideoPct:  { green: 50, yellow: 35 },
 };
+/* The five, in the order they get talked about. Three are channels and take the
+   colour their line is drawn in on the hero's chart; two are the video
+   standards, which have no line to match, so they take the next two slots. */
+const FIVE = [
+  { id: "internet", key: "internetPct", label: "Internet", long: "Internet delivered", col: "var(--s1)" },
+  { id: "phone", key: "phonePct", label: "Phone", long: "Phone delivered", col: "var(--s2)" },
+  { id: "showroom", key: "showroomPct", label: "Showroom", long: "Showroom delivered", col: "var(--s3)" },
+  { id: "apptVideoDayPct", key: "apptVideoDayPct", label: "Appt video", long: "Video day of appointment", col: "var(--s4)" },
+  { id: "engagedVideoPct", key: "engagedVideoPct", label: "Engaged", long: "Engaged personalized video", col: "var(--s5)" },
+];
 
 // Older stores saved a single flat { green, yellow }. Spread it across all three
 // channels so nothing breaks and the numbers carry over.
@@ -498,11 +514,12 @@ function normThresholds(t) {
   if (!t) return JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
   if (t.green !== undefined || t.yellow !== undefined) {
     const flat = { green: t.green ?? 20, yellow: t.yellow ?? 10 };
-    return { internet: { ...flat }, phone: { ...flat }, showroom: { ...flat } };
+    return { ...JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS)),
+      internet: { ...flat }, phone: { ...flat }, showroom: { ...flat } };
   }
   const out = {};
-  for (const c of CHANNEL_LIST) {
-    out[c.id] = { ...DEFAULT_THRESHOLDS[c.id], ...(t[c.id] || {}) };
+  for (const k of Object.keys(DEFAULT_THRESHOLDS)) {
+    out[k] = { ...DEFAULT_THRESHOLDS[k], ...(t[k] || {}) };
   }
   return out;
 }
@@ -3475,7 +3492,7 @@ export default function LeadPerformanceCalculator() {
       navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
     } else {
       navItems = isAdmin
-        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "People"]]
+        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Targets"], ["roster", "People"]]
         : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]];
       navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
     }
@@ -3626,7 +3643,7 @@ export default function LeadPerformanceCalculator() {
             ) : (
               <SegControl
                 items={isAdmin
-                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "People"]]
+                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Targets"], ["roster", "People"]]
                   : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]]}
                 value={(isAdmin
                   ? ["board", "import", "gm", "history", "standards", "roster"]
@@ -3684,7 +3701,7 @@ export default function LeadPerformanceCalculator() {
                 {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
-                {tab === "standards" && isAdmin && <div className="tab-page"><StandardsEditor config={config} storeId={view} onChange={persistConfig} /></div>}
+                {tab === "standards" && isAdmin && <div className="tab-page"><TargetsEditor config={config} storeId={view} data={storeData} onChange={persistConfig} /></div>}
                 {tab === "roster" && (
                   <div className="tab-page">
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
@@ -20884,7 +20901,7 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
 const NAV_ICON = {
   board: "chart", dashboard: "chart", import: "arrowup", gm: "doc", history: "clock",
   floor: "users",   // Live Floor's own board: who is on the floor right now
-  standards: "check", actstd: "check", roster: "users", checkout: "handshake",
+  standards: "chart", actstd: "check", roster: "users", checkout: "handshake",
   queue: "phone", coaching: "user", plates: "car", overview: "globe",
   access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
   backup: "arrowdown",
@@ -23277,13 +23294,8 @@ function HistCell({ now, before }) {
    about. Three are channels, and take the colour their line is drawn in on the
    hero's chart; two are the video standards, which have no line to match, so
    they get the next two slots on the same scale. */
-const HIST_FIVE = [
-  { k: "internetPct", label: "Internet", col: CHANNEL_SERIES.internet, thr: (t) => t.internet.green },
-  { k: "phonePct", label: "Phone", col: CHANNEL_SERIES.phone, thr: (t) => t.phone.green },
-  { k: "showroomPct", label: "Showroom", col: CHANNEL_SERIES.showroom, thr: (t) => t.showroom.green },
-  { k: "apptVideoDayPct", label: "Appt video", col: "var(--s4)", thr: () => 60 },
-  { k: "engagedVideoPct", label: "Engaged", col: "var(--s5)", thr: () => 50 },
-];
+/* History reads the same five, against the same targets the store set. */
+const HIST_FIVE = FIVE.map((f) => ({ k: f.key, label: f.label, col: f.col, thr: (t) => t[f.id].green }));
 
 /* The hero card's channel bar, smaller: a column per month, the fill in that
    metric's colour, and a dashed cap where the target sits. Full height is the
@@ -23459,11 +23471,26 @@ function HistoryPanel({ config, store, data }) {
 }
 
 /* ---------------- Standards editor ---------------- */
-function StandardsEditor({ config, storeId, onChange }) {
+/* ---------------- Targets ----------------
+   This was Standards: a machine for deciding who gets restricted, with the lead
+   caps across the whole screen and the figures a store is actually run on
+   scattered through them as tier requirements.
+
+   The page is now the five: what green means, what yellow means, where the store
+   sits against each one today, and how many people are meeting it. The tier
+   ladder has not been deleted, because the board still needs a number to stop
+   somebody grabbing at, but it is a queue rule rather than a verdict on a
+   person, so it lives in a panel instead of across the page. */
+function TargetsEditor({ config, storeId, data, onChange }) {
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
+  const [openTier, setOpenTier] = useState(null);
   const std = config.standards?.[storeId]?.[roleId] || { tiers: [] };
   const roleName = config.roles.find((r) => r.id === roleId)?.name;
-  const storeName = config.stores.find((s) => s.id === storeId)?.name;
+  const store = config.stores.find((s) => s.id === storeId);
+  const storeName = store?.name;
+  const thr = normThresholds(store?.thresholds);
+  const roster = useMemo(() => (data?.roster || []).filter((a) => a.roleId === roleId), [data, roleId]);
+  const M = data?.months?.[ym()];
 
   const update = (fn, detail) => {
     const next = JSON.parse(JSON.stringify(config));
@@ -23471,69 +23498,197 @@ function StandardsEditor({ config, storeId, onChange }) {
     if (!next.standards[storeId][roleId]) next.standards[storeId][roleId] = { tiers: [] };
     fn(next.standards[storeId][roleId]);
     next.standards[storeId][roleId].tiers.sort((a, b) => a.cap - b.cap);
-    onChange(next, { store: storeId, action: "Edited standards", detail: `${roleName} @ ${storeName}: ${detail}` });
+    onChange(next, { store: storeId, action: "Edited lead caps", detail: `${roleName} @ ${storeName}: ${detail}` });
   };
 
+  const setTarget = (id, key, v) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const st = next.stores.find((x) => x.id === storeId);
+    st.thresholds = normThresholds(st.thresholds);
+    const was = st.thresholds[id][key];
+    const val = Math.max(0, Math.min(100, v));
+    if (was === val) return;
+    st.thresholds[id][key] = val;
+    const f = FIVE.find((x) => x.id === id);
+    onChange(next, { store: storeId, action: "Changed a target",
+      detail: `${storeName}: ${f ? f.long : id} ${key} ${was} → ${val}` });
+  };
+
+  /* Where the store itself sits on each of the five this month, and how many of
+     this position's people are at or above green. The number that matters before
+     changing a target is how many people it would move. */
+  const rows = useMemo(() => {
+    const chan = channelRates(M, data?.roster || []);
+    return FIVE.map((f) => {
+      const isChannel = !!chan.find((c) => c.id === f.id);
+      let now = null;
+      if (isChannel) now = chan.find((c) => c.id === f.id)?.pct ?? null;
+      else {
+        let sum = 0, n = 0;
+        for (const a of roster) { const v = M?.stats?.[norm(a.name)]?.[f.key]; if (v != null) { sum += v; n++; } }
+        now = n ? sum / n : null;
+      }
+      let hit = 0, seen = 0;
+      for (const a of roster) {
+        const v = M?.stats?.[norm(a.name)]?.[f.key];
+        if (v == null) continue;
+        seen++;
+        if (v * 100 >= thr[f.id].green) hit++;
+      }
+      return { ...f, now, hit, seen, green: thr[f.id].green, yellow: thr[f.id].yellow };
+    });
+  }, [M, roster, data, thr]);
+
+  const atGreen = rows.reduce((n, r) => n + r.hit, 0);
+  const possible = rows.reduce((n, r) => n + r.seen, 0);
+
   return (
-    <div className="standards">
-      <div className="card grace-setting">
-        <label className="grace-label">Grace period
-          <input type="number" min="0" max="28" defaultValue={config.stores.find((s) => s.id === storeId)?.graceDays ?? 10}
-            onBlur={(e) => {
-              const v = Math.max(0, Math.min(28, toNum(e.target.value) ?? 10));
-              const cur = config.stores.find((s) => s.id === storeId)?.graceDays ?? 10;
-              if (v === cur) return;
-              const next = JSON.parse(JSON.stringify(config));
-              next.stores.find((s) => s.id === storeId).graceDays = v;
-              onChange(next, { store: storeId, action: "Changed grace period", detail: `${storeName}: ${cur} → ${v} days` });
-            }} />
-          days
-        </label>
-        <span className="hint">No restrictions are recommended during the first days of the month while numbers settle. Anyone below standard shows as working toward the target instead. Set to 0 to turn this off.</span>
-      </div>
-      <div className="card">
-        <h3>Leaderboard colors <span className="section-sub">{storeName}</span></h3>
-        <ThresholdGrid
-          value={config.stores.find((s) => s.id === storeId)?.thresholds}
-          onChange={(next) => {
-            const cfg = JSON.parse(JSON.stringify(config));
-            const s = cfg.stores.find((x) => x.id === storeId);
-            s.thresholds = next;
-            onChange(cfg, { store: storeId, action: "Changed leaderboard thresholds", detail: storeName });
-          }} />
-      </div>
-      <div className="std-head">
-        <h3>Standards for</h3>
-        <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-          {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
-        <span className="hint">These apply to every {roleName} at this store only. Changes are recorded in the audit log.</span>
-      </div>
-      {std.tiers.map((tier, ti) => (
-        <div key={ti} className="card tier">
-          <div className="tier-head">
-            <span className="tier-label">Tier {ti + 1}</span>
-            <label>Lead cap <input type="number" defaultValue={tier.cap}
-              onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== tier.cap) update((s) => { s.tiers[ti].cap = v; }, `Tier ${ti + 1} cap ${tier.cap} → ${v}`); }} /></label>
-            <span className="hint">{ti === 0 ? `Everyone starts here. Meet the requirements below to grab past ${tier.cap}.` : `Applies from ${(std.tiers[ti - 1]?.cap ?? 0) + 1} to ${tier.cap} leads.`}</span>
-            <button className="btn-x" onClick={() => update((s) => s.tiers.splice(ti, 1), `Removed tier ${ti + 1} (cap ${tier.cap})`)}>Remove tier</button>
+    <div className="standards targets">
+      <div className="s2-hero tg-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">{storeName} · what good looks like on the five · every change is logged</div>
+            <h2 className="s2-store">Targets</h2>
           </div>
-          {tier.requirements.map((req, ri) => (
-            <div key={ri} className="req-row">
-              <select value={req.metric} onChange={(e) => update((s) => { s.tiers[ti].requirements[ri].metric = e.target.value; }, `Tier ${ti + 1}: metric → ${METRICS[e.target.value].label}`)}>
-                {Object.entries(METRICS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
-              </select>
-              <span>must be at least</span>
-              <input type="number" defaultValue={req.min}
-                onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== req.min) update((s) => { s.tiers[ti].requirements[ri].min = v; }, `Tier ${ti + 1}: ${METRICS[req.metric].short} ${req.min} → ${v}`); }} />
-              <span>{METRICS[req.metric].kind === "pct" ? "%" : "units"}</span>
-              <button className="btn-x" onClick={() => update((s) => s.tiers[ti].requirements.splice(ri, 1), `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <div className="s2-chips">
+            <select className="hist-month" value={roleId} onChange={(e) => setRoleId(e.target.value)}
+              title="Which position these apply to">
+              {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="tg-herobody">
+          <div className="tg-hstat"><span className="s2-cap">Metrics tracked</span>
+            <span className="tg-hbig">5</span><span className="tg-hsub">three channels, two videos</span></div>
+          <div className="tg-hstat"><span className="s2-cap">At green today</span>
+            <span className="tg-hbig">{atGreen}<span className="tg-hden"> of {possible || "-"}</span></span>
+            <span className="tg-hsub">{roster.length} {roster.length === 1 ? "person" : "people"} across 5 metrics</span></div>
+          <div className="tg-hstat"><span className="s2-cap">Grace period</span>
+            <span className="tg-hbig">{store?.graceDays ?? 10}<span className="tg-hden"> days</span></span>
+            <span className="tg-hsub">colours held while the month is thin</span></div>
+          <div className="tg-hstat"><span className="s2-cap">Lead caps</span>
+            <span className="tg-hbig">{std.tiers.length}</span>
+            <span className="tg-hsub">tiers for {roleName}</span></div>
+        </div>
+      </div>
+
+      <div className="sec-cap tg-cap">What green and yellow mean, per metric</div>
+      <div className="tg-tbl">
+        <div className="tg-h">
+          <span className="tg-name">Metric</span>
+          <span className="tg-now">Store now</span>
+          <span className="tg-bar" />
+          <span className="tg-in">Green at</span>
+          <span className="tg-in">Yellow at</span>
+          <span className="tg-hitc">Meeting green</span>
+        </div>
+        {rows.map((r) => (
+          <div key={r.id} className="tg-row" style={{ "--hc": r.col }}>
+            <span className="tg-name"><i className="tg-dot" />{r.long}</span>
+            <span className="tg-now">{r.now == null ? "-" : fmtPct(r.now)}</span>
+            <span className="tg-bar" title={r.now == null ? "no figures yet" : `${fmtPct(r.now)} against a ${r.green}% target`}>
+              <i style={{ width: r.now == null ? 0 : `${Math.min(100, (r.now * 100) / r.green * 100)}%` }} />
+              <b />
+            </span>
+            <label className="tg-in">
+              <input type="number" min="0" max="100" defaultValue={r.green} key={"g" + r.id + r.green}
+                onBlur={(e) => setTarget(r.id, "green", parseInt(e.target.value, 10) || 0)} />%
+            </label>
+            <label className="tg-in">
+              <input type="number" min="0" max="100" defaultValue={r.yellow} key={"y" + r.id + r.yellow}
+                onBlur={(e) => setTarget(r.id, "yellow", parseInt(e.target.value, 10) || 0)} />%
+            </label>
+            <span className="tg-hitc">
+              {r.seen === 0 ? <span className="tg-chip">no figures</span>
+                : <span className={"tg-chip " + (r.hit * 2 >= r.seen ? "ok" : "wt")}>{r.hit} of {r.seen}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="hint tg-note">
+        Each metric is scored on its own scale, because a 25% showroom close and a 25% internet close are not
+        the same achievement. At or above green shows green on The Board, at or above yellow shows yellow,
+        anything under that shows red.
+      </p>
+
+      <div className="tg-grid">
+        <div className="card tg-panel">
+          <div className="p-cap2">Grace period</div>
+          <label className="grace-label">
+            <input type="number" min="0" max="28" defaultValue={store?.graceDays ?? 10}
+              onBlur={(e) => {
+                const v = Math.max(0, Math.min(28, toNum(e.target.value) ?? 10));
+                const cur = store?.graceDays ?? 10;
+                if (v === cur) return;
+                const next = JSON.parse(JSON.stringify(config));
+                next.stores.find((x) => x.id === storeId).graceDays = v;
+                onChange(next, { store: storeId, action: "Changed grace period", detail: `${storeName}: ${cur} → ${v} days` });
+              }} />
+            days
+          </label>
+          <p className="hint">Colours are held back while the month's numbers are still thin, so nobody is
+            judged on four days of figures. Set it to 0 to turn this off.</p>
+        </div>
+
+        <div className="card tg-panel">
+          <div className="p-cap2">Lead caps <span className="tg-chip">still on, no longer the headline</span></div>
+          <p className="hint">The tier ladder decides how many leads somebody can hold at once, because the
+            board needs a number to stop at. It is a queue rule, not a verdict on the person.</p>
+          {std.tiers.map((tier, ti) => (
+            <div key={ti} className="tg-tier">
+              <div className="tg-tierh">
+                <b>Tier {ti + 1}</b>
+                <span className="hint">{ti === 0 ? "everyone starts here"
+                  : `${(std.tiers[ti - 1]?.cap ?? 0) + 1} to ${tier.cap} leads`}</span>
+                <span className="r-flex2" />
+                <span className="tg-chip">cap {tier.cap}</span>
+                <button className="pp-act" onClick={() => setOpenTier(openTier === ti ? null : ti)}>
+                  {openTier === ti ? "Close" : "Edit"}
+                </button>
+              </div>
+              {openTier === ti && (
+                <div className="tg-tierbody">
+                  <label className="tg-caplbl">Lead cap
+                    <input type="number" defaultValue={tier.cap}
+                      onBlur={(e) => { const v = toNum(e.target.value) ?? 0;
+                        if (v !== tier.cap) update((x) => { x.tiers[ti].cap = v; }, `Tier ${ti + 1} cap ${tier.cap} → ${v}`); }} />
+                  </label>
+                  {tier.requirements.map((req, ri) => (
+                    <div key={ri} className="tg-req">
+                      <select value={req.metric}
+                        onChange={(e) => update((x) => { x.tiers[ti].requirements[ri].metric = e.target.value; },
+                          `Tier ${ti + 1}: metric → ${METRICS[e.target.value].label}`)}>
+                        {Object.entries(METRICS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+                      </select>
+                      <span>at least</span>
+                      <input type="number" defaultValue={req.min}
+                        onBlur={(e) => { const v = toNum(e.target.value) ?? 0;
+                          if (v !== req.min) update((x) => { x.tiers[ti].requirements[ri].min = v; },
+                            `Tier ${ti + 1}: ${METRICS[req.metric].short} ${req.min} → ${v}`); }} />
+                      <span>{METRICS[req.metric].kind === "pct" ? "%" : "units"}</span>
+                      <button className="pp-act danger"
+                        onClick={() => update((x) => x.tiers[ti].requirements.splice(ri, 1),
+                          `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)}>Remove</button>
+                    </div>
+                  ))}
+                  <div className="tg-reqacts">
+                    <button className="pp-act" onClick={() => update((x) => x.tiers[ti].requirements.push({ metric: "apptVideoDayPct", min: 50 }),
+                      `Tier ${ti + 1}: added requirement`)}>Add a requirement</button>
+                    <button className="pp-act danger" onClick={() => update((x) => x.tiers.splice(ti, 1),
+                      `Removed tier ${ti + 1} (cap ${tier.cap})`)}>Remove this tier</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
-          <button className="btn-ghost" onClick={() => update((s) => s.tiers[ti].requirements.push({ metric: "apptVideoDayPct", min: 50 }), `Tier ${ti + 1}: added requirement`)}>+ Add requirement</button>
+          <button className="pp-act tg-addtier" onClick={() => update((x) => x.tiers.push({
+            cap: (std.tiers[std.tiers.length - 1]?.cap ?? 40) + 20,
+            requirements: [{ metric: "apptVideoDayPct", min: 50 }],
+          }), "Added tier")}>Add a tier</button>
         </div>
-      ))}
-      <button className="btn" onClick={() => update((s) => s.tiers.push({ cap: (std.tiers[std.tiers.length - 1]?.cap ?? 40) + 20, requirements: [{ metric: "apptVideoDayPct", min: 50 }] }), "Added tier")}>+ Add Tier</button>
+      </div>
     </div>
   );
 }
@@ -31562,6 +31717,77 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* ---- Targets, in the new language ---- */
+      .tg-hero { margin-bottom:12px; }
+      .tg-hero .s2-ava { color:var(--hB); }
+      .tg-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .tg-hstat { display:flex; flex-direction:column; gap:2px; min-width:110px; }
+      .tg-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .tg-hden { font-size:12px; color:rgba(255,255,255,.6); font-weight:500; }
+      .tg-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .sec-cap.tg-cap { font:700 9.5px var(--font-mono); letter-spacing:.11em; text-transform:uppercase;
+        color:var(--ink-2); margin:14px 2px 7px; display:flex; align-items:center; gap:8px; }
+      .sec-cap.tg-cap::after { content:""; flex:1; height:2px; opacity:.3;
+        background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
+      .tg-tbl { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+      .tg-h, .tg-row { display:flex; align-items:center; gap:10px; padding:9px 14px; }
+      .tg-h { border-bottom:1px solid var(--line); font:700 9.5px var(--font-mono);
+        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); }
+      .tg-row { border-bottom:1px solid var(--line); }
+      .tg-row:last-child { border-bottom:0; }
+      .tg-name { width:238px; flex:0 0 auto; display:flex; align-items:center; gap:8px;
+        font-size:12px; font-weight:600; }
+      .tg-h .tg-name { font-weight:700; }
+      .tg-dot { width:9px; height:9px; border-radius:50%; background:var(--hc); flex:0 0 auto; }
+      .tg-now { width:86px; flex:0 0 auto; text-align:right;
+        font:700 13.5px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--hc); }
+      .tg-h .tg-now { font:700 9.5px var(--font-mono); color:var(--ink-3); }
+      .tg-bar { position:relative; flex:1; min-width:60px; height:8px; border-radius:4px;
+        background:rgba(16,32,52,.08); }
+      .tg-bar i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--hc); }
+      .tg-bar b { position:absolute; left:100%; top:-2.5px; width:2px; height:13px;
+        border-radius:1px; background:var(--ink-2); }
+      .tg-h .tg-bar { background:none; }
+      .tg-in { width:86px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:3px;
+        font-size:10.5px; color:var(--ink-3); }
+      .tg-h .tg-in { justify-content:center; }
+      .tg-in input { width:52px; text-align:center; border:1px solid var(--line); border-radius:9px;
+        padding:5px 4px; font:600 11.5px var(--font-mono); color:var(--ink); background:var(--card); }
+      .tg-in input:focus-visible { outline:2px solid var(--p2); outline-offset:1px; }
+      .tg-hitc { width:118px; flex:0 0 auto; text-align:right; }
+      .tg-chip { display:inline-flex; align-items:center; border-radius:99px; padding:2px 9px;
+        font:700 9.5px var(--font-mono); background:rgba(16,32,52,.07); color:var(--ink-2); }
+      .tg-chip.ok { background:rgba(30,138,76,.12); color:#1E8A4C; }
+      .tg-chip.wt { background:rgba(176,119,0,.13); color:#8A5A00; }
+      .tg-note { margin:8px 2px 0; }
+      .tg-grid { display:grid; grid-template-columns:1fr 1.25fr; gap:10px; margin-top:12px; align-items:start; }
+      .tg-panel { margin-bottom:0; padding:13px 16px 15px; }
+      .p-cap2 { display:flex; align-items:center; gap:8px; font:700 9px var(--font-mono);
+        letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin-bottom:8px; }
+      .p-cap2 .tg-chip { text-transform:none; letter-spacing:0; }
+      .tg-tier { border-top:1px dashed var(--line); padding:8px 0 4px; }
+      .tg-tierh { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:12px; }
+      .r-flex2 { flex:1; }
+      .tg-tierbody { display:flex; flex-direction:column; gap:8px; padding:9px 0 4px; }
+      .tg-caplbl { display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:600; }
+      .tg-caplbl input, .tg-req input { width:64px; border:1px solid var(--line); border-radius:9px;
+        padding:5px 8px; font:600 11.5px var(--font-mono); color:var(--ink); background:var(--card); }
+      .tg-req { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--ink-2); }
+      .tg-req select { border:1px solid var(--line); border-radius:9px; padding:5px 8px;
+        font:600 11px var(--font-display); color:var(--ink); background:var(--card); max-width:220px; }
+      .tg-reqacts { display:flex; gap:8px; flex-wrap:wrap; }
+      .tg-addtier { margin-top:10px; }
+      .targets .grace-label input { width:64px; border:1px solid var(--line); border-radius:9px;
+        padding:6px 8px; font:600 12px var(--font-mono); color:var(--ink); background:var(--card); }
+      @media (max-width: 900px) {
+        .tg-grid { grid-template-columns:1fr; }
+        .tg-h { display:none; }
+        .tg-row { flex-wrap:wrap; row-gap:8px; }
+        .tg-name { width:100%; }
+        .tg-bar { flex:1 1 100%; order:5; }
+      }
       /* ---- People, in the new language ---- */
       .pp-hero { margin-bottom:12px; }
       .pp-hero .s2-ava { color:var(--hB); }
