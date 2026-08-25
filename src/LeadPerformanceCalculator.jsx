@@ -23273,9 +23273,39 @@ function HistCell({ now, before }) {
   );
 }
 
+/* The five figures the store is actually run on, in the order they get talked
+   about. Three are channels, and take the colour their line is drawn in on the
+   hero's chart; two are the video standards, which have no line to match, so
+   they get the next two slots on the same scale. */
+const HIST_FIVE = [
+  { k: "internetPct", label: "Internet", col: CHANNEL_SERIES.internet, thr: (t) => t.internet.green },
+  { k: "phonePct", label: "Phone", col: CHANNEL_SERIES.phone, thr: (t) => t.phone.green },
+  { k: "showroomPct", label: "Showroom", col: CHANNEL_SERIES.showroom, thr: (t) => t.showroom.green },
+  { k: "apptVideoDayPct", label: "Appt video", col: "var(--s4)", thr: () => 60 },
+  { k: "engagedVideoPct", label: "Engaged", col: "var(--s5)", thr: () => 50 },
+];
+
+/* The hero card's channel bar, smaller: a column per month, the fill in that
+   metric's colour, and a dashed cap where the target sits. Full height is the
+   target rather than the best of these months, so a short bar means short of
+   target and not merely short of last spring. */
+function HistBars({ vals, target, col }) {
+  return (
+    <span className="hist-bars" style={{ "--hc": col }}>
+      {vals.map((v, i) => (
+        <span key={i} className={"hist-b" + (i === vals.length - 1 ? " now" : "")}>
+          <i style={{ height: v == null ? 0 : `${Math.min(120, (v * 100) / target * 100) / 1.2}%` }} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function HistoryPanel({ config, store, data }) {
   const months = Object.keys(data.months || {}).sort().reverse();
   const [month, setMonth] = useState(months[0] || ym());
+  const roster = useMemo(() => (data.roster || []).slice().sort((a, b) => a.order - b.order), [data.roster]);
+  const thr = normThresholds(store.thresholds);
   if (months.length === 0) return <div className="empty">History builds itself month by month. Nothing here yet.</div>;
   const M = data.months[month];
   /* The month before the one being read, wherever it is in the list. Not "last
@@ -23283,80 +23313,147 @@ function HistoryPanel({ config, store, data }) {
      August with June rather than with nothing at all. */
   const prevKey = months[months.indexOf(month) + 1] || null;
   const prevStats = prevKey ? (data.months[prevKey].stats || {}) : {};
-  /* Oldest to newest, so the trail reads left to right the way time does. */
-  const trail = months.slice(0, 8).reverse();
+  /* Oldest to newest, ending on the month being read, so the bars run left to
+     right the way time does and the last one is the figure above them. */
+  const at = months.indexOf(month);
+  const trail = months.slice(at, at + 8).reverse();
   const before = (name, field) => (prevStats[norm(name)] || {})[field];
+  const valIn = (mk, name, field) => data.months[mk]?.stats?.[norm(name)]?.[field] ?? null;
+
+  /* The store's own five for the month, so a person can be read against the
+     floor they are standing on rather than against nothing. */
+  const storeFive = HIST_FIVE.map((f) => {
+    if (f.k.endsWith("VideoDayPct") || f.k === "apptVideoDayPct" || f.k === "engagedVideoPct") {
+      let sum = 0, n = 0;
+      for (const a of roster) { const v = M?.stats?.[norm(a.name)]?.[f.k]; if (v != null) { sum += v; n++; } }
+      const prev = (() => { let s2 = 0, m = 0;
+        for (const a of roster) { const v = (prevStats[norm(a.name)] || {})[f.k]; if (v != null) { s2 += v; m++; } }
+        return m ? s2 / m : null; })();
+      return { ...f, now: n ? sum / n : null, prev };
+    }
+    const id = f.k.replace("Pct", "");
+    const now = channelRates(M, roster).find((c) => c.id === id)?.pct ?? null;
+    const prev = prevKey ? (channelRates(data.months[prevKey], roster).find((c) => c.id === id)?.pct ?? null) : null;
+    return { ...f, now, prev };
+  });
 
   return (
     <div className="history">
-      <div className="gm-toolbar">
-        <select value={month} onChange={(e) => setMonth(e.target.value)}>
-          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
-        <span className="hint">
-          {prevKey
-            ? <>Every figure against {monthLabel(prevKey)}, in points.</>
-            : <>The first month on record, so there is nothing to compare it with yet.</>}
-          {month !== ym() && (M.standardsSnapshot
-            ? " Verdicts are under the standards that were in effect that month."
-            : " This month predates standards snapshots, so verdicts use today's standards.")}
-        </span>
-        {/* Said once, at the top, rather than under every position on the page. */}
-        <span className="hist-key">
-          <i className="hist-pip pass" />cleared
-          <i className="hist-pip fail" />restricted
-          <i className="hist-pip none" />no figures
-        </span>
+      <div className="s2-hero hist-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              {store.name} · the five that get tracked, month by month
+              {prevKey ? <> · against {monthLabel(prevKey)}</> : <> · the first month on record</>}
+            </div>
+            <h2 className="s2-store">History</h2>
+          </div>
+          <div className="s2-chips">
+            <select className="hist-month" value={month} onChange={(e) => setMonth(e.target.value)}
+              title="Which month to read">
+              {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+            <button className="da-hbtn" onClick={() => window.print()}>
+              <PixIcon glyph="doc" size={11} /> Print the month
+            </button>
+          </div>
+        </div>
+        <div className="hist-herobody">
+          <div className="hist-hstat">
+            <span className="s2-cap">Months on record</span>
+            <span className="hist-hbig">{months.length}</span>
+            <span className="hist-hsub">{monthLabel(months[months.length - 1])} to {monthLabel(months[0])}</span>
+          </div>
+          {storeFive.map((f) => {
+            const mv = f.now != null && f.prev != null ? (f.now - f.prev) * 100 : null;
+            return (
+              <div key={f.k} className="hist-hstat">
+                <span className="s2-cap">{f.label}</span>
+                <span className="hist-hbig">{f.now == null ? "-" : fmtPct(f.now)}</span>
+                <span className="hist-hsub">
+                  {mv == null ? "no month to compare" : Math.abs(mv) < 0.05 ? "level on " + monthLabel(prevKey)
+                    : `${mv > 0 ? "up" : "down"} ${Math.abs(mv).toFixed(1)} on ${monthLabel(prevKey)}`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
+      {month !== ym() && (
+        <p className="hint hist-note">
+          {M.standardsSnapshot
+            ? "Targets are the ones that were in force that month."
+            : "This month predates target snapshots, so it is read against today's."}
+        </p>
+      )}
+
       {config.roles.map((role) => {
-        const frozen = month !== ym() ? M.standardsSnapshot?.[role.id]?.tiers : null;
-        const tiers = frozen || config.standards?.[store.id]?.[role.id]?.tiers;
-        const people = (data.roster || []).filter((a) => a.roleId === role.id).sort((a, b) => a.order - b.order);
+        const people = roster.filter((a) => a.roleId === role.id);
         if (!people.length) return null;
         return (
-          <div key={role.id} className="card role-section" style={{ "--role": role.color }}>
-            <h3 className="role-header"><RoleBadge role={role} count={people.length} big /></h3>
-            <table className="gm-table hist-table">
-              <thead><tr>
-                <th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th>
-                <th>Engaged %</th><th>BH %</th><th>Verdict</th><th className="hist-trail-h">Since {monthLabel(trail[0])}</th>
-              </tr></thead>
-              <tbody>
-                {people.map((a) => {
-                  const st = M.stats?.[norm(a.name)];
-                  const ev = evaluateAssociate(st, tiers);
-                  return (
-                    <tr key={a.id}>
-                      <td><b>{a.name}</b></td>
-                      <td>{ev.opps ?? 0} / {ev.cap ?? "-"}</td>
-                      <td><HistCell now={st?.deliveredPct} before={before(a.name, "deliveredPct")} /></td>
-                      <td><HistCell now={st?.apptVideoDayPct} before={before(a.name, "apptVideoDayPct")} /></td>
-                      <td><HistCell now={st?.engagedVideoPct} before={before(a.name, "engagedVideoPct")} /></td>
-                      <td><HistCell now={st?.bhVideoPct} before={before(a.name, "bhVideoPct")} /></td>
-                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span>
-                        : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span>
-                        : ev.status === "no-data" ? <span className="verdict verdict-dim sm">No figures</span> : "-"}</td>
-                      {/* The whole point of the tab: what has been happening to this
-                          person, month by month, rather than one month in isolation. */}
-                      <td>
-                        <span className="hist-trail">
-                          {trail.map((m) => {
-                            const v = verdictIn(data, config, store.id, m, a);
-                            return (
-                              <i key={m} className={"hist-pip " + (v || "none") + (m === month ? " here" : "")}
-                                title={`${monthLabel(m)}: ${v === "pass" ? "cleared" : v === "fail" ? "restricted" : "no figures"}`} />
-                            );
-                          })}
+          <div key={role.id} className="hist-section">
+            <div className="warmhead"><RoleBadge role={role} count={people.length} /></div>
+            <div className="hist-tblh">
+              <span className="hist-name">Associate</span>
+              {HIST_FIVE.map((f) => (
+                <span key={f.k} className="hist-mh">
+                  <i style={{ background: f.col }} />{f.label}
+                </span>
+              ))}
+            </div>
+            {people.map((a) => {
+              const st = M.stats?.[norm(a.name)];
+              const held = evaluateAssociate(st, config.standards?.[store.id]?.[role.id]?.tiers);
+              /* Five empty bar charts say nothing five times. Somebody with no
+                 figures in any of the five, in this month or the eight behind it,
+                 gets one quiet line instead. */
+              const anywhere = HIST_FIVE.some((f) =>
+                st?.[f.k] != null || trail.some((mk) => valIn(mk, a.name, f.k) != null));
+              if (!anywhere) return (
+                <div key={a.id} className="hist-row hist-empty">
+                  <span className="hist-name"><b>{a.name}</b>
+                    <span className="hist-nsub">{held.opps ?? 0} / {held.cap ?? "-"} leads</span></span>
+                  <span className="hist-nofig">No figures in {monthLabel(month)}</span>
+                </div>
+              );
+              return (
+                <div key={a.id} className="hist-row">
+                  <span className="hist-name">
+                    <b>{a.name}</b>
+                    <span className="hist-nsub">{held.opps ?? 0} / {held.cap ?? "-"} leads</span>
+                  </span>
+                  {HIST_FIVE.map((f) => {
+                    const now = st?.[f.k] ?? null;
+                    const mv = moveOn(now, before(a.name, f.k));
+                    const target = f.thr(thr);
+                    return (
+                      <span key={f.k} className="hist-cell5" style={{ "--hc": f.col }}>
+                        <span className="hist-clbl">{f.label}</span>
+                        <span className="hist-ctop">
+                          <b>{now == null ? "-" : fmtPct(now)}</b>
+                          {mv && mv.dir !== "flat" && <i className={"hist-move " + mv.dir}>{mv.txt}</i>}
+                          {mv && mv.dir === "flat" && now == null && <i className="hist-move flat">new</i>}
                         </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <HistBars col={f.col} target={target}
+                          vals={trail.map((mk) => valIn(mk, a.name, f.k))} />
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         );
       })}
+      <p className="hint hist-key2">
+        Each figure is the month shown and the points it moved against the month before, with the last
+        {" "}{Math.min(8, months.length)} months as bars underneath. A full bar is that metric's target, and the
+        dashed line across them is where the target sits. Channel colours are the ones their lines are drawn
+        in on the dashboard's delivery chart.
+      </p>
     </div>
   );
 }
@@ -25221,6 +25318,10 @@ const SAGE_CSS = `
         --hA: #7FA98A; --hB: #55795F; --hC: #26382C;
         --sandHead: #F6E3C3; --sandCap: #EDE0BE; --sandTick: #E4C98D; --sandInk: #D0821E;
         --s1: #2E7DE0; --s2: #E88600; --s3: #17A054;
+        /* The two video standards have no line on the chart to match, so they take
+           the next two slots on the same scale: a violet and a teal, both clear of
+           the three channel hues and of each other. */
+        --s4: #8A4FA8; --s5: #0E8F8F;
       }
 
       /* ---- Android's own idea of how big your text should be ----
@@ -31362,6 +31463,64 @@ const SAGE_CSS = `
         .up-hist .imp-row .when { width:auto; padding-left:0; margin-left:30px; }
         .up-hist .act-b { margin-left:auto; }
         .imp-date { flex:1 1 130px; min-width:0; }
+      }
+      /* ---- History, in the new language ----
+         The page is the five figures, month by month. The hero says where the
+         store is, and every row says where one person is against the same five,
+         with the last eight months as the hero card's own bars, smaller. */
+      .hist-hero .s2-head { align-items:flex-start; }
+      .hist-month { height:34px; border:0; border-radius:12px; padding:0 12px;
+        font:600 11px var(--font-display); color:var(--ink); background:#fff;
+        box-shadow:0 4px 12px -6px rgba(12,24,18,.4); }
+      .hist-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .hist-hstat { display:flex; flex-direction:column; gap:2px; min-width:104px; }
+      .hist-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .hist-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .hist-note { margin:0 0 10px; }
+      .hist-section { background:var(--card); border:1px solid var(--line); border-radius:14px;
+        overflow:hidden; margin-bottom:12px; }
+      .hist-section .warmhead { border-radius:0; }
+      .hist-tblh, .hist-row { display:flex; align-items:center; gap:10px; padding:9px 14px; }
+      .hist-tblh { border-bottom:1px solid var(--line); }
+      .hist-row { border-bottom:1px solid var(--line); }
+      .hist-row:last-child { border-bottom:0; }
+      .hist-row:hover { background:color-mix(in srgb, var(--p2) 4%, transparent); }
+      .hist-name { width:158px; flex:0 0 auto; min-width:0; font-size:12.5px; }
+      .hist-name b { font-weight:600; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .hist-nsub { display:block; font:400 9.5px var(--font-mono); color:var(--ink-3); }
+      .hist-mh { width:112px; flex:0 0 auto; display:flex; align-items:center; gap:5px;
+        font:700 9.5px var(--font-mono); letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); }
+      .hist-mh i { width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+      .hist-cell5 { width:112px; flex:0 0 auto; display:flex; flex-direction:column; gap:3px; }
+      .hist-clbl { display:none; }
+      .hist-ctop { display:flex; align-items:baseline; gap:6px; }
+      .hist-ctop b { font:700 13.5px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--hc); }
+      .hist-move { font:600 9.5px var(--font-mono); font-style:normal; }
+      .hist-move.up { color:#1E8A4C; } .hist-move.down { color:#C2361F; }
+      .hist-move.flat { color:var(--ink-3); }
+      .hist-bars { position:relative; display:flex; align-items:flex-end; gap:3px; height:26px; width:100%; }
+      .hist-b { position:relative; flex:1; height:100%; border-radius:4px;
+        background:rgba(16,32,52,.06); display:flex; align-items:flex-end; }
+      .hist-b i { display:block; width:100%; border-radius:4px;
+        background:color-mix(in srgb, var(--hc) 38%, transparent); }
+      .hist-b.now i { background:var(--hc); }
+      /* the dashed cap, where the hero card puts it: the target, at 100% of a
+         bar that runs to 120% */
+      .hist-bars::after { content:""; position:absolute; left:0; right:0; bottom:83.33%;
+        border-top:1.5px dashed color-mix(in srgb, var(--hc) 55%, transparent); }
+      .hist-row.hist-empty { color:var(--ink-3); }
+      .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
+      .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
+      .hist-key2 { margin-top:2px; }
+      @media (max-width: 900px) {
+        .hist-tblh { display:none; }
+        .hist-row { flex-wrap:wrap; row-gap:10px; }
+        .hist-name { width:100%; }
+        .hist-cell5 { width:calc(50% - 5px); }
+        .hist-clbl { display:block; font:700 8.5px var(--font-mono); letter-spacing:.09em;
+          text-transform:uppercase; color:var(--ink-3); }
       }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
