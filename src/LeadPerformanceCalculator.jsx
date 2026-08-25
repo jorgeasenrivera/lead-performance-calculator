@@ -7737,7 +7737,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
               {Object.entries(ACCOUNT_KINDS).map(([k, v]) => (
                 <button key={k} type="button" className={"lf-kind" + (kind === k ? " on" : "")}
                   onClick={() => { setKind(k); setErr(""); }} aria-pressed={kind === k}>
-                  <b>{v.label}</b><i>{v.sub}</i>
+                  {v.label}
                 </button>
               ))}
             </div>
@@ -31153,20 +31153,25 @@ const SAGE_CSS = `
       .lb-ref-ask button:first-child { border-color:rgba(30,138,76,.4); color:#1E7A3C; }
       .q-open { background:rgba(201,138,0,.16); color:#8A5A10; }
       .q-open.none { background:rgba(16,32,52,.06); color:var(--ink-2); }
-      /* signing up: which of the two you are, asked before anything else */
-      .lf-kinds { display:flex; gap:8px; margin:2px 0 4px; }
-      .lf-kind { flex:1; min-width:0; text-align:left; cursor:pointer; border:1px solid var(--line);
-        background:var(--card); border-radius:12px; padding:10px 12px; font:inherit; color:var(--ink);
-        transition:border-color .18s ease, transform .18s ease; }
-      .lf-kind:hover { transform:translateY(-1px); }
-      .lf-kind b { display:block; font:700 12.5px var(--font-display); }
-      .lf-kind i { display:block; font-style:normal; font-size:10px; color:var(--ink-3); margin-top:2px; }
-      .lf-kind.on { border-color:var(--p2); box-shadow:0 0 0 1px var(--p2) inset;
-        background:color-mix(in srgb, var(--p2) 7%, var(--card)); }
-      .lf-kind.on b { color:var(--p3); }
-      .lf-kindnote { font-size:10.5px; color:var(--ink-2); line-height:1.55; margin:2px 0 6px; }
-      .lf-acctid { font-size:10.5px; color:var(--ink-3); }
-      .lf-acctid b { font-family:var(--font-mono); color:var(--ink-2); }
+      /* ---- signing up: which of the two you are ----
+         Off this screen's own palette rather than the dashboard's: the same ink
+         as the sign-in pill when one is chosen, the same line as the fields when
+         it is not, and the same radius as the button underneath. The choice does
+         not carry its own explanation - the line below it does, and it changes
+         with the choice, so the pills stay the width of their words. */
+      .lf-kinds { display:flex; gap:9px; margin:8px 0 2px; }
+      .lf-kind { flex:1; min-width:0; cursor:pointer; font:inherit; font-size:14px; font-weight:600;
+        padding:11px 14px; border-radius:999px; border:1.5px solid #C9CBC9;
+        background:none; color:#2E3A32;
+        transition: background .2s var(--ease), border-color .2s var(--ease),
+                    color .2s var(--ease), box-shadow .2s var(--ease), transform .2s var(--ease); }
+      .lf-kind:hover:not(.on) { border-color:#2E3A32; }
+      .lf-kind.on { background:#2E3A32; border-color:#2E3A32; color:#F1F2EE;
+        box-shadow:0 6px 18px rgba(46,58,50,0.18); }
+      .lf-kind:active { transform:scale(.985); }
+      .lf-kindnote { font-size:13px; line-height:1.5; color:#6E6E76; margin:10px 0 0; text-align:left; }
+      .lf-acctid { font-size:12px; color:#8A8A90; margin-top:14px; }
+      .lf-acctid b { font-weight:600; color:#6E6E76; }
       .asked-tag { display:inline-flex; align-items:center; border-radius:99px; padding:2px 9px;
         font:700 9.5px var(--font-mono); letter-spacing:.04em; margin-top:3px;
         background:rgba(16,32,52,.07); color:var(--ink-2); }
