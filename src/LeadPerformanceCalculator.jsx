@@ -10011,12 +10011,17 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     const sub = st === "customer" ? variant.custSub
       : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
       : isNext ? variant.upSub : `${availableAhead} ${variant.aheadSub}`;
+    // the desk asked for them by name: loud while it is fresh, then just history
+    const nudgeOn = me.nudgedAt && qMinsSince(me.nudgedAt) < 10;
     content = (
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
           <span className="q-mark q-mark-live"><span className="sf-live-dot" />
             <PixIcon glyph={variant.bannerGlyph} size={18} /><span>{variant.label}</span></span>
         </div>
+        {nudgeOn && (
+          <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you</div>
+        )}
         <div className="sf-poswrap">
           <div className="sf-aura" />
           {/* The arc fills as the time passes, so a long wait has a shape before it has
@@ -10456,27 +10461,47 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
 /* ---- live "who got opportunities today" tally, as color-fill leaderboard cards ----
    The Line counts manager hand-offs; Live Floor also counts walk-ins/appointments that
    flipped a rep to "with customer" — on the floor, catching an up IS the opportunity. */
-function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"] }) {
+/* What can have happened to an opportunity. Deliberately three: two endings and
+   an honest "not yet", because forcing a verdict on something still being worked
+   is how a log stops being true. */
+const OPP_OUTCOMES = { sold: "Sold", lost: "Didn't buy", working: "Still working it" };
+function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"], onCloseOpp }) {
   const act = useMemo(() => new Set(actions), [actions.join(",")]); // eslint-disable-line
   // The stock number or lead name typed at hand-off is already on the history entry.
   // Carrying it through means the tally answers "which ones?", not just "how many?".
+  /* Taken and still open are different questions. An opportunity is closed when
+     somebody says what happened to it - sold, did not buy, still working it -
+     and until then it is open, which is the number a manager wants when they are
+     deciding who can take the next one. The closing event points at the moment
+     the opportunity was handed over, because that is the only thing about it
+     guaranteed to be unique to that person. */
   const rows = useMemo(() => {
     const by = {};
+    const closed = new Map();
+    for (const e of history || []) {
+      if (e.action === "closed" && e.at) closed.set(e.id + "|" + e.at, e.outcome || "closed");
+    }
     for (const e of history || []) {
       if (!act.has(e.action)) continue;
       if (isTestId(e.id)) continue;          // the test identity is not a person
-
-      const b = by[e.id] || (by[e.id] = { id: e.id, n: 0, refs: [] });
+      const at = e.t || e.at || null;
+      const b = by[e.id] || (by[e.id] = { id: e.id, n: 0, open: 0, refs: [] });
       b.n += 1;
-      b.refs.push({ ref: (e.ref || "").trim(), t: e.t || e.at || null, reason: e.reason || "" });
+      const outcome = at ? closed.get(e.id + "|" + at) : null;
+      if (!outcome) b.open += 1;
+      b.refs.push({ ref: (e.ref || "").trim(), t: at, reason: e.reason || "", outcome: outcome || null });
     }
     return Object.values(by).sort((a, b) => b.n - a.n || String(nameOf(a.id)).localeCompare(String(nameOf(b.id))));
   }, [history, act, nameOf]);
   const total = rows.reduce((s, r) => s + r.n, 0);
+  const openTotal = rows.reduce((s, r) => s + r.open, 0);
+  const [closing, setClosing] = useState(null);          // "id|t" being closed out
   const max = rows[0]?.n || 1;
   return (
     <div className="q-opps">
-      <div className="q-opps-head">Opportunities today <span className="q-opps-total" style={{ background: accent }}>{total}</span></div>
+      <div className="q-opps-head">Opportunities today
+        <span className="q-opps-total" style={{ background: accent }}>{total}</span>
+        {openTotal > 0 && <span className="q-opps-open">{openTotal} still open</span>}</div>
       {rows.length === 0
         ? <p className="muted q-opps-empty">Nobody's caught an opportunity yet today.</p>
         : <div className="lb-list">
@@ -10489,13 +10514,29 @@ function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"]
                   {i === 0 && <span className="lb-crown" aria-hidden="true">▲</span>}
                   <span className="lb-n">{r.n}</span>
                 </div>
-                {r.refs.some((x) => x.ref) && (
+                {r.refs.length > 0 && (
                   <div className="lb-refs">
-                    {r.refs.map((x, k) => (
-                      <span key={k} className="lb-ref" title={[x.reason ? "Skipped forward: " + x.reason : "", x.t ? new Date(x.t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : ""].filter(Boolean).join(" · ")}>
-                        {x.ref || "no reference"}
-                      </span>
-                    ))}
+                    {r.refs.map((x, k) => {
+                      const key = r.id + "|" + x.t;
+                      const tip = [x.reason ? "Skipped forward: " + x.reason : "",
+                        x.t ? new Date(x.t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "",
+                        x.outcome ? OPP_OUTCOMES[x.outcome] || x.outcome : "still open"].filter(Boolean).join(" · ");
+                      if (closing === key) {
+                        return (
+                          <span key={k} className="lb-ref lb-ref-ask">
+                            {Object.entries(OPP_OUTCOMES).map(([o, label]) => (
+                              <button key={o} onClick={() => { onCloseOpp(r.id, x.t, o); setClosing(null); }}>{label}</button>
+                            ))}
+                            <button onClick={() => setClosing(null)}>Cancel</button>
+                          </span>
+                        );
+                      }
+                      const body = (x.ref || "no reference") + (x.outcome ? " · " + (OPP_OUTCOMES[x.outcome] || x.outcome) : "");
+                      return onCloseOpp && !x.outcome && x.t
+                        ? <button key={k} className="lb-ref lb-ref-open" title={tip + " · click to close it out"}
+                            onClick={() => setClosing(key)}>{body}</button>
+                        : <span key={k} className={"lb-ref" + (x.outcome ? " lb-ref-done" : "")} title={tip}>{body}</span>;
+                    })}
                   </div>
                 )}
               </div>
@@ -10889,6 +10930,21 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     }
     return by;
   }, [row]);
+  /* Still open: handed over and nobody has said what happened yet. This is the
+     drafts' "opp" chip, and it could not be drawn until an opportunity had a way
+     of being closed. */
+  const openOpps = useMemo(() => {
+    const closed = new Set();
+    for (const e of (row && row.history) || []) if (e.action === "closed" && e.at) closed.add(e.id + "|" + e.at);
+    const by = {};
+    for (const e of (row && row.history) || []) {
+      if (!UPS_ACTIONS.has(e.action) || !e.id) continue;
+      const at = e.t || e.at;
+      if (at && closed.has(e.id + "|" + at)) continue;
+      by[e.id] = (by[e.id] || 0) + 1;
+    }
+    return by;
+  }, [row]);
 
   const expectedNotHere = useMemo(
     () => salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id)),
@@ -10976,6 +11032,24 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     }, { action: "Queue: reordered", detail: `${realName(id)} to #${j + 1}` });
   };
   const removePerson = (id) => act((cur) => { cur.line = (cur.line || []).filter((p) => p.id !== id); return cur; }, { action: "Queue: removed", detail: realName(id) });
+  /* Asking somebody who is away or on a call to come back. It stamps their own
+     entry, which is what their phone reads and what the push is decided from. */
+  const nudge = (id) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id);
+    if (!p) return null;
+    p.nudgedAt = qNowIso();
+    pushH(cur, { action: "nudged", id, who: p.label, by: "manager" });
+    return cur;
+  }, { action: "Queue: nudged", detail: realName(id) });
+  const nudgedRecently = (p) => !!(p.nudgedAt && qMinsSince(p.nudgedAt) < 10);
+  /* Saying what happened to an opportunity. It points at the moment it was
+     handed over rather than at the stock number, because two people can be
+     working the same stock number and only one of them was handed this one. */
+  const closeOpp = (id, at, outcome) => act((cur) => {
+    pushH(cur, { action: "closed", id, at, outcome });
+    return cur;
+  }, { action: "Queue: opportunity closed", detail: `${realName(id)} · ${OPP_OUTCOMES[outcome] || outcome}` });
+
   const addPerson = (id) => act((cur) => {
     cur.line = cur.line || [];
     if (cur.line.some((p) => p.id === id)) return cur;
@@ -11035,7 +11109,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         );
       })()}
 
-      <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
+      <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />
 
       {showPins && (
         <ToolSheet title="Salesperson PINs" sub="Created the first time each person signs in" onClose={() => setShowPins(false)}>
@@ -11094,6 +11168,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
                 </div>
               </div>
               <span className={"q-ups" + (upsToday[p.id] ? "" : " none")}>{upsToday[p.id] || 0} today</span>
+              <span className={"q-ups q-open" + (openOpps[p.id] ? "" : " none")}
+                title={openOpps[p.id] ? "Handed over and not closed out yet" : "Nothing open"}>{openOpps[p.id] || 0} open</span>
               <div className="q-row-actions">
                 {pendingAssign === p.id ? (
                   <div className="q-reason">
@@ -11105,6 +11181,11 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
                 ) : (
                   <>
                     {!isNext && avail && <button className="btn btn-sm" onClick={() => setPendingAssign(p.id)}>Assign</button>}
+                    {!avail && !isTestId(p.id) && (
+                      <button className="btn btn-sm" disabled={nudgedRecently(p)} onClick={() => nudge(p.id)}>
+                        {nudgedRecently(p) ? "Nudged" : "Nudge"}
+                      </button>
+                    )}
                     <button className="btn btn-sm" onClick={() => decline(p.id)}>Decline</button>
                     <select className="q-flag-sel" value={p.status} onChange={(e) => setFlag(p.id, e.target.value)}>
                       <option value="waiting">In line</option>
@@ -11993,6 +12074,13 @@ function FloorBoard({ config, store, data, onData, userName }) {
     pushH(cur, { action: "nudged", id, who: p.label, by: "manager" });
     return cur;
   }, { action: "Floor: nudged", detail: realName(id) });
+  /* Saying what happened to an opportunity. It points at the moment it was
+     handed over rather than at the stock number, because two people can be
+     working the same stock number and only one of them was handed this one. */
+  const closeOpp = (id, at, outcome) => act((cur) => {
+    pushH(cur, { action: "closed", id, at, outcome });
+    return cur;
+  }, { action: "Floor: opportunity closed", detail: `${realName(id)} · ${OPP_OUTCOMES[outcome] || outcome}` });
   const nudgedMap = useMemo(() => {
     const m = {};
     for (const p of (row && row.line) || []) {
@@ -12302,7 +12390,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
         );
       })()}
 
-      <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
+      <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" onCloseOpp={closeOpp}
+        actions={["assigned", "auto-checkin", "auto-appt-show"]} />
 
       {unmatched.length > 0 && (
         <div className="f-unmatched">
@@ -30997,6 +31086,19 @@ const SAGE_CSS = `
       .mf .sa-card .sa-sub, .mf .sa-card .sa-input, .mf .sa-card .sa-chips,
       .mf .sa-card .sa-list { margin-left:16px; margin-right:16px; }
       .mf .sa-card .sa-list { margin-bottom:14px; }
+      /* opportunities: what is still open, and saying what happened to one */
+      .q-opps-open { margin-left:auto; font:700 10px var(--font-mono); letter-spacing:.06em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .lb-ref-open { cursor:pointer; border:1px dashed var(--line); background:var(--card);
+        color:var(--ink-2); font:inherit; }
+      .lb-ref-open:hover { border-style:solid; color:var(--ink); }
+      .lb-ref-done { opacity:.55; }
+      .lb-ref-ask { display:inline-flex; gap:5px; flex-wrap:wrap; padding:2px; }
+      .lb-ref-ask button { border:1px solid var(--line); background:var(--card); border-radius:99px;
+        padding:4px 10px; font:600 10px var(--font-display); color:var(--ink-2); cursor:pointer; }
+      .lb-ref-ask button:first-child { border-color:rgba(30,138,76,.4); color:#1E7A3C; }
+      .q-open { background:rgba(201,138,0,.16); color:#8A5A10; }
+      .q-open.none { background:rgba(16,32,52,.06); color:var(--ink-2); }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
       .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
