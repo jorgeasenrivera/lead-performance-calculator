@@ -16629,17 +16629,28 @@ function RoundUp({ config, store, data, M }) {
         <div className="ru-scrim" onClick={close}>
           <div className="ru-sheet" role="dialog" aria-label="Your round-up" onClick={(e) => e.stopPropagation()}>
             <div className="ru-sheet-body">
-              <div className="ru-sheet-head"
-                style={(() => { const b = store.brand || DEFAULT_BRAND;
-                  return { "--rup": b.primary, "--rud": b.deep || b.primary }; })()}>
-                <p className="ru-eyebrow">Your round-up</p>
-                <div className="ru-sheet-store">{store.name}</div>
-                {/* The date the round-up COVERS, not the date it is being read on.
-                    Everything in it stops at the end of yesterday, and a sheet
-                    headed with today's date while reporting yesterday's numbers is
-                    the kind of small lie that costs trust in all the others. */}
-                <div className="ru-sheet-date">
-                  Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+              {/* The same card the dashboard opens on, at the top of the sheet
+                  that opens before it: the store's own picture, the Garden wash
+                  and the grain. It was the one screen still wearing the old blue
+                  brand gradient, which made the round-up read as a different
+                  product to the page it hands you to. */}
+              <div className="ru-sheet-head s2-hero">
+                <i className="s2-noise" aria-hidden="true" />
+                <div className="ru-head-id">
+                  <div className="s2-ava">
+                    {store.icon ? <img src={store.icon} alt="" /> : <Logo size={34} />}
+                  </div>
+                  <div className="s2-idtx">
+                    <p className="ru-eyebrow">Your round-up</p>
+                    <div className="ru-sheet-store">{store.name}</div>
+                    {/* The date the round-up COVERS, not the date it is being read on.
+                        Everything in it stops at the end of yesterday, and a sheet
+                        headed with today's date while reporting yesterday's numbers is
+                        the kind of small lie that costs trust in all the others. */}
+                    <div className="ru-sheet-date">
+                      Through {new Date(Date.now() - 86400000).toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
+                    </div>
+                  </div>
                 </div>
                 {(ru2.up + ru2.down) > 0 && (
                   <div className="ru-verdict">
@@ -16739,9 +16750,10 @@ function RoundUp({ config, store, data, M }) {
                 </div>
               )}
             </div>
-            <div className="ru-sheet-foot" style={{ animationDelay: "760ms" }}>
-              <button className="ru-btn" onClick={close}>Open the dashboard</button>
-            </div>
+            {/* No button along the bottom. It said "open the dashboard" about a
+                sheet that closes onto the dashboard whichever way you dismiss it,
+                and it was spending a strip of a screen that is mostly numbers to
+                say so. Clicking away does it. */}
           </div>
         </div>
       </Overlay>
@@ -25798,9 +25810,15 @@ const SAGE_CSS = `
       /* The head is the store's own hero in miniature: the same gradient sweep,
          the same identity, so the sheet reads as the store speaking rather than
          the app interrupting. */
-      .ru-sheet-head { padding:20px 24px 16px; color:#fff; position:relative;
-        background:linear-gradient(130deg, var(--rup, #2A5E9B) 0%, var(--rup, #2A5E9B) 42%, var(--rud, #1D4674) 100%); }
-      .ru-verdict { position:absolute; right:24px; top:22px; text-align:right;
+      /* The hero's own card, at the top of the sheet. The radius follows the
+         sheet's corners rather than the hero's, because it is the sheet's edge
+         it is sitting in. */
+      .ru-sheet-head { padding:20px 24px 18px; color:#fff; position:relative;
+        border-radius:22px 22px 0 0; overflow:hidden; }
+      .ru-head-id { display:flex; align-items:center; gap:13px; position:relative; z-index:1; }
+      .ru-sheet-head .s2-ava { width:46px; height:46px; }
+      .ru-sheet-head .s2-ava::after { inset:-6px; }
+      .ru-verdict { position:absolute; right:24px; top:22px; text-align:right; z-index:1;
         opacity:0; animation:ruBloop .6s var(--ease-bloop) .3s both; }
       .ru-verdict-word { font-family:var(--font-display); font-size:15px; font-weight:700; }
       .ru-verdict-sub { font-size:11px; opacity:.78; margin-top:2px; }
@@ -25846,7 +25864,7 @@ const SAGE_CSS = `
       .ru2-down .ru2-spark i:last-child { background:var(--red); }
       @keyframes ru2Bar { to { transform:scaleY(1); } }
       @media (max-width: 560px) { .ru2-grid { grid-template-columns:repeat(2, 1fr); } }
-      .ru-eyebrow { font-size:11.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
+      .ru-eyebrow { font-size:10.5px; font-weight:700; letter-spacing:.13em; text-transform:uppercase;
         color:rgba(255,255,255,.72); margin:0; opacity:0; animation:ruBloop .6s var(--ease-bloop) .12s both; }
       .ru-sheet-store { font-family:var(--font-display); font-size:25px; letter-spacing:-.02em; line-height:1.12;
         margin-top:3px; color:#fff; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
