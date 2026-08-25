@@ -16571,7 +16571,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
                 restriction={restrictions[a.id]} onSetRestriction={(r) => onSetRestriction(a, r)}
                 focused={focusName === a.name}
                 thresholds={store.thresholds}
-                storeData={data}
+                storeData={data} cfg={config}
                 picking={picking} picked={sel.has(norm(a.name))}
                 onPick={() => toggleSel(norm(a.name))}
                 rolled={!query && i >= ROLL_CAP && !rollOpen[role.id] && a.name !== focusName} />
@@ -16685,8 +16685,148 @@ function MetricStrip({ ev, stats }) {
   );
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData, picking, picked, onPick }) {
+/* ---------------- The associate card ----------------
+   Clicking a row opens the person, fixed to the viewport rather than unfolding
+   in place: on a long board the old inline panel opened somewhere off screen and
+   pushed every row below it down. It grows out of the point that was clicked and
+   shrinks back into it, over a frosted backdrop rather than a dark one, and
+   carries what the drafts asked for: where the units came from, the new/used
+   split, how they are trending against their coaching goal, the months behind
+   them, the four standards, and the one thing they are best at. */
+function AssocCard({ a, stats, ev, data, config, origin, onClose }) {
+  const [closing, setClosing] = useState(false);
+  const boxRef = useRef(null);
+  const shut = () => { setClosing(true); setTimeout(onClose, 240); };
+  /* The click point is in screen space; a transform-origin is in the card's own
+     space, so it has to be measured once the card is on screen — before paint,
+     or the first frame of the grow animation uses the wrong corner. */
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el || !origin) return;
+    const r = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min(r.width, origin.x - r.left));
+    const y = Math.max(-80, Math.min(r.height + 80, origin.y - r.top));
+    el.style.transformOrigin = `${x.toFixed(0)}px ${y.toFixed(0)}px`;
+  }, [origin]);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line
+
+  const ini = a.name.split(" ").filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const units = unitsOf(stats) || 0;
+  const ch = DETAIL_CHANNELS.map((c) => ({ ...c, n: stats?.[c.units] ?? 0 }));
+  const nw = stats?.newUnits ?? null, us = stats?.usedUnits ?? null;
+  const hasSplit = nw != null && us != null && (nw + us) > 0;
+
+  /* Trending to goal. The goal is the one the manager set in Coaching; the
+     projection runs this month's units out over the store's selling days, the
+     same arithmetic the hero's pace track uses. */
+  const goal = data?.goals?.[a.id]?.monthly ?? 0;
+  const isHol = (d) => ((config.holidays || []).some((h) => (h.date || h) === d));
+  const daysAll = storeDaysInMonth(ym(), isHol);
+  const daysDone = storeDaysDone(ym(), isHol, today());
+  const projected = daysDone > 0 && daysAll > 0 ? Math.round((units / daysDone) * daysAll * 10) / 10 : null;
+  const trendTier = goal > 0 && projected != null ? goalTier(projected, goal) : null;
+
+  /* The months behind them. A per-person WEEK is not in the data anywhere — only
+     the month documents carry a person's units — so this is the last eight
+     months, said plainly rather than dressed up as weeks. */
+  const trail = Object.keys(data?.months || {}).sort().slice(-8)
+    .map((k) => ({ k, u: unitsOf(data.months[k]?.stats?.[norm(a.name)]) || 0 }));
+  const trailMax = Math.max(1, ...trail.map((t) => t.u));
+
+  // what they are best at: the graded standard furthest over its bar
+  const best = (ev?.tier?.requirements || []).map((r) => {
+    const def = METRICS[r.metric]; const v = stats?.[r.metric];
+    if (!def || v == null) return null;
+    const shown = def.kind === "pct" ? v * 100 : v;
+    return { metric: r.metric, def, shown, min: r.min, ratio: shown / (r.min || 1) };
+  }).filter(Boolean).sort((x, y) => y.ratio - x.ratio)[0];
+
+  return createPortal(
+    <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
+      <div ref={boxRef} className={"acard" + (closing ? " closing" : "")} role="dialog" aria-label={a.name}>
+        <button className="ac-x" onClick={shut} aria-label="Close">×</button>
+        <div className="ac-head">
+          <span className="ac-ava">{ini}</span>
+          <div>
+            <div className="ac-name">{a.name}</div>
+            <div className="ac-sub">
+              {ev?.cap != null ? <>{ev.opps ?? 0}/{ev.cap} leads held</> : "no cap set"}
+              {units > 0 ? <> · {fmtNum(units)} out</> : null}
+            </div>
+          </div>
+        </div>
+
+        {ch.some((c) => c.n > 0) && (<>
+          <div className="ac-cap">Sold by channel</div>
+          <div className="ac-ch">
+            {ch.map((c) => (
+              <span key={c.id}>
+                <em><u style={{ background: CHANNEL_HUE[c.id] }} />{c.label}</em>
+                <b>{fmtNum(c.n)}</b>
+              </span>
+            ))}
+          </div>
+        </>)}
+
+        {hasSplit && (<>
+          <div className="ac-cap">New vs used</div>
+          <div className="s2-split ac-split">
+            <i className="nw" style={{ flex: Math.max(nw, 0.01) }} />
+            <i className="us" style={{ flex: Math.max(us, 0.01) }} />
+          </div>
+          <div className="ac-splitlbl"><span><b>{fmtNum(nw)}</b> new</span><span><b>{fmtNum(us)}</b> used</span></div>
+        </>)}
+
+        {goal > 0 && projected != null && (<>
+          <div className="ac-cap">Trending to goal <i>· from Coaching</i></div>
+          <div className="ac-trend">
+            <i style={{ width: `${Math.min(100, (projected / goal) * 100).toFixed(0)}%`, background: trendTier.col }} />
+            <s style={{ left: "calc(100% - 2px)" }} />
+          </div>
+          <div className="ac-trendlbl">
+            <span>trending <b style={{ color: trendTier.col }}>{fmtNum(projected)}</b></span>
+            <span>goal {fmtNum(goal)}</span>
+          </div>
+        </>)}
+
+        {trail.length > 1 && (<>
+          <div className="ac-cap">Last {trail.length} months <i>· units delivered</i></div>
+          <svg className="ac-spark" viewBox="0 0 310 44" preserveAspectRatio="none">
+            <polyline fill="none" strokeWidth="2" strokeLinejoin="round"
+              stroke={trendTier ? trendTier.col : "var(--p2)"}
+              points={trail.map((t, i) => `${(i / (trail.length - 1) * 300 + 5).toFixed(1)},${(40 - (t.u / trailMax) * 32).toFixed(1)}`).join(" ")} />
+            <circle r="3.2" fill={trendTier ? trendTier.col : "var(--p2)"}
+              cx={305} cy={(40 - (trail[trail.length - 1].u / trailMax) * 32).toFixed(1)} />
+          </svg>
+          <div className="ac-trendlbl">
+            <span>{monthLabel(trail[0].k)}</span><span>{monthLabel(trail[trail.length - 1].k)}</span>
+          </div>
+        </>)}
+
+        {ev?.tier?.requirements?.length > 0 && (<>
+          <div className="ac-cap">The four standards</div>
+          <div className="ac-gauges"><MetricStrip ev={ev} stats={stats} /></div>
+        </>)}
+
+        {best && (<>
+          <div className="ac-cap">Best at</div>
+          <span className="ac-best">
+            <PixIcon glyph="trophy" size={10} /> {METRIC_TINY[best.metric] || best.def.short}
+            {" · "}{best.def.kind === "pct" ? Math.round(best.shown * 10) / 10 + "%" : fmtNum(best.shown)}
+            {" vs "}{best.def.kind === "pct" ? best.min + "%" : best.min}
+          </span>
+        </>)}
+      </div>
+    </div>, document.body);
+}
+
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData, cfg, picking, picked, onPick }) {
   const [open, setOpen] = useState(false);
+  const [origin, setOrigin] = useState(null);
   const cardRef = useRef(null);
   // Picked out of the hero shortlist or the podium: open the card and bring it
   // into view, so the manager lands on the person rather than hunting for them.
@@ -16747,7 +16887,11 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
       <div className="assoc-row" onClick={(e) => {
         // a tap on a gauge is a glance, not a request to unfold the whole row
         if (e.target.closest && e.target.closest(".bloop-host")) return;
-        picking ? onPick() : setOpen(!open);
+        if (e.target.closest && e.target.closest(".s2-rowfoot")) return;
+        if (picking) { onPick(); return; }
+        // the card grows from the point that was clicked
+        setOrigin({ x: e.clientX, y: e.clientY });
+        setOpen(!open);
       }}>
         <span className={"da-stripe st-" + (restrictedNow || incomplete ? "dim"
           : ev.status === "pass" ? "g"
@@ -16858,8 +17002,10 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           )}
         </div>
       )}
-      {open && !picking && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
-        data={storeData} associate={a} />}
+      {open && !picking && stats && (
+        <AssocCard a={a} stats={stats} ev={ev} data={storeData} config={cfg}
+          origin={origin} onClose={() => setOpen(false)} />
+      )}
     </div>
   );
 }
@@ -31279,6 +31425,53 @@ const SAGE_CSS = `
       .s2-rowdays { width:56px; border:1px solid var(--line); border-radius:8px; padding:5px 8px;
         font:700 11px var(--font-mono); }
       .s2-pickbtn { display:inline-flex; align-items:center; gap:6px; margin:12px 0 2px; }
+      /* ---- the associate card ----
+         fixed to the viewport so it opens where you are looking, out of focus
+         behind rather than dark, growing from the row that was clicked */
+      .acard-scrim { position:fixed; inset:0; z-index:410; display:flex; align-items:center;
+        justify-content:center; padding:20px; background:rgba(245,245,247,.32);
+        -webkit-backdrop-filter:blur(7px); backdrop-filter:blur(7px); }
+      .acard { position:relative; width:min(360px, 100%); max-height:88vh; overflow:auto;
+        background:var(--card); border-radius:16px; padding:16px 18px 16px;
+        box-shadow:0 30px 70px -20px rgba(10,20,14,.6);
+        animation:acpop .32s cubic-bezier(.2,.8,.3,1.14) both; }
+      @keyframes acpop { from { transform:scale(.35); opacity:0; } }
+      .acard.closing { animation:acout .24s cubic-bezier(.5,0,.75,.4) both; }
+      @keyframes acout { to { transform:scale(.35); opacity:0; } }
+      .ac-x { position:absolute; top:8px; right:12px; border:0; background:none;
+        font:700 19px var(--font-display); line-height:1; color:var(--ink-3); cursor:pointer; }
+      .ac-head { display:flex; align-items:center; gap:11px; margin-bottom:4px; text-align:left; }
+      .ac-head > div { flex:1; min-width:0; }
+      .ac-ava { width:40px; height:40px; border-radius:50%; flex:0 0 auto; display:flex;
+        align-items:center; justify-content:center; color:#fff; font:700 13px var(--font-mono);
+        background:linear-gradient(140deg, var(--p2), var(--p3)); }
+      .ac-name { font:700 16px var(--font-display); }
+      .ac-sub { font-size:9.5px; color:var(--ink-2); }
+      .ac-cap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+        color:var(--ink-3); margin:13px 0 5px; display:flex; align-items:center; gap:6px; }
+      .ac-cap i { font-style:normal; text-transform:none; letter-spacing:0; font-weight:500; }
+      .ac-ch { display:flex; gap:8px; }
+      .ac-ch span { flex:1; background:rgba(16,32,52,.04); border-radius:10px; padding:6px 9px; }
+      .ac-ch b { display:block; font:700 15px var(--font-mono); }
+      .ac-ch em { font:600 8px var(--font-mono); font-style:normal; letter-spacing:.07em;
+        text-transform:uppercase; color:var(--ink-2); display:flex; align-items:center; gap:4px; }
+      .ac-ch em u { width:6px; height:6px; border-radius:2px; text-decoration:none; display:inline-block; }
+      .ac-split { height:12px; }
+      .ac-splitlbl { display:flex; justify-content:space-between; font-size:9.5px;
+        color:var(--ink-2); margin-top:4px; }
+      .ac-splitlbl b { font-family:var(--font-mono); color:var(--ink); }
+      .ac-trend { position:relative; height:10px; border-radius:5px; background:rgba(16,32,52,.08); }
+      .ac-trend i { position:absolute; left:0; top:0; bottom:0; border-radius:5px; }
+      .ac-trend s { position:absolute; top:-3px; width:2px; height:16px; background:var(--ink-2);
+        text-decoration:none; }
+      .ac-trendlbl { display:flex; justify-content:space-between; font-size:9px;
+        color:var(--ink-2); margin-top:4px; }
+      .ac-trendlbl b { font-family:var(--font-mono); }
+      .ac-spark { display:block; width:100%; height:44px; }
+      .ac-gauges .mstrip { display:flex; gap:2px; justify-content:space-between; }
+      .ac-gauges .s2g4 { width:70px; }
+      .ac-best { display:inline-flex; align-items:center; gap:6px; border-radius:99px;
+        padding:5px 11px; font:700 10px var(--font-mono); background:rgba(30,138,76,.12); color:#1E7A3C; }
       .s2-podium { display:flex; gap:8px; margin-bottom:4px; }
       .s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
         background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
