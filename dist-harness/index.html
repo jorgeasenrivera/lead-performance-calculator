@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Safari tints its own toolbars with this. Left unset it paints them white,
+         which is the hard line the app's tinted background used to butt into at
+         the top and bottom of the screen. Same value as --bg, and the same value
+         the identity's page ground uses, so the reason has not changed. -->
+    <meta name="theme-color" content="#F5F5F7" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Sage</title>
+    <script type="module" crossorigin src="/assets/index-C_e7wE-o.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- The white flash across the sign-in arrival, and it lives HERE rather than
+         in the app for one reason: the moment it exists to cover is the moment the
+         signed-out tree is replaced by the signed-in one, and those two have
+         different root components, so React tears the whole subtree down between
+         them. Anything mounted inside either one is destroyed by the very swap it
+         was drawn to hide — measured: the flash restarted at 0 on the frame the
+         dashboard appeared. Outside React it cannot be unmounted, and it needs
+         nothing from React: the beats drive it entirely through classes on <html>. -->
+    <div class="sage-flash" aria-hidden="true"></div>
+    <!-- The far end of the jump: the point the streaks converged on, left glowing
+         for a moment after they have gone. The dashboard comes out of it. Static
+         for the same reason the flash is — it has to outlive the swap between the
+         signed-out and signed-in trees, and it is placed from --jx/--jy, which the
+         sign-in screen measures off its own mark. -->
+    <div class="sage-spark" aria-hidden="true"></div>
+  </body>
+</html>

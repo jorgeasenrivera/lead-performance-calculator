@@ -3677,7 +3677,7 @@ export default function LeadPerformanceCalculator() {
                 {/* The gutter the Dashboard has had all along. These four were
                     rendered straight into .page, which carries no padding, so they
                     ran edge to edge on anything wider than a laptop. */}
-                {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
                 {tab === "standards" && isAdmin && <div className="tab-page"><StandardsEditor config={config} storeId={view} onChange={persistConfig} /></div>}
@@ -18809,39 +18809,38 @@ function UploadHistory({ data, onChange }) {
     setBusy(false);
   };
 
+  /* The drafts read the history as the same checklist line as the imports above:
+     the file, what it was, when it landed and where, and the way back out. */
   return (
-    <div className="da-tbl imp-card up-card">
-      <div className="warmhead"><PixIcon glyph="doc" size={16} style={{ color: "#D0821E" }} />
-        Upload history <span className="da-count">{Math.min(log.length, 25)}</span></div>
+    <div className="up-hist">
+      <div className="p-cap"><PixIcon glyph="doc" size={13} /> Upload history</div>
       <p className="hint up-hint">
-        Every upload, with the time it landed. Activity days can be deleted on their own.
-        The other reports overwrite the month's totals, so undoing one means rewinding to just before it.
+        Activity days can be deleted on their own. The other reports overwrite the month's
+        totals, so undoing one rewinds to just before it.
       </p>
-      <div className="up-list">
-        {log.slice(0, 25).map((u, i) => {
-          const canSurgical = u.type === "activity" && u.day;
-          const after = laterThan(u);
-          return (
-            <div key={u.id || i} className="up-row">
-              <span className="up-when">{new Date(u.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
-              <span className="up-type">{u.label}</span>
-              <span className="up-file">{u.file}</span>
-              <span className="up-count">{u.count} rows{u.skipped ? `, ${u.skipped} ignored` : ""}</span>
-              <span className="up-by">{u.by}</span>
-              {canSurgical ? (
-                <button className="btn-x danger" disabled={busy} onClick={() => deleteActivityDay(u)}>Delete</button>
-              ) : u.snapT ? (
-                <button className="btn-x danger" disabled={busy} onClick={() => undoUpload(u)}
-                  title={after > 0 ? `Also undoes ${after} later upload${after === 1 ? "" : "s"}` : "Rewinds to just before this upload"}>
-                  Undo{after > 0 ? ` (+${after})` : ""}
-                </button>
-              ) : (
-                <span className="hint">-</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {log.slice(0, 25).map((u, i) => {
+        const canSurgical = u.type === "activity" && u.day;
+        const after = laterThan(u);
+        const lands = canSurgical && u.day
+          ? new Date(u.day + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+          : new Date(u.t).toLocaleDateString("en-US", { month: "long" });
+        return (
+          <div key={u.id || i} className="imp-row done">
+            <span className="ck"><PixIcon glyph="check" size={11} /></span>
+            <b>{u.file}</b>
+            <span className="up-tag">{u.label}</span>
+            <span className="when">{new Date(u.t).toLocaleString([], { hour: "numeric", minute: "2-digit" })} · {lands}</span>
+            {canSurgical ? (
+              <button className="act-b" disabled={busy} onClick={() => deleteActivityDay(u)}>Delete</button>
+            ) : u.snapT ? (
+              <button className="act-b" disabled={busy} onClick={() => undoUpload(u)}
+                title={after > 0 ? `Also undoes ${after} later upload${after === 1 ? "" : "s"}` : "Rewinds to just before this upload"}>
+                Undo{after > 0 ? ` (+${after})` : ""}
+              </button>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -22500,6 +22499,25 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
   const seedMonthLabel = new Date(seedDay + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const seedT = seeding ? Object.assign({}, ...Object.values(data.months?.[seedMonth]?.imports || {})) : t;
   const doneCount = ["appointment", "video", "delivery"].filter((k) => seedT[k]).length;
+  /* The drafts' order, which is the order the job happens in: the card that says
+     what this page is doing, the pad you drop the file on, and only then the two
+     lists that say what has landed and what it did. The pad is full width and
+     first because it is the only thing on the page anybody came here to use. */
+  const aDay = activityDay || today();
+  const aDayLabel = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const yday = dayIn(new Date(Date.now() - 86400000));
+  const actUploads = (data.importLog || []).filter((u) => u.type === "activity" && u.day === aDay);
+  const actRecs = Object.values(data.activity?.[aDay] || {});
+  const actStamp = actUploads[0]?.t || actRecs.map((r) => r.uploadedAt).filter(Boolean).sort().slice(-1)[0] || null;
+  const ydayRecs = Object.values(data.activity?.[yday] || {});
+  const ydayStamp = ydayRecs.map((r) => r.uploadedAt).filter(Boolean).sort().slice(-1)[0] || null;
+  const stampAt = (t) => new Date(t).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+  const CHECKS = [
+    { k: "appointment", n: "Appointment report", when: seedT.appointment ? "in" : "waiting" },
+    { k: "video", n: "Video report", when: seedT.video ? "in" : "waiting" },
+    { k: "delivery", n: "Delivery Summary", when: seedT.delivery ? (seeding ? "on file" : "landed today") : "emailed in on schedule" },
+    { k: "delivery-campaign", n: "Campaign Delivery Summary", when: seedT["delivery-campaign"] ? "in" : "units only, optional" },
+  ];
   return (
     <div className="import">
       <ImportHero
@@ -22514,65 +22532,71 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
               onChange={(e) => { const v = e.target.value; if (v && v <= curMonth) setActivityDay(v + "-01"); }} />
           )}
         </>} />
-      <div className="import-grid">
-        <div className="da-tbl imp-card">
-          <div className="warmhead"><PixIcon glyph="check" size={16} style={{ color: "#D0821E" }} />
-            {seeding ? "For " + seedMonthLabel : "Today's imports"}
-            <span className="da-count">{doneCount}/3</span></div>
-          <div className="imp-body">
-          <div className="check-group-label">Upload these</div>
-          {(activityDay || today()).slice(0, 7) !== today().slice(0, 7) && (
-            <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
-          )}
-          <div className={"check " + (seedT.appointment ? "done" : "")}>
-            <span className="check-box">{seedT.appointment ? <PixIcon glyph="check" size={11} /> : ""}</span>Appointment report
-          </div>
-          <div className={"check " + (seedT.video ? "done" : "")}>
-            <span className="check-box">{seedT.video ? <PixIcon glyph="check" size={11} /> : ""}</span>Video report
-          </div>
 
-          <div className="check-group-label">Arriving automatically</div>
-          <div className={"check readonly " + (seedT.delivery ? "done" : "")}>
-            <span className="check-box">{seedT.delivery ? <PixIcon glyph="check" size={11} /> : "·"}</span>
-            Delivery Summary
-            <span className="check-note">
-              {seedT.delivery
-                ? (seeding ? "on file for " + seedMonthLabel : "landed today, all channels")
-                : "emailed in on schedule, nothing to upload"}
-            </span>
-          </div>
-          {!seedT.delivery && (
-            <p className="hint">
-              If this hasn't ticked by mid-morning, the email pipeline may be stuck. You can still
-              pull the Delivery Summary by hand and drop it below. Hit <strong>Help</strong> for the steps.
-            </p>
+      <div className={"dropzone dz2 " + (dropActive ? "active" : "")}
+        onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
+        onDragLeave={() => setDropActive(false)}
+        onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
+        onClick={() => fileRef.current?.click()}>
+        <PixIcon glyph="arrowdown" size={40} className="dz2-ico" />
+        <div className="dz2-t"><span className="dz-drop">Drop any report here</span><span className="dz-tap">Choose a report</span></div>
+        <div className="dz2-s">CSV or PDF, straight from DriveCentric. It reads the file, works out which
+          report it is, and files it where it belongs. A wrong-slot drop is flagged, never lost.</div>
+        <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
+          onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+      </div>
+
+      <div className="import-grid">
+        <div className="imp-panel">
+          <div className="p-cap"><PixIcon glyph="check" size={13} /> {seeding ? "For " + seedMonthLabel : "Today's imports"}</div>
+          {(activityDay || today()).slice(0, 7) !== today().slice(0, 7) && (
+            <p className="hint act-backfill">Seeding a past month: everything dropped above lands in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong>, not the current month.</p>
           )}
-          <div className={"check " + (seedT["delivery-campaign"] ? "done" : "")}>
-            <span className="check-box">{seedT["delivery-campaign"] ? <PixIcon glyph="check" size={11} /> : ""}</span>Campaign Delivery Summary
-            <span className="check-note">units only, no percentage</span>
-          </div>
-          {!(seedT.delivery && seedT.appointment && seedT.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
-          </div>
+          {CHECKS.map((c) => (
+            <div key={c.k} className={"imp-row " + (seedT[c.k] ? "done" : "")}>
+              <span className="ck">{seedT[c.k] ? <PixIcon glyph="check" size={11} /> : ""}</span>
+              <b>{c.n}</b><span className="when">{c.when}</span>
+            </div>
+          ))}
+          {!seedT.delivery && (
+            <p className="hint">If this has not ticked by mid-morning the email pipeline may be stuck. Pull the
+              Delivery Summary by hand and drop it above; <button className="linkish" onClick={onHelp}>the steps are here</button>.</p>
+          )}
+          <FlagBanner />
         </div>
-        <div className={"dropzone " + (dropActive ? "active" : "")}
-          onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
-          onDragLeave={() => setDropActive(false)}
-          onDrop={(e) => { e.preventDefault(); setDropActive(false); onFiles(e.dataTransfer.files); }}
-          onClick={() => fileRef.current?.click()}>
-          <div className="dz-icon"><span>⇩</span></div>
-          <div className="dz-title"><span className="dz-drop">{seeding ? "Drop " + seedMonthLabel + " reports here" : "Drop today's reports here"}</span><span className="dz-tap">{seeding ? "Choose " + seedMonthLabel + " reports" : "Choose today's reports"}</span></div>
-          <div className="dz-sub">Drop the <strong>Appointment</strong> and <strong>Video</strong> reports. Delivery Summaries arrive by email automatically; to backfill a missed day or carry on while the automation is down, drop the PDF straight in and it is read here the same way.</div>
-          <input ref={fileRef} type="file" accept=".csv,.pdf" multiple style={{ display: "none" }}
-            onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+
+        <div className="imp-panel">
+          <div className="p-cap"><PixIcon glyph="calendar" size={13} /> Daily Activity import</div>
+          {setActivityScope && (
+            <div className="imp-scope">
+              {[["day", "Today", today()], ["day", "Yesterday", yday], ["month", "Whole month", aDay]].map(([sc, label, d], i) => {
+                const on = sc === "month" ? activityScope === "month"
+                  : activityScope !== "month" && aDay === d;
+                return (
+                  <button key={i} className={"imp-chip" + (on ? " on" : "")}
+                    onClick={() => { setActivityScope(sc); if (sc === "day") setActivityDay(d); }}>{label}</button>
+                );
+              })}
+              <input type="date" className="imp-date" value={aDay} max={today()}
+                onChange={(e) => { if (e.target.value) { setActivityScope("day"); setActivityDay(e.target.value); } }} />
+            </div>
+          )}
+          <div className="s2-cw"><PixIcon glyph="doc" size={11} style={{ color: "var(--p2)" }} />
+            <span>Last upload for {aDay === today() ? "today" : aDayLabel(aDay)}: <b>{actStamp ? stampAt(actStamp) : "none yet"}</b>
+              {actStamp ? " · re-importing replaces it" : ". Drop the export to build the Check Out sheet."}</span></div>
+          {ydayStamp && aDay === today() && (
+            <div className="s2-cw"><PixIcon glyph="clock" size={11} style={{ color: "#8B93A2" }} />
+              <span>Yesterday's landed <b>{stampAt(ydayStamp)}</b></span></div>
+          )}
+          <UploadHistory data={data} onChange={onChange} />
         </div>
       </div>
-      <FlagBanner />
+
       {log.length > 0 && (
         <div className="import-log">
           {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}
         </div>
       )}
-      <UploadHistory data={data} onChange={onChange} />
       <Explain label="What an import does to the numbers">
         Performance is measured month-to-date and resets automatically on the 1st. Each import replaces the
         previous numbers for that report rather than adding to them, and every import is recorded in the
@@ -31251,10 +31275,64 @@ const SAGE_CSS = `
       /* The checklist is a list of short lines and the landing pad wants room to
          be landed on, but 300px was tight enough that "Delivery Summary" broke
          over two lines while the pad had space to spare. */
-      .import .import-grid { align-items:start; grid-template-columns:minmax(360px, 440px) 1fr; }
+      .import { gap:12px; }
+      .import .import-grid { align-items:stretch; grid-template-columns:1fr 1fr; gap:10px; }
       .import .import-grid .imp-card { padding:0; }
       .import .dropzone { min-height:0; }
       @media (max-width:900px) { .import .import-grid { grid-template-columns:1fr; } }
+      /* the landing pad, full width and first: the only thing on the page
+         anybody came here to use */
+      .import .dz2 { display:flex; flex-direction:column; align-items:center; gap:9px; text-align:center;
+        padding:30px 24px; margin:0; min-height:0; max-width:none; }
+      .dz2-ico { color:var(--p2); }
+      .import .dz2 .dz2-t { font:700 15px var(--font-display); color:var(--ink); }
+      .import .dz2 .dz2-s { font-size:10.5px; color:var(--ink-2); max-width:380px; line-height:1.5; }
+      /* the two lists under it, in the drafts' plainer panel rather than a warm
+         head: they are a checklist and a log, not a table of people */
+      .imp-panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:11px 14px; }
+      .imp-panel .p-cap { display:flex; align-items:center; gap:7px; margin-bottom:6px;
+        font:700 9px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+      .imp-row { display:flex; align-items:center; gap:10px; padding:8px 2px;
+        border-bottom:1px dashed var(--line); }
+      .imp-row:last-of-type { border-bottom:0; }
+      .imp-row .ck { width:20px; height:20px; border-radius:7px; border:1.5px solid var(--line); flex:0 0 auto;
+        display:flex; align-items:center; justify-content:center; color:#1E8A4C; }
+      .imp-row.done .ck { background:rgba(30,138,76,.12); border-color:#1E8A4C; }
+      .imp-row b { font-size:11.5px; flex:1 1 auto; min-width:0; overflow:hidden;
+        text-overflow:ellipsis; white-space:nowrap; }
+      .imp-row .when { margin-left:auto; font:600 9.5px var(--font-mono); color:var(--ink-3); flex:0 0 auto; }
+      .imp-scope { display:flex; gap:7px; margin:4px 0 10px; flex-wrap:wrap; }
+      .imp-chip { border:1px solid var(--line); background:var(--card); border-radius:99px; cursor:pointer;
+        padding:4px 11px; font:700 10.5px var(--font-mono); color:var(--ink-2); }
+      .imp-chip.on { background:var(--p2); border-color:var(--p2); color:#fff; }
+      .imp-date { border:1px solid var(--line); border-radius:10px; padding:4px 10px;
+        font:600 10.5px var(--font-mono); color:var(--ink-2); background:var(--card); }
+      .imp-panel .s2-cw { display:flex; align-items:flex-start; gap:7px; font-size:11px;
+        color:var(--ink-2); line-height:1.5; margin-top:6px; }
+      .imp-panel .s2-cw b { color:var(--ink); }
+      .up-hist .p-cap { margin-top:14px; }
+      .up-hist .up-hint { margin:0 0 2px; font-size:10px; line-height:1.5; }
+      .up-hist .up-tag { flex:0 0 auto; border-radius:99px; padding:2px 8px;
+        font:700 9px var(--font-mono); letter-spacing:.03em; color:var(--ink-2);
+        background:rgba(16,32,52,.07); }
+      .up-hist .act-b { flex:0 0 auto; border:1px solid var(--line); background:var(--card);
+        border-radius:9px; padding:4px 10px; font:600 10px var(--font-display);
+        color:var(--ink-2); cursor:pointer; }
+      .up-hist .act-b:hover { border-color:var(--p2); color:var(--p2d); }
+      .up-hist .act-b:disabled { opacity:.5; cursor:default; }
+      .linkish { border:0; background:none; padding:0; font:inherit; color:var(--blue);
+        text-decoration:underline; cursor:pointer; }
+      @media (max-width:900px) { .import .import-grid { grid-template-columns:1fr; } }
+      /* on a phone the row runs out of width long before it runs out of things
+         to say, so the timestamp drops to its own line under the name */
+      @media (max-width:640px) {
+        .imp-row { flex-wrap:wrap; row-gap:5px; }
+        .imp-row b { white-space:normal; overflow:visible; }
+        .imp-row .when { margin-left:0; width:100%; padding-left:30px; }
+        .up-hist .imp-row .when { width:auto; padding-left:0; margin-left:30px; }
+        .up-hist .act-b { margin-left:auto; }
+        .imp-date { flex:1 1 130px; min-width:0; }
+      }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
       .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
