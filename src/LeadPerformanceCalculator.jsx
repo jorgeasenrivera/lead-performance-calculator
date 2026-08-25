@@ -1714,9 +1714,22 @@ async function authSignIn(email, password) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   return { error: error ? error.message : null };
 }
-async function authSignUp(email, password, name) {
+/* Two kinds of person sign up here and they need opposite things. A manager
+   needs a store to look at, which only an admin can grant. A salesperson needs
+   no store at all - they need their account joined to their name on the roster,
+   which happens on the floor. Asking which at sign-up is the difference between
+   an admin guessing and an admin knowing.
+
+   The answer rides in the account's own metadata, which needs nothing added to
+   the database to work. If the profiles trigger is taught to copy it across
+   (see supabase-account-kind.sql), the admin sees it on the approval row too. */
+const ACCOUNT_KINDS = {
+  associate: { label: "Salesperson", sub: "You take ups, calls and leads" },
+  manager: { label: "Manager", sub: "You watch the floor and the numbers" },
+};
+async function authSignUp(email, password, name, kind) {
   const { error } = await supabase.auth.signUp({
-    email, password, options: { data: { name } },
+    email, password, options: { data: { name, wants: kind || "associate" } },
   });
   return { error: error ? error.message : null };
 }
@@ -7442,6 +7455,7 @@ function TicketsPanel({ config, onChange }) {
 /* ---------------- Login (real accounts) ---------------- */
 function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
+  const [kind, setKind] = useState("associate");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -7619,7 +7633,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       return;
     }
     setBusy(true);
-    const res = await authSignUp(e, password, name.trim());
+    const res = await authSignUp(e, password, name.trim(), kind);
     setBusy(false);
     if (res.error) { setErr(res.error); return; }
     setOk("Account created.");
@@ -7713,8 +7727,24 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
           <div className="lf-mode" key="signup">
             <p className="lf-note">
               {canRegister
-                ? "Create your account. Your group admin grants store access after you register."
+                ? "Create your account. What happens next depends on which of these you are."
                 : "Create your account. Heads up: the very first account created becomes the group admin."}
+            </p>
+            {/* Asked first, because the answer changes what the rest of this
+                screen is promising. */}
+            <label className="lf-label">What do you do here</label>
+            <div className="lf-kinds">
+              {Object.entries(ACCOUNT_KINDS).map(([k, v]) => (
+                <button key={k} type="button" className={"lf-kind" + (kind === k ? " on" : "")}
+                  onClick={() => { setKind(k); setErr(""); }} aria-pressed={kind === k}>
+                  <b>{v.label}</b><i>{v.sub}</i>
+                </button>
+              ))}
+            </div>
+            <p className="lf-kindnote">
+              {kind === "manager"
+                ? "Your group admin grants you the stores you look after. You will see the dashboard once they do."
+                : "You do not need the dashboard. Your manager joins this account to your name on the floor, and then the line, your standards and your day show up on your phone."}
             </p>
             <label className="lf-label">Work email</label>
             <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
@@ -8828,18 +8858,33 @@ function SageField() {
 /* ---------------- Waiting on approval ---------------- */
 function PendingScreen({ profile, onSignOut }) {
   const first = (profile.name || "").split(" ")[0];
+  /* What they asked to be at sign-up, if the account carries it. Two people wait
+     on this screen for opposite reasons and the old copy only described one of
+     them: a salesperson was told to wait for store access they will never be
+     given and do not need. */
+  const wants = profile.wants || profile.requested_role || null;
+  const isAssociate = wants === "associate";
   return (
     <div className="login">
       <div className="login-card">
         <div className="login-logo"><SageMark word size={56} className="logo-anim" /></div>
-        <h1 className="login-title">Almost there</h1>
-        {/* The salesperson's first screen after signing up, so it speaks the same
-            language as the one they just left rather than the app's general
-            chrome. */}
+        <h1 className="login-title">{isAssociate ? "One thing left" : "Almost there"}</h1>
+        {/* The first screen after signing up, so it speaks the same language as
+            the one they just left rather than the app's general chrome. */}
         <p className="lf-note">
-          Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
-          Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
+          {isAssociate ? (<>
+            Your account exists{first ? ", " + first : ""}. The last step is on the floor: ask your
+            manager to open <b>Live Floor &rarr; Phones</b> and join this account to your name. After
+            that the line, your standards and your day are on your phone, and you will not need this
+            screen again.
+          </>) : (<>
+            Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
+            Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
+          </>)}
         </p>
+        {/* The one thing this screen can hand somebody that is useful to the
+            person on the other end of the conversation. */}
+        <p className="lf-note lf-acctid">Account <b>{String(profile.id || "").slice(0, 8)}</b> · {profile.email || ""}</p>
         <button className="lf-go lf-solo" onClick={onSignOut}><span>Sign out</span></button>
       </div>
     </div>
@@ -24547,6 +24592,15 @@ function PendingRow({ u, stores, busy, onApprove, onReject }) {
       <div className="pending-who">
         <b>{u.name || "-"}</b>
         <span className="mono">{u.email}</span>
+        {/* What they said they were when they signed up. Absent on accounts made
+            before that was asked, and on databases whose profiles trigger has
+            not been taught to carry it across, so it is shown only when it is
+            actually known rather than guessed at. */}
+        {(u.wants || u.requested_role) && (
+          <span className={"asked-tag" + ((u.wants || u.requested_role) === "manager" ? " mgr" : "")}>
+            asked for: {(ACCOUNT_KINDS[u.wants || u.requested_role] || {}).label || (u.wants || u.requested_role)}
+          </span>
+        )}
       </div>
       <div className="store-checks tight">
         {stores.map((s) => (
@@ -31099,6 +31153,24 @@ const SAGE_CSS = `
       .lb-ref-ask button:first-child { border-color:rgba(30,138,76,.4); color:#1E7A3C; }
       .q-open { background:rgba(201,138,0,.16); color:#8A5A10; }
       .q-open.none { background:rgba(16,32,52,.06); color:var(--ink-2); }
+      /* signing up: which of the two you are, asked before anything else */
+      .lf-kinds { display:flex; gap:8px; margin:2px 0 4px; }
+      .lf-kind { flex:1; min-width:0; text-align:left; cursor:pointer; border:1px solid var(--line);
+        background:var(--card); border-radius:12px; padding:10px 12px; font:inherit; color:var(--ink);
+        transition:border-color .18s ease, transform .18s ease; }
+      .lf-kind:hover { transform:translateY(-1px); }
+      .lf-kind b { display:block; font:700 12.5px var(--font-display); }
+      .lf-kind i { display:block; font-style:normal; font-size:10px; color:var(--ink-3); margin-top:2px; }
+      .lf-kind.on { border-color:var(--p2); box-shadow:0 0 0 1px var(--p2) inset;
+        background:color-mix(in srgb, var(--p2) 7%, var(--card)); }
+      .lf-kind.on b { color:var(--p3); }
+      .lf-kindnote { font-size:10.5px; color:var(--ink-2); line-height:1.55; margin:2px 0 6px; }
+      .lf-acctid { font-size:10.5px; color:var(--ink-3); }
+      .lf-acctid b { font-family:var(--font-mono); color:var(--ink-2); }
+      .asked-tag { display:inline-flex; align-items:center; border-radius:99px; padding:2px 9px;
+        font:700 9.5px var(--font-mono); letter-spacing:.04em; margin-top:3px;
+        background:rgba(16,32,52,.07); color:var(--ink-2); }
+      .asked-tag.mgr { background:rgba(42,94,155,.12); color:#1D4674; }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
       .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
