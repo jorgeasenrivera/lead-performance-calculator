@@ -23764,6 +23764,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     return c;
   }, [people]);
 
+  /* Somebody on the floor with nobody's account attached to them cannot open
+     their own card, which is the one thing the app is for from their side. */
+  const noAcct = useMemo(() => {
+    if (links === null) return 0;
+    return people.filter((p) => p.status === "active" && p.id
+      && !(links || []).some((l) => l.person_id === p.id)).length;
+  }, [people, links]);
+
   const shown = people.filter((p) => (only === "all" || p.status === only)
     && (!q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())));
 
@@ -23855,6 +23863,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
      can see and fix. The other order loses them from both. */
   /* A person's roster id is what a link is filed under, so somebody with no id —
      a name that only exists on the ignore list — simply has no account to show. */
+  const [openStanding, setOpenStanding] = useState(null);
   const linkFor = (p) => (links || []).find((l) => l.person_id === p.id) || null;
   const acctFor = (l) => (accounts || []).find((a) => a.id === (l && l.user_id)) || null;
   const takenAccounts = useMemo(() => new Set((links || []).map((l) => l.user_id)), [links]);
@@ -24105,15 +24114,41 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
         </div>
       )}
 
-      <div className="card">
-        <div className="pp-head">
-          <h3>People at {storeName || "this store"}</h3>
-          <div className="pp-counts">
-            <span className="pp-count on">{counts.active} on the floor</span>
-            <span className="pp-count">{counts.departed} left</span>
-            <span className="pp-count">{counts.ignored} not ours</span>
+      <div className="s2-hero pp-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="users" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              {storeName || "This store"} · the store says who works here, and the figures are checked against it
+            </div>
+            <h2 className="s2-store">People</h2>
+          </div>
+          <div className="s2-chips">
+            <button className="da-hbtn" onClick={() => setAdding((v) => !v)}>
+              <PixIcon glyph={adding ? "close" : "plus"} size={11} /> {adding ? "Cancel" : "Add a person"}
+            </button>
           </div>
         </div>
+        <div className="pp-herobody">
+          <div className="pp-hstat"><span className="s2-cap">On the floor</span>
+            <span className="pp-hbig">{counts.active}</span>
+            <span className="pp-hsub">counted on the board</span></div>
+          <div className="pp-hstat"><span className="s2-cap">Left</span>
+            <span className="pp-hbig">{counts.departed}</span>
+            <span className="pp-hsub">keep the cars they sold</span></div>
+          <div className="pp-hstat"><span className="s2-cap">Never ours</span>
+            <span className="pp-hbig">{counts.ignored}</span>
+            <span className="pp-hsub">figures come back off</span></div>
+          {links !== null && (
+            <div className="pp-hstat"><span className="s2-cap">Without an account</span>
+              <span className="pp-hbig">{noAcct}</span>
+              <span className="pp-hsub">cannot see their own card</span></div>
+          )}
+        </div>
+      </div>
+
+      <div className="card pp-card">
         <Explain label="Left, and not ours: what the difference costs">
           Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
           did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
@@ -24150,7 +24185,6 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               {shown.every((p) => sel.has(p.name)) ? "Clear selection" : `Select all ${shown.length}`}
             </button>
           )}
-          <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>{adding ? "Cancel" : "Add a person"}</button>
         </div>
 
         {adding && (
@@ -24261,35 +24295,49 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   to do; the list itself is. So they are drawn quietly and turn
                   solid under the pointer, and only the one that takes figures
                   away has a colour of its own. */}
+              {/* ---- two, not five ----
+                  Four of these were standing changes and one was the card, drawn
+                  as five identical pills on every row of a list twelve people
+                  long. Standing is one decision with three answers, so it is one
+                  button that opens them; the card is the other. */}
               <div className="pp-acts">
-                {p.status !== "active" && (
-                  <button className="pp-act" onClick={() => move(p.name, "active")}>
-                    <PixIcon glyph="check" size={11} /><span>On the floor</span>
-                  </button>
-                )}
-                {p.status !== "departed" && (
-                  <button className="pp-act" onClick={() => move(p.name, "departed")}>
-                    <PixIcon glyph="door" size={11} /><span>They left</span>
-                  </button>
-                )}
-                {p.status === "active" && (allStores || []).length > 1 && (
-                  <button className="pp-act" onClick={() => { setMoving(p); setMoveTo(""); }}>
-                    <PixIcon glyph="swap" size={11} /><span>Move store</span>
-                  </button>
-                )}
-                {p.status !== "ignored" && (
-                  <button className="pp-act danger" onClick={() => move(p.name, "ignored")}>
-                    <PixIcon glyph="close" size={11} /><span>Not ours</span>
-                  </button>
-                )}
                 {storeId && p.id && p.status !== "ignored" && (
                   <button className={"pp-act" + (openAcct === p.key ? " on" : "")}
                     onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
-                    <PixIcon glyph={openAcct === p.key ? "arrowup" : "more"} size={11} />
-                    <span>{openAcct === p.key ? "Close" : "Details"}</span>
+                    <PixIcon glyph={openAcct === p.key ? "arrowup" : "user"} size={11} />
+                    <span>{openAcct === p.key ? "Close" : "Card"}</span>
                   </button>
                 )}
+                <button className={"pp-act" + (openStanding === p.key ? " on" : "")}
+                  onClick={() => setOpenStanding(openStanding === p.key ? null : p.key)}>
+                  <PixIcon glyph={openStanding === p.key ? "arrowup" : "swap"} size={11} />
+                  <span>Change standing</span>
+                </button>
               </div>
+              {openStanding === p.key && (
+                <div className="pp-standing">
+                  {p.status !== "active" && (
+                    <button className="pp-act" onClick={() => { move(p.name, "active"); setOpenStanding(null); }}>
+                      <PixIcon glyph="check" size={11} /><span>On the floor</span>
+                    </button>
+                  )}
+                  {p.status !== "departed" && (
+                    <button className="pp-act" onClick={() => { move(p.name, "departed"); setOpenStanding(null); }}>
+                      <PixIcon glyph="door" size={11} /><span>They left · keep the figures</span>
+                    </button>
+                  )}
+                  {p.status === "active" && (allStores || []).length > 1 && (
+                    <button className="pp-act" onClick={() => { setMoving(p); setMoveTo(""); setOpenStanding(null); }}>
+                      <PixIcon glyph="swap" size={11} /><span>Move store</span>
+                    </button>
+                  )}
+                  {p.status !== "ignored" && (
+                    <button className="pp-act danger" onClick={() => { move(p.name, "ignored"); setOpenStanding(null); }}>
+                      <PixIcon glyph="close" size={11} /><span>Not ours · take the figures back</span>
+                    </button>
+                  )}
+                </div>
+              )}
             {openAcct === p.key && storeId && p.id && (() => {
               const l = linkFor(p);
               const a = acctFor(l);
@@ -31514,6 +31562,21 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* ---- People, in the new language ---- */
+      .pp-hero { margin-bottom:12px; }
+      .pp-hero .s2-ava { color:var(--hB); }
+      .pp-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .pp-hstat { display:flex; flex-direction:column; gap:2px; min-width:104px; }
+      .pp-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .pp-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .pp-card { margin-bottom:0; }
+      /* the standing options, opened under the person they belong to */
+      .pp-standing { grid-column:1 / -1; display:flex; gap:7px; flex-wrap:wrap;
+        margin:2px 0 4px 44px; padding:9px 12px; border-radius:12px;
+        background:color-mix(in srgb, var(--p2) 7%, transparent);
+        border:1px solid color-mix(in srgb, var(--p2) 22%, transparent); }
       @media (max-width: 900px) {
         .hist-tblh { display:none; }
         .hist-row { flex-wrap:wrap; row-gap:10px; }
