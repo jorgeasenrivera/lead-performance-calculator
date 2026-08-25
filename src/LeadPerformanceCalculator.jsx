@@ -5698,7 +5698,9 @@ function QueueBoard({ storeId, kind }) {
         const d = kind === "floor"
           ? await loadFloorRow(storeId, today())
           : await loadQueueRow(storeId, today(), kind === "online" ? "online" : "line");
-        if (!dead) { setRow(d || null); setErr(false); }
+        if (dead) return;
+        if (d === undefined) { setErr(true); return; }   // read failed: hold what is shown
+        setRow(d || null); setErr(false);
       } catch (e) { if (!dead) setErr(true); }
     };
     pull();
@@ -9002,13 +9004,19 @@ const qMinsSince = (iso) => (iso ? Math.max(0, Math.floor((Date.now() - new Date
 const qWaitLabel = (m) => (m < 1 ? "just now" : m === 1 ? "1 min" : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${m % 60}m`);
 
 /* ---- Supabase access: the per-day line row (queue_public) ---- */
+/* A read that FAILED and a row that does not exist are completely different
+   things, and treating them the same is what made people vanish from the line:
+   one flaky read came back as "nobody is in the queue", the screen emptied, and
+   the next write saved that emptiness. undefined means the read failed and
+   nothing should be concluded from it; null means the row genuinely is not there
+   yet. Every caller below acts on that difference. */
 async function loadQueueRow(store, date, kind) {
-  if (!supabase) return null;
+  if (!supabase) return undefined;
   try {
     const { data, error } = await supabase.from(QUEUE_TABLE).select("data").eq("id", queueRowId(store, date, kind)).maybeSingle();
     if (error) throw error;
     return data ? data.data : null;
-  } catch (e) { console.error("loadQueueRow", e); return null; }
+  } catch (e) { console.error("loadQueueRow", e); return undefined; }
 }
 async function saveQueueRow(store, date, data, kind) {
   if (!supabase) return false;
@@ -9019,12 +9027,28 @@ async function saveQueueRow(store, date, data, kind) {
     return true;
   } catch (e) { console.error("saveQueueRow", e); return false; }
 }
+/* Every change to a queue row is read-modify-write against a row with no
+   revision to check, so two writers overlapping means one of them silently
+   loses. That is exactly what made a person added to the line disappear a few
+   seconds later: the roster sync had read the row before the add and wrote its
+   copy back afterwards. Mutations for a given row now queue up behind each
+   other, so each one reads what the one before it wrote. */
+const qChains = new Map();
 async function mutateQueueRow(store, date, fn, kind) {
-  const cur = await loadQueueRow(store, date, kind);
-  const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
-  if (!next) return cur;
-  await saveQueueRow(store, date, next, kind);
-  return next;
+  const key = `${store}|${date}|${kind || "line"}`;
+  const run = async () => {
+    let cur = await loadQueueRow(store, date, kind);
+    if (cur === undefined) { await new Promise((z) => setTimeout(z, 400)); cur = await loadQueueRow(store, date, kind); }
+    if (cur === undefined) throw new Error("The queue could not be read just now, so nothing was changed.");
+    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+    if (!next) return cur;                       // a mutator that changed nothing
+    await saveQueueRow(store, date, next, kind);
+    return next;
+  };
+  const prev = qChains.get(key) || Promise.resolve();
+  const p = prev.then(run, run);
+  qChains.set(key, p.catch(() => {}));
+  return p;
 }
 
 /* ---- Supabase access: the persistent identity row (queue_identity), one per store ---- */
@@ -9745,7 +9769,11 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   // Needs to be in scope before the panel is built, not after.
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
-  const refetch = useCallback(async () => setRow((await loadQueueRow(store, date, variant.kind)) || null), [store, date, variant.kind]);
+  const refetch = useCallback(async () => {
+    const got = await loadQueueRow(store, date, variant.kind);
+    if (got === undefined) return;
+    setRow(got || null);
+  }, [store, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
@@ -10192,6 +10220,30 @@ function AvatarStack({ names, max = 5, accent = "#4c8bf5" }) {
       {extra > 0 && <span className="av-chip av-more" style={{ zIndex: 0 }}>+{extra}</span>}
     </div>
   );
+}
+
+/* A panel that opens over the page instead of pushing it down. The floor tools
+   used to unfold PINs and the sign-in code inline, which shoved the queue - the
+   thing being looked at - off the bottom of the screen. Same frosted backdrop
+   and grow-from-nothing as the associate card. */
+function ToolSheet({ title, sub, onClose, wide, children }) {
+  const [closing, setClosing] = useState(false);
+  const shut = () => { setClosing(true); setTimeout(onClose, 240); };
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") shut(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line
+  return createPortal(
+    <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
+      <div className={"acard toolsheet" + (wide ? " wide" : "") + (closing ? " closing" : "")}
+        role="dialog" aria-label={title}>
+        <button className="ac-x" onClick={shut} aria-label="Close">×</button>
+        <div className="ac-name">{title}</div>
+        {sub && <div className="ac-sub">{sub}</div>}
+        <div className="ts-body">{children}</div>
+      </div>
+    </div>, document.body);
 }
 
 /* ---- the floor tool's hero, in the drafts' language ----
@@ -10641,7 +10693,11 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     return (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).slice().sort((a, b) => a.name.localeCompare(b.name));
   }, [data.roster, config.roles]);
 
-  const refetch = useCallback(async () => setRow((await loadQueueRow(store.id, date, variant.kind)) || null), [store.id, date, variant.kind]);
+  const refetch = useCallback(async () => {
+    const got = await loadQueueRow(store.id, date, variant.kind);
+    if (got === undefined) return;              // the read failed; keep what is on screen
+    setRow(got || null);
+  }, [store.id, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store.id, date, fn, variant.kind);
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const ensureRow = useCallback(async () => {
@@ -10659,14 +10715,24 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     // Always published, never shown unless the address asks for it.
     snap.push({ id: TEST_ID, label: TEST_LABEL, role: "Test", test: true });
     const list = checklistFor(store);
-    const next = await mutateRow((cur) => {
+    let next = null;
+    try { next = await mutateRow((cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [] };
+      /* This effect re-runs whenever the store document is saved, which is once
+         per queue action. Writing the row again each time is what put a stale
+         copy of the line back on the server; nothing here has changed unless
+         the roster, the name or the checklist has, so say so and skip the write. */
+      const same = JSON.stringify(cur.roster || []) === JSON.stringify(snap)
+        && cur.storeName === store.name
+        && JSON.stringify(cur.checklist || null) === JSON.stringify(list)
+        && !!cur.token && !!cur.date;
+      if (same) return null;
       cur.roster = snap; cur.storeName = store.name; cur.checklist = list;
       if (!cur.token) cur.token = uid();
       if (!cur.date) cur.date = date;
       return cur;
-    });
-    setRow(next);
+    }); } catch (e) { return; }                 // could not read: leave the row alone
+    if (next) setRow(next);
   }, [store.id, store.name, date, salesRoster, config.roles]);
 
   useEffect(() => { ensureRow(); }, [ensureRow]);
@@ -10797,10 +10863,9 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   return (
     <div className={`checkout q-tab mf ${variant.mf}`}>
       <div className="q-topline">
-        <div className="q-phone-banner"><PixIcon glyph={variant.bannerGlyph} className="q-banner-ico" size={16} /> {variant.bannerLabel}</div>
         <div className="q-topline-actions">
-          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
-          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
+          <button className="btn" onClick={() => setShowQR(true)}>Sign-in code</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
           <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
         </div>
@@ -10826,8 +10891,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
 
       {showPins && (
-        <div className="q-pins-panel">
-          <div className="q-pins-head">Salesperson PINs</div>
+        <ToolSheet title="Salesperson PINs" sub="Created the first time each person signs in" onClose={() => setShowPins(false)}>
           {pinPeople.length === 0
             ? <p className="muted">No PINs set yet. They're created the first time each person signs in.</p>
             : pinPeople.map((p) => (
@@ -10836,21 +10900,21 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
                   <button className="btn btn-sm q-pin-reset" onClick={() => resetPin(p.id)}>Reset PIN</button>
                 </div>
               ))}
-        </div>
+        </ToolSheet>
       )}
 
       {showQR && (
-        <div className="q-qr-panel">
+        <ToolSheet title="Sign-in code" wide
+          sub={`Post this at the sales desk. It only works today; a fresh code appears each morning.`}
+          onClose={() => setShowQR(false)}>
           <div className="q-qr-box"><QueueQR url={url} /></div>
-          <div className="q-qr-info">
-            <p><strong>Post this at the sales desk.</strong> Salespeople scan it, enter their name and PIN, and they're {variant.count}. No login. It only works today; a fresh code appears each morning.</p>
-            <div className="q-qr-btns">
-              <button className="btn" onClick={() => printQueueSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
-              <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
-              <button className="btn" onClick={regenToken}>New code</button>
-            </div>
+          <p className="ts-note">Salespeople scan it, enter their name and PIN, and they're {variant.count}. No login.</p>
+          <div className="q-qr-btns">
+            <button className="btn" onClick={() => printQueueSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+            <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
+            <button className="btn" onClick={regenToken}>New code</button>
           </div>
-        </div>
+        </ToolSheet>
       )}
 
       <div className="mf-lower">
@@ -11044,12 +11108,12 @@ function FFlagIcon({ status, className }) {
 
 /* ---- Supabase access: per-day floor row (floor_public) ---- */
 async function loadFloorRow(store, date) {
-  if (!supabase) return null;
+  if (!supabase) return undefined;
   try {
     const { data, error } = await supabase.from(FLOOR_TABLE).select("data").eq("id", floorRowId(store, date)).maybeSingle();
     if (error) throw error;
     return data ? data.data : null;
-  } catch (e) { console.error("loadFloorRow", e); return null; }
+  } catch (e) { console.error("loadFloorRow", e); return undefined; }
 }
 /* Same reasoning as the queue write: a refused write that reports success is worse
    than one that fails loudly, because the screen agrees with you for five seconds
@@ -11064,12 +11128,23 @@ async function saveFloorRow(store, date, data) {
   }
   return true;
 }
+/* Serialised for the same reason the queue rows are: overlapping read-modify-
+   writes on a row with no revision lose each other's changes. */
 async function mutateFloorRow(store, date, fn) {
-  const cur = await loadFloorRow(store, date);
-  const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
-  if (!next) return cur;
-  await saveFloorRow(store, date, next);
-  return next;
+  const key = `floor|${store}|${date}`;
+  const run = async () => {
+    let cur = await loadFloorRow(store, date);
+    if (cur === undefined) { await new Promise((z) => setTimeout(z, 400)); cur = await loadFloorRow(store, date); }
+    if (cur === undefined) throw new Error("The floor could not be read just now, so nothing was changed.");
+    const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
+    if (!next) return cur;
+    await saveFloorRow(store, date, next);
+    return next;
+  };
+  const prev = qChains.get(key) || Promise.resolve();
+  const p = prev.then(run, run);
+  qChains.set(key, p.catch(() => {}));
+  return p;
 }
 
 /* Several days at once, for the screen that looks back rather than at now.
@@ -11304,7 +11379,11 @@ function FloorSignIn({ store, date, token, test = false }) {
   useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
-  const refetch = useCallback(async () => setRow((await loadFloorRow(store, date)) || null), [store, date]);
+  const refetch = useCallback(async () => {
+    const got = await loadFloorRow(store, date);
+    if (got === undefined) return;
+    setRow(got || null);
+  }, [store, date]);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
@@ -11768,7 +11847,11 @@ function FloorBoard({ config, store, data, onData, userName }) {
   }, [data, config.roles]);
 
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
-  const refetch = useCallback(async () => setRow((await loadFloorRow(store.id, date)) || null), [store.id, date]);
+  const refetch = useCallback(async () => {
+    const got = await loadFloorRow(store.id, date);
+    if (got === undefined) return;
+    setRow(got || null);
+  }, [store.id, date]);
 
   const ensureRow = useCallback(async () => {
     if (!data) return;
@@ -11784,14 +11867,20 @@ function FloorBoard({ config, store, data, onData, userName }) {
     // Always published, never shown unless the address asks for it.
     snap.push({ id: TEST_ID, name: TEST_LABEL, label: TEST_LABEL, role: "Test", test: true });
     const list = checklistFor(store);
-    const next = await mutateFloorRow(store.id, date, (cur) => {
+    let next = null;
+    try { next = await mutateFloorRow(store.id, date, (cur) => {
       if (!cur) return { token: uid(), date, store: store.id, storeName: store.name, createdAt: qNowIso(), roster: snap, line: [], history: [], unmatched: [], processed: [], lastEventAt: null };
+      const same = JSON.stringify(cur.roster || []) === JSON.stringify(snap)
+        && cur.storeName === store.name
+        && JSON.stringify(cur.checklist || null) === JSON.stringify(list)
+        && !!cur.token && !!cur.date;
+      if (same) return null;
       cur.roster = snap; cur.storeName = store.name; cur.checklist = list;
       if (!cur.token) cur.token = uid();
       if (!cur.date) cur.date = date;
       return cur;
-    });
-    setRow(next);
+    }); } catch (e) { return; }
+    if (next) setRow(next);
   }, [store.id, store.name, date, salesRoster, config.roles, data]);
 
   useEffect(() => { loadIds(); }, [loadIds]);
@@ -11830,7 +11919,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
     // timer auto-pass on the leader
     if (cfg.timerOn) {
       const cur = await loadFloorRow(store.id, date);
-      if (cur) {
+      if (cur) {   // undefined (a failed read) falls through untouched
         const li = (cur.line || []).findIndex((p) => p.status === "waiting");
         if (li >= 0) {
           const leader = cur.line[li];
@@ -11989,9 +12078,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
   return (
     <div className="checkout q-tab f-tab mf mf-floor">
       <div className="q-topline">
-        <div className="q-phone-banner f-banner"><FDoorIcon className="q-banner-ico" /> Live Floor{cfg.enabled ? "" : " · paused"}</div>
         <div className="q-topline-actions">
-          <button className="btn" onClick={() => setShowPins((v) => !v)}>{showPins ? "Hide PINs" : "PINs"}</button>
+          <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
           <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
           {/* Only ever shown when there is something in it. A button that reads
               "0 to review" every day of the year teaches a manager to stop
@@ -12009,7 +12097,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
               {showBehind ? "Hide behind" : `Behind · ${behindCount}`}
             </button>
           )}
-          <button className="btn" onClick={() => setShowQR((v) => !v)}>{showQR ? "Hide code" : "Sign-in code"}</button>
+          <button className="btn" onClick={() => setShowQR(true)}>Sign-in code</button>
           <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
           <QueueBoardLink storeId={store.id} kind="floor" />
         </div>
@@ -12065,8 +12153,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
       {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} />}
 
       {showPins && (
-        <div className="q-pins-panel">
-          <div className="q-pins-head">Salesperson PINs <span className="muted">(shared with the phone line)</span></div>
+        <ToolSheet title="Salesperson PINs" sub="Shared with the phone line · created the first time each person signs in"
+          onClose={() => setShowPins(false)}>
           {pinPeople.length === 0
             ? <p className="muted">No PINs set yet. They're created the first time each person signs in.</p>
             : pinPeople.map((p) => (
@@ -12075,21 +12163,21 @@ function FloorBoard({ config, store, data, onData, userName }) {
                   <button className="btn btn-sm q-pin-reset" onClick={() => resetPin(p.id)}>Reset PIN</button>
                 </div>
               ))}
-        </div>
+        </ToolSheet>
       )}
 
       {showQR && (
-        <div className="q-qr-panel">
+        <ToolSheet title="Sign-in code" wide
+          sub="Post this on the showroom floor. It only works today; a fresh code appears each morning."
+          onClose={() => setShowQR(false)}>
           <div className="q-qr-box"><QueueQR url={url} /></div>
-          <div className="q-qr-info">
-            <p><strong>Post this on the showroom floor.</strong> Salespeople scan it, enter their name and PIN, and they're on the floor. Their spot then updates on its own as customers check in and deals happen. It only works today; a fresh code appears each morning.</p>
-            <div className="q-qr-btns">
-              <button className="btn" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
-              <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
-              <button className="btn" onClick={regenToken}>New code</button>
-            </div>
+          <p className="ts-note">Salespeople scan it, enter their name and PIN, and they're on the floor. Their spot updates on its own as customers check in and deals happen.</p>
+          <div className="q-qr-btns">
+            <button className="btn" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+            <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
+            <button className="btn" onClick={regenToken}>New code</button>
           </div>
-        </div>
+        </ToolSheet>
       )}
 
       <div className="mf-lower">
@@ -31651,6 +31739,20 @@ const SAGE_CSS = `
         border-radius:12px; }
       .flag-banner-head { color:#8A5A00; }
       .flag-banner-foot { color:var(--ink-2); font-style:normal; }
+      /* a tool panel that opens over the page rather than pushing the queue down */
+      /* with the banner pill gone the tool's utilities sit to the right, so the
+         hero is the first thing the page says */
+      .mf .q-topline-actions { margin-left:auto; }
+      .toolsheet { width:min(420px, 100%); }
+      .toolsheet.wide { width:min(520px, 100%); }
+      .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
+      .ts-body .q-pin-row { display:flex; align-items:center; gap:10px; padding:7px 0;
+        border-bottom:1px dashed var(--line); }
+      .ts-body .q-pin-row:last-child { border-bottom:0; }
+      .ts-body .q-pin-name { flex:1; font-size:12.5px; font-weight:600; }
+      .ts-body .q-qr-box { align-self:center; }
+      .ts-note { margin:0; font-size:11px; color:var(--ink-2); line-height:1.55; }
+      .ts-body .q-qr-btns { display:flex; gap:8px; flex-wrap:wrap; }
       .s2-podium { display:flex; gap:8px; margin-bottom:4px; }
       .s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
         background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
