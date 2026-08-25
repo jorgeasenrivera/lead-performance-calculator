@@ -8940,6 +8940,9 @@ const QUEUE_FLAGS = {
   away:     { label: "Away",          cls: "q-away" },
 };
 const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
+/* What counts as "an opportunity taken" on a row. The floor counts the two
+   automatic ones too, because catching an up on the floor IS the opportunity. */
+const UPS_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
 
 /* The Line and Online are the same lead-queue mechanic with different wording,
    accent, data slot, and close-rate channel. The Line's config is byte-identical
@@ -10742,6 +10745,17 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   const line = (row && row.line) || [];
   const realName = (id) => salesRoster.find((a) => a.id === id)?.name || (row?.roster || []).find((r) => r.id === id)?.label || id;
+  /* How many opportunities each person has taken today, from the same history
+     the tally above counts. The drafts put it on the row, because "third in line
+     and already had four" is the argument a manager is actually having. */
+  const upsToday = useMemo(() => {
+    const by = {};
+    for (const e of (row && row.history) || []) {
+      if (!UPS_ACTIONS.has(e.action) || !e.id) continue;
+      by[e.id] = (by[e.id] || 0) + 1;
+    }
+    return by;
+  }, [row]);
 
   const expectedNotHere = useMemo(
     () => salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id)),
@@ -10942,10 +10956,11 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
                   {isTestId(p.id) && <span className="q-test-tag">Test</span>}
                   {isNext && <span className="q-next-tag">NEXT</span>}</div>
                 <div className="q-meta">
-                  <span className={`q-chip ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{p.status !== "waiting" && <QFlagIcon status={p.status} className="q-chip-ico" />}{QUEUE_FLAGS[p.status]?.label || p.status}</span>
-                  <span className="q-w">{qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
+                  <span className={`q-state ${QUEUE_FLAGS[p.status]?.cls || ""}`}>{QUEUE_FLAGS[p.status]?.label || p.status}</span>
+                  <span className="q-w">· {qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt))}</span>
                 </div>
               </div>
+              <span className={"q-ups" + (upsToday[p.id] ? "" : " none")}>{upsToday[p.id] || 0} today</span>
               <div className="q-row-actions">
                 {pendingAssign === p.id ? (
                   <div className="q-reason">
@@ -31743,6 +31758,18 @@ const SAGE_CSS = `
       /* with the banner pill gone the tool's utilities sit to the right, so the
          hero is the first thing the page says */
       .mf .q-topline-actions { margin-left:auto; }
+      /* the queue row, closer to the drafts: the state and the wait read as one
+         quiet line under the name, and what they have already had today rides
+         beside it as a fixed-width chip */
+      .mf .q-line.qtbl .q-meta { display:flex; align-items:center; gap:5px; font-size:9.5px; color:var(--ink-3); }
+      .mf .q-line.qtbl .q-state { font-weight:600; color:var(--facc, var(--p2)); }
+      .mf .q-line.qtbl .q-state.q-customer, .mf .q-line.qtbl .q-state.q-lunch,
+      .mf .q-line.qtbl .q-state.q-away { color:var(--ink-2); }
+      .q-ups { display:inline-flex; align-items:center; justify-content:center; width:74px; flex:0 0 auto;
+        border-radius:99px; padding:4px 0; font:700 10px var(--font-mono);
+        background:rgba(16,32,52,.06); color:var(--ink-2); }
+      .q-ups.none { opacity:.45; }
+      @media (max-width:760px) { .q-ups { display:none; } }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
       .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
