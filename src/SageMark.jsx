@@ -20,7 +20,13 @@ const LOWER = {
   e: [".....", ".....", ".ooo.", "o...o", "ooooo", "o....", ".ooo.", ".....", "....."],
 };
 const WORDMARK = (() => {
-  const blocks = [ICON_S, LOWER.a, LOWER.g, LOWER.e];
+  /* The S is drawn on its own 9-wide grid with a blank column down each side,
+     which is right when it stands alone and wrong beside a letter: joined as-is
+     it leaves two blank columns after the S and one between every other pair,
+     and the word reads as "S age". The S keeps its left margin, which is the
+     lockup's own edge, and loses the right one, which is a gap. */
+  const S_JOINED = ICON_S.map((r) => r.slice(0, 8));
+  const blocks = [S_JOINED, LOWER.a, LOWER.g, LOWER.e];
   const rows = [];
   for (let r = 0; r < 9; r++) rows.push(blocks.map(b => b[r]).join("."));
   return rows;
