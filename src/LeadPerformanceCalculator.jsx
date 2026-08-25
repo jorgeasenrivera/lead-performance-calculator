@@ -147,6 +147,10 @@ const METRIC_FIX = {
 };
 
 const CHANNELS = { internet: "Internet", phone: "Phone", showroom: "Showroom" };
+/* One colour per channel, used by every place a channel is drawn: the hero's
+   bars, the delivery-against-target lines, and the legend under them. Read from
+   one object so a bar and the line it belongs to can never drift apart. */
+const CHANNEL_SERIES = { internet: "var(--s1)", phone: "var(--s2)", showroom: "var(--s3)" };
 
 const REPORTS = {
   delivery: { label: "Delivery Summary" },
@@ -21330,7 +21334,7 @@ function flowMarks(days) {
    did. The viewBox is built at the measured width of the card, so nothing is
    stretched: a pixel of stroke is a pixel of stroke at any size. Falls back to
    the month documents, dashed, until two daily readings are on file. */
-function S2DeliveryChart({ digests, thr, moTrail, drawKey }) {
+function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   const wrapRef = useRef(null);
   const [w, setW] = useState(560);
   useEffect(() => {
@@ -21344,10 +21348,18 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey }) {
     return () => ro.disconnect();
   }, []);
   const [pick, setPick] = useState(null);
+  /* Reading this chart takes longer than the six seconds the display waits before
+     flipping to the next slide, and having it flip out from under a finger is the
+     one thing it must not do. So while somebody is on the chart, or has a day
+     picked, the rotation is held. */
+  const hovering = useRef(false);
+  const hold = (on) => { hovering.current = on; onHold && onHold(on || pick != null); };
+  useEffect(() => { onHold && onHold(hovering.current || pick != null); }, [pick]); // eslint-disable-line
+  useEffect(() => () => { onHold && onHold(false); }, []); // eslint-disable-line
   const series = useMemo(() => dailySeries(digests, thr), [digests, thr]);
   const daily = !!series;
 
-  const SER = { internet: "var(--s1)", phone: "var(--s2)", showroom: "var(--s3)" };
+  const SER = CHANNEL_SERIES;
   const ids = ["internet", "phone", "showroom"];
   // one shape for both resolutions: columns, a label per column, a value per channel
   const cols = daily ? series[0].days : moTrail.map((m) => m.k);
@@ -21374,7 +21386,9 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey }) {
   const pi = pick ? cols.indexOf(pick) : -1;
 
   return (<>
-    <div className="s2-chwrap" ref={wrapRef} onClick={(e) => pickAt(e.clientX)}>
+    <div className="s2-chwrap" ref={wrapRef} onClick={(e) => pickAt(e.clientX)}
+      onPointerEnter={() => hold(true)} onPointerLeave={() => hold(false)}
+      onPointerDown={() => hold(true)}>
       <svg key={"draw" + drawKey} className="s2-mchart" viewBox={`0 0 ${w} ${H}`} style={{ height: H }}>
         {ids.map((id) => (
           <line key={"t" + id} x1={PL} x2={w - PR} y1={y(thr[id].green)} y2={y(thr[id].green)}
@@ -22063,12 +22077,17 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const [spotOn, setSpotOn] = useState(0);
   const spotTimer = useRef(null); const swipeX = useRef(null);
   const SPOT_N = 2;
+  /* Held while somebody is reading the chart. Six seconds is long enough to
+     glance at it and far too short to study it, and a slide that moves under a
+     finger loses whatever the person was looking at. */
+  const [spotHeld, setSpotHeld] = useState(false);
   const armSpot = () => {
     clearInterval(spotTimer.current);
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (spotHeld) return;
     spotTimer.current = setInterval(() => setSpotOn((i) => (i + 1) % SPOT_N), 6000);
   };
-  useEffect(() => { armSpot(); return () => clearInterval(spotTimer.current); }, []);
+  useEffect(() => { armSpot(); return () => clearInterval(spotTimer.current); }, [spotHeld]); // eslint-disable-line
   // fresh numbers arrive like flipping the channel on a tube
   const heroRef = useRef(null); const prevUnitsRef = useRef(null);
   useEffect(() => {
@@ -22277,12 +22296,18 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   const t = pctV == null ? null : goalTier(pctV, target);
                   const h = pctV == null ? 0 : Math.min(pctV / target * 100, 120) / 1.2;
                   const d = chDelta[c.id];
+                  /* The bar takes its channel's colour, the same one the line for
+                     that channel is drawn in on the chart below. A bar and its line
+                     reading as two different colours made them look like two
+                     different figures. Whether the channel is at target is still
+                     said by the bar against the dashed cap, and in words on hover. */
+                  const col = CHANNEL_SERIES[c.id] || (t ? t.col : "rgba(255,255,255,.3)");
                   return (
                     <div key={c.id} className="s2-hbar bloop-host" tabIndex={0}>
                       <b>{pctV == null ? "–" : fmtPct(c.pct)}</b>
                       <span className="s2-hmid">
                         <span className="s2-hcol">
-                          <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: t ? t.col : "rgba(255,255,255,.3)" }} />
+                          <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: pctV == null ? "rgba(255,255,255,.3)" : col }} />
                         </span>
                         {d != null && (
                           <span className={"s2-hd " + (d >= 0 ? "up" : "dn")}>
@@ -22291,9 +22316,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                         )}
                       </span>
                       <span className="s2-mklbl">{c.label}</span>
-                      <div className={"bloopwin" + (i === closing.length - 1 ? " r" : "")} style={{ "--bw": t ? t.col : undefined }}>
+                      <div className={"bloopwin" + (i === closing.length - 1 ? " r" : "")} style={{ "--bw": pctV == null ? undefined : col }}>
                         <div className="bw-title">{(METRICS[c.id + "Pct"] && METRICS[c.id + "Pct"].label) || c.label}</div>
                         <div className="bw-big">{pctV == null ? "no data yet" : fmtPct(c.pct)} {pctV != null && <small>of {target}% target</small>}</div>
+                        <div className="bw-sub">{pctV == null ? "" : pctV >= target ? "At or above target" : `${Math.round((target - pctV) * 10) / 10} points under target`}</div>
                         <div className="bw-sub">{fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : 0} leads</div>
                       </div>
                     </div>
@@ -22350,7 +22376,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           }}>
           <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
             <div className="s2-scap"><PixIcon glyph="chart" size={12} /> Delivery against target · all three channels</div>
-            <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={spotOn} />
+            <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={spotOn} onHold={setSpotHeld} />
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
             <div className="s2-scap"><PixIcon glyph="bolt" size={12} /> Talk to these first</div>
@@ -22368,7 +22394,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             ))}
           </div>
           <div className="s2-dots">{Array.from({ length: SPOT_N }, (_, i) => <i key={i} className={spotOn === i ? "on" : ""} />)}</div>
-          <div className="s2-rtag">rotating</div>
+          <div className={"s2-rtag" + (spotHeld ? " held" : "")}>{spotHeld ? "holding" : "rotating"}</div>
         </div>
       </div>
 
@@ -30733,6 +30759,10 @@ const SAGE_CSS = `
       .s2-rtag::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--sandInk);
         animation:s2blink 1.2s steps(2,start) infinite; }
       @keyframes s2blink { to { visibility:hidden; } }
+      /* held: the light stops blinking and goes green, so it is obvious the
+         display is waiting rather than broken */
+      .s2-rtag.held { color:var(--p2d); }
+      .s2-rtag.held::before { background:var(--p2); animation:none; }
       .s2-scap { font:700 9px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
         color:var(--ink-3); display:flex; align-items:center; gap:6px; margin-bottom:8px; }
       .s2-none { font-size:11px; color:var(--ink-2); }
