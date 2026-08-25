@@ -32,6 +32,8 @@ export function standings(line) {
       ahead: waitingAhead,
       // Up means: waiting, with nobody waiting in front. Exactly the app's rule.
       up: (p.status || "waiting") === "waiting" && waitingAhead === 0,
+      // When the desk last asked for them, if it has.
+      nudgedAt: p.nudgedAt || null,
     });
     if ((p.status || "waiting") === "waiting") waitingAhead++;
   }
@@ -43,6 +45,7 @@ export function standings(line) {
  *
  * kinds:
  *   "up"       — buzz them. They are next and were not before.
+ *   "nudge"    — buzz them. A manager asked for them by name.
  *   "position" — no alert; the Live Activity / ongoing notification moves.
  *   "end"      — take the standing display away; they are out of the running.
  */
@@ -53,6 +56,22 @@ export function decide(before, after, opts = {}) {
 
   for (const [id, s] of now) {
     const w = was.get(id);
+
+    /* A manager asked for this person by name. It outranks everything else in
+       this loop, including being up: if the desk is calling for somebody who is
+       with a customer or at lunch, that IS the message, and their place in the
+       line can be said quietly afterwards.
+
+       The test is that the stamp CHANGED. A nudge that is merely still on the
+       row would fire again on every unrelated write to the line, which on a busy
+       floor is every few seconds, and a phone that buzzes every few seconds is a
+       phone that gets put face down. */
+    if (s.nudgedAt && (!w || w.nudgedAt !== s.nudgedAt)) {
+      out.push({ id, kind: "nudge", label: s.label, ahead: s.ahead, status: s.status,
+                 title: opts.nudgeTitle || "The desk is asking for you",
+                 body: opts.nudgeBody || "Head back to the floor." });
+      continue;
+    }
 
     if (s.up && (!w || !w.up)) {
       /* The moment worth interrupting somebody for. Everything else on this

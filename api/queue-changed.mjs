@@ -10,9 +10,12 @@
  * entire point of the feature, and it is why nothing about it can be done from
  * the browser.
  *
- * Set up in Supabase → Database → Webhooks: table queue_public, events INSERT
- * and UPDATE, method POST, and one header — x-lpc-secret — matching
- * QUEUE_HOOK_SECRET here.
+ * Set up in Supabase → Database → Webhooks: tables queue_public AND
+ * floor_public, events INSERT and UPDATE, method POST, and one header —
+ * x-lpc-secret — matching QUEUE_HOOK_SECRET here. Both tables are wired to this
+ * one handler because a line and a floor are the same thing to a phone: a place
+ * you are standing in, and a moment somebody needs to know about. The floor rows
+ * carry no kind in their id, so the table name is what says which it is.
  *
  * Env:
  *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY   (server only, never shipped)
@@ -28,9 +31,11 @@ import { sendAlert, worthSending } from "./_report-alert.mjs";
 
 const ACTIVITY_TYPE = "QueueAttributes";     // must match the Swift struct's name
 
-/* The line's own id carries the store, the day and which queue it is. */
-function partsOf(rowId) {
+/* The line's own id carries the store, the day and which queue it is. A floor
+   row's id has no kind on the end — the table it arrived from is the kind. */
+function partsOf(rowId, table) {
   const [store, date, kind = "line"] = String(rowId || "").split(":");
+  if (table === "floor_public") return { store, date, kind: "floor" };
   return { store, date, kind };
 }
 
@@ -70,7 +75,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, sent: out.sent ? 1 : 0, note: out.why || "alerted" });
   }
 
-  const { store, date, kind } = partsOf(after.id);
+  const { store, date, kind } = partsOf(after.id, body.table);
   const plan = decide(before && before.data, after.data);
   if (!plan.length) return res.status(200).json({ ok: true, sent: 0 });
 
@@ -98,6 +103,9 @@ export default async function handler(req, res) {
   await Promise.all(plan.flatMap((item) => (byPerson.get(item.id) || []).map(async (dev) => {
     const state = contentState({ ahead: item.ahead ?? 0, up: item.kind === "up",
                                  status: item.status || "waiting", label: item.label });
+    /* A nudge on a phone that has no Live Activity running should not start one
+       claiming a place in a line the person may not be in. The alert carries the
+       message; the display only follows for people who are actually queued. */
     /* One collapse id per person per queue: a phone that was off all through a
        busy hour should wake to where the line is NOW, not to forty of them. */
     const collapseId = `${store}:${kind}:${item.id}`;
@@ -109,12 +117,13 @@ export default async function handler(req, res) {
             results.push(await sendApns({ token: dev.activity_token, pushType: "liveactivity",
               payload: liveEndPayload({ state }), priority: 5, collapseId }));
           }
-        } else if (item.kind === "up") {
+        } else if (item.kind === "up" || item.kind === "nudge") {
           // The buzz goes to the device; the display moves on its own token.
           if (dev.apns_token) {
             results.push(await sendApns({ token: dev.apns_token, pushType: "alert", collapseId,
               payload: alertPayload({ title: item.title, body: item.body,
-                                      data: { store, kind, date, ahead: 0, up: true } }) }));
+                                      data: { store, kind, date, ahead: item.ahead ?? 0,
+                                              up: item.kind === "up", nudge: item.kind === "nudge" } }) }));
           }
           if (dev.activity_token) {
             results.push(await sendApns({ token: dev.activity_token, pushType: "liveactivity", collapseId,
@@ -136,11 +145,12 @@ export default async function handler(req, res) {
           }
         }
       } else if (dev.platform === "android" && dev.fcm_token) {
-        const body = item.kind === "up" ? item.body
+        const body = (item.kind === "up" || item.kind === "nudge") ? item.body
           : item.ahead === 0 ? "You're next." : `${item.ahead} ahead of you.`;
         const msg = item.kind === "end" ? fcmEndMessage({ token: dev.fcm_token, tag: collapseId, data: { store, kind } })
-          : item.kind === "up" ? fcmUpMessage({ token: dev.fcm_token, title: item.title, body: item.body,
-                                                tag: collapseId, data: { store, kind, ahead: "0" } })
+          : (item.kind === "up" || item.kind === "nudge")
+            ? fcmUpMessage({ token: dev.fcm_token, title: item.title, body: item.body, tag: collapseId,
+                             data: { store, kind, ahead: String(item.ahead ?? 0), nudge: item.kind === "nudge" ? "1" : "0" } })
           : fcmStandingMessage({ token: dev.fcm_token, title: "In the line", body,
                                  tag: collapseId, data: { store, kind, ahead: String(item.ahead ?? 0) } });
         results.push(await sendFcm({ message: msg }));
