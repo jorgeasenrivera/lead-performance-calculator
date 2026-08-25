@@ -10249,6 +10249,139 @@ function ToolSheet({ title, sub, onClose, wide, children }) {
     </div>, document.body);
 }
 
+/* ---- coverage by hour, and everyone else on the clock ----
+   Two questions the floor asks all day that the tool could not answer: was
+   anybody actually out there at two o'clock, and where is everyone who is not
+   in the rotation. Both are read off what is already recorded - the sign-in
+   history for the hours, the line and the schedule for the people - so neither
+   invents anything.
+
+   An hour counts as covered when two or more people were on the floor able to
+   take an up, thin at one, and a gap at none. Hours that have not happened yet
+   are drawn quiet: there is nothing to say about them. */
+function coverageByHour({ store, line, history, now = new Date() }) {
+  const openH = Math.floor(hourOf((store?.hours || DEFAULT_HOURS).open));
+  const closeH = Math.ceil(hourOf((store?.hours || DEFAULT_HOURS).close));
+  const spans = new Map();                       // id -> [{from, to}]
+  const put = (id, from, to) => {
+    if (!id || isTestId(id)) return;
+    const a = spans.get(id) || []; a.push({ from, to }); spans.set(id, a);
+  };
+  const hrOf = (iso) => { const d = new Date(iso); return isNaN(d) ? null : d.getHours() + d.getMinutes() / 60; };
+  const open = new Map();
+  for (const e of history || []) {
+    const h = hrOf(e.t || e.at);
+    if (h == null || !e.id) continue;
+    if (e.action === "signed-in") open.set(e.id, h);
+    else if (e.action === "removed" || e.action === "left") {
+      const from = open.get(e.id);
+      if (from != null) { put(e.id, from, h); open.delete(e.id); }
+    }
+  }
+  // anybody still in the line is still on the clock
+  for (const p of line || []) {
+    const from = open.get(p.id) ?? hrOf(p.joinedAt);
+    if (from != null) put(p.id, from, 24);
+    open.delete(p.id);
+  }
+  for (const [id, from] of open) put(id, from, 24);
+
+  const nowH = now.getHours() + now.getMinutes() / 60;
+  const out = [];
+  for (let h = openH; h < closeH; h++) {
+    if (h > nowH) { out.push({ h, state: "ahead", n: 0 }); continue; }
+    let n = 0;
+    for (const list of spans.values()) if (list.some((sp) => sp.from < h + 1 && sp.to > h)) n++;
+    out.push({ h, n, state: n === 0 ? "gap" : n === 1 ? "thin" : "ok" });
+  }
+  return out;
+}
+const hourLabel = (h) => { const x = h % 12 || 12; return `${x}${h < 12 ? "a" : "p"}`; };
+
+function CoverageStrip({ store, line, history }) {
+  const hours = useMemo(() => coverageByHour({ store, line, history }), [store, line, history]);
+  if (!hours.length) return null;
+  const gaps = hours.filter((x) => x.state === "gap").length;
+  const thin = hours.filter((x) => x.state === "thin").length;
+  return (
+    <div className="da-tbl cov-card">
+      <div className="warmhead">
+        <PixIcon glyph="clock" size={16} style={{ color: "#D0821E" }} />
+        Coverage by hour
+        <span className="da-count">{hourLabel(hours[0].h)} to {hourLabel(hours[hours.length - 1].h + 1)}</span>
+        <span className="s2-hflex" />
+        {gaps > 0 && <span className="cov-tag gap">{gaps} {gaps === 1 ? "gap" : "gaps"}</span>}
+        {thin > 0 && <span className="cov-tag thin">{thin} thin</span>}
+        {gaps === 0 && thin === 0 && <span className="cov-tag ok">covered so far</span>}
+      </div>
+      <div className="cov-body">
+        <div className="cov-hours">
+          {hours.map((x) => (
+            <i key={x.h} className={"cov-" + x.state}
+              title={x.state === "ahead" ? `${hourLabel(x.h)} · not yet`
+                : `${hourLabel(x.h)} · ${x.n} on the floor`} />
+          ))}
+        </div>
+        <div className="cov-scale">
+          <span>{hourLabel(hours[0].h)}</span>
+          <span>{hourLabel(hours[hours.length - 1].h + 1)}</span>
+        </div>
+        <div className="s2-leg cov-leg">
+          <span><i style={{ background: "#1E8A4C" }} />two or more</span>
+          <span><i style={{ background: "#C98A00" }} />one</span>
+          <span><i style={{ background: "#C2361F" }} />nobody</span>
+          <span className="s2-leg-note">by the hour, from sign-ins</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Everyone on the clock who is not in the rotation: with a guest, away, never
+   signed in, or off. What can be done about each differs, so the row says which
+   it is and offers only the thing that would actually help. */
+function AlsoOnClock({ roster, line, data, date, realName, onAdd, onNudge, nudged }) {
+  const inLine = new Map((line || []).map((p) => [p.id, p]));
+  const rows = [];
+  for (const a of roster || []) {
+    const p = inLine.get(a.id);
+    if (p && p.status === "waiting") continue;                  // in the rotation
+    if (p) {
+      const st = QUEUE_FLAGS[p.status]?.label || p.status;
+      rows.push({ a, kind: p.status, what: st, since: qWaitLabel(qMinsSince(p.statusAt || p.joinedAt)), can: "nudge" });
+    } else if (isOff(data, a.id, date)) {
+      rows.push({ a, kind: "off", what: "Off today", since: "", can: null });
+    } else {
+      rows.push({ a, kind: "out", what: "Not signed in", since: "", can: "add" });
+    }
+  }
+  if (!rows.length) return null;
+  const order = { customer: 0, lunch: 1, away: 2, out: 3, off: 4 };
+  rows.sort((x, y) => (order[x.kind] ?? 9) - (order[y.kind] ?? 9) || x.a.name.localeCompare(y.a.name));
+  return (
+    <div className="da-tbl clock-card">
+      <div className="warmhead">
+        <PixIcon glyph="clock" size={16} style={{ color: "#D0821E" }} />
+        Also on the clock <span className="da-count">{rows.length}</span>
+      </div>
+      {rows.map((r) => (
+        <div key={r.a.id} className="da-row clock-row">
+          <span className={"da-stripe st-" + (r.kind === "customer" ? "g" : r.kind === "out" ? "a" : "dim")} aria-hidden="true" />
+          <span className="da-name"><b>{r.a.name}</b>
+            <span className="da-sub">{r.what}{r.since ? ` · ${r.since}` : ""}</span></span>
+          <span className="da-flex" />
+          {r.can === "nudge" && (
+            <button className="s2-rowbtn" disabled={!!nudged[r.a.id]} onClick={() => onNudge(r.a.id)}>
+              {nudged[r.a.id] ? "Nudged" : "Nudge"}
+            </button>
+          )}
+          {r.can === "add" && <button className="s2-rowbtn go" onClick={() => onAdd(r.a.id)}>Put them on</button>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ---- the floor tool's hero, in the drafts' language ----
    The same saturated card Performance wears, tinted with the tool's own accent
    so Live Floor, The Line and Online are recognisable at a glance, carrying the
@@ -10610,8 +10743,8 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
 
   const whoLabel = kind === "floor" ? "on the floor" : "in the line";
   return (
-    <div className="sa">
-      <div className="sa-head">Smart assign</div>
+    <div className="sa sa-card">
+      <div className="sa-head"><PixIcon glyph="search" size={16} style={{ color: "#D0821E" }} />Smart assign</div>
       <p className="sa-sub">Type what the {kind === "floor" ? "customer" : "lead"} needs and skip the right person forward. A skip always needs a reason.</p>
       <input className="sa-input" value={query} placeholder={kind === "floor" ? "e.g. spanish speaker, best showroom closer" : "e.g. spanish speaker, best closing percentage"}
         onChange={(e) => setQuery(e.target.value)} />
@@ -11731,12 +11864,19 @@ function FloorSignIn({ store, date, token, test = false }) {
     const sub = st === "customer" ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " for your appointment" : ""}. You rejoin when they leave.</>
       : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
       : isNext ? "Head to the door. The next one is yours." : `${availableAhead} available ahead of you`;
+    /* The desk asked for them. Loud while it is fresh, then it stops shouting:
+       a banner that never goes away is a banner nobody reads. */
+    const nudgedMins = me.nudgedAt ? qMinsSince(me.nudgedAt) : null;
+    const nudgeOn = nudgedMins != null && nudgedMins < 10;
     content = (
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
         <div className="sf-top">
           <span className="q-mark q-mark-live"><span className="sf-live-dot" />
             <PixIcon glyph="door" size={18} /><span>Live Floor</span></span>
         </div>
+        {nudgeOn && (
+          <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you on the floor</div>
+        )}
         {/* The ring carries the position, and around it the two facts that belonged to
             it anyway: how long you have been on, and how many are on with you. Said
             once, in the place the eye already is. */}
@@ -11842,6 +11982,25 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [showQR, setShowQR] = useState(false);
   const [showPins, setShowPins] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
+  /* A nudge is a note on their own entry, which their phone screen reads the
+     next time it polls: "the desk is asking for you". It is deliberately not a
+     silent flag - it goes in the history too, because asking somebody to come
+     back to the floor is a thing worth being able to point at later. */
+  const nudge = (id) => act((cur) => {
+    const p = (cur.line || []).find((x) => x.id === id);
+    if (!p) return null;
+    p.nudgedAt = qNowIso();
+    pushH(cur, { action: "nudged", id, who: p.label, by: "manager" });
+    return cur;
+  }, { action: "Floor: nudged", detail: realName(id) });
+  const nudgedMap = useMemo(() => {
+    const m = {};
+    for (const p of (row && row.line) || []) {
+      // a nudge is loud for ten minutes, then it is just history
+      if (p.nudgedAt && qMinsSince(p.nudgedAt) < 10) m[p.id] = true;
+    }
+    return m;
+  }, [row]);
   const [showBacklog, setShowBacklog] = useState(false);
   const [backlogCount, setBacklogCount] = useState(null);
   const [showBehind, setShowBehind] = useState(false);
@@ -12161,6 +12320,11 @@ function FloorBoard({ config, store, data, onData, userName }) {
       )}
 
       <FloorBacklog store={store} data={data} userName={userName} open={showBacklog} onCount={setBacklogCount} />
+
+      <CoverageStrip store={store} line={line} history={row?.history} />
+
+      <AlsoOnClock roster={salesRoster} line={line} data={data} date={date} realName={realName}
+        onAdd={addPerson} onNudge={nudge} nudged={nudgedMap} />
 
       <MissedStandards store={store} data={data} roster={salesRoster} userName={userName}
         open={showBehind} onCount={setBehindCount} />
@@ -31770,6 +31934,58 @@ const SAGE_CSS = `
         background:rgba(16,32,52,.06); color:var(--ink-2); }
       .q-ups.none { opacity:.45; }
       @media (max-width:760px) { .q-ups { display:none; } }
+      /* coverage by hour: one block an hour, read left to right */
+      .cov-card, .clock-card { margin-bottom:14px; overflow:visible; }
+      .cov-body { padding:12px 16px 14px; }
+      .cov-hours { display:flex; gap:3px; }
+      .cov-hours i { flex:1; height:26px; border-radius:5px; background:rgba(16,32,52,.08); }
+      .cov-hours i.cov-ok { background:#1E8A4C; }
+      .cov-hours i.cov-thin { background:#C98A00; }
+      .cov-hours i.cov-gap { background:#C2361F; }
+      .cov-hours i.cov-ahead { background:rgba(16,32,52,.07); }
+      .cov-scale { display:flex; justify-content:space-between; margin-top:5px;
+        font:700 8.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); }
+      .cov-leg { margin-top:10px; }
+      .cov-tag { display:inline-flex; align-items:center; border-radius:99px; padding:3px 10px;
+        font:700 10px var(--font-mono); }
+      .cov-tag.gap { background:rgba(194,54,31,.12); color:#C13529; }
+      .cov-tag.thin { background:rgba(201,138,0,.16); color:#8A5A10; }
+      .cov-tag.ok { background:rgba(30,138,76,.12); color:#1E7A3C; }
+      .clock-row { padding:9px 16px; }
+      .clock-row .da-name { width:auto; flex:1 1 auto; }
+      /* the desk asking for you, on your own screen */
+      .sf-nudge { display:flex; align-items:center; justify-content:center; gap:8px; margin:10px 14px 0;
+        padding:10px 14px; border-radius:12px; font:700 12px var(--font-display); color:#4A3300;
+        background:linear-gradient(140deg,#F2C14E,#E0A62B); box-shadow:0 6px 16px -8px rgba(224,166,43,.8);
+        animation:sfNudge 1.6s ease-in-out infinite; }
+      @keyframes sfNudge { 0%,100% { transform:none; } 50% { transform:translateY(-2px); } }
+      @media (prefers-reduced-motion: reduce) { .sf-nudge { animation:none; } }
+      /* ---- plates + smart assign, in the new card language ----
+         the tables keep their markup; what changes is the shell around them,
+         the head row, and the row rhythm, so they read like every other list */
+      .plates .card { border:1px solid var(--line); border-radius:14px; box-shadow:none;
+        background:var(--card); }
+      .plates .card > h3 { display:flex; align-items:center; gap:9px; margin:-16px -16px 12px;
+        padding:12px 16px; border-bottom:1px solid var(--line); border-radius:13px 13px 0 0;
+        background:linear-gradient(90deg, var(--sandHead), rgba(246,227,195,0) 72%);
+        font-family:var(--font-display); font-weight:700; font-size:14.5px; }
+      .plates .roster-table th { font:700 8.5px var(--font-mono); letter-spacing:.1em;
+        text-transform:uppercase; color:var(--ink-3); border-bottom:1px solid var(--line); }
+      .plates .roster-table td { border-bottom:1px solid var(--line); font-size:12.5px; }
+      .plates .roster-table tr:last-child td { border-bottom:0; }
+      .plates .roster-table tbody tr:hover { background:color-mix(in srgb, var(--p2) 6%, transparent); }
+      .plates .plate-state-out { color:#C13529; font:700 10px var(--font-mono); }
+      .plates .plate-state-in { color:#1E7A3C; font:700 10px var(--font-mono); }
+      /* smart assign wears the same card and warm head as the queue beside it */
+      .mf-side .smart-assign, .mf .sa-card { background:var(--card); border:1px solid var(--line);
+        border-radius:14px; overflow:hidden; }
+      .mf .sa-head { display:flex; align-items:center; gap:9px; padding:12px 16px;
+        border-bottom:1px solid var(--line);
+        background:linear-gradient(90deg, var(--sandHead), rgba(246,227,195,0) 72%);
+        font-family:var(--font-display); font-weight:700; font-size:14.5px; }
+      .mf .sa-card .sa-sub, .mf .sa-card .sa-input, .mf .sa-card .sa-chips,
+      .mf .sa-card .sa-list { margin-left:16px; margin-right:16px; }
+      .mf .sa-card .sa-list { margin-bottom:14px; }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
       .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
