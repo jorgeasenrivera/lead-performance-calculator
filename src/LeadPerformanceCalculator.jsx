@@ -3656,7 +3656,7 @@ export default function LeadPerformanceCalculator() {
                     {/* The delivery chart now lives inside the hero's rotating display. */}
                     <Board config={config} store={currentStore} data={storeData}
                       onMove={moveAssociate} onSetRestriction={setRestriction}
-                      filter={boardFilter} onClearFilter={() => setBoardFilter(null)}
+                      filter={boardFilter} onFilter={setBoardFilter} onClearFilter={() => setBoardFilter(null)}
                       query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc}
                       onIgnore={ignoreNames} />
                   </div>
@@ -16326,7 +16326,7 @@ function AssocSearch({ value, onChange, store }) {
    above the fold next to the hero without the board turning into a scroll. */
 const ROLL_CAP = 5;
 
-function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onClearFilter, query = "", focusName, onFocus, onIgnore }) {
+function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter, onFilter, onClearFilter, query = "", focusName, onFocus, onIgnore }) {
   const [rollOpen, setRollOpen] = useState({});
   /* The board is where you notice somebody who does not belong — a name from
      another rooftop that an import dragged in. Sending you to the Roster tab to
@@ -16439,6 +16439,10 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
   const sections = config.roles.map((role) => ({
     role,
     people: (data.roster || []).filter((a) => a.roleId === role.id && matches(a) && inFilter(a)).sort(byLeads),
+    /* Counts for the header chips are taken BEFORE the filter, so the chip that
+       turns a filter off still says how many it would bring back. */
+    counts: (data.roster || []).filter((a) => a.roleId === role.id && matches(a))
+      .reduce((n, a) => { const b = bucketOf(a); n[b] = (n[b] || 0) + 1; return n; }, {}),
   }));
 
   /* Picking a top performer has to land on them, and the top three by units are
@@ -16476,42 +16480,36 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             <button className="btn-quiet" onClick={stopPicking}>Done</button>
           </div>
         ) : (
-          <button className="btn-quiet board-pick" onClick={() => setPicking(true)}>
-            Select people to ignore
+          <button className="s2-rowbtn s2-pickbtn" onClick={() => setPicking(true)}>
+            <PixIcon glyph="user" size={11} /> Select people to ignore
           </button>
         )
       )}
-      {!query && top3.length > 0 && (
-        <div className="podium">
-          <div className="podium-cap">Top Performers <span>units delivered, standards break the tie</span></div>
-          <div className="podium-row">
-            {top3.map((r, i) => (
-              <button key={r.name} className={"pod pod-" + (i + 1)} onClick={() => onFocus && onFocus(r.name)}>
-                <span className={"lb-medal lb-medal-" + (i + 1)}>{i + 1}</span>
-                <span className="pod-who">
-                  <span className="pod-name">{r.name}</span>
-                  <span className="pod-role" style={{ color: r.role.color }}>{r.role.name}</span>
-                </span>
-                <span className="pod-units"><CountUp value={r.units} decimals={1} delay={180 + i * 80} /><em>units</em></span>
-                <span className={"lb-std " + (r.passing ? "ok" : "part")}>
-                  {r.passing ? `+${Math.round(r.surpass * 100)}%` : `${r.met}/${r.total} standards`}
-                </span>
-              </button>
-            ))}
-          </div>
+      {!query && top3.length > 0 && (<>
+        <div className="sec-cap"><PixIcon glyph="trophy" size={12} /> Top performers · units delivered, standards break the tie</div>
+        <div className="s2-podium">
+          {top3.map((r, i) => (
+            <button key={r.name} className={"s2-pod" + (i === 0 ? " first" : "")} onClick={() => onFocus && onFocus(r.name)}>
+              <span className={"s2-medal m" + (i + 1)}>{i + 1}</span>
+              <span className="s2-podname">{r.name}
+                <span className="s2-podsub">{r.passing ? `on standard · ${r.met}/${r.total} above bar` : `${r.met}/${r.total} standards`}</span>
+              </span>
+              <span className="s2-podval"><CountUp value={r.units} decimals={1} delay={180 + i * 80} /></span>
+            </button>
+          ))}
         </div>
-      )}
+      </>)}
 
       {!query && inGrace && (
-        <div className="card grace-banner">
-          <span className="badge badge-warn">Grace period</span>
-          <span>Month-to-date numbers swing hard this early, so no restrictions are recommended through day {graceDays}. Anything below standard shows as a focus area instead. You can change the grace window in Standards.</span>
+        <div className="da-panel s2-gracestrip">
+          <PixIcon glyph="clock" size={13} />
+          <span>Grace period · no restrictions recommended through day {graceDays}. Anything below standard reads as a focus area instead.</span>
         </div>
       )}
       {!query && recap.length > 0 && (
-        <div className="card recap">
-          <h3 className="role-header">{monthLabel(prevYm())} Wrap-Up: Focus Areas This Month</h3>
-          <p className="hint">These associates finished last month below standard (judged by last month's requirements). Use the first {graceDays} days to coach these before restrictions resume.</p>
+        <div className="da-tbl s2-recap">
+          <div className="warmhead"><PixIcon glyph="calendar" size={16} style={{ color: "#D0821E" }} />{monthLabel(prevYm())} wrap-up · focus areas <span className="da-count">{recap.length}</span></div>
+          <p className="da-hint s2-recaphint">Judged by last month's requirements. Use the first {graceDays} days to coach these before restrictions resume.</p>
           {recap.map((r, i) => (
             <div key={i} className="recap-row">
               <span className="recap-name" style={{ color: r.role.color }}>●</span>
@@ -16526,24 +16524,40 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         </div>
       )}
       {!query && inGrace && P && recap.length === 0 && (
-        <div className="card recap">
-          <h3 className="role-header">{monthLabel(prevYm())} Wrap-Up</h3>
-          <p className="hint">Everyone on the roster finished last month at or above standard. Clean slate.</p>
+        <div className="da-panel s2-gracestrip">
+          <PixIcon glyph="check" size={13} />
+          <span>{monthLabel(prevYm())} wrap-up · everyone finished at or above standard. Clean slate.</span>
         </div>
       )}
       {filter && (
-        <div className="filter-bar">
-          <span className="filter-what">
-            Showing only <b>{filter === "cleared" ? "cleared to grab leads" : filter === "attention" ? "needs attention" : "off leads"}</b>
-            {" \u00b7 "}{totalMatches} {totalMatches === 1 ? "person" : "people"}
-          </span>
-          <button className="btn-x" onClick={onClearFilter}>Show everyone</button>
+        <div className="da-panel s2-gracestrip s2-filterstrip">
+          <PixIcon glyph="search" size={13} />
+          <span>Showing only <b>{filter === "cleared" ? "cleared to grab leads" : filter === "attention" ? "needs attention" : "off leads"}</b>
+            {" \u00b7 "}{totalMatches} {totalMatches === 1 ? "person" : "people"}</span>
+          <button className="s2-showall" onClick={onClearFilter}>Show everyone</button>
         </div>
       )}
-      <div className="card roster-card">
-      {sections.map(({ role, people }) => (
-        <section key={role.id} className="role-group" style={{ "--role": role.color }}>
-          <h3 className="role-header"><span className="role-swatch" />{role.name} <span className="role-count">{people.length}</span></h3>
+      {sections.map(({ role, people, counts }) => (
+        <section key={role.id} className="da-tbl lite s2-rolecard" style={{ "--role": role.color }}>
+          {/* The section header carries the bucket chips: the counts belong to
+              the people underneath them, and a chip is where the eye already is
+              when it wants fewer rows. */}
+          <div className="warmhead">
+            <PixIcon glyph="users" size={16} style={{ color: "#D0821E" }} />
+            {role.name} <span className="da-count">{people.length}</span>
+            <span className="s2-hflex" />
+            {["cleared", "attention", "off"].map((b) => {
+              const n = counts[b] || 0;
+              if (!n && filter !== b) return null;
+              const label = b === "cleared" ? "cleared" : b === "attention" ? (inGrace ? "working toward" : "need attention") : "off leads";
+              return (
+                <button key={b} className={"s2-fchip " + b + (filter === b ? " on" : "")}
+                  onClick={() => (filter === b ? onClearFilter() : onFilter && onFilter(b))}>
+                  <b>{n}</b> {label}
+                </button>
+              );
+            })}
+          </div>
           {people.length === 0 && <div className="role-empty">{query ? "No matches in this section" : "No associates in this section"}</div>}
           {people.map((a, i) => {
             const stats = M?.stats?.[norm(a.name)];
@@ -16581,9 +16595,12 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         </section>
       ))}
       {unassigned.length > 0 && (
-        <section className="role-group unassigned" style={{ "--role": "#8E8E93" }}>
-          <h3 className="role-header"><span className="role-swatch" />Needs a Position <span className="role-count">{unassigned.length}</span></h3>
-          <p className="hint">These names came in from reports. Give each one a position to start scoring them.</p>
+        <section className="da-tbl lite s2-rolecard unassigned" style={{ "--role": "#8E8E93" }}>
+          <div className="warmhead">
+            <PixIcon glyph="question" size={16} style={{ color: "#D0821E" }} />
+            Needs a position <span className="da-count">{unassigned.length}</span>
+          </div>
+          <p className="da-hint s2-recaphint">These names came in from reports. Give each one a position to start scoring them.</p>
           {unassigned.map((a) => (
             <div key={a.id} className="assoc-row unassigned-row">
               <span className="assoc-name">{a.name}</span>
@@ -16598,7 +16615,6 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           ))}
         </section>
       )}
-      </div>
     </div>
   );
 }
@@ -16813,35 +16829,33 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         })()}
         <span className="s2-rgo" aria-hidden="true">›</span>
       </div>
-      {incomplete && (
-        <div className="reasons gray-note">
-          Not all reports are in yet for this associate. {missing.length > 0 ? `Waiting on: ${missing.join(", ")}.` : "Some required numbers are blank."} The status stays on hold until the file is complete.
+      {/* One quiet strip under the row instead of three red paragraphs. The row
+          already says the state; what belongs here is the action and, when a
+          file is genuinely missing, which one. */}
+      {incomplete && missing.length > 0 && (
+        <div className="s2-rowfoot"><PixIcon glyph="warn" size={11} /> Waiting on {missing.join(", ")}</div>
+      )}
+      {restrictedNow && !readOnly && (
+        <div className="s2-rowfoot">
+          <PixIcon glyph="close" size={11} /> Off leads since {new Date(restriction.since).toLocaleDateString()}
+          {restriction.until ? ` · re-evaluates ${new Date(restriction.until).toLocaleDateString()}` : ""}
+          <button className="s2-rowbtn go" onClick={() => onSetRestriction(null)}>Put back on leads</button>
         </div>
       )}
-      {restrictedNow && (
-        <div className="reasons off-note">
-          Confirmed off leads since {new Date(restriction.since).toLocaleDateString()}.
-          {restriction.until ? ` Set to re-evaluate on ${new Date(restriction.until).toLocaleDateString()}.` : " No re-evaluation date set."}
-          {!readOnly && <button className="btn-x" onClick={() => onSetRestriction(null)}>Put back on leads</button>}
-        </div>
-      )}
-      {ev.status === "fail" && !grace && !incomplete && !restrictedNow && (
-        <div className="reasons">
-          {/* No sentence here any more: the verdict beside the name says it in
-              three words and the bar shows it. What is left is the one thing on
-              this block that is not a restatement — the action. */}
-          {!readOnly && ev.atCap && (!showRestrict ? (
-            <button className="btn-confirm" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
+      {ev.status === "fail" && !grace && !incomplete && !restrictedNow && !readOnly && ev.atCap && (
+        <div className="s2-rowfoot">
+          {!showRestrict ? (
+            <button className="s2-rowbtn stop" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
           ) : (
-            <div className="restrict-form">
+            <>
               <span>Re-evaluate in</span>
-              <input type="number" min="0" max="90" value={days} onChange={(e) => setDays(Math.max(0, Math.min(90, parseInt(e.target.value) || 0)))} />
+              <input className="s2-rowdays" type="number" min="0" max="90" value={days}
+                onChange={(e) => setDays(Math.max(0, Math.min(90, parseInt(e.target.value) || 0)))} />
               <span>days</span>
-              <button className="btn" onClick={confirmRestrict}>Confirm</button>
-              <button className="btn-x" onClick={() => setShowRestrict(false)}>Cancel</button>
-              <span className="hint">{days > 0 ? `Comes back up for review on ${new Date(Date.now() + days * 86400000).toLocaleDateString()}. Set 0 for no auto date.` : "No automatic re-evaluation date."}</span>
-            </div>
-          ))}
+              <button className="s2-rowbtn stop" onClick={confirmRestrict}>Confirm</button>
+              <button className="s2-rowbtn" onClick={() => setShowRestrict(false)}>Cancel</button>
+            </>
+          )}
         </div>
       )}
       {open && !picking && stats && <AssociateDetail stats={stats} ev={ev} thresholds={thresholds}
@@ -31238,6 +31252,64 @@ const SAGE_CSS = `
       .s2-goalset button { border:0; border-radius:8px; padding:6px 11px; cursor:pointer;
         font:700 10.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
         background:var(--sandTick); color:#4A3300; }
+      /* ---- the board, in the drafts' language ----
+         one warm-headed card per position, the bucket chips in the header, and
+         the podium in the trophy colours. */
+      .s2-rolecard { margin-top:12px; overflow:visible; }
+      .s2-rolecard .warmhead { border-radius:13px 13px 0 0; }
+      .s2-rolecard .assoc-card:last-child .assoc-row { border-radius:0 0 13px 13px; }
+      .s2-rolecard .assoc-card { border:0; border-radius:0; box-shadow:none; margin:0; padding:0;
+        border-top:1px solid var(--line); background:none; }
+      .s2-rolecard .assoc-card:first-of-type { border-top:0; }
+      .s2-rolecard .assoc-row:hover { background:color-mix(in srgb, var(--p2) 7%, transparent); }
+      .s2-hflex { flex:1; }
+      .warmhead .s2-fchip { border:0; border-radius:99px; padding:5px 11px; cursor:pointer;
+        font:600 10px var(--font-display); background:rgba(16,32,52,.06); color:var(--ink-2); }
+      .warmhead .s2-fchip b { font-family:var(--font-mono); }
+      .warmhead .s2-fchip.cleared { background:rgba(30,138,76,.12); color:#1E7A3C; }
+      .warmhead .s2-fchip.attention { background:rgba(201,138,0,.16); color:#8A5A10; }
+      .warmhead .s2-fchip.on { outline:2px solid currentColor; outline-offset:1px; }
+      /* the quiet strip under a row: the action, not a restatement */
+      .s2-rowfoot { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+        padding:0 19px 11px 19px; font-size:10.5px; color:var(--ink-2); }
+      .s2-rowbtn { border:1px solid var(--line); border-radius:99px; background:var(--card);
+        padding:6px 13px; cursor:pointer; font:600 10.5px var(--font-display); color:var(--ink-2); }
+      .s2-rowbtn.stop { border-color:rgba(194,54,31,.35); color:#C13529; }
+      .s2-rowbtn.go { border-color:rgba(30,138,76,.4); color:#1E7A3C; margin-left:auto; }
+      .s2-rowdays { width:56px; border:1px solid var(--line); border-radius:8px; padding:5px 8px;
+        font:700 11px var(--font-mono); }
+      .s2-pickbtn { display:inline-flex; align-items:center; gap:6px; margin:12px 0 2px; }
+      .s2-podium { display:flex; gap:8px; margin-bottom:4px; }
+      .s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
+        background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
+        font:inherit; color:var(--ink); text-align:left; transition:transform .18s ease; }
+      .s2-pod:hover { transform:translateY(-2px); }
+      .s2-pod.first { flex:1.35; background:linear-gradient(115deg,#F7E8C6,#FDFAF2 70%); border-color:#E4C98D;
+        box-shadow:0 10px 26px -14px rgba(201,151,0,.55); }
+      .s2-medal { width:26px; height:26px; border-radius:50%; flex:0 0 auto; display:flex;
+        align-items:center; justify-content:center; font:700 12px var(--font-mono); color:#fff; }
+      .s2-medal.m1 { background:linear-gradient(140deg,#F2BC2B,#D99206); box-shadow:0 3px 8px -3px rgba(217,146,6,.7); }
+      .s2-medal.m2 { background:linear-gradient(140deg,#C4CEDA,#93A0AE); box-shadow:0 3px 8px -3px rgba(147,160,174,.7); }
+      .s2-medal.m3 { background:linear-gradient(140deg,#D89055,#B0642A); box-shadow:0 3px 8px -3px rgba(176,100,42,.7); }
+      .s2-podname { flex:1; min-width:0; font-size:11.5px; font-weight:600;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .s2-pod.first .s2-podname { font-size:13px; }
+      .s2-podsub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400; }
+      .s2-podval { font:700 19px var(--font-mono); flex:0 0 auto; }
+      .s2-gracestrip { display:flex; align-items:center; gap:9px; margin-top:12px; font-size:11px;
+        color:var(--ink-2); line-height:1.5; }
+      .s2-gracestrip b { color:var(--ink); }
+      .s2-filterstrip { border-color:var(--sandTick); }
+      .s2-showall { margin-left:auto; border:0; border-radius:99px; padding:6px 13px; cursor:pointer;
+        font:700 10px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
+        background:rgba(16,32,52,.07); color:var(--ink-2); flex:0 0 auto; }
+      .s2-recap { margin-top:12px; }
+      .s2-recaphint { padding:10px 16px 0; margin:0; }
+      .s2-recap .recap-row { padding:8px 16px; }
+      @media (max-width:760px) {
+        .s2-podium { flex-direction:column; }
+        .warmhead .s2-fchip { padding:7px 12px; font-size:11px; }
+      }
       @media (max-width:760px) {
         .vpill .vp-l { display:none; }
         .vpill .vp-s { display:inline; }
