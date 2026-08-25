@@ -15253,14 +15253,45 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     onChange(next, { action: "Removed a plate record that was not this store's", detail: `${p.tag} (${p.assignee || "unassigned"}, ${d})` });
   };
 
+  /* Counts for the hero: what is out, what came back today, what never did,
+     and how many tags this store knows about at all. */
+  const platesOut = heldNow.length;
+  const dealerOut = heldNow.filter((x) => (registry || []).some((r) => r.tag === x.tag && r.dealer)).length;
+  const backToday = returnedRecent.filter((r) => String(r.returnedAt || "").slice(0, 10) === today()).length;
+  const missingN = missing.length;
+  const knownN = (registry || []).filter((r) => !r.retired).length;
+
   return (
     <div className="plates">
+      <div className="s2-hero plate-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="car" size={26} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">Plates · {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+              {" · "}{standing ? "held until returned" : "out by day, back by close"}</div>
+            <h2 className="s2-store">License plates</h2>
+          </div>
+        </div>
+        <div className="da-kpis">
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="car" size={10} /> Out now</div>
+            <div className="da-krow"><span className="da-knum">{platesOut}</span>
+              {platesOut > 0 && <span className="da-ksub">{dealerOut} dealer · {platesOut - dealerOut} one-time</span>}</div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> Back today</div>
+            <div className="da-krow"><span className="da-knum">{backToday}</span></div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Missing</div>
+            <div className="da-krow"><span className="da-knum" style={missingN ? { color: "#C2361F" } : undefined}>{missingN}</span>
+              {missingN > 0 && <span className="da-ksub">not checked back in</span>}</div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="doc" size={10} /> Registry</div>
+            <div className="da-krow"><span className="da-knum">{knownN}</span><span className="da-ksub">plates known</span></div></div>
+        </div>
+      </div>
       {missing.length > 0 && (
         <div className="plate-missing-banner">
           <b>⚠ {missing.length === 1 ? "A license plate is missing" : `${missing.length} license plates are missing`}</b>
           {missing.map((x) => (
             <div key={x.plate.tag + x.day} className="plate-missing-row">
-              <span><b>{x.plate.tag}</b>: out since {x.day} with {x.plate.assignee || "unassigned"}, never marked returned. It can't go out again until it's checked back in.</span>
+              <span><span className="platechip">{x.plate.tag}</span> out since {x.day} with {x.plate.assignee || "unassigned"}, never marked returned. It can't go out again until it's checked back in.</span>
               <span className="plate-missing-acts">
                 <button className="btn secondary" onClick={() => markReturnedPrior(x.day, x.plate.id)}>Mark returned now</button>
                 <button className="btn-quiet" onClick={() => dropPriorRecord(x.day, x.plate.id)}>Not this store's</button>
@@ -15395,7 +15426,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
               <tbody>
                 {heldNow.map((p) => (
                   <tr key={p.id} className="plate-out">
-                    <td><b>{p.tag}</b></td>
+                    <td><span className="platechip">{p.tag}</span></td>
                     <td>
                       {handing === p.id ? (
                         <span className="plate-time-edit">
@@ -15445,7 +15476,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                 <tbody>
                   {returnedRecent.map((p) => (
                     <tr key={p.id}>
-                      <td><b>{p.tag}</b></td>
+                      <td><span className="platechip">{p.tag}</span></td>
                       <td>{p.assignee || "Unassigned"}</td>
                       <td>{fmtTime(p.takenAt)}</td>
                       <td><span className="plate-returned">{fmtTime(p.returnedAt)}</span></td>
@@ -15465,7 +15496,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
             <tbody>
               {[...dayPlates].sort((x, y) => (y.takenAt || "").localeCompare(x.takenAt || "")).map((p) => (
                 <tr key={p.id} className={p.checkedIn ? "" : "plate-out"}>
-                  <td><b>{p.tag}</b></td>
+                  <td><span className="platechip">{p.tag}</span></td>
                   <td>
                     <input className="plate-assignee-in" defaultValue={p.assignee || ""} placeholder="Unassigned"
                       list="plate-assignees" autoComplete="off"
@@ -31584,6 +31615,42 @@ const SAGE_CSS = `
         box-shadow:none; margin:0; background:none; padding:9px 16px; }
       .mf .q-line.qtbl .q-row:hover { background:color-mix(in srgb, var(--p2) 7%, transparent); }
       .mf .q-line.qtbl .q-empty { padding:14px 16px; margin:0; }
+      /* ---- plates ----
+         a steel hero, and every tag drawn as the plate it is */
+      .plate-hero { margin-bottom:14px;
+        background:linear-gradient(140deg,#8593A0 0%,#5B6875 44%,#20262D 100%); }
+      .plate-hero .s2-ava { color:#5B6875; }
+      .platechip { display:inline-flex; align-items:center; justify-content:center; min-width:88px;
+        font:700 12px var(--font-mono); letter-spacing:.08em; color:#2A3540;
+        background:linear-gradient(180deg,#F8FAFC,#DDE3EA); border:1.5px solid #9AA6B2; border-radius:6px;
+        padding:5px 11px; box-shadow:inset 0 1px 0 #fff, 0 2px 5px -2px rgba(30,40,50,.45); }
+      .platechip.dealer { border-color:#C9A24C; background:linear-gradient(180deg,#FBF6E8,#EFE2C2); color:#5A4310; }
+      /* a plate that never came back is the loudest thing on the page */
+      .plates .plate-missing-banner { border:0; color:#fff; border-radius:16px; padding:14px 18px;
+        background:linear-gradient(150deg,#D14434,#A32517); box-shadow:0 16px 38px -18px rgba(163,37,23,.6); }
+      .plates .plate-missing-banner > b { color:#fff; }
+      .plates .plate-missing-banner, .plates .plate-missing-banner * { color:#fff; }
+      .plates .plate-missing-banner .platechip { color:#2A3540; }
+      .plates .plate-missing-banner .btn.secondary { color:#A32517; }
+      .plates .plate-missing-banner .btn.secondary { background:#fff; color:#A32517; border:0; }
+      .plates .plate-missing-banner .btn-quiet { color:rgba(255,255,255,.85); }
+      .plates .plate-missing-row { gap:10px; }
+      /* ---- imports ----
+         the dropzone as a landing pad, and the flag as a card that reads like a
+         note rather than a browser warning */
+      .import .dropzone, .imports .dropzone { border:2px dashed color-mix(in srgb, var(--p2) 50%, transparent);
+        border-radius:18px; background:color-mix(in srgb, var(--p2) 6%, #fff);
+        transition:transform .18s ease, background .18s ease; }
+      .import .dropzone:hover, .imports .dropzone:hover { transform:translateY(-2px);
+        background:color-mix(in srgb, var(--p2) 10%, #fff); }
+      .import .dropzone.active, .imports .dropzone.active { border-style:solid;
+        background:color-mix(in srgb, var(--p2) 14%, #fff); }
+      .import .dz-icon, .imports .dz-icon { color:var(--p2); }
+      .flag-banner { border:0; border-left:4px solid var(--sandInk);
+        background:linear-gradient(100deg, var(--sandHead), rgba(246,227,195,.35) 70%);
+        border-radius:12px; }
+      .flag-banner-head { color:#8A5A00; }
+      .flag-banner-foot { color:var(--ink-2); font-style:normal; }
       .s2-podium { display:flex; gap:8px; margin-bottom:4px; }
       .s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
         background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
