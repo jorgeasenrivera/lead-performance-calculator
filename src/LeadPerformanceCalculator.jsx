@@ -10194,29 +10194,71 @@ function AvatarStack({ names, max = 5, accent = "#4c8bf5" }) {
   );
 }
 
-/* ---- manager "next up" hero + who's-here avatar stack (both boards) ---- */
-function QueueHero({ nextName, waitingNames, accent, kind, onAssign, assignDisabled, assignBusy }) {
+/* ---- the floor tool's hero, in the drafts' language ----
+   The same saturated card Performance wears, tinted with the tool's own accent
+   so Live Floor, The Line and Online are recognisable at a glance, carrying the
+   store's identity, the day's shape as chips, the big who's-up block the drafts
+   asked for, and the day's numbers as tiles on the green. */
+function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, accent, kind, metrics,
+                    onAssign, assignDisabled, assignBusy, assignLabel }) {
+  const stack = (waitingNames || []).slice(0, 6);
+  const extra = Math.max(0, (waitingNames || []).length - stack.length);
+  const M = metrics || {};
   return (
-    <div className="qh">
-      <div className="qh-stage">
-        <LivingAura color={accent} active={!!nextName} />
-        <div className="qh-inner">
-          <div className="qh-kicker">Next up</div>
-          <div className={"qh-name" + (nextName ? "" : " qh-empty")}>{nextName || "Nobody available"}</div>
+    <div className="s2-hero floor-hero" style={{ "--facc": accent }}>
+      <i className="s2-noise" aria-hidden="true" />
+      <div className="s2-head">
+        <div className="s2-ava">{store && store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
+        <div className="s2-idtx">
+          <div className="s2-greet">{title}{sub ? ` · ${sub}` : ""}</div>
+          <h2 className="s2-store">{store ? store.name : title}</h2>
         </div>
-        {/* The button belongs beside the name it hands the customer to, not tucked in
-            a row of small utilities at the top of the page. */}
+        {chips && chips.length > 0 && (
+          <div className="s2-chips">
+            {chips.map((c, i) => <span key={i} className="fh-chip">{c}</span>)}
+          </div>
+        )}
+      </div>
+
+      <div className="fh-up">
+        <span className="fh-ava">{nextName ? initialsOf(nextName) : "--"}</span>
+        <div className="fh-main">
+          <div className="s2-cap">Next up</div>
+          <div className={"fh-name" + (nextName ? "" : " empty")}>{nextName || "Nobody available"}</div>
+          {nextSub && <div className="fh-sub">{nextSub}</div>}
+        </div>
+        {stack.length > 0 && (
+          <div className="fh-deck">
+            <div className="s2-cap">{kind === "floor" ? "On the floor" : kind === "online" ? "In the queue" : "In line"} · {(waitingNames || []).length}</div>
+            <div className="fh-stack">
+              {stack.map((nm, i) => (
+                <i key={i} style={{ background: `hsl(${hueFromName(nm)} 52% 42%)`, zIndex: stack.length - i }} title={nm}>{initialsOf(nm)}</i>
+              ))}
+              {extra > 0 && <i className="more">+{extra}</i>}
+            </div>
+          </div>
+        )}
         {onAssign && (
-          <button className="qh-assign" disabled={assignDisabled} onClick={onAssign}>
-            <span className="qh-assign-lbl">{assignBusy ? "Assigning" : "Assign " + (nextName ? nextName.split(" ")[0] : "next")}</span>
-            <PixIcon glyph="arrow" size={15} className="qh-assign-ico" />
+          <button className="fh-go" disabled={assignDisabled} onClick={onAssign}>
+            <PixIcon glyph="arrow" size={12} />
+            {assignBusy ? "Assigning" : (assignLabel || ("Assign " + (nextName ? nextName.split(" ")[0] : "next")))}
           </button>
         )}
       </div>
-      {waitingNames.length > 0 && (
-        <div className="qh-side">
-          <div className="qh-side-lbl">{kind === "floor" ? "On the floor" : "In line"} · {waitingNames.length}</div>
-          <AvatarStack names={waitingNames} accent={accent} />
+
+      {metrics && (
+        <div className="da-kpis fh-kpis">
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="users" size={10} /> {kind === "floor" ? "On the floor" : "Signed in"}</div>
+            <div className="da-krow"><span className="da-knum">{M.onFloor ?? 0}</span>
+              <span className="da-ksub">of {M.scheduled ?? 0} scheduled</span></div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="clock" size={10} /> Avg wait</div>
+            <div className="da-krow"><span className="da-knum">{M.avgWaitMin ?? 0}<span className="da-ksub">m</span></span></div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="handshake" size={10} /> With a customer</div>
+            <div className="da-krow"><span className="da-knum">{M.withCust ?? 0}</span>
+              <span className="da-ksub">{M.ready ?? 0} ready</span></div></div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="star" size={10} /> Fairness</div>
+            <div className="da-krow"><span className="da-knum">{M.fairness == null ? "–" : Math.round(M.fairness * 100) + "%"}</span>
+              <span className="da-ksub">even rotation</span></div></div>
         </div>
       )}
     </div>
@@ -10764,14 +10806,22 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         </div>
       </div>
 
-      <InstrumentCluster kind="line"
-        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] })} />
-
-      <QueueHero
-        nextName={(() => { const p = line.find((x) => x.status === "waiting" && !isTestId(x.id)); return p ? realName(p.id) : ""; })()}
-        waitingNames={withoutTest(line).map((p) => realName(p.id))}
-        accent={variant.accent} kind="line"
-        onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+      {(() => {
+        const M = computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] });
+        const nextP = line.find((x) => x.status === "waiting" && !isTestId(x.id));
+        const nextNm = nextP ? realName(nextP.id) : "";
+        return (
+          <QueueHero store={store} title={variant.label}
+            sub={`${new Date(date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${withoutTest(line).length} ${variant.count}`}
+            chips={[`${availCount} ready`, `${M.withCust} with a customer`]}
+            nextName={nextNm}
+            nextSub={nextP ? `waiting ${qWaitLabel(qMinsSince(nextP.joinedAt))}` : null}
+            waitingNames={withoutTest(line).map((p) => realName(p.id))}
+            accent={variant.accent} kind={variant.kind} metrics={M}
+            assignLabel={variant.kind === "online" ? "Assign the lead" : "Assign the call"}
+            onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+        );
+      })()}
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} />
 
@@ -10805,7 +10855,12 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
       <div className="mf-lower">
       <div className="mf-main">
-      <div className="q-line">
+      <div className="q-line qtbl">
+        <div className="warmhead">
+          <PixIcon glyph={variant.kind === "online" ? "globe" : "phone"} size={16} style={{ color: "#D0821E" }} />
+          {variant.kind === "online" ? "The queue, in order" : "The Line, in order"}
+          <span className="da-count">{withoutTest(line).length}</span>
+        </div>
         {line.length === 0 && <p className="muted q-empty">{variant.empty}</p>}
         {line.map((p, i) => {
           const avail = p.status === "waiting";
@@ -11968,14 +12023,22 @@ function FloorBoard({ config, store, data, onData, userName }) {
         </div>
       )}
 
-      <InstrumentCluster kind="floor"
-        metrics={computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] })} />
-
-      <QueueHero
-        nextName={(() => { const p = line.find((x) => x.status === "waiting" && !isTestId(x.id)); return p ? realName(p.id) : ""; })()}
-        waitingNames={withoutTest(line).map((p) => realName(p.id))}
-        accent="#0FB37E" kind="floor"
-        onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+      {(() => {
+        const M = computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] });
+        const nextP = line.find((x) => x.status === "waiting" && !isTestId(x.id));
+        const nextNm = nextP ? realName(nextP.id) : "";
+        return (
+          <QueueHero store={store} title="Live Floor"
+            sub={`${new Date(date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${withoutTest(line).length} on the floor`}
+            chips={[`${availCount} ready`, `${M.withCust} with a guest`]}
+            nextName={nextNm}
+            nextSub={nextP ? `waiting ${qWaitLabel(qMinsSince(nextP.joinedAt))}` : null}
+            waitingNames={withoutTest(line).map((p) => realName(p.id))}
+            accent="#0FB37E" kind="floor" metrics={M}
+            assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "next")}
+            onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+        );
+      })()}
 
       <OppsTally history={row?.history} nameOf={realName} accent="#0FB37E" actions={["assigned", "auto-checkin", "auto-appt-show"]} />
 
@@ -12031,7 +12094,12 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
       <div className="mf-lower">
       <div className="mf-main">
-      <div className="q-line f-line">
+      <div className="q-line f-line qtbl">
+        <div className="warmhead">
+          <PixIcon glyph="door" size={16} style={{ color: "#D0821E" }} />
+          On the floor, in order
+          <span className="da-count">{withoutTest(line).length}</span>
+        </div>
         {line.length === 0 && <p className="muted q-empty">Nobody's on the floor yet. Post the code, or add someone below.</p>}
         {line.map((p, i) => {
           const avail = p.status === "waiting";
@@ -31472,6 +31540,50 @@ const SAGE_CSS = `
       .ac-gauges .s2g4 { width:70px; }
       .ac-best { display:inline-flex; align-items:center; gap:6px; border-radius:99px;
         padding:5px 11px; font:700 10px var(--font-mono); background:rgba(30,138,76,.12); color:#1E7A3C; }
+      /* ---- the floor tools' hero ----
+         the Garden card, tinted with each tool's own accent so Live Floor, The
+         Line and Online are told apart the moment they open */
+      .floor-hero { margin-bottom:14px;
+        background:
+          linear-gradient(140deg, color-mix(in srgb, var(--facc) 42%, var(--hA)) 0%,
+                                  color-mix(in srgb, var(--facc) 30%, var(--hB)) 44%,
+                                  color-mix(in srgb, var(--facc) 18%, var(--hC)) 100%); }
+      .fh-chip { display:inline-flex; align-items:center; height:34px; padding:0 14px; border-radius:12px;
+        background:rgba(255,255,255,.18); color:#fff; font:700 10.5px var(--font-mono);
+        letter-spacing:.05em; text-transform:uppercase; }
+      .fh-up { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-top:18px; }
+      .fh-ava { width:54px; height:54px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center;
+        justify-content:center; font:700 18px var(--font-mono); color:var(--hC);
+        background:#fff; box-shadow:0 10px 24px -10px rgba(12,24,18,.55); }
+      .fh-main { min-width:0; flex:1 1 220px; }
+      .fh-name { font-family:var(--font-display); font-size:26px; font-weight:700; letter-spacing:-.02em;
+        color:#fff; line-height:1.15; }
+      .fh-name.empty { color:rgba(255,255,255,.6); font-size:20px; }
+      .fh-sub { font-size:10.5px; color:rgba(255,255,255,.78); margin-top:2px; }
+      .fh-deck { padding-left:16px; border-left:1px solid rgba(255,255,255,.3); flex:0 0 auto; }
+      .fh-stack { display:flex; align-items:center; padding-left:8px; margin-top:5px; }
+      .fh-stack i { width:30px; height:30px; border-radius:50%; border:2px solid #fff; margin-left:-8px;
+        display:inline-flex; align-items:center; justify-content:center; color:#fff;
+        font:700 9.5px var(--font-mono); font-style:normal; }
+      .fh-stack i.more { background:rgba(255,255,255,.28); }
+      .fh-go { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:12px; cursor:pointer;
+        padding:12px 18px; font:700 12px var(--font-display); color:var(--hC); background:#fff;
+        box-shadow:0 10px 24px -12px rgba(12,24,18,.6); flex:0 0 auto; margin-left:auto; }
+      .fh-go:disabled { opacity:.5; cursor:default; box-shadow:none; }
+      .fh-kpis { margin-top:18px; }
+      @media (max-width:760px) {
+        .fh-up { gap:12px; }
+        .fh-deck { padding-left:0; border-left:0; }
+        .fh-go { width:100%; justify-content:center; margin-left:0; }
+      }
+      /* the queue itself, as a warm-headed table rather than a stack of cards */
+      .mf .q-line.qtbl { background:var(--card); border:1px solid var(--line); border-radius:14px;
+        overflow:hidden; padding:0; gap:0; display:block; }
+      .mf .q-line.qtbl .warmhead { border-radius:13px 13px 0 0; }
+      .mf .q-line.qtbl .q-row { border:0; border-top:1px solid var(--line); border-radius:0;
+        box-shadow:none; margin:0; background:none; padding:9px 16px; }
+      .mf .q-line.qtbl .q-row:hover { background:color-mix(in srgb, var(--p2) 7%, transparent); }
+      .mf .q-line.qtbl .q-empty { padding:14px 16px; margin:0; }
       .s2-podium { display:flex; gap:8px; margin-bottom:4px; }
       .s2-pod { flex:1; min-width:0; display:flex; align-items:center; gap:9px; cursor:pointer;
         background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 16px;
