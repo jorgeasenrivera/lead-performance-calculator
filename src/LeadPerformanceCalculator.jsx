@@ -18810,9 +18810,10 @@ function UploadHistory({ data, onChange }) {
   };
 
   return (
-    <div className="card">
-      <h3>Upload history</h3>
-      <p className="hint">
+    <div className="da-tbl imp-card up-card">
+      <div className="warmhead"><PixIcon glyph="doc" size={16} style={{ color: "#D0821E" }} />
+        Upload history <span className="da-count">{Math.min(log.length, 25)}</span></div>
+      <p className="hint up-hint">
         Every upload, with the time it landed. Activity days can be deleted on their own.
         The other reports overwrite the month's totals, so undoing one means rewinding to just before it.
       </p>
@@ -22381,6 +22382,26 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
+  /* The page's own card, the same one every other page opens on. What it says
+     depends on what the page is doing: seeding a past month is a different job
+     from keeping today current, and the header is where that is said once. */
+  const ImportHero = ({ title, sub, chips }) => (
+    <div className="s2-hero import-hero">
+      <i className="s2-noise" aria-hidden="true" />
+      <div className="s2-head">
+        <div className="s2-ava"><PixIcon glyph="arrowdown" size={24} /></div>
+        <div className="s2-idtx">
+          <div className="s2-greet">{sub}</div>
+          <h2 className="s2-store">{title}</h2>
+        </div>
+        <div className="s2-chips">
+          {chips}
+          <button className="da-hbtn" onClick={onHelp}><PixIcon glyph="question" size={11} /> How to pull reports</button>
+        </div>
+      </div>
+    </div>
+  );
+
   const FlagBanner = () => flags.length > 0 ? (
     <div className="flag-banner">
       <div className="flag-banner-head"><span className="flag-ico">⚠︎</span>Double-check this upload</div>
@@ -22412,9 +22433,14 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
     const fmtStamp = (s) => new Date(s).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
     return (
       <div className="import">
+        <ImportHero title="Daily Activity import"
+          sub={`The Check Out sheet is built from this · ${monthMode ? monthLabel(aMonth) : dayLabel(aDay)}`}
+          chips={<span className="fh-chip">{monthMode ? "whole month" : aDay === today() ? "today" : "backfill"}</span>} />
         <div className="import-grid">
-          <div className="card checklist">
-            <div className="checklist-title">Daily Activity Import <span className="section-sub">{monthMode ? monthLabel(aMonth) : dayLabel(aDay)}</span></div>
+          <div className="da-tbl imp-card">
+            <div className="warmhead"><PixIcon glyph="calendar" size={16} style={{ color: "#D0821E" }} />
+              Which day this lands on <span className="da-count">{monthMode ? monthLabel(aMonth) : dayLabel(aDay)}</span></div>
+            <div className="imp-body">
             <div className="act-day-pick">
               <span className="act-day-label">Import for</span>
               <div className="seg-small">
@@ -22443,6 +22469,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
               : lastStamp
                 ? <p className="hint act-last">Last upload for {aDay === today() ? "today" : "this day"}: <strong>{fmtStamp(lastStamp)}</strong>. Re-importing replaces it.</p>
                 : <p className="hint">No Daily Activity imported for {dayLabel(aDay)} yet. Drop the export to build the Check Out sheet.</p>}
+            </div>
           </div>
           <div className={"dropzone " + (dropActive ? "active" : "")}
             onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
@@ -22472,18 +22499,27 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
   const seeding = seedMonth !== curMonth;
   const seedMonthLabel = new Date(seedDay + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const seedT = seeding ? Object.assign({}, ...Object.values(data.months?.[seedMonth]?.imports || {})) : t;
+  const doneCount = ["appointment", "video", "delivery"].filter((k) => seedT[k]).length;
   return (
     <div className="import">
+      <ImportHero
+        title={seeding ? "Imports for " + seedMonthLabel : "Imports"}
+        sub={seeding ? "Seeding a past month · these land in that month, not this one"
+          : `${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`}
+        chips={<>
+          <span className="fh-chip">{doneCount} of 3 in</span>
+          {setActivityDay && (
+            <input type="month" className="seed-month" value={seedMonth} max={curMonth}
+              title="Choose the month these reports import into"
+              onChange={(e) => { const v = e.target.value; if (v && v <= curMonth) setActivityDay(v + "-01"); }} />
+          )}
+        </>} />
       <div className="import-grid">
-        <div className="card checklist">
-          <div className="checklist-title">
-            {seeding ? "Imports for " + seedMonthLabel : "Today's Imports"} <span className="section-sub">{seeding ? "seeding a past month" : new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</span>
-            {setActivityDay && (
-              <input type="month" className="seed-month" value={seedMonth} max={curMonth} title="Choose the month these reports import into"
-                onChange={(e) => { const v = e.target.value; if (v && v <= curMonth) setActivityDay(v + "-01"); }} />
-            )}
-            <button className="help-btn" onClick={onHelp} title="How to pull the Appointment and Video reports">? Help</button>
-          </div>
+        <div className="da-tbl imp-card">
+          <div className="warmhead"><PixIcon glyph="check" size={16} style={{ color: "#D0821E" }} />
+            {seeding ? "For " + seedMonthLabel : "Today's imports"}
+            <span className="da-count">{doneCount}/3</span></div>
+          <div className="imp-body">
           <div className="check-group-label">Upload these</div>
           {(activityDay || today()).slice(0, 7) !== today().slice(0, 7) && (
             <p className="hint act-backfill">Seeding a past month: the Delivery Summary and other month reports dropped below will land in <strong>{new Date((activityDay || today()) + "T12:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}</strong> (from the date picked above), not the current month.</p>
@@ -22516,6 +22552,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
             <span className="check-note">units only, no percentage</span>
           </div>
           {!(seedT.delivery && seedT.appointment && seedT.video) && <p className="hint">Lead statuses reflect the latest data on file. Drop today's DriveCentric exports to bring everyone current.</p>}
+          </div>
         </div>
         <div className={"dropzone " + (dropActive ? "active" : "")}
           onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
@@ -31194,6 +31231,30 @@ const SAGE_CSS = `
         font:700 9.5px var(--font-mono); letter-spacing:.04em; margin-top:3px;
         background:rgba(16,32,52,.07); color:var(--ink-2); }
       .asked-tag.mgr { background:rgba(42,94,155,.12); color:#1D4674; }
+      /* ---- imports, in the new card language ----
+         a hero that says what this page is doing, the checklist and the history
+         as warm-headed cards, and the dropzone as the landing pad between them */
+      .import-hero { margin-bottom:14px;
+        background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 44%, var(--hC) 100%); }
+      .import-hero .s2-ava { color:var(--hB); }
+      .import-hero .seed-month { height:34px; border:0; border-radius:12px; padding:0 12px;
+        font:600 11px var(--font-display); color:var(--ink); background:#fff;
+        box-shadow:0 4px 12px -6px rgba(12,24,18,.4); }
+      .imp-card { overflow:visible; margin-bottom:14px; }
+      .imp-card .warmhead { border-radius:13px 13px 0 0; }
+      .imp-body { padding:12px 16px 14px; }
+      .imp-body .check-group-label:first-child { margin-top:0; }
+      .up-card .up-hint { padding:12px 16px 0; margin:0; }
+      .up-card .up-list { padding:8px 16px 14px; }
+      .up-card .up-row { border-bottom:1px solid var(--line); padding:8px 0; }
+      .up-card .up-row:last-child { border-bottom:0; }
+      /* The checklist is a list of short lines and the landing pad wants room to
+         be landed on, but 300px was tight enough that "Delivery Summary" broke
+         over two lines while the pad had space to spare. */
+      .import .import-grid { align-items:start; grid-template-columns:minmax(360px, 440px) 1fr; }
+      .import .import-grid .imp-card { padding:0; }
+      .import .dropzone { min-height:0; }
+      @media (max-width:900px) { .import .import-grid { grid-template-columns:1fr; } }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
       .ts-body { margin-top:12px; display:flex; flex-direction:column; gap:9px; }
