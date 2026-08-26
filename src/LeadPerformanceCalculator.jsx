@@ -31396,7 +31396,7 @@ const SAGE_CSS = `
       /* what you read sits at the foot of the rail, so the two pressable things
          stay together at the top where the eye lands */
       .s2-chip-state { margin-top:auto; display:flex; flex-direction:column-reverse;
-        align-items:stretch; gap:10px; }
+        align-items:flex-end; gap:10px; }
       .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
         border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
         font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
@@ -31422,19 +31422,16 @@ const SAGE_CSS = `
       .s2-names s.off { color:var(--ink-3); }
       .s2-pdot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; background:var(--green); }
       .s2-pdot.off { background:var(--ink-3); }
-      /* The month runs the width of the rail, so it lines up with the two
-         buttons above it rather than sitting in from them. */
-      .s2-mcal { display:flex; flex-direction:column; gap:6px; align-items:stretch; cursor:default; }
+      .s2-mcal { display:flex; flex-direction:column; gap:6px; align-items:flex-end; cursor:default; }
       .s2-mc-cap { font:700 12px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
         color:var(--sandCap); display:flex; gap:6px; align-items:center; }
-      /* Rounded squares rather than dots: they tile the width evenly instead of
-         leaving a scatter of circles with gaps between them, which is what made
-         the month look untidy once it ran the full width of the rail. */
-      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; justify-items:center; }
-      .s2-mc-grid i { width:100%; max-width:22px; aspect-ratio:1; border-radius:5px;
-        background:rgba(255,255,255,.13); cursor:pointer; }
-      .s2-mc-grid i.p { background:rgba(255,255,255,.8); }
-      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 8px var(--sandTick); }
+      /* Dots, with room between them: at three and a half pixels apart they read
+         as a texture rather than as days you could pick one out of. */
+      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,15px); gap:6px; justify-items:center; }
+      .s2-mc-grid i { width:9px; height:9px; border-radius:50%;
+        background:rgba(255,255,255,.24); cursor:pointer; }
+      .s2-mc-grid i.p { background:rgba(255,255,255,.75); }
+      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 8px var(--sandTick); transform:scale(1.25); }
       .s2-mc-grid i.e { background:transparent; pointer-events:none; }
       .s2-mc-sub { font-size:9.5px; color:rgba(255,255,255,.7); white-space:nowrap; margin-top:2px; }
       .s2-cw { display:flex; align-items:flex-start; gap:8px; font-size:10px; color:var(--ink);
@@ -31840,8 +31837,7 @@ const SAGE_CSS = `
          rows, and the rule was forcing both ROWS to 38px, so the calendar's three
          stacked lines overflowed straight through the rule beneath the head. */
       .s2-chip-acts > * { width:100%; box-sizing:border-box; display:flex; align-items:center; }
-      .s2-chip-state > .s2-rota { height:38px; box-sizing:border-box; display:flex; align-items:center;
-        justify-content:center; }
+      .s2-chip-state > .s2-rota { height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
       .s2-chip-acts > .s2-ru { height:38px; justify-content:center; }
       .s2-chip-acts > .s2-imp { min-height:44px; padding:7px 10px 7px 7px; }
       /* in a fixed rail the text has to give, not the arrow at the end of it */
