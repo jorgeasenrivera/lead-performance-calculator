@@ -4001,7 +4001,7 @@ function LEADERBOARD_HTML(p) {
     background:
       radial-gradient(42% 55% at 18% 8%, rgba(36,79,128,.95), transparent 70%),
       radial-gradient(38% 50% at 82% 12%, rgba(193,215,48,.12), transparent 70%),
-      radial-gradient(50% 60% at 50% 100%, rgba(42,94,155,.35), transparent 72%);
+      radial-gradient(50% 60% at 50% 100%, color-mix(in srgb, var(--p2) 35%, transparent), transparent 72%);
     animation: aurora 40s ease-in-out infinite alternate; }
   @keyframes aurora {
     0% { transform: translate3d(0,0,0) scale(1); }
@@ -17275,12 +17275,25 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
    different number of dials in different places, and a column of people became a
    column of nothing lining up with anything. Reading down a column is the whole
    point of putting them side by side. */
-const STRIP_METRICS = ["apptVideoDayPct", "deliveredPct", "engagedVideoPct", "bhVideoPct"];
+/* The five the store is run on. It used to be the four the tier ladder happened
+   to grade, which meant a person's card showed internet lead delivery and BH
+   video and never mentioned phone or showroom, while every other screen was
+   built on the five. */
+const STRIP_METRICS = FIVE.map((f) => f.key);
 
-function MetricStrip({ ev, stats }) {
-  const reqs = ev?.tier?.requirements;
-  if (!reqs || !reqs.length) return null;
+function MetricStrip({ ev, stats, thr }) {
+  const reqs = ev?.tier?.requirements || [];
   const need = new Map(reqs.map((r) => [r.metric, r]));
+  /* A dial needs a number to point at. The tier's requirement is used where it
+     has one, and the store's own target for that metric otherwise, so all five
+     are graded rather than four graded and one drawn grey. */
+  const targetOf = (metric) => {
+    const req = need.get(metric);
+    if (req) return req.min;
+    const f = FIVE.find((x) => x.key === metric);
+    return f && thr && thr[f.id] ? thr[f.id].green : null;
+  };
+  if (!reqs.length && !thr) return null;
   /* The fixed four first, then anything else this tier happens to ask for. A
      requirement must never be hidden just because it is unusual. */
   const columns = [...STRIP_METRICS, ...reqs.map((r) => r.metric).filter((m) => !STRIP_METRICS.includes(m))];
@@ -17294,13 +17307,13 @@ function MetricStrip({ ev, stats }) {
   return (
     <div className="mstrip">
       {columns.map((metric, gi) => {
-        const req = need.get(metric);
         const def = METRICS[metric];
         if (!def) return null;
         const v = stats?.[metric];
-        const na = !req;
+        const tgtFor = targetOf(metric);
+        const na = tgtFor == null;
         const vShow = v == null ? null : def.kind === "pct" ? Math.round(v * 1000) / 10 : v;
-        const tgt = req ? req.min : null;
+        const tgt = tgtFor;
         const t = !na && vShow != null ? goalTier(vShow, tgt) : null;
         const col = na || vShow == null ? "#C9CDD3" : t.col;
         const frac = na || vShow == null ? 0 : Math.max(0.04, Math.min(1, vShow / (tgt * 1.6)));
@@ -17320,7 +17333,7 @@ function MetricStrip({ ev, stats }) {
             <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
               <div className="bw-title">{def.label}</div>
               <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
-                <small>{na ? "no target for this associate" : `of ${def.kind === "pct" ? tgt + "%" : tgt} target`}</small></div>
+                <small>{na ? "no target set" : `of ${def.kind === "pct" ? tgt + "%" : tgt} target`}</small></div>
               <div className="bw-desc">{METRIC_DESC[metric] || "Measured month to date."}</div>
             </div>
           </span>
@@ -17338,7 +17351,8 @@ function MetricStrip({ ev, stats }) {
    carries what the drafts asked for: where the units came from, the new/used
    split, how they are trending against their coaching goal, the months behind
    them, the four standards, and the one thing they are best at. */
-function AssocCard({ a, stats, ev, data, config, origin, onClose }) {
+function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose }) {
+  const thr = normThresholds(thresholds);
   const [closing, setClosing] = useState(false);
   const boxRef = useRef(null);
   const shut = () => { setClosing(true); setTimeout(onClose, 240); };
@@ -17452,9 +17466,9 @@ function AssocCard({ a, stats, ev, data, config, origin, onClose }) {
           </div>
         </>)}
 
-        {ev?.tier?.requirements?.length > 0 && (<>
-          <div className="ac-cap">The four standards</div>
-          <div className="ac-gauges"><MetricStrip ev={ev} stats={stats} /></div>
+        {(ev?.tier?.requirements?.length > 0 || thr) && (<>
+          <div className="ac-cap">The five</div>
+          <div className="ac-gauges"><MetricStrip ev={ev} stats={stats} thr={thr} /></div>
         </>)}
 
         {best && (<>
@@ -17592,7 +17606,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
                 background: pct >= 95 ? "#C2361F" : pct >= 85 ? "#C98A00" : "var(--p2)" }} />
           </span>
         )}
-        {showDials && <MetricStrip ev={ev} stats={stats} />}
+        {showDials && <MetricStrip ev={ev} stats={stats} thr={normThresholds(thresholds)} />}
         <span className="assoc-spacer" />
         {/* Two sub-columns, not one right-aligned string: "74 / 80" and "82 / 100"
             are different widths, so aligning the whole thing put the slash in a
@@ -17648,7 +17662,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         </div>
       )}
       {open && !picking && stats && (
-        <AssocCard a={a} stats={stats} ev={ev} data={storeData} config={cfg}
+        <AssocCard a={a} stats={stats} ev={ev} data={storeData} config={cfg} thresholds={thresholds}
           origin={origin} onClose={() => setOpen(false)} />
       )}
     </div>
@@ -19995,7 +20009,10 @@ function OyoChain({ steps }) {
   );
 }
 /* One colour per channel, the same three everywhere they appear. */
-const OYO_CHAN_COLOR = { internet: "#2A5E9B", showroom: "#C77800", phone: "#7E8B24", campaign: "#8A5A3C" };
+/* The same colour each channel is drawn in everywhere else: the hero's bars, the
+   delivery chart, History and Targets. Internet was one blue here and another
+   blue on the chart, which is two answers to "which line is internet". */
+const OYO_CHAN_COLOR = { internet: "#2E7DE0", showroom: "#17A054", phone: "#E88600", campaign: "#8A5A3C" };
 
 function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
   const [editBase, setEditBase] = useState(false);
@@ -25657,7 +25674,12 @@ function AppShell({
 const SAGE_CSS = `
       :root {
         --bg: #F5F5F7; --card: #FFFFFF; --ink: #1D1D1F; --ink-2: #6E6E73; --ink-3: #AEAEB2;
-        --line: rgba(0,0,0,.08); --blue: #2A5E9B; --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
+        --line: rgba(0,0,0,.08); --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
+        /* The interface accent. It was the old blue and is now the Garden green,
+           in one place, because forty-odd rules point at it and a screen with two
+           accents in it reads as two products. The name is kept so nothing has to
+           be renamed to find it. */
+        --blue: #567D61;
         --radius: 18px; --spring: cubic-bezier(.32,.72,.33,1);
         --shadow-1: 0 1px 2px rgba(0,0,0,.04), 0 2px 12px rgba(0,0,0,.05);
         --shadow-2: 0 4px 10px rgba(0,0,0,.06), 0 12px 32px rgba(0,0,0,.10);
@@ -25747,7 +25769,7 @@ const SAGE_CSS = `
       /* second drifting layer, slower and offset, for parallax life */
       .lpc::after { content:""; position:fixed; inset:-15%; z-index:-2; pointer-events:none;
         background:
-          radial-gradient(30% 30% at 70% 85%, rgba(42,94,155,.18), transparent 72%),
+          radial-gradient(30% 30% at 70% 85%, color-mix(in srgb, var(--p2) 18%, transparent), transparent 72%),
           radial-gradient(26% 26% at 25% 92%, rgba(0,168,150,.13), transparent 72%),
           radial-gradient(24% 24% at 92% 42%, rgba(122,79,155,.10), transparent 74%);
         animation: driftB 46s ease-in-out infinite alternate; will-change: transform; }
@@ -25779,7 +25801,7 @@ const SAGE_CSS = `
       }
 
       .lpc * { box-sizing: border-box; }
-      ::selection { background: rgba(42,94,155,.2); }
+      ::selection { background: color-mix(in srgb, var(--p2) 20%, transparent); }
 
       /* ---- store hero (manager landing) ---- */
       .hero { position:relative; z-index:220; margin-bottom: 26px; --sp: #2A5E9B; --sd: #1D4674; --sa: #C1D730; }
@@ -25870,9 +25892,9 @@ const SAGE_CSS = `
       /* the card the manager was sent to, briefly haloed so they land on it */
       .assoc-card.is-focused { animation: focusPing 2.4s var(--ease) both; border-radius:12px; }
       @keyframes focusPing {
-        0%   { box-shadow: 0 0 0 0 rgba(42,94,155,.34); background:rgba(42,94,155,.07); }
-        55%  { box-shadow: 0 0 0 7px rgba(42,94,155,0); background:rgba(42,94,155,.05); }
-        100% { box-shadow: 0 0 0 0 rgba(42,94,155,0); background:transparent; }
+        0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p2) 34%, transparent); background:color-mix(in srgb, var(--p2) 7%, transparent); }
+        55%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--p2) 0%, transparent); background:color-mix(in srgb, var(--p2) 5%, transparent); }
+        100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p2) 0%, transparent); background:transparent; }
       }
       .pod { cursor:pointer; text-align:left; font:inherit; color:inherit; }
 
@@ -25903,7 +25925,7 @@ const SAGE_CSS = `
           radial-gradient(26% 28% at 24% 22%, rgba(122,79,155,.31), transparent 70%),
           radial-gradient(24% 26% at 78% 56%, rgba(0,168,150,.31), transparent 70%),
           radial-gradient(22% 24% at 48% 92%, rgba(255,159,10,.24), transparent 72%),
-          radial-gradient(20% 22% at 88% 16%, rgba(42,94,155,.26), transparent 72%),
+          radial-gradient(20% 22% at 88% 16%, color-mix(in srgb, var(--p2) 26%, transparent), transparent 72%),
           radial-gradient(18% 20% at 8% 70%, rgba(193,215,48,.22), transparent 74%);
         opacity:.5; animation: bgMorph 16s ease-in-out infinite alternate;
         transition: opacity 1.4s var(--ease); }
@@ -25984,7 +26006,7 @@ const SAGE_CSS = `
       .hol-add .btn-ghost { margin-top:0; }
       .hol-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
       .hol-chip { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600;
-        background:rgba(42,94,155,.09); border:1px solid rgba(42,94,155,.16); color:var(--ink);
+        background:color-mix(in srgb, var(--p2) 9%, transparent); border:1px solid color-mix(in srgb, var(--p2) 16%, transparent); color:var(--ink);
         padding:5px 8px 5px 11px; border-radius:99px; }
       .hol-chip em { font-style:normal; color:var(--ink-3); font-weight:500; }
       .hol-chip button { border:none; background:none; cursor:pointer; color:var(--ink-3); font-size:11px; padding:0 2px; }
@@ -25995,7 +26017,7 @@ const SAGE_CSS = `
       /* ---- hourly contact pattern on the coaching card ---- */
       .hourly { position:relative; margin-top:22px; }
       .hourly-chart { width:100%; height:auto; display:block; margin-top:4px; }
-      .hr-bar { fill:rgba(42,94,155,.16); }
+      .hr-bar { fill:color-mix(in srgb, var(--p2) 16%, transparent); }
       .hr-line { stroke:#E59200; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
       .hr-dot { fill:#E59200; stroke:#fff; stroke-width:1.5; }
       .hr-tick { font-size:9px; fill:var(--ink-3); font-weight:600; }
@@ -26070,7 +26092,7 @@ const SAGE_CSS = `
         padding:24px; z-index:60; }
       .loadscreen-inner { text-align:center; animation: loadFadeIn .45s var(--spring) both; }
       .loadscreen-logo { display:flex; justify-content:center; margin-bottom:20px;
-        filter: drop-shadow(0 10px 26px rgba(42,94,155,.28)); }
+        filter: drop-shadow(0 10px 26px color-mix(in srgb, var(--p2) 28%, transparent)); }
       @keyframes loadFadeIn { from { opacity:0; transform: scale(.94); } to { opacity:1; transform:none; } }
       /* the speedometer needle + its gradient trail spin together */
       .sage-loading i { animation: sageDot 1.05s ease-in-out infinite; }
@@ -26314,7 +26336,7 @@ const SAGE_CSS = `
         border-radius:14px; padding:11px 16px; margin-bottom:20px; box-shadow:var(--shadow-1);
         transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease);
         opacity:0; animation:ruBloop .5s var(--ease-bloop) .1s both; }
-      .ru-reopen:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:rgba(42,94,155,.4); }
+      .ru-reopen:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:color-mix(in srgb, var(--p2) 40%, transparent); }
       .ru-reopen:active { transform:scale(.99); }
       .ru-reopen-t { font-family:var(--font-display); font-size:14.5px; letter-spacing:-.01em; }
       .ru-reopen-tally { display:flex; gap:9px; flex-wrap:wrap; margin-left:auto; }
@@ -26561,7 +26583,7 @@ const SAGE_CSS = `
       .ac-sub { color:var(--ink-2); font-size:13px; margin-top:3px; }
       .ac-actions { display:flex; gap:8px; }
       .ac-results { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap:12px; margin:18px 0 6px; }
-      .ac-stat { background:rgba(42,94,155,.07); border-radius:12px; padding:12px 14px; }
+      .ac-stat { background:color-mix(in srgb, var(--p2) 7%, transparent); border-radius:12px; padding:12px 14px; }
       .ac-stat b { display:block; font-size:22px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
       .ac-stat span { font-size:11px; color:var(--ink-2); font-weight:600; }
       .ac-h3 { font-size:15px; font-weight:700; margin:20px 0 10px; }
@@ -26583,7 +26605,7 @@ const SAGE_CSS = `
 
       /* ---- own your outcome ---- */
       .oyo-goal { display:grid; grid-template-columns: 200px 1fr; gap:20px; align-items:start;
-        background:rgba(42,94,155,.05); border-radius:14px; padding:16px; margin-bottom:6px; }
+        background:color-mix(in srgb, var(--p2) 5%, transparent); border-radius:14px; padding:16px; margin-bottom:6px; }
       .oyo-goalset label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em;
         color:var(--ink-3); font-weight:700; margin-bottom:6px; }
       .oyo-goalset input { width:100%; font-size:22px; font-weight:700; text-align:center; padding:8px; }
@@ -26863,7 +26885,7 @@ const SAGE_CSS = `
       .skill-chip { font-family:inherit; font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px;
         border:1px solid rgba(16,32,52,.13); background:#fff; color:var(--ink-3); cursor:pointer;
         transition:background .14s, color .14s, border-color .14s; }
-      .skill-chip:hover { border-color:rgba(42,94,155,.4); color:var(--ink-2); }
+      .skill-chip:hover { border-color:color-mix(in srgb, var(--p2) 40%, transparent); color:var(--ink-2); }
       .skill-chip.on { background:var(--blue); border-color:var(--blue); color:#fff; }
       .skill-chip.earned { cursor:help; background:rgba(217,164,37,.16); border-color:rgba(217,164,37,.45);
         color:#8A6314; }
@@ -27008,7 +27030,7 @@ const SAGE_CSS = `
         color:var(--ink-2); margin:8px 0 2px; }
       .oyo-from b { font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums; }
       .oyo-from-tag { font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
-        color:#1D4674; background:rgba(42,94,155,.12); padding:3px 9px; border-radius:999px; }
+        color:#1D4674; background:color-mix(in srgb, var(--p2) 12%, transparent); padding:3px 9px; border-radius:999px; }
       .oyo-from-op { color:var(--ink-3); }
       .oyo-from-warn { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:650;
         color:#95600A; background:rgba(255,159,10,.14); padding:3px 9px; border-radius:999px; cursor:help; }
@@ -27024,7 +27046,7 @@ const SAGE_CSS = `
       .explain > summary::-webkit-details-marker { display:none; }
       .explain > summary::before { content:"?"; display:inline-grid; place-items:center;
         width:15px; height:15px; border-radius:50%; font-size:10px; font-weight:800;
-        background:rgba(42,94,155,.12); color:var(--blue); }
+        background:color-mix(in srgb, var(--p2) 12%, transparent); color:var(--blue); }
       .explain[open] > summary::before { content:"\\2212"; }
       .explain > summary:hover { text-decoration:underline; }
       .explain-body { font-size:12.5px; line-height:1.6; color:var(--ink-2); max-width:78ch;
@@ -27039,12 +27061,12 @@ const SAGE_CSS = `
       .pp-strangers { display:grid; gap:6px; margin-top:10px; }
       .pp-stranger { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:9px 12px;
         border-radius:12px; background:rgba(16,32,52,.04); }
-      .pp-stranger.on { background:rgba(42,94,155,.14); }
+      .pp-stranger.on { background:color-mix(in srgb, var(--p2) 14%, transparent); }
       .pp-batch { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0 6px; }
       .pp-batch-n { font-size:11.5px; color:var(--ink-3); margin-right:2px; }
       /* A repair rather than a question or a fault, so its own colour: these are
          your people, and the tool is offering to put them back together. */
-      .pp-mangled { border-color:rgba(42,94,155,.35); background:linear-gradient(180deg,rgba(42,94,155,.06),transparent); }
+      .pp-mangled { border-color:color-mix(in srgb, var(--p2) 35%, transparent); background:linear-gradient(180deg,color-mix(in srgb, var(--p2) 6%, transparent),transparent); }
       .pp-mangled h3 { color:var(--blue); }
       .pp-was { color:var(--ink-3); text-decoration:line-through; text-decoration-thickness:1px; }
       .pp-arrow { color:var(--ink-3); }
@@ -27081,12 +27103,12 @@ const SAGE_CSS = `
       .pp-date { display:flex; gap:7px; align-items:center; font-size:12px; color:var(--ink-2); }
       .pp-date input { width:auto; }
       .pp-bulk { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:10px 0;
-        padding:9px 12px; border-radius:12px; background:rgba(42,94,155,.08); font-size:12.5px; font-weight:600; }
+        padding:9px 12px; border-radius:12px; background:color-mix(in srgb, var(--p2) 8%, transparent); font-size:12.5px; font-weight:600; }
 
       .pp-list { display:grid; gap:5px; margin-top:10px; }
       .pp-row { display:flex; gap:12px; align-items:center; padding:11px 14px; border-radius:13px;
         background:rgba(16,32,52,.035); }
-      .pp-row.on { background:rgba(42,94,155,.12); }
+      .pp-row.on { background:color-mix(in srgb, var(--p2) 12%, transparent); }
       .pp-row.pp-ignored { opacity:.62; }
       .pp-tick { background:none; border:0; padding:0; cursor:pointer; display:flex; }
       .pp-who { flex:1; min-width:0; }
@@ -27111,7 +27133,7 @@ const SAGE_CSS = `
       .pp-act:hover svg { opacity:1; }
       .pp-act:active { transform:none; }
       /* Open, and staying open: the one state in this row that is not momentary. */
-      .pp-act.on { background:rgba(42,94,155,.1); border-color:rgba(42,94,155,.32); color:#2A5E9B; }
+      .pp-act.on { background:color-mix(in srgb, var(--p2) 10%, transparent); border-color:color-mix(in srgb, var(--p2) 32%, transparent); color:#2A5E9B; }
       .pp-act.on svg { opacity:1; }
       /* The only one that takes a person's figures out of the store's books. It
          earns a colour; the other four do not. */
@@ -27163,7 +27185,7 @@ const SAGE_CSS = `
       .pp-startrow { padding-bottom:10px; margin-bottom:10px; border-bottom:1px solid rgba(16,32,52,.08); }
       .pp-startnote { margin:0 !important; flex:1; min-width:180px; }
       .pp-move { margin-top:12px; padding:12px 14px; border-radius:13px;
-        background:rgba(42,94,155,.07); border:1px solid rgba(42,94,155,.2); }
+        background:color-mix(in srgb, var(--p2) 7%, transparent); border:1px solid color-mix(in srgb, var(--p2) 20%, transparent); }
       .pp-move-head { font-size:14px; margin-bottom:4px; }
       .pp-move .hint { margin:0 0 10px; }
       .pp-move-row { display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
@@ -27208,14 +27230,14 @@ const SAGE_CSS = `
       .help-fab { position:fixed; right:18px; bottom:18px; z-index:350; width:46px; height:46px;
         border-radius:999px; border:0; cursor:pointer; display:flex; align-items:center; justify-content:center;
         background:linear-gradient(135deg,#2A5E9B,#5566F0); color:#fff;
-        box-shadow:0 14px 30px -12px rgba(42,94,155,.7), inset 0 1px 0 rgba(255,255,255,.25);
+        box-shadow:0 14px 30px -12px color-mix(in srgb, var(--p2) 70%, transparent), inset 0 1px 0 rgba(255,255,255,.25);
         transition:transform .16s var(--ease), box-shadow .2s var(--ease); }
-      .help-fab:hover { transform:translateY(-2px); box-shadow:0 20px 38px -12px rgba(42,94,155,.75); }
+      .help-fab:hover { transform:translateY(-2px); box-shadow:0 20px 38px -12px color-mix(in srgb, var(--p2) 75%, transparent); }
       .help-fab.inline { position:static !important; inset:auto !important; width:auto; height:auto;
         gap:8px; padding:11px 18px; border-radius:12px; font-family:inherit; font-size:13.5px;
         font-weight:700; margin-top:16px; align-self:flex-start; box-shadow:none;
-        background:rgba(42,94,155,.1); color:var(--blue); }
-      .help-fab.inline:hover { background:rgba(42,94,155,.18); transform:none; }
+        background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--blue); }
+      .help-fab.inline:hover { background:color-mix(in srgb, var(--p2) 18%, transparent); transform:none; }
       /* The sign-in pages are a single column with the controls at the foot, so the
          floating button is lifted clear of them rather than sitting on top. */
       /* Clear of the spine. The salesperson screens draw the queue down a 46px
@@ -27291,8 +27313,8 @@ const SAGE_CSS = `
       .help-person b { display:block; font-size:15px; }
       .help-role { font-size:12px; color:var(--ink-3); }
       .help-link { display:block; font-size:15px; font-weight:700; color:var(--blue); text-decoration:none;
-        padding:11px 14px; border-radius:12px; background:rgba(42,94,155,.07); }
-      .help-link:hover { background:rgba(42,94,155,.12); }
+        padding:11px 14px; border-radius:12px; background:color-mix(in srgb, var(--p2) 7%, transparent); }
+      .help-link:hover { background:color-mix(in srgb, var(--p2) 12%, transparent); }
       .help-lbl { display:block; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
         color:var(--ink-3); margin-bottom:5px; }
       .help-area, .help-in { width:100%; box-sizing:border-box; font-family:inherit; font-size:14px;
@@ -27348,7 +27370,7 @@ const SAGE_CSS = `
       .brand-btn { background:none; border:0; padding:0; cursor:pointer; border-radius:12px; line-height:0;
         transition:transform .14s ease, box-shadow .18s ease; }
       .brand-btn:hover { transform:translateY(-1px); }
-      .brand-btn.on { box-shadow:0 0 0 3px rgba(42,94,155,.28); }
+      .brand-btn.on { box-shadow:0 0 0 3px color-mix(in srgb, var(--p2) 28%, transparent); }
       .brand-menu { position:absolute; top:calc(100% + 10px); left:0; z-index:60; min-width:230px;
         background:#fff; border:1px solid rgba(16,32,52,.10); border-radius:16px; padding:8px;
         box-shadow:0 22px 48px -20px rgba(16,32,52,.42); }
@@ -27363,7 +27385,7 @@ const SAGE_CSS = `
         padding:8px 10px; border-top:1px solid rgba(16,32,52,.08); }
       .bm-item { display:block; width:100%; text-align:left; font-family:inherit; font-size:13.5px; font-weight:600;
         padding:9px 10px; border:0; border-radius:10px; background:none; color:var(--ink); cursor:pointer; }
-      .bm-item:hover { background:rgba(42,94,155,.09); }
+      .bm-item:hover { background:color-mix(in srgb, var(--p2) 9%, transparent); }
       .tool-row { display:inline-flex; align-items:stretch; gap:12px; flex-wrap:wrap; }
       .tool-switch { position:relative; display:inline-flex; gap:2px; background:rgba(118,118,128,.12);
         border-radius:10px; padding:2px; }
@@ -27402,9 +27424,9 @@ const SAGE_CSS = `
       .seg-wave::after { content:""; position:absolute; inset:0; border-radius:9px; pointer-events:none;
         animation: segWave 2.4s var(--ease) infinite; }
       @keyframes segWave {
-        0%   { box-shadow: 0 0 0 0 rgba(42,94,155,.40); }
-        70%  { box-shadow: 0 0 0 11px rgba(42,94,155,0); }
-        100% { box-shadow: 0 0 0 0 rgba(42,94,155,0); }
+        0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p2) 40%, transparent); }
+        70%  { box-shadow: 0 0 0 11px color-mix(in srgb, var(--p2) 0%, transparent); }
+        100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p2) 0%, transparent); }
       }
 
       /* ---- page transition ---- */
@@ -28401,7 +28423,7 @@ const SAGE_CSS = `
       /* amber: below standard and closing on the cap */
       .verdict-warn { background:rgba(255,159,10,.16); color:#95600A; }
       /* blue: below standard but plenty of headroom, so nothing is paused yet */
-      .verdict-watch { background:rgba(42,94,155,.12); color:#1D4674; }
+      .verdict-watch { background:color-mix(in srgb, var(--p2) 12%, transparent); color:#1D4674; }
       .verdict-dim { background:#F2F2F4; color:var(--ink-2); }
       /* In the row now, and long. A bar is a picture of exactly one thing — how
          much of the allowance is gone — and it was the smallest object on a row
@@ -28421,7 +28443,7 @@ const SAGE_CSS = `
       /* A grid of fixed columns rather than a row of whatever fits. Every dial is
          88px, so column four sits under column four on every row and a manager
          can read down "Delivery" instead of hunting for it on each line. */
-      .mstrip { display:grid; grid-auto-flow:column; grid-auto-columns:88px; gap:10px 14px; justify-content:start; }
+      .mstrip { display:grid; grid-auto-flow:column; grid-auto-columns:80px; gap:10px 10px; justify-content:start; }
       /* On the associate row the dials ride to the right of the name and stay
          together as one unit; the row itself wraps them if the screen is narrow. */
       .assoc-row .mstrip { gap:10px; }
@@ -28469,8 +28491,8 @@ const SAGE_CSS = `
       .search-top .search-input { padding:9px 38px; border-radius:12px;
         background:rgba(118,118,128,.10); border:1px solid transparent;
         transition: background .3s var(--ease), border-color .3s var(--ease), box-shadow .3s var(--ease); }
-      .search-top .search-input:focus { background:#fff; border-color:rgba(42,94,155,.35);
-        box-shadow: 0 0 0 4px rgba(42,94,155,.14); }
+      .search-top .search-input:focus { background:#fff; border-color:color-mix(in srgb, var(--p2) 35%, transparent);
+        box-shadow: 0 0 0 4px color-mix(in srgb, var(--p2) 14%, transparent); }
       .seg-wrap { align-items:center; gap:16px; }
       .search-icon { position:absolute; left:14px; top:0; bottom:0; color:var(--ink-2);
         display:flex; align-items:center; justify-content:center; line-height:0;
@@ -28502,7 +28524,7 @@ const SAGE_CSS = `
       .plate-pick { font-family:inherit; font-size:12.5px; font-weight:700; padding:5px 11px; border-radius:999px;
         border:1px solid rgba(16,32,52,.12); background:rgba(118,118,128,.08); color:var(--ink); cursor:pointer;
         transition:background .15s, border-color .15s, transform .12s; }
-      .plate-pick:hover { background:rgba(42,94,155,.10); border-color:rgba(42,94,155,.3); transform:translateY(-1px); }
+      .plate-pick:hover { background:color-mix(in srgb, var(--p2) 10%, transparent); border-color:color-mix(in srgb, var(--p2) 30%, transparent); transform:translateY(-1px); }
       .plate-pick.on { background:var(--blue); border-color:var(--blue); color:#fff; }
       .plate-assignee-in { width:100%; min-width:120px; padding:7px 10px; border-radius:9px;
         border:1px solid rgba(16,32,52,.12); background:rgba(255,255,255,.75); font-family:inherit; font-size:13px; }
@@ -28580,7 +28602,7 @@ const SAGE_CSS = `
       .coach-list-card { --tint: rgba(0,168,150,.10); }
       .plates .card { --tint: rgba(122,79,155,.09); }
       .import .checklist { --tint: rgba(136,198,234,.16); }
-      .assoc-card-full { --tint: rgba(42,94,155,.09); }
+      .assoc-card-full { --tint: color-mix(in srgb, var(--p2) 9%, transparent); }
       /* The dot marks are boxes, not glyphs, so they need centring against the
          digits rather than resting on the baseline like the characters did. */
       .streak { display:inline-flex; align-items:center; gap:2px; vertical-align:middle; }
@@ -28675,15 +28697,15 @@ const SAGE_CSS = `
       .dr-rank { list-style:none; margin:0; padding:0; }
       .dr-rank-row { display:grid; grid-template-columns:auto 1fr auto auto; gap:10px; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); }
       .dr-rank-row:last-child { border-bottom:none; }
-      .dr-rank-n { width:24px; height:24px; border-radius:50%; background:rgba(42,94,155,.1); color:var(--blue); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; }
+      .dr-rank-n { width:24px; height:24px; border-radius:50%; background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--blue); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:12px; }
       .dr-rank-name { font-size:14px; }
       .dr-rank-worked { font-size:11.5px; color:var(--ink-3); }
       .dr-rank-pts { font-size:18px; font-weight:800; font-variant-numeric:tabular-nums; }
       .dr-rank-pts.pt-1 { color:#95600A; } .dr-rank-pts.pt-2 { color:#B4530A; } .dr-rank-pts.pt-3 { color:#C13529; }
       @media (max-width:620px) { .dr-cols { grid-template-columns:1fr; } }
       .sched-drop { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
-        border:1.5px dashed rgba(42,94,155,.35); border-radius:16px; padding:32px 20px; cursor:pointer; margin-bottom:14px; }
-      .sched-drop:hover { border-color:var(--blue); background:rgba(42,94,155,.03); }
+        border:1.5px dashed color-mix(in srgb, var(--p2) 35%, transparent); border-radius:16px; padding:32px 20px; cursor:pointer; margin-bottom:14px; }
+      .sched-drop:hover { border-color:var(--blue); background:color-mix(in srgb, var(--p2) 3%, transparent); }
       .sched-err { color:#C13529; font-size:13px; font-weight:600; margin:8px 0; }
       .sched-help { background:rgba(0,0,0,.02); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
       .sched-help-title { font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-3); margin-bottom:8px; }
@@ -28697,7 +28719,7 @@ const SAGE_CSS = `
       .sched-sheet-list { display:flex; flex-direction:column; gap:6px; margin:12px 0; max-height:320px; overflow-y:auto; }
       .sched-sheet-btn { text-align:left; border:1px solid var(--line); background:#fff; font:inherit; font-size:14px; font-weight:600;
         color:var(--ink); padding:12px 14px; border-radius:10px; cursor:pointer; }
-      .sched-sheet-btn:hover { border-color:var(--blue); background:rgba(42,94,155,.05); color:var(--blue); }
+      .sched-sheet-btn:hover { border-color:var(--blue); background:color-mix(in srgb, var(--p2) 5%, transparent); color:var(--blue); }
       .sched-prow { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
       .sched-dates { color:var(--ink-2); text-align:right; }
       .sched-actions { display:flex; gap:10px; justify-content:flex-end; }
@@ -28715,7 +28737,7 @@ const SAGE_CSS = `
       .plate-check.out { background:rgba(255,159,10,.16); color:var(--amber); }
       .plate-check.in { background:rgba(48,177,85,.14); color:#1E7A3C; }
       .plate-time { border:none; background:transparent; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; padding:4px 8px; border-radius:7px; display:inline-flex; align-items:center; gap:6px; }
-      .plate-time:hover { background:rgba(42,94,155,.08); }
+      .plate-time:hover { background:color-mix(in srgb, var(--p2) 8%, transparent); }
       .plate-time-pencil { color:var(--ink-3); font-size:11px; }
       .plate-time-edit { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; }
       .plate-time-edit input { font:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--line); border-radius:7px; }
@@ -28726,7 +28748,7 @@ const SAGE_CSS = `
          actually scanning this column for, so it gets its own weight rather than
          being read off the date. */
       .plate-days { display:inline-block; margin-left:8px; padding:1px 8px; border-radius:999px;
-        background:rgba(42,94,155,.10); color:var(--ink-2); font-size:11.5px; font-weight:700;
+        background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--ink-2); font-size:11.5px; font-weight:700;
         font-variant-numeric:tabular-nums; }
       .plate-days.long { background:rgba(229,71,60,.12); color:#C13529; }
       .plate-missing-banner { background:rgba(229,71,60,.09); border:1px solid rgba(229,71,60,.35);
@@ -28749,7 +28771,7 @@ const SAGE_CSS = `
       .plate-hist-list > li:nth-child(odd) { background:rgba(0,0,0,.025); }
       .ph-when { font-size:12px; font-weight:700; color:var(--ink-2); font-variant-numeric:tabular-nums; margin-bottom:4px; }
       .ph-body { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-      .ph-action { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:99px; background:rgba(42,94,155,.12); color:var(--blue); }
+      .ph-action { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:2px 8px; border-radius:99px; background:color-mix(in srgb, var(--p2) 12%, transparent); color:var(--blue); }
       .ph-action.ph-taken-out, .ph-action.ph-carried-forward { background:rgba(255,159,10,.16); color:#95600A; }
       .ph-action.ph-returned { background:rgba(48,177,85,.16); color:#1E7A3C; }
       .ph-action.ph-time-edited { background:rgba(136,198,234,.22); color:#1D4674; }
@@ -28762,7 +28784,7 @@ const SAGE_CSS = `
       .stepper-label { font-weight:700; font-size:14px; margin-bottom:8px; }
       .stepper { display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:14px; overflow:hidden; background:#fff; }
       .stepper-btn { border:none; background:rgba(255,255,255,.6); width:46px; height:46px; font-size:22px; font-weight:600; color:var(--blue); cursor:pointer; transition: background .15s; }
-      .stepper-btn:hover:not(:disabled) { background:rgba(42,94,155,.1); }
+      .stepper-btn:hover:not(:disabled) { background:color-mix(in srgb, var(--p2) 10%, transparent); }
       .stepper-btn:disabled { opacity:.3; cursor:default; }
       .stepper-value { min-width:60px; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; }
       .stepper-hint { font-size:11px; color:var(--ink-3); margin-top:5px; }
@@ -28788,7 +28810,7 @@ const SAGE_CSS = `
       .login-ok { color:#1E7A3C; font-size:12.5px; margin-top:10px; background:rgba(48,177,85,.12); padding:8px 10px; border-radius:8px; }
       .pending-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 0; border-bottom:1px solid rgba(0,0,0,.05); }
       .pending-row:last-child { border-bottom:none; }
-      .domain-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(42,94,155,.1); color:var(--blue);
+      .domain-chip { display:inline-flex; align-items:center; gap:6px; background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--blue);
         font-weight:600; font-size:12.5px; padding:4px 10px; border-radius:16px; }
       .domain-chip button { border:none; background:none; color:var(--blue); cursor:pointer; font-size:11px; padding:0; }
       .toggle-row { display:flex; gap:9px; align-items:center; margin-top:12px; font-weight:600; }
@@ -28899,7 +28921,7 @@ const SAGE_CSS = `
       .check.readonly .check-box { border-style:dashed; }
       .check.readonly.done .check-box { border-style:solid; }
       .check.done .check-box { background:var(--green); border-color:var(--green); color:#fff; transform: scale(1.05); }
-      .dropzone { border:1.5px dashed rgba(42,94,155,.35); border-radius:var(--radius); padding:48px 20px; text-align:center; cursor:pointer;
+      .dropzone { border:1.5px dashed color-mix(in srgb, var(--p2) 35%, transparent); border-radius:var(--radius); padding:48px 20px; text-align:center; cursor:pointer;
         background:rgba(255,255,255,.45); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
         transition: all .25s var(--spring); max-width:640px; }
       .dropzone:hover { border-color: var(--blue); transform: translateY(-1px); box-shadow: var(--shadow-1); }
@@ -28980,7 +29002,7 @@ const SAGE_CSS = `
       .drawer-item { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:none; background:transparent;
         font:inherit; font-size:16px; font-weight:600; color:var(--ink); padding:13px 12px; border-radius:12px; cursor:pointer; }
       .drawer-item:active { background:rgba(0,0,0,.05); }
-      .drawer-item.on { background:rgba(42,94,155,.1); color:var(--blue); }
+      .drawer-item.on { background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--blue); }
       .drawer-item > span:first-child { flex:1; }
       .drawer-tick { color:var(--blue); font-weight:800; }
 
@@ -29017,11 +29039,11 @@ const SAGE_CSS = `
 
       /* ---- tables ---- */
       .bulk-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;
-        padding:10px 13px; border-radius:12px; background:rgba(42,94,155,.09);
-        border:1px solid rgba(42,94,155,.22); animation:detailIn .3s var(--ease-bloop) both; }
+        padding:10px 13px; border-radius:12px; background:color-mix(in srgb, var(--p2) 9%, transparent);
+        border:1px solid color-mix(in srgb, var(--p2) 22%, transparent); animation:detailIn .3s var(--ease-bloop) both; }
       .bulk-n { font-weight:700; font-size:13.5px; margin-right:2px; }
       .assoc-pick { width:18px; height:18px; accent-color:var(--blue); flex:0 0 auto; margin-right:2px; }
-      .assoc-card.is-picked { background:rgba(42,94,155,.08); }
+      .assoc-card.is-picked { background:color-mix(in srgb, var(--p2) 8%, transparent); }
       .roster-table { width:100%; max-width:760px; border-collapse:collapse; }
       .roster-table.wide { max-width:1060px; }
       .roster-table th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3);
@@ -29081,7 +29103,7 @@ const SAGE_CSS = `
       .tr-chip { border:1px solid var(--line); background:rgba(255,255,255,.7); color:var(--ink-2);
         font:inherit; font-size:12px; font-weight:600; padding:5px 12px; border-radius:99px; cursor:pointer;
         transition: transform .25s var(--ease-bloop), border-color .25s var(--ease), color .25s var(--ease); }
-      .tr-chip:hover { border-color:rgba(42,94,155,.4); color:var(--blue); transform:translateY(-1px); }
+      .tr-chip:hover { border-color:color-mix(in srgb, var(--p2) 40%, transparent); color:var(--blue); transform:translateY(-1px); }
 
       /* ---- summary grouped by standard ---- */
       .std-group { margin-top:16px; }
@@ -29133,7 +29155,7 @@ const SAGE_CSS = `
       .vchip-lbl { font-weight:600; opacity:.85; }
       .vchip-pass  { background:rgba(48,177,85,.13);  color:#1E7A3C; border-color:rgba(48,177,85,.28); }
       .vchip-grace { background:rgba(136,198,234,.18); color:#1D4674; border-color:rgba(136,198,234,.4); }
-      .vchip-watch { background:rgba(42,94,155,.12);   color:#1D4674; border-color:rgba(42,94,155,.25); }
+      .vchip-watch { background:color-mix(in srgb, var(--p2) 12%, transparent);   color:#1D4674; border-color:color-mix(in srgb, var(--p2) 25%, transparent); }
       .vchip-warn  { background:rgba(255,159,10,.16);  color:#95600A; border-color:rgba(255,159,10,.3); }
       .vchip-fail  { background:rgba(229,71,60,.13);   color:#C13529; border-color:rgba(229,71,60,.28); }
       .vchip-off   { background:rgba(0,0,0,.06);       color:var(--ink-2); border-color:rgba(0,0,0,.1); }
@@ -29637,7 +29659,7 @@ const SAGE_CSS = `
         /* Narrow screens wrap to two rows of two rather than one long scroll,
            and the columns still line up because the tracks are the same width. */
         .assoc-row .mstrip { margin-left:0; }
-        .mstrip { grid-auto-flow:row; grid-template-columns:repeat(2, 88px); grid-auto-columns:auto; }
+        .mstrip { grid-auto-flow:row; grid-template-columns:repeat(3, 1fr); grid-auto-columns:auto; }
         .mdial { width:calc(33.333% - 8px); }
         /* The cap sentence is what the bar and the pill under it already say. On a
            phone, where reading is the expensive part, the visual carries it. */
@@ -29815,7 +29837,7 @@ const SAGE_CSS = `
             radial-gradient(52% 20% at 24% 22%, rgba(122,79,155,.26), transparent 70%),
             radial-gradient(48% 19% at 78% 56%, rgba(0,168,150,.26), transparent 70%),
             radial-gradient(44% 17% at 48% 92%, rgba(255,159,10,.20), transparent 72%),
-            radial-gradient(40% 16% at 88% 16%, rgba(42,94,155,.22), transparent 72%),
+            radial-gradient(40% 16% at 88% 16%, color-mix(in srgb, var(--p2) 22%, transparent), transparent 72%),
             radial-gradient(36% 14% at 8% 70%, rgba(193,215,48,.18), transparent 74%);
         }
       }
@@ -31482,7 +31504,7 @@ const SAGE_CSS = `
         box-shadow:0 4px 12px -5px rgba(18,138,71,.6); }
       .vpill.limit { background:rgba(201,138,0,.16); color:#95600A; box-shadow:0 4px 12px -6px rgba(176,119,0,.5); }
       .vpill.stop { background:rgba(194,54,31,.14); color:#C13529; }
-      .vpill.room { background:rgba(42,94,155,.12); color:#1D4674; }
+      .vpill.room { background:color-mix(in srgb, var(--p2) 12%, transparent); color:#1D4674; }
       .vpill.grace { background:var(--sandHead); color:#8A5A00; }
       .vpill.off { background:rgba(16,32,52,.08); color:var(--ink-2); }
       .vpill.dim { background:#F2F2F4; color:var(--ink-2); }
@@ -31576,7 +31598,12 @@ const SAGE_CSS = `
         color:var(--ink-2); margin-top:4px; }
       .ac-trendlbl b { font-family:var(--font-mono); }
       .ac-spark { display:block; width:100%; height:44px; }
-      .ac-gauges .mstrip { display:flex; gap:2px; justify-content:space-between; }
+      /* Five dials, sometimes six when a tier grades something outside them, in a
+         card 340px wide: they wrap rather than run off the edge. */
+      .ac-gauges .mstrip { display:grid; grid-auto-flow:row;
+        grid-template-columns:repeat(auto-fit, minmax(64px, 1fr)); gap:8px 4px; }
+      .ac-gauges .s2g4 { width:auto; min-width:0; }
+      .ac-gauges .s2g4-l { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .ac-gauges .s2g4 { width:70px; }
       .ac-best { display:inline-flex; align-items:center; gap:6px; border-radius:99px;
         padding:5px 11px; font:700 10px var(--font-mono); background:rgba(30,138,76,.12); color:#1E7A3C; }
@@ -31763,7 +31790,7 @@ const SAGE_CSS = `
       .asked-tag { display:inline-flex; align-items:center; border-radius:99px; padding:2px 9px;
         font:700 9.5px var(--font-mono); letter-spacing:.04em; margin-top:3px;
         background:rgba(16,32,52,.07); color:var(--ink-2); }
-      .asked-tag.mgr { background:rgba(42,94,155,.12); color:#1D4674; }
+      .asked-tag.mgr { background:color-mix(in srgb, var(--p2) 12%, transparent); color:#1D4674; }
       /* ---- imports, in the new card language ----
          a hero that says what this page is doing, the checklist and the history
          as warm-headed cards, and the dropzone as the landing pad between them */
