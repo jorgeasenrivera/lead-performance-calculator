@@ -5527,39 +5527,68 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
 
   if (single) {
     const s = stores[0];
+    const b = s.brand || DEFAULT_BRAND;
     return (
       <div className="board-launch">
-        <div className="card board-launch-card">
+        <div className="bl-one" style={{ "--sp": b.primary, "--sd": b.deep }}>
           <div className="bl-logo">{s.icon ? <img src={s.icon} alt="" /> : <Logo size={54} animated />}</div>
           <h2 className="bl-title">{s.name}</h2>
-          <p className="hint">The Board opened in its own window, sized for a TV or big screen. It refreshes on its own every 30 seconds.</p>
-          <button className="btn" onClick={() => onLaunch(s.id)}>Open it again</button>
-          <CastLink storeId={s.id} config={config} />
-          <button className="btn-link" onClick={onBack}>← Back to start</button>
+          <p className="bl-onesub">The Board opened in its own window, sized for a TV or a big screen. It
+            refreshes on its own every 30 seconds and shows the five: {FIVE.map((f) => f.label.toLowerCase()).join(", ")}.</p>
+          <div className="bl-tile-acts">
+            <button className="bl-go" onClick={() => onLaunch(s.id)}>Open it again ↗</button>
+            <CastLink storeId={s.id} config={config} compact />
+          </div>
         </div>
+        <button className="btn-link" onClick={onBack}>← Back to start</button>
       </div>
     );
   }
 
-  // Admin and Centralized BDC pick which store's board to throw on the screen.
+  /* Admin and Centralized BDC pick which store's board to throw on the screen.
+     Every tile is in its own dealership's colours, and carries opening it, the TV
+     link and publishing together: they are three things you do to one store, and
+     they were split between a grid and a row of links underneath it. */
   return (
     <div className="board-launch">
-      <h2 className="section-title">The Board <span className="section-sub">choose a store</span></h2>
-      <p className="hint">Opens a live leaderboard in its own window, sized for a TV. Managers skip this step, their board opens straight to their own store.</p>
+      <div className="s2-hero bl-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              Choose a store · it opens in its own window, sized for a TV, and refreshes every 30 seconds
+            </div>
+            <h2 className="s2-store">The Board</h2>
+          </div>
+          <div className="s2-chips">
+            <span className="fh-chip">{stores.length} {stores.length === 1 ? "store" : "stores"}</span>
+          </div>
+        </div>
+        <div className="bl-herobody">
+          <div className="bl-hstat"><span className="s2-cap">Showing</span>
+            <span className="bl-hbig">The five</span>
+            <span className="bl-hsub">{FIVE.map((f) => f.label.toLowerCase()).join(", ")}</span></div>
+          <div className="bl-hstat"><span className="s2-cap">Managers</span>
+            <span className="bl-hbig">No picker</span>
+            <span className="bl-hsub">their own store opens straight away</span></div>
+        </div>
+      </div>
+
       <div className="bl-grid">
         {stores.map((s) => {
           const b = s.brand || DEFAULT_BRAND;
           return (
-            <button key={s.id} className="bl-tile" style={{ "--sp": b.primary, "--sd": b.deep }} onClick={() => onLaunch(s.id)}>
+            <div key={s.id} className="bl-tile" style={{ "--sp": b.primary, "--sd": b.deep }}>
               <span className="bl-tile-logo">{s.icon ? <img src={s.icon} alt="" /> : <span className="bl-tile-ph">{s.name[0]}</span>}</span>
               <span className="bl-tile-name">{s.name}</span>
-              <span className="bl-tile-go">Open ↗</span>
-            </button>
+              <span className="bl-tile-acts">
+                <button className="bl-go" onClick={() => onLaunch(s.id)}>Open the board ↗</button>
+                <CastLink storeId={s.id} config={config} compact />
+              </span>
+            </div>
           );
         })}
-      </div>
-      <div className="bl-cast">
-        {stores.map((s) => <CastLink key={s.id} storeId={s.id} label={s.name} config={config} />)}
       </div>
       <button className="btn-link" onClick={onBack}>← Back to start</button>
     </div>
@@ -5568,7 +5597,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
 
 // The address a TV is pointed at. Copy it once, set it as the screen's start page,
 // and nobody has to touch it again.
-function CastLink({ storeId, label, config }) {
+function CastLink({ storeId, label, config, compact }) {
   const [said, setSaid] = useState(false);
   const [pub, setPub] = useState(null);   // null | "working" | {ok, err}
   const url = boardTvUrl(storeId);
@@ -5579,16 +5608,16 @@ function CastLink({ storeId, label, config }) {
     if (r.ok) setTimeout(() => setPub(null), 4000);
   };
   return (
-    <span className="cast-wrap">
-      <button className="btn-link cast-link" title={url}
+    <span className={"cast-wrap" + (compact ? " cast-compact" : "")}>
+      <button className={compact ? "bl-tvb" : "btn-link cast-link"} title={url}
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
             () => window.prompt("Copy this address into the TV's browser:", url));
         }}>
-        {said ? "Copied" : (label ? "Copy TV link for " + label : "Copy the TV link")}
+        {said ? "Copied" : (label ? "Copy TV link for " + label : compact ? "Copy TV link" : "Copy the TV link")}
       </button>
-      <button className="btn-link cast-link" onClick={publish} disabled={pub === "working"}>
-        {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : "Publish to TVs")}
+      <button className={compact ? "bl-tvb" : "btn-link cast-link"} onClick={publish} disabled={pub === "working"}>
+        {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : compact ? "Publish" : "Publish to TVs")}
       </button>
       {pub && pub !== "working" && !pub.ok && (
         <span className="cast-err">Could not publish: {pub.err}. The TVs will keep showing what they already have. Use the Help button to report this.</span>
@@ -31717,6 +31746,41 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* ---- The Board picker, in the new language ----
+         Each store in its own colours, with opening it, the TV link and
+         publishing on the tile they belong to. */
+      .board-launch { max-width:1180px; margin:0 auto; padding:14px 18px 24px; }
+      .bl-hero { margin-bottom:12px; }
+      .bl-hero .s2-ava { color:var(--hB); }
+      .bl-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .bl-hstat { display:flex; flex-direction:column; gap:2px; min-width:150px; }
+      .bl-hbig { font:700 19px var(--font-mono); letter-spacing:-.02em; color:#fff; line-height:1.1; }
+      .bl-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .bl-grid { grid-template-columns:repeat(auto-fit, minmax(232px, 1fr)); gap:10px; margin:0 0 14px; }
+      .bl-tile { border-radius:16px; padding:18px 16px 14px; gap:10px; cursor:default;
+        background:linear-gradient(145deg, var(--sp), var(--sd)); color:#fff;
+        box-shadow:0 14px 32px -18px color-mix(in srgb, var(--sp) 80%, #000); }
+      .bl-tile:hover { transform:none; box-shadow:0 20px 40px -18px color-mix(in srgb, var(--sp) 80%, #000); }
+      .bl-tile-logo { color:var(--sd); }
+      .bl-tile-acts { display:flex; gap:7px; flex-wrap:wrap; margin-top:auto; align-items:center; }
+      .bl-go { border:0; border-radius:9px; padding:6px 11px; cursor:pointer;
+        font:700 10.5px var(--font-display); background:#fff; color:var(--sd); }
+      .bl-tvb { border:1px solid rgba(255,255,255,.38); background:rgba(255,255,255,.14); color:#fff;
+        border-radius:9px; padding:6px 10px; font:600 10px var(--font-display); cursor:pointer; }
+      .bl-tvb:hover { background:rgba(255,255,255,.24); }
+      .bl-tvb:disabled { opacity:.6; cursor:default; }
+      .bl-go:focus-visible, .bl-tvb:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+      .cast-compact { display:inline-flex; gap:7px; align-items:center; flex-wrap:wrap; }
+      .cast-compact .cast-err { flex:1 1 100%; color:#FFD9D2; font-size:10px; }
+      /* one store: the same tile, wider, because there is nothing to choose between */
+      .bl-one { border-radius:20px; padding:26px 24px 22px; color:#fff; max-width:640px; margin:0 auto 12px;
+        background:linear-gradient(145deg, var(--sp), var(--sd)); text-align:center;
+        display:flex; flex-direction:column; align-items:center; gap:10px;
+        box-shadow:0 18px 44px -20px color-mix(in srgb, var(--sp) 80%, #000); }
+      .bl-one .bl-title { margin:0; font:700 21px var(--font-display); letter-spacing:-.02em; }
+      .bl-onesub { margin:0; max-width:44ch; font-size:11.5px; line-height:1.6; color:rgba(255,255,255,.8); }
+      .bl-one .bl-tile-acts { justify-content:center; }
       /* ---- Targets, in the new language ---- */
       .tg-hero { margin-bottom:12px; }
       .tg-hero .s2-ava { color:var(--hB); }
