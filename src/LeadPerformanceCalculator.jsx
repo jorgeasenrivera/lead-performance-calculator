@@ -656,6 +656,17 @@ function isOff(data, aId, d) {
   if (!(data.daysOff?.[aId] && data.daysOff[aId].includes(d))) return false;
   return !workedAnyway(data, aId, d);
 }
+/* Whose day the schedule is counted over. The check-out sheet grades these
+   people and nobody else, so the hero's on-and-off has to be drawn from the
+   same list: counting service and the desk there made the hero say eight were
+   on while the sheet showed two, and both were right about a different set of
+   people. One definition, used by both. */
+function activityRoster(config, data) {
+  const ids = new Set((config?.roles || [])
+    .filter((r) => r.coaching !== false && r.tracked !== false && r.id !== "service")
+    .map((r) => r.id));
+  return (data?.roster || []).filter((a) => a.roleId && ids.has(a.roleId));
+}
 // Points for one person on one day: one point per missed required item
 // (calls, videos, RockEd), each judged independently. 0-3. Days off and days with
 // no data at all score no points. RockEd is a simple "qualified" mark now: the manager
@@ -13598,10 +13609,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
      day is driven by whatever comes through the service drive rather than by a call
      and video count. Holding them to a floor standard would mark them down every day
      for work they were never asked to do. They still appear everywhere else. */
-  const salesRoles = new Set((config.roles || [])
-    .filter((r) => r.coaching !== false && r.tracked !== false && r.id !== "service")
-    .map((r) => r.id));
-  const roster = (data.roster || []).filter((a) => a.roleId && salesRoles.has(a.roleId)).sort((a, b) => a.name.localeCompare(b.name));
+  const roster = activityRoster(config, data).slice().sort((a, b) => a.name.localeCompare(b.name));
 
   // A clean text recap of the day the manager can paste into a group chat or email.
   // People the schedule says are working today, whose report has run, and who
@@ -21979,9 +21987,14 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   let cleared = 0, attention = 0, offLeads = 0, oppsUsed = 0, capTotal = 0;
   const ranked = [];
   const roster = (data.roster || []).filter((a) => a.roleId);
+  /* "On the board" has to mean the board's own roster. Counting every role
+     here put BDC, Service to Sales and the desk into a line that says how many
+     are on a board none of them appear on. */
+  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
+  const boardRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
   for (const role of config.roles) {
     const tiers = config.standards?.[store.id]?.[role.id]?.tiers;
-    for (const a of roster.filter((x) => x.roleId === role.id)) {
+    for (const a of boardRoster.filter((x) => x.roleId === role.id)) {
       const ev = evaluateAssociate(M?.stats?.[norm(a.name)], tiers);
       if (ev.opps != null) oppsUsed += ev.opps;
       if (ev.cap != null) capTotal += ev.cap;
@@ -22084,7 +22097,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 
   // numbers roll up rather than just appearing
   const nPct = useCountUp(pct, 1100, 300);
-  const nRoster = useCountUp(roster.length, 800, 460);
+  const nRoster = useCountUp(boardRoster.length, 800, 460);
   const nOpps = useCountUp(oppsUsed, 900, 530);
 
   // Store closing rate per channel. Units are stored per person, but lead counts
@@ -22095,8 +22108,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   // rate has to be summed over exactly those people. Summing the whole roster
   // pulled in BDC, Service-to-Sales and managers, who also carry delivery stats,
   // which is why the popup read roughly double the Delivery Summary's own totals.
-  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-  const closingRoster = monthRoster(data, M, roster.filter((a) => boardRoleIds.has(a.roleId)));
+  const closingRoster = monthRoster(data, M, boardRoster);
   const closing = channelRates(M, closingRoster);
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const halves = halfStory(data, M, closingRoster);
@@ -22246,8 +22258,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     }
     return o;
   }, [digests]);
-  const offToday = roster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
-  const onCount = roster.length - offToday.length;
+  /* The same people the check-out sheet counts, read the same way, so the two
+     screens can never put a different number of bodies on the floor. */
+  const floorRoster = activityRoster(config, data);
+  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
+  const onCount = floorRoster.length - offToday.length;
   const mcal = useMemo(() => {
     const mk = ym();
     const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
@@ -22276,10 +22291,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     const keys = Object.keys(data.months || {}).sort().slice(-4);
     return keys.map((k) => {
       const out = { k, lbl: new Date(k + "-15T12:00").toLocaleDateString("en-US", { month: "short" }) };
-      for (const c of channelRates(data.months[k], roster)) out[c.id] = c.pct == null ? null : c.pct * 100;
+      // the same people the bars above the chart are drawn from, or the line
+      // and the bar for one channel are two different figures
+      for (const c of channelRates(data.months[k], boardRoster)) out[c.id] = c.pct == null ? null : c.pct * 100;
       return out;
     });
-  }, [data, roster]);
+  }, [data, boardRoster]);
   // the rotating display under the hero: the chart, then who to talk to
   const [spotOn, setSpotOn] = useState(0);
   const spotTimer = useRef(null); const swipeX = useRef(null);
@@ -22530,7 +22547,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               <div className="bloopwin dn r s2-rotawin">
                 <div className="bw-title">On today · {onCount}</div>
                 <div className="s2-names">
-                  {roster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
+                  {floorRoster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
                     <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
                   ))}
                 </div>
@@ -31395,7 +31412,7 @@ const SAGE_CSS = `
         50% { box-shadow:0 0 14px 4px rgba(242,193,78,.65); } }
       .s2-rota { display:flex; align-items:center; cursor:default;
         background:rgba(255,255,255,.15); border-radius:12px; padding:9px 13px; }
-      .s2-rota > b { font:700 10.5px var(--font-mono); color:#fff; white-space:nowrap; }
+      .s2-rota > b { font:700 13px var(--font-mono); color:#fff; white-space:nowrap; }
       .s2-rota > b i { font-style:normal; color:rgba(255,255,255,.6); }
       .s2-rotawin, .s2-calwin { width:252px; }
       .s2-names { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
@@ -31410,10 +31427,14 @@ const SAGE_CSS = `
       .s2-mcal { display:flex; flex-direction:column; gap:6px; align-items:stretch; cursor:default; }
       .s2-mc-cap { font:700 12px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
         color:var(--sandCap); display:flex; gap:6px; align-items:center; }
-      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; justify-items:center; }
-      .s2-mc-grid i { width:12px; height:12px; border-radius:50%; background:rgba(255,255,255,.26); cursor:pointer; }
-      .s2-mc-grid i.p { background:rgba(255,255,255,.72); }
-      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 7px var(--sandTick); transform:scale(1.22); }
+      /* Rounded squares rather than dots: they tile the width evenly instead of
+         leaving a scatter of circles with gaps between them, which is what made
+         the month look untidy once it ran the full width of the rail. */
+      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; justify-items:center; }
+      .s2-mc-grid i { width:100%; max-width:22px; aspect-ratio:1; border-radius:5px;
+        background:rgba(255,255,255,.13); cursor:pointer; }
+      .s2-mc-grid i.p { background:rgba(255,255,255,.8); }
+      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 8px var(--sandTick); }
       .s2-mc-grid i.e { background:transparent; pointer-events:none; }
       .s2-mc-sub { font-size:9.5px; color:rgba(255,255,255,.7); white-space:nowrap; margin-top:2px; }
       .s2-cw { display:flex; align-items:flex-start; gap:8px; font-size:10px; color:var(--ink);
