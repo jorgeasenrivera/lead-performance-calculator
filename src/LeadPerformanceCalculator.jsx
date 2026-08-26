@@ -16817,57 +16817,122 @@ function RoundUp({ config, store, data, M }) {
 }
 
 /* ---------------- Admin overview ---------------- */
+/* The group, one card per store, each in that store's own colours.
+
+   It used to count who was cleared, in grace, nearing the limit and restricted,
+   which is a verdict on people read from four stores away. What a group manager
+   opens this for is whether anything is wrong anywhere: is the month on pace,
+   did the reports land, and where do the five sit. */
 function AdminOverview({ config, adminData, onOpenStore }) {
+  const mk = ym();
+  const cards = config.stores.map((s) => {
+    const d = adminData[s.id] || emptyStoreData();
+    const M = d.months?.[mk];
+    const t = M?.imports?.[today()] || {};
+    const done = ["appointment", "video"].filter((k) => t[k]).length;
+    const roster = d.roster || [];
+    let units = 0;
+    for (const a of roster) {
+      const st = M?.stats?.[norm(a.name)];
+      if (!st) continue;
+      units += (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+    }
+    const g = s.goal || {};
+    const goal = (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0);
+    const chan = channelRates(M, roster);
+    const five = FIVE.map((f) => {
+      const c = chan.find((x) => x.id === f.id);
+      if (c) return { ...f, v: c.pct };
+      let sum = 0, n = 0;
+      for (const a of roster) { const v = M?.stats?.[norm(a.name)]?.[f.key]; if (v != null) { sum += v; n++; } }
+      return { ...f, v: n ? sum / n : null };
+    });
+    const brand = s.brand || DEFAULT_BRAND;
+    return { s, d, done, units, goal, five, brand, roster };
+  });
+  const groupUnits = cards.reduce((n, c) => n + c.units, 0);
+  const groupGoal = cards.reduce((n, c) => n + c.goal, 0);
+  const allIn = cards.filter((c) => c.done === 2).length;
+
   return (
     <div className="admin">
-      <h2 className="section-title">Group Overview <span className="section-sub">{monthLabel(ym())}</span></h2>
-      <div className="store-grid">
-        {config.stores.map((s) => {
-          const d = adminData[s.id] || emptyStoreData();
-          const M = d.months?.[ym()];
-          const t = M?.imports?.[today()] || {};
-          const done = ["appointment", "video"].filter((k) => t[k]).length;
-          const inGrace = dayOfMonth() <= (s.graceDays ?? 10);
-          const restrictions = d.restrictions || {};
-          const isRestricted = (a) => { const r = restrictions[a.id]; return r && (!r.until || new Date(r.until) > new Date()); };
-          // Same buckets the manager sees inside the store, counted here so the card
-          // reads the same as their hero tiles — just as icons.
-          const b = { cleared: 0, nearing: 0, room: 0, restrict: 0, grace: 0, off: 0, none: 0 };
-          for (const a of d.roster || []) {
-            if (!a.roleId) continue;
-            const ev = evaluateAssociate(M?.stats?.[norm(a.name)], config.standards?.[s.id]?.[a.roleId]?.tiers);
-            const v = verdictOf(ev, { restricted: isRestricted(a), inGrace });
-            b[v.key] = (b[v.key] || 0) + 1;
-          }
-          // Only surface the buckets that have people in them, in severity order.
-          const order = ["cleared", "grace", "room", "nearing", "restrict", "off"];
-          const chips = order.filter((k) => b[k] > 0).map((k) => ({ ...VERDICT[k], n: b[k] }));
-          return (
-            <button key={s.id} className="store-card" onClick={() => onOpenStore(s.id)}>
-              <div className="store-card-top">
-                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
-                <div className="store-card-name">{s.name}</div>
+      <div className="s2-hero gv-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="globe" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">Every store · {monthLabel(mk)} · through {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+            <h2 className="s2-store">Group</h2>
+          </div>
+          <div className="s2-chips">
+            <span className="fh-chip">{config.stores.length} {config.stores.length === 1 ? "store" : "stores"}</span>
+          </div>
+        </div>
+        <div className="gv-herobody">
+          <div className="gv-hstat"><span className="s2-cap">Units this month</span>
+            <span className="gv-hbig">{fmtNum(groupUnits)}{groupGoal > 0 && <span className="gv-hden"> / {groupGoal}</span>}</span>
+            <span className="gv-hsub">{groupGoal > 0
+              ? `${Math.round(groupUnits / groupGoal * 100)}% of goal, ${Math.round(storeDaysDone(mk, isHoliday, today()) / Math.max(1, storeDaysInMonth(mk, isHoliday)) * 100)}% of the month gone`
+              : "no group goal set"}</span></div>
+          <div className="gv-hstat"><span className="s2-cap">Stores fully imported</span>
+            <span className="gv-hbig">{allIn}<span className="gv-hden"> / {cards.length}</span></span>
+            <span className="gv-hsub">{allIn === cards.length ? "everything landed today"
+              : cards.filter((c) => c.done < 2).map((c) => c.s.name).slice(0, 2).join(", ") + " still waiting"}</span></div>
+          {FIVE.slice(0, 3).map((f) => {
+            const vals = cards.map((c) => c.five.find((x) => x.id === f.id)?.v).filter((v) => v != null);
+            const avg = vals.length ? vals.reduce((n, v) => n + v, 0) / vals.length : null;
+            const best = cards.map((c) => ({ n: c.s.name, v: c.five.find((x) => x.id === f.id)?.v }))
+              .filter((x) => x.v != null).sort((x, y) => y.v - x.v)[0];
+            return (
+              <div key={f.id} className="gv-hstat">
+                <span className="s2-cap">Group {f.label.toLowerCase()}</span>
+                <span className="gv-hbig">{avg == null ? "-" : fmtPct(avg)}</span>
+                <span className="gv-hsub">{best ? `${best.n} leads at ${fmtPct(best.v)}` : "no figures yet"}</span>
               </div>
-              <div className="store-card-row">
-                <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>Imports {done}/2</span>
-              </div>
-              <div className="store-verdicts">
-                {chips.length === 0
-                  ? <span className="stat-dim">No one evaluated yet</span>
-                  : chips.map((c) => (
-                    <span key={c.key} className={"vchip vchip-" + c.cls} title={c.label}>
-                      <span className="vchip-ico">{c.icon}</span>
-                      <span className="vchip-n">{c.n}</span>
-                      <span className="vchip-lbl">{c.short}</span>
-                    </span>
-                  ))}
-                <span className="stat-dim vchip-roster">{(d.roster || []).length} on roster</span>
-              </div>
-              <div className="store-card-open">Open →</div>
-            </button>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+
+      <div className="gv-grid">
+        {cards.map(({ s, done, units, goal, five, brand, roster }) => (
+          <div key={s.id} className="gv-card" style={{ "--sp": brand.primary, "--sd": brand.deep }}>
+            <div className="gv-top">
+              {s.icon ? <img className="gv-logo" src={s.icon} alt="" />
+                : <span className="gv-badge">{initialsOf(s.name)}</span>}
+              <span className="gv-id">
+                <span className="gv-name">{s.name}</span>
+                <span className="gv-sub">{roster.length} on the roster · imports {done}/2 in</span>
+              </span>
+              <span className="r-flex2" />
+              <span className={"tg-chip " + (done === 2 ? "ok" : "wt")}>{done === 2 ? "all reports in" : "waiting"}</span>
+            </div>
+            {goal > 0 && (
+              <div className="gv-track" title={`${fmtNum(units)} of ${goal} units`}>
+                <i style={{ width: `${Math.min(100, units / goal * 100).toFixed(0)}%` }} />
+              </div>
+            )}
+            <div className="gv-feet">
+              <span className="gv-units">{fmtNum(units)}</span>
+              <span className="gv-of">{goal > 0 ? `of ${goal} units` : "units delivered"}</span>
+              <span className="r-flex2" />
+              <button className="gv-open" onClick={() => onOpenStore(s.id)}>Open the store</button>
+            </div>
+            <div className="gv-five">
+              {five.map((f) => (
+                <span key={f.id} className="gv-m">
+                  <span className="gv-mc">{f.label}</span>
+                  <span className="gv-mn">{f.v == null ? "-" : fmtPct(f.v)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="hint gv-note">
+        Store colours come from each store's brand setting, the same one its hero band and its board already
+        use. The five figures are the store's own, not an average of its people.
+      </p>
     </div>
   );
 }
@@ -31762,6 +31827,44 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* ---- the group, one card per store, each in its own colours ---- */
+      .gv-hero { margin-bottom:12px; }
+      .gv-hero .s2-ava { color:var(--hB); }
+      .gv-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .gv-hstat { display:flex; flex-direction:column; gap:2px; min-width:118px; }
+      .gv-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .gv-hden { font-size:12px; color:rgba(255,255,255,.6); font-weight:500; }
+      .gv-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .gv-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:10px; }
+      .gv-card { position:relative; overflow:hidden; background:var(--card); border:1px solid var(--line);
+        border-radius:14px; padding:12px 14px 12px 18px; display:flex; flex-direction:column; gap:9px; }
+      .gv-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--sp); }
+      .gv-top { display:flex; align-items:center; gap:10px; }
+      .gv-badge, .gv-logo { width:34px; height:34px; border-radius:11px; flex:0 0 auto; }
+      .gv-badge { color:#fff; display:flex; align-items:center; justify-content:center;
+        font:700 12px var(--font-display); background:linear-gradient(140deg, var(--sp), var(--sd)); }
+      .gv-logo { object-fit:contain; background:#fff; border:1px solid var(--line); }
+      .gv-id { min-width:0; }
+      .gv-name { display:block; font:700 13.5px var(--font-display); letter-spacing:-.01em; }
+      .gv-sub { display:block; font:400 9.5px var(--font-mono); color:var(--ink-3); margin-top:1px; }
+      .gv-track { height:7px; border-radius:4px; background:rgba(16,32,52,.08); overflow:hidden; }
+      .gv-track i { display:block; height:100%; border-radius:4px;
+        background:linear-gradient(90deg, color-mix(in srgb, var(--sp) 45%, #fff), var(--sp)); }
+      .gv-feet { display:flex; align-items:baseline; gap:8px; }
+      .gv-units { font:700 16px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--ink); }
+      .gv-of { font:600 10px var(--font-mono); color:var(--ink-2); }
+      .gv-open { border:1px solid var(--line); background:var(--card); border-radius:9px; cursor:pointer;
+        padding:5px 11px; font:600 10px var(--font-display); color:var(--ink-2); align-self:center; }
+      .gv-open:hover { border-color:var(--sp); color:var(--sd); }
+      .gv-open:focus-visible { outline:2px solid var(--sp); outline-offset:1px; }
+      .gv-five { display:flex; gap:10px; flex-wrap:wrap; }
+      .gv-m { min-width:62px; }
+      .gv-mc { display:block; font:700 8px var(--font-mono); letter-spacing:.08em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .gv-mn { display:block; font:700 13px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--sp); }
+      .gv-note { margin-top:10px; }
       /* ---- Coaching, in the new language ----
          The ceiling in the hero, and every row showing where somebody stands
          against it without having to be opened. */
