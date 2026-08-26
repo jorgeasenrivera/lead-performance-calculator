@@ -22287,6 +22287,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     <div className="hero" style={brandVars}>
       <div className="s2-hero" ref={heroRef}>
         <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-fx" aria-hidden="true">
+          <i className="s2-rgb"><i className="r" /><i className="c" /></i>
+          <i className="s2-sweep" />
+        </i>
         {/* Everything the tube shows sits in here, and the glass bows this and
             not the card's own edge: a silhouette that wobbled against the page
             read as a rendering fault rather than as a screen. */}
@@ -31194,17 +31198,52 @@ const SAGE_CSS = `
         100% { transform:none; filter:none; }
       }
       .s2-noise { position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0; z-index:3;
-        background:repeating-linear-gradient(0deg, rgba(255,255,255,.2) 0 1px, transparent 1px 3px),
-          repeating-linear-gradient(90deg, rgba(255,255,255,.09) 0 2px, rgba(0,0,0,.12) 2px 5px); }
+        background:
+          repeating-linear-gradient(0deg, rgba(255,255,255,.22) 0 1px, transparent 1px 3px),
+          repeating-linear-gradient(90deg, rgba(255,255,255,.10) 0 2px, rgba(0,0,0,.14) 2px 5px),
+          repeating-linear-gradient(0deg, rgba(255,255,255,.14) 0 1px, transparent 1px 2px); }
       .s2-hero.s2-chswitch .s2-noise { animation:s2noise .80s steps(11); }
+      /* The static does not fade off in a line, it crackles: every step is a
+         different amount and a different offset, which is what stops it reading
+         as a fade and starts it reading as interference. */
       @keyframes s2noise {
-        0%,100% { opacity:0; background-position:0 0, 0 0; }
-        12% { opacity:.55; background-position:0 4px, 5px 0; }
-        24% { opacity:.85; background-position:0 11px, 11px 0; }
-        36% { opacity:.5; background-position:0 6px, 3px 0; }
-        50% { opacity:.3; background-position:0 14px, 8px 0; }
-        68% { opacity:.12; background-position:0 8px, 2px 0; }
+        0%,100% { opacity:0; background-position:0 0, 0 0, 0 0; }
+        8%  { opacity:.72; background-position:0 2px, 7px 0, 0 3px; }
+        16% { opacity:.36; background-position:0 8px, 2px 0, 0 1px; }
+        24% { opacity:1;   background-position:0 13px, 13px 0, 0 8px; }
+        34% { opacity:.52; background-position:0 5px, 5px 0, 0 4px; }
+        46% { opacity:.78; background-position:0 16px, 9px 0, 0 11px; }
+        58% { opacity:.3;  background-position:0 9px, 3px 0, 0 6px; }
+        72% { opacity:.12; background-position:0 18px, 6px 0, 0 2px; }
       }
+
+      /* ---- the rest of the sizzle ----
+         A hot bar sweeping down as the tube re-locks, and the picture's colour
+         coming apart into a red and a cyan before it settles. Both are clipped to
+         the card, which the card itself is not: it lets its popups escape. */
+      .s2-fx { position:absolute; inset:0; border-radius:inherit; overflow:hidden;
+        pointer-events:none; z-index:4; }
+      .s2-sweep { position:absolute; left:0; right:0; height:20%; opacity:0;
+        background:linear-gradient(180deg, transparent, rgba(255,255,255,.42), transparent); }
+      .s2-rgb { position:absolute; inset:0; opacity:0; mix-blend-mode:screen; }
+      .s2-rgb > i { position:absolute; inset:0; }
+      .s2-rgb > i.r { background:#D8483C; }
+      .s2-rgb > i.c { background:#2FBFD0; }
+      .s2-hero.s2-chswitch .s2-sweep { animation:s2sweep .80s ease-out; }
+      @keyframes s2sweep {
+        0% { opacity:0; transform:translateY(-140%); }
+        26% { opacity:.95; }
+        100% { opacity:0; transform:translateY(500%); }
+      }
+      .s2-hero.s2-chswitch .s2-rgb { animation:s2split .80s linear; }
+      .s2-hero.s2-chswitch .s2-rgb > i.r { animation:s2splitR .80s linear; }
+      .s2-hero.s2-chswitch .s2-rgb > i.c { animation:s2splitC .80s linear; }
+      @keyframes s2split { 0%,100% { opacity:0; } 12% { opacity:.16; } 30% { opacity:.26; }
+        55% { opacity:.11; } 80% { opacity:0; } }
+      @keyframes s2splitR { 0%,100% { transform:none; } 14% { transform:translateX(-7px); }
+        34% { transform:translateX(11px); } 58% { transform:translateX(-4px); } }
+      @keyframes s2splitC { 0%,100% { transform:none; } 14% { transform:translateX(7px); }
+        34% { transform:translateX(-11px); } 58% { transform:translateX(4px); } }
       .s2-head { display:flex; align-items:center; gap:15px; flex-wrap:wrap; }
       .s2-ava { position:relative; width:58px; height:58px; border-radius:50%; flex:0 0 auto; background:#fff;
         display:flex; align-items:center; justify-content:center; overflow:hidden;
@@ -31390,7 +31429,9 @@ const SAGE_CSS = `
       }
       @media (prefers-reduced-motion: reduce) {
         .s2-imp, .s2-vdot, .s2-rtag::before, .s2-hcol i, .s2-dialrev { animation:none !important; }
-        .s2-hero.s2-chswitch, .s2-hero.s2-chswitch .s2-noise { animation:none !important; }
+        .s2-hero.s2-chswitch, .s2-hero.s2-chswitch .s2-noise,
+        .s2-hero.s2-chswitch .s2-sweep, .s2-hero.s2-chswitch .s2-rgb,
+        .s2-hero.s2-chswitch .s2-rgb > i { animation:none !important; }
         .s2-tube { filter:none; }
       }
 
