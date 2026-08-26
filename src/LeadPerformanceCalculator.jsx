@@ -25651,12 +25651,21 @@ function bulgeMap(power) {
   const cx = w / 2, cy = h / 2, maxR = Math.hypot(cx, cy);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
-      const dx = (i - cx) / maxR, dy = (j - cy) / maxR;
+      /* i + 0.5 is the pixel's centre. Using i put the neutral point half a
+         pixel off the middle of the map, which is nothing on its own and is
+         still wrong. */
+      const dx = (i + 0.5 - cx) / maxR, dy = (j + 0.5 - cy) / maxR;
       const r = Math.hypot(dx, dy);
       const k = power * r * r;
       const o = (j * w + i) * 4;
-      d[o] = Math.max(0, Math.min(255, 128 + dx * k * 255));
-      d[o + 1] = Math.max(0, Math.min(255, 128 + dy * k * 255));
+      /* Minus, not plus. feDisplacementMap SAMPLES from the offset position, so
+         a channel above the midpoint on the right edge fetches from further
+         right and drags that content inward. The first version had it the other
+         way round and the glass sucked the picture in instead of bulging it out
+         — a pincushion, which is the fault old sets were corrected for, not the
+         look anybody means by a tube. */
+      d[o] = Math.max(0, Math.min(255, 128 - dx * k * 255));
+      d[o + 1] = Math.max(0, Math.min(255, 128 - dy * k * 255));
       d[o + 2] = 128;
       d[o + 3] = 255;
     }
