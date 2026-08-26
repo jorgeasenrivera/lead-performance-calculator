@@ -22322,7 +22322,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 
   return (
     <div className="hero" style={brandVars}>
-      <div className="s2-hero" ref={heroRef}>
+      <div className="s2-hero s2-hasrail" ref={heroRef}>
         <i className="s2-noise" aria-hidden="true" />
         <i className="s2-fx" aria-hidden="true">
           <i className="s2-rgb"><i className="r" /><i className="c" /></i>
@@ -22339,81 +22339,6 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           <div className="s2-idtx">
             <div className="s2-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
             <h1 className="s2-store">{store.name}</h1>
-          </div>
-          {/* ---- everything you press, and everything you read, on the right ----
-              These four sat in one long row, so the calendar's three stacked lines
-              set the height of the whole row and its last line dropped through the
-              rule underneath. Two rows now: what you press on top, what you read
-              beneath it, both hard right. */}
-          <div className="s2-chips">
-          <div className="s2-chip-acts">
-            {/* The calendar is the only thing that says the date now; this is just
-                the door to the round-up, not a second copy of the day. */}
-            <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
-              <PixIcon glyph="star" size={11} /> Round-up
-            </button>
-            <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
-              <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
-              <span className="s2-imp-tx">
-                <b>{missing.length ? (missing.length === 1 ? "Import due" : "Imports due") : "Imports in"}</b>
-                <i>{missing.length ? missing.join(" and ") : `${done.length} of ${need.length} reports today`}</i>
-              </span>
-              <PixIcon glyph="arrow" size={11} />
-            </button>
-          </div>
-          <div className="s2-chip-state">
-            <div className="s2-rota bloop-host" tabIndex={0}>
-              <b>{onCount} on{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
-              <div className="bloopwin dn r s2-rotawin">
-                <div className="bw-title">On today · {onCount}</div>
-                <div className="s2-names">
-                  {roster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
-                    <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
-                  ))}
-                </div>
-                {offToday.length > 0 && (<>
-                  <div className="bw-title" style={{ marginTop: 10 }}>Off today · {offToday.length}</div>
-                  <div className="s2-names">
-                    {offToday.map((a) => (<s key={a.id} className="off"><i className="s2-pdot off" />{a.name}</s>))}
-                  </div>
-                </>)}
-              </div>
-            </div>
-            <div className="s2-mcal bloop-host" tabIndex={0}>
-              <div className="s2-mc-cap"><PixIcon glyph="calendar" size={10} /> {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}</div>
-              <div className="s2-mc-grid">
-                {Array.from({ length: mcal.off }, (_, i) => <i key={"e" + i} className="e" />)}
-                {Array.from({ length: mcal.dim }, (_, i) => {
-                  const d = i + 1;
-                  return <i key={d} className={d < mcal.dNow ? "p" : d === mcal.dNow ? "t" : ""}
-                    onClick={(e) => { e.stopPropagation(); setDayPick(`${mcal.mk}-${String(d).padStart(2, "0")}`); }} />;
-                })}
-              </div>
-              <div className="s2-mc-sub">{storePace.daysLeft} selling {storePace.daysLeft === 1 ? "day" : "days"} left</div>
-              <div className="bloopwin dn r s2-calwin">
-                <div className="bw-title">{new Date().toLocaleDateString("en-US", { month: "long" })} at a glance</div>
-                {!storePace.tooEarly && storePace.goal && storePace.short > 0 && storePace.daysLeft > 0 && (
-                  <div className="s2-cw"><PixIcon glyph="bolt" size={11} style={{ color: "#C98A00" }} />
-                    <span>Need <b>{(Math.round(storePace.needPerDay * 10) / 10).toFixed(1)}</b> a day the rest of the way</span></div>
-                )}
-                {mcal.best && (
-                  <div className="s2-cw"><PixIcon glyph="trophy" size={11} style={{ color: "#C99700" }} />
-                    <span>Best day so far: {new Date(mcal.best.d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <b>{fmtNum(mcal.best.u)}</b> units</span></div>
-                )}
-                <div className="s2-cw"><PixIcon glyph="calendar" size={11} style={{ color: "var(--p2)" }} />
-                  <span><b>{mcal.satsLeft}</b> {mcal.satsLeft === 1 ? "Saturday" : "Saturdays"} left{monthHolidays.length ? <> · {monthHolidays.length} {monthHolidays.length === 1 ? "holiday" : "holidays"} out</> : null}</span></div>
-                {lastImport && lastImport.t && (
-                  <div className="s2-cw"><PixIcon glyph="doc" size={11} style={{ color: "#8B93A2" }} />
-                    <span>Last import: <b>{new Date(lastImport.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</b></span></div>
-                )}
-                <div className="s2-detail">{dayPick
-                  ? (dayUnits[dayPick] && dayUnits[dayPick].u != null
-                    ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold</>
-                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · no day record</>)
-                  : "Click a day dot to see it"}</div>
-              </div>
-            </div>
-          </div>
           </div>
         </div>
         <div className="s2-body">
@@ -22563,6 +22488,87 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           </div>
         </div>
         </div>
+        {/* ---- the card's own right-hand column ----
+        The controls used to ride along the top of the head, which is the one
+        row that also has to hold the store's name. They have a column of the
+        card to themselves now, and the head gets its full width back. */}
+      <aside className="s2-rail">
+          {/* ---- everything you press, and everything you read, on the right ----
+              These four sat in one long row, so the calendar's three stacked lines
+              set the height of the whole row and its last line dropped through the
+              rule underneath. Two rows now: what you press on top, what you read
+              beneath it, both hard right. */}
+          <div className="s2-chips">
+          <div className="s2-chip-acts">
+            {/* The calendar is the only thing that says the date now; this is just
+                the door to the round-up, not a second copy of the day. */}
+            <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
+              <PixIcon glyph="star" size={11} /> Round-up
+            </button>
+            <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
+              <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
+              <span className="s2-imp-tx">
+                <b>{missing.length ? (missing.length === 1 ? "Import due" : "Imports due") : "Imports in"}</b>
+                <i>{missing.length ? missing.join(" and ") : `${done.length} of ${need.length} reports today`}</i>
+              </span>
+              <PixIcon glyph="arrow" size={11} />
+            </button>
+          </div>
+          <div className="s2-chip-state">
+            <div className="s2-rota bloop-host" tabIndex={0}>
+              <b>{onCount} on{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
+              <div className="bloopwin dn r s2-rotawin">
+                <div className="bw-title">On today · {onCount}</div>
+                <div className="s2-names">
+                  {roster.filter((a) => !offToday.includes(a)).slice(0, 14).map((a) => (
+                    <s key={a.id}><i className="s2-pdot on" />{a.name}</s>
+                  ))}
+                </div>
+                {offToday.length > 0 && (<>
+                  <div className="bw-title" style={{ marginTop: 10 }}>Off today · {offToday.length}</div>
+                  <div className="s2-names">
+                    {offToday.map((a) => (<s key={a.id} className="off"><i className="s2-pdot off" />{a.name}</s>))}
+                  </div>
+                </>)}
+              </div>
+            </div>
+            <div className="s2-mcal bloop-host" tabIndex={0}>
+              <div className="s2-mc-cap"><PixIcon glyph="calendar" size={10} /> {new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" })}</div>
+              <div className="s2-mc-grid">
+                {Array.from({ length: mcal.off }, (_, i) => <i key={"e" + i} className="e" />)}
+                {Array.from({ length: mcal.dim }, (_, i) => {
+                  const d = i + 1;
+                  return <i key={d} className={d < mcal.dNow ? "p" : d === mcal.dNow ? "t" : ""}
+                    onClick={(e) => { e.stopPropagation(); setDayPick(`${mcal.mk}-${String(d).padStart(2, "0")}`); }} />;
+                })}
+              </div>
+              <div className="s2-mc-sub">{storePace.daysLeft} selling {storePace.daysLeft === 1 ? "day" : "days"} left</div>
+              <div className="bloopwin dn r s2-calwin">
+                <div className="bw-title">{new Date().toLocaleDateString("en-US", { month: "long" })} at a glance</div>
+                {!storePace.tooEarly && storePace.goal && storePace.short > 0 && storePace.daysLeft > 0 && (
+                  <div className="s2-cw"><PixIcon glyph="bolt" size={11} style={{ color: "#C98A00" }} />
+                    <span>Need <b>{(Math.round(storePace.needPerDay * 10) / 10).toFixed(1)}</b> a day the rest of the way</span></div>
+                )}
+                {mcal.best && (
+                  <div className="s2-cw"><PixIcon glyph="trophy" size={11} style={{ color: "#C99700" }} />
+                    <span>Best day so far: {new Date(mcal.best.d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <b>{fmtNum(mcal.best.u)}</b> units</span></div>
+                )}
+                <div className="s2-cw"><PixIcon glyph="calendar" size={11} style={{ color: "var(--p2)" }} />
+                  <span><b>{mcal.satsLeft}</b> {mcal.satsLeft === 1 ? "Saturday" : "Saturdays"} left{monthHolidays.length ? <> · {monthHolidays.length} {monthHolidays.length === 1 ? "holiday" : "holidays"} out</> : null}</span></div>
+                {lastImport && lastImport.t && (
+                  <div className="s2-cw"><PixIcon glyph="doc" size={11} style={{ color: "#8B93A2" }} />
+                    <span>Last import: <b>{new Date(lastImport.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</b></span></div>
+                )}
+                <div className="s2-detail">{dayPick
+                  ? (dayUnits[dayPick] && dayUnits[dayPick].u != null
+                    ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold</>
+                    : <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · no day record</>)
+                  : "Click a day dot to see it"}</div>
+              </div>
+            </div>
+          </div>
+          </div>
+      </aside>
       </div>
 
       <div className="s2-focusgrid">
@@ -31237,7 +31243,24 @@ const SAGE_CSS = `
          distance, and the card is overscanned a touch so the bow never drags the
          edge inward and shows the page behind it. */
       .lpc-glass { position:absolute; width:0; height:0; overflow:hidden; }
-      .s2-tube { position:relative; filter:url(#lpc-bulge); }
+      /* The card is two columns: everything it says, and a rail of everything you
+         press. The rail is a fixed width so the head and the body underneath it
+         both end at the same place, and the store's name gets the head to itself
+         again. */
+      /* The tube stacks, like the card it replaced: wrapping the hero's children
+         in it swallowed the 18px the hero used to put between the head and the
+         body, and only the dashboard wants two columns. */
+      .s2-tube { position:relative; filter:url(#lpc-bulge);
+        display:flex; flex-direction:column; gap:18px; }
+      /* ---- the card's two columns ----
+         A grid, not nested flex. Flex sizes a row's height from its items and an
+         item's height from the row, and with the rail's own column in the middle
+         of that the whole card resolved to one line tall. A grid track sizes to
+         its content and asks nothing back. */
+      .s2-hero.s2-hasrail { display:grid; grid-template-columns:1fr 214px; column-gap:24px;
+        align-items:stretch; }
+      .s2-hero.s2-hasrail > .s2-tube { grid-column:1; grid-row:1; }
+      .s2-rail { grid-column:2; grid-row:1; display:flex; flex-direction:column; gap:9px; }
       /* A filter makes its element a containing block, so anything inside that
          was fixed to the viewport is now fixed to the tube. Nothing in here is,
          but the popups are worth saying out loud: they are absolutely positioned
@@ -31328,10 +31351,12 @@ const SAGE_CSS = `
       /* Two rows, both hard right: what you press, then what you read. In one
          row the calendar's three stacked lines set the height of the whole row
          and its last line dropped through the rule underneath it. */
-      .s2-chips { margin-left:auto; display:grid; justify-items:end; row-gap:9px; }
-      .s2-chip-acts, .s2-chip-state { display:flex; gap:10px; align-items:center;
-        flex-wrap:wrap; justify-content:flex-end; }
-      .s2-chip-state { align-items:flex-end; gap:14px; }
+      .s2-chips { display:flex; flex-direction:column; gap:10px; height:100%; }
+      .s2-chip-acts { display:flex; flex-direction:column; gap:9px; align-items:stretch; }
+      /* what you read sits at the foot of the rail, so the two pressable things
+         stay together at the top where the eye lands */
+      .s2-chip-state { margin-top:auto; display:flex; align-items:flex-end;
+        justify-content:space-between; gap:12px; }
       .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
         border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
         font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
@@ -31498,8 +31523,13 @@ const SAGE_CSS = `
       @media (max-width: 860px) {
         .s2-body { flex-direction:column; align-items:stretch; gap:18px; }
         .s2-left { max-width:none; }
-        .s2-chips { margin-left:0; width:100%; align-items:stretch; }
-        .s2-chip-acts, .s2-chip-state { justify-content:flex-start; }
+        .s2-hero.s2-hasrail { grid-template-columns:1fr; row-gap:16px; }
+        .s2-hero.s2-hasrail > .s2-tube { grid-column:1; grid-row:1; }
+        .s2-rail { grid-column:1; grid-row:2; width:100%; }
+        .s2-chips { width:100%; }
+        .s2-chip-acts { flex-direction:row; flex-wrap:wrap; }
+        .s2-chip-acts > * { width:auto; }
+        .s2-chip-state { margin-top:0; justify-content:flex-start; gap:14px; }
         .s2-mcal { display:none; }
         .s2-focusgrid { grid-template-columns:1fr; }
         .s2-hbars { height:104px; gap:12px; }
@@ -31749,8 +31779,14 @@ const SAGE_CSS = `
          to say .s2-chips > *, which was the pills themselves; they are now in two
          rows, and the rule was forcing both ROWS to 38px, so the calendar's three
          stacked lines overflowed straight through the rule beneath the head. */
-      .s2-chip-acts > *, .s2-chip-state > .s2-rota {
-        height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
+      .s2-chip-acts > * { width:100%; box-sizing:border-box; display:flex; align-items:center; }
+      .s2-chip-state > .s2-rota { height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
+      .s2-chip-acts > .s2-ru { height:38px; justify-content:center; }
+      .s2-chip-acts > .s2-imp { min-height:44px; padding:7px 10px 7px 7px; }
+      /* in a fixed rail the text has to give, not the arrow at the end of it */
+      .s2-chip-acts .s2-imp-tx { flex:1 1 auto; min-width:0; }
+      .s2-chip-acts .s2-imp-tx i { max-width:100%; }
+      .s2-chip-acts .s2-imp > svg:last-child { flex:0 0 auto; }
       .s2-ru, .s2-imp, .s2-rota { border-radius:12px; }
       .s2-rota { padding:0 14px; }
       .s2-imp { padding:0 14px; }
