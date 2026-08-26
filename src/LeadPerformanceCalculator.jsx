@@ -387,7 +387,23 @@ const DEFAULT_THRESHOLDS = {
   internet: { green: 20, yellow: 10 },
   phone:    { green: 25, yellow: 12 },
   showroom: { green: 30, yellow: 15 },
+  /* The two video standards sit in the same list, because the store is run on
+     five figures and splitting three of them into "thresholds" and two into
+     "whatever the first tier happens to ask for" is how the two drifted apart.
+     A tier can still require a video figure; this is what good looks like. */
+  apptVideoDayPct:  { green: 60, yellow: 45 },
+  engagedVideoPct:  { green: 50, yellow: 35 },
 };
+/* The five, in the order they get talked about. Three are channels and take the
+   colour their line is drawn in on the hero's chart; two are the video
+   standards, which have no line to match, so they take the next two slots. */
+const FIVE = [
+  { id: "internet", key: "internetPct", label: "Internet", long: "Internet delivered", col: "var(--s1)" },
+  { id: "phone", key: "phonePct", label: "Phone", long: "Phone delivered", col: "var(--s2)" },
+  { id: "showroom", key: "showroomPct", label: "Showroom", long: "Showroom delivered", col: "var(--s3)" },
+  { id: "apptVideoDayPct", key: "apptVideoDayPct", label: "Appt video", long: "Video day of appointment", col: "var(--s4)" },
+  { id: "engagedVideoPct", key: "engagedVideoPct", label: "Engaged", long: "Engaged personalized video", col: "var(--s5)" },
+];
 
 // Older stores saved a single flat { green, yellow }. Spread it across all three
 // channels so nothing breaks and the numbers carry over.
@@ -498,11 +514,12 @@ function normThresholds(t) {
   if (!t) return JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS));
   if (t.green !== undefined || t.yellow !== undefined) {
     const flat = { green: t.green ?? 20, yellow: t.yellow ?? 10 };
-    return { internet: { ...flat }, phone: { ...flat }, showroom: { ...flat } };
+    return { ...JSON.parse(JSON.stringify(DEFAULT_THRESHOLDS)),
+      internet: { ...flat }, phone: { ...flat }, showroom: { ...flat } };
   }
   const out = {};
-  for (const c of CHANNEL_LIST) {
-    out[c.id] = { ...DEFAULT_THRESHOLDS[c.id], ...(t[c.id] || {}) };
+  for (const k of Object.keys(DEFAULT_THRESHOLDS)) {
+    out[k] = { ...DEFAULT_THRESHOLDS[k], ...(t[k] || {}) };
   }
   return out;
 }
@@ -3475,7 +3492,7 @@ export default function LeadPerformanceCalculator() {
       navValue = (isAdmin ? ["checkout", "coaching", "plates", "import", "actstd"] : ["checkout", "coaching", "plates", "import"]).includes(tab) ? tab : "checkout";
     } else {
       navItems = isAdmin
-        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "People"]]
+        ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Targets"], ["roster", "People"]]
         : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]];
       navValue = (isAdmin ? ["board", "import", "gm", "history", "standards", "roster"] : ["board", "import", "gm", "history", "roster"]).includes(tab) ? tab : "board";
     }
@@ -3524,7 +3541,7 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "access" && <AccessPanel config={config} session={session} onChange={persistConfig} />}
             {adminTab === "tickets" && <TicketsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && <RepairPanel config={config} />}
-            {adminTab === "audit" && <AuditLog />}
+            {adminTab === "audit" && <AuditLog config={config} />}
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
               <BackupPanel config={config} adminData={adminData} session={session}
@@ -3626,7 +3643,7 @@ export default function LeadPerformanceCalculator() {
             ) : (
               <SegControl
                 items={isAdmin
-                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Standards"], ["roster", "People"]]
+                  ? [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["standards", "Targets"], ["roster", "People"]]
                   : [["board", "Dashboard"], ["import", "Import"], ["gm", "Summary"], ["history", "History"], ["roster", "People"]]}
                 value={(isAdmin
                   ? ["board", "import", "gm", "history", "standards", "roster"]
@@ -3684,7 +3701,7 @@ export default function LeadPerformanceCalculator() {
                 {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
-                {tab === "standards" && isAdmin && <div className="tab-page"><StandardsEditor config={config} storeId={view} onChange={persistConfig} /></div>}
+                {tab === "standards" && isAdmin && <div className="tab-page"><TargetsEditor config={config} storeId={view} data={storeData} onChange={persistConfig} /></div>}
                 {tab === "roster" && (
                   <div className="tab-page">
                     <StorePeoplePanel config={config} data={storeData} storeId={view}
@@ -5510,39 +5527,68 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
 
   if (single) {
     const s = stores[0];
+    const b = s.brand || DEFAULT_BRAND;
     return (
       <div className="board-launch">
-        <div className="card board-launch-card">
+        <div className="bl-one" style={{ "--sp": b.primary, "--sd": b.deep }}>
           <div className="bl-logo">{s.icon ? <img src={s.icon} alt="" /> : <Logo size={54} animated />}</div>
           <h2 className="bl-title">{s.name}</h2>
-          <p className="hint">The Board opened in its own window, sized for a TV or big screen. It refreshes on its own every 30 seconds.</p>
-          <button className="btn" onClick={() => onLaunch(s.id)}>Open it again</button>
-          <CastLink storeId={s.id} config={config} />
-          <button className="btn-link" onClick={onBack}>← Back to start</button>
+          <p className="bl-onesub">The Board opened in its own window, sized for a TV or a big screen. It
+            refreshes on its own every 30 seconds and shows the five: {FIVE.map((f) => f.label.toLowerCase()).join(", ")}.</p>
+          <div className="bl-tile-acts">
+            <button className="bl-go" onClick={() => onLaunch(s.id)}>Open it again ↗</button>
+            <CastLink storeId={s.id} config={config} compact />
+          </div>
         </div>
+        <button className="btn-link" onClick={onBack}>← Back to start</button>
       </div>
     );
   }
 
-  // Admin and Centralized BDC pick which store's board to throw on the screen.
+  /* Admin and Centralized BDC pick which store's board to throw on the screen.
+     Every tile is in its own dealership's colours, and carries opening it, the TV
+     link and publishing together: they are three things you do to one store, and
+     they were split between a grid and a row of links underneath it. */
   return (
     <div className="board-launch">
-      <h2 className="section-title">The Board <span className="section-sub">choose a store</span></h2>
-      <p className="hint">Opens a live leaderboard in its own window, sized for a TV. Managers skip this step, their board opens straight to their own store.</p>
+      <div className="s2-hero bl-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              Choose a store · it opens in its own window, sized for a TV, and refreshes every 30 seconds
+            </div>
+            <h2 className="s2-store">The Board</h2>
+          </div>
+          <div className="s2-chips">
+            <span className="fh-chip">{stores.length} {stores.length === 1 ? "store" : "stores"}</span>
+          </div>
+        </div>
+        <div className="bl-herobody">
+          <div className="bl-hstat"><span className="s2-cap">Showing</span>
+            <span className="bl-hbig">The five</span>
+            <span className="bl-hsub">{FIVE.map((f) => f.label.toLowerCase()).join(", ")}</span></div>
+          <div className="bl-hstat"><span className="s2-cap">Managers</span>
+            <span className="bl-hbig">No picker</span>
+            <span className="bl-hsub">their own store opens straight away</span></div>
+        </div>
+      </div>
+
       <div className="bl-grid">
         {stores.map((s) => {
           const b = s.brand || DEFAULT_BRAND;
           return (
-            <button key={s.id} className="bl-tile" style={{ "--sp": b.primary, "--sd": b.deep }} onClick={() => onLaunch(s.id)}>
+            <div key={s.id} className="bl-tile" style={{ "--sp": b.primary, "--sd": b.deep }}>
               <span className="bl-tile-logo">{s.icon ? <img src={s.icon} alt="" /> : <span className="bl-tile-ph">{s.name[0]}</span>}</span>
               <span className="bl-tile-name">{s.name}</span>
-              <span className="bl-tile-go">Open ↗</span>
-            </button>
+              <span className="bl-tile-acts">
+                <button className="bl-go" onClick={() => onLaunch(s.id)}>Open the board ↗</button>
+                <CastLink storeId={s.id} config={config} compact />
+              </span>
+            </div>
           );
         })}
-      </div>
-      <div className="bl-cast">
-        {stores.map((s) => <CastLink key={s.id} storeId={s.id} label={s.name} config={config} />)}
       </div>
       <button className="btn-link" onClick={onBack}>← Back to start</button>
     </div>
@@ -5551,7 +5597,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
 
 // The address a TV is pointed at. Copy it once, set it as the screen's start page,
 // and nobody has to touch it again.
-function CastLink({ storeId, label, config }) {
+function CastLink({ storeId, label, config, compact }) {
   const [said, setSaid] = useState(false);
   const [pub, setPub] = useState(null);   // null | "working" | {ok, err}
   const url = boardTvUrl(storeId);
@@ -5562,16 +5608,16 @@ function CastLink({ storeId, label, config }) {
     if (r.ok) setTimeout(() => setPub(null), 4000);
   };
   return (
-    <span className="cast-wrap">
-      <button className="btn-link cast-link" title={url}
+    <span className={"cast-wrap" + (compact ? " cast-compact" : "")}>
+      <button className={compact ? "bl-tvb" : "btn-link cast-link"} title={url}
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
             () => window.prompt("Copy this address into the TV's browser:", url));
         }}>
-        {said ? "Copied" : (label ? "Copy TV link for " + label : "Copy the TV link")}
+        {said ? "Copied" : (label ? "Copy TV link for " + label : compact ? "Copy TV link" : "Copy the TV link")}
       </button>
-      <button className="btn-link cast-link" onClick={publish} disabled={pub === "working"}>
-        {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : "Publish to TVs")}
+      <button className={compact ? "bl-tvb" : "btn-link cast-link"} onClick={publish} disabled={pub === "working"}>
+        {pub === "working" ? "Publishing..." : (pub && pub.ok ? "Published" : compact ? "Publish" : "Publish to TVs")}
       </button>
       {pub && pub !== "working" && !pub.ok && (
         <span className="cast-err">Could not publish: {pub.err}. The TVs will keep showing what they already have. Use the Help button to report this.</span>
@@ -7322,11 +7368,19 @@ function TicketsPanel({ config, onChange }) {
     });
   const openWrong = (items || []).filter((t) => t.kind === "figures" && (t.status || "open") === "open").length;
   const openBehind = (items || []).filter((t) => t.kind === "standard" && (t.status || "open") === "open").length;
+  const openList = (items || []).filter((t) => (t.status || "open") === "open");
+  const openCount = openList.length;
+  const oldest = openList.map((t) => t.at).filter(Boolean).sort()[0] || null;
+  const closedThisMonth = (items || []).filter((t) => t.status === "closed"
+    && String(t.closedAt || "").slice(0, 7) === ym()).length;
+  /* Which dealership a ticket came from, in that dealership's own colour, so a
+     list of tickets across four stores sorts itself by eye. */
+  const storeOf = (id) => (config?.stores || []).find((x) => x.id === id || x.name === id) || null;
 
   return (
     <div className="board-page">
       <div className="card">
-        <h3>Who people reach</h3>
+        <div className="p-cap2">Who people reach</div>
         <p className="hint">
           This is what the Help button shows, everywhere, including the sign-in pages that
           salespeople use without an account. Leave anything blank and it simply is not shown.
@@ -7362,26 +7416,39 @@ function TicketsPanel({ config, onChange }) {
           <p className="sched-err">That has to start with https. A plain http address would put whatever
             somebody typed across the wire in clear.</p>
         )}
-        <button className="btn" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
+        <button className="go-log2" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
+      </div>
+
+      <div className="tk-counts">
+        <div className="card tk-count">
+          <div className="p-cap2">Open</div>
+          <div className="tk-cnum wt">{openCount}</div>
+          <p className="hint">{oldest ? `oldest raised ${new Date(oldest).toLocaleDateString([], { weekday: "long" })}` : "nothing waiting"}</p>
+        </div>
+        <div className="card tk-count">
+          <div className="p-cap2">Wrong numbers open</div>
+          <div className="tk-cnum r">{openWrong}</div>
+          <p className="hint">a figure that is lying is read by everybody until it is fixed</p>
+        </div>
+        <div className="card tk-count">
+          <div className="p-cap2">Closed this month</div>
+          <div className="tk-cnum ok">{closedThisMonth}</div>
+          <p className="hint">{openBehind > 0 ? `${openBehind} still behind the standard` : "nobody flagged as behind"}</p>
+        </div>
       </div>
 
       <div className="card">
         <div className="tk-head">
-          <h3>Tickets
-            {openWrong > 0 && <span className="tk-badge">{openWrong} wrong {openWrong === 1 ? "number" : "numbers"}</span>}
-            {openBehind > 0 && <span className="tk-badge tk-badge-behind">{openBehind} behind</span>}
-          </h3>
-          <div className="seg-small">
-            {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
-              <button key={id} className={"seg-opt " + (filter === id ? "on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
-            ))}
-          </div>
-          <div className="seg-small">
-            {[["all", "Everything"], ["figures", "Wrong numbers"], ["standard", "Behind"], ["problem", "Problems"]].map(([id, lbl]) => (
-              <button key={id} className={"seg-opt " + (kind === id ? "on" : "")} onClick={() => setKind(id)}>{lbl}</button>
-            ))}
-          </div>
-          <button className="btn-quiet" onClick={reload}>Refresh</button>
+          <div className="p-cap2">Tickets</div>
+          {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
+            <button key={id} className={"tg-sub" + (filter === id ? " on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
+          ))}
+          <span className="tk-div" />
+          {[["all", "Everything"], ["figures", "Wrong numbers"], ["standard", "Behind"], ["problem", "Problems"]].map(([id, lbl]) => (
+            <button key={id} className={"tg-sub" + (kind === id ? " on" : "")} onClick={() => setKind(id)}>{lbl}</button>
+          ))}
+          <span className="r-flex2" />
+          <button className="pp-act" onClick={reload}>Refresh</button>
         </div>
         {items === null ? <p className="hint">Loading...</p>
           : shown.length === 0 ? <p className="hint">Nothing here. {filter === "open" ? "No open tickets." : ""}</p>
@@ -7391,6 +7458,10 @@ function TicketsPanel({ config, onChange }) {
                 <div key={t.id} className={"tk" + ((t.status || "open") === "closed" ? " tk-closed" : "")
                   + (t.kind === "figures" ? " tk-wrong" : "") + (t.kind === "standard" ? " tk-behind" : "")}>
                   <div className="tk-top">
+                    {(() => { const st = storeOf(t.store); return st
+                      ? <span className="tk-store" title={st.name}>
+                          <i style={{ background: (st.brand || DEFAULT_BRAND).primary }} />{st.name}
+                        </span> : null; })()}
                     {t.kind === "figures" && <span className="tk-kind">number's wrong</span>}
                     {t.kind === "standard" && <span className="tk-kind tk-kind-behind">behind the standard</span>}
                     <b>{t.from || "Anonymous"}</b>
@@ -16771,57 +16842,122 @@ function RoundUp({ config, store, data, M }) {
 }
 
 /* ---------------- Admin overview ---------------- */
+/* The group, one card per store, each in that store's own colours.
+
+   It used to count who was cleared, in grace, nearing the limit and restricted,
+   which is a verdict on people read from four stores away. What a group manager
+   opens this for is whether anything is wrong anywhere: is the month on pace,
+   did the reports land, and where do the five sit. */
 function AdminOverview({ config, adminData, onOpenStore }) {
+  const mk = ym();
+  const cards = config.stores.map((s) => {
+    const d = adminData[s.id] || emptyStoreData();
+    const M = d.months?.[mk];
+    const t = M?.imports?.[today()] || {};
+    const done = ["appointment", "video"].filter((k) => t[k]).length;
+    const roster = d.roster || [];
+    let units = 0;
+    for (const a of roster) {
+      const st = M?.stats?.[norm(a.name)];
+      if (!st) continue;
+      units += (st.internetUnits ?? 0) + (st.phoneUnits ?? 0) + (st.showroomUnits ?? 0) + (st.campaignUnits ?? 0);
+    }
+    const g = s.goal || {};
+    const goal = (g.byMonth && g.byMonth[mk] != null) ? g.byMonth[mk] : (g.units ?? 0);
+    const chan = channelRates(M, roster);
+    const five = FIVE.map((f) => {
+      const c = chan.find((x) => x.id === f.id);
+      if (c) return { ...f, v: c.pct };
+      let sum = 0, n = 0;
+      for (const a of roster) { const v = M?.stats?.[norm(a.name)]?.[f.key]; if (v != null) { sum += v; n++; } }
+      return { ...f, v: n ? sum / n : null };
+    });
+    const brand = s.brand || DEFAULT_BRAND;
+    return { s, d, done, units, goal, five, brand, roster };
+  });
+  const groupUnits = cards.reduce((n, c) => n + c.units, 0);
+  const groupGoal = cards.reduce((n, c) => n + c.goal, 0);
+  const allIn = cards.filter((c) => c.done === 2).length;
+
   return (
     <div className="admin">
-      <h2 className="section-title">Group Overview <span className="section-sub">{monthLabel(ym())}</span></h2>
-      <div className="store-grid">
-        {config.stores.map((s) => {
-          const d = adminData[s.id] || emptyStoreData();
-          const M = d.months?.[ym()];
-          const t = M?.imports?.[today()] || {};
-          const done = ["appointment", "video"].filter((k) => t[k]).length;
-          const inGrace = dayOfMonth() <= (s.graceDays ?? 10);
-          const restrictions = d.restrictions || {};
-          const isRestricted = (a) => { const r = restrictions[a.id]; return r && (!r.until || new Date(r.until) > new Date()); };
-          // Same buckets the manager sees inside the store, counted here so the card
-          // reads the same as their hero tiles — just as icons.
-          const b = { cleared: 0, nearing: 0, room: 0, restrict: 0, grace: 0, off: 0, none: 0 };
-          for (const a of d.roster || []) {
-            if (!a.roleId) continue;
-            const ev = evaluateAssociate(M?.stats?.[norm(a.name)], config.standards?.[s.id]?.[a.roleId]?.tiers);
-            const v = verdictOf(ev, { restricted: isRestricted(a), inGrace });
-            b[v.key] = (b[v.key] || 0) + 1;
-          }
-          // Only surface the buckets that have people in them, in severity order.
-          const order = ["cleared", "grace", "room", "nearing", "restrict", "off"];
-          const chips = order.filter((k) => b[k] > 0).map((k) => ({ ...VERDICT[k], n: b[k] }));
-          return (
-            <button key={s.id} className="store-card" onClick={() => onOpenStore(s.id)}>
-              <div className="store-card-top">
-                {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
-                <div className="store-card-name">{s.name}</div>
+      <div className="s2-hero gv-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="globe" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">Every store · {monthLabel(mk)} · through {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+            <h2 className="s2-store">Group</h2>
+          </div>
+          <div className="s2-chips">
+            <span className="fh-chip">{config.stores.length} {config.stores.length === 1 ? "store" : "stores"}</span>
+          </div>
+        </div>
+        <div className="gv-herobody">
+          <div className="gv-hstat"><span className="s2-cap">Units this month</span>
+            <span className="gv-hbig">{fmtNum(groupUnits)}{groupGoal > 0 && <span className="gv-hden"> / {groupGoal}</span>}</span>
+            <span className="gv-hsub">{groupGoal > 0
+              ? `${Math.round(groupUnits / groupGoal * 100)}% of goal, ${Math.round(storeDaysDone(mk, isHoliday, today()) / Math.max(1, storeDaysInMonth(mk, isHoliday)) * 100)}% of the month gone`
+              : "no group goal set"}</span></div>
+          <div className="gv-hstat"><span className="s2-cap">Stores fully imported</span>
+            <span className="gv-hbig">{allIn}<span className="gv-hden"> / {cards.length}</span></span>
+            <span className="gv-hsub">{allIn === cards.length ? "everything landed today"
+              : cards.filter((c) => c.done < 2).map((c) => c.s.name).slice(0, 2).join(", ") + " still waiting"}</span></div>
+          {FIVE.slice(0, 3).map((f) => {
+            const vals = cards.map((c) => c.five.find((x) => x.id === f.id)?.v).filter((v) => v != null);
+            const avg = vals.length ? vals.reduce((n, v) => n + v, 0) / vals.length : null;
+            const best = cards.map((c) => ({ n: c.s.name, v: c.five.find((x) => x.id === f.id)?.v }))
+              .filter((x) => x.v != null).sort((x, y) => y.v - x.v)[0];
+            return (
+              <div key={f.id} className="gv-hstat">
+                <span className="s2-cap">Group {f.label.toLowerCase()}</span>
+                <span className="gv-hbig">{avg == null ? "-" : fmtPct(avg)}</span>
+                <span className="gv-hsub">{best ? `${best.n} leads at ${fmtPct(best.v)}` : "no figures yet"}</span>
               </div>
-              <div className="store-card-row">
-                <span className={"badge " + (done === 2 ? "badge-ok" : "badge-warn")}>Imports {done}/2</span>
-              </div>
-              <div className="store-verdicts">
-                {chips.length === 0
-                  ? <span className="stat-dim">No one evaluated yet</span>
-                  : chips.map((c) => (
-                    <span key={c.key} className={"vchip vchip-" + c.cls} title={c.label}>
-                      <span className="vchip-ico">{c.icon}</span>
-                      <span className="vchip-n">{c.n}</span>
-                      <span className="vchip-lbl">{c.short}</span>
-                    </span>
-                  ))}
-                <span className="stat-dim vchip-roster">{(d.roster || []).length} on roster</span>
-              </div>
-              <div className="store-card-open">Open →</div>
-            </button>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+
+      <div className="gv-grid">
+        {cards.map(({ s, done, units, goal, five, brand, roster }) => (
+          <div key={s.id} className="gv-card" style={{ "--sp": brand.primary, "--sd": brand.deep }}>
+            <div className="gv-top">
+              {s.icon ? <img className="gv-logo" src={s.icon} alt="" />
+                : <span className="gv-badge">{initialsOf(s.name)}</span>}
+              <span className="gv-id">
+                <span className="gv-name">{s.name}</span>
+                <span className="gv-sub">{roster.length} on the roster · imports {done}/2 in</span>
+              </span>
+              <span className="r-flex2" />
+              <span className={"tg-chip " + (done === 2 ? "ok" : "wt")}>{done === 2 ? "all reports in" : "waiting"}</span>
+            </div>
+            {goal > 0 && (
+              <div className="gv-track" title={`${fmtNum(units)} of ${goal} units`}>
+                <i style={{ width: `${Math.min(100, units / goal * 100).toFixed(0)}%` }} />
+              </div>
+            )}
+            <div className="gv-feet">
+              <span className="gv-units">{fmtNum(units)}</span>
+              <span className="gv-of">{goal > 0 ? `of ${goal} units` : "units delivered"}</span>
+              <span className="r-flex2" />
+              <button className="gv-open" onClick={() => onOpenStore(s.id)}>Open the store</button>
+            </div>
+            <div className="gv-five">
+              {five.map((f) => (
+                <span key={f.id} className="gv-m">
+                  <span className="gv-mc">{f.label}</span>
+                  <span className="gv-mn">{f.v == null ? "-" : fmtPct(f.v)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="hint gv-note">
+        Store colours come from each store's brand setting, the same one its hero band and its board already
+        use. The five figures are the store's own, not an average of its people.
+      </p>
     </div>
   );
 }
@@ -19192,45 +19328,47 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 
   return (
     <div className="coaching">
-      {new Date().getDate() <= 10 && (
-        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Month-end recaps</h3>
-            <p className="hint" style={{ margin: "2px 0 0" }}>Print last month's review for every associate with data, one page each.</p>
-          </div>
-          <button className="btn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>Print all Month-End recaps</button>
-        </div>
-      )}
-      {withData.length === 0 ? (
-        <div className="card">
-          <h3>What the strongest people do differently</h3>
-          <p className="hint">
-            Needs Daily Activity imported before it can tell you anything. You can still open anyone's card
-            below to set a goal, seed their baseline, and print their one-pager.
-          </p>
-        </div>
-      ) : (
-      <div className="card">
-        <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
-        {/* Same treatment as the plan on a person's card: where the bar came from,
-            stated as the evidence rather than as a promise about it. "Not a number
-            someone made up" is a claim; "the top 6 of your 18, every imported day"
-            is the thing that makes it true. */}
-        <div className="oyo-from">
-          <span className="oyo-from-tag">Your own floor</span>
-          <b>{top.length}</b> of <b>{withData.length}</b>
-          <span className="oyo-from-op">by units delivered, averaged across every imported day</span>
-        </div>
-        <div className="bench-grid">
-          {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
-            <div key={b.id} className="bench-tile">
-              <div className="bench-num">{b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}</div>
-              <div className="bench-lbl">{b.label}</div>
+      {/* The benchmark is the ceiling everything under it is measured against, so
+          it belongs in the card the page opens on rather than in a pale panel that
+          reads like another set of results. Where the bar came from is stated as
+          the evidence rather than as a promise about it: "the top 6 of your 18,
+          every imported day" is what makes "not a number someone made up" true. */}
+      <div className="s2-hero cx-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="bolt" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              {store.name} · {withData.length === 0
+                ? "needs Daily Activity imported before it can tell you anything"
+                : <>what the strongest {top.length} of {withData.length} do differently, averaged across every imported day</>}
             </div>
-          ))}
+            <h2 className="s2-store">Coaching</h2>
+          </div>
+          <div className="s2-chips">
+            <span className="fh-chip">Your own floor</span>
+            {new Date().getDate() <= 10 && (
+              <button className="da-hbtn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>
+                <PixIcon glyph="doc" size={11} /> Print all Month-End recaps
+              </button>
+            )}
+          </div>
         </div>
+        {withData.length === 0 ? (
+          <div className="cx-none">
+            Open anyone below to set a goal, seed their baseline, and print their one-pager.
+          </div>
+        ) : (
+          <div className="cx-bench">
+            {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
+              <div key={b.id} className="cx-bm">
+                <div className="cx-bnum">{b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}</div>
+                <div className="cx-blbl">{b.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      )}
 
       <div className={"coach-split " + (openRow ? "has-open" : "")}>
         <div className="card coach-list-card">
@@ -19248,6 +19386,19 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
                 <span className="coach-units">{r.units} <em>units</em></span>
                 {r.act ? <span className="coach-days">{r.act.days} day{r.act.days === 1 ? "" : "s"} of activity</span>
                        : <span className="coach-days dim">no activity yet</span>}
+                {/* Where they stand against the ceiling in the card above, on the
+                    behaviour that moves cars most. The gap is the whole point of
+                    the page, and it took opening somebody to see it. */}
+                {(() => {
+                  const b = BEHAVIOURS.find((x) => topAvg[x.id] != null);
+                  if (!b || !r.act || r.act[b.id] == null) return <span className="coach-gap" />;
+                  const frac = Math.min(1, r.act[b.id] / topAvg[b.id]);
+                  return (
+                    <span className="coach-gap" title={`${b.label}: ${b.kind === "pct" ? fmtPct(r.act[b.id]) : fmtNum(r.act[b.id])} against the floor's strongest ${b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}`}>
+                      <i style={{ width: `${(frac * 100).toFixed(0)}%` }} /><b />
+                    </span>
+                  );
+                })()}
                 <span className="coach-open">{openId === r.a.id ? "Close" : "Open card"}</span>
               </button>
             ))}
@@ -20884,7 +21035,7 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
 const NAV_ICON = {
   board: "chart", dashboard: "chart", import: "arrowup", gm: "doc", history: "clock",
   floor: "users",   // Live Floor's own board: who is on the floor right now
-  standards: "check", actstd: "check", roster: "users", checkout: "handshake",
+  standards: "chart", actstd: "check", roster: "users", checkout: "handshake",
   queue: "phone", coaching: "user", plates: "car", overview: "globe",
   access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
   backup: "arrowdown",
@@ -23273,9 +23424,34 @@ function HistCell({ now, before }) {
   );
 }
 
+/* The five figures the store is actually run on, in the order they get talked
+   about. Three are channels, and take the colour their line is drawn in on the
+   hero's chart; two are the video standards, which have no line to match, so
+   they get the next two slots on the same scale. */
+/* History reads the same five, against the same targets the store set. */
+const HIST_FIVE = FIVE.map((f) => ({ k: f.key, label: f.label, col: f.col, thr: (t) => t[f.id].green }));
+
+/* The hero card's channel bar, smaller: a column per month, the fill in that
+   metric's colour, and a dashed cap where the target sits. Full height is the
+   target rather than the best of these months, so a short bar means short of
+   target and not merely short of last spring. */
+function HistBars({ vals, target, col }) {
+  return (
+    <span className="hist-bars" style={{ "--hc": col }}>
+      {vals.map((v, i) => (
+        <span key={i} className={"hist-b" + (i === vals.length - 1 ? " now" : "")}>
+          <i style={{ height: v == null ? 0 : `${Math.min(120, (v * 100) / target * 100) / 1.2}%` }} />
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function HistoryPanel({ config, store, data }) {
   const months = Object.keys(data.months || {}).sort().reverse();
   const [month, setMonth] = useState(months[0] || ym());
+  const roster = useMemo(() => (data.roster || []).slice().sort((a, b) => a.order - b.order), [data.roster]);
+  const thr = normThresholds(store.thresholds);
   if (months.length === 0) return <div className="empty">History builds itself month by month. Nothing here yet.</div>;
   const M = data.months[month];
   /* The month before the one being read, wherever it is in the list. Not "last
@@ -23283,90 +23459,172 @@ function HistoryPanel({ config, store, data }) {
      August with June rather than with nothing at all. */
   const prevKey = months[months.indexOf(month) + 1] || null;
   const prevStats = prevKey ? (data.months[prevKey].stats || {}) : {};
-  /* Oldest to newest, so the trail reads left to right the way time does. */
-  const trail = months.slice(0, 8).reverse();
+  /* Oldest to newest, ending on the month being read, so the bars run left to
+     right the way time does and the last one is the figure above them. */
+  const at = months.indexOf(month);
+  const trail = months.slice(at, at + 8).reverse();
   const before = (name, field) => (prevStats[norm(name)] || {})[field];
+  const valIn = (mk, name, field) => data.months[mk]?.stats?.[norm(name)]?.[field] ?? null;
+
+  /* The store's own five for the month, so a person can be read against the
+     floor they are standing on rather than against nothing. */
+  const storeFive = HIST_FIVE.map((f) => {
+    if (f.k.endsWith("VideoDayPct") || f.k === "apptVideoDayPct" || f.k === "engagedVideoPct") {
+      let sum = 0, n = 0;
+      for (const a of roster) { const v = M?.stats?.[norm(a.name)]?.[f.k]; if (v != null) { sum += v; n++; } }
+      const prev = (() => { let s2 = 0, m = 0;
+        for (const a of roster) { const v = (prevStats[norm(a.name)] || {})[f.k]; if (v != null) { s2 += v; m++; } }
+        return m ? s2 / m : null; })();
+      return { ...f, now: n ? sum / n : null, prev };
+    }
+    const id = f.k.replace("Pct", "");
+    const now = channelRates(M, roster).find((c) => c.id === id)?.pct ?? null;
+    const prev = prevKey ? (channelRates(data.months[prevKey], roster).find((c) => c.id === id)?.pct ?? null) : null;
+    return { ...f, now, prev };
+  });
 
   return (
     <div className="history">
-      <div className="gm-toolbar">
-        <select value={month} onChange={(e) => setMonth(e.target.value)}>
-          {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
-        </select>
-        <span className="hint">
-          {prevKey
-            ? <>Every figure against {monthLabel(prevKey)}, in points.</>
-            : <>The first month on record, so there is nothing to compare it with yet.</>}
-          {month !== ym() && (M.standardsSnapshot
-            ? " Verdicts are under the standards that were in effect that month."
-            : " This month predates standards snapshots, so verdicts use today's standards.")}
-        </span>
-        {/* Said once, at the top, rather than under every position on the page. */}
-        <span className="hist-key">
-          <i className="hist-pip pass" />cleared
-          <i className="hist-pip fail" />restricted
-          <i className="hist-pip none" />no figures
-        </span>
+      <div className="s2-hero hist-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              {store.name} · the five that get tracked, month by month
+              {prevKey ? <> · against {monthLabel(prevKey)}</> : <> · the first month on record</>}
+            </div>
+            <h2 className="s2-store">History</h2>
+          </div>
+          <div className="s2-chips">
+            <select className="hist-month" value={month} onChange={(e) => setMonth(e.target.value)}
+              title="Which month to read">
+              {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+            <button className="da-hbtn" onClick={() => window.print()}>
+              <PixIcon glyph="doc" size={11} /> Print the month
+            </button>
+          </div>
+        </div>
+        <div className="hist-herobody">
+          <div className="hist-hstat">
+            <span className="s2-cap">Months on record</span>
+            <span className="hist-hbig">{months.length}</span>
+            <span className="hist-hsub">{monthLabel(months[months.length - 1])} to {monthLabel(months[0])}</span>
+          </div>
+          {storeFive.map((f) => {
+            const mv = f.now != null && f.prev != null ? (f.now - f.prev) * 100 : null;
+            return (
+              <div key={f.k} className="hist-hstat">
+                <span className="s2-cap">{f.label}</span>
+                <span className="hist-hbig">{f.now == null ? "-" : fmtPct(f.now)}</span>
+                <span className="hist-hsub">
+                  {mv == null ? "no month to compare" : Math.abs(mv) < 0.05 ? "level on " + monthLabel(prevKey)
+                    : `${mv > 0 ? "up" : "down"} ${Math.abs(mv).toFixed(1)} on ${monthLabel(prevKey)}`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
+      {month !== ym() && (
+        <p className="hint hist-note">
+          {M.standardsSnapshot
+            ? "Targets are the ones that were in force that month."
+            : "This month predates target snapshots, so it is read against today's."}
+        </p>
+      )}
+
       {config.roles.map((role) => {
-        const frozen = month !== ym() ? M.standardsSnapshot?.[role.id]?.tiers : null;
-        const tiers = frozen || config.standards?.[store.id]?.[role.id]?.tiers;
-        const people = (data.roster || []).filter((a) => a.roleId === role.id).sort((a, b) => a.order - b.order);
+        const people = roster.filter((a) => a.roleId === role.id);
         if (!people.length) return null;
         return (
-          <div key={role.id} className="card role-section" style={{ "--role": role.color }}>
-            <h3 className="role-header"><RoleBadge role={role} count={people.length} big /></h3>
-            <table className="gm-table hist-table">
-              <thead><tr>
-                <th>Associate</th><th>Leads</th><th>Delivery %</th><th>Appt Video %</th>
-                <th>Engaged %</th><th>BH %</th><th>Verdict</th><th className="hist-trail-h">Since {monthLabel(trail[0])}</th>
-              </tr></thead>
-              <tbody>
-                {people.map((a) => {
-                  const st = M.stats?.[norm(a.name)];
-                  const ev = evaluateAssociate(st, tiers);
-                  return (
-                    <tr key={a.id}>
-                      <td><b>{a.name}</b></td>
-                      <td>{ev.opps ?? 0} / {ev.cap ?? "-"}</td>
-                      <td><HistCell now={st?.deliveredPct} before={before(a.name, "deliveredPct")} /></td>
-                      <td><HistCell now={st?.apptVideoDayPct} before={before(a.name, "apptVideoDayPct")} /></td>
-                      <td><HistCell now={st?.engagedVideoPct} before={before(a.name, "engagedVideoPct")} /></td>
-                      <td><HistCell now={st?.bhVideoPct} before={before(a.name, "bhVideoPct")} /></td>
-                      <td>{ev.status === "pass" ? <span className="verdict verdict-pass sm">Cleared</span>
-                        : ev.status === "fail" ? <span className="verdict verdict-fail sm">Restrict</span>
-                        : ev.status === "no-data" ? <span className="verdict verdict-dim sm">No figures</span> : "-"}</td>
-                      {/* The whole point of the tab: what has been happening to this
-                          person, month by month, rather than one month in isolation. */}
-                      <td>
-                        <span className="hist-trail">
-                          {trail.map((m) => {
-                            const v = verdictIn(data, config, store.id, m, a);
-                            return (
-                              <i key={m} className={"hist-pip " + (v || "none") + (m === month ? " here" : "")}
-                                title={`${monthLabel(m)}: ${v === "pass" ? "cleared" : v === "fail" ? "restricted" : "no figures"}`} />
-                            );
-                          })}
+          <div key={role.id} className="hist-section">
+            <div className="warmhead"><RoleBadge role={role} count={people.length} /></div>
+            <div className="hist-tblh">
+              <span className="hist-name">Associate</span>
+              {HIST_FIVE.map((f) => (
+                <span key={f.k} className="hist-mh">
+                  <i style={{ background: f.col }} />{f.label}
+                </span>
+              ))}
+            </div>
+            {people.map((a) => {
+              const st = M.stats?.[norm(a.name)];
+              const held = evaluateAssociate(st, config.standards?.[store.id]?.[role.id]?.tiers);
+              /* Five empty bar charts say nothing five times. Somebody with no
+                 figures in any of the five, in this month or the eight behind it,
+                 gets one quiet line instead. */
+              const anywhere = HIST_FIVE.some((f) =>
+                st?.[f.k] != null || trail.some((mk) => valIn(mk, a.name, f.k) != null));
+              if (!anywhere) return (
+                <div key={a.id} className="hist-row hist-empty">
+                  <span className="hist-name"><b>{a.name}</b>
+                    <span className="hist-nsub">{held.opps ?? 0} / {held.cap ?? "-"} leads</span></span>
+                  <span className="hist-nofig">No figures in {monthLabel(month)}</span>
+                </div>
+              );
+              return (
+                <div key={a.id} className="hist-row">
+                  <span className="hist-name">
+                    <b>{a.name}</b>
+                    <span className="hist-nsub">{held.opps ?? 0} / {held.cap ?? "-"} leads</span>
+                  </span>
+                  {HIST_FIVE.map((f) => {
+                    const now = st?.[f.k] ?? null;
+                    const mv = moveOn(now, before(a.name, f.k));
+                    const target = f.thr(thr);
+                    return (
+                      <span key={f.k} className="hist-cell5" style={{ "--hc": f.col }}>
+                        <span className="hist-clbl">{f.label}</span>
+                        <span className="hist-ctop">
+                          <b>{now == null ? "-" : fmtPct(now)}</b>
+                          {mv && mv.dir !== "flat" && <i className={"hist-move " + mv.dir}>{mv.txt}</i>}
+                          {mv && mv.dir === "flat" && now == null && <i className="hist-move flat">new</i>}
                         </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <HistBars col={f.col} target={target}
+                          vals={trail.map((mk) => valIn(mk, a.name, f.k))} />
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         );
       })}
+      <p className="hint hist-key2">
+        Each figure is the month shown and the points it moved against the month before, with the last
+        {" "}{Math.min(8, months.length)} months as bars underneath. A full bar is that metric's target, and the
+        dashed line across them is where the target sits. Channel colours are the ones their lines are drawn
+        in on the dashboard's delivery chart.
+      </p>
     </div>
   );
 }
 
 /* ---------------- Standards editor ---------------- */
-function StandardsEditor({ config, storeId, onChange }) {
+/* ---------------- Targets ----------------
+   This was Standards: a machine for deciding who gets restricted, with the lead
+   caps across the whole screen and the figures a store is actually run on
+   scattered through them as tier requirements.
+
+   The page is now the five: what green means, what yellow means, where the store
+   sits against each one today, and how many people are meeting it. The tier
+   ladder has not been deleted, because the board still needs a number to stop
+   somebody grabbing at, but it is a queue rule rather than a verdict on a
+   person, so it lives in a panel instead of across the page. */
+function TargetsEditor({ config, storeId, data, onChange }) {
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
+  const [openTier, setOpenTier] = useState(null);
   const std = config.standards?.[storeId]?.[roleId] || { tiers: [] };
   const roleName = config.roles.find((r) => r.id === roleId)?.name;
-  const storeName = config.stores.find((s) => s.id === storeId)?.name;
+  const store = config.stores.find((s) => s.id === storeId);
+  const storeName = store?.name;
+  const thr = normThresholds(store?.thresholds);
+  const roster = useMemo(() => (data?.roster || []).filter((a) => a.roleId === roleId), [data, roleId]);
+  const M = data?.months?.[ym()];
 
   const update = (fn, detail) => {
     const next = JSON.parse(JSON.stringify(config));
@@ -23374,69 +23632,197 @@ function StandardsEditor({ config, storeId, onChange }) {
     if (!next.standards[storeId][roleId]) next.standards[storeId][roleId] = { tiers: [] };
     fn(next.standards[storeId][roleId]);
     next.standards[storeId][roleId].tiers.sort((a, b) => a.cap - b.cap);
-    onChange(next, { store: storeId, action: "Edited standards", detail: `${roleName} @ ${storeName}: ${detail}` });
+    onChange(next, { store: storeId, action: "Edited lead caps", detail: `${roleName} @ ${storeName}: ${detail}` });
   };
 
+  const setTarget = (id, key, v) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const st = next.stores.find((x) => x.id === storeId);
+    st.thresholds = normThresholds(st.thresholds);
+    const was = st.thresholds[id][key];
+    const val = Math.max(0, Math.min(100, v));
+    if (was === val) return;
+    st.thresholds[id][key] = val;
+    const f = FIVE.find((x) => x.id === id);
+    onChange(next, { store: storeId, action: "Changed a target",
+      detail: `${storeName}: ${f ? f.long : id} ${key} ${was} → ${val}` });
+  };
+
+  /* Where the store itself sits on each of the five this month, and how many of
+     this position's people are at or above green. The number that matters before
+     changing a target is how many people it would move. */
+  const rows = useMemo(() => {
+    const chan = channelRates(M, data?.roster || []);
+    return FIVE.map((f) => {
+      const isChannel = !!chan.find((c) => c.id === f.id);
+      let now = null;
+      if (isChannel) now = chan.find((c) => c.id === f.id)?.pct ?? null;
+      else {
+        let sum = 0, n = 0;
+        for (const a of roster) { const v = M?.stats?.[norm(a.name)]?.[f.key]; if (v != null) { sum += v; n++; } }
+        now = n ? sum / n : null;
+      }
+      let hit = 0, seen = 0;
+      for (const a of roster) {
+        const v = M?.stats?.[norm(a.name)]?.[f.key];
+        if (v == null) continue;
+        seen++;
+        if (v * 100 >= thr[f.id].green) hit++;
+      }
+      return { ...f, now, hit, seen, green: thr[f.id].green, yellow: thr[f.id].yellow };
+    });
+  }, [M, roster, data, thr]);
+
+  const atGreen = rows.reduce((n, r) => n + r.hit, 0);
+  const possible = rows.reduce((n, r) => n + r.seen, 0);
+
   return (
-    <div className="standards">
-      <div className="card grace-setting">
-        <label className="grace-label">Grace period
-          <input type="number" min="0" max="28" defaultValue={config.stores.find((s) => s.id === storeId)?.graceDays ?? 10}
-            onBlur={(e) => {
-              const v = Math.max(0, Math.min(28, toNum(e.target.value) ?? 10));
-              const cur = config.stores.find((s) => s.id === storeId)?.graceDays ?? 10;
-              if (v === cur) return;
-              const next = JSON.parse(JSON.stringify(config));
-              next.stores.find((s) => s.id === storeId).graceDays = v;
-              onChange(next, { store: storeId, action: "Changed grace period", detail: `${storeName}: ${cur} → ${v} days` });
-            }} />
-          days
-        </label>
-        <span className="hint">No restrictions are recommended during the first days of the month while numbers settle. Anyone below standard shows as working toward the target instead. Set to 0 to turn this off.</span>
-      </div>
-      <div className="card">
-        <h3>Leaderboard colors <span className="section-sub">{storeName}</span></h3>
-        <ThresholdGrid
-          value={config.stores.find((s) => s.id === storeId)?.thresholds}
-          onChange={(next) => {
-            const cfg = JSON.parse(JSON.stringify(config));
-            const s = cfg.stores.find((x) => x.id === storeId);
-            s.thresholds = next;
-            onChange(cfg, { store: storeId, action: "Changed leaderboard thresholds", detail: storeName });
-          }} />
-      </div>
-      <div className="std-head">
-        <h3>Standards for</h3>
-        <select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-          {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
-        <span className="hint">These apply to every {roleName} at this store only. Changes are recorded in the audit log.</span>
-      </div>
-      {std.tiers.map((tier, ti) => (
-        <div key={ti} className="card tier">
-          <div className="tier-head">
-            <span className="tier-label">Tier {ti + 1}</span>
-            <label>Lead cap <input type="number" defaultValue={tier.cap}
-              onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== tier.cap) update((s) => { s.tiers[ti].cap = v; }, `Tier ${ti + 1} cap ${tier.cap} → ${v}`); }} /></label>
-            <span className="hint">{ti === 0 ? `Everyone starts here. Meet the requirements below to grab past ${tier.cap}.` : `Applies from ${(std.tiers[ti - 1]?.cap ?? 0) + 1} to ${tier.cap} leads.`}</span>
-            <button className="btn-x" onClick={() => update((s) => s.tiers.splice(ti, 1), `Removed tier ${ti + 1} (cap ${tier.cap})`)}>Remove tier</button>
+    <div className="standards targets">
+      <div className="s2-hero tg-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">{storeName} · what good looks like on the five · every change is logged</div>
+            <h2 className="s2-store">Targets</h2>
           </div>
-          {tier.requirements.map((req, ri) => (
-            <div key={ri} className="req-row">
-              <select value={req.metric} onChange={(e) => update((s) => { s.tiers[ti].requirements[ri].metric = e.target.value; }, `Tier ${ti + 1}: metric → ${METRICS[e.target.value].label}`)}>
-                {Object.entries(METRICS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
-              </select>
-              <span>must be at least</span>
-              <input type="number" defaultValue={req.min}
-                onBlur={(e) => { const v = toNum(e.target.value) ?? 0; if (v !== req.min) update((s) => { s.tiers[ti].requirements[ri].min = v; }, `Tier ${ti + 1}: ${METRICS[req.metric].short} ${req.min} → ${v}`); }} />
-              <span>{METRICS[req.metric].kind === "pct" ? "%" : "units"}</span>
-              <button className="btn-x" onClick={() => update((s) => s.tiers[ti].requirements.splice(ri, 1), `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <div className="s2-chips">
+            <select className="hist-month" value={roleId} onChange={(e) => setRoleId(e.target.value)}
+              title="Which position these apply to">
+              {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="tg-herobody">
+          <div className="tg-hstat"><span className="s2-cap">Metrics tracked</span>
+            <span className="tg-hbig">5</span><span className="tg-hsub">three channels, two videos</span></div>
+          <div className="tg-hstat"><span className="s2-cap">At green today</span>
+            <span className="tg-hbig">{atGreen}<span className="tg-hden"> of {possible || "-"}</span></span>
+            <span className="tg-hsub">{roster.length} {roster.length === 1 ? "person" : "people"} across 5 metrics</span></div>
+          <div className="tg-hstat"><span className="s2-cap">Grace period</span>
+            <span className="tg-hbig">{store?.graceDays ?? 10}<span className="tg-hden"> days</span></span>
+            <span className="tg-hsub">colours held while the month is thin</span></div>
+          <div className="tg-hstat"><span className="s2-cap">Lead caps</span>
+            <span className="tg-hbig">{std.tiers.length}</span>
+            <span className="tg-hsub">tiers for {roleName}</span></div>
+        </div>
+      </div>
+
+      <div className="sec-cap tg-cap">What green and yellow mean, per metric</div>
+      <div className="tg-tbl">
+        <div className="tg-h">
+          <span className="tg-name">Metric</span>
+          <span className="tg-now">Store now</span>
+          <span className="tg-bar" />
+          <span className="tg-in">Green at</span>
+          <span className="tg-in">Yellow at</span>
+          <span className="tg-hitc">Meeting green</span>
+        </div>
+        {rows.map((r) => (
+          <div key={r.id} className="tg-row" style={{ "--hc": r.col }}>
+            <span className="tg-name"><i className="tg-dot" />{r.long}</span>
+            <span className="tg-now">{r.now == null ? "-" : fmtPct(r.now)}</span>
+            <span className="tg-bar" title={r.now == null ? "no figures yet" : `${fmtPct(r.now)} against a ${r.green}% target`}>
+              <i style={{ width: r.now == null ? 0 : `${Math.min(100, (r.now * 100) / r.green * 100)}%` }} />
+              <b />
+            </span>
+            <label className="tg-in">
+              <input type="number" min="0" max="100" defaultValue={r.green} key={"g" + r.id + r.green}
+                onBlur={(e) => setTarget(r.id, "green", parseInt(e.target.value, 10) || 0)} />%
+            </label>
+            <label className="tg-in">
+              <input type="number" min="0" max="100" defaultValue={r.yellow} key={"y" + r.id + r.yellow}
+                onBlur={(e) => setTarget(r.id, "yellow", parseInt(e.target.value, 10) || 0)} />%
+            </label>
+            <span className="tg-hitc">
+              {r.seen === 0 ? <span className="tg-chip">no figures</span>
+                : <span className={"tg-chip " + (r.hit * 2 >= r.seen ? "ok" : "wt")}>{r.hit} of {r.seen}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="hint tg-note">
+        Each metric is scored on its own scale, because a 25% showroom close and a 25% internet close are not
+        the same achievement. At or above green shows green on The Board, at or above yellow shows yellow,
+        anything under that shows red.
+      </p>
+
+      <div className="tg-grid">
+        <div className="card tg-panel">
+          <div className="p-cap2">Grace period</div>
+          <label className="grace-label">
+            <input type="number" min="0" max="28" defaultValue={store?.graceDays ?? 10}
+              onBlur={(e) => {
+                const v = Math.max(0, Math.min(28, toNum(e.target.value) ?? 10));
+                const cur = store?.graceDays ?? 10;
+                if (v === cur) return;
+                const next = JSON.parse(JSON.stringify(config));
+                next.stores.find((x) => x.id === storeId).graceDays = v;
+                onChange(next, { store: storeId, action: "Changed grace period", detail: `${storeName}: ${cur} → ${v} days` });
+              }} />
+            days
+          </label>
+          <p className="hint">Colours are held back while the month's numbers are still thin, so nobody is
+            judged on four days of figures. Set it to 0 to turn this off.</p>
+        </div>
+
+        <div className="card tg-panel">
+          <div className="p-cap2">Lead caps <span className="tg-chip">still on, no longer the headline</span></div>
+          <p className="hint">The tier ladder decides how many leads somebody can hold at once, because the
+            board needs a number to stop at. It is a queue rule, not a verdict on the person.</p>
+          {std.tiers.map((tier, ti) => (
+            <div key={ti} className="tg-tier">
+              <div className="tg-tierh">
+                <b>Tier {ti + 1}</b>
+                <span className="hint">{ti === 0 ? "everyone starts here"
+                  : `${(std.tiers[ti - 1]?.cap ?? 0) + 1} to ${tier.cap} leads`}</span>
+                <span className="r-flex2" />
+                <span className="tg-chip">cap {tier.cap}</span>
+                <button className="pp-act" onClick={() => setOpenTier(openTier === ti ? null : ti)}>
+                  {openTier === ti ? "Close" : "Edit"}
+                </button>
+              </div>
+              {openTier === ti && (
+                <div className="tg-tierbody">
+                  <label className="tg-caplbl">Lead cap
+                    <input type="number" defaultValue={tier.cap}
+                      onBlur={(e) => { const v = toNum(e.target.value) ?? 0;
+                        if (v !== tier.cap) update((x) => { x.tiers[ti].cap = v; }, `Tier ${ti + 1} cap ${tier.cap} → ${v}`); }} />
+                  </label>
+                  {tier.requirements.map((req, ri) => (
+                    <div key={ri} className="tg-req">
+                      <select value={req.metric}
+                        onChange={(e) => update((x) => { x.tiers[ti].requirements[ri].metric = e.target.value; },
+                          `Tier ${ti + 1}: metric → ${METRICS[e.target.value].label}`)}>
+                        {Object.entries(METRICS).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+                      </select>
+                      <span>at least</span>
+                      <input type="number" defaultValue={req.min}
+                        onBlur={(e) => { const v = toNum(e.target.value) ?? 0;
+                          if (v !== req.min) update((x) => { x.tiers[ti].requirements[ri].min = v; },
+                            `Tier ${ti + 1}: ${METRICS[req.metric].short} ${req.min} → ${v}`); }} />
+                      <span>{METRICS[req.metric].kind === "pct" ? "%" : "units"}</span>
+                      <button className="pp-act danger"
+                        onClick={() => update((x) => x.tiers[ti].requirements.splice(ri, 1),
+                          `Tier ${ti + 1}: removed ${METRICS[req.metric].short} requirement`)}>Remove</button>
+                    </div>
+                  ))}
+                  <div className="tg-reqacts">
+                    <button className="pp-act" onClick={() => update((x) => x.tiers[ti].requirements.push({ metric: "apptVideoDayPct", min: 50 }),
+                      `Tier ${ti + 1}: added requirement`)}>Add a requirement</button>
+                    <button className="pp-act danger" onClick={() => update((x) => x.tiers.splice(ti, 1),
+                      `Removed tier ${ti + 1} (cap ${tier.cap})`)}>Remove this tier</button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
-          <button className="btn-ghost" onClick={() => update((s) => s.tiers[ti].requirements.push({ metric: "apptVideoDayPct", min: 50 }), `Tier ${ti + 1}: added requirement`)}>+ Add requirement</button>
+          <button className="pp-act tg-addtier" onClick={() => update((x) => x.tiers.push({
+            cap: (std.tiers[std.tiers.length - 1]?.cap ?? 40) + 20,
+            requirements: [{ metric: "apptVideoDayPct", min: 50 }],
+          }), "Added tier")}>Add a tier</button>
         </div>
-      ))}
-      <button className="btn" onClick={() => update((s) => s.tiers.push({ cap: (std.tiers[std.tiers.length - 1]?.cap ?? 40) + 20, requirements: [{ metric: "apptVideoDayPct", min: 50 }] }), "Added tier")}>+ Add Tier</button>
+      </div>
     </div>
   );
 }
@@ -23667,6 +24053,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     return c;
   }, [people]);
 
+  /* Somebody on the floor with nobody's account attached to them cannot open
+     their own card, which is the one thing the app is for from their side. */
+  const noAcct = useMemo(() => {
+    if (links === null) return 0;
+    return people.filter((p) => p.status === "active" && p.id
+      && !(links || []).some((l) => l.person_id === p.id)).length;
+  }, [people, links]);
+
   const shown = people.filter((p) => (only === "all" || p.status === only)
     && (!q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase())));
 
@@ -23758,6 +24152,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
      can see and fix. The other order loses them from both. */
   /* A person's roster id is what a link is filed under, so somebody with no id —
      a name that only exists on the ignore list — simply has no account to show. */
+  const [openStanding, setOpenStanding] = useState(null);
   const linkFor = (p) => (links || []).find((l) => l.person_id === p.id) || null;
   const acctFor = (l) => (accounts || []).find((a) => a.id === (l && l.user_id)) || null;
   const takenAccounts = useMemo(() => new Set((links || []).map((l) => l.user_id)), [links]);
@@ -24008,15 +24403,41 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
         </div>
       )}
 
-      <div className="card">
-        <div className="pp-head">
-          <h3>People at {storeName || "this store"}</h3>
-          <div className="pp-counts">
-            <span className="pp-count on">{counts.active} on the floor</span>
-            <span className="pp-count">{counts.departed} left</span>
-            <span className="pp-count">{counts.ignored} not ours</span>
+      <div className="s2-hero pp-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="users" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              {storeName || "This store"} · the store says who works here, and the figures are checked against it
+            </div>
+            <h2 className="s2-store">People</h2>
+          </div>
+          <div className="s2-chips">
+            <button className="da-hbtn" onClick={() => setAdding((v) => !v)}>
+              <PixIcon glyph={adding ? "close" : "plus"} size={11} /> {adding ? "Cancel" : "Add a person"}
+            </button>
           </div>
         </div>
+        <div className="pp-herobody">
+          <div className="pp-hstat"><span className="s2-cap">On the floor</span>
+            <span className="pp-hbig">{counts.active}</span>
+            <span className="pp-hsub">counted on the board</span></div>
+          <div className="pp-hstat"><span className="s2-cap">Left</span>
+            <span className="pp-hbig">{counts.departed}</span>
+            <span className="pp-hsub">keep the cars they sold</span></div>
+          <div className="pp-hstat"><span className="s2-cap">Never ours</span>
+            <span className="pp-hbig">{counts.ignored}</span>
+            <span className="pp-hsub">figures come back off</span></div>
+          {links !== null && (
+            <div className="pp-hstat"><span className="s2-cap">Without an account</span>
+              <span className="pp-hbig">{noAcct}</span>
+              <span className="pp-hsub">cannot see their own card</span></div>
+          )}
+        </div>
+      </div>
+
+      <div className="card pp-card">
         <Explain label="Left, and not ours: what the difference costs">
           Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
           did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
@@ -24053,7 +24474,6 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               {shown.every((p) => sel.has(p.name)) ? "Clear selection" : `Select all ${shown.length}`}
             </button>
           )}
-          <button className="btn btn-sm" onClick={() => setAdding((v) => !v)}>{adding ? "Cancel" : "Add a person"}</button>
         </div>
 
         {adding && (
@@ -24164,35 +24584,49 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   to do; the list itself is. So they are drawn quietly and turn
                   solid under the pointer, and only the one that takes figures
                   away has a colour of its own. */}
+              {/* ---- two, not five ----
+                  Four of these were standing changes and one was the card, drawn
+                  as five identical pills on every row of a list twelve people
+                  long. Standing is one decision with three answers, so it is one
+                  button that opens them; the card is the other. */}
               <div className="pp-acts">
-                {p.status !== "active" && (
-                  <button className="pp-act" onClick={() => move(p.name, "active")}>
-                    <PixIcon glyph="check" size={11} /><span>On the floor</span>
-                  </button>
-                )}
-                {p.status !== "departed" && (
-                  <button className="pp-act" onClick={() => move(p.name, "departed")}>
-                    <PixIcon glyph="door" size={11} /><span>They left</span>
-                  </button>
-                )}
-                {p.status === "active" && (allStores || []).length > 1 && (
-                  <button className="pp-act" onClick={() => { setMoving(p); setMoveTo(""); }}>
-                    <PixIcon glyph="swap" size={11} /><span>Move store</span>
-                  </button>
-                )}
-                {p.status !== "ignored" && (
-                  <button className="pp-act danger" onClick={() => move(p.name, "ignored")}>
-                    <PixIcon glyph="close" size={11} /><span>Not ours</span>
-                  </button>
-                )}
                 {storeId && p.id && p.status !== "ignored" && (
                   <button className={"pp-act" + (openAcct === p.key ? " on" : "")}
                     onClick={() => { setOpenAcct(openAcct === p.key ? null : p.key); setAcctSaid(null); }}>
-                    <PixIcon glyph={openAcct === p.key ? "arrowup" : "more"} size={11} />
-                    <span>{openAcct === p.key ? "Close" : "Details"}</span>
+                    <PixIcon glyph={openAcct === p.key ? "arrowup" : "user"} size={11} />
+                    <span>{openAcct === p.key ? "Close" : "Card"}</span>
                   </button>
                 )}
+                <button className={"pp-act" + (openStanding === p.key ? " on" : "")}
+                  onClick={() => setOpenStanding(openStanding === p.key ? null : p.key)}>
+                  <PixIcon glyph={openStanding === p.key ? "arrowup" : "swap"} size={11} />
+                  <span>Change standing</span>
+                </button>
               </div>
+              {openStanding === p.key && (
+                <div className="pp-standing">
+                  {p.status !== "active" && (
+                    <button className="pp-act" onClick={() => { move(p.name, "active"); setOpenStanding(null); }}>
+                      <PixIcon glyph="check" size={11} /><span>On the floor</span>
+                    </button>
+                  )}
+                  {p.status !== "departed" && (
+                    <button className="pp-act" onClick={() => { move(p.name, "departed"); setOpenStanding(null); }}>
+                      <PixIcon glyph="door" size={11} /><span>They left · keep the figures</span>
+                    </button>
+                  )}
+                  {p.status === "active" && (allStores || []).length > 1 && (
+                    <button className="pp-act" onClick={() => { setMoving(p); setMoveTo(""); setOpenStanding(null); }}>
+                      <PixIcon glyph="swap" size={11} /><span>Move store</span>
+                    </button>
+                  )}
+                  {p.status !== "ignored" && (
+                    <button className="pp-act danger" onClick={() => { move(p.name, "ignored"); setOpenStanding(null); }}>
+                      <PixIcon glyph="close" size={11} /><span>Not ours · take the figures back</span>
+                    </button>
+                  )}
+                </div>
+              )}
             {openAcct === p.key && storeId && p.id && (() => {
               const l = linkFor(p);
               const a = acctFor(l);
@@ -24582,7 +25016,7 @@ function AccessPanel({ config, session, onChange }) {
 
       {pending.length > 0 && (
         <div className="card">
-          <h3>Waiting for approval <span className="badge badge-warn">{pending.length}</span></h3>
+          <div className="p-cap2">Waiting for approval <span className="tg-chip wt">{pending.length}</span></div>
           <p className="hint">
             These people created an account and are waiting on you. Tick the stores they should see, then approve.
             A salesperson needs no stores at all: approve them with nothing ticked and they stay off the dashboard
@@ -24595,73 +25029,85 @@ function AccessPanel({ config, session, onChange }) {
         </div>
       )}
 
-      <div className="card">
-        <h3>Accounts</h3>
+      <div className="card ac-card">
+        <div className="p-cap2">Accounts <span className="tg-chip">{active.length}</span></div>
         <p className="hint">
           Passwords are handled by Supabase and stored hashed. No one, including you, can read them.
           If someone forgets theirs they use "Forgot password?" on the sign-in screen.
         </p>
-        <table className="roster-table wide">
-          <thead>
-            <tr><th>Name</th><th>Email</th><th>Role</th><th>Stores</th><th>Status</th><th /></tr>
-          </thead>
-          <tbody>
-            {active.map((u) => (
-              <tr key={u.id}>
-                <td><b>{u.name || "-"}</b>
+        <div className="ac-tbl">
+          <div className="ac-h">
+            <span className="ac-who">Person</span>
+            <span className="ac-role">Role</span>
+            <span className="ac-stores">Stores</span>
+            <span className="ac-state">Status</span>
+            <span className="ac-acts" />
+          </div>
+          {active.map((u) => (
+            <div key={u.id} className="ac-row">
+              <span className="ac-who">
+                <b>{u.name || "-"}
                   {/* Two accounts for one person is the usual reason access "doesn't
                       stick": the grant lands on one of them and they sign in as the other. */}
                   {dupeEmails.has(norm(u.email)) && <span className="dupe-tag" title="Another account uses this same email. Access granted here won't apply to the other one.">duplicate</span>}
-                </td>
-                <td className="mono">{u.email}<span className="acct-id" title="Account ID. Compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span></td>
-                <td>
-                  {u.role === "admin" ? "Group Admin" : (
-                    <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
-                      <option value="manager">Store Manager</option>
-                      <option value="overseer">Centralized BDC</option>
-                    </select>
-                  )}
-                </td>
-                <td>
-                  {u.role === "admin" ? <span className="hint">All stores</span> : (
-                    <div className="store-checks tight">
-                      {config.stores.map((s) => (
-                        <label key={s.id} className="check-inline">
-                          <input type="checkbox" disabled={busy}
-                            checked={(u.stores || []).includes(s.id)}
-                            onChange={(e) => toggleStore(u, s.id, e.target.checked)} />
-                          {s.name}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td>{u.active ? <span className="badge badge-ok">Active</span> : <span className="badge badge-off">Inactive</span>}</td>
-                <td className="row-actions">
-                  {u.id !== session.id && (
-                    <>
-                      <button className="btn-x" onClick={() => toggleActive(u)} disabled={busy}>{u.active ? "Deactivate" : "Reactivate"}</button>
-                      {u.role !== "admin"
-                        ? <button className="btn-x" onClick={() => promote(u)} disabled={busy}>Make admin</button>
-                        : <button className="btn-x" onClick={() => demote(u)} disabled={busy}>Remove admin</button>}
-                      <button className="btn-x" onClick={() => remove(u)} disabled={busy}>Delete</button>
-                    </>
-                  )}
-                  {u.id === session.id && <span className="hint">This is you</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </b>
+                <span className="ac-mail">{u.email}
+                  <span className="acct-id" title="Account ID. Compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span>
+                </span>
+              </span>
+              <span className="ac-role">
+                {u.role === "admin" ? <span className="tg-chip on">Group Admin</span> : (
+                  <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
+                    <option value="manager">Store Manager</option>
+                    <option value="overseer">Centralized BDC</option>
+                  </select>
+                )}
+              </span>
+              <span className="ac-stores">
+                {u.role === "admin" ? <span className="hint">All stores</span> : (
+                  /* Each store in its own colour, the same one it wears on the group
+                     overview and on its board, so who can see what reads at a glance
+                     rather than by reading four names twice. */
+                  config.stores.map((s) => {
+                    const on = (u.stores || []).includes(s.id);
+                    const col = (s.brand || DEFAULT_BRAND).primary;
+                    return (
+                      <label key={s.id} className={"ac-store" + (on ? " on" : "")}
+                        style={{ "--sp": col }} title={s.name}>
+                        <input type="checkbox" disabled={busy} checked={on}
+                          onChange={(e) => toggleStore(u, s.id, e.target.checked)} />
+                        <i /><span>{s.name}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </span>
+              <span className="ac-state">
+                <span className={"tg-chip " + (u.active ? "ok" : "")}>{u.active ? "Active" : "Inactive"}</span>
+              </span>
+              <span className="ac-acts">
+                {u.id !== session.id ? (
+                  <>
+                    <button className="pp-act" onClick={() => toggleActive(u)} disabled={busy}>{u.active ? "Deactivate" : "Reactivate"}</button>
+                    {u.role !== "admin"
+                      ? <button className="pp-act" onClick={() => promote(u)} disabled={busy}>Make admin</button>
+                      : <button className="pp-act" onClick={() => demote(u)} disabled={busy}>Remove admin</button>}
+                    <button className="pp-act danger" onClick={() => remove(u)} disabled={busy}>Delete</button>
+                  </>
+                ) : <span className="hint">This is you</span>}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="card">
-        <h3>Approved email domains</h3>
+        <div className="p-cap2">Approved email domains</div>
         <p className="hint">Only these domains may create an account. Leave this empty and nobody new can register.</p>
         <div className="inline-form">
           <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourcompany.com"
             onKeyDown={(e) => e.key === "Enter" && addDomain()} />
-          <button className="btn" onClick={addDomain}>Add domain</button>
+          <button className="go-log2" onClick={addDomain}>Add domain</button>
         </div>
         <div className="domain-list">
           {(config.approvedDomains || []).length === 0
@@ -24730,34 +25176,69 @@ function PendingRow({ u, stores, busy, onApprove, onReject }) {
 }
 
 /* ---------------- Audit log ---------------- */
-function AuditLog() {
+function AuditLog({ config }) {
   const [log, setLog] = useState(null);
   const [filter, setFilter] = useState("");
+  const [kind, setKind] = useState("all");
   useEffect(() => { loadShared(AUDIT_KEY, []).then(setLog); }, []);
+  /* Every store's own colour, so a line about Holler Ford is recognisable as
+     Holler Ford at a glance rather than by reading the column. */
+  const colOf = (name) => {
+    const st = (config?.stores || []).find((x) => x.id === name || x.name === name);
+    return st ? (st.brand || DEFAULT_BRAND).primary : null;
+  };
   if (!log) return <div className="loading">Loading audit log…</div>;
-  const shown = log.filter((e) => !filter || JSON.stringify(e).toLowerCase().includes(filter.toLowerCase()));
+  /* What people come here asking: who moved a target, who changed the roster,
+     what has been imported. Everything else is still one click away. */
+  const KINDS = [
+    ["all", "Everything", () => true],
+    ["targets", "Targets", (e) => /target|threshold|grace|cap|standard/i.test(e.action)],
+    ["roster", "Roster", (e) => /roster|person|people|left|ours|merge|move/i.test(e.action)],
+    ["imports", "Imports", (e) => /import|upload|undo|activity/i.test(e.action)],
+  ];
+  const test = (KINDS.find((k) => k[0] === kind) || KINDS[0])[2];
+  const shown = log.filter(test).filter((e) => !filter || JSON.stringify(e).toLowerCase().includes(filter.toLowerCase()));
   return (
     <div className="audit">
-      <div className="inline-form">
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by name, store, action…" style={{ minWidth: 280 }} />
-        <button className="btn secondary" onClick={() => downloadCSV(`Audit-Log_${today()}.csv`, [["When", "User", "Store", "Action", "Detail"], ...log.map((e) => [e.t, e.user, e.store || "", e.action, e.detail || ""])])}>Export CSV</button>
+      <div className="card ad-bar">
+        <span className="ad-find">
+          <PixIcon glyph="search" size={12} />
+          <input value={filter} onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by name, store, action" />
+        </span>
+        {KINDS.map(([id, label]) => (
+          <button key={id} className={"tg-sub" + (kind === id ? " on" : "")} onClick={() => setKind(id)}>{label}</button>
+        ))}
+        <span className="r-flex2" />
+        <button className="pp-act" onClick={() => downloadCSV(`Audit-Log_${today()}.csv`,
+          [["When", "User", "Store", "Action", "Detail"], ...log.map((e) => [e.t, e.user, e.store || "", e.action, e.detail || ""])])}>
+          Export CSV
+        </button>
       </div>
-      <p className="hint">Last {log.length} events (capped at 400). Imports, standards edits, roster changes, and user access changes all land here automatically.</p>
-      <div className="card">
-        <table className="roster-table wide">
-          <thead><tr><th>When</th><th>User</th><th>Store</th><th>Action</th><th>Detail</th></tr></thead>
-          <tbody>
-            {shown.map((e, i) => (
-              <tr key={i}>
-                <td className="mono">{new Date(e.t).toLocaleString()}</td>
-                <td>{e.user}</td>
-                <td>{e.store || "-"}</td>
-                <td><b>{e.action}</b></td>
-                <td>{e.detail || ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <p className="hint ad-note">
+        The last {log.length} events, capped at 400. Imports, target changes, roster changes and access
+        changes all land here on their own. Showing {shown.length}.
+      </p>
+      <div className="ad-tbl">
+        <div className="ad-h">
+          <span className="ad-when">When</span><span className="ad-who">Who</span>
+          <span className="ad-what">What changed</span><span className="ad-where">Where</span>
+        </div>
+        {shown.length === 0 && <div className="ad-row"><span className="hint">Nothing matches that.</span></div>}
+        {shown.map((e, i) => {
+          const c = colOf(e.store);
+          return (
+            <div key={i} className="ad-row">
+              <span className="ad-when">{new Date(e.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+              <span className="ad-who">{e.user}</span>
+              <span className="ad-what"><b>{e.action}</b>{e.detail ? <span className="ad-det">{e.detail}</span> : null}</span>
+              <span className="ad-where">
+                {e.store ? <>{c && <i className="ad-dot" style={{ background: c }} />}{
+                  (config?.stores || []).find((x) => x.id === e.store)?.name || e.store}</> : "-"}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -25221,6 +25702,10 @@ const SAGE_CSS = `
         --hA: #7FA98A; --hB: #55795F; --hC: #26382C;
         --sandHead: #F6E3C3; --sandCap: #EDE0BE; --sandTick: #E4C98D; --sandInk: #D0821E;
         --s1: #2E7DE0; --s2: #E88600; --s3: #17A054;
+        /* The two video standards have no line on the chart to match, so they take
+           the next two slots on the same scale: a violet and a teal, both clear of
+           the three channel hues and of each other. */
+        --s4: #8A4FA8; --s5: #0E8F8F;
       }
 
       /* ---- Android's own idea of how big your text should be ----
@@ -25994,7 +26479,7 @@ const SAGE_CSS = `
       .bench-lbl { font-size:11px; color:var(--ink-2); font-weight:600; margin-top:4px; }
 
       .coach-list { display:flex; flex-direction:column; gap:6px; }
-      .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; gap:12px; align-items:center;
+      .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto auto; gap:12px; align-items:center;
         text-align:left; padding:11px 14px; border-radius:12px; cursor:pointer; border:1px solid transparent;
         background:rgba(255,255,255,.5); font-size:13px; transition: all .2s var(--spring); }
       .coach-row:hover { background:#fff; }
@@ -26015,6 +26500,7 @@ const SAGE_CSS = `
       .coach-split.has-open .coach-role { grid-column:1; font-size:12px; }
       .coach-split.has-open .coach-units { grid-column:1; grid-row:3; }
       .coach-split.has-open .coach-days { grid-column:2; grid-row:3; text-align:right; }
+      .coach-split.has-open .coach-gap { grid-column:1 / -1; grid-row:4; width:100%; }
       .coach-detail { min-width:0; position:relative; }
       .coach-close { display:none; }
       .coach-detail-open { animation: cardOpen .42s cubic-bezier(.22,.61,.36,1) both; }
@@ -26031,7 +26517,7 @@ const SAGE_CSS = `
       @media (max-width: 900px) {
         .coach-split.has-open { grid-template-columns: 1fr; }
         .coach-list-card { position:static; }
-        .coach-split.has-open .coach-row { grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; }
+        .coach-split.has-open .coach-row { grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto auto; }
         .coach-empty { display:none; }
       }
 
@@ -31362,6 +31848,329 @@ const SAGE_CSS = `
         .up-hist .imp-row .when { width:auto; padding-left:0; margin-left:30px; }
         .up-hist .act-b { margin-left:auto; }
         .imp-date { flex:1 1 130px; min-width:0; }
+      }
+      /* ---- History, in the new language ----
+         The page is the five figures, month by month. The hero says where the
+         store is, and every row says where one person is against the same five,
+         with the last eight months as the hero card's own bars, smaller. */
+      .hist-hero .s2-head { align-items:flex-start; }
+      .hist-month { height:34px; border:0; border-radius:12px; padding:0 12px;
+        font:600 11px var(--font-display); color:var(--ink); background:#fff;
+        box-shadow:0 4px 12px -6px rgba(12,24,18,.4); }
+      .hist-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .hist-hstat { display:flex; flex-direction:column; gap:2px; min-width:104px; }
+      .hist-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .hist-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .hist-note { margin:0 0 10px; }
+      .hist-section { background:var(--card); border:1px solid var(--line); border-radius:14px;
+        overflow:hidden; margin-bottom:12px; }
+      .hist-section .warmhead { border-radius:0; }
+      .hist-tblh, .hist-row { display:flex; align-items:center; gap:10px; padding:9px 14px; }
+      .hist-tblh { border-bottom:1px solid var(--line); }
+      .hist-row { border-bottom:1px solid var(--line); }
+      .hist-row:last-child { border-bottom:0; }
+      .hist-row:hover { background:color-mix(in srgb, var(--p2) 4%, transparent); }
+      .hist-name { width:158px; flex:0 0 auto; min-width:0; font-size:12.5px; }
+      .hist-name b { font-weight:600; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .hist-nsub { display:block; font:400 9.5px var(--font-mono); color:var(--ink-3); }
+      .hist-mh { width:112px; flex:0 0 auto; display:flex; align-items:center; gap:5px;
+        font:700 9.5px var(--font-mono); letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); }
+      .hist-mh i { width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+      .hist-cell5 { width:112px; flex:0 0 auto; display:flex; flex-direction:column; gap:3px; }
+      .hist-clbl { display:none; }
+      .hist-ctop { display:flex; align-items:baseline; gap:6px; }
+      .hist-ctop b { font:700 13.5px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--hc); }
+      .hist-move { font:600 9.5px var(--font-mono); font-style:normal; }
+      .hist-move.up { color:#1E8A4C; } .hist-move.down { color:#C2361F; }
+      .hist-move.flat { color:var(--ink-3); }
+      .hist-bars { position:relative; display:flex; align-items:flex-end; gap:3px; height:26px; width:100%; }
+      .hist-b { position:relative; flex:1; height:100%; border-radius:4px;
+        background:rgba(16,32,52,.06); display:flex; align-items:flex-end; }
+      .hist-b i { display:block; width:100%; border-radius:4px;
+        background:color-mix(in srgb, var(--hc) 38%, transparent); }
+      .hist-b.now i { background:var(--hc); }
+      /* the dashed cap, where the hero card puts it: the target, at 100% of a
+         bar that runs to 120% */
+      .hist-bars::after { content:""; position:absolute; left:0; right:0; bottom:83.33%;
+        border-top:1.5px dashed color-mix(in srgb, var(--hc) 55%, transparent); }
+      .hist-row.hist-empty { color:var(--ink-3); }
+      .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
+      .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
+      .hist-key2 { margin-top:2px; }
+      /* the one filled button a panel gets, in the palette the rest of the app uses */
+      .go-log2 { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:11px;
+        padding:9px 16px; cursor:pointer; font:700 11.5px var(--font-display); color:#fff;
+        background:var(--p2); box-shadow:0 5px 14px -6px color-mix(in srgb, var(--p2) 70%, transparent); }
+      .go-log2:hover { background:var(--p2d); }
+      .go-log2:focus-visible { outline:2px solid var(--p3); outline-offset:2px; }
+      /* ---- Access, as rows rather than a table ---- */
+      .ac-card { margin-bottom:10px; }
+      .ac-tbl { border:1px solid var(--line); border-radius:13px; overflow:hidden; margin-top:9px; }
+      .ac-h, .ac-row { display:flex; align-items:center; gap:12px; padding:9px 13px; }
+      .ac-h { border-bottom:1px solid var(--line); font:700 9.5px var(--font-mono);
+        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); }
+      .ac-row { border-bottom:1px solid var(--line); }
+      .ac-row:last-child { border-bottom:0; }
+      .ac-row:hover { background:color-mix(in srgb, var(--p2) 4%, transparent); }
+      .ac-who { width:230px; flex:0 0 auto; min-width:0; font-size:12.5px; }
+      .ac-who b { display:block; font-weight:600; }
+      .ac-mail { display:block; font:400 9.5px var(--font-mono); color:var(--ink-3);
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ac-role { width:150px; flex:0 0 auto; }
+      .ac-role select { width:100%; border:1px solid var(--line); border-radius:9px; padding:5px 8px;
+        font:600 11px var(--font-display); color:var(--ink); background:var(--card); }
+      .ac-stores { flex:1; min-width:120px; display:flex; gap:6px; flex-wrap:wrap; }
+      .ac-store { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+        border:1px solid var(--line); border-radius:99px; padding:3px 10px 3px 7px;
+        font:600 10px var(--font-display); color:var(--ink-3); background:var(--card); }
+      .ac-store input { position:absolute; opacity:0; width:0; height:0; }
+      .ac-store i { width:9px; height:9px; border-radius:50%; flex:0 0 auto;
+        background:rgba(16,32,52,.14); }
+      .ac-store.on { border-color:var(--sp); color:var(--ink); }
+      .ac-store.on i { background:var(--sp); }
+      .ac-store:focus-within { outline:2px solid var(--p2); outline-offset:1px; }
+      .ac-state { width:88px; flex:0 0 auto; }
+      .ac-acts { width:250px; flex:0 0 auto; display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap; }
+      @media (max-width: 960px) {
+        .ac-h { display:none; }
+        .ac-row { flex-wrap:wrap; row-gap:8px; }
+        .ac-who { width:100%; }
+        .ac-acts { width:100%; justify-content:flex-start; }
+      }
+      /* ---- tickets, in the console's language ---- */
+      .tk-counts { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px,1fr));
+        gap:10px; margin-bottom:10px; }
+      .tk-count { margin-bottom:0; padding:12px 15px 13px; }
+      .tk-count .hint { margin:2px 0 0; }
+      .tk-cnum { font:700 26px var(--font-mono); font-variant-numeric:tabular-nums; line-height:1.1; }
+      .tk-cnum.ok { color:#1E8A4C; } .tk-cnum.wt { color:#B07700; } .tk-cnum.r { color:#C2361F; }
+      .tk-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:10px; }
+      .tk-div { width:1px; height:18px; background:var(--line); margin:0 3px; }
+      .tk-store { display:inline-flex; align-items:center; gap:6px; font:600 9.5px var(--font-mono);
+        color:var(--ink-2); }
+      .tk-store i { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+      /* ---- the audit log, as the same dense row as everywhere else ---- */
+      .ad-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+        margin-bottom:8px; padding:10px 13px; }
+      .ad-find { display:flex; align-items:center; gap:7px; flex:1 1 240px; min-width:0;
+        border:1px solid var(--line); border-radius:11px; padding:6px 11px; color:var(--ink-3);
+        background:var(--card); }
+      .ad-find input { border:0; background:none; outline:none; flex:1; min-width:0;
+        font:500 12px var(--font-display); color:var(--ink); }
+      .tg-sub { border:1px solid var(--line); background:var(--card); border-radius:99px; cursor:pointer;
+        padding:6px 13px; font:700 10.5px var(--font-mono); color:var(--ink-2); }
+      .tg-sub.on { background:var(--p2); border-color:var(--p2); color:#fff; }
+      .tg-sub:focus-visible { outline:2px solid var(--p2); outline-offset:2px; }
+      .ad-note { margin:0 2px 8px; }
+      .ad-tbl { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+      .ad-h, .ad-row { display:flex; align-items:baseline; gap:12px; padding:8px 14px;
+        font-family:var(--font-mono); font-size:10.5px; }
+      .ad-h { border-bottom:1px solid var(--line); font-weight:700; letter-spacing:.07em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .ad-row { border-bottom:1px solid var(--line); }
+      .ad-row:last-child { border-bottom:0; }
+      .ad-row:hover { background:color-mix(in srgb, var(--p2) 4%, transparent); }
+      .ad-when { width:132px; flex:0 0 auto; color:var(--ink-3); }
+      .ad-who { width:104px; flex:0 0 auto; font-weight:600; color:var(--ink-2); }
+      .ad-what { flex:1; min-width:0; color:var(--ink); }
+      .ad-what b { font-weight:700; }
+      .ad-det { display:block; color:var(--ink-2); margin-top:2px; }
+      .ad-where { width:150px; flex:0 0 auto; display:flex; align-items:center; gap:6px; color:var(--ink-3); }
+      .ad-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+      @media (max-width: 820px) {
+        .ad-h { display:none; }
+        .ad-row { flex-wrap:wrap; row-gap:4px; }
+        .ad-what { flex:1 1 100%; order:5; }
+      }
+      /* ---- the group, one card per store, each in its own colours ---- */
+      .gv-hero { margin-bottom:12px; }
+      .gv-hero .s2-ava { color:var(--hB); }
+      .gv-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .gv-hstat { display:flex; flex-direction:column; gap:2px; min-width:118px; }
+      .gv-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .gv-hden { font-size:12px; color:rgba(255,255,255,.6); font-weight:500; }
+      .gv-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .gv-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:10px; }
+      .gv-card { position:relative; overflow:hidden; background:var(--card); border:1px solid var(--line);
+        border-radius:14px; padding:12px 14px 12px 18px; display:flex; flex-direction:column; gap:9px; }
+      .gv-card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--sp); }
+      .gv-top { display:flex; align-items:center; gap:10px; }
+      .gv-badge, .gv-logo { width:34px; height:34px; border-radius:11px; flex:0 0 auto; }
+      .gv-badge { color:#fff; display:flex; align-items:center; justify-content:center;
+        font:700 12px var(--font-display); background:linear-gradient(140deg, var(--sp), var(--sd)); }
+      .gv-logo { object-fit:contain; background:#fff; border:1px solid var(--line); }
+      .gv-id { min-width:0; }
+      .gv-name { display:block; font:700 13.5px var(--font-display); letter-spacing:-.01em; }
+      .gv-sub { display:block; font:400 9.5px var(--font-mono); color:var(--ink-3); margin-top:1px; }
+      .gv-track { height:7px; border-radius:4px; background:rgba(16,32,52,.08); overflow:hidden; }
+      .gv-track i { display:block; height:100%; border-radius:4px;
+        background:linear-gradient(90deg, color-mix(in srgb, var(--sp) 45%, #fff), var(--sp)); }
+      .gv-feet { display:flex; align-items:baseline; gap:8px; }
+      .gv-units { font:700 16px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--ink); }
+      .gv-of { font:600 10px var(--font-mono); color:var(--ink-2); }
+      .gv-open { border:1px solid var(--line); background:var(--card); border-radius:9px; cursor:pointer;
+        padding:5px 11px; font:600 10px var(--font-display); color:var(--ink-2); align-self:center; }
+      .gv-open:hover { border-color:var(--sp); color:var(--sd); }
+      .gv-open:focus-visible { outline:2px solid var(--sp); outline-offset:1px; }
+      .gv-five { display:flex; gap:10px; flex-wrap:wrap; }
+      .gv-m { min-width:62px; }
+      .gv-mc { display:block; font:700 8px var(--font-mono); letter-spacing:.08em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .gv-mn { display:block; font:700 13px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--sp); }
+      .gv-note { margin-top:10px; }
+      /* ---- Coaching, in the new language ----
+         The ceiling in the hero, and every row showing where somebody stands
+         against it without having to be opened. */
+      .cx-hero { margin-bottom:12px; }
+      .cx-hero .s2-ava { color:var(--hB); }
+      .cx-bench { position:relative; display:grid; gap:8px; margin-top:16px; padding-top:14px;
+        border-top:1px solid rgba(255,255,255,.16);
+        grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); }
+      .cx-bm { background:rgba(255,255,255,.13); border-radius:11px; padding:8px 11px; }
+      .cx-bnum { font:700 17px var(--font-mono); font-variant-numeric:tabular-nums;
+        color:#fff; line-height:1.1; }
+      .cx-blbl { font:700 8px var(--font-mono); letter-spacing:.09em; text-transform:uppercase;
+        color:var(--sandCap); margin-top:3px; line-height:1.35; }
+      .cx-none { position:relative; margin-top:14px; padding-top:12px;
+        border-top:1px solid rgba(255,255,255,.16); font-size:11.5px; color:rgba(255,255,255,.78); }
+      .coach-gap { position:relative; display:block; width:92px; height:8px; border-radius:4px;
+        background:rgba(16,32,52,.08); flex:0 0 auto; }
+      .coach-gap i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--p2); }
+      .coach-gap b { position:absolute; left:100%; top:-2.5px; width:2px; height:13px;
+        border-radius:1px; background:var(--ink-2); }
+      @media (max-width: 760px) { .coach-gap { display:none; } }
+      /* ---- The Board picker, in the new language ----
+         Each store in its own colours, with opening it, the TV link and
+         publishing on the tile they belong to. */
+      .board-launch { max-width:1180px; margin:0 auto; padding:14px 18px 24px; }
+      .bl-hero { margin-bottom:12px; }
+      .bl-hero .s2-ava { color:var(--hB); }
+      .bl-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .bl-hstat { display:flex; flex-direction:column; gap:2px; min-width:150px; }
+      .bl-hbig { font:700 19px var(--font-mono); letter-spacing:-.02em; color:#fff; line-height:1.1; }
+      .bl-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .bl-grid { grid-template-columns:repeat(auto-fit, minmax(232px, 1fr)); gap:10px; margin:0 0 14px; }
+      .bl-tile { border-radius:16px; padding:18px 16px 14px; gap:10px; cursor:default;
+        background:linear-gradient(145deg, var(--sp), var(--sd)); color:#fff;
+        box-shadow:0 14px 32px -18px color-mix(in srgb, var(--sp) 80%, #000); }
+      .bl-tile:hover { transform:none; box-shadow:0 20px 40px -18px color-mix(in srgb, var(--sp) 80%, #000); }
+      .bl-tile-logo { color:var(--sd); }
+      .bl-tile-acts { display:flex; gap:7px; flex-wrap:wrap; margin-top:auto; align-items:center; }
+      .bl-go { border:0; border-radius:9px; padding:6px 11px; cursor:pointer;
+        font:700 10.5px var(--font-display); background:#fff; color:var(--sd); }
+      .bl-tvb { border:1px solid rgba(255,255,255,.38); background:rgba(255,255,255,.14); color:#fff;
+        border-radius:9px; padding:6px 10px; font:600 10px var(--font-display); cursor:pointer; }
+      .bl-tvb:hover { background:rgba(255,255,255,.24); }
+      .bl-tvb:disabled { opacity:.6; cursor:default; }
+      .bl-go:focus-visible, .bl-tvb:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+      .cast-compact { display:inline-flex; gap:7px; align-items:center; flex-wrap:wrap; }
+      .cast-compact .cast-err { flex:1 1 100%; color:#FFD9D2; font-size:10px; }
+      /* one store: the same tile, wider, because there is nothing to choose between */
+      .bl-one { border-radius:20px; padding:26px 24px 22px; color:#fff; max-width:640px; margin:0 auto 12px;
+        background:linear-gradient(145deg, var(--sp), var(--sd)); text-align:center;
+        display:flex; flex-direction:column; align-items:center; gap:10px;
+        box-shadow:0 18px 44px -20px color-mix(in srgb, var(--sp) 80%, #000); }
+      .bl-one .bl-title { margin:0; font:700 21px var(--font-display); letter-spacing:-.02em; }
+      .bl-onesub { margin:0; max-width:44ch; font-size:11.5px; line-height:1.6; color:rgba(255,255,255,.8); }
+      .bl-one .bl-tile-acts { justify-content:center; }
+      /* ---- Targets, in the new language ---- */
+      .tg-hero { margin-bottom:12px; }
+      .tg-hero .s2-ava { color:var(--hB); }
+      .tg-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .tg-hstat { display:flex; flex-direction:column; gap:2px; min-width:110px; }
+      .tg-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .tg-hden { font-size:12px; color:rgba(255,255,255,.6); font-weight:500; }
+      .tg-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .sec-cap.tg-cap { font:700 9.5px var(--font-mono); letter-spacing:.11em; text-transform:uppercase;
+        color:var(--ink-2); margin:14px 2px 7px; display:flex; align-items:center; gap:8px; }
+      .sec-cap.tg-cap::after { content:""; flex:1; height:2px; opacity:.3;
+        background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
+      .tg-tbl { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+      .tg-h, .tg-row { display:flex; align-items:center; gap:10px; padding:9px 14px; }
+      .tg-h { border-bottom:1px solid var(--line); font:700 9.5px var(--font-mono);
+        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); }
+      .tg-row { border-bottom:1px solid var(--line); }
+      .tg-row:last-child { border-bottom:0; }
+      .tg-name { width:238px; flex:0 0 auto; display:flex; align-items:center; gap:8px;
+        font-size:12px; font-weight:600; }
+      .tg-h .tg-name { font-weight:700; }
+      .tg-dot { width:9px; height:9px; border-radius:50%; background:var(--hc); flex:0 0 auto; }
+      .tg-now { width:86px; flex:0 0 auto; text-align:right;
+        font:700 13.5px var(--font-mono); font-variant-numeric:tabular-nums; color:var(--hc); }
+      .tg-h .tg-now { font:700 9.5px var(--font-mono); color:var(--ink-3); }
+      .tg-bar { position:relative; flex:1; min-width:60px; height:8px; border-radius:4px;
+        background:rgba(16,32,52,.08); }
+      .tg-bar i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--hc); }
+      .tg-bar b { position:absolute; left:100%; top:-2.5px; width:2px; height:13px;
+        border-radius:1px; background:var(--ink-2); }
+      .tg-h .tg-bar { background:none; }
+      .tg-in { width:86px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:3px;
+        font-size:10.5px; color:var(--ink-3); }
+      .tg-h .tg-in { justify-content:center; }
+      .tg-in input { width:52px; text-align:center; border:1px solid var(--line); border-radius:9px;
+        padding:5px 4px; font:600 11.5px var(--font-mono); color:var(--ink); background:var(--card); }
+      .tg-in input:focus-visible { outline:2px solid var(--p2); outline-offset:1px; }
+      .tg-hitc { width:118px; flex:0 0 auto; text-align:right; }
+      .tg-chip { display:inline-flex; align-items:center; border-radius:99px; padding:2px 9px;
+        font:700 9.5px var(--font-mono); background:rgba(16,32,52,.07); color:var(--ink-2); }
+      .tg-chip.ok { background:rgba(30,138,76,.12); color:#1E8A4C; }
+      .tg-chip.wt { background:rgba(176,119,0,.13); color:#8A5A00; }
+      .tg-note { margin:8px 2px 0; }
+      .tg-grid { display:grid; grid-template-columns:1fr 1.25fr; gap:10px; margin-top:12px; align-items:start; }
+      .tg-panel { margin-bottom:0; padding:13px 16px 15px; }
+      .p-cap2 { display:flex; align-items:center; gap:8px; font:700 9px var(--font-mono);
+        letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin-bottom:8px; }
+      .p-cap2 .tg-chip { text-transform:none; letter-spacing:0; }
+      .tg-tier { border-top:1px dashed var(--line); padding:8px 0 4px; }
+      .tg-tierh { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:12px; }
+      .r-flex2 { flex:1; }
+      .tg-tierbody { display:flex; flex-direction:column; gap:8px; padding:9px 0 4px; }
+      .tg-caplbl { display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:600; }
+      .tg-caplbl input, .tg-req input { width:64px; border:1px solid var(--line); border-radius:9px;
+        padding:5px 8px; font:600 11.5px var(--font-mono); color:var(--ink); background:var(--card); }
+      .tg-req { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--ink-2); }
+      .tg-req select { border:1px solid var(--line); border-radius:9px; padding:5px 8px;
+        font:600 11px var(--font-display); color:var(--ink); background:var(--card); max-width:220px; }
+      .tg-reqacts { display:flex; gap:8px; flex-wrap:wrap; }
+      .tg-addtier { margin-top:10px; }
+      .targets .grace-label input { width:64px; border:1px solid var(--line); border-radius:9px;
+        padding:6px 8px; font:600 12px var(--font-mono); color:var(--ink); background:var(--card); }
+      @media (max-width: 900px) {
+        .tg-grid { grid-template-columns:1fr; }
+        .tg-h { display:none; }
+        .tg-row { flex-wrap:wrap; row-gap:8px; }
+        .tg-name { width:100%; }
+        .tg-bar { flex:1 1 100%; order:5; }
+      }
+      /* ---- People, in the new language ---- */
+      .pp-hero { margin-bottom:12px; }
+      .pp-hero .s2-ava { color:var(--hB); }
+      .pp-herobody { position:relative; display:flex; gap:26px; flex-wrap:wrap;
+        margin-top:16px; padding-top:14px; border-top:1px solid rgba(255,255,255,.16); }
+      .pp-hstat { display:flex; flex-direction:column; gap:2px; min-width:104px; }
+      .pp-hbig { font:700 25px var(--font-mono); font-variant-numeric:tabular-nums;
+        letter-spacing:-.02em; color:#fff; line-height:1.05; }
+      .pp-hsub { font-size:10px; color:rgba(255,255,255,.72); }
+      .pp-card { margin-bottom:0; }
+      /* the standing options, opened under the person they belong to */
+      .pp-standing { grid-column:1 / -1; display:flex; gap:7px; flex-wrap:wrap;
+        margin:2px 0 4px 44px; padding:9px 12px; border-radius:12px;
+        background:color-mix(in srgb, var(--p2) 7%, transparent);
+        border:1px solid color-mix(in srgb, var(--p2) 22%, transparent); }
+      @media (max-width: 900px) {
+        .hist-tblh { display:none; }
+        .hist-row { flex-wrap:wrap; row-gap:10px; }
+        .hist-name { width:100%; }
+        .hist-cell5 { width:calc(50% - 5px); }
+        .hist-clbl { display:block; font:700 8.5px var(--font-mono); letter-spacing:.09em;
+          text-transform:uppercase; color:var(--ink-3); }
       }
       .toolsheet { width:min(420px, 100%); }
       .toolsheet.wide { width:min(520px, 100%); }
