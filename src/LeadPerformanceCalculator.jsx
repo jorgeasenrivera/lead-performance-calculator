@@ -5553,6 +5553,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
     <div className="board-launch">
       <div className="s2-hero bl-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
           <div className="s2-idtx">
@@ -5572,6 +5573,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
           <div className="bl-hstat"><span className="s2-cap">Managers</span>
             <span className="bl-hbig">No picker</span>
             <span className="bl-hsub">their own store opens straight away</span></div>
+        </div>
         </div>
       </div>
 
@@ -10519,6 +10521,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
   return (
     <div className="s2-hero floor-hero" style={{ "--facc": accent }}>
       <i className="s2-noise" aria-hidden="true" />
+      <div className="s2-tube">
       <div className="s2-head">
         <div className="s2-ava">{store && store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
         <div className="s2-idtx">
@@ -10573,6 +10576,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
               <span className="da-ksub">even rotation</span></div></div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -13767,6 +13771,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     <div className="checkout da-page">
       <div className="s2-hero da-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
           <div className="s2-idtx">
@@ -13795,6 +13800,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
                 <div className="da-krow"><span className="da-knum">{noShowSuspects.length}</span><span className="da-ksub">no log yet</span></div></div>
             : <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="bolt" size={10} /> Clean sheets</div>
                 <div className="da-krow"><span className="da-knum">{rockedCount}</span><span className="da-ksub">0 pts today</span></div></div>}
+        </div>
         </div>
       </div>
 
@@ -15735,6 +15741,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     <div className="plates">
       <div className="s2-hero plate-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="car" size={26} /></div>
           <div className="s2-idtx">
@@ -15754,6 +15761,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
               {missingN > 0 && <span className="da-ksub">not checked back in</span>}</div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="doc" size={10} /> Registry</div>
             <div className="da-krow"><span className="da-knum">{knownN}</span><span className="da-ksub">plates known</span></div></div>
+        </div>
         </div>
       </div>
       {missing.length > 0 && (
@@ -16876,6 +16884,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
     <div className="admin">
       <div className="s2-hero gv-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="globe" size={24} /></div>
           <div className="s2-idtx">
@@ -16909,6 +16918,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
               </div>
             );
           })}
+        </div>
         </div>
       </div>
 
@@ -19332,6 +19342,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
           every imported day" is what makes "not a number someone made up" true. */}
       <div className="s2-hero cx-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="bolt" size={24} /></div>
           <div className="s2-idtx">
@@ -19365,6 +19376,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
             ))}
           </div>
         )}
+        </div>
       </div>
 
       <div className={"coach-split " + (openRow ? "has-open" : "")}>
@@ -22244,7 +22256,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     const el = heroRef.current;
     if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     el.classList.remove("s2-chswitch"); void el.offsetWidth; el.classList.add("s2-chswitch");
-    const t = setTimeout(() => el.classList.remove("s2-chswitch"), 700);
+    const t = setTimeout(() => el.classList.remove("s2-chswitch"), 860);
     return () => clearTimeout(t);
   }, [totalUnits]);
   useEffect(() => { installBloopManager(); }, []);
@@ -22275,6 +22287,10 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     <div className="hero" style={brandVars}>
       <div className="s2-hero" ref={heroRef}>
         <i className="s2-noise" aria-hidden="true" />
+        {/* Everything the tube shows sits in here, and the glass bows this and
+            not the card's own edge: a silhouette that wobbled against the page
+            read as a rendering fault rather than as a screen. */}
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">
             {store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}
@@ -22496,6 +22512,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             )}
           </div>
         </div>
+        </div>
       </div>
 
       <div className="s2-focusgrid">
@@ -22561,6 +22578,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
   const ImportHero = ({ title, sub, chips }) => (
     <div className="s2-hero import-hero">
       <i className="s2-noise" aria-hidden="true" />
+      <div className="s2-tube">
       <div className="s2-head">
         <div className="s2-ava"><PixIcon glyph="arrowdown" size={24} /></div>
         <div className="s2-idtx">
@@ -22571,6 +22589,7 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           {chips}
           <button className="da-hbtn" onClick={onHelp}><PixIcon glyph="question" size={11} /> How to pull reports</button>
         </div>
+      </div>
       </div>
     </div>
   );
@@ -23209,6 +23228,7 @@ function GMSummary({ config, data, stores }) {
       <div className="sm-printhead">Lead Performance Summary · {monthLabel(month)} · {stores.map((s) => s.name).join(" · ")}</div>
       <div className="s2-hero da-hero sm-hero no-print">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{single && single.icon ? <img src={single.icon} alt="" /> : <Logo size={40} />}</div>
           <div className="s2-idtx">
@@ -23238,6 +23258,7 @@ function GMSummary({ config, data, stores }) {
               <div className="da-krow"><span className="da-knum">{cleared.length}</span></div></div>
           </div>
         )}
+        </div>
       </div>
       {rows.length === 0 && <div className="empty">No data for this month yet.</div>}
 
@@ -23484,6 +23505,7 @@ function HistoryPanel({ config, store, data }) {
     <div className="history">
       <div className="s2-hero hist-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
           <div className="s2-idtx">
@@ -23522,6 +23544,7 @@ function HistoryPanel({ config, store, data }) {
               </div>
             );
           })}
+        </div>
         </div>
       </div>
 
@@ -23677,6 +23700,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
     <div className="standards targets">
       <div className="s2-hero tg-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
           <div className="s2-idtx">
@@ -23702,6 +23726,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
           <div className="tg-hstat"><span className="s2-cap">Lead caps</span>
             <span className="tg-hbig">{std.tiers.length}</span>
             <span className="tg-hsub">tiers for {roleName}</span></div>
+        </div>
         </div>
       </div>
 
@@ -24402,6 +24427,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
       <div className="s2-hero pp-hero">
         <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="users" size={24} /></div>
           <div className="s2-idtx">
@@ -24431,6 +24457,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
               <span className="pp-hbig">{noAcct}</span>
               <span className="pp-hsub">cannot see their own card</span></div>
           )}
+        </div>
         </div>
       </div>
 
@@ -25600,6 +25627,60 @@ function Shell({ children, entering, style }) {
    A module with no sections simply has no chip strip. That is what finally
    closes the dead-end bug: the way out of a tool is a fixture of the shell, not
    something a module has to supply. */
+/* ---------------- the tube's glass ----------------
+   A displacement map, drawn once into a canvas and handed to an SVG filter. Each
+   pixel of the map says how far to push the pixel under it: nothing at the
+   centre, and outward by the square of the distance toward the corners, which is
+   the barrel a real tube has. The map is aspect-agnostic because the filter
+   stretches it over whatever it is applied to.
+
+   Kept at 256x160 because the map is smooth: any more is memory for no picture. */
+function bulgeMap(power) {
+  if (typeof document === "undefined") return null;
+  const w = 256, h = 160;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const x = c.getContext("2d");
+  if (!x) return null;
+  const img = x.createImageData(w, h);
+  const d = img.data;
+  const cx = w / 2, cy = h / 2, maxR = Math.hypot(cx, cy);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const dx = (i - cx) / maxR, dy = (j - cy) / maxR;
+      const r = Math.hypot(dx, dy);
+      const k = power * r * r;
+      const o = (j * w + i) * 4;
+      d[o] = Math.max(0, Math.min(255, 128 + dx * k * 255));
+      d[o + 1] = Math.max(0, Math.min(255, 128 + dy * k * 255));
+      d[o + 2] = 128;
+      d[o + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  try { return c.toDataURL(); } catch (e) { return null; }
+}
+
+/* How far the glass bows, in pixels of displacement at the corner. Slight is the
+   shipped setting: enough that a straight edge is visibly not straight, not so
+   much that the dot-matrix numerals lose their dots. */
+const BULGE_SCALE = 9;
+
+function TubeGlass() {
+  const [map, setMap] = useState(null);
+  useEffect(() => { setMap(bulgeMap(1)); }, []);
+  if (!map) return null;
+  return (
+    <svg className="lpc-glass" width="0" height="0" aria-hidden="true" focusable="false">
+      <filter id="lpc-bulge" x="-8%" y="-14%" width="116%" height="128%" colorInterpolationFilters="sRGB">
+        <feImage href={map} result="MAP" preserveAspectRatio="none" />
+        <feDisplacementMap in="SourceGraphic" in2="MAP" scale={BULGE_SCALE}
+          xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
+  );
+}
+
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
   right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
@@ -25618,6 +25699,7 @@ function AppShell({
   const b = brand || DEFAULT_BRAND;
   return (
     <Shell entering={entering} style={{ "--sp": b.primary, "--sd": b.deep, "--sa": b.accent }}>
+      <TubeGlass />
       {/* The header and the section strip stick as one block. A sticky element
           can only move inside its own containing block, so the wrapper is what
           sticks and the two rows inside it are static — otherwise the strip needs
@@ -31074,32 +31156,54 @@ const SAGE_CSS = `
         background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 42%, var(--hC) 100%);
         box-shadow:0 18px 44px -20px rgba(18,34,26,.55); transform-origin:50% 50%; }
       /* CRT glass: scanlines, a centre bulge, corner falloff */
+      /* ---- the analog bulge ----
+         The light on the middle of the glass was only ever a highlight painted
+         over a flat card. A real tube bows the picture itself, so the filter
+         below pushes every pixel outward from the centre by the square of its
+         distance, and the card is overscanned a touch so the bow never drags the
+         edge inward and shows the page behind it. */
+      .lpc-glass { position:absolute; width:0; height:0; overflow:hidden; }
+      .s2-tube { position:relative; filter:url(#lpc-bulge); }
+      /* A filter makes its element a containing block, so anything inside that
+         was fixed to the viewport is now fixed to the tube. Nothing in here is,
+         but the popups are worth saying out loud: they are absolutely positioned
+         against their own host, which still works, and they bow with everything
+         else, which is the point. */
+      @supports not (filter: url(#lpc-bulge)) { .s2-tube { filter:none; } }
       .s2-hero::before { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
         background:
           radial-gradient(120% 85% at 50% 40%, rgba(255,255,255,.09), transparent 58%),
           radial-gradient(145% 125% at 50% 50%, transparent 60%, rgba(8,16,10,.3) 100%),
           repeating-linear-gradient(0deg, rgba(255,255,255,.03) 0 1px, transparent 1px 3px); }
-      .s2-hero.s2-chswitch { animation:s2crt .64s linear both; }
+      /* ---- the channel switch, on the Z axis ----
+         The picture falls back into the tube, tips, and is thrown forward again,
+         rather than only squashing in place. The card needs a perspective to
+         fall into, which is on .hero, and the numbers change while it is dark so
+         they are never seen crossing over. */
+      .hero { perspective:900px; }
+      .s2-hero { transform-style:preserve-3d; }
+      .s2-hero.s2-chswitch { animation:s2crt .80s cubic-bezier(.2,.8,.2,1) both; }
       @keyframes s2crt {
         0% { transform:none; filter:none; }
-        10% { transform:scaleY(.94); filter:brightness(1.5) saturate(1.4); }
-        16% { transform:scaleY(.012); filter:brightness(3); }
-        24% { transform:scaleY(.018); filter:brightness(2.4); }
-        33% { transform:scaleY(1.045); filter:brightness(1.4) hue-rotate(9deg); }
-        44% { transform:scaleY(.988) translateY(2px); filter:brightness(1.12); }
-        58% { transform:scaleY(1.006) translateY(-1px); filter:none; }
+        10% { transform:translateZ(-70px) scaleY(.93); filter:brightness(1.7) saturate(1.5); }
+        19% { transform:translateZ(-300px) scaleY(.05) rotateX(9deg); filter:brightness(3.4); }
+        26% { transform:translateZ(-340px) scaleY(.03) rotateX(12deg); filter:brightness(2.6); }
+        38% { transform:translateZ(70px) scaleY(1.08) rotateX(-5deg); filter:brightness(1.6) hue-rotate(10deg); }
+        50% { transform:translateZ(-22px) scaleY(.985) rotateX(2deg); filter:brightness(1.2); }
+        64% { transform:translateZ(8px) scaleY(1.004); filter:none; }
         100% { transform:none; filter:none; }
       }
       .s2-noise { position:absolute; inset:0; border-radius:inherit; pointer-events:none; opacity:0; z-index:3;
         background:repeating-linear-gradient(0deg, rgba(255,255,255,.2) 0 1px, transparent 1px 3px),
           repeating-linear-gradient(90deg, rgba(255,255,255,.09) 0 2px, rgba(0,0,0,.12) 2px 5px); }
-      .s2-hero.s2-chswitch .s2-noise { animation:s2noise .64s steps(7); }
+      .s2-hero.s2-chswitch .s2-noise { animation:s2noise .80s steps(11); }
       @keyframes s2noise {
         0%,100% { opacity:0; background-position:0 0, 0 0; }
-        14% { opacity:.5; background-position:0 3px, 4px 0; }
-        26% { opacity:.8; background-position:0 9px, 9px 0; }
-        40% { opacity:.45; background-position:0 5px, 2px 0; }
-        62% { opacity:.15; background-position:0 12px, 6px 0; }
+        12% { opacity:.55; background-position:0 4px, 5px 0; }
+        24% { opacity:.85; background-position:0 11px, 11px 0; }
+        36% { opacity:.5; background-position:0 6px, 3px 0; }
+        50% { opacity:.3; background-position:0 14px, 8px 0; }
+        68% { opacity:.12; background-position:0 8px, 2px 0; }
       }
       .s2-head { display:flex; align-items:center; gap:15px; flex-wrap:wrap; }
       .s2-ava { position:relative; width:58px; height:58px; border-radius:50%; flex:0 0 auto; background:#fff;
@@ -31287,6 +31391,7 @@ const SAGE_CSS = `
       @media (prefers-reduced-motion: reduce) {
         .s2-imp, .s2-vdot, .s2-rtag::before, .s2-hcol i, .s2-dialrev { animation:none !important; }
         .s2-hero.s2-chswitch, .s2-hero.s2-chswitch .s2-noise { animation:none !important; }
+        .s2-tube { filter:none; }
       }
 
       /* ================= Daily Activity, redesigned =================
