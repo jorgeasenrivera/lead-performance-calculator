@@ -31370,11 +31370,16 @@ const SAGE_CSS = `
          row the calendar's three stacked lines set the height of the whole row
          and its last line dropped through the rule underneath it. */
       .s2-chips { display:flex; flex-direction:column; gap:10px; height:100%; }
+      /* On the dashboard the controls live in the card's own right-hand rail.
+         Every other hero carries them in the head, and they belong on the same
+         side there: hard right, one width, so they read as one column. */
+      .s2-head > .s2-chips { margin-left:auto; align-items:stretch; flex:0 0 auto; }
+      .s2-head > .s2-chips > * { width:100%; box-sizing:border-box; justify-content:center; }
       .s2-chip-acts { display:flex; flex-direction:column; gap:9px; align-items:stretch; }
       /* what you read sits at the foot of the rail, so the two pressable things
          stay together at the top where the eye lands */
       .s2-chip-state { margin-top:auto; display:flex; flex-direction:column-reverse;
-        align-items:flex-end; gap:10px; }
+        align-items:stretch; gap:10px; }
       .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
         border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
         font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
@@ -31400,13 +31405,15 @@ const SAGE_CSS = `
       .s2-names s.off { color:var(--ink-3); }
       .s2-pdot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; background:var(--green); }
       .s2-pdot.off { background:var(--ink-3); }
-      .s2-mcal { display:flex; flex-direction:column; gap:4px; align-items:flex-end; cursor:default; }
-      .s2-mc-cap { font:700 9px var(--font-mono); letter-spacing:.09em; text-transform:uppercase;
-        color:var(--sandCap); display:flex; gap:4px; align-items:center; }
-      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,12px); gap:3.5px; justify-items:center; }
-      .s2-mc-grid i { width:7.5px; height:7.5px; border-radius:50%; background:rgba(255,255,255,.26); cursor:pointer; }
+      /* The month runs the width of the rail, so it lines up with the two
+         buttons above it rather than sitting in from them. */
+      .s2-mcal { display:flex; flex-direction:column; gap:6px; align-items:stretch; cursor:default; }
+      .s2-mc-cap { font:700 12px var(--font-mono); letter-spacing:.06em; text-transform:uppercase;
+        color:var(--sandCap); display:flex; gap:6px; align-items:center; }
+      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; justify-items:center; }
+      .s2-mc-grid i { width:12px; height:12px; border-radius:50%; background:rgba(255,255,255,.26); cursor:pointer; }
       .s2-mc-grid i.p { background:rgba(255,255,255,.72); }
-      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 6px var(--sandTick); transform:scale(1.4); }
+      .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 7px var(--sandTick); transform:scale(1.22); }
       .s2-mc-grid i.e { background:transparent; pointer-events:none; }
       .s2-mc-sub { font-size:9.5px; color:rgba(255,255,255,.7); white-space:nowrap; margin-top:2px; }
       .s2-cw { display:flex; align-items:flex-start; gap:8px; font-size:10px; color:var(--ink);
@@ -31812,7 +31819,8 @@ const SAGE_CSS = `
          rows, and the rule was forcing both ROWS to 38px, so the calendar's three
          stacked lines overflowed straight through the rule beneath the head. */
       .s2-chip-acts > * { width:100%; box-sizing:border-box; display:flex; align-items:center; }
-      .s2-chip-state > .s2-rota { height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
+      .s2-chip-state > .s2-rota { height:38px; box-sizing:border-box; display:flex; align-items:center;
+        justify-content:center; }
       .s2-chip-acts > .s2-ru { height:38px; justify-content:center; }
       .s2-chip-acts > .s2-imp { min-height:44px; padding:7px 10px 7px 7px; }
       /* in a fixed rail the text has to give, not the arrow at the end of it */
