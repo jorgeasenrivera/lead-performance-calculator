@@ -19238,45 +19238,47 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
 
   return (
     <div className="coaching">
-      {new Date().getDate() <= 10 && (
-        <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h3 style={{ margin: 0 }}>Month-end recaps</h3>
-            <p className="hint" style={{ margin: "2px 0 0" }}>Print last month's review for every associate with data, one page each.</p>
-          </div>
-          <button className="btn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>Print all Month-End recaps</button>
-        </div>
-      )}
-      {withData.length === 0 ? (
-        <div className="card">
-          <h3>What the strongest people do differently</h3>
-          <p className="hint">
-            Needs Daily Activity imported before it can tell you anything. You can still open anyone's card
-            below to set a goal, seed their baseline, and print their one-pager.
-          </p>
-        </div>
-      ) : (
-      <div className="card">
-        <h3>What the strongest people do differently <span className="section-sub">{store.name}</span></h3>
-        {/* Same treatment as the plan on a person's card: where the bar came from,
-            stated as the evidence rather than as a promise about it. "Not a number
-            someone made up" is a claim; "the top 6 of your 18, every imported day"
-            is the thing that makes it true. */}
-        <div className="oyo-from">
-          <span className="oyo-from-tag">Your own floor</span>
-          <b>{top.length}</b> of <b>{withData.length}</b>
-          <span className="oyo-from-op">by units delivered, averaged across every imported day</span>
-        </div>
-        <div className="bench-grid">
-          {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
-            <div key={b.id} className="bench-tile">
-              <div className="bench-num">{b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}</div>
-              <div className="bench-lbl">{b.label}</div>
+      {/* The benchmark is the ceiling everything under it is measured against, so
+          it belongs in the card the page opens on rather than in a pale panel that
+          reads like another set of results. Where the bar came from is stated as
+          the evidence rather than as a promise about it: "the top 6 of your 18,
+          every imported day" is what makes "not a number someone made up" true. */}
+      <div className="s2-hero cx-hero">
+        <i className="s2-noise" aria-hidden="true" />
+        <div className="s2-head">
+          <div className="s2-ava"><PixIcon glyph="bolt" size={24} /></div>
+          <div className="s2-idtx">
+            <div className="s2-greet">
+              {store.name} · {withData.length === 0
+                ? "needs Daily Activity imported before it can tell you anything"
+                : <>what the strongest {top.length} of {withData.length} do differently, averaged across every imported day</>}
             </div>
-          ))}
+            <h2 className="s2-store">Coaching</h2>
+          </div>
+          <div className="s2-chips">
+            <span className="fh-chip">Your own floor</span>
+            {new Date().getDate() <= 10 && (
+              <button className="da-hbtn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>
+                <PixIcon glyph="doc" size={11} /> Print all Month-End recaps
+              </button>
+            )}
+          </div>
         </div>
+        {withData.length === 0 ? (
+          <div className="cx-none">
+            Open anyone below to set a goal, seed their baseline, and print their one-pager.
+          </div>
+        ) : (
+          <div className="cx-bench">
+            {BEHAVIOURS.filter((b) => topAvg[b.id] != null).map((b) => (
+              <div key={b.id} className="cx-bm">
+                <div className="cx-bnum">{b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}</div>
+                <div className="cx-blbl">{b.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      )}
 
       <div className={"coach-split " + (openRow ? "has-open" : "")}>
         <div className="card coach-list-card">
@@ -19294,6 +19296,19 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
                 <span className="coach-units">{r.units} <em>units</em></span>
                 {r.act ? <span className="coach-days">{r.act.days} day{r.act.days === 1 ? "" : "s"} of activity</span>
                        : <span className="coach-days dim">no activity yet</span>}
+                {/* Where they stand against the ceiling in the card above, on the
+                    behaviour that moves cars most. The gap is the whole point of
+                    the page, and it took opening somebody to see it. */}
+                {(() => {
+                  const b = BEHAVIOURS.find((x) => topAvg[x.id] != null);
+                  if (!b || !r.act || r.act[b.id] == null) return <span className="coach-gap" />;
+                  const frac = Math.min(1, r.act[b.id] / topAvg[b.id]);
+                  return (
+                    <span className="coach-gap" title={`${b.label}: ${b.kind === "pct" ? fmtPct(r.act[b.id]) : fmtNum(r.act[b.id])} against the floor's strongest ${b.kind === "pct" ? fmtPct(topAvg[b.id]) : fmtNum(topAvg[b.id])}`}>
+                      <i style={{ width: `${(frac * 100).toFixed(0)}%` }} /><b />
+                    </span>
+                  );
+                })()}
                 <span className="coach-open">{openId === r.a.id ? "Close" : "Open card"}</span>
               </button>
             ))}
@@ -26327,7 +26342,7 @@ const SAGE_CSS = `
       .bench-lbl { font-size:11px; color:var(--ink-2); font-weight:600; margin-top:4px; }
 
       .coach-list { display:flex; flex-direction:column; gap:6px; }
-      .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; gap:12px; align-items:center;
+      .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto auto; gap:12px; align-items:center;
         text-align:left; padding:11px 14px; border-radius:12px; cursor:pointer; border:1px solid transparent;
         background:rgba(255,255,255,.5); font-size:13px; transition: all .2s var(--spring); }
       .coach-row:hover { background:#fff; }
@@ -26348,6 +26363,7 @@ const SAGE_CSS = `
       .coach-split.has-open .coach-role { grid-column:1; font-size:12px; }
       .coach-split.has-open .coach-units { grid-column:1; grid-row:3; }
       .coach-split.has-open .coach-days { grid-column:2; grid-row:3; text-align:right; }
+      .coach-split.has-open .coach-gap { grid-column:1 / -1; grid-row:4; width:100%; }
       .coach-detail { min-width:0; position:relative; }
       .coach-close { display:none; }
       .coach-detail-open { animation: cardOpen .42s cubic-bezier(.22,.61,.36,1) both; }
@@ -26364,7 +26380,7 @@ const SAGE_CSS = `
       @media (max-width: 900px) {
         .coach-split.has-open { grid-template-columns: 1fr; }
         .coach-list-card { position:static; }
-        .coach-split.has-open .coach-row { grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto; }
+        .coach-split.has-open .coach-row { grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto auto; }
         .coach-empty { display:none; }
       }
 
@@ -31746,6 +31762,27 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* ---- Coaching, in the new language ----
+         The ceiling in the hero, and every row showing where somebody stands
+         against it without having to be opened. */
+      .cx-hero { margin-bottom:12px; }
+      .cx-hero .s2-ava { color:var(--hB); }
+      .cx-bench { position:relative; display:grid; gap:8px; margin-top:16px; padding-top:14px;
+        border-top:1px solid rgba(255,255,255,.16);
+        grid-template-columns:repeat(auto-fit, minmax(112px, 1fr)); }
+      .cx-bm { background:rgba(255,255,255,.13); border-radius:11px; padding:8px 11px; }
+      .cx-bnum { font:700 17px var(--font-mono); font-variant-numeric:tabular-nums;
+        color:#fff; line-height:1.1; }
+      .cx-blbl { font:700 8px var(--font-mono); letter-spacing:.09em; text-transform:uppercase;
+        color:var(--sandCap); margin-top:3px; line-height:1.35; }
+      .cx-none { position:relative; margin-top:14px; padding-top:12px;
+        border-top:1px solid rgba(255,255,255,.16); font-size:11.5px; color:rgba(255,255,255,.78); }
+      .coach-gap { position:relative; display:block; width:92px; height:8px; border-radius:4px;
+        background:rgba(16,32,52,.08); flex:0 0 auto; }
+      .coach-gap i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--p2); }
+      .coach-gap b { position:absolute; left:100%; top:-2.5px; width:2px; height:13px;
+        border-radius:1px; background:var(--ink-2); }
+      @media (max-width: 760px) { .coach-gap { display:none; } }
       /* ---- The Board picker, in the new language ----
          Each store in its own colours, with opening it, the TV link and
          publishing on the tile they belong to. */
