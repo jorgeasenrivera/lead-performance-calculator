@@ -25674,10 +25674,13 @@ function bulgeMap(power) {
   try { return c.toDataURL(); } catch (e) { return null; }
 }
 
-/* How far the glass bows, in pixels of displacement at the corner. Slight is the
-   shipped setting: enough that a straight edge is visibly not straight, not so
-   much that the dot-matrix numerals lose their dots. */
-const BULGE_SCALE = 9;
+/* How far the glass bows, in pixels of displacement at the corner.
+
+   Nine was too polite to read. A bulge you have to be told about is doing the
+   same job as no bulge at all, and at that strength the honest reaction was to
+   wonder whether it was bending the wrong way. Sixteen is where the centre
+   plainly sits closest to you and the dot-matrix numerals still keep every dot. */
+const BULGE_SCALE = 16;
 
 function TubeGlass() {
   const [map, setMap] = useState(null);
