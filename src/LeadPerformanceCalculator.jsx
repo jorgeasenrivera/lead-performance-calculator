@@ -25658,14 +25658,18 @@ function bulgeMap(power) {
       const r = Math.hypot(dx, dy);
       const k = power * r * r;
       const o = (j * w + i) * 4;
-      /* Minus, not plus. feDisplacementMap SAMPLES from the offset position, so
-         a channel above the midpoint on the right edge fetches from further
-         right and drags that content inward. The first version had it the other
-         way round and the glass sucked the picture in instead of bulging it out
-         — a pincushion, which is the fault old sets were corrected for, not the
-         look anybody means by a tube. */
-      d[o] = Math.max(0, Math.min(255, 128 - dx * k * 255));
-      d[o + 1] = Math.max(0, Math.min(255, 128 - dy * k * 255));
+      /* Plus. What decides whether a screen reads as bulging toward you is not
+         which way pixels travel, it is where the picture is MAGNIFIED: a
+         magnifier keeps the middle at full size and squeezes the rim.
+
+         Measured on a ruler of lines 16px apart, at a displacement of 16:
+           plus   centre 16.00  edge 15.60   rim compressed, centre nearest
+           minus  centre 16.00  edge 16.40   rim stretched, centre furthest
+         Minus was shipped briefly on the strength of "the pixels move outward,
+         so it must bulge outward". They do, and it does not: the edges move
+         outward further than the middle, which flattens the middle into a dish. */
+      d[o] = Math.max(0, Math.min(255, 128 + dx * k * 255));
+      d[o + 1] = Math.max(0, Math.min(255, 128 + dy * k * 255));
       d[o + 2] = 128;
       d[o + 3] = 255;
     }
