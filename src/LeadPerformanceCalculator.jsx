@@ -45,6 +45,7 @@ import { goalStanding, dayBelow, didWork, notesFor, owesNote, makeNote, addNote,
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor } from "../api/_floor-presence.mjs";
+import qrcodeGen from "qrcode-generator";
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
    editor would otherwise carry on every single load. */
@@ -5514,12 +5515,16 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
   const isAdmin = session.role === "admin";
   const stores = isAdmin ? config.stores : config.stores.filter((s) => (session.stores || []).includes(s.id));
   const single = stores.length === 1;
-  const [opened, setOpened] = useState(false);
-
-  // A manager belongs to exactly one store, so their board opens straight away, with no picker.
-  useEffect(() => {
-    if (single && !opened) { onLaunch(stores[0].id); setOpened(true); }
-  }, [single, opened]); // eslint-disable-line
+  /* It used to open the board by itself the moment a manager landed here. A
+     window opened without a click is what a pop-up blocker exists to stop, so on
+     a default Chrome or Safari it was blocked every time, and all anybody got
+     was a message box behind the blocker's little icon. It opens on a press now,
+     which is a press nobody minds and a window no browser argues with. */
+  const [blocked, setBlocked] = useState(false);
+  const launch = async (id) => {
+    const ok = await onLaunch(id);
+    setBlocked(ok === false);
+  };
 
   if (stores.length === 0) {
     return <div className="empty">No store is assigned to your account yet, so there's no board to show. Ask your group admin to grant you store access.</div>;
@@ -5533,12 +5538,14 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
         <div className="bl-one" style={{ "--sp": b.primary, "--sd": b.deep }}>
           <div className="bl-logo">{s.icon ? <img src={s.icon} alt="" /> : <Logo size={54} animated />}</div>
           <h2 className="bl-title">{s.name}</h2>
-          <p className="bl-onesub">The Board opened in its own window, sized for a TV or a big screen. It
+          <p className="bl-onesub">The Board opens in its own window, sized for a TV or a big screen. It
             refreshes on its own every 30 seconds and shows the five: {FIVE.map((f) => f.label.toLowerCase()).join(", ")}.</p>
           <div className="bl-tile-acts">
-            <button className="bl-go" onClick={() => onLaunch(s.id)}>Open it again ↗</button>
+            <button className="bl-go" onClick={() => launch(s.id)}>Open the board ↗</button>
             <CastLink storeId={s.id} config={config} compact />
           </div>
+          {blocked && <p className="bl-blocked">Your browser stopped that window from opening. Allow pop-ups
+            for this site and press again, or copy the TV link and open it yourself.</p>}
         </div>
         <button className="btn-link" onClick={onBack}>← Back to start</button>
       </div>
@@ -5585,13 +5592,15 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
               <span className="bl-tile-logo">{s.icon ? <img src={s.icon} alt="" /> : <span className="bl-tile-ph">{s.name[0]}</span>}</span>
               <span className="bl-tile-name">{s.name}</span>
               <span className="bl-tile-acts">
-                <button className="bl-go" onClick={() => onLaunch(s.id)}>Open the board ↗</button>
+                <button className="bl-go" onClick={() => launch(s.id)}>Open the board ↗</button>
                 <CastLink storeId={s.id} config={config} compact />
               </span>
             </div>
           );
         })}
       </div>
+      {blocked && <p className="bl-blocked">Your browser stopped that window from opening. Allow pop-ups for
+        this site and press again, or copy the TV link and open it yourself.</p>}
       <button className="btn-link" onClick={onBack}>← Back to start</button>
     </div>
   );
@@ -5701,7 +5710,10 @@ async function publishBoardNow(config, storeId) {
 // Opens a standalone, auto-refreshing leaderboard in a new window sized for a TV.
 async function openLeaderboard(config, storeId) {
   const w = window.open("", "lpc_leaderboard_" + storeId, "width=1600,height=900");
-  if (!w) { alert("Please allow pop-ups for this site to open the leaderboard on a second screen."); return; }
+  /* Said on the page rather than in a message box: a blocked pop-up usually
+     comes with the browser's own alert suppressed too, so the box nobody sees
+     is the only thing that ever explained it. */
+  if (!w) return false;
   // Publish the sanitized TV row first, so this window and any casted screen are
   // reading the exact same thing.
   let sdata = null;
@@ -5727,6 +5739,7 @@ async function openLeaderboard(config, storeId) {
   w.document.open();
   w.document.write(LEADERBOARD_HTML(payload));
   w.document.close();
+  return true;
 }
 
 /* ---------------- Queue boards on a wall ----------------
@@ -9256,20 +9269,14 @@ function qResolveName(typed, roster) {
   return { kind: "none", suggestions: ranked.slice(0, 4) };
 }
 
-/* ---- QR loader + renderer ---- */
-let _qrPromise = null;
+/* ---- QR renderer ----
+   The encoder ships with the app. It used to be fetched from a CDN the first
+   time anybody opened a sign-in code, which is a network call at exactly the
+   wrong moment: a dealership that blocks cdnjs, a phone on a bad connection or
+   a slow morning all turned the code into the words "QR unavailable", and the
+   only way onto the floor is that square. Nothing to fetch now. */
 function loadQRCode() {
-  if (typeof window !== "undefined" && window.qrcode) return Promise.resolve(window.qrcode);
-  if (_qrPromise) return _qrPromise;
-  _qrPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js";
-    s.async = true;
-    s.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error("qrcode init failed")));
-    s.onerror = () => { _qrPromise = null; reject(new Error("qrcode load failed")); };
-    document.head.appendChild(s);
-  });
-  return _qrPromise;
+  return Promise.resolve(qrcodeGen);
 }
 function queueSignInUrl(storeId, date, token, param = "q", test = false) {
   const base = window.location.origin + window.location.pathname;
@@ -32264,6 +32271,10 @@ const SAGE_CSS = `
       .bl-one .bl-title { margin:0; font:700 21px var(--font-display); letter-spacing:-.02em; }
       .bl-onesub { margin:0; max-width:44ch; font-size:11.5px; line-height:1.6; color:rgba(255,255,255,.8); }
       .bl-one .bl-tile-acts { justify-content:center; }
+      .bl-blocked { max-width:640px; margin:0 auto 12px; padding:11px 15px; border-radius:12px;
+        font-size:11.5px; line-height:1.6; color:#8A2B1E;
+        background:linear-gradient(90deg, rgba(229,71,60,.14), rgba(229,71,60,.05) 74%);
+        border-left:4px solid var(--red); }
       /* ---- Targets, in the new language ---- */
       .tg-hero { margin-bottom:12px; }
       .tg-hero .s2-ava { color:var(--hB); }
