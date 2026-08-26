@@ -152,6 +152,9 @@ const CHANNELS = { internet: "Internet", phone: "Phone", showroom: "Showroom" };
    bars, the delivery-against-target lines, and the legend under them. Read from
    one object so a bar and the line it belongs to can never drift apart. */
 const CHANNEL_SERIES = { internet: "var(--s1)", phone: "var(--s2)", showroom: "var(--s3)" };
+// where the standard rule sits on a channel column, as a percentage of it, which
+// leaves the top third of the column for the channels that are beating it
+const CH_STD = 60;
 
 const REPORTS = {
   delivery: { label: "Delivery Summary" },
@@ -17343,13 +17346,18 @@ function MetricStrip({ ev, stats, thr }) {
            left to the standards, which is what a dial against a target is for. */
         const chan = FIVE.find((f) => f.key === metric && CHANNELS[f.id]);
         if (chan) {
-          const w = na || vShow == null ? 0 : Math.max(2, Math.min(100, (vShow / tgt) * 100));
+          /* The standard sits at a fixed height on every column, so a manager
+             reads one line straight across the row and sees at a glance which
+             of the three cleared it. The column fills to the same scale, which
+             puts a channel at target exactly on the line and lets a good one
+             stand above it. */
+          const h = na || vShow == null ? 0 : Math.max(3, Math.min(100, (vShow / tgt) * CH_STD));
           return (
             <span key={metric} className={"s2g4 s2g4-bar bloop-host" + (t ? " " + t.cls : "")}
               tabIndex={0} style={{ "--cc": chan.col }}>
               <b className="s2g4-v" style={{ color: vShow == null ? "#B9BEC6" : col }}>{shown}</b>
-              <span className="s2g4-track" aria-hidden="true">
-                <i style={{ width: w + "%" }} /><s />
+              <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
+                <i style={{ height: h.toFixed(1) + "%" }} /><s />
               </span>
               <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
@@ -31196,6 +31204,11 @@ const SAGE_CSS = `
       .bloopwin.dn { bottom:auto; top:calc(100% + 9px); transform-origin:50% -22px; transform:translate(-50%,-6px) scale(.5); }
       .bloopwin.dn.r { transform:translate(0,-6px) scale(.5); transform-origin:85% -22px; }
       .bloop-host:hover > .bloopwin, .bloop-host:focus-within > .bloopwin { opacity:1; transform:translate(-50%,0) scale(1); }
+      /* A popup is see-through to the mouse so it never eats a click meant for
+         the page under it. The calendar of days sold is the exception: its days
+         are the point, so while it is showing it takes the pointer. Hovering it
+         keeps the host hovered, since it is a child of the host. */
+      .bloop-host:hover > .s2-salewin, .bloop-host:focus-within > .s2-salewin { pointer-events:auto; }
       .bloop-host:hover > .bloopwin.r, .bloop-host:focus-within > .bloopwin.r { transform:translate(0,0) scale(1); }
       .bw-title { font:700 9.5px var(--font-mono); letter-spacing:.05em; text-transform:uppercase; color:var(--bw, var(--p3)); }
       .bw-big { font:700 21px var(--font-mono); letter-spacing:-.02em; margin-top:3px; color:var(--ink); }
@@ -31231,7 +31244,7 @@ const SAGE_CSS = `
          One saturated Garden card that is the landing spot: identity and the
          day's controls up top, the month on the left, the instruments on the
          right, and the weakest standard and rotating display underneath. */
-      .s2-hero { position:relative; border-radius:24px; color:#fff; overflow:visible;
+      .s2-hero { position:relative; z-index:4; border-radius:24px; color:#fff; overflow:visible;
         padding:22px 28px 26px; margin-bottom:12px; display:flex; flex-direction:column; gap:18px;
         background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 42%, var(--hC) 100%);
         box-shadow:0 18px 44px -20px rgba(18,34,26,.55); transform-origin:50% 50%; }
@@ -31478,9 +31491,13 @@ const SAGE_CSS = `
       .s2-dialrev { animation:s2dialrev .95s cubic-bezier(.32,.8,.35,1.28) both; }
       @keyframes s2dialrev { from { stroke-dasharray:0 100; } }
       /* weakest standard and the rotating display, side by side */
+      /* The cards under the hero are positioned, so without a z-index of their own
+         they paint over anything the hero pops downward. The order is set here
+         once: the hero's instruments, then the weakest standard, then the
+         rotating display, each above the one that follows it. */
       .s2-focusgrid { display:grid; grid-template-columns:288px 1fr; gap:12px; align-items:stretch;
-        margin-bottom:14px; }
-      .s2-ansq { border:0; border-radius:16px; padding:16px 18px 14px; color:#fff; cursor:default;
+        margin-bottom:14px; position:relative; z-index:1; }
+      .s2-ansq { position:relative; z-index:2; border:0; border-radius:16px; padding:16px 18px 14px; color:#fff; cursor:default;
         background:linear-gradient(150deg,#D14434,#A32517); box-shadow:0 16px 38px -18px rgba(163,37,23,.6);
         display:flex; flex-direction:column; gap:4px; }
       .s2-an-cap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
@@ -31490,7 +31507,7 @@ const SAGE_CSS = `
       .s2-an-big small { font:500 11px var(--font-mono); color:rgba(255,255,255,.7); padding-bottom:2px; }
       .s2-an-sub { font-size:10px; color:rgba(255,255,255,.82); margin-top:6px; }
       .s2-answin { width:300px; }
-      .s2-spot { position:relative; background:var(--card); border:1px solid var(--line); border-radius:16px;
+      .s2-spot { position:relative; z-index:1; background:var(--card); border:1px solid var(--line); border-radius:16px;
         padding:15px 19px 34px; min-height:216px; overflow:hidden; touch-action:pan-y; }
       .s2-slide { position:absolute; inset:15px 19px 34px; opacity:0; transform:translateY(10px);
         transition:opacity .65s var(--ease), transform .65s var(--ease); pointer-events:none; overflow:hidden; }
@@ -31746,15 +31763,23 @@ const SAGE_CSS = `
       /* the four standards on every associate row, in the drafts' speedometer */
       .s2g4 { width:88px; display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; }
       .s2g4 svg { width:46px; height:27px; display:block; }
-      /* the channel cell: the same bullet bar the hero, Targets and Coaching use,
-         in that channel's own colour, with the target as a tick at 100% */
-      .s2g4-bar { justify-content:flex-end; gap:4px; }
+      /* the channel cell: a column in that channel's own colour, drawn against
+         the standard as a rule across it. Above the rule is above standard, and
+         the rule is at the same height in all three so they read as one line. */
+      .s2g4-bar { justify-content:flex-end; gap:3px; }
       .s2g4-v { font:700 12px var(--font-mono); font-variant-numeric:tabular-nums; line-height:1; }
-      .s2g4-track { position:relative; display:block; width:52px; height:8px; border-radius:4px;
-        background:rgba(16,32,52,.09); }
-      .s2g4-track i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--cc); }
-      .s2g4-track s { position:absolute; left:100%; top:-2.5px; width:2px; height:13px;
-        border-radius:1px; background:var(--ink-2); }
+      .s2g4-col { position:relative; display:block; width:24px; height:30px; border-radius:6px;
+        background:rgba(16,32,52,.05); box-shadow:inset 0 0 0 1px rgba(16,32,52,.1); }
+      /* square across the top so the fill reads as a level in a vessel rather
+         than a pill floating in one */
+      .s2g4-col i { position:absolute; left:0; right:0; bottom:0; border-radius:0 0 6px 6px; background:var(--cc);
+        transition:height .5s cubic-bezier(.22,.61,.36,1); }
+      .s2g4-col.full i { border-radius:6px; }
+      /* the standard, dashed, the way the hero draws the cap on its own channel
+         bars, so it reads as the mark to reach and not the rim of the vessel */
+      .s2g4-col s { position:absolute; left:-2px; right:-2px; bottom:60%; height:2px; margin-bottom:-1px;
+        background:repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 5.5px); opacity:.38; }
+      .s2g4-col.over s { opacity:.7; }
       .s2g4-l { font:700 7.5px var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3);
         white-space:nowrap; }
       .s2g4-l i { font-style:normal; color:var(--ink-3); font-weight:600; }
@@ -31807,9 +31832,15 @@ const SAGE_CSS = `
       .s2-rolecard { margin-top:12px; overflow:visible; }
       .s2-rolecard .warmhead { border-radius:13px 13px 0 0; }
       .s2-rolecard .assoc-card:last-child .assoc-row { border-radius:0 0 13px 13px; }
-      .s2-rolecard .assoc-card { border:0; border-radius:0; box-shadow:none; margin:0; padding:0;
-        border-top:1px solid var(--line); background:none; }
-      .s2-rolecard .assoc-card:first-of-type { border-top:0; }
+      .s2-rolecard .assoc-card { position:relative; border:0; border-radius:0; box-shadow:none; margin:0; padding:0;
+        background:none; }
+      /* The rule between two people picks up where the row's colour wash leaves
+         off: nothing at the left edge, where the wash is strongest, and full
+         grey by the point the wash has run out. */
+      .s2-rolecard .assoc-card::before { content:""; position:absolute; left:0; right:0; top:0; height:1px;
+        pointer-events:none;
+        background:linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--line) 45%, transparent) 26%, var(--line) 55%); }
+      .s2-rolecard .assoc-card:first-of-type::before { display:none; }
       .s2-rolecard .assoc-row:hover { background:color-mix(in srgb, var(--p2) 7%, transparent); }
       .s2-hflex { flex:1; }
       .warmhead .s2-fchip { border:0; border-radius:99px; padding:5px 11px; cursor:pointer;
