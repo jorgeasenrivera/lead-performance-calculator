@@ -22310,7 +22310,13 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="s2-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
             <h1 className="s2-store">{store.name}</h1>
           </div>
+          {/* ---- everything you press, and everything you read, on the right ----
+              These four sat in one long row, so the calendar's three stacked lines
+              set the height of the whole row and its last line dropped through the
+              rule underneath. Two rows now: what you press on top, what you read
+              beneath it, both hard right. */}
           <div className="s2-chips">
+          <div className="s2-chip-acts">
             {/* The calendar is the only thing that says the date now; this is just
                 the door to the round-up, not a second copy of the day. */}
             <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
@@ -22324,6 +22330,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
               </span>
               <PixIcon glyph="arrow" size={11} />
             </button>
+          </div>
+          <div className="s2-chip-state">
             <div className="s2-rota bloop-host" tabIndex={0}>
               <b>{onCount} on{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
               <div className="bloopwin dn r s2-rotawin">
@@ -22375,6 +22383,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   : "Click a day dot to see it"}</div>
               </div>
             </div>
+          </div>
           </div>
         </div>
         <div className="s2-body">
@@ -25645,10 +25654,13 @@ function Shell({ children, entering, style }) {
    the barrel a real tube has. The map is aspect-agnostic because the filter
    stretches it over whatever it is applied to.
 
-   Kept at 256x160 because the map is smooth: any more is memory for no picture. */
+   Resolution matters more than it looks. At 256 wide, stretched across a hero
+   1300px across, one map pixel covers five screen pixels and the displacement
+   steps rather than slides: every curved edge on the card picked up a wobble.
+   1024 costs a megabyte of canvas once and the edges come out clean. */
 function bulgeMap(power) {
   if (typeof document === "undefined") return null;
-  const w = 256, h = 160;
+  const w = 1024, h = 256;
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   const x = c.getContext("2d");
@@ -25687,11 +25699,12 @@ function bulgeMap(power) {
 
 /* How far the glass bows, in pixels of displacement at the corner.
 
-   Nine was too polite to read. A bulge you have to be told about is doing the
-   same job as no bulge at all, and at that strength the honest reaction was to
-   wonder whether it was bending the wrong way. Sixteen is where the centre
-   plainly sits closest to you and the dot-matrix numerals still keep every dot. */
-const BULGE_SCALE = 16;
+   Nine was too polite to read at all. Sixteen read, and cost more than it was
+   worth: this filter resamples whatever is under it, so every pixel of
+   displacement is paid for in sharpness, and on a 1080p screen there are no
+   spare pixels to hide that in. Ten is where the bulge still reads and the small
+   type comes back. Turn it to 0 and the glass is flat. */
+const BULGE_SCALE = 10;
 
 function TubeGlass() {
   const [map, setMap] = useState(null);
@@ -26490,8 +26503,12 @@ const SAGE_CSS = `
       /* The hero's own card, at the top of the sheet. The radius follows the
          sheet's corners rather than the hero's, because it is the sheet's edge
          it is sitting in. */
-      .ru-sheet-head { padding:20px 24px 18px; color:#fff; position:relative;
-        border-radius:22px 22px 0 0; overflow:hidden; }
+      /* .s2-hero comes later in this stylesheet at the same specificity, so it
+         was winning: the head took the hero's 24px radius inside a sheet clipped
+         at 22px, and its overflow went visible. Two pixels of white showed at
+         each top corner. Named twice here so this one wins. */
+      .ru-sheet .ru-sheet-head { padding:20px 24px 18px; color:#fff; position:relative;
+        border-radius:22px 22px 0 0; overflow:hidden; margin-bottom:0; }
       .ru-head-id { display:flex; align-items:center; gap:13px; position:relative; z-index:1; }
       .ru-sheet-head .s2-ava { width:46px; height:46px; }
       .ru-sheet-head .s2-ava::after { inset:-6px; }
@@ -31278,7 +31295,13 @@ const SAGE_CSS = `
       .s2-greet { font-size:11px; color:rgba(255,255,255,.78); }
       .s2-store { margin:0; font-family:var(--font-display); font-size:22px; font-weight:700;
         letter-spacing:-.02em; color:#fff; line-height:1.15; }
-      .s2-chips { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+      /* Two rows, both hard right: what you press, then what you read. In one
+         row the calendar's three stacked lines set the height of the whole row
+         and its last line dropped through the rule underneath it. */
+      .s2-chips { margin-left:auto; display:grid; justify-items:end; row-gap:9px; }
+      .s2-chip-acts, .s2-chip-state { display:flex; gap:10px; align-items:center;
+        flex-wrap:wrap; justify-content:flex-end; }
+      .s2-chip-state { align-items:flex-end; gap:14px; }
       .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
         border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
         font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
@@ -31312,7 +31335,7 @@ const SAGE_CSS = `
       .s2-mc-grid i.p { background:rgba(255,255,255,.72); }
       .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 6px var(--sandTick); transform:scale(1.4); }
       .s2-mc-grid i.e { background:transparent; pointer-events:none; }
-      .s2-mc-sub { font-size:8.5px; color:rgba(255,255,255,.7); }
+      .s2-mc-sub { font-size:8.5px; color:rgba(255,255,255,.7); white-space:nowrap; margin-top:1px; }
       .s2-cw { display:flex; align-items:flex-start; gap:8px; font-size:10px; color:var(--ink);
         line-height:1.45; padding:3.5px 0; }
       .s2-cw b { font-family:var(--font-mono); }
@@ -31445,7 +31468,8 @@ const SAGE_CSS = `
       @media (max-width: 860px) {
         .s2-body { flex-direction:column; align-items:stretch; gap:18px; }
         .s2-left { max-width:none; }
-        .s2-chips { margin-left:0; width:100%; }
+        .s2-chips { margin-left:0; width:100%; align-items:stretch; }
+        .s2-chip-acts, .s2-chip-state { justify-content:flex-start; }
         .s2-mcal { display:none; }
         .s2-focusgrid { grid-template-columns:1fr; }
         .s2-hbars { height:104px; gap:12px; }
@@ -31681,8 +31705,12 @@ const SAGE_CSS = `
       .assoc-nameblock { min-width:0; display:block; }
       .assoc-sub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      /* every chip in the hero head is one height, whatever it holds */
-      .s2-chips > * { height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
+      /* Every pill in the hero head is one height, whatever it holds. This used
+         to say .s2-chips > *, which was the pills themselves; they are now in two
+         rows, and the rule was forcing both ROWS to 38px, so the calendar's three
+         stacked lines overflowed straight through the rule beneath the head. */
+      .s2-chip-acts > *, .s2-chip-state > .s2-rota {
+        height:38px; box-sizing:border-box; display:inline-flex; align-items:center; }
       .s2-ru, .s2-imp, .s2-rota { border-radius:12px; }
       .s2-rota { padding:0 14px; }
       .s2-imp { padding:0 14px; }
