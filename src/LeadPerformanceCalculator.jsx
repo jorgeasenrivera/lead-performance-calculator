@@ -7382,8 +7382,7 @@ function TicketsPanel({ config, onChange }) {
       <div className="card">
         <div className="p-cap2">Who people reach</div>
         <p className="hint">
-          This is what the Help button shows, everywhere, including the sign-in pages that
-          salespeople use without an account. Leave anything blank and it simply is not shown.
+          What the Help button shows, everywhere. Anything blank is not shown.
         </p>
         <div className="help-row">
           <span><label className="help-lbl">Name</label>
@@ -12786,10 +12785,7 @@ function FloorPhones({ store, roster, onClose }) {
         <button className="btn-quiet" onClick={onClose}>Close</button>
       </div>
       <p className="hint">
-        Which account belongs to which person here. It is what decides whose phone buzzes when their
-        customer walks in, so it is set here rather than by the salesperson. They need an account on
-        this site first. They sign up as usual and you leave them with no stores ticked, which keeps
-        them off the dashboard while still letting their phone know who they are.
+        Which account belongs to which person, and so whose phone buzzes when their customer walks in. They sign up as usual, with no stores ticked: off the dashboard, but their phone knows who they are.
       </p>
 
       {err && <p className="f-backlog-err">{err}</p>}
@@ -13252,7 +13248,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
       <div className="card">
         <h3>Linked dealerships</h3>
-        <p className="hint">Type the DriveCentric dealership name exactly as it appears in the deal alerts (e.g. "Driver's Mart Winter Park"). Events for these dealerships feed this store. Matching is case- and punctuation-insensitive.</p>
+        <p className="hint">Exactly as the deal alerts spell it. Case and punctuation do not matter.</p>
         <div className="f-dealer-add">
           <input className="f-input" placeholder="Dealership name from DriveCentric" value={dealerInput}
             onChange={(e) => setDealerInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addDealer(); }} />
@@ -13288,9 +13284,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
       <div className="card">
         <h3>The lot</h3>
         <p className="hint">
-          Where this store's property ends. A phone can only tell that somebody has left the lot if
-          it knows where the lot is, and it never records where anybody goes, only whether they are
-          on it or off it.
+          Where the lot ends. A phone reports on it or off it, never where anybody goes.
         </p>
         {fence && fence.ring && fence.ring.length >= 3 && !drawing && (
           <p className="hint">
@@ -15808,7 +15802,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
               ? "This store gives a salesperson a plate and they keep it. There is no day to work through and nothing is overdue for being out overnight, so the screen shows who is holding what and since when. Changing this back to daily does not touch a single record."
               : "This store hands plates out and wants them back by close, so the log runs a day at a time and a plate that did not come back is flagged. Switch to held-until-returned if your salespeople keep a plate for weeks at a time."}
           </p>
-          <p className="hint">This is set per store, and it changes nothing about the records themselves. The same trips, times and custody logs are underneath either way.</p>
+          <p className="hint">Per store. The trips, times and custody logs are the same underneath either way.</p>
         </div>
       )}
       {masterOpen && (
@@ -15928,7 +15922,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                     <td className="plate-acts plate-acts-3">
                       <span>{handing !== p.id && <button className="btn-quiet" onClick={() => { setPlateErr(""); setHanding(p.id); }}>Hand over</button>}</span>
                       <button className="plate-check out" onClick={() => toggleIn(p.id)}>Mark returned</button>
-                      <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
+                      <button className="btn-x danger" onClick={() => remove(p.id)}>Remove</button>
                     </td>
                   </tr>
                 ))}
@@ -16002,7 +15996,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                       place on every line and the eye had to find it each time. */}
                   <td className="plate-acts">
                     <button className={"plate-check " + (p.checkedIn ? "in" : "out")} onClick={() => toggleIn(p.id)}>{p.checkedIn ? <><PixIcon glyph="check" size={11} /> Returned</> : "Mark returned"}</button>
-                    <button className="btn-x" onClick={() => remove(p.id)}>Remove</button>
+                    <button className="btn-x danger" onClick={() => remove(p.id)}>Remove</button>
                   </td>
                 </tr>
               ))}
@@ -16136,8 +16130,7 @@ function ChecklistEditor({ config, storeId, onChange }) {
     <div className="card">
       <h3>The floor checklist</h3>
       <p className="hint">
-        What a salesperson sees under My day. Keep the wording short: it is read on a phone,
-        between customers. Nobody is graded on these.
+        What a salesperson sees under My day. Read on a phone, between customers, and graded on nothing.
       </p>
 
       <div className="md-cap">Ticked by the reports</div>
@@ -16210,7 +16203,7 @@ function ActivityStandardsEditor({ config, storeId, onChange }) {
     <div className="standards">
       <div className="card">
         <h3>Daily Check Out Minimums <span className="section-sub">{store.name}</span></h3>
-        <p className="hint">An associate "rocks it" for the day when they meet both minimums. These pull from the Daily Activity report's Calls and Personalized Video columns, and apply to this store only.</p>
+        <p className="hint">Both minimums met is a day rocked. From the Calls and Personalized Video columns, this store only.</p>
         <div className="stepper-row">
           <Stepper label="Calls" field="minCalls" value={std.minCalls} hint="per day" />
           <Stepper label="Videos" field="minVideos" value={std.minVideos} hint="per day" />
@@ -17860,7 +17853,7 @@ function CombinedBoard({ config, stores, adminData, onOpenStore }) {
           ))}
         </section>
       ))}
-      <p className="hint">This is a read-only oversight view. To make changes, open a specific store, though your account is set to view-only there as well.</p>
+      <p className="hint">Read-only. Your account is view-only inside the stores too.</p>
     </div>
   );
 }
@@ -18157,8 +18150,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
       <div className="card">
         <h3>Backup</h3>
         <p className="hint">
-          Everything lives in one database with no version history, so a bad import, an accidental delete, or two people saving at once can lose data with no way back.
-          Download a backup regularly, and always before a big change. The file holds every store, roster, import, standard, and user.
+          One database, no version history. Download a backup regularly, and always before a big change. The file holds every store, roster, import, target and user.
         </p>
         <div className="inline-form">
           <button className="btn" onClick={download} disabled={busy}>Download backup</button>
@@ -18174,9 +18166,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
       <div className="card recover-card">
         <h3>Recover missing stores</h3>
         <p className="hint">
-          If a store disappeared from the tool but you know you created it, its data is very likely
-          still in the database, just no longer listed. This scans for store data that isn't attached
-          to any store and offers to put it back, with its roster, imports, and history intact.
+          Scans for store data no longer attached to a store, and offers to put it back with its roster, imports and history intact.
         </p>
         <button className="btn" disabled={busy} onClick={scanOrphans}>Scan for missing stores</button>
         {orphans !== null && (
@@ -18219,19 +18209,14 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
             </div>
           )}
         <p className="hint">
-          One caveat worth knowing: these live in the same database as your data, so they protect you
-          from a bad import or an accidental delete, but not from losing the Supabase project itself.
-          Download a copy now and then and keep it somewhere else.
+          These live in the same database, so they cover a bad import but not losing the project itself. Download a copy now and then and keep it elsewhere.
         </p>
       </div>
 
       <div className="card">
         <h3>Recover one store</h3>
         <p className="hint">
-          Restoring a whole backup rolls back every store to that date, which is far too much when
-          one store is wrong and the other twelve are fine. This puts a single store back and leaves
-          the rest untouched. Every daily backup is read first and shown, so you can see whose people
-          are in each one before choosing.
+          Puts one store back and leaves the rest untouched. Every daily backup is read first, so you can see whose people are in each before choosing.
         </p>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select className="inp" value={recStore} onChange={(e) => { setRecStore(e.target.value); setRecRows(null); }}>
@@ -18283,7 +18268,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
 
       <div className="card">
         <h3>Restore points</h3>
-        <p className="hint">The tool automatically saves the state of a store right before every import. If an import goes wrong, roll that store back here. The last 8 are kept per store.</p>
+        <p className="hint">Taken before every import. The last 8 are kept per store.</p>
         {config.stores.map((s) => {
           const snaps = adminData[s.id]?.snapshots || [];
           return (
@@ -18352,7 +18337,7 @@ function ChannelPrompt({ pending, onCancel, onConfirm }) {
           {dupes && <div className="login-err">Two files are set to the same channel. Each channel should only be imported once.</div>}
         </div>
         <div className="wiz-foot">
-          <button className="btn-x" onClick={onCancel}>Cancel import</button>
+          <button className="btn-x danger" onClick={onCancel}>Cancel import</button>
           <button className="btn" disabled={!allPicked || dupes}
             onClick={() => onConfirm(pending.ambiguous.map((f, i) => ({ rows: f.rows, type: picks[i], fileName: f.fileName })))}>
             Import
@@ -18427,7 +18412,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
           <div className="wiz-form">
             <label>Store name</label>
             <input value={name} onChange={(e) => { setName(e.target.value); setErr(""); }} placeholder="e.g. Audi North Orlando" />
-            {editing && <p className="hint">Rename it freely. Its roster, imports, and history are tied to the store itself, not to what it is called, so nothing is lost.</p>}
+            {editing && <p className="hint">Rename it freely. The roster, imports and history are tied to the store, not its name.</p>}
 
             <label>Manufacturer</label>
             <div className="wiz-presets">
@@ -18463,7 +18448,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
                 <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { pickFile(e.target.files[0]); e.target.value = ""; }} />
               </label>
               {icon && <button className="btn-x" onClick={() => setCropSrc(icon)}>Crop</button>}
-              {icon && <button className="btn-x" onClick={() => setIcon(null)}>Remove</button>}
+              {icon && <button className="btn-x danger" onClick={() => setIcon(null)}>Remove</button>}
             </div>
 
             <label>Leaderboard colors</label>
@@ -18507,9 +18492,7 @@ function StoreWizard({ config, store, onCancel, onSave }) {
             </div>
 
             <label>Daily report cutoff</label>
-            <p className="hint">The hour you expect the day's reports to have landed. Anything inside the
-              grace window still counts as on time. Silence after the last scheduled report is not flagged,
-              because DriveCentric sends on a schedule and the day is simply finished.</p>
+            <p className="hint">When the day's reports should have landed. Inside the grace window still counts as on time.</p>
             <div className="wiz-nums">
               <label className="thr-label">Expected by
                 <input type="time" value={cutoff.at}
@@ -18831,7 +18814,7 @@ function BaselineImport({ data, onChange }) {
             {preview.people.length} matched from {preview.fileName}
           </div>
           {preview.people.length === 0 ? (
-            <p className="hint">Nobody in that file matches your roster. Check the names, or import the report normally first so the roster builds itself.</p>
+            <p className="hint">Nobody in that file is on your roster. Check the names, or import the report normally first.</p>
           ) : (
             <>
               <table className="roster-table">
@@ -20151,8 +20134,7 @@ function OwnYourOutcome({ store, data, a, monthStats, onChange }) {
       {/* ---- the blueprint ---- */}
       {!ratios ? (
         <p className="hint">
-          No conversion history yet, so there is nothing to build a plan from. Seed this person's 90-day numbers
-          below, or wait for a few weeks of imports to accumulate.
+          No conversion history yet. Seed their 90 days below, or wait for a few weeks of imports.
         </p>
       ) : (
         <>
@@ -20318,8 +20300,7 @@ function BaselineEditor({ seed, onSave }) {
   return (
     <div className="bl-editor">
       <p className="hint">
-        Type in what this person actually did over their last 90 days, straight from the workbook.
-        The tool blends it with everything it imports from here on, so the seed matters less and less over time.
+        Their last 90 days, straight from the workbook. It blends with every import from here on.
       </p>
       <div className="bl-grid">
         {f("daysWorked", "Days worked")}
@@ -20669,7 +20650,7 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
                 </ul>
               </>
             ) : (
-              <p className="hint">This person is at or above the benchmark on every behavior we track. Worth asking what they do that is not in the report.</p>
+              <p className="hint">At or above the benchmark on everything tracked. Worth asking what they do that the report does not see.</p>
             )}
             {ahead.length > 0 && (
               <p className="hint">Strengths worth naming out loud: {ahead.slice(0, 3).map((g) => g.label.toLowerCase()).join(", ")}.</p>
@@ -21189,8 +21170,7 @@ function NoAccessPanel({ session, config, onRecheck }) {
       </div>
 
       <p className="hint noaccess-hint">
-        Admin tip: compare the Account ID above with the person's row in the Access panel. If they don't match,
-        there are two accounts for this person and the access was granted to the other one.
+        If the Account ID above differs from their row under Access, there are two accounts and the access went to the other one.
       </p>
 
       <button className="btn" onClick={recheck} disabled={checking}>{checking ? "Checking…" : "Check again"}</button>
@@ -25018,9 +24998,7 @@ function AccessPanel({ config, session, onChange }) {
         <div className="card">
           <div className="p-cap2">Waiting for approval <span className="tg-chip wt">{pending.length}</span></div>
           <p className="hint">
-            These people created an account and are waiting on you. Tick the stores they should see, then approve.
-            A salesperson needs no stores at all: approve them with nothing ticked and they stay off the dashboard
-            while still having an account you can join to their name on the floor.
+            Tick the stores they should see, then approve. A salesperson needs none: approve with nothing ticked and they stay off the dashboard with an account you can join to their name.
           </p>
           {pending.map((u) => (
             <PendingRow key={u.id} u={u} stores={config.stores} busy={busy}
@@ -25032,8 +25010,7 @@ function AccessPanel({ config, session, onChange }) {
       <div className="card ac-card">
         <div className="p-cap2">Accounts <span className="tg-chip">{active.length}</span></div>
         <p className="hint">
-          Passwords are handled by Supabase and stored hashed. No one, including you, can read them.
-          If someone forgets theirs they use "Forgot password?" on the sign-in screen.
+          Passwords are stored hashed. Nobody, including you, can read them.
         </p>
         <div className="ac-tbl">
           <div className="ac-h">
@@ -25169,7 +25146,7 @@ function PendingRow({ u, stores, busy, onApprove, onReject }) {
         <button className="btn" disabled={busy} onClick={() => onApprove(ids)}>
           {ids.length ? "Approve" : "Approve for the floor only"}
         </button>
-        <button className="btn-x" disabled={busy} onClick={onReject}>Reject</button>
+        <button className="btn-x danger" disabled={busy} onClick={onReject}>Reject</button>
       </div>
     </div>
   );
@@ -25273,9 +25250,7 @@ function HolidayPanel({ config, onChange }) {
     <div className="card holiday-card">
       <h3>Holidays <span className="section-sub">group-wide</span></h3>
       <p className="hint">
-        Set once and applied to every store. A holiday comes out of every associate's working days for
-        that month, so pacing, per-day averages, the coaching targets and the Check Out day counts never
-        judge anyone against a day the doors were shut. It does not remove any numbers that were imported.
+        Set once, for every store. A holiday comes out of everyone's working days, so nobody is judged against a day the doors were shut. Nothing imported is removed.
       </p>
       <div className="hol-add">
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
@@ -25392,7 +25367,7 @@ function SettingsPanel({ config, onChange }) {
         <h3>Stores &amp; Manufacturer Logos</h3>
         <div className="store-list">
           {config.stores.map((s, idx) => (
-            <div key={s.id} className="store-item">
+            <div key={s.id} className="store-item" style={{ "--sp": (s.brand || DEFAULT_BRAND).primary }}>
               <div className="store-item-main">
                 <div className="store-item-order">
                   <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up" aria-label="Move up"><PixIcon glyph="arrowup" size={11} /></button>
@@ -25412,7 +25387,7 @@ function SettingsPanel({ config, onChange }) {
                   <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { setIcon(s.id, e.target.files[0]); e.target.value = ""; }} />
                 </label>
                 {s.icon && <button className="btn-x" onClick={() => setCropping({ storeId: s.id, src: s.icon })}>Crop</button>}
-                {s.icon && <button className="btn-x" onClick={() => clearIcon(s.id)}>Remove logo</button>}
+                {s.icon && <button className="btn-x danger" onClick={() => clearIcon(s.id)}>Remove logo</button>}
                 <button className="btn-x danger" onClick={() => deleteStore(s)}>Delete store</button>
               </div>
             </div>
@@ -25421,7 +25396,7 @@ function SettingsPanel({ config, onChange }) {
         <div className="inline-form">
           <button className="btn" onClick={() => setWizard({})}>+ New Store</button>
         </div>
-        <p className="hint">"New Store" opens a setup tool where you pick the manufacturer colors, logo, standards, and thresholds, with a live preview of the manager's view, before the store is created. "Customize" reopens that tool for an existing store. The order here is the order everywhere.</p>
+        <p className="hint">Customize reopens the setup tool for a store. The order here is the order everywhere.</p>
       </div>
       {wizard && (
         <StoreWizard config={config} store={wizard.store} onCancel={() => setWizard(null)} onSave={saveStore} />
@@ -25430,8 +25405,7 @@ function SettingsPanel({ config, onChange }) {
       <div className="card">
         <h3>Positions</h3>
         <p className="hint">
-          Both The Board and Coaching are built on cars sold. A position that does not deliver units
-          has no meaningful closing rate or per-car ratio, so it is switched off for both by default.
+          Both are built on cars sold, so a position that delivers none is off by default.
         </p>
         <table className="roster-table">
           <thead>
@@ -28593,7 +28567,7 @@ const SAGE_CSS = `
       .verdict-off { background:rgba(118,118,128,.2); color:var(--ink); }
 
       /* ---- auth extras ---- */
-      .btn-link { background:none; border:none; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer; margin-top:12px; }
+      .btn-link { background:none; border:none; color:var(--p2d); font-weight:600; font-size:13px; cursor:pointer; margin-top:12px; }
 
       /* ---- splash ---- */
       .splash { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px 20px;
@@ -28963,21 +28937,24 @@ const SAGE_CSS = `
         background-repeat:no-repeat; background-position:right 13px center; background-size:12px 8px; }
       select::-ms-expand { display:none; }
       input:hover, select:hover { background:rgba(255,255,255,.92); }
-      input:focus, select:focus { border-color:var(--blue); background:#fff; box-shadow: 0 0 0 3.5px rgba(42,94,155,.18); }
+      input:focus, select:focus { border-color:var(--p2); background:#fff;
+        box-shadow:0 0 0 3.5px color-mix(in srgb, var(--p2) 22%, transparent); }
       input[type=number] { width:84px; }
-      .btn { background:linear-gradient(180deg, #3B72B0 0%, var(--blue) 100%); color:#fff; border:none;
+      /* One filled button for the whole site, in the Garden palette every page
+         now wears. It was a blue gradient left over from the old look, which is
+         why converted pages kept sprouting a blue pill in the corner. */
+      .btn { background:var(--p2); color:#fff; border:none;
         border-radius:12px; padding:10px 20px; font-weight:600; font-size:13px; letter-spacing:.005em;
-        cursor:pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), 0 1px 2px rgba(16,40,68,.22), 0 6px 18px rgba(42,94,155,.24);
-        transition: transform .28s var(--ease-bloop), box-shadow .28s var(--ease), filter .2s; }
-      .btn:hover { filter:brightness(1.05); transform: translateY(-1.5px);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 2px 4px rgba(16,40,68,.2), 0 12px 26px rgba(42,94,155,.34); }
+        cursor:pointer; box-shadow:0 5px 14px -6px color-mix(in srgb, var(--p2) 70%, transparent);
+        transition: transform .28s var(--ease-bloop), box-shadow .28s var(--ease), background .2s; }
+      .btn:hover { background:var(--p2d); transform: translateY(-1.5px);
+        box-shadow:0 10px 22px -8px color-mix(in srgb, var(--p2) 70%, transparent); }
       .btn:active { transform: translateY(0) scale(.975); transition-duration:.09s; }
       .btn:disabled { filter:grayscale(.35); opacity:.5; box-shadow:none; transform:none; cursor:default; }
       .btn.wide { width:100%; margin-top:18px; padding:12px; border-radius:12px; font-size:14px; }
-      .btn.secondary { background:rgba(255,255,255,.72); color:var(--ink); border:1px solid rgba(16,40,68,.10);
-        backdrop-filter: blur(14px) saturate(160%); -webkit-backdrop-filter: blur(14px) saturate(160%);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 1px 2px rgba(16,40,68,.06); }
-      .btn.secondary:hover { background:#fff; box-shadow: inset 0 1px 0 #fff, 0 8px 20px rgba(16,40,68,.12); }
+      .btn.secondary { background:var(--card); color:var(--ink-2); border:1px solid var(--line);
+        box-shadow:none; }
+      .btn.secondary:hover { background:var(--card); border-color:var(--p2); color:var(--p2d); box-shadow:none; }
       /* ---- mobile slide-out drawer (hidden on desktop, shown under 720px) ---- */
       .hamburger { display:none; flex-direction:column; justify-content:center; gap:4px; width:38px; height:38px;
         border:1px solid var(--line); border-radius:11px; background:#fff; cursor:pointer; padding:0 9px; }
@@ -29007,21 +28984,27 @@ const SAGE_CSS = `
       .drawer-item > span:first-child { flex:1; }
       .drawer-tick { color:var(--blue); font-weight:800; }
 
-      .btn-quiet { background:transparent; border:none; color:var(--blue); font-weight:600; font-size:13px; cursor:pointer;
+      .btn-quiet { background:transparent; border:none; color:var(--p2d); font-weight:600; font-size:13px; cursor:pointer;
         padding:7px 10px; border-radius:9px; transition: background .2s; }
-      .btn-quiet:hover { background:rgba(10,132,255,.08); }
+      .btn-quiet:hover { background:color-mix(in srgb, var(--p2) 10%, transparent); }
       .btn-ghost { background:transparent; border:1px solid var(--line); border-radius:11px; padding:8px 15px; color:var(--ink-2);
         cursor:pointer; margin-top:6px; display:inline-block; font-weight:600; font-size:12.5px;
         transition: border-color .25s var(--ease), color .25s var(--ease), background .25s var(--ease), transform .25s var(--ease-bloop); }
-      .btn-ghost:hover { border-color:rgba(42,94,155,.45); color:var(--blue); background:rgba(42,94,155,.06); transform:translateY(-1px); }
+      .btn-ghost:hover { border-color:var(--p2); color:var(--p2d);
+        background:color-mix(in srgb, var(--p2) 7%, transparent); transform:translateY(-1px); }
       .btn-ghost:active { transform:none; }
       .btn-ghost.on { background:rgba(224,161,0,.14); border-color:transparent; color:#95600A; }
       .coach-excl { margin-left:8px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
         background:rgba(224,161,0,.15); color:#95600A; padding:1px 7px; border-radius:99px; vertical-align:middle; }
       .file-btn { cursor:pointer; margin:0; }
-      .btn-x { background:transparent; border:none; color:var(--red); cursor:pointer; font-size:12px; font-weight:600;
-        padding:4px 8px; border-radius:8px; transition: background .2s; }
-      .btn-x:hover { background:rgba(229,71,60,.08); }
+      /* Red for everything, including Cancel, Crop, Move up and Download: a
+         screen of ordinary actions read as a screen of warnings. Neutral now,
+         with red kept for the ones that actually take something away. */
+      .btn-x { background:transparent; border:none; color:var(--ink-2); cursor:pointer; font-size:12px; font-weight:600;
+        padding:4px 8px; border-radius:8px; transition: background .2s, color .2s; }
+      .btn-x:hover { background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--p2d); }
+      .btn-x.danger { color:var(--red); }
+      .btn-x.danger:hover { background:rgba(229,71,60,.08); color:var(--red); }
       .hint { font-size:12px; color:var(--ink-2); line-height:1.45; }
 
       /* ---- standards ---- */
@@ -29159,7 +29142,17 @@ const SAGE_CSS = `
       .store-checks.tight { gap:8px; }
       .check-inline { display:flex; gap:6px; align-items:center; font-size:12.5px; }
       .check-inline input[type=checkbox] { accent-color: var(--blue); width:15px; height:15px; }
-      .card h3 { margin:0 0 10px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
+      /* Every panel's heading in one voice: the dotted small-caps caption the
+         redesigned pages use, rather than a 16px bold line that read as a
+         different product from the card next to it. */
+      .card h3 { margin:0 0 9px; display:flex; align-items:center; gap:8px;
+        font:700 9px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+        color:var(--ink-3); }
+      .card h3::after { content:""; flex:1; height:2px; opacity:.3;
+        background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
+      .card h3 .section-sub { margin-left:0; font:700 9px var(--font-mono);
+        letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); opacity:.75; }
+      .card h3 .badge, .card h3 .tg-chip { text-transform:none; letter-spacing:0; }
 
       @media (max-width: 700px) { .assoc-name { flex:1 1 auto; } }
 
@@ -31899,6 +31892,10 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* the store list wears the same colour the store wears everywhere else */
+      .store-item { position:relative; overflow:hidden; padding-left:18px; }
+      .store-item::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px;
+        background:var(--sp, var(--p2)); }
       /* the one filled button a panel gets, in the palette the rest of the app uses */
       .go-log2 { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:11px;
         padding:9px 16px; cursor:pointer; font:700 11.5px var(--font-display); color:#fff;
