@@ -13728,8 +13728,10 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         <span className="da-cell">
           <em>Tasks</em>
           <b className={r.tasksPosted > 0 && (r.tasks || 0) / r.tasksPosted >= taskBar ? "cg" : ""}>
-            <TaskDial done={r.tasks} posted={r.tasksPosted} target={taskBar} size={26} />
-            {r.tasksPosted > 0 ? <>{r.tasks ?? 0}<i>/{r.tasksPosted}</i></> : <i>–</i>}
+            {/* the dial says the count and the share of it in one mark, and
+                hovering it spells both out, so the figures beside it were the
+                same thing said twice */}
+            <TaskDial done={r.tasks} posted={r.tasksPosted} target={taskBar} size={36} />
           </b>
         </span>
         <span className="da-cell">
@@ -28541,7 +28543,10 @@ const SAGE_CSS = `
         padding:11px 16px 11px 19px; }
       /* the verdict fade bleeds in from the left edge; everything rides above it */
       .assoc-row > :not(.da-stripe) { position:relative; }
-      .assoc-row .da-stripe { border-radius:10px; }
+      /* square, so a row runs edge to edge and starts at the rule above it
+         rather than curving away from it */
+      .assoc-row .da-stripe { border-radius:0; }
+      .s2-rolecard .assoc-card:last-child .assoc-row .da-stripe { border-radius:0 0 13px 13px; }
       .assoc-row .assoc-who { width:190px; flex:0 0 auto; }
       .assoc-row .assoc-name { font-size:13px; font-weight:600; }
       .assoc-row .assoc-gauge { width:150px; flex:0 0 auto; height:7px; border-radius:4px; min-width:0; }
@@ -28815,7 +28820,7 @@ const SAGE_CSS = `
       .tdial-mark { stroke:rgba(16,32,52,.42); }
       /* An svg <text> now, not a <b> beside the ring, so these paint with fill.
          Leaving them on "color" silently did nothing and every count went black. */
-      .tdial-n { font-family:var(--font-display); font-size:13px; font-weight:800;
+      .tdial-n { font-family:var(--font-display); font-size:14px; font-weight:800;
         letter-spacing:-.02em; }
       .tdial-ok .tdial-fg { stroke:#178A57; }   .tdial-ok .tdial-n { fill:#137048; }
       .tdial-mid .tdial-fg { stroke:#D9A425; }  .tdial-mid .tdial-n { fill:#9A6410; }
@@ -31368,8 +31373,8 @@ const SAGE_CSS = `
       .s2-chip-acts { display:flex; flex-direction:column; gap:9px; align-items:stretch; }
       /* what you read sits at the foot of the rail, so the two pressable things
          stay together at the top where the eye lands */
-      .s2-chip-state { margin-top:auto; display:flex; align-items:flex-end;
-        justify-content:space-between; gap:12px; }
+      .s2-chip-state { margin-top:auto; display:flex; flex-direction:column-reverse;
+        align-items:flex-end; gap:10px; }
       .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
         border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
         font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
@@ -31395,15 +31400,15 @@ const SAGE_CSS = `
       .s2-names s.off { color:var(--ink-3); }
       .s2-pdot { width:7px; height:7px; border-radius:50%; flex:0 0 auto; background:var(--green); }
       .s2-pdot.off { background:var(--ink-3); }
-      .s2-mcal { display:flex; flex-direction:column; gap:3px; align-items:flex-end; cursor:default; }
-      .s2-mc-cap { font:700 8px var(--font-mono); letter-spacing:.09em; text-transform:uppercase;
+      .s2-mcal { display:flex; flex-direction:column; gap:4px; align-items:flex-end; cursor:default; }
+      .s2-mc-cap { font:700 9px var(--font-mono); letter-spacing:.09em; text-transform:uppercase;
         color:var(--sandCap); display:flex; gap:4px; align-items:center; }
-      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,8px); gap:2.4px; justify-items:center; }
-      .s2-mc-grid i { width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.26); cursor:pointer; }
+      .s2-mc-grid { display:grid; grid-template-columns:repeat(7,12px); gap:3.5px; justify-items:center; }
+      .s2-mc-grid i { width:7.5px; height:7.5px; border-radius:50%; background:rgba(255,255,255,.26); cursor:pointer; }
       .s2-mc-grid i.p { background:rgba(255,255,255,.72); }
       .s2-mc-grid i.t { background:var(--sandTick); box-shadow:0 0 6px var(--sandTick); transform:scale(1.4); }
       .s2-mc-grid i.e { background:transparent; pointer-events:none; }
-      .s2-mc-sub { font-size:8.5px; color:rgba(255,255,255,.7); white-space:nowrap; margin-top:1px; }
+      .s2-mc-sub { font-size:9.5px; color:rgba(255,255,255,.7); white-space:nowrap; margin-top:2px; }
       .s2-cw { display:flex; align-items:flex-start; gap:8px; font-size:10px; color:var(--ink);
         line-height:1.45; padding:3.5px 0; }
       .s2-cw b { font-family:var(--font-mono); }
@@ -31628,15 +31633,17 @@ const SAGE_CSS = `
       .da-stripe.st-a { --dasc:rgba(201,138,0,.14); }
       .da-stripe.st-r { --dasc:rgba(194,54,31,.14); }
       .da-stripe.st-dim { --dasc:rgba(16,32,52,.06); }
-      .da-name { width:170px; flex:0 0 auto; min-width:0; }
-      .da-name b { display:flex; align-items:center; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .da-sub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400; }
-      .da-flex { flex:1; }
-      .da-cell { display:flex; flex-direction:column; gap:1px; flex:1 1 0; max-width:118px; min-width:62px; }
-      .da-cell em { font:700 7.5px var(--font-mono); font-style:normal; letter-spacing:.08em;
+      .da-name { width:196px; flex:0 0 auto; min-width:0; }
+      .da-name b { display:flex; align-items:center; font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .da-sub { display:block; font-size:10.5px; color:var(--ink-3); font-weight:400; }
+      /* The cells take the width between them rather than crowding the left of
+         a wide screen and leaving a hole in the middle. */
+      .da-flex { flex:0 1 28px; }
+      .da-cell { display:flex; flex-direction:column; gap:2px; flex:1 1 0; max-width:none; min-width:70px; }
+      .da-cell em { font:700 8.5px var(--font-mono); font-style:normal; letter-spacing:.08em;
         text-transform:uppercase; color:var(--ink-3); }
-      .da-cell b { font:700 12px var(--font-mono); display:flex; align-items:center; gap:4px; color:var(--ink); }
-      .da-cell b i { font-style:normal; font-weight:500; font-size:9.5px; color:var(--ink-3); }
+      .da-cell b { font:700 14.5px var(--font-mono); display:flex; align-items:center; gap:5px; color:var(--ink); }
+      .da-cell b i { font-style:normal; font-weight:500; font-size:11px; color:var(--ink-3); }
       .da-cell b.cg { color:#1E8A4C; }
       .da-cell b.cr { color:#C2361F; }
       .da-out b { color:var(--ink-2); }
@@ -31762,19 +31769,19 @@ const SAGE_CSS = `
       .s2-leg-note { margin-left:auto; color:var(--ink-3); }
       /* the four standards on every associate row, in the drafts' speedometer */
       .s2g4 { width:88px; display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; }
-      .s2g4 svg { width:46px; height:27px; display:block; }
+      .s2g4 svg { width:58px; height:34px; display:block; }
       /* the channel cell: a column in that channel's own colour, drawn against
          the standard as a rule across it. Above the rule is above standard, and
          the rule is at the same height in all three so they read as one line. */
       .s2g4-bar { justify-content:flex-end; gap:3px; }
       .s2g4-v { font:700 12px var(--font-mono); font-variant-numeric:tabular-nums; line-height:1; }
-      .s2g4-col { position:relative; display:block; width:24px; height:30px; border-radius:6px;
+      .s2g4-col { position:relative; display:block; width:17px; height:34px; border-radius:5px;
         background:rgba(16,32,52,.05); box-shadow:inset 0 0 0 1px rgba(16,32,52,.1); }
       /* square across the top so the fill reads as a level in a vessel rather
          than a pill floating in one */
-      .s2g4-col i { position:absolute; left:0; right:0; bottom:0; border-radius:0 0 6px 6px; background:var(--cc);
+      .s2g4-col i { position:absolute; left:0; right:0; bottom:0; border-radius:0 0 5px 5px; background:var(--cc);
         transition:height .5s cubic-bezier(.22,.61,.36,1); }
-      .s2g4-col.full i { border-radius:6px; }
+      .s2g4-col.full i { border-radius:5px; }
       /* the standard, dashed, the way the hero draws the cap on its own channel
          bars, so it reads as the mark to reach and not the rim of the vessel */
       .s2g4-col s { position:absolute; left:-2px; right:-2px; bottom:60%; height:2px; margin-bottom:-1px;
