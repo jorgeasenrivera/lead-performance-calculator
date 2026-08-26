@@ -17335,6 +17335,32 @@ function MetricStrip({ ev, stats, thr }) {
         const col = na || vShow == null ? "#C9CDD3" : t.col;
         const frac = na || vShow == null ? 0 : Math.max(0.04, Math.min(1, vShow / (tgt * 1.6)));
         const shown = vShow == null ? "\u2013" : def.kind === "pct" ? vShow + "%" : fmtNum(vShow);
+        /* ---- a channel is a bar, a standard is a dial ----
+           Seven dials in a row asked the eye to read seven arcs and compare
+           them, and the three on the left are the same three channels the hero,
+           the chart, History and Targets all draw as bars in their own colours.
+           One thing, one shape: channels are bars here too, and the dials are
+           left to the standards, which is what a dial against a target is for. */
+        const chan = FIVE.find((f) => f.key === metric && CHANNELS[f.id]);
+        if (chan) {
+          const w = na || vShow == null ? 0 : Math.max(2, Math.min(100, (vShow / tgt) * 100));
+          return (
+            <span key={metric} className={"s2g4 s2g4-bar bloop-host" + (t ? " " + t.cls : "")}
+              tabIndex={0} style={{ "--cc": chan.col }}>
+              <b className="s2g4-v" style={{ color: vShow == null ? "#B9BEC6" : col }}>{shown}</b>
+              <span className="s2g4-track" aria-hidden="true">
+                <i style={{ width: w + "%" }} /><s />
+              </span>
+              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
+              <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
+                <div className="bw-title">{def.label}</div>
+                <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
+                  <small>{na ? "no target set" : `of ${tgt}% target`}</small></div>
+                <div className="bw-desc">{METRIC_DESC[metric] || "Measured month to date."}</div>
+              </div>
+            </span>
+          );
+        }
         return (
           <span key={metric} className={"s2g4 bloop-host" + (t ? " " + t.cls : "")} tabIndex={0}>
             <svg viewBox="0 0 40 24" aria-hidden="true">
@@ -17603,7 +17629,11 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         {star && <span className="star-badge" title="Forty per cent or more over every requirement">
           <PixIcon glyph="trophy" size={12} /> Crushing it
         </span>}
-          {incomplete && <span className="flag flag-gray" title={"Waiting on: " + missing.join(", ")}>⚑ incomplete file</span>}
+          {/* The pill said "incomplete file" beside the name while the line
+              directly under the name already said "waiting on a report". Two ways
+              of saying one thing, and in a cell 190px wide the second one landed
+              on top of the first. The sub-line carries it now, with what is
+              missing on hover. */}
         </span>
         {/* ---- the lead bar, in the row and running most of its length ----
             It used to sit under the row at a fifth of the tile's width with a
@@ -31686,6 +31716,15 @@ const SAGE_CSS = `
       /* the four standards on every associate row, in the drafts' speedometer */
       .s2g4 { width:88px; display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; }
       .s2g4 svg { width:46px; height:27px; display:block; }
+      /* the channel cell: the same bullet bar the hero, Targets and Coaching use,
+         in that channel's own colour, with the target as a tick at 100% */
+      .s2g4-bar { justify-content:flex-end; gap:4px; }
+      .s2g4-v { font:700 12px var(--font-mono); font-variant-numeric:tabular-nums; line-height:1; }
+      .s2g4-track { position:relative; display:block; width:52px; height:8px; border-radius:4px;
+        background:rgba(16,32,52,.09); }
+      .s2g4-track i { position:absolute; left:0; top:0; bottom:0; border-radius:4px; background:var(--cc); }
+      .s2g4-track s { position:absolute; left:100%; top:-2.5px; width:2px; height:13px;
+        border-radius:1px; background:var(--ink-2); }
       .s2g4-l { font:700 7.5px var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3);
         white-space:nowrap; }
       .s2g4-l i { font-style:normal; color:var(--ink-3); font-weight:600; }
@@ -31703,6 +31742,7 @@ const SAGE_CSS = `
       .vpill.dim { background:#F2F2F4; color:var(--ink-2); }
       .s2-rgo { color:var(--ink-3); font-size:17px; line-height:1; flex:0 0 auto; }
       .assoc-nameblock { min-width:0; display:block; }
+      .assoc-sub.waiting { color:var(--amber); }
       .assoc-sub { display:block; font-size:9.5px; color:var(--ink-3); font-weight:400;
         white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       /* Every pill in the hero head is one height, whatever it holds. This used
