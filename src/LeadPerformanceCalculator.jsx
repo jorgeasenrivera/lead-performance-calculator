@@ -3541,7 +3541,7 @@ export default function LeadPerformanceCalculator() {
             {adminTab === "access" && <AccessPanel config={config} session={session} onChange={persistConfig} />}
             {adminTab === "tickets" && <TicketsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && <RepairPanel config={config} />}
-            {adminTab === "audit" && <AuditLog />}
+            {adminTab === "audit" && <AuditLog config={config} />}
             {adminTab === "settings" && <SettingsPanel config={config} onChange={persistConfig} />}
             {adminTab === "backup" && (
               <BackupPanel config={config} adminData={adminData} session={session}
@@ -7368,11 +7368,19 @@ function TicketsPanel({ config, onChange }) {
     });
   const openWrong = (items || []).filter((t) => t.kind === "figures" && (t.status || "open") === "open").length;
   const openBehind = (items || []).filter((t) => t.kind === "standard" && (t.status || "open") === "open").length;
+  const openList = (items || []).filter((t) => (t.status || "open") === "open");
+  const openCount = openList.length;
+  const oldest = openList.map((t) => t.at).filter(Boolean).sort()[0] || null;
+  const closedThisMonth = (items || []).filter((t) => t.status === "closed"
+    && String(t.closedAt || "").slice(0, 7) === ym()).length;
+  /* Which dealership a ticket came from, in that dealership's own colour, so a
+     list of tickets across four stores sorts itself by eye. */
+  const storeOf = (id) => (config?.stores || []).find((x) => x.id === id || x.name === id) || null;
 
   return (
     <div className="board-page">
       <div className="card">
-        <h3>Who people reach</h3>
+        <div className="p-cap2">Who people reach</div>
         <p className="hint">
           This is what the Help button shows, everywhere, including the sign-in pages that
           salespeople use without an account. Leave anything blank and it simply is not shown.
@@ -7408,26 +7416,39 @@ function TicketsPanel({ config, onChange }) {
           <p className="sched-err">That has to start with https. A plain http address would put whatever
             somebody typed across the wire in clear.</p>
         )}
-        <button className="btn" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
+        <button className="go-log2" style={{ marginTop: 12 }} onClick={saveSupport}>Save contact details</button>
+      </div>
+
+      <div className="tk-counts">
+        <div className="card tk-count">
+          <div className="p-cap2">Open</div>
+          <div className="tk-cnum wt">{openCount}</div>
+          <p className="hint">{oldest ? `oldest raised ${new Date(oldest).toLocaleDateString([], { weekday: "long" })}` : "nothing waiting"}</p>
+        </div>
+        <div className="card tk-count">
+          <div className="p-cap2">Wrong numbers open</div>
+          <div className="tk-cnum r">{openWrong}</div>
+          <p className="hint">a figure that is lying is read by everybody until it is fixed</p>
+        </div>
+        <div className="card tk-count">
+          <div className="p-cap2">Closed this month</div>
+          <div className="tk-cnum ok">{closedThisMonth}</div>
+          <p className="hint">{openBehind > 0 ? `${openBehind} still behind the standard` : "nobody flagged as behind"}</p>
+        </div>
       </div>
 
       <div className="card">
         <div className="tk-head">
-          <h3>Tickets
-            {openWrong > 0 && <span className="tk-badge">{openWrong} wrong {openWrong === 1 ? "number" : "numbers"}</span>}
-            {openBehind > 0 && <span className="tk-badge tk-badge-behind">{openBehind} behind</span>}
-          </h3>
-          <div className="seg-small">
-            {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
-              <button key={id} className={"seg-opt " + (filter === id ? "on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
-            ))}
-          </div>
-          <div className="seg-small">
-            {[["all", "Everything"], ["figures", "Wrong numbers"], ["standard", "Behind"], ["problem", "Problems"]].map(([id, lbl]) => (
-              <button key={id} className={"seg-opt " + (kind === id ? "on" : "")} onClick={() => setKind(id)}>{lbl}</button>
-            ))}
-          </div>
-          <button className="btn-quiet" onClick={reload}>Refresh</button>
+          <div className="p-cap2">Tickets</div>
+          {[["open", "Open"], ["closed", "Closed"], ["all", "All"]].map(([id, lbl]) => (
+            <button key={id} className={"tg-sub" + (filter === id ? " on" : "")} onClick={() => setFilter(id)}>{lbl}</button>
+          ))}
+          <span className="tk-div" />
+          {[["all", "Everything"], ["figures", "Wrong numbers"], ["standard", "Behind"], ["problem", "Problems"]].map(([id, lbl]) => (
+            <button key={id} className={"tg-sub" + (kind === id ? " on" : "")} onClick={() => setKind(id)}>{lbl}</button>
+          ))}
+          <span className="r-flex2" />
+          <button className="pp-act" onClick={reload}>Refresh</button>
         </div>
         {items === null ? <p className="hint">Loading...</p>
           : shown.length === 0 ? <p className="hint">Nothing here. {filter === "open" ? "No open tickets." : ""}</p>
@@ -7437,6 +7458,10 @@ function TicketsPanel({ config, onChange }) {
                 <div key={t.id} className={"tk" + ((t.status || "open") === "closed" ? " tk-closed" : "")
                   + (t.kind === "figures" ? " tk-wrong" : "") + (t.kind === "standard" ? " tk-behind" : "")}>
                   <div className="tk-top">
+                    {(() => { const st = storeOf(t.store); return st
+                      ? <span className="tk-store" title={st.name}>
+                          <i style={{ background: (st.brand || DEFAULT_BRAND).primary }} />{st.name}
+                        </span> : null; })()}
                     {t.kind === "figures" && <span className="tk-kind">number's wrong</span>}
                     {t.kind === "standard" && <span className="tk-kind tk-kind-behind">behind the standard</span>}
                     <b>{t.from || "Anonymous"}</b>
@@ -24991,7 +25016,7 @@ function AccessPanel({ config, session, onChange }) {
 
       {pending.length > 0 && (
         <div className="card">
-          <h3>Waiting for approval <span className="badge badge-warn">{pending.length}</span></h3>
+          <div className="p-cap2">Waiting for approval <span className="tg-chip wt">{pending.length}</span></div>
           <p className="hint">
             These people created an account and are waiting on you. Tick the stores they should see, then approve.
             A salesperson needs no stores at all: approve them with nothing ticked and they stay off the dashboard
@@ -25004,73 +25029,85 @@ function AccessPanel({ config, session, onChange }) {
         </div>
       )}
 
-      <div className="card">
-        <h3>Accounts</h3>
+      <div className="card ac-card">
+        <div className="p-cap2">Accounts <span className="tg-chip">{active.length}</span></div>
         <p className="hint">
           Passwords are handled by Supabase and stored hashed. No one, including you, can read them.
           If someone forgets theirs they use "Forgot password?" on the sign-in screen.
         </p>
-        <table className="roster-table wide">
-          <thead>
-            <tr><th>Name</th><th>Email</th><th>Role</th><th>Stores</th><th>Status</th><th /></tr>
-          </thead>
-          <tbody>
-            {active.map((u) => (
-              <tr key={u.id}>
-                <td><b>{u.name || "-"}</b>
+        <div className="ac-tbl">
+          <div className="ac-h">
+            <span className="ac-who">Person</span>
+            <span className="ac-role">Role</span>
+            <span className="ac-stores">Stores</span>
+            <span className="ac-state">Status</span>
+            <span className="ac-acts" />
+          </div>
+          {active.map((u) => (
+            <div key={u.id} className="ac-row">
+              <span className="ac-who">
+                <b>{u.name || "-"}
                   {/* Two accounts for one person is the usual reason access "doesn't
                       stick": the grant lands on one of them and they sign in as the other. */}
                   {dupeEmails.has(norm(u.email)) && <span className="dupe-tag" title="Another account uses this same email. Access granted here won't apply to the other one.">duplicate</span>}
-                </td>
-                <td className="mono">{u.email}<span className="acct-id" title="Account ID. Compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span></td>
-                <td>
-                  {u.role === "admin" ? "Group Admin" : (
-                    <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
-                      <option value="manager">Store Manager</option>
-                      <option value="overseer">Centralized BDC</option>
-                    </select>
-                  )}
-                </td>
-                <td>
-                  {u.role === "admin" ? <span className="hint">All stores</span> : (
-                    <div className="store-checks tight">
-                      {config.stores.map((s) => (
-                        <label key={s.id} className="check-inline">
-                          <input type="checkbox" disabled={busy}
-                            checked={(u.stores || []).includes(s.id)}
-                            onChange={(e) => toggleStore(u, s.id, e.target.checked)} />
-                          {s.name}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </td>
-                <td>{u.active ? <span className="badge badge-ok">Active</span> : <span className="badge badge-off">Inactive</span>}</td>
-                <td className="row-actions">
-                  {u.id !== session.id && (
-                    <>
-                      <button className="btn-x" onClick={() => toggleActive(u)} disabled={busy}>{u.active ? "Deactivate" : "Reactivate"}</button>
-                      {u.role !== "admin"
-                        ? <button className="btn-x" onClick={() => promote(u)} disabled={busy}>Make admin</button>
-                        : <button className="btn-x" onClick={() => demote(u)} disabled={busy}>Remove admin</button>}
-                      <button className="btn-x" onClick={() => remove(u)} disabled={busy}>Delete</button>
-                    </>
-                  )}
-                  {u.id === session.id && <span className="hint">This is you</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </b>
+                <span className="ac-mail">{u.email}
+                  <span className="acct-id" title="Account ID. Compare this with what the person sees on their No access screen.">{String(u.id).slice(0, 8)}</span>
+                </span>
+              </span>
+              <span className="ac-role">
+                {u.role === "admin" ? <span className="tg-chip on">Group Admin</span> : (
+                  <select value={u.role} onChange={(e) => setRole(u, e.target.value)} disabled={busy}>
+                    <option value="manager">Store Manager</option>
+                    <option value="overseer">Centralized BDC</option>
+                  </select>
+                )}
+              </span>
+              <span className="ac-stores">
+                {u.role === "admin" ? <span className="hint">All stores</span> : (
+                  /* Each store in its own colour, the same one it wears on the group
+                     overview and on its board, so who can see what reads at a glance
+                     rather than by reading four names twice. */
+                  config.stores.map((s) => {
+                    const on = (u.stores || []).includes(s.id);
+                    const col = (s.brand || DEFAULT_BRAND).primary;
+                    return (
+                      <label key={s.id} className={"ac-store" + (on ? " on" : "")}
+                        style={{ "--sp": col }} title={s.name}>
+                        <input type="checkbox" disabled={busy} checked={on}
+                          onChange={(e) => toggleStore(u, s.id, e.target.checked)} />
+                        <i /><span>{s.name}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </span>
+              <span className="ac-state">
+                <span className={"tg-chip " + (u.active ? "ok" : "")}>{u.active ? "Active" : "Inactive"}</span>
+              </span>
+              <span className="ac-acts">
+                {u.id !== session.id ? (
+                  <>
+                    <button className="pp-act" onClick={() => toggleActive(u)} disabled={busy}>{u.active ? "Deactivate" : "Reactivate"}</button>
+                    {u.role !== "admin"
+                      ? <button className="pp-act" onClick={() => promote(u)} disabled={busy}>Make admin</button>
+                      : <button className="pp-act" onClick={() => demote(u)} disabled={busy}>Remove admin</button>}
+                    <button className="pp-act danger" onClick={() => remove(u)} disabled={busy}>Delete</button>
+                  </>
+                ) : <span className="hint">This is you</span>}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="card">
-        <h3>Approved email domains</h3>
+        <div className="p-cap2">Approved email domains</div>
         <p className="hint">Only these domains may create an account. Leave this empty and nobody new can register.</p>
         <div className="inline-form">
           <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="yourcompany.com"
             onKeyDown={(e) => e.key === "Enter" && addDomain()} />
-          <button className="btn" onClick={addDomain}>Add domain</button>
+          <button className="go-log2" onClick={addDomain}>Add domain</button>
         </div>
         <div className="domain-list">
           {(config.approvedDomains || []).length === 0
@@ -25139,34 +25176,69 @@ function PendingRow({ u, stores, busy, onApprove, onReject }) {
 }
 
 /* ---------------- Audit log ---------------- */
-function AuditLog() {
+function AuditLog({ config }) {
   const [log, setLog] = useState(null);
   const [filter, setFilter] = useState("");
+  const [kind, setKind] = useState("all");
   useEffect(() => { loadShared(AUDIT_KEY, []).then(setLog); }, []);
+  /* Every store's own colour, so a line about Holler Ford is recognisable as
+     Holler Ford at a glance rather than by reading the column. */
+  const colOf = (name) => {
+    const st = (config?.stores || []).find((x) => x.id === name || x.name === name);
+    return st ? (st.brand || DEFAULT_BRAND).primary : null;
+  };
   if (!log) return <div className="loading">Loading audit log…</div>;
-  const shown = log.filter((e) => !filter || JSON.stringify(e).toLowerCase().includes(filter.toLowerCase()));
+  /* What people come here asking: who moved a target, who changed the roster,
+     what has been imported. Everything else is still one click away. */
+  const KINDS = [
+    ["all", "Everything", () => true],
+    ["targets", "Targets", (e) => /target|threshold|grace|cap|standard/i.test(e.action)],
+    ["roster", "Roster", (e) => /roster|person|people|left|ours|merge|move/i.test(e.action)],
+    ["imports", "Imports", (e) => /import|upload|undo|activity/i.test(e.action)],
+  ];
+  const test = (KINDS.find((k) => k[0] === kind) || KINDS[0])[2];
+  const shown = log.filter(test).filter((e) => !filter || JSON.stringify(e).toLowerCase().includes(filter.toLowerCase()));
   return (
     <div className="audit">
-      <div className="inline-form">
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter by name, store, action…" style={{ minWidth: 280 }} />
-        <button className="btn secondary" onClick={() => downloadCSV(`Audit-Log_${today()}.csv`, [["When", "User", "Store", "Action", "Detail"], ...log.map((e) => [e.t, e.user, e.store || "", e.action, e.detail || ""])])}>Export CSV</button>
+      <div className="card ad-bar">
+        <span className="ad-find">
+          <PixIcon glyph="search" size={12} />
+          <input value={filter} onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by name, store, action" />
+        </span>
+        {KINDS.map(([id, label]) => (
+          <button key={id} className={"tg-sub" + (kind === id ? " on" : "")} onClick={() => setKind(id)}>{label}</button>
+        ))}
+        <span className="r-flex2" />
+        <button className="pp-act" onClick={() => downloadCSV(`Audit-Log_${today()}.csv`,
+          [["When", "User", "Store", "Action", "Detail"], ...log.map((e) => [e.t, e.user, e.store || "", e.action, e.detail || ""])])}>
+          Export CSV
+        </button>
       </div>
-      <p className="hint">Last {log.length} events (capped at 400). Imports, standards edits, roster changes, and user access changes all land here automatically.</p>
-      <div className="card">
-        <table className="roster-table wide">
-          <thead><tr><th>When</th><th>User</th><th>Store</th><th>Action</th><th>Detail</th></tr></thead>
-          <tbody>
-            {shown.map((e, i) => (
-              <tr key={i}>
-                <td className="mono">{new Date(e.t).toLocaleString()}</td>
-                <td>{e.user}</td>
-                <td>{e.store || "-"}</td>
-                <td><b>{e.action}</b></td>
-                <td>{e.detail || ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <p className="hint ad-note">
+        The last {log.length} events, capped at 400. Imports, target changes, roster changes and access
+        changes all land here on their own. Showing {shown.length}.
+      </p>
+      <div className="ad-tbl">
+        <div className="ad-h">
+          <span className="ad-when">When</span><span className="ad-who">Who</span>
+          <span className="ad-what">What changed</span><span className="ad-where">Where</span>
+        </div>
+        {shown.length === 0 && <div className="ad-row"><span className="hint">Nothing matches that.</span></div>}
+        {shown.map((e, i) => {
+          const c = colOf(e.store);
+          return (
+            <div key={i} className="ad-row">
+              <span className="ad-when">{new Date(e.t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+              <span className="ad-who">{e.user}</span>
+              <span className="ad-what"><b>{e.action}</b>{e.detail ? <span className="ad-det">{e.detail}</span> : null}</span>
+              <span className="ad-where">
+                {e.store ? <>{c && <i className="ad-dot" style={{ background: c }} />}{
+                  (config?.stores || []).find((x) => x.id === e.store)?.name || e.store}</> : "-"}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -31827,6 +31899,91 @@ const SAGE_CSS = `
       .hist-row.hist-empty .hist-name b { font-weight:500; color:var(--ink-2); }
       .hist-nofig { font:600 10.5px var(--font-mono); color:var(--ink-3); }
       .hist-key2 { margin-top:2px; }
+      /* the one filled button a panel gets, in the palette the rest of the app uses */
+      .go-log2 { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:11px;
+        padding:9px 16px; cursor:pointer; font:700 11.5px var(--font-display); color:#fff;
+        background:var(--p2); box-shadow:0 5px 14px -6px color-mix(in srgb, var(--p2) 70%, transparent); }
+      .go-log2:hover { background:var(--p2d); }
+      .go-log2:focus-visible { outline:2px solid var(--p3); outline-offset:2px; }
+      /* ---- Access, as rows rather than a table ---- */
+      .ac-card { margin-bottom:10px; }
+      .ac-tbl { border:1px solid var(--line); border-radius:13px; overflow:hidden; margin-top:9px; }
+      .ac-h, .ac-row { display:flex; align-items:center; gap:12px; padding:9px 13px; }
+      .ac-h { border-bottom:1px solid var(--line); font:700 9.5px var(--font-mono);
+        letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); }
+      .ac-row { border-bottom:1px solid var(--line); }
+      .ac-row:last-child { border-bottom:0; }
+      .ac-row:hover { background:color-mix(in srgb, var(--p2) 4%, transparent); }
+      .ac-who { width:230px; flex:0 0 auto; min-width:0; font-size:12.5px; }
+      .ac-who b { display:block; font-weight:600; }
+      .ac-mail { display:block; font:400 9.5px var(--font-mono); color:var(--ink-3);
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ac-role { width:150px; flex:0 0 auto; }
+      .ac-role select { width:100%; border:1px solid var(--line); border-radius:9px; padding:5px 8px;
+        font:600 11px var(--font-display); color:var(--ink); background:var(--card); }
+      .ac-stores { flex:1; min-width:120px; display:flex; gap:6px; flex-wrap:wrap; }
+      .ac-store { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+        border:1px solid var(--line); border-radius:99px; padding:3px 10px 3px 7px;
+        font:600 10px var(--font-display); color:var(--ink-3); background:var(--card); }
+      .ac-store input { position:absolute; opacity:0; width:0; height:0; }
+      .ac-store i { width:9px; height:9px; border-radius:50%; flex:0 0 auto;
+        background:rgba(16,32,52,.14); }
+      .ac-store.on { border-color:var(--sp); color:var(--ink); }
+      .ac-store.on i { background:var(--sp); }
+      .ac-store:focus-within { outline:2px solid var(--p2); outline-offset:1px; }
+      .ac-state { width:88px; flex:0 0 auto; }
+      .ac-acts { width:250px; flex:0 0 auto; display:flex; gap:6px; justify-content:flex-end; flex-wrap:wrap; }
+      @media (max-width: 960px) {
+        .ac-h { display:none; }
+        .ac-row { flex-wrap:wrap; row-gap:8px; }
+        .ac-who { width:100%; }
+        .ac-acts { width:100%; justify-content:flex-start; }
+      }
+      /* ---- tickets, in the console's language ---- */
+      .tk-counts { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px,1fr));
+        gap:10px; margin-bottom:10px; }
+      .tk-count { margin-bottom:0; padding:12px 15px 13px; }
+      .tk-count .hint { margin:2px 0 0; }
+      .tk-cnum { font:700 26px var(--font-mono); font-variant-numeric:tabular-nums; line-height:1.1; }
+      .tk-cnum.ok { color:#1E8A4C; } .tk-cnum.wt { color:#B07700; } .tk-cnum.r { color:#C2361F; }
+      .tk-head { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:10px; }
+      .tk-div { width:1px; height:18px; background:var(--line); margin:0 3px; }
+      .tk-store { display:inline-flex; align-items:center; gap:6px; font:600 9.5px var(--font-mono);
+        color:var(--ink-2); }
+      .tk-store i { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+      /* ---- the audit log, as the same dense row as everywhere else ---- */
+      .ad-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+        margin-bottom:8px; padding:10px 13px; }
+      .ad-find { display:flex; align-items:center; gap:7px; flex:1 1 240px; min-width:0;
+        border:1px solid var(--line); border-radius:11px; padding:6px 11px; color:var(--ink-3);
+        background:var(--card); }
+      .ad-find input { border:0; background:none; outline:none; flex:1; min-width:0;
+        font:500 12px var(--font-display); color:var(--ink); }
+      .tg-sub { border:1px solid var(--line); background:var(--card); border-radius:99px; cursor:pointer;
+        padding:6px 13px; font:700 10.5px var(--font-mono); color:var(--ink-2); }
+      .tg-sub.on { background:var(--p2); border-color:var(--p2); color:#fff; }
+      .tg-sub:focus-visible { outline:2px solid var(--p2); outline-offset:2px; }
+      .ad-note { margin:0 2px 8px; }
+      .ad-tbl { background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+      .ad-h, .ad-row { display:flex; align-items:baseline; gap:12px; padding:8px 14px;
+        font-family:var(--font-mono); font-size:10.5px; }
+      .ad-h { border-bottom:1px solid var(--line); font-weight:700; letter-spacing:.07em;
+        text-transform:uppercase; color:var(--ink-3); }
+      .ad-row { border-bottom:1px solid var(--line); }
+      .ad-row:last-child { border-bottom:0; }
+      .ad-row:hover { background:color-mix(in srgb, var(--p2) 4%, transparent); }
+      .ad-when { width:132px; flex:0 0 auto; color:var(--ink-3); }
+      .ad-who { width:104px; flex:0 0 auto; font-weight:600; color:var(--ink-2); }
+      .ad-what { flex:1; min-width:0; color:var(--ink); }
+      .ad-what b { font-weight:700; }
+      .ad-det { display:block; color:var(--ink-2); margin-top:2px; }
+      .ad-where { width:150px; flex:0 0 auto; display:flex; align-items:center; gap:6px; color:var(--ink-3); }
+      .ad-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+      @media (max-width: 820px) {
+        .ad-h { display:none; }
+        .ad-row { flex-wrap:wrap; row-gap:4px; }
+        .ad-what { flex:1 1 100%; order:5; }
+      }
       /* ---- the group, one card per store, each in its own colours ---- */
       .gv-hero { margin-bottom:12px; }
       .gv-hero .s2-ava { color:var(--hB); }
