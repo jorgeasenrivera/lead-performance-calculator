@@ -151,3 +151,62 @@ test("dropping a PDF into the wrong store by hand", () => {
       at("Holler Ford", "classic-mazda")?.id === "holler-ford");
 });
 
+
+/* ---- the Delivery Summary's own store block ----
+   DriveCentric prints the store's totals above the people, and the reader used
+   to drop that block on the floor: `if (!curName) continue`. It is the only
+   figure in the report the report itself is authoritative about, and the app
+   now quotes it back to check the board against, so it has to survive. */
+const DS_HEAD = [
+  "Total Leads Total Ups Unsold In Showroom Be Backs Delivered F I Closing %",
+];
+const dsBlock = (name, rows) => [
+  line(`${name} ${DS_HEAD[0]}`),
+  ...rows.map((r) => line(r)),
+];
+const dsDoc = (store, storeRows, people) => {
+  const out = [...dsBlock(store, storeRows)];
+  for (const [nm, rs] of people) out.push(...dsBlock(nm, rs));
+  return out;
+};
+
+test("the Delivery Summary keeps the store's own totals", () => {
+  const got = P.mapDeliverySummaryGrid(dsDoc(
+    "Holler Honda",
+    ["Internet 400 0 0 0 200 50%", "Phone 100 0 0 0 40 40%",
+     "Showroom 300 20 5 2 15 5%", "Campaign 0 0 0 0 0 0%"],
+    [["Alex Demo", ["Internet 40 0 0 0 20.5 51%", "Phone 10 0 0 0 4 40%",
+                    "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]],
+     ["Brianna Demo", ["Internet 40 0 0 0 20 50%", "Phone 10 0 0 0 4 40%",
+                       "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]],
+     ["Carlos Demo", ["Internet 40 0 0 0 20 50%", "Phone 10 0 0 0 4 40%",
+                      "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]]],
+  ));
+  assert.ok(got, "the grid should read");
+  assert.equal(got.storeName, "Holler Honda");
+  assert.ok(got.stated, "the store block should be kept");
+  assert.equal(got.stated.total, 255);
+  assert.equal(got.stated.units.internet, 200);
+  assert.equal(got.stated.units.showroom, 15);
+  assert.equal(got.stated.leads.internet, 400);
+  // and the store block must not have become a person
+  const names = got.rows.slice(2).map((r) => r[0]);
+  assert.ok(!names.includes("Holler Honda"), names.join(", "));
+  assert.equal(names.length, 3);
+});
+
+test("a split deal's half unit survives the read", () => {
+  const got = P.mapDeliverySummaryGrid(dsDoc(
+    "Holler Honda",
+    ["Internet 400 0 0 0 200 50%", "Phone 100 0 0 0 40 40%",
+     "Showroom 300 20 5 2 15 5%", "Campaign 0 0 0 0 0 0%"],
+    [["Alex Demo", ["Internet 40 0 0 0 20.5 51%", "Phone 10 0 0 0 4 40%",
+                    "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]],
+     ["Brianna Demo", ["Internet 40 0 0 0 20 50%", "Phone 10 0 0 0 4 40%",
+                       "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]],
+     ["Carlos Demo", ["Internet 40 0 0 0 20 50%", "Phone 10 0 0 0 4 40%",
+                      "Showroom 30 2 1 0 1 3%", "Campaign 0 0 0 0 0 0%"]]],
+  ));
+  const parsed = P.parseDeliverySummaryRows(got.rows);
+  assert.equal(parsed["alex demo"].internetUnits, 20.5);
+});
