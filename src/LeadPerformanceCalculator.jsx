@@ -17581,6 +17581,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
                 storeData={data} cfg={config}
                 picking={picking} picked={sel.has(norm(a.name))}
                 onPick={() => toggleSel(norm(a.name))}
+                first={i === 0}
                 rolled={!query && i >= ROLL_CAP && !rollOpen[role.id] && a.name !== focusName} />
             );
           })}
@@ -17642,8 +17643,12 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
    video and never mentioned phone or showroom, while every other screen was
    built on the five. */
 const STRIP_METRICS = FIVE.map((f) => f.key);
+/* A half circle drawn to fill a 44 x 22 box: centre low, radius 17, five wide.
+   Its length is what the sweep is measured against. */
+const DIAL_ARC = "M5 19.5 A17 17 0 0 1 39 19.5";
+const DIAL_L = Math.PI * 17;
 
-function MetricStrip({ ev, stats, thr }) {
+function MetricStrip({ ev, stats, thr, first }) {
   const reqs = ev?.tier?.requirements || [];
   const need = new Map(reqs.map((r) => [r.metric, r]));
   /* A dial needs a number to point at. The tier's requirement is used where it
@@ -17658,7 +17663,15 @@ function MetricStrip({ ev, stats, thr }) {
   if (!reqs.length && !thr) return null;
   /* The fixed four first, then anything else this tier happens to ask for. A
      requirement must never be hidden just because it is unusual. */
-  const columns = [...STRIP_METRICS, ...reqs.map((r) => r.metric).filter((m) => !STRIP_METRICS.includes(m))];
+  /* Delivered percent came in as a tier requirement and sat at the end of the
+     row as a seventh instrument. For a store whose leads are all internet leads
+     it prints the same figure as the internet column, twice on one line, and the
+     units it counts are already the lead bar and the count beside it. */
+  const columns = [...STRIP_METRICS,
+    ...reqs.map((r) => r.metric).filter((m) => !STRIP_METRICS.includes(m) && m !== "deliveredPct")];
+  const isChan = (m) => !!FIVE.find((f) => f.key === m && CHANNELS[f.id]);
+  const chanCols = columns.filter(isChan);
+  const standCols = columns.filter((m) => !isChan(m));
 
   /* The drafts' little speedometer: the sweep is the value against 1.6x the
      target so beating the bar still has road left, the needle marks the target,
@@ -17666,9 +17679,7 @@ function MetricStrip({ ev, stats, thr }) {
      wording rides in the glance popup. An ungraded metric keeps its place in
      the column, drawn grey, so the dials always line up person to person. */
   const L = 50.27;
-  return (
-    <div className="mstrip">
-      {columns.map((metric, gi) => {
+  const cell = (metric, gi) => {
         const def = METRICS[metric];
         if (!def) return null;
         const v = stats?.[metric];
@@ -17713,14 +17724,23 @@ function MetricStrip({ ev, stats, thr }) {
         }
         return (
           <span key={metric} className={"s2g4 bloop-host" + (t ? " " + t.cls : "")} tabIndex={0}>
-            <svg viewBox="0 0 40 24" aria-hidden="true">
-              <path d="M4 20 A16 16 0 0 1 36 20" fill="none" stroke="rgba(16,32,52,.09)" strokeWidth="4.6" strokeLinecap="round" />
+            {/* The arc fills its box top to bottom, so a dial stands exactly as
+                tall as the channel column beside it and the row reads as one
+                set of instruments rather than two sizes of them. */}
+            <svg viewBox="0 0 44 22" aria-hidden="true">
+              <path d={DIAL_ARC} fill="none" stroke="rgba(16,32,52,.09)" strokeWidth="5" strokeLinecap="round" />
               {frac > 0 && (
-                <path d="M4 20 A16 16 0 0 1 36 20" fill="none" stroke={col} strokeWidth="4.6" strokeLinecap="round"
-                  strokeDasharray={`${(frac * L).toFixed(1)} ${L.toFixed(1)}`} />
+                <path d={DIAL_ARC} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round"
+                  strokeDasharray={`${(frac * DIAL_L).toFixed(1)} ${DIAL_L.toFixed(1)}`} />
               )}
-              <line x1="24.9" y1="8.4" x2="27.7" y2="1.7" stroke={na ? "#C9CDD3" : "var(--ink-2)"} strokeWidth="1.6" strokeLinecap="round" />
-              <text x="20" y="20.5" textAnchor="middle" style={{ font: "700 7.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
+              {(() => {
+                const a = Math.PI - Math.PI * 0.625;   // the target notch, at the same place as before
+                const cx = 22, cy = 19.5, r = 17;
+                return <line x1={cx + Math.cos(a) * (r - 3)} y1={cy - Math.sin(a) * (r - 3)}
+                  x2={cx + Math.cos(a) * (r + 3)} y2={cy - Math.sin(a) * (r + 3)}
+                  stroke={na ? "#C9CDD3" : "var(--ink-2)"} strokeWidth="1.8" strokeLinecap="round" />;
+              })()}
+              <text x="22" y="18.4" textAnchor="middle" style={{ font: "700 8.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
             </svg>
             <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i></span>
             <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
@@ -17731,7 +17751,23 @@ function MetricStrip({ ev, stats, thr }) {
             </div>
           </span>
         );
-      })}
+  };
+
+  /* Two clusters with a hairline between them: the channels the store sells
+     through, then the standards it holds people to. The captions are printed
+     once, on the first row of the board, rather than six times on every line. */
+  return (
+    <div className="mstrip">
+      <span className="mclust">
+        {first && <span className="mccap">Channels</span>}
+        {chanCols.map((m, i) => cell(m, i))}
+      </span>
+      {standCols.length > 0 && (
+        <span className="mclust">
+          {first && <span className="mccap">Standards</span>}
+          {standCols.map((m, i) => cell(m, chanCols.length + i))}
+        </span>
+      )}
     </div>
   );
 }
@@ -17876,7 +17912,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose }) 
     </div>, document.body);
 }
 
-function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData, cfg, picking, picked, onPick }) {
+function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, restriction, onSetRestriction, readOnly, focused, rolled, thresholds, storeData, cfg, picking, picked, onPick, first }) {
   const [open, setOpen] = useState(false);
   const [origin, setOrigin] = useState(null);
   const cardRef = useRef(null);
@@ -18003,7 +18039,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
                 background: pct >= 95 ? "#C2361F" : pct >= 85 ? "#C98A00" : "var(--p2)" }} />
           </span>
         )}
-        {showDials && <MetricStrip ev={ev} stats={stats} thr={normThresholds(thresholds)} />}
+        {showDials && <MetricStrip ev={ev} stats={stats} thr={normThresholds(thresholds)} first={first} />}
         <span className="assoc-spacer" />
         {/* Two sub-columns, not one right-aligned string: "74 / 80" and "82 / 100"
             are different widths, so aligning the whole thing put the slash in a
@@ -22289,6 +22325,111 @@ function DeliveryCard({ config, store, data }) {
 
 /* Marks a card that opens something. Only rendered on touch — a pointer gets
    the same answer from hover, and the mark would be noise. */
+/* ---- out from under the lens ----
+   The tube's bulge is one SVG filter over the whole card, and a filter applies
+   to everything inside it: nothing nested can opt out. What a popup and a store
+   badge have in common is that neither should be bent — a paragraph read through
+   a magnifier is worse for it, and a photograph of a building is not glass.
+
+   Both leave the filtered subtree the only way there is: they are drawn into the
+   hero itself, which carries no filter, at the place their marker sits. The
+   marker stays where the content was so the layout does not move. */
+function useUnbent(measure) {
+  const mark = useRef(null);
+  const [hero, setHero] = useState(null);
+  const [box, setBox] = useState(null);
+  const place = useCallback(() => {
+    const el = mark.current;
+    if (!el) return null;
+    const h = el.closest(".s2-hero");
+    const anchor = measure === "parent" ? el.parentElement : el;
+    if (!h || !anchor) return null;
+    const a = anchor.getBoundingClientRect(), r = h.getBoundingClientRect();
+    const next = { left: a.left - r.left, top: a.top - r.top, width: a.width, height: a.height,
+      mid: a.left - r.left + a.width / 2, below: r.height - (a.bottom - r.top) };
+    setBox((prev) => (prev && prev.left === next.left && prev.top === next.top
+      && prev.width === next.width && prev.height === next.height) ? prev : next);
+    return h;
+  }, [measure]);
+  /* Measured on mount and when the window changes, and again the moment a popup
+     is asked for. Watching the card itself with a ResizeObserver looked tidier
+     and was not: the card is animated, so the observer fired every frame of the
+     channel switch, and the re-render storm left nothing on the page still
+     enough to tap. */
+  useLayoutEffect(() => {
+    const h = place();
+    if (h) setHero(h);
+    let raf = 0;
+    const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => place()); };
+    window.addEventListener("resize", onResize);
+    return () => { window.removeEventListener("resize", onResize); cancelAnimationFrame(raf); };
+  }, [place]);
+  return { mark, hero, box, place };
+}
+
+/* A hero popup, drawn over the card rather than through it. Hover and focus are
+   tracked here because the popup is no longer a child of its host, so the CSS
+   that used to show it cannot see the hover. */
+function BloopWin({ cls = "", style, children }) {
+  const { mark, hero, box, place } = useUnbent("parent");
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const el = mark.current;
+    const host = el && el.parentElement;
+    if (!host) return;
+    const show = () => { place(); setOn(true); };
+    const hide = () => setOn(false);
+    host.addEventListener("pointerenter", show);
+    host.addEventListener("pointerleave", hide);
+    host.addEventListener("focusin", show);
+    host.addEventListener("focusout", hide);
+    return () => {
+      host.removeEventListener("pointerenter", show);
+      host.removeEventListener("pointerleave", hide);
+      host.removeEventListener("focusin", show);
+      host.removeEventListener("focusout", hide);
+    };
+  }, [place]); // eslint-disable-line
+  const dn = cls.includes("dn");
+  const right = cls.includes("r");
+  const pos = box && {
+    left: right ? undefined : box.mid,
+    right: right ? undefined : undefined,
+    ...(right ? { left: box.left + box.width } : null),
+    ...(dn ? { top: box.top + box.height + 9 } : { bottom: box.below + box.height + 9 }),
+  };
+  /* On a touch screen the tap manager already lifts a copy of the popup onto
+     the body, which is outside the filter and therefore straight, so the one
+     that stays in place is the one touch uses. Only a pointer needs the portal,
+     and only one of the two is ever shown. */
+  return (
+    <>
+      <i ref={mark} className="bloop-mark" aria-hidden="true" />
+      <div className={"bloopwin inplace " + cls} style={style}>{children}</div>
+      {hero && box && createPortal(
+        <div className={"bloopwin port " + cls + (on ? " on" : "")}
+          style={{ ...style, ...pos }}
+          onPointerEnter={() => setOn(true)} onPointerLeave={() => setOn(false)}>
+          {children}
+        </div>, hero)}
+    </>
+  );
+}
+
+/* The store's badge. The dotted ring and the disc are the card's own furniture
+   and bend with it; the picture inside is a photograph and does not. */
+function AvaShot({ src }) {
+  const { mark, hero, box } = useUnbent("parent");
+  return (
+    <>
+      <i ref={mark} className="bloop-mark" aria-hidden="true" />
+      {hero && box && createPortal(
+        <img className="s2-avashot" src={src} alt=""
+          style={{ left: box.left, top: box.top, width: box.width, height: box.height }} />, hero)}
+    </>
+  );
+}
+
 function TapMark() {
   return <span className="tapmark" aria-hidden="true"><PixIcon glyph="tap" size={13} /></span>;
 }
@@ -22693,7 +22834,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">
-            {store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}
+            {store.icon ? <AvaShot src={store.icon} /> : <Logo size={40} />}
           </div>
           <div className="s2-idtx">
             <div className="s2-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
@@ -22728,7 +22869,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   </span>
                   <span>{fmtNum(storePace.goal.bar)} to hit</span>
                 </div>
-                <div className="bloopwin dn s2-pacewin">
+                <BloopWin cls="dn s2-pacewin">
                   <div className="bw-title">The month, against the ask</div>
                   <div className="bw-big">{fmtNum(totalUnits)} <small>of {fmtNum(storePace.goal.bar)} · {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}</small></div>
                   {!storePace.tooEarly && (
@@ -22740,7 +22881,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     <div className="bw-desc">By stock, at today's mix: new pace <b>{Math.round(storePace.projected * vehicleSplit.newPct)}</b> · used pace <b>{Math.round(storePace.projected * vehicleSplit.usedPct)}</b></div>
                   )}
                   <div className="bw-desc">{storePace.daysDone} of {storePace.daysAll} days counted · through yesterday</div>
-                </div>
+                </BloopWin>
               </div>
             )}
             {vehicleSplit.seen && vehicleSplit.known > 0 && (
@@ -22751,7 +22892,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 </div>
                 <div className="s2-split-lbl"><span><b>{fmtNum(vehicleSplit.nw)}</b> new</span><span><b>{fmtNum(vehicleSplit.us)}</b> used</span></div>
                 {Object.keys(dayUnits).length > 0 && (
-                  <div className="bloopwin dn s2-salewin">
+                  <BloopWin cls="dn s2-salewin">
                     <div className="bw-title">Sold by day · {new Date().toLocaleDateString("en-US", { month: "long" })}</div>
                     <div className="s2-sw-grid">
                       {Array.from({ length: mcal.off }, (_, i) => <span key={"e" + i} className="e" />)}
@@ -22771,7 +22912,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     <div className="s2-detail">{dayPick && dayUnits[dayPick]
                       ? <><b>{new Date(dayPick + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</b> · {fmtNum(dayUnits[dayPick].u)} sold{dayUnits[dayPick].nu != null ? <> · {fmtNum(dayUnits[dayPick].nu)} new / {fmtNum(dayUnits[dayPick].uu)} used</> : null}</>
                       : "Click a day to see it"}</div>
-                  </div>
+                  </BloopWin>
                 )}
               </div>
             )}
@@ -22814,12 +22955,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                         )}
                       </span>
                       <span className="s2-mklbl">{c.label}</span>
-                      <div className={"bloopwin" + (i === closing.length - 1 ? " r" : "")} style={{ "--bw": pctV == null ? undefined : col }}>
+                      <BloopWin cls={i === closing.length - 1 ? "r" : ""} style={{ "--bw": pctV == null ? undefined : col }}>
                         <div className="bw-title">{(METRICS[c.id + "Pct"] && METRICS[c.id + "Pct"].label) || c.label}</div>
                         <div className="bw-big">{pctV == null ? "no data yet" : fmtPct(c.pct)} {pctV != null && <small>of {target}% target</small>}</div>
                         <div className="bw-sub">{pctV == null ? "" : pctV >= target ? "At or above target" : `${Math.round((target - pctV) * 10) / 10} points under target`}</div>
                         <div className="bw-sub">{fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : 0} leads</div>
-                      </div>
+                      </BloopWin>
                     </div>
                   );
                 })}
@@ -22833,12 +22974,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
                       <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} />
                       <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
-                      <div className={"bloopwin" + (i >= videoDials.length - 1 ? " r" : "")} style={{ "--bw": goalTier(v.mean, 1).col }}>
+                      <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
                         <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
                         <div className="bw-sub">{v.below} of {v.total} below target</div>
                         <div className="bw-desc">{METRIC_DESC[v.m] || "Measured month to date."}</div>
-                      </div>
+                      </BloopWin>
                     </div>
                   ))}
                 </div>
@@ -28967,7 +29108,10 @@ const SAGE_CSS = `
       /* A grid of fixed columns rather than a row of whatever fits. Every dial is
          88px, so column four sits under column four on every row and a manager
          can read down "Delivery" instead of hunting for it on each line. */
-      .mstrip { display:grid; grid-auto-flow:column; grid-auto-columns:80px; gap:10px 10px; justify-content:start; }
+      /* Two clusters side by side, each laying its own instruments out. It was a
+         grid of fixed 80px columns, which gave a whole cluster one column and
+         stacked its three instruments on top of each other. */
+      .mstrip { display:flex; align-items:flex-end; gap:10px; }
       /* On the associate row the dials ride to the right of the name and stay
          together as one unit; the row itself wraps them if the screen is narrow. */
       .assoc-row .mstrip { gap:10px; }
@@ -30328,7 +30472,15 @@ const SAGE_CSS = `
         /* Narrow screens wrap to two rows of two rather than one long scroll,
            and the columns still line up because the tracks are the same width. */
         .assoc-row .mstrip { margin-left:0; }
-        .mstrip { grid-auto-flow:row; grid-template-columns:repeat(3, 1fr); grid-auto-columns:auto; }
+        /* On a phone the two clusters stop being columns and become one wrapping
+           set: there is no room for a rule down the middle of a 390px screen,
+           and the instruments matter more than the grouping does. */
+        .mstrip { flex-wrap:wrap; width:100%; }
+        .mclust { flex-wrap:wrap; flex:1 1 100%; justify-content:flex-start; gap:14px 12px; }
+        .mclust + .mclust { padding-left:0; margin-left:0; }
+        .mclust + .mclust::before { display:none; }
+        .mccap { display:none; }
+        .s2g4 { width:calc(33.333% - 8px); }
         .mdial { width:calc(33.333% - 8px); }
         /* The cap sentence is what the bar and the pill under it already say. On a
            phone, where reading is the expensive part, the visual carries it. */
@@ -31693,6 +31845,21 @@ const SAGE_CSS = `
          Hover drives them on a mouse; on touch a tap manager toggles .open, so the
          hover rules are gated off where hover would stick. ---- */
       .bloop-host { position:relative; }
+      /* ---- the layer over the lens ----
+         Portaled into .s2-hero, which carries no filter, and placed at the spot
+         its marker holds inside the tube. */
+      .bloop-mark { display:block; width:0; height:0; }
+      .s2-avashot { position:absolute; z-index:2; border-radius:50%; object-fit:cover; pointer-events:none; }
+      .bloopwin.port { position:absolute; z-index:60; transform:translate(-50%,6px) scale(.5);
+        transform-origin:50% calc(100% + 26px); }
+      .bloopwin.port.r { transform:translate(-100%,6px) scale(.5); transform-origin:85% calc(100% + 26px); }
+      .bloopwin.port.dn { transform:translate(-50%,-6px) scale(.5); transform-origin:50% -22px; }
+      .bloopwin.port.dn.r { transform:translate(-100%,-6px) scale(.5); transform-origin:85% -22px; }
+      .bloopwin.port.on { opacity:1; pointer-events:auto; transform:translate(-50%,0) scale(1); }
+      .bloopwin.port.on.r { transform:translate(-100%,0) scale(1); }
+      @media (hover: none) { .bloopwin.port { display:none; } }
+      @media (hover: hover) { .bloopwin.inplace { display:none; } }
+
       .bloopwin { position:absolute; bottom:calc(100% + 9px); left:50%; width:242px; text-align:left; color:var(--ink);
         background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px;
         box-shadow:0 20px 44px -18px rgba(16,32,52,.5); z-index:45; will-change:transform; pointer-events:none;
@@ -32269,13 +32436,27 @@ const SAGE_CSS = `
       .s2-leg span { display:inline-flex; align-items:center; gap:5px; }
       .s2-leg i { width:9px; height:9px; border-radius:3px; }
       .s2-leg-note { margin-left:auto; color:var(--ink-3); }
-      /* the four standards on every associate row, in the drafts' speedometer */
-      .s2g4 { width:88px; display:flex; flex-direction:column; align-items:center; gap:1px; text-align:center; }
-      .s2g4 svg { width:58px; height:34px; display:block; }
+      /* Every instrument on the row sits on the same three rows: the figure, the
+         instrument, the label. A dial has its figure inside it and leaves the
+         first row empty, which is what puts APPT VIDEO level with INTERNET. */
+      .s2g4 { width:88px; display:grid; grid-template-rows:13px 34px auto; row-gap:3px;
+        justify-items:center; align-items:end; text-align:center; }
+      .s2g4 svg { width:68px; height:34px; display:block; grid-row:2; }
+      .s2g4-v { grid-row:1; }
+      .s2g4-col { grid-row:2; }
+      .s2g4-l { grid-row:3; }
+      /* channels, then a rule, then the standards */
+      .mclust { display:flex; gap:10px; position:relative; }
+      .mclust + .mclust { padding-left:19px; margin-left:9px; }
+      .mclust + .mclust::before { content:""; position:absolute; left:0; top:4px; bottom:4px;
+        width:1px; background:var(--line); }
+      .mccap { position:absolute; top:-13px; left:0; font:700 8px var(--font-mono); letter-spacing:.12em;
+        text-transform:uppercase; color:var(--ink-3); white-space:nowrap; }
+      .mclust + .mclust .mccap { left:19px; }
       /* the channel cell: a column in that channel's own colour, drawn against
          the standard as a rule across it. Above the rule is above standard, and
          the rule is at the same height in all three so they read as one line. */
-      .s2g4-bar { justify-content:flex-end; gap:3px; }
+      .s2g4-bar { gap:3px; }
       .s2g4-v { font:700 12px var(--font-mono); font-variant-numeric:tabular-nums; line-height:1; }
       .s2g4-col { position:relative; display:block; width:17px; height:34px; border-radius:5px;
         background:rgba(16,32,52,.05); box-shadow:inset 0 0 0 1px rgba(16,32,52,.1); }
@@ -32287,7 +32468,7 @@ const SAGE_CSS = `
       /* the standard, dashed, the way the hero draws the cap on its own channel
          bars, so it reads as the mark to reach and not the rim of the vessel */
       .s2g4-col s { position:absolute; left:-2px; right:-2px; bottom:60%; height:2px; margin-bottom:-1px;
-        background:repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 5.5px); opacity:.38; }
+        border-radius:1px; background:var(--ink); opacity:.34; }
       .s2g4-col.over s { opacity:.7; }
       .s2g4-l { font:700 7.5px var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3);
         white-space:nowrap; }
