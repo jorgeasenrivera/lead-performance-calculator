@@ -23177,22 +23177,50 @@ function CrossCheck({ store, data, config, onClose }) {
   const read = async (file) => {
     setErr(""); setBusy(true); setRes(null);
     try {
-      if (!/\.pdf$/i.test(file.name)) {
-        setErr("That is not a PDF. Pull the Delivery Summary out of DriveCentric as a PDF and drop that in.");
-        setBusy(false); return;
+      /* Two shapes reach this screen. The PDF Delivery Summary is the grid with
+         a channel block per person and the store's own totals above them. The
+         Standard Delivery Summary CSV is a flat roll-up -- one row per user,
+         units and opportunities, no channels and no store row -- and it is the
+         one a manager actually has to hand, so refusing it made the check
+         useless on the file it was built for. */
+      let file2, stated = null;
+      if (/\.pdf$/i.test(file.name)) {
+        const lines = await extractPdfLinesInBrowser(file);
+        const ds = mapDeliverySummaryGrid(lines);
+        if (!ds) {
+          setErr("That PDF reads as something other than a Delivery Summary. Nothing was changed.");
+          setBusy(false); return;
+        }
+        const other = reportBelongsElsewhere(config?.stores, ds.storeName, store.id);
+        if (other) {
+          setErr(`That is ${other.name}'s report and you are in ${store.name}. Nothing was changed.`);
+          setBusy(false); return;
+        }
+        file2 = parseDeliverySummaryRows(ds.rows);
+        stated = ds.stated;
+      } else {
+        const rows = Papa.parse((await file.text()).replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+        const hi = rows.findIndex((r) => (r || []).some((c) => /^units delivered$/i.test(String(c).trim())));
+        const head = hi >= 0 ? rows[hi].map((c) => String(c).trim()) : null;
+        const nameAt = head ? head.findIndex((c) => /^(user|name|salesperson)$/i.test(c)) : -1;
+        const unitAt = head ? head.findIndex((c) => /^units delivered$/i.test(c)) : -1;
+        if (!head || nameAt < 0 || unitAt < 0) {
+          setErr("That file has no User and Units Delivered columns, so there is nothing to compare. A Delivery Summary, as a PDF or the standard CSV, is what this reads.");
+          setBusy(false); return;
+        }
+        const oppAt = head.findIndex((c) => /^net opportunities$/i.test(c));
+        file2 = {};
+        for (const r of rows.slice(hi + 1)) {
+          const nm = String((r || [])[nameAt] || "").trim();
+          if (!nm) continue;
+          const raw = String(r[unitAt] ?? "").trim();
+          file2[norm(nm)] = {
+            displayName: nm,
+            flatUnits: raw === "" || raw === "-" ? null : Number(raw),
+            opps: oppAt >= 0 ? Number(r[oppAt] || 0) : null,
+          };
+        }
       }
-      const lines = await extractPdfLinesInBrowser(file);
-      const ds = mapDeliverySummaryGrid(lines);
-      if (!ds) {
-        setErr("That PDF reads as something other than a Delivery Summary. Nothing was changed.");
-        setBusy(false); return;
-      }
-      const other = reportBelongsElsewhere(config?.stores, ds.storeName, store.id);
-      if (other) {
-        setErr(`That is ${other.name}'s report and you are in ${store.name}. Nothing was changed.`);
-        setBusy(false); return;
-      }
-      const file2 = parseDeliverySummaryRows(ds.rows);
       const M = data.months?.[ym()];
       const held = M?.stats || {};
 
@@ -23200,7 +23228,8 @@ function CrossCheck({ store, data, config, onClose }) {
       const keys = new Set([...Object.keys(file2), ...Object.keys(held)]);
       for (const k of keys) {
         const f = file2[k], h = held[k];
-        const fu = f ? unitsOf(f) : null;
+        // the CSV carries one total; the PDF carries it split by channel
+        const fu = !f ? null : (f.flatUnits !== undefined ? f.flatUnits : unitsOf(f));
         const hu = h ? unitsOf(h) : null;
         const name = f?.displayName || h?.displayName || k;
         rows.push({
@@ -23213,8 +23242,15 @@ function CrossCheck({ store, data, config, onClose }) {
 
       const sum = (list, f) => list.reduce((n, r) => n + (f(r) ?? 0), 0);
       const boardRows = rows.filter((r) => r.onBoard);
+      /* Why a total ends in .5, said properly. A split deal is credited half to
+         each name. If both halves are in the report the halves pair off and the
+         total lands whole; an ODD number of people holding one is the proof that
+         at least one split has its other half somewhere this report cannot see. */
+      const halfHolders = rows.filter((r) => r.fu != null && Math.abs(r.fu - Math.round(r.fu)) > 0.001);
       setRes({
-        stated: ds.stated,
+        stated,
+        halfHolders,
+        kind: /\.pdf$/i.test(file.name) ? "pdf" : "csv",
         fileTotal: +sum(rows, (r) => r.fu).toFixed(2),
         boardTotal: +sum(boardRows, (r) => r.hu).toFixed(2),
         heldTotal: +sum(rows, (r) => r.hu).toFixed(2),
@@ -23253,9 +23289,9 @@ function CrossCheck({ store, data, config, onClose }) {
                 <div className="dz-icon"><span>⇩</span></div>
                 <div className="dz-title">{busy ? "Reading…" : "Drop a Delivery Summary in"}</div>
                 <div className="dz-sub">
-                  The same PDF you would import, read and thrown away afterwards. It puts DriveCentric's
-                  own store total next to what {store.name}'s board adds up to, and names whoever
-                  accounts for the gap.
+                  The PDF grid or the standard CSV, whichever you have. It is read and thrown away:
+                  nothing here is imported. What comes back is the report's own total next to what{" "}
+                  {store.name}'s board adds up to, and the name of whoever accounts for the gap.
                 </div>
               </label>
               {err && <p className="sched-err">{err}</p>}
@@ -23282,14 +23318,24 @@ function CrossCheck({ store, data, config, onClose }) {
                 </div>
               </div>
 
-              {half(res.boardTotal) && (
+              {(half(res.boardTotal) || half(res.fileTotal)) && (
                 <div className="xc-warn">
                   <span className="xc-warn-ic"><PixIcon glyph="warn" size={13} /></span>
                   <div>
-                    <b>The store total is not a whole number</b>
-                    <p>A split deal is credited in halves, so a person can hold {n(0.5)} legitimately.
-                      A store cannot: both halves of a split should land on the board. One of them is
-                      going to somebody the board is not counting, which the lists below will name.</p>
+                    <b>{res.halfHolders.length} {res.halfHolders.length === 1 ? "person holds" : "people hold"} half a unit{res.halfHolders.length % 2 ? ", which is an odd number of them" : ""}</b>
+                    <p>
+                      A split deal is credited half to each name, so half a unit against a person is
+                      right. Halves pair off: if both sides of every split were in this report there
+                      would be an even number of people holding one, and the total would land whole.
+                      {res.halfHolders.length % 2
+                        ? " There is an odd number, so at least one split has its other half against somebody this report cannot see \u2014 a manager, a house deal, or somebody who has left."
+                        : " There is an even number here, so the halves account for each other and a fractional total is coming from somewhere else."}
+                    </p>
+                    <div className="xc-halves">
+                      {res.halfHolders.slice(0, 24).map((r) => (
+                        <span key={r.k} className="xc-half">{r.name} <b>{n(r.fu)}</b></span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -29851,6 +29897,10 @@ const SAGE_CSS = `
         display:flex; align-items:center; justify-content:center; }
       .xc-warn b { display:block; font:600 13px var(--font-ui); }
       .xc-warn p { margin:3px 0 0; font-size:12.5px; color:var(--ink-2); }
+      .xc-halves { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
+      .xc-half { font:500 11px var(--font-ui); background:rgba(255,255,255,.6); border:1px solid rgba(201,138,0,.3);
+        border-radius:99px; padding:3px 9px; color:var(--ink-2); white-space:nowrap; }
+      .xc-half b { font-family:var(--font-mono); color:var(--ink); }
       .xc-lead { margin:15px 0 0; font-size:13px; color:var(--ink-2); }
       .xc-lead b { color:var(--ink); font-family:var(--font-mono); }
       .xc-list { margin-top:18px; border-top:1px solid var(--line); padding-top:13px; }
