@@ -13552,6 +13552,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
 function CheckOutTracker({ config, store, data, onChange, query = "" }) {
   const [day, setDay] = useState(today());
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showRoom, setShowRoom] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showLosers, setShowLosers] = useState(false);
   useDailyReportOpener(useCallback(() => setShowReport(true), []));
@@ -13803,7 +13804,8 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
               {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
             </select>
             <button className="da-hbtn" onClick={() => setShowReport(true)}><PixIcon glyph="doc" size={11} /> Daily report</button>
-            <button className="da-hbtn" onClick={() => setShowSchedule(true)}><PixIcon glyph="calendar" size={11} /> Upload schedule</button>
+            <button className="da-hbtn" onClick={() => setShowRoom(true)}><PixIcon glyph="calendar" size={11} /> The schedule</button>
+            <button className="da-hbtn" onClick={() => setShowSchedule(true)}><PixIcon glyph="arrowdown" size={11} /> Upload schedule</button>
           </div>
         </div>
         <div className="da-kpis">
@@ -13912,6 +13914,9 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
         </div>
       )}
 
+      {showRoom && (
+        <ScheduleRoom store={store} config={config} data={data} onChange={onChange} onClose={() => setShowRoom(false)} />
+      )}
       {showSchedule && (
         <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />
       )}
@@ -14976,6 +14981,308 @@ function parseNameGrid(rows, roster, targetYear, targetMonth) {
       .filter((u) => u.dates.length) };
 }
 
+/* ---------------- The schedule room ----------------
+   The month the store is running on, opened from the check-out sheet. On a desk
+   it is the wall calendar the schedule already lives on: every day carries who
+   is off, and pressing one opens that day. On a phone it is one day at a time,
+   two columns, press a name to move it across. Both edit the same list.
+
+   "As uploaded" is the other half. An upload only ever adds days off, so a
+   column that did not line up quietly costs people a day and there was no way
+   to see it. This shows what the last file put on the board, calls out any day
+   where nearly the whole floor reads as off, and puts that day back in a press. */
+function ScheduleRoom({ store, config, data, onChange, onClose }) {
+  const roster = useMemo(
+    () => activityRoster(config, data).slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [config, data]);
+  const months = useMemo(() => {
+    const set = new Set([ym()]);
+    for (const list of Object.values(data.daysOff || {})) for (const d of list || []) set.add(String(d).slice(0, 7));
+    for (const k of Object.keys(data.scheduleSource || {})) set.add(k);
+    return [...set].sort().reverse().slice(0, 12);
+  }, [data]);
+
+  const [mk, setMk] = useState(ym());
+  const [mode, setMode] = useState("edit");
+
+  const [Y, M] = mk.split("-").map(Number);
+  const dim = new Date(Y, M, 0).getDate();
+  const firstDow = new Date(Y, M - 1, 1).getDay();
+  const dstr = (d) => `${mk}-${String(d).padStart(2, "0")}`;
+  const dayNum = (s) => parseInt(String(s).slice(8), 10);
+  const inMonth = (d) => String(d).slice(0, 7) === mk;
+  const dayLabel = (d) => new Date(dstr(d) + "T12:00").toLocaleDateString("en-US",
+    { weekday: "short", month: "short", day: "numeric" });
+
+  const saved = useMemo(() => Object.fromEntries(roster.map((a) =>
+    [a.id, new Set((data.daysOff?.[a.id] || []).filter(inMonth))])), [roster, data, mk]); // eslint-disable-line
+  const [draft, setDraft] = useState(saved);
+  const [pick, setPick] = useState(inMonth(today()) ? dayNum(today()) : 1);
+  useEffect(() => {
+    setDraft(saved);
+    setPick(inMonth(today()) ? dayNum(today()) : 1);
+  }, [saved]); // eslint-disable-line
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", esc);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", esc); };
+  }, [onClose]);
+
+  const isOffD = (aId, d) => !!(draft[aId] && draft[aId].has(dstr(d)));
+  const onCount = (d) => roster.filter((a) => !isOffD(a.id, d)).length;
+  const offList = (d) => roster.filter((a) => isOffD(a.id, d));
+  /* A day nobody could have run: it is either a holiday the store already knows
+     about or, far more often, a column the reader lost. Either way it is worth
+     saying out loud rather than leaving it to be discovered in the points. */
+  const thin = (d) => roster.length >= 4 && onCount(d) <= Math.max(1, Math.floor(roster.length * 0.15));
+
+  const toggle = (aId, d) => setDraft((prev) => {
+    const set = new Set(prev[aId] || []);
+    const k = dstr(d);
+    if (set.has(k)) set.delete(k); else set.add(k);
+    return { ...prev, [aId]: set };
+  });
+  const putBack = (d) => setDraft((prev) => {
+    const out = {};
+    for (const a of roster) { const s = new Set(prev[a.id] || []); s.delete(dstr(d)); out[a.id] = s; }
+    return out;
+  });
+
+  const changed = useMemo(() => {
+    let n = 0;
+    for (const a of roster) {
+      const was = saved[a.id] || new Set(), now = draft[a.id] || new Set();
+      for (let d = 1; d <= dim; d++) if (was.has(dstr(d)) !== now.has(dstr(d))) n++;
+    }
+    return n;
+  }, [draft, saved, roster, dim]); // eslint-disable-line
+
+  const save = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.daysOff = next.daysOff || {};
+    next.daysOffAt = next.daysOffAt || {};
+    const stamp = new Date().toISOString();
+    for (const a of roster) {
+      const other = (next.daysOff[a.id] || []).filter((d) => !inMonth(d));
+      const mine = [...(draft[a.id] || [])];
+      next.daysOff[a.id] = [...other, ...mine].sort();
+      if (((saved[a.id] && saved[a.id].size) || 0) !== mine.length
+        || mine.some((d) => !(saved[a.id] || new Set()).has(d))) next.daysOffAt[a.id] = stamp;
+    }
+    onChange(next, { action: "Edited schedule",
+      detail: `${store.name} · ${monthLabel(mk)} · ${changed} change${changed === 1 ? "" : "s"}` });
+  };
+
+  const src = (data.scheduleSource || {})[mk];
+  const srcOff = (aId, d) => !!(src && (src.off?.[aId] || []).includes(dstr(d)));
+  const srcOnCount = (d) => roster.filter((a) => !srcOff(a.id, d)).length;
+  const srcThin = [];
+  if (src) for (let d = 1; d <= dim; d++) {
+    if (roster.length >= 4 && srcOnCount(d) <= Math.max(1, Math.floor(roster.length * 0.15))) srcThin.push(d);
+  }
+
+  const dowCaps = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const short = (n) => { const p = n.split(" "); return p.length > 1 ? p[0] + " " + p[1][0] + "." : n; };
+
+  /* ---- the desk view: the month on the wall ---- */
+  const calendar = (
+    <div className="sr-deskonly">
+      <div className="sr-cal">
+        {dowCaps.map((d) => <div key={d} className="sr-dow">{d}</div>)}
+        {Array.from({ length: firstDow }, (_, i) => <div key={"e" + i} className="sr-day blank" />)}
+        {Array.from({ length: dim }, (_, i) => {
+          const d = i + 1, names = offList(d), n = onCount(d);
+          return (
+            <button key={d} type="button"
+              className={"sr-day" + (dstr(d) === today() ? " today" : "") + (d === pick ? " sel" : "") + (thin(d) ? " thin" : "")}
+              onClick={() => setPick(d)}>
+              <span className="sr-dtop"><span className="sr-dnum">{d}</span><span className="sr-don">{n} on</span></span>
+              <span className="sr-chips">
+                {names.slice(0, 3).map((a) => <span key={a.id} className="sr-chip">{short(a.name)}</span>)}
+                {names.length > 3 && <span className="sr-chip more">+{names.length - 3}</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="sr-edit">
+        <div className="sr-edit-head">
+          <div>
+            <h4>{dayLabel(pick)}</h4>
+            <p>{onCount(pick)} on the floor · {roster.length - onCount(pick)} off. Press a name to move them.</p>
+          </div>
+          {thin(pick) && <button className="sr-put" onClick={() => putBack(pick)}>Put everybody back on</button>}
+        </div>
+        <div className="sr-rows">
+          {roster.map((a) => {
+            const off = isOffD(a.id, pick);
+            return (
+              <button key={a.id} type="button" className={"sr-prow" + (off ? "" : " on")}
+                onClick={() => toggle(a.id, pick)}>
+                <span className="sr-pdot" />
+                <b>{a.name}</b>
+                <span className="sr-ptag">{off ? "off" : "on"}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ---- the phone view: one day, two columns ---- */
+  const on = roster.filter((a) => !isOffD(a.id, pick));
+  const off = roster.filter((a) => isOffD(a.id, pick));
+  const dayView = (
+    <div className="sr-phoneonly">
+      <div className="sr-strip">
+        {Array.from({ length: dim }, (_, i) => {
+          const d = i + 1;
+          const w = Math.max(3, Math.round((onCount(d) / Math.max(1, roster.length)) * 20));
+          return (
+            <button key={d} type="button" className={"sr-dbtn" + (dstr(d) === today() ? " today" : "")}
+              aria-pressed={d === pick} onClick={() => setPick(d)} title={dayLabel(d)}>
+              <span className="sr-dd">{d}</span>
+              <span className="sr-dbar" style={{ width: w + "px", background: thin(d) ? "var(--red)" : "var(--p2d)" }} />
+            </button>
+          );
+        })}
+      </div>
+      <div className="sr-daycap">
+        <b>{dayLabel(pick)}</b>
+        {thin(pick) && <button className="sr-put" onClick={() => putBack(pick)}>Put everybody back on</button>}
+      </div>
+      <div className="sr-cols">
+        <div className="sr-col">
+          <h4>On the floor <em>{on.length}</em></h4>
+          <div className="sr-cards">
+            {on.length ? on.map((a) => (
+              <button key={a.id} type="button" className="sr-card" onClick={() => toggle(a.id, pick)}>
+                <span className="sr-av">{initialsOf(a.name)}</span><b>{a.name}</b><span className="sr-go">move off</span>
+              </button>
+            )) : <div className="sr-none">Nobody is on this day.</div>}
+          </div>
+        </div>
+        <div className="sr-col off">
+          <h4>Off <em>{off.length}</em></h4>
+          <div className="sr-cards">
+            {off.length ? off.map((a) => (
+              <button key={a.id} type="button" className="sr-card" onClick={() => toggle(a.id, pick)}>
+                <span className="sr-av">{initialsOf(a.name)}</span><b>{a.name}</b><span className="sr-go">put on</span>
+              </button>
+            )) : <div className="sr-none">Everybody is working.</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ---- as uploaded ---- */
+  const uploaded = !src ? (
+    <div className="sr-nosrc">
+      <b>No upload on record for {monthLabel(mk)}</b>
+      <p>Either nothing has been uploaded for this month, or it was applied before the app started
+        keeping a copy of what the file put on the board. Upload the sheet again and this fills in.</p>
+    </div>
+  ) : (
+    <>
+      <div className="sr-file">
+        <b>{src.file}</b>
+        <span className="sr-stamp">{new Date(src.at).toLocaleString("en-US",
+          { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</span>
+        <span className="sr-kind">read as {src.kind}</span>
+      </div>
+      {srcThin.length > 0 && (
+        <div className="sr-warn">
+          <span className="sr-warn-ic"><PixIcon glyph="warn" size={13} /></span>
+          <div>
+            <b>{srcThin.length === 1
+              ? `Nearly everybody reads as off on ${dayLabel(srcThin[0])}`
+              : `${srcThin.length} days read with nearly the whole floor off`}</b>
+            <p>A day where {srcThin.length === 1 ? "only " + srcOnCount(srcThin[0]) + " of " + roster.length + " are working" : "almost nobody is working"} is
+              usually a column the reader lost rather than a day the store closed. Check it against the sheet before it counts against anybody.</p>
+            <div className="sr-warn-days">
+              {srcThin.map((d) => (
+                <button key={d} className="sr-put" onClick={() => { setMode("edit"); setPick(d); putBack(d); }}>
+                  Put {dayLabel(d)} back
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {(src.unmatched || []).length > 0 && (
+        <p className="sr-unmatched">
+          Names in the sheet that are not on the roster and were skipped: {src.unmatched.join(", ")}.
+        </p>
+      )}
+      <div className="sr-srcwrap">
+        <table className="sr-src">
+          <thead>
+            <tr><th className="lbl">What the file put on the board</th>
+              {Array.from({ length: dim }, (_, i) => (
+                <th key={i} className={srcThin.includes(i + 1) ? "bad" : ""}>{i + 1}</th>
+              ))}</tr>
+          </thead>
+          <tbody>
+            {roster.map((a) => (
+              <tr key={a.id}>
+                <td className="lbl">{a.name}</td>
+                {Array.from({ length: dim }, (_, i) => {
+                  const o = srcOff(a.id, i + 1);
+                  return <td key={i} className={o ? "off" : ""} title={a.name + " · " + dayLabel(i + 1) + " · " + (o ? "off" : "working")}>{o ? "off" : ""}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="sr-srcnote">
+        This is what the upload wrote, not the spreadsheet itself. To change a day go back to
+        <b> The month</b>; uploading the sheet again only ever adds days off, so a day taken off in
+        error is cleared here.
+      </p>
+    </>
+  );
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal sr-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="sr-head">
+          <div className="sr-id">
+            <div className="sr-sub">The schedule this month is running on</div>
+            <h2>{store.name}</h2>
+          </div>
+          <select className="sr-mo" value={mk} onChange={(e) => setMk(e.target.value)} aria-label="Which month">
+            {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+          </select>
+          <div className="sr-seg">
+            <button className={mode === "edit" ? "on" : ""} onClick={() => setMode("edit")}>The month</button>
+            <button className={mode === "raw" ? "on" : ""} onClick={() => setMode("raw")}>As uploaded</button>
+          </div>
+          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+        </div>
+
+        {changed > 0 && (
+          <div className="sr-savebar">
+            <span><b>{changed}</b> change{changed === 1 ? "" : "s"} not saved</span>
+            <span className="sr-sp" />
+            <button onClick={() => setDraft(saved)}>Discard</button>
+            <button className="go" onClick={save}>Save schedule</button>
+          </div>
+        )}
+
+        <div className="sr-body">
+          {mode === "raw" ? uploaded : <>{calendar}{dayView}</>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [preview, setPreview] = useState(null); // { matched:[{name,id,dates}], unmatched:[name], total }
   // Answers to "who is this?", keyed by the name the sheet used. Held here until
@@ -14993,12 +15300,15 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
   const [err, setErr] = useState("");
   const [sheetPick, setSheetPick] = useState(null); // { sheets:[names], rowsBySheet:{name:rows} } when an xlsx has many tabs
   const [busy, setBusy] = useState(false);
+  // The name of the file being read, kept so the schedule room can say where a
+  // month came from. The file itself is not stored; what it put on the board is.
+  const [fileName, setFileName] = useState("");
 
   // Turn a dropped file into rows (2D array). CSV is read directly; xlsx is read with
   // SheetJS, loaded on demand. A workbook can hold many monthly tabs, so if there's more
   // than one non-empty sheet we let the manager pick which month to import.
   const readFile = async (file) => {
-    setErr(""); setBusy(true);
+    setErr(""); setBusy(true); setFileName(file.name || "");
     try {
       const nameLc = (file.name || "").toLowerCase();
       if (nameLc.endsWith(".pdf")) {
@@ -15181,6 +15491,28 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
       m.dates.forEach((d) => set.add(d));
       next.daysOff[m.id] = [...set].sort();
       next.daysOffAt[m.id] = stamp;
+    }
+    /* What this upload put on the board, kept per month so the schedule room can
+       show it back. A month read wrong is only obvious next to what the file
+       actually said, and the file itself is not ours to keep. */
+    const wrote = {};
+    let firstDate = null;
+    for (const m of toApply) for (const d of m.dates) {
+      (wrote[m.id] = wrote[m.id] || []).push(d);
+      if (!firstDate || d < firstDate) firstDate = d;
+    }
+    if (firstDate) {
+      next.scheduleSource = next.scheduleSource || {};
+      next.scheduleSource[String(firstDate).slice(0, 7)] = {
+        file: fileName || "a schedule file",
+        at: stamp,
+        kind: preview.pdf ? "a calendar PDF, matched by first name"
+          : preview.blankGrid ? "a shift grid, where a blank cell is a day off"
+          : preview.grid ? "a team grid, with OFF and VAC lines"
+          : "a Name and Off Dates list",
+        off: Object.fromEntries(Object.entries(wrote).map(([k, v]) => [k, [...new Set(v)].sort()])),
+        unmatched: preview.unmatched || [],
+      };
     }
     onChange(next, { action: "Applied schedule",
       detail: `${store.name} · ${preview.total} off-days across ${preview.matched.filter((m) => m.dates.length).length} people`
@@ -28863,6 +29195,151 @@ const SAGE_CSS = `
       .streak-down .streak-n { color:#2E6FB0; }
       /* top offenders ranking */
       /* schedule upload modal */
+
+      /* ---- the schedule room ----
+         The wall calendar on a desk, one day at a time on a phone, and what the
+         last upload put on the board behind both. */
+      .sr-modal { width:min(1120px, calc(100vw - 40px)); max-height:calc(100vh - 60px);
+        display:flex; flex-direction:column; overflow:hidden; }
+      .sr-head { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:17px 20px;
+        color:#fff; background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 46%, var(--hC) 100%); }
+      .sr-id { flex:1 1 auto; min-width:0; }
+      .sr-sub { font-size:11.5px; color:rgba(255,255,255,.78); }
+      .sr-head h2 { margin:1px 0 0; font:700 20px var(--font-display); letter-spacing:-.02em; }
+      .sr-mo { border:0; border-radius:10px; background:#fff; color:var(--ink); cursor:pointer;
+        font:600 11.5px var(--font-display); padding:8px 12px; }
+      .sr-seg { display:flex; gap:3px; padding:3px; border-radius:11px; background:rgba(255,255,255,.16); }
+      .sr-seg button { border:0; background:transparent; color:rgba(255,255,255,.84); cursor:pointer;
+        font:600 11.5px var(--font-display); padding:7px 13px; border-radius:9px; white-space:nowrap; }
+      .sr-seg button.on { background:#fff; color:var(--p3); }
+      .sr-head .btn-x { background:rgba(255,255,255,.18); color:#fff; border:0; }
+      .sr-savebar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 20px;
+        background:rgba(201,138,0,.14); border-bottom:1px solid var(--line);
+        font:600 12px var(--font-display); color:var(--ink); }
+      .sr-savebar b { font-family:var(--font-mono); }
+      .sr-sp { flex:1 1 auto; }
+      .sr-savebar button { border:1px solid var(--line); background:var(--card); border-radius:9px;
+        padding:7px 13px; font:600 11.5px var(--font-display); cursor:pointer; }
+      .sr-savebar button.go { border-color:transparent; background:var(--p2d); color:#fff; }
+      .sr-body { padding:18px 20px 22px; overflow:auto; }
+      .sr-phoneonly { display:none; }
+
+      .sr-cal { display:grid; grid-template-columns:repeat(7,1fr); gap:7px; }
+      .sr-dow { font:700 9.5px var(--font-mono); letter-spacing:.13em; text-transform:uppercase;
+        color:var(--ink-3); text-align:center; padding-bottom:2px; }
+      .sr-day { border:1px solid rgba(0,0,0,.06); background:#FAFBFA; border-radius:12px; min-height:96px;
+        padding:8px 9px; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:5px;
+        transition:border-color .16s ease, transform .16s ease; }
+      .sr-day:hover { transform:translateY(-2px); border-color:var(--p2); }
+      .sr-day.blank { background:none; border-color:transparent; cursor:default; }
+      .sr-day.blank:hover { transform:none; }
+      .sr-day.today { border-color:var(--sandTick); background:color-mix(in srgb, var(--sandTick) 13%, #FAFBFA); }
+      .sr-day.sel { border-color:var(--p2d); box-shadow:0 0 0 2px color-mix(in srgb, var(--p2d) 26%, transparent); }
+      .sr-dtop { display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
+      .sr-dnum { font:700 13px var(--font-mono); }
+      .sr-don { font:500 9.5px var(--font-mono); color:var(--ink-3); }
+      .sr-day.thin .sr-don { color:var(--red); font-weight:700; }
+      .sr-chips { display:flex; flex-wrap:wrap; gap:3px; }
+      .sr-chip { font:500 9.5px var(--font-ui); background:#fff; border:1px solid rgba(0,0,0,.06);
+        border-radius:99px; padding:2px 7px; color:var(--ink-2); white-space:nowrap; }
+      .sr-chip.more { background:none; border-color:transparent; color:var(--ink-3); }
+
+      .sr-edit { margin-top:18px; border-top:1px solid var(--line); padding-top:15px; }
+      .sr-edit-head { display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+      .sr-edit-head h4 { margin:0; font:700 15px var(--font-display); }
+      .sr-edit-head p { margin:2px 0 0; font-size:12px; color:var(--ink-2); }
+      .sr-put { margin-left:auto; border:1px solid rgba(201,138,0,.45); background:none; color:#8A5A10;
+        border-radius:9px; padding:6px 12px; font:600 11.5px var(--font-display); cursor:pointer; }
+      .sr-rows { display:grid; grid-template-columns:repeat(auto-fill, minmax(228px, 1fr)); gap:8px; margin-top:13px; }
+      .sr-prow { display:flex; align-items:center; gap:10px; padding:8px 11px; border-radius:11px;
+        border:1px solid rgba(0,0,0,.06); background:#FAFBFA; cursor:pointer; text-align:left; }
+      .sr-prow:hover { border-color:var(--p2); }
+      .sr-pdot { width:10px; height:10px; border-radius:50%; background:rgba(16,32,52,.16); flex:0 0 auto; }
+      .sr-prow.on .sr-pdot { background:var(--p2d); }
+      .sr-prow b { font:600 12.5px var(--font-ui); flex:1 1 auto; min-width:0; }
+      .sr-ptag { font:500 9.5px var(--font-mono); letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); }
+      .sr-prow.on .sr-ptag { color:#1E7A3C; }
+
+      .sr-strip { display:flex; gap:4px; overflow-x:auto; padding:2px 0 8px; }
+      .sr-dbtn { border:1px solid rgba(0,0,0,.06); background:#FAFBFA; border-radius:10px; min-width:40px;
+        padding:7px 0 8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:4px; flex:0 0 auto; }
+      .sr-dd { font:700 11.5px var(--font-mono); color:var(--ink-2); }
+      .sr-dbar { height:3px; border-radius:2px; }
+      .sr-dbtn[aria-pressed="true"] { background:var(--p3); border-color:transparent; }
+      .sr-dbtn[aria-pressed="true"] .sr-dd { color:#fff; }
+      .sr-dbtn.today .sr-dd { color:var(--sandInk); }
+      .sr-daycap { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 0 10px;
+        font:700 14px var(--font-display); }
+      .sr-cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+      .sr-col { border:1px solid rgba(0,0,0,.06); border-radius:14px; background:#FAFBFA; padding:11px; }
+      .sr-col h4 { margin:0 0 9px; font:700 9.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase;
+        color:var(--ink-3); display:flex; align-items:center; justify-content:space-between; }
+      .sr-col h4 em { font-style:normal; font:700 13px var(--font-mono); color:var(--ink); }
+      .sr-cards { display:flex; flex-direction:column; gap:6px; }
+      .sr-card { display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:11px; width:100%;
+        background:var(--card); border:1px solid rgba(0,0,0,.06); cursor:pointer; text-align:left; }
+      .sr-av { width:26px; height:26px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center;
+        justify-content:center; color:#fff; font:700 9.5px var(--font-mono); background:var(--p2d); }
+      .sr-col.off .sr-av { background:var(--ink-3); }
+      .sr-card b { font:600 12.5px var(--font-ui); flex:1 1 auto; min-width:0; }
+      .sr-go { font:500 10px var(--font-mono); color:var(--ink-3); white-space:nowrap; }
+      .sr-none { font-size:12px; color:var(--ink-3); padding:12px 4px; text-align:center; }
+
+      .sr-file { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:10px 12px;
+        border:1px solid rgba(0,0,0,.06); border-radius:12px; background:#FAFBFA; }
+      .sr-file b { font:600 12.5px var(--font-ui); }
+      .sr-stamp, .sr-kind { font:500 11px var(--font-mono); color:var(--ink-2); }
+      .sr-warn { display:flex; gap:12px; align-items:flex-start; margin-top:12px; padding:13px 15px;
+        border-radius:12px; background:rgba(201,138,0,.13); border:1px solid rgba(201,138,0,.34); }
+      .sr-warn-ic { width:24px; height:24px; border-radius:8px; background:#C77800; color:#fff; flex:0 0 auto;
+        display:flex; align-items:center; justify-content:center; }
+      .sr-warn b { display:block; font:600 13px var(--font-ui); }
+      .sr-warn p { margin:3px 0 0; font-size:12.5px; color:var(--ink-2); }
+      .sr-warn-days { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+      .sr-warn-days .sr-put { margin-left:0; }
+      .sr-unmatched { margin:11px 0 0; font-size:12px; color:var(--ink-2); }
+      .sr-srcwrap { overflow-x:auto; margin-top:15px; }
+      .sr-src { border-collapse:collapse; font-family:var(--font-mono); font-size:9.5px; }
+      .sr-src th, .sr-src td { border:1px solid rgba(0,0,0,.06); padding:4px 3px; text-align:center;
+        min-width:22px; color:var(--ink-3); }
+      .sr-src th { background:#FAFBFA; font-weight:700; color:var(--ink-2); }
+      .sr-src th.bad { background:rgba(194,54,31,.13); color:#C13529; }
+      .sr-src .lbl { text-align:left; font:600 11.5px var(--font-ui); color:var(--ink);
+        min-width:150px; padding:5px 10px; position:sticky; left:0; background:var(--card); }
+      .sr-src th.lbl { background:#FAFBFA; }
+      .sr-src td.off { background:rgba(194,54,31,.1); color:#C13529; }
+      .sr-srcnote { margin:12px 0 0; font-size:12px; color:var(--ink-2); max-width:72ch; }
+      .sr-nosrc { padding:26px 4px; text-align:center; }
+      .sr-nosrc b { display:block; font:700 14px var(--font-display); }
+      .sr-nosrc p { margin:6px auto 0; max-width:52ch; font-size:12.5px; color:var(--ink-2); }
+
+      @media (max-width: 860px) {
+        /* a full-screen sheet: the backdrop's own inset would otherwise leave the
+           month hanging off the bottom of the phone */
+        .modal-backdrop:has(> .sr-modal) { padding:0; align-items:stretch; overflow:hidden; }
+        .sr-modal { width:100vw; height:100dvh; max-height:100dvh; border-radius:0; border:0; }
+        .sr-savebar { flex-wrap:nowrap; padding:9px 15px; }
+        .sr-savebar button { padding:7px 11px; white-space:nowrap; }
+        .sr-deskonly { display:none; }
+        .sr-phoneonly { display:block; }
+        .sr-head { padding:14px 56px 14px 15px; gap:10px; position:relative; }
+        .sr-head .btn-x { position:absolute; right:14px; top:14px; }
+        .sr-body { padding:14px 15px 20px; }
+        .sr-id { flex:1 1 100%; }
+      }
+      /* Both sides stay side by side on a phone. Stacking them put twelve cards
+         between the two columns, and seeing the swap is the whole point of this
+         view, so the cards give up their avatar and their label instead. */
+      @media (max-width: 520px) {
+        .sr-cols { gap:9px; }
+        .sr-col { padding:9px 8px; }
+        .sr-card { padding:9px 8px; gap:0; }
+        .sr-card .sr-av, .sr-card .sr-go { display:none; }
+        .sr-card b { font-size:12px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .sr-day:hover { transform:none; }
+      }
       .sched-modal { max-width:540px; width:100%; padding:24px 26px; }
       .dayreport-modal { max-width:720px; width:100%; padding:24px 26px; }
       .dr-head-actions { display:flex; align-items:center; gap:10px; }
