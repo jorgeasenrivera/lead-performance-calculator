@@ -30016,7 +30016,12 @@ const SAGE_CSS = `
          on the page that did. What it gains instead is the warm head the board
          wears, the four figures a manager reads a trail for in the dot numerals,
          one dashed rule for the average, and the last day marked and printed. */
-      .trends .tr-head { border-radius:13px 13px 0 0; margin:-15px -17px 0; }
+      /* Pulled out to the card's padding edge exactly: .card is padded 22/24 and
+         .gm-card resets the top to 14, so the bleed is -14 and -24, not the -15
+         and -17 it was guessed at -- seven pixels of card showed down each side
+         of the band. The radius is the card's 18 less its 1px border, because
+         the band sits inside that border, not on it. */
+      .trends .tr-head { border-radius:17px 17px 0 0; margin:-14px -24px 0; }
       .tr-head-note { font:600 10.5px var(--font-mono); color:var(--ink-3); letter-spacing:.04em; }
       .tr-hint { margin-top:12px; }
       .tr-body { display:grid; grid-template-columns:184px 1fr; gap:22px; align-items:start; margin-top:12px; }
