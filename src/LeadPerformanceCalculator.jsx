@@ -26262,6 +26262,27 @@ function Shell({ children, entering, style }) {
    1300px across, one map pixel covers five screen pixels and the displacement
    steps rather than slides: every curved edge on the card picked up a wobble.
    1024 costs a megabyte of canvas once and the edges come out clean. */
+/* How much of the bow is spent vertically. One, and a straight horizontal rule
+   inside the glass breaks into offset segments: feDisplacementMap samples the
+   source at whole pixels, so a rule whose vertical displacement drifts across a
+   half-pixel boundary lands on the next row and stays there. Measured across a
+   1376px card at a displacement of 10, on a 1080p screen:
+
+     x10 y10   horizontal rule bows 1.00px  with 2 hard jogs
+     x10 y3.5  horizontal rule bows 0.00px  with 0 jogs
+     x6  y6    horizontal rule bows 0.00px  with 0 jogs, and the whole lens weaker
+
+   A bow of one pixel across thirteen hundred is not a curve anybody sees; the
+   one-pixel jog in the middle of it is the only thing they see. So the vertical
+   share is spent down to where it stops crossing rows, and the horizontal share,
+   which is what actually reads as a lens on a card this wide, is left alone.
+
+   Raising the map from 1024x256 to 2048x512 was measured too and changed nothing:
+   the staircase is in how the source is sampled, not in the map. And below 0.35
+   nothing improves either -- what is left is the horizontal share resampling the
+   rule's own edge, which only a smaller bow would fix. On the hero itself, at
+   1920x1080 with no device scaling: six hard jogs before, two after. */
+const BULGE_Y = 0.35;
 function bulgeMap(power) {
   if (typeof document === "undefined") return null;
   const w = 1024, h = 256;
@@ -26292,7 +26313,7 @@ function bulgeMap(power) {
          so it must bulge outward". They do, and it does not: the edges move
          outward further than the middle, which flattens the middle into a dish. */
       d[o] = Math.max(0, Math.min(255, 128 + dx * k * 255));
-      d[o + 1] = Math.max(0, Math.min(255, 128 + dy * k * 255));
+      d[o + 1] = Math.max(0, Math.min(255, 128 + dy * k * BULGE_Y * 255));
       d[o + 2] = 128;
       d[o + 3] = 255;
     }
