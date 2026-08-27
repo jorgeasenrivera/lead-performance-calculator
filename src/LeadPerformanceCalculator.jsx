@@ -23162,6 +23162,9 @@ function CrossCheck({ store, data, config, onClose }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [res, setRes] = useState(null);
+  /* The store roll-up is a separate export from the per-person list, so it is
+     held on its own and survives reading the other one. */
+  const [roll, setRoll] = useState(null);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -23174,9 +23177,11 @@ function CrossCheck({ store, data, config, onClose }) {
   const roster = useMemo(() => (data.roster || []).filter((a) => a.roleId), [data]);
   const onRoster = useMemo(() => new Set(roster.map((a) => norm(a.name))), [roster]);
 
-  const read = async (file) => {
+  const read = async (fileList) => {
     setErr(""); setBusy(true); setRes(null);
     try {
+      const files = Array.from(fileList);
+      const file = files[0];
       /* Two shapes reach this screen. The PDF Delivery Summary is the grid with
          a channel block per person and the store's own totals above them. The
          Standard Delivery Summary CSV is a flat roll-up -- one row per user,
@@ -23200,12 +23205,33 @@ function CrossCheck({ store, data, config, onClose }) {
         stated = ds.stated;
       } else {
         const rows = Papa.parse((await file.text()).replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+        /* Two CSV shapes come out of the same report. One row per user, with a
+           Units Delivered column, is the list. One row for the store, with no
+           Units column at all, is the roll-up -- and that roll-up is the store's
+           own count of deliveries, which is the figure worth checking against.
+           Refusing it because it has no User column would have refused the only
+           authoritative number in the pair. */
+        const si = rows.findIndex((r) => (r || []).some((c) => /^store$/i.test(String(c).trim())));
+        const shead = si >= 0 ? rows[si].map((c) => String(c).trim()) : null;
+        const sDeal = shead ? shead.findIndex((c) => /^deals delivered$/i.test(c)) : -1;
+        if (shead && sDeal >= 0 && rows[si + 1]) {
+          const r = rows[si + 1];
+          const at = (re) => { const j = shead.findIndex((c) => re.test(c)); return j < 0 ? null : Number(r[j] || 0); };
+          setRoll({
+            store: String(r[shead.findIndex((c) => /^store$/i.test(c))] || "").trim(),
+            deals: Number(r[sDeal] || 0),
+            sold: at(/^sold$/i),
+            opps: at(/^net opportunities$/i),
+            fileName: file.name,
+          });
+          setBusy(false); return;
+        }
         const hi = rows.findIndex((r) => (r || []).some((c) => /^units delivered$/i.test(String(c).trim())));
         const head = hi >= 0 ? rows[hi].map((c) => String(c).trim()) : null;
         const nameAt = head ? head.findIndex((c) => /^(user|name|salesperson)$/i.test(c)) : -1;
         const unitAt = head ? head.findIndex((c) => /^units delivered$/i.test(c)) : -1;
         if (!head || nameAt < 0 || unitAt < 0) {
-          setErr("That file has no User and Units Delivered columns, so there is nothing to compare. A Delivery Summary, as a PDF or the standard CSV, is what this reads.");
+          setErr("That file is neither the per-person list nor the store roll-up. Both come out of the Delivery Summary; drop either, or both.");
           setBusy(false); return;
         }
         const oppAt = head.findIndex((c) => /^net opportunities$/i.test(c));
@@ -23235,6 +23261,7 @@ function CrossCheck({ store, data, config, onClose }) {
         rows.push({
           k, name, fu, hu,
           onBoard: onRoster.has(k),
+          opps: f?.opps ?? null,
           diff: fu != null && hu != null ? +(fu - hu).toFixed(2) : null,
         });
       }
@@ -23249,9 +23276,11 @@ function CrossCheck({ store, data, config, onClose }) {
       const halfHolders = rows.filter((r) => r.fu != null && Math.abs(r.fu - Math.round(r.fu)) > 0.001);
       setRes({
         stated,
+        roll,
         halfHolders,
         kind: /\.pdf$/i.test(file.name) ? "pdf" : "csv",
         fileTotal: +sum(rows, (r) => r.fu).toFixed(2),
+        fileOpps: rows.some((r) => r.opps != null) ? +sum(rows, (r) => r.opps).toFixed(0) : null,
         boardTotal: +sum(boardRows, (r) => r.hu).toFixed(2),
         heldTotal: +sum(rows, (r) => r.hu).toFixed(2),
         offBoard: rows.filter((r) => r.fu != null && !r.onBoard && r.fu > 0),
@@ -23284,16 +23313,26 @@ function CrossCheck({ store, data, config, onClose }) {
           {!res ? (
             <>
               <label className="sched-drop dz2">
-                <input type="file" accept=".pdf" style={{ display: "none" }}
-                  onChange={(e) => { if (e.target.files[0]) read(e.target.files[0]); e.target.value = ""; }} />
+                <input type="file" accept=".pdf,.csv" multiple style={{ display: "none" }}
+                  onChange={(e) => { if (e.target.files.length) read(e.target.files); e.target.value = ""; }} />
                 <div className="dz-icon"><span>⇩</span></div>
                 <div className="dz-title">{busy ? "Reading…" : "Drop a Delivery Summary in"}</div>
                 <div className="dz-sub">
-                  The PDF grid or the standard CSV, whichever you have. It is read and thrown away:
-                  nothing here is imported. What comes back is the report's own total next to what{" "}
-                  {store.name}'s board adds up to, and the name of whoever accounts for the gap.
+                  The PDF grid, the per-person CSV, or the store roll-up -- drop the roll-up and the
+                  list together and both figures land side by side. Everything here is read and thrown
+                  away: nothing is imported.
                 </div>
               </label>
+              {roll && (
+                <div className="xc-roll">
+                  <div className="xc-cap">The store roll-up says</div>
+                  <div className="xc-rollrow">
+                    <span className="xc-n">{roll.deals}</span>
+                    <span className="xc-note">deliveries at {roll.store}{roll.sold != null ? ` \u00b7 ${roll.sold} sold` : ""}{roll.opps != null ? ` \u00b7 ${roll.opps} opportunities` : ""}</span>
+                  </div>
+                  <p className="xc-note">Now drop the per-person list and this sits next to what the board adds up to.</p>
+                </div>
+              )}
               {err && <p className="sched-err">{err}</p>}
             </>
           ) : (
@@ -23303,8 +23342,10 @@ function CrossCheck({ store, data, config, onClose }) {
               <div className="xc-tiles">
                 <div className="xc-tile">
                   <div className="xc-cap">DriveCentric says</div>
-                  <div className="xc-n">{res.stated ? n(res.stated.total) : "–"}</div>
-                  <div className="xc-note">{res.stated ? "off the report's own store block" : "this report carries no store block"}</div>
+                  <div className="xc-n">{res.roll ? n(res.roll.deals) : res.stated ? n(res.stated.total) : "–"}</div>
+                  <div className="xc-note">{res.roll ? "deliveries, off the store roll-up"
+                    : res.stated ? "off the report's own store block"
+                    : "drop the store roll-up too and this fills in"}</div>
                 </div>
                 <div className="xc-tile">
                   <div className="xc-cap">The report's people add to</div>
@@ -23340,13 +23381,38 @@ function CrossCheck({ store, data, config, onClose }) {
                 </div>
               )}
 
-              {res.stated && Math.abs(res.stated.total - res.boardTotal) > 0.001 && (
-                <p className="xc-lead">
-                  The board is <b>{n(Math.abs(res.boardTotal - res.stated.total))}</b>{" "}
-                  {res.boardTotal > res.stated.total ? "ahead of" : "behind"} the report. What follows is
-                  every name that could account for it.
-                </p>
-              )}
+              {(() => {
+                /* The one thing this screen exists to say. The store's own count
+                   is not the sum of its people and never was: a delivery credited
+                   to a salesperson AND to whoever set the appointment lands as a
+                   whole delivery on both rows. Add the rows up and every column
+                   comes out high -- opportunities most of all, which is the proof
+                   it is double counting rather than disagreeing. */
+                const auth = res.roll ? res.roll.deals : res.stated ? res.stated.total : null;
+                if (auth == null) return null;
+                const over = res.fileTotal - auth;
+                if (Math.abs(over) <= 0.001) return (
+                  <p className="xc-lead">The report's people add up to exactly what the store says.</p>
+                );
+                return (
+                  <div className="xc-warn xc-note-blue">
+                    <span className="xc-warn-ic"><PixIcon glyph="warn" size={13} /></span>
+                    <div>
+                      <b>The store is not the sum of its people, and is not meant to be</b>
+                      <p>
+                        The roll-up counts each delivery once. The per-person list credits it to
+                        everybody who touched it, so a car sold by one person off an appointment set
+                        by another is a whole delivery on both rows. Adding the rows up therefore
+                        runs {over > 0 ? "high" : "low"} by <b>{n(Math.abs(over))}</b>
+                        {res.roll && res.roll.opps != null && res.fileOpps != null
+                          ? `, and the opportunity counts run apart the same way \u2014 ${n(res.fileOpps)} across the people against ${n(res.roll.opps)} for the store.`
+                          : "."}
+                        {" "}The figure to trust for the store is <b>{n(auth)}</b>.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <XcList title="In the report, not on the board" hint="Their units are in the report's total and not in the board's."
                 rows={res.offBoard} col={(r) => n(r.fu)} />
@@ -29895,8 +29961,15 @@ const SAGE_CSS = `
         border-radius:12px; background:rgba(201,138,0,.13); border:1px solid rgba(201,138,0,.34); }
       .xc-warn-ic { width:24px; height:24px; border-radius:8px; background:#C77800; color:#fff; flex:0 0 auto;
         display:flex; align-items:center; justify-content:center; }
-      .xc-warn b { display:block; font:600 13px var(--font-ui); }
+      /* only the heading is a block; a bold number inside the sentence stays in it */
+      .xc-warn > div > b { display:block; font:600 13px var(--font-ui); }
+      .xc-warn p b { font-family:var(--font-mono); font-weight:700; }
       .xc-warn p { margin:3px 0 0; font-size:12.5px; color:var(--ink-2); }
+      .xc-note-blue { background:rgba(46,125,224,.09); border-color:rgba(46,125,224,.3); margin-top:16px; }
+      .xc-note-blue .xc-warn-ic { background:#2E7DE0; }
+      .xc-note-blue b { color:var(--ink); }
+      .xc-roll { border:1px solid var(--line); border-radius:14px; background:#FAFBFA; padding:12px 14px; margin-top:14px; }
+      .xc-rollrow { display:flex; align-items:baseline; gap:10px; margin:4px 0 6px; }
       .xc-halves { display:flex; flex-wrap:wrap; gap:5px; margin-top:9px; }
       .xc-half { font:500 11px var(--font-ui); background:rgba(255,255,255,.6); border:1px solid rgba(201,138,0,.3);
         border-radius:99px; padding:3px 9px; color:var(--ink-2); white-space:nowrap; }
