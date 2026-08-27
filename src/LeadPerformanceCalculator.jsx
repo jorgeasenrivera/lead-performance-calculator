@@ -13761,8 +13761,9 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
           <span className="da-cell da-out"><em>Texts</em><b>{r.hasData ? (r.text ?? "–") : "–"}</b></span>
           <span className="da-cell da-out"><em>Emails</em><b>{r.hasData ? (r.email ?? "–") : "–"}</b></span>
         </>}
-        <span className="da-flex" />
-        <button className="da-markoff" onClick={() => toggleOff(r.a)} title="Mark this person off for the day.">Mark off</button>
+        {/* RockEd is a column like the rest of them, so it takes its share of
+            the row instead of being pushed to the far side of a hole. Only Mark
+            off, which appears on hover, sits out on its own. */}
         <span className="da-cell da-qualcell">
           <em style={{ textTransform: "none" }}>RockEd</em>
           <button className={"da-qual " + (r.qual === "yes" ? "yes" : "no")} onClick={() => cycleQualified(norm(r.a.name))}
@@ -13770,6 +13771,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
             {r.qual === "yes" ? <><PixIcon glyph="check" size={10} /> Qualified</> : <><PixIcon glyph="close" size={10} /> Not yet</>}
           </button>
         </span>
+        <button className="da-markoff" onClick={() => toggleOff(r.a)} title="Mark this person off for the day.">Mark off</button>
         <span className="da-cell da-ptcell">
           <em>Points</em>
           {!r.hasData ? <span className="da-ptb off">no data</span>
@@ -17667,8 +17669,12 @@ function MetricStrip({ ev, stats, thr, first }) {
      row as a seventh instrument. For a store whose leads are all internet leads
      it prints the same figure as the internet column, twice on one line, and the
      units it counts are already the lead bar and the count beside it. */
-  const columns = [...STRIP_METRICS,
-    ...reqs.map((r) => r.metric).filter((m) => !STRIP_METRICS.includes(m) && m !== "deliveredPct")];
+  const columns = [...STRIP_METRICS.slice(0, 4), "bhVideoPct", ...STRIP_METRICS.slice(4),
+    ...reqs.map((r) => r.metric)
+      .filter((m) => !STRIP_METRICS.includes(m) && m !== "bhVideoPct" && m !== "deliveredPct")];
+  /* The hero grades three video standards; the row was drawing two, because
+     BH video is not one of the five the board is built on and only ever arrived
+     as a tier requirement. It is a standard either way, so the row carries it. */
   const isChan = (m) => !!FIVE.find((f) => f.key === m && CHANNELS[f.id]);
   const chanCols = columns.filter(isChan);
   const standCols = columns.filter((m) => !isChan(m));
@@ -18063,6 +18069,16 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             </span>
           );
         })()}
+        {/* The confirm used to drop onto a line of its own, which made every
+            row that had one half again as tall and broke the rhythm of the
+            list. It rides in the row now, just before the chevron. Pressing it
+            opens the re-evaluate form below, which is the only part that
+            genuinely needs a second line. */}
+        {ev.status === "fail" && !grace && !incomplete && !restrictedNow && !readOnly && ev.atCap && !showRestrict && (
+          <button className="assoc-act" onClick={(e) => { e.stopPropagation(); setShowRestrict(true); }}>
+            Confirm removed from leads
+          </button>
+        )}
         <span className="s2-rgo" aria-hidden="true">›</span>
       </div>
       {/* One quiet strip under the row instead of three red paragraphs. The row
@@ -18078,11 +18094,9 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           <button className="s2-rowbtn go" onClick={() => onSetRestriction(null)}>Put back on leads</button>
         </div>
       )}
-      {ev.status === "fail" && !grace && !incomplete && !restrictedNow && !readOnly && ev.atCap && (
+      {ev.status === "fail" && !grace && !incomplete && !restrictedNow && !readOnly && ev.atCap && showRestrict && (
         <div className="s2-rowfoot">
-          {!showRestrict ? (
-            <button className="s2-rowbtn stop" onClick={() => setShowRestrict(true)}>Confirm removed from leads</button>
-          ) : (
+          {(
             <>
               <span>Re-evaluate in</span>
               <input className="s2-rowdays" type="number" min="0" max="90" value={days}
@@ -22416,16 +22430,22 @@ function BloopWin({ cls = "", style, children }) {
   );
 }
 
-/* The store's badge. The dotted ring and the disc are the card's own furniture
-   and bend with it; the picture inside is a photograph and does not. */
-function AvaShot({ src }) {
-  const { mark, hero, box } = useUnbent("parent");
+/* The store's badge, lifted out of the lens whole.
+
+   Taking only the picture out and leaving the disc and the dotted ring behind
+   split the badge in two: the ring bent with the card, the photograph did not,
+   and at the top-left corner -- where the glass pushes hardest -- the picture
+   climbed out of its seat. A ring and the face inside it are one object, so
+   both come out together. The seat stays in the flow at full size and draws
+   nothing, which keeps the head's layout exactly as it was. */
+function AvaSeat({ children }) {
+  const { mark, hero, box } = useUnbent("self");
   return (
     <>
-      <i ref={mark} className="bloop-mark" aria-hidden="true" />
+      <div ref={mark} className="s2-ava s2-ava-seat" aria-hidden="true" />
       {hero && box && createPortal(
-        <img className="s2-avashot" src={src} alt=""
-          style={{ left: box.left, top: box.top, width: box.width, height: box.height }} />, hero)}
+        <div className="s2-ava s2-ava-lift"
+          style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>{children}</div>, hero)}
     </>
   );
 }
@@ -22833,9 +22853,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             read as a rendering fault rather than as a screen. */}
         <div className="s2-tube">
         <div className="s2-head">
-          <div className="s2-ava">
-            {store.icon ? <AvaShot src={store.icon} /> : <Logo size={40} />}
-          </div>
+          <AvaSeat>{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</AvaSeat>
           <div className="s2-idtx">
             <div className="s2-greet">{greeting}{firstName ? `, ${firstName}` : ""}</div>
             <h1 className="s2-store">{store.name}</h1>
@@ -27106,7 +27124,16 @@ const SAGE_CSS = `
       .ru-scrim { position:fixed; inset:0; z-index:400; background:rgba(16,32,52,.5);
         display:flex; align-items:center; justify-content:center; padding:24px;
         animation:ruScrim .3s var(--ease) both; }
-      .ru-sheet { background:var(--card); border-radius:22px; box-shadow:var(--shadow-3);
+      /* The sheet is green under the head and white under everything else, so
+         the head is not the only thing standing between the corner and the page.
+         Squaring the head's own corner stopped it drawing a second curve, and
+         the white kept showing anyway: whatever the last hairline is -- a
+         composited layer rounding its clip differently, a subpixel of the entry
+         animation -- it now has the head's own colour behind it rather than
+         white, and there is nothing left to see. The body and the foot paint
+         their own white on top, so only the head sits on green. */
+      .ru-sheet { background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 46%, var(--hC) 100%);
+        border-radius:22px; box-shadow:var(--shadow-3);
         width:min(660px, 100%); max-height:min(820px, 92vh); display:flex; flex-direction:column;
         overflow:hidden; animation:ruSheetUp .42s var(--ease-bloop, cubic-bezier(.2,.7,.3,1)) both; }
       /* Without overscroll-behavior a flick at either end of this list hands the
@@ -27117,7 +27144,7 @@ const SAGE_CSS = `
          content past the container - a scrollbar flashing for the length of the
          stagger. Short screens, where the content genuinely cannot fit, get a
          real scrollbar with its gutter reserved so nothing shifts. */
-      .ru-sheet-body { flex:1; overflow:hidden; }
+      .ru-sheet-body { flex:1; overflow:hidden; background:var(--card); }
       @media (max-height: 700px) {
         .ru-sheet-body { overflow-y:auto; overscroll-behavior:contain;
           -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
@@ -27201,7 +27228,7 @@ const SAGE_CSS = `
         opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
       .ru-sec-h h4 { font-size:12.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); margin:0; }
       .ru-count { font-family:var(--font-display); font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
-      .ru-sheet-foot { padding:14px 24px calc(18px + env(safe-area-inset-bottom, 0px));
+      .ru-sheet-foot { padding:14px 24px calc(18px + env(safe-area-inset-bottom, 0px)); background:var(--card);
         border-top:1px solid var(--line); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
       .ru-btn { width:100%; font:inherit; font-size:15px; font-weight:700; padding:13px; border-radius:13px;
         cursor:pointer; border:1px solid var(--blue); background:var(--blue); color:#fff;
@@ -31982,7 +32009,11 @@ const SAGE_CSS = `
          Portaled into .s2-hero, which carries no filter, and placed at the spot
          its marker holds inside the tube. */
       .bloop-mark { display:block; width:0; height:0; }
-      .s2-avashot { position:absolute; z-index:2; border-radius:50%; object-fit:cover; pointer-events:none; }
+      .s2-ava-seat { visibility:hidden; }
+      /* .s2-ava sets position:relative and is defined further down this sheet,
+         so at equal specificity it won and the lifted badge dropped into the
+         grid at the foot of the card. Named against its parent so it wins. */
+      .s2-hero > .s2-ava-lift { position:absolute; z-index:2; pointer-events:none; }
       .bloopwin.port { position:absolute; z-index:60; transform:translate(-50%,6px) scale(.5);
         transform-origin:50% calc(100% + 26px); }
       .bloopwin.port.r { transform:translate(-100%,6px) scale(.5); transform-origin:85% calc(100% + 26px); }
@@ -32451,14 +32482,14 @@ const SAGE_CSS = `
       .da-out b { color:var(--ink-2); }
       .da-out em { opacity:.8; }
       .da-qualcell, .da-ptcell { flex:0 0 auto; max-width:none; min-width:0; }
-      .da-qual { display:inline-flex; align-items:center; gap:5px; border-radius:99px; border:1px solid var(--line);
-        padding:5px 0; width:100px; justify-content:center; font:600 10px var(--font-display); cursor:pointer;
+      .da-qual { display:inline-flex; align-items:center; gap:6px; border-radius:99px; border:1px solid var(--line);
+        padding:8px 0; width:124px; justify-content:center; font:600 12px var(--font-display); cursor:pointer;
         flex:0 0 auto; background:var(--card); color:var(--ink-2); }
       .da-qual.yes { background:rgba(30,138,76,.1); color:#1E8A4C; border-color:rgba(30,138,76,.4); }
-      .da-ptb { display:inline-flex; align-items:center; gap:4px; font:700 10px var(--font-mono); border-radius:99px;
-        padding:4px 0; width:64px; justify-content:center; background:rgba(194,54,31,.1); color:#C2361F; flex:0 0 auto; }
+      .da-ptb { display:inline-flex; align-items:center; gap:5px; font:700 12.5px var(--font-mono); border-radius:99px;
+        padding:7px 0; width:82px; justify-content:center; background:rgba(194,54,31,.1); color:#C2361F; flex:0 0 auto; }
       .da-ptb.p0 { background:rgba(30,138,76,.12); color:#1E8A4C; }
-      .da-ptb.off { background:rgba(16,32,52,.05); color:var(--ink-3); width:auto; padding:4px 10px; }
+      .da-ptb.off { background:rgba(16,32,52,.05); color:var(--ink-3); width:auto; padding:7px 12px; }
       .da-markoff { border:1px solid var(--line); border-radius:99px; background:var(--card); color:var(--ink-2);
         font:600 10px var(--font-display); padding:5px 11px; cursor:pointer; opacity:0; transition:opacity .15s ease; flex:0 0 auto; }
       .da-row:hover .da-markoff, .da-markoff:focus-visible { opacity:1; }
@@ -32583,8 +32614,11 @@ const SAGE_CSS = `
       .mclust + .mclust { padding-left:19px; margin-left:9px; }
       .mclust + .mclust::before { content:""; position:absolute; left:0; top:4px; bottom:4px;
         width:1px; background:var(--line); }
-      .mccap { position:absolute; top:-13px; left:0; font:700 8px var(--font-mono); letter-spacing:.12em;
+      .mccap { position:absolute; top:-14px; left:0; font:700 8px var(--font-mono); letter-spacing:.12em;
         text-transform:uppercase; color:var(--ink-3); white-space:nowrap; }
+      /* The captions hang above the first row's instruments, so that row needs
+         the room. Without it they climbed into the section header. */
+      .s2-rolecard .assoc-card:first-of-type .assoc-row { padding-top:24px; }
       .mclust + .mclust .mccap { left:19px; }
       /* the channel cell: a column in that channel's own colour, drawn against
          the standard as a rule across it. Above the rule is above standard, and
@@ -32673,6 +32707,11 @@ const SAGE_CSS = `
       .warmhead .s2-fchip.attention { background:rgba(201,138,0,.16); color:#8A5A10; }
       .warmhead .s2-fchip.on { outline:2px solid currentColor; outline-offset:1px; }
       /* the quiet strip under a row: the action, not a restatement */
+      /* the confirm, in the row rather than under it */
+      .assoc-act { flex:0 0 auto; border:1px solid rgba(194,54,31,.42); background:transparent; color:#C13529;
+        border-radius:99px; padding:6px 13px; cursor:pointer; white-space:nowrap;
+        font:600 11px var(--font-display); }
+      .assoc-act:hover { background:rgba(194,54,31,.08); }
       .s2-rowfoot { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
         padding:0 19px 11px 19px; font-size:10.5px; color:var(--ink-2); }
       .s2-rowbtn { border:1px solid var(--line); border-radius:99px; background:var(--card);
