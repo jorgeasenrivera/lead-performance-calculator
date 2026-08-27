@@ -22809,7 +22809,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                         </span>
                         {d != null && (
                           <span className={"s2-hd " + (d >= 0 ? "up" : "dn")}>
-                            <PixIcon glyph={d >= 0 ? "triup" : "tridown"} size={9} />{d >= 0 ? "+" : ""}{d}
+                            <PixIcon glyph={d >= 0 ? "triup" : "tridown"} size={11} />{d >= 0 ? "+" : ""}{d}
                           </span>
                         )}
                       </span>
@@ -31972,7 +31972,7 @@ const SAGE_CSS = `
       .s2-fchip.dim.on { background:rgba(255,255,255,.85); color:var(--ink); }
       .s2-right { flex:1; display:flex; flex-direction:column; gap:16px; min-width:0; position:relative; z-index:1; }
       .s2-group { display:flex; flex-direction:column; gap:9px; }
-      .s2-gcap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+      .s2-gcap { font:700 10.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
         color:var(--sandCap); display:flex; align-items:center; gap:6px; }
       .s2-gcap::after { content:""; flex:1; height:2px; opacity:.35;
         background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
@@ -31988,10 +31988,10 @@ const SAGE_CSS = `
         animation:s2barup .8s cubic-bezier(.22,.68,.32,1.12) both;
         filter:drop-shadow(0 0 8px rgba(255,255,255,.25)); }
       @keyframes s2barup { from { transform:scaleY(0); } to { transform:scaleY(1); } }
-      .s2-hd { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-        font:700 9px var(--font-mono); }
+      .s2-hd { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+        font:700 11.5px var(--font-mono); }
       .s2-hd.up { color:#7FE3AC; } .s2-hd.dn { color:#FFB3A6; }
-      .s2-mklbl { font:700 9px var(--font-mono); letter-spacing:.07em; text-transform:uppercase;
+      .s2-mklbl { font:700 10px var(--font-mono); letter-spacing:.07em; text-transform:uppercase;
         color:rgba(255,255,255,.78); white-space:nowrap; margin-top:6px; }
       .s2-marks { display:flex; gap:14px; justify-content:space-evenly; align-items:center; }
       .s2-mark { display:flex; flex-direction:column; align-items:center; cursor:default; }
