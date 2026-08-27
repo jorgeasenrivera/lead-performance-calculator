@@ -365,6 +365,12 @@ function mapDeliverySummaryGrid(lines) {
 
   let sawHeaderSig = false;
   let storeName = null;
+  /* DriveCentric prints its own totals in a block above the people, under the
+     store's name. They were read and thrown away, which meant the one number
+     the report is authoritative about -- how many units the store delivered --
+     was the one number the app could not quote back. Kept now, so the board can
+     be checked against the report it came from instead of against memory. */
+  const storeSources = {};
   let curName = null;
   let pendingFrags = [];
   const people = {};       // norm(name) -> { displayName, sources }
@@ -394,11 +400,11 @@ function mapDeliverySummaryGrid(lines) {
       commitName();
       const nums = texts.slice(1).filter(isNum);
       if (nums.length < 6) continue;
-      if (!curName) continue;                             // store block: not a person
-      const k = norm(curName);
-      if (!people[k]) { people[k] = { displayName: curName, sources: {}, vehicles: {} }; order.push(k); }
-      people[k].vehicles = people[k].vehicles || {};
+      const k = curName ? norm(curName) : null;
+      if (k && !people[k]) { people[k] = { displayName: curName, sources: {}, vehicles: {} }; order.push(k); }
+      if (k) people[k].vehicles = people[k].vehicles || {};
       const vals = nums.slice(0, 6).map(val);
+      if (!curName) { storeSources[rowTag.toLowerCase()] = vals; continue; }
       /* The New/Used/Other/Total rows carry the same six columns cut by vehicle type
          rather than by source. They used to be thrown away at this line, which is why
          nothing in the tool could say how much of a month was new against used.
@@ -473,7 +479,18 @@ function mapDeliverySummaryGrid(lines) {
         : "-",
     });
   }
-  return { storeName, rows, pairings };
+  /* What the report itself says the store did, straight off its own block:
+     units by channel and the total. Nothing here is derived from the people
+     rows, which is the whole point -- it is the figure to check them against. */
+  const g = (src, i) => (storeSources[src] ? storeSources[src][i] : null);
+  const dcUnits = { internet: g("internet", 4), phone: g("phone", 4),
+    showroom: g("showroom", 4), campaign: g("campaign", 4) };
+  const dcTotal = ["internet", "phone", "showroom", "campaign"]
+    .reduce((n, c) => (dcUnits[c] == null ? n : n + dcUnits[c]), 0);
+  const dcLeads = { internet: g("internet", 0), phone: g("phone", 0), showroom: g("showroom", 0) };
+  const stated = Object.keys(storeSources).length
+    ? { units: dcUnits, total: dcTotal, leads: dcLeads } : null;
+  return { storeName, rows, pairings, stated };
 }
 
 /* Delivery Summary rows are pre-shaped, so they bypass parseReport(). */

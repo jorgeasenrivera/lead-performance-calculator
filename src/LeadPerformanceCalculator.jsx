@@ -3685,7 +3685,7 @@ export default function LeadPerformanceCalculator() {
                 {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
-                {tab === "import" && <ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
+                {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
                 {tab === "actstd" && isAdmin && <><ActivityStandardsEditor config={config} storeId={view} onChange={persistConfig} />
                   <ChecklistEditor config={config} storeId={view} onChange={persistConfig} /></>}
               </>
@@ -3713,7 +3713,7 @@ export default function LeadPerformanceCalculator() {
                 {/* The gutter the Dashboard has had all along. These four were
                     rendered straight into .page, which carries no padding, so they
                     ran edge to edge on anything wider than a laptop. */}
-                {tab === "import" && <div className="tab-page"><ImportPanel data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
+                {tab === "import" && <div className="tab-page"><ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} /></div>}
                 {tab === "gm" && <div className="tab-page"><GMSummary config={config} data={{ [view]: storeData }} stores={[currentStore]} /></div>}
                 {tab === "history" && <div className="tab-page"><HistoryPanel config={config} store={currentStore} data={storeData} /></div>}
                 {tab === "standards" && isAdmin && <div className="tab-page"><TargetsEditor config={config} storeId={view} data={storeData} onChange={persistConfig} /></div>}
@@ -23143,7 +23143,207 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
 }
 
 /* ---------------- Import ---------------- */
-function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
+/* ---------------- The cross-check ----------------
+   The board is built by adding up what every person on it delivered. DriveCentric
+   prints its own figure for the store in the same report, above the people, and
+   that figure was read and thrown away for as long as this tool has existed --
+   so the one number the report is authoritative about was the one number the app
+   could not quote back.
+
+   This drops a Delivery Summary in and imports nothing. It puts the report's own
+   store total next to what the board sums to, and where they disagree it says
+   who accounts for the difference: somebody in the report who is not on the
+   roster, somebody on the roster the report has never heard of, and anybody whose
+   figures have moved since the last import. A half unit is a real thing -- a
+   split deal is credited in halves -- but a STORE total ending in .5 means one
+   half of a split is being counted against somebody the other half is not, and
+   that is worth saying out loud rather than rounding away. */
+function CrossCheck({ store, data, config, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [res, setRes] = useState(null);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const esc = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", esc);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", esc); };
+  }, [onClose]);
+
+  const roster = useMemo(() => (data.roster || []).filter((a) => a.roleId), [data]);
+  const onRoster = useMemo(() => new Set(roster.map((a) => norm(a.name))), [roster]);
+
+  const read = async (file) => {
+    setErr(""); setBusy(true); setRes(null);
+    try {
+      if (!/\.pdf$/i.test(file.name)) {
+        setErr("That is not a PDF. Pull the Delivery Summary out of DriveCentric as a PDF and drop that in.");
+        setBusy(false); return;
+      }
+      const lines = await extractPdfLinesInBrowser(file);
+      const ds = mapDeliverySummaryGrid(lines);
+      if (!ds) {
+        setErr("That PDF reads as something other than a Delivery Summary. Nothing was changed.");
+        setBusy(false); return;
+      }
+      const other = reportBelongsElsewhere(config?.stores, ds.storeName, store.id);
+      if (other) {
+        setErr(`That is ${other.name}'s report and you are in ${store.name}. Nothing was changed.`);
+        setBusy(false); return;
+      }
+      const file2 = parseDeliverySummaryRows(ds.rows);
+      const M = data.months?.[ym()];
+      const held = M?.stats || {};
+
+      const rows = [];
+      const keys = new Set([...Object.keys(file2), ...Object.keys(held)]);
+      for (const k of keys) {
+        const f = file2[k], h = held[k];
+        const fu = f ? unitsOf(f) : null;
+        const hu = h ? unitsOf(h) : null;
+        const name = f?.displayName || h?.displayName || k;
+        rows.push({
+          k, name, fu, hu,
+          onBoard: onRoster.has(k),
+          diff: fu != null && hu != null ? +(fu - hu).toFixed(2) : null,
+        });
+      }
+      rows.sort((a, b) => Math.abs(b.diff ?? 99) - Math.abs(a.diff ?? 99) || (b.fu ?? 0) - (a.fu ?? 0));
+
+      const sum = (list, f) => list.reduce((n, r) => n + (f(r) ?? 0), 0);
+      const boardRows = rows.filter((r) => r.onBoard);
+      setRes({
+        stated: ds.stated,
+        fileTotal: +sum(rows, (r) => r.fu).toFixed(2),
+        boardTotal: +sum(boardRows, (r) => r.hu).toFixed(2),
+        heldTotal: +sum(rows, (r) => r.hu).toFixed(2),
+        offBoard: rows.filter((r) => r.fu != null && !r.onBoard && r.fu > 0),
+        missing: rows.filter((r) => r.fu == null && r.onBoard && (r.hu ?? 0) > 0),
+        moved: rows.filter((r) => r.diff != null && Math.abs(r.diff) > 0.001),
+        fileName: file.name,
+        month: monthLabel(ym()),
+      });
+    } catch (e) {
+      setErr("That file could not be read. If it is a scan or a photo rather than a PDF exported from DriveCentric, there is no text in it to read.");
+    }
+    setBusy(false);
+  };
+
+  const n = (v) => (v == null ? "–" : (Math.round(v * 100) / 100).toString());
+  const half = (v) => v != null && Math.abs(v - Math.round(v)) > 0.001;
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal xc-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="xc-head">
+          <div className="xc-id">
+            <div className="xc-sub">Nothing here is imported or changed</div>
+            <h2>Check the board against the report</h2>
+          </div>
+          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+        </div>
+
+        <div className="xc-body">
+          {!res ? (
+            <>
+              <label className="sched-drop dz2">
+                <input type="file" accept=".pdf" style={{ display: "none" }}
+                  onChange={(e) => { if (e.target.files[0]) read(e.target.files[0]); e.target.value = ""; }} />
+                <div className="dz-icon"><span>⇩</span></div>
+                <div className="dz-title">{busy ? "Reading…" : "Drop a Delivery Summary in"}</div>
+                <div className="dz-sub">
+                  The same PDF you would import, read and thrown away afterwards. It puts DriveCentric's
+                  own store total next to what {store.name}'s board adds up to, and names whoever
+                  accounts for the gap.
+                </div>
+              </label>
+              {err && <p className="sched-err">{err}</p>}
+            </>
+          ) : (
+            <>
+              <div className="xc-file"><b>{res.fileName}</b><span>{res.month}</span></div>
+
+              <div className="xc-tiles">
+                <div className="xc-tile">
+                  <div className="xc-cap">DriveCentric says</div>
+                  <div className="xc-n">{res.stated ? n(res.stated.total) : "–"}</div>
+                  <div className="xc-note">{res.stated ? "off the report's own store block" : "this report carries no store block"}</div>
+                </div>
+                <div className="xc-tile">
+                  <div className="xc-cap">The report's people add to</div>
+                  <div className={"xc-n" + (half(res.fileTotal) ? " odd" : "")}>{n(res.fileTotal)}</div>
+                  <div className="xc-note">every name in the file, on the board or not</div>
+                </div>
+                <div className="xc-tile">
+                  <div className="xc-cap">{store.name} shows</div>
+                  <div className={"xc-n" + (half(res.boardTotal) ? " odd" : "")}>{n(res.boardTotal)}</div>
+                  <div className="xc-note">the board's own roster, as held now</div>
+                </div>
+              </div>
+
+              {half(res.boardTotal) && (
+                <div className="xc-warn">
+                  <span className="xc-warn-ic"><PixIcon glyph="warn" size={13} /></span>
+                  <div>
+                    <b>The store total is not a whole number</b>
+                    <p>A split deal is credited in halves, so a person can hold {n(0.5)} legitimately.
+                      A store cannot: both halves of a split should land on the board. One of them is
+                      going to somebody the board is not counting, which the lists below will name.</p>
+                  </div>
+                </div>
+              )}
+
+              {res.stated && Math.abs(res.stated.total - res.boardTotal) > 0.001 && (
+                <p className="xc-lead">
+                  The board is <b>{n(Math.abs(res.boardTotal - res.stated.total))}</b>{" "}
+                  {res.boardTotal > res.stated.total ? "ahead of" : "behind"} the report. What follows is
+                  every name that could account for it.
+                </p>
+              )}
+
+              <XcList title="In the report, not on the board" hint="Their units are in the report's total and not in the board's."
+                rows={res.offBoard} col={(r) => n(r.fu)} />
+              <XcList title="On the board, not in the report" hint="The board still holds units for them; this report does not mention them."
+                rows={res.missing} col={(r) => n(r.hu)} />
+              <XcList title="Figures that have moved since the last import" hint="What the report says now against what the board is holding."
+                rows={res.moved} col={(r) => `${n(r.hu)} → ${n(r.fu)}`} />
+
+              {!res.offBoard.length && !res.missing.length && !res.moved.length && (
+                <p className="xc-clean"><PixIcon glyph="check" size={13} /> Every name and every figure matches.</p>
+              )}
+
+              <div className="xc-actions">
+                <button className="btn secondary" onClick={() => setRes(null)}>Check another</button>
+                <button className="btn" onClick={onClose}>Done</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function XcList({ title, hint, rows, col }) {
+  if (!rows.length) return null;
+  return (
+    <div className="xc-list">
+      <div className="xc-list-cap">{title} <span>{rows.length}</span></div>
+      <p className="xc-list-hint">{hint}</p>
+      {rows.slice(0, 40).map((r) => (
+        <div key={r.k} className="xc-row">
+          <b>{r.name}</b>
+          <span className="xc-v">{col(r)}</span>
+        </div>
+      ))}
+      {rows.length > 40 && <div className="xc-more">and {rows.length - 40} more</div>}
+    </div>
+  );
+}
+
+function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
+  const [xcheck, setXcheck] = useState(false);
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
   /* The page's own card, the same one every other page opens on. What it says
@@ -23161,12 +23361,14 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
         </div>
         <div className="s2-chips">
           {chips}
+          <button className="da-hbtn" onClick={() => setXcheck(true)}><PixIcon glyph="check" size={11} /> Cross-check the board</button>
           <button className="da-hbtn" onClick={onHelp}><PixIcon glyph="question" size={11} /> How to pull reports</button>
         </div>
       </div>
       </div>
     </div>
   );
+
 
   const FlagBanner = () => flags.length > 0 ? (
     <div className="flag-banner">
@@ -23252,6 +23454,9 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
           </div>
         </div>
         <FlagBanner />
+        {/* One per layout: this panel returns one tree or the other, never both,
+            so exactly one of these is ever mounted. */}
+        {xcheck && <CrossCheck store={store} data={data} config={config} onClose={() => setXcheck(false)} />}
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
         <UploadHistory data={data} onChange={onChange} />
@@ -23330,6 +23535,9 @@ function ImportPanel({ data, log, dropActive, setDropActive, onFiles, fileRef, a
               Delivery Summary by hand and drop it above; <button className="linkish" onClick={onHelp}>the steps are here</button>.</p>
           )}
           <FlagBanner />
+        {/* One per layout: this panel returns one tree or the other, never both,
+            so exactly one of these is ever mounted. */}
+        {xcheck && <CrossCheck store={store} data={data} config={config} onClose={() => setXcheck(false)} />}
         </div>
 
         <div className="imp-panel">
@@ -29613,6 +29821,52 @@ const SAGE_CSS = `
       }
       @media (prefers-reduced-motion: reduce) {
         .sr-day:hover { transform:none; }
+      }
+
+      /* ---- the cross-check ----
+         A reading screen, not a working one: the three figures at the top are
+         the whole answer, and the lists under them are only there to name the
+         difference when there is one. */
+      .xc-modal { width:min(720px, calc(100vw - 40px)); max-height:calc(100vh - 60px);
+        display:flex; flex-direction:column; overflow:hidden; }
+      .xc-head { display:flex; align-items:center; gap:14px; padding:17px 20px; color:#fff;
+        background:linear-gradient(140deg, var(--hA) 0%, var(--hB) 46%, var(--hC) 100%); }
+      .xc-id { flex:1 1 auto; min-width:0; }
+      .xc-sub { font-size:11.5px; color:rgba(255,255,255,.78); }
+      .xc-head h2 { margin:1px 0 0; font:700 19px var(--font-display); letter-spacing:-.02em; }
+      .xc-head .btn-x { background:rgba(255,255,255,.18); color:#fff; border:0; }
+      .xc-body { padding:18px 20px 22px; overflow:auto; }
+      .xc-file { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:14px;
+        font:600 13px var(--font-ui); }
+      .xc-file span { font:500 11.5px var(--font-mono); color:var(--ink-3); }
+      .xc-tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(184px, 1fr)); gap:10px; }
+      .xc-tile { border:1px solid var(--line); border-radius:14px; background:#FAFBFA; padding:12px 14px; }
+      .xc-cap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
+      .xc-n { font:700 30px var(--font-mono); letter-spacing:-.02em; margin-top:5px; line-height:1; }
+      .xc-n.odd { color:#C13529; }
+      .xc-note { font-size:11px; color:var(--ink-3); margin-top:6px; }
+      .xc-warn { display:flex; gap:12px; align-items:flex-start; margin-top:14px; padding:13px 15px;
+        border-radius:12px; background:rgba(201,138,0,.13); border:1px solid rgba(201,138,0,.34); }
+      .xc-warn-ic { width:24px; height:24px; border-radius:8px; background:#C77800; color:#fff; flex:0 0 auto;
+        display:flex; align-items:center; justify-content:center; }
+      .xc-warn b { display:block; font:600 13px var(--font-ui); }
+      .xc-warn p { margin:3px 0 0; font-size:12.5px; color:var(--ink-2); }
+      .xc-lead { margin:15px 0 0; font-size:13px; color:var(--ink-2); }
+      .xc-lead b { color:var(--ink); font-family:var(--font-mono); }
+      .xc-list { margin-top:18px; border-top:1px solid var(--line); padding-top:13px; }
+      .xc-list-cap { font:700 9.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-2); }
+      .xc-list-cap span { font-family:var(--font-mono); color:var(--ink-3); margin-left:6px; }
+      .xc-list-hint { margin:3px 0 9px; font-size:11.5px; color:var(--ink-3); }
+      .xc-row { display:flex; align-items:center; gap:12px; padding:6px 0; border-top:1px solid var(--line-2); }
+      .xc-row:first-of-type { border-top:0; }
+      .xc-row b { font:600 12.5px var(--font-ui); flex:1 1 auto; min-width:0; }
+      .xc-v { font:700 12.5px var(--font-mono); color:var(--ink-2); white-space:nowrap; }
+      .xc-more { font-size:11.5px; color:var(--ink-3); padding-top:7px; }
+      .xc-clean { display:flex; align-items:center; gap:8px; margin-top:18px; font-size:13px; color:#1E7A3C; }
+      .xc-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+      @media (max-width: 700px) {
+        .xc-modal { width:100vw; height:100dvh; max-height:100dvh; border-radius:0; border:0; }
+        .modal-backdrop:has(> .xc-modal) { padding:0; align-items:stretch; overflow:hidden; }
       }
       .sched-modal { max-width:540px; width:100%; padding:24px 26px; }
       .dayreport-modal { max-width:720px; width:100%; padding:24px 26px; }
