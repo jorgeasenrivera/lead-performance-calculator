@@ -27130,10 +27130,17 @@ const SAGE_CSS = `
          it is sitting in. */
       /* .s2-hero comes later in this stylesheet at the same specificity, so it
          was winning: the head took the hero's 24px radius inside a sheet clipped
-         at 22px, and its overflow went visible. Two pixels of white showed at
-         each top corner. Named twice here so this one wins. */
+         at 22px, and its overflow went visible. Named twice here so this one wins.
+
+         The radius is zero, not the sheet's 22. Two rounded corners stacked on
+         the same curve do not cancel out: each is antialiased, and the white
+         behind shows through the head's own soft edge as a hairline arc. The
+         sheet already clips at 22 with overflow:hidden, so the head is left
+         square and cut by the sheet -- one curve, drawn once. Matching the
+         radius instead would leave the same fringe, and any radius LARGER than
+         the sheet's takes the green further in and shows white outright. */
       .ru-sheet .ru-sheet-head { padding:20px 24px 18px; color:#fff; position:relative;
-        border-radius:22px 22px 0 0; overflow:hidden; margin-bottom:0; }
+        border-radius:0; overflow:hidden; margin-bottom:0; }
       .ru-head-id { display:flex; align-items:center; gap:13px; position:relative; z-index:1; }
       .ru-sheet-head .s2-ava { width:46px; height:46px; }
       .ru-sheet-head .s2-ava::after { inset:-6px; }
