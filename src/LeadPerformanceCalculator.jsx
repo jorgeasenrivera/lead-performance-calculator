@@ -23402,6 +23402,8 @@ function TrendsPanel({ config, stores, data }) {
   const [from, setFrom] = useState(RANGES[0].from());
   const [to, setTo] = useState(today());
   const [picked, setPicked] = useState([]);
+  const [find, setFind] = useState("");
+  const [allPeople, setAllPeople] = useState(false);
   const [hover, setHover] = useState(null);
   const [byHour, setByHour] = useState(false);
 
@@ -23491,7 +23493,7 @@ function TrendsPanel({ config, stores, data }) {
     }),
   });
 
-  const series = [seriesFor(people.map((p) => p.key), metric.kind === "pct" ? "Floor average" : "Everyone", "#12212F")];
+  const series = [seriesFor(people.map((p) => p.key), metric.kind === "pct" ? "Floor average" : "Everyone", "var(--p2d)")];
   picked.forEach((k, i) => {
     const p = people.find((x) => x.key === k);
     if (p) series.push(seriesFor([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
@@ -23504,14 +23506,14 @@ function TrendsPanel({ config, stores, data }) {
       points: hours.map((h) => keys.reduce((n, k) => n + (hourAll[h]?.[k] ?? 0), 0)),
     });
     series.length = 0;
-    series.push(hourSeries(people.map((p) => p.key), "Everyone", "#12212F"));
+    series.push(hourSeries(people.map((p) => p.key), "Everyone", "var(--p2d)"));
     picked.forEach((k, i) => {
       const p = people.find((x) => x.key === k);
       if (p) series.push(hourSeries([k], p.name, TREND_COLORS[i % TREND_COLORS.length]));
     });
   }
 
-  const W = 920, H = 300, PL = 52, PR = 16, PT = 16, PB = 34;
+  const W = 920, H = 240, PL = 8, PR = 26, PT = 18, PB = 30;
   const all = series.flatMap((s) => s.points).filter((v) => v != null);
   const hi = all.length ? Math.max(...all) : 1;
   const lo = 0;
@@ -23543,8 +23545,13 @@ function TrendsPanel({ config, stores, data }) {
 
   return (
     <div className="card gm-card trends">
-      <h3 className="gm-section">Trends</h3>
-      <p className="hint">
+      <div className="warmhead tr-head">
+        <PixIcon glyph="chart" size={16} style={{ color: "#D0821E" }} />
+        {metric.label}
+        <span className="s2-hflex" />
+        <span className="tr-head-note">{isHour ? "by the hour" : "day by day"}</span>
+      </div>
+      <p className="hint tr-hint">
         {byHour
           ? "Each hour is the difference between two imports on the same day, so this fills in once the activity report is scheduled to arrive more than once a day."
           : "Built from the daily imports, so the trail starts the day this store began importing."}
@@ -23584,19 +23591,51 @@ function TrendsPanel({ config, stores, data }) {
         </p>
       ) : (
         <>
+        <div className="tr-body">
+          <div className="tr-stats">
+            {(() => {
+              /* The four figures a manager reads a trail for, set in the dot
+                 numerals the hero already uses. Range-aware rather than
+                 month-only, because this chart draws whatever window is picked. */
+              const pts = series[0].points.filter((v) => v != null);
+              if (!pts.length) return null;
+              const sum = pts.reduce((a, b) => a + b, 0);
+              const mean = sum / pts.length;
+              const bi = series[0].points.reduce((best, v, i) =>
+                (v != null && (best < 0 || v > series[0].points[best])) ? i : best, -1);
+              const last = [...series[0].points].reverse().find((v) => v != null);
+              const dLbl = (i) => isHour ? days[i]
+                : new Date(days[i] + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              const cell = (cap, val, sub, dot) => (
+                <div className="tr-stat">
+                  <div className="tr-stat-cap">{cap}</div>
+                  <div className="tr-stat-n"><DotNum value={val} dot={dot} />{sub ? <small>{sub}</small> : null}</div>
+                </div>
+              );
+              return (<>
+                {cell(isHour ? "Latest hour" : "Latest day", fmt(last), metric.kind === "pct" ? "" : metric.short || "", 6)}
+                {metric.kind !== "pct" && cell("In this window", fmtNum(Math.round(sum)), `over ${pts.length}`, 5)}
+                {bi >= 0 && cell(isHour ? "Best hour" : "Best day", fmt(series[0].points[bi]), dLbl(bi), 4)}
+                {cell(isHour ? "Average hour" : "Average day", fmt(mean), metric.kind === "pct" ? "" : "each", 4)}
+              </>);
+            })()}
+          </div>
           <div className="tr-chart">
             <svg viewBox={`0 0 ${W} ${H}`} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
-              {Array.from({ length: ticks + 1 }, (_, t) => {
-                const v = lo + ((top - lo) * t) / ticks;
-                return (
-                  <g key={t}>
-                    <line className="tr-grid" x1={PL} y1={y(v)} x2={W - PR} y2={y(v)} />
-                    <text className="tr-ytick" x={PL - 9} y={y(v) + 4} textAnchor="end">{fmt(v)}</text>
-                  </g>
-                );
-              })}
+              {/* No grid and no numbered axis: the rest of the site draws neither.
+                  One dashed rule for the average, which is the mark a day is read
+                  against, and the dates in the same mono the other axes use. */}
+              {(() => {
+                const pts = series[0].points.filter((v) => v != null);
+                if (!pts.length) return null;
+                const mean = pts.reduce((a, b) => a + b, 0) / pts.length;
+                return (<>
+                  <line className="tr-avg" x1={PL} y1={y(mean)} x2={W - PR} y2={y(mean)} />
+                  <text className="tr-avglbl" x={PL + 2} y={y(mean) - 6}>avg {fmt(mean)}</text>
+                </>);
+              })()}
               {days.map((d, i) => (i % labelEvery === 0 ? (
-                <text key={d} className="tr-xtick" x={x(i)} y={H - 12} textAnchor="middle">
+                <text key={d} className="tr-xtick" x={x(i)} y={H - 10} textAnchor={i === 0 ? "start" : "middle"}>
                   {isHour ? d : new Date(d + "T12:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}
                 </text>
               ) : null))}
@@ -23604,6 +23643,18 @@ function TrendsPanel({ config, stores, data }) {
                 <path key={si} className={"tr-line" + (si === 0 ? " tr-floor" : "")}
                   d={path(sr.points)} stroke={sr.color} fill="none" />
               ))}
+              {(() => {
+                /* The day the window is up to, marked and printed, so the end of
+                   the line is a figure rather than a guess. */
+                let li = -1;
+                for (let i = series[0].points.length - 1; i >= 0; i--) if (series[0].points[i] != null) { li = i; break; }
+                if (li < 0) return null;
+                const v = series[0].points[li];
+                return (<>
+                  <circle cx={x(li)} cy={y(v)} r="4.5" fill={series[0].color} stroke="var(--card)" strokeWidth="2" />
+                  <text className="tr-endlbl" x={x(li) - 7} y={y(v) - 13} textAnchor="end">{fmt(v)}</text>
+                </>);
+              })()}
               {hover != null && (
                 <>
                   <line className="tr-cross" x1={x(hover)} y1={PT} x2={x(hover)} y2={H - PB} />
@@ -23630,20 +23681,37 @@ function TrendsPanel({ config, stores, data }) {
               </div>
             )}
           </div>
+          </div>
 
+          {/* Twenty-six chips of equal weight is a wall to scan. A name to type
+              into, the first few, and the rest a press away. */}
           <div className="tr-people no-print">
             <span className="tr-people-cap">Lay someone over the top</span>
-            {people.slice(0, 40).map((p) => (
-              <button key={p.key}
-                className={"tr-chip" + (picked.includes(p.key) ? " on" : "")}
-                style={picked.includes(p.key)
-                  ? { background: TREND_COLORS[picked.indexOf(p.key) % TREND_COLORS.length], borderColor: "transparent", color: "#fff" }
-                  : undefined}
-                onClick={() => setPicked((cur) =>
-                  cur.includes(p.key) ? cur.filter((k) => k !== p.key) : cur.length >= 6 ? cur : [...cur, p.key])}>
-                {p.name}
-              </button>
-            ))}
+            <input className="tr-find" type="search" value={find} placeholder="Find a name"
+              aria-label="Find a name" onChange={(e) => setFind(e.target.value)} />
+            {(() => {
+              const q = norm(find);
+              const hits = q ? people.filter((p) => norm(p.name).includes(q)) : people;
+              const shown = q || allPeople ? hits.slice(0, 40) : hits.slice(0, 8);
+              return (<>
+                {shown.map((p) => (
+                  <button key={p.key}
+                    className={"tr-chip" + (picked.includes(p.key) ? " on" : "")}
+                    style={picked.includes(p.key)
+                      ? { background: TREND_COLORS[picked.indexOf(p.key) % TREND_COLORS.length], borderColor: "transparent", color: "#fff" }
+                      : undefined}
+                    onClick={() => setPicked((cur) =>
+                      cur.includes(p.key) ? cur.filter((k) => k !== p.key) : cur.length >= 6 ? cur : [...cur, p.key])}>
+                    {p.name}
+                  </button>
+                ))}
+                {!q && hits.length > 8 && (
+                  <button className="tr-all" onClick={() => setAllPeople((v) => !v)}>
+                    {allPeople ? "Show fewer" : `All ${hits.length}`}
+                  </button>
+                )}
+              </>);
+            })()}
           </div>
         </>
       )}
@@ -27151,7 +27219,14 @@ const SAGE_CSS = `
       /* ---- coaching side-by-side ---- */
       .coach-split { display:grid; grid-template-columns: 1fr; gap:16px; align-items:start; margin-top:16px; }
       .coach-split.has-open { grid-template-columns: minmax(300px, 380px) 1fr; }
-      .coach-list-card { position:sticky; top:12px; }
+      /* Sticky only where it earns its keep: beside an open card, where the list
+         has a tall neighbour to stay level with. With nothing open the split is
+         one column, and a sticky grid item is held by the grid container rather
+         than by its own row, so on the way down the page the list slid over the
+         panel underneath it -- which then painted on top of the last few rows,
+         showed through them, and swallowed their clicks. */
+      .coach-split.has-open .coach-list-card { position:sticky; top:12px; }
+      .coach-list-card { position:relative; z-index:1; }
       .coach-split.has-open .coach-row { grid-template-columns: 1fr auto; grid-auto-rows:auto; row-gap:3px; }
       .coach-split.has-open .coach-name { grid-column:1; }
       .coach-split.has-open .coach-open { grid-column:2; grid-row:1; text-align:right; }
@@ -29880,6 +29955,36 @@ const SAGE_CSS = `
       }
       /* ---- trends ---- */
       .trends { --tint: rgba(0,168,150,.09); }
+      /* ---- the trail, in the app's own furniture ----
+         No grid and no numbered axis: the delivery chart on the dashboard draws
+         neither, and this one reading like a stock dashboard was the only thing
+         on the page that did. What it gains instead is the warm head the board
+         wears, the four figures a manager reads a trail for in the dot numerals,
+         one dashed rule for the average, and the last day marked and printed. */
+      .trends .tr-head { border-radius:13px 13px 0 0; margin:-15px -17px 0; }
+      .tr-head-note { font:600 10.5px var(--font-mono); color:var(--ink-3); letter-spacing:.04em; }
+      .tr-hint { margin-top:12px; }
+      .tr-body { display:grid; grid-template-columns:184px 1fr; gap:22px; align-items:start; margin-top:12px; }
+      .tr-stats { display:flex; flex-direction:column; gap:14px; }
+      .tr-stat-cap { font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+        color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+      .tr-stat-cap::after { content:""; flex:1; height:2px; opacity:.35;
+        background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
+      .tr-stat-n { display:flex; align-items:flex-end; gap:7px; margin-top:9px; line-height:0; color:var(--ink); }
+      .tr-stat-n small { font:500 10.5px var(--font-mono); color:var(--ink-3); padding-bottom:3px; line-height:1.2; }
+      .tr-avg { stroke:var(--p2); stroke-width:1.5; stroke-dasharray:4 4; opacity:.75; }
+      .tr-avglbl { font:700 8.5px var(--font-mono); letter-spacing:.07em; text-transform:uppercase; fill:var(--p2d); }
+      .tr-endlbl { font:700 13px var(--font-mono); fill:var(--p2d); }
+      .tr-find { border:1px solid var(--line); background:rgba(255,255,255,.7); border-radius:10px;
+        padding:6px 11px; font:500 12px var(--font-ui); width:170px; }
+      .tr-all { border:0; background:none; color:var(--ink-3); cursor:pointer;
+        font:600 11.5px var(--font-ui); text-decoration:underline; text-underline-offset:3px; }
+      @media (max-width: 900px) {
+        .tr-body { grid-template-columns:1fr; gap:14px; }
+        .tr-stats { flex-direction:row; flex-wrap:wrap; gap:14px 22px; }
+        .tr-find { width:100%; }
+      }
+
       .tr-controls { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin:14px 0 6px; }
       .tr-ranges { display:inline-flex; background:rgba(118,118,128,.12); border-radius:11px; padding:3px; gap:2px; }
       .tr-range { border:none; background:transparent; font:inherit; font-size:12.5px; font-weight:600;
