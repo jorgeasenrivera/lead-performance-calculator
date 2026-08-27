@@ -79,6 +79,17 @@ export function sageDots({ word = false, rise = true, fill, base = SAGE_BASE, ca
       });
     }
   }
+  /* The S shares its 9-row grid with the wordmark, whose lowercase needs the
+     rows under the baseline for descenders. Alone, those rows are empty box,
+     and centring the box left the S riding high on every plate it sits on --
+     the app icon read as off-centre because it was. The ink is measured and
+     re-centred here; the box stays the wordmark's box. */
+  if (!word && out.length) {
+    const top = Math.min(...out.map((d) => d.y - d.r));
+    const bot = Math.max(...out.map((d) => d.y + d.r));
+    const yOff = (rows * PITCH - top - bot) / 2;
+    for (const d of out) d.y += yOff;
+  }
   out.sort((a, b) => a.x - b.x || a.y - b.y);
   return { dots: out, w: cols * PITCH, h: rows * PITCH };
 }
@@ -138,16 +149,26 @@ export default function SageMark({
      of it somewhere else. That only works if the geometry travels with the dots. */
   const midX = (cols * PITCH) / 2, midY = (rows * PITCH) / 2;
 
+  /* Same ink-centring as sageDots, so the drawn mark and the geometry the
+     sign-in arrival flies its streaks along stay one thing. */
+  const rOf = (r) => ((riseOn ? WEIGHT[r] : 1) * CELL * fillOn) / 2;
+  const yOff = word || !cells.length ? 0 : (() => {
+    const ys = cells.map(({ r }) => (r + 0.5) * PITCH);
+    const top = Math.min(...cells.map(({ r }, i) => ys[i] - rOf(r)));
+    const bot = Math.max(...cells.map(({ r }, i) => ys[i] + rOf(r)));
+    return (rows * PITCH - top - bot) / 2;
+  })();
+
   const dots = cells.map(({ r, c }) => (
     <circle
       key={r + "-" + c}
       cx={(c + 0.5) * PITCH + padPx}
-      cy={(r + 0.5) * PITCH + padPx}
+      cy={(r + 0.5) * PITCH + padPx + yOff}
       r={((riseOn ? WEIGHT[r] : 1) * CELL * fillOn) / 2}
       fill={flat || mix(base, cap, rows > 1 ? 1 - r / (rows - 1) : 0)}
       data-dot={r + "-" + c}
       style={(() => {
-        const dx = (c + 0.5) * PITCH - midX, dy = (r + 0.5) * PITCH - midY;
+        const dx = (c + 0.5) * PITCH - midX, dy = (r + 0.5) * PITCH + yOff - midY;
         return {
           /* Drawn but transparent rather than absent, so the mark never reflows
              as it fills and the streaks later have every dot to start from. In
