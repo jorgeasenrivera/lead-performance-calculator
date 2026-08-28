@@ -18138,7 +18138,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           <button className="assoc-act" aria-label="Confirm removed from leads"
             title="They are off leads? Press to confirm it and set the re-check date"
             onClick={(e) => { e.stopPropagation(); setShowRestrict(true); }}>
-            <PixIcon glyph="check" size={11} />
+            <PixIcon glyph="close" size={11} />
           </button>
         )}
         <span className="s2-rgo" aria-hidden="true">›</span>
@@ -18157,7 +18157,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         </div>
       )}
       {ev.status === "fail" && !grace && !incomplete && !restrictedNow && !readOnly && ev.atCap && showRestrict && (
-        <div className="s2-rowfoot">
+        <div className="s2-rowfoot rf-right">
           {(
             <>
               <span>Re-evaluate in</span>
@@ -32783,7 +32783,13 @@ const SAGE_CSS = `
         color:rgba(255,255,255,.82); }
       .s2-vitals b { font-family:var(--font-mono); color:#fff; }
       .s2-vdot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px;
-        vertical-align:baseline; animation:s2vpulse 2.6s ease-in-out infinite; }
+        vertical-align:baseline;
+        /* Finite on purpose. These dots sit INSIDE the .s2-tube, and anything
+           that so much as breathes inside a filtered subtree makes Chromium
+           re-run the whole displacement filter over the whole hero -- on the
+           CPU, every frame, forever. Thirteen seconds of pulse to catch the
+           eye, then the tube holds still and the filter result is cached. */
+        animation:s2vpulse 2.6s ease-in-out 5; }
       .s2-v-g { background:#8FE3B3; --vglow:rgba(143,227,179,.5); }
       .s2-v-y { background:#F2C57C; --vglow:rgba(242,197,124,.5); }
       .s2-v-r { background:#FFA294; --vglow:rgba(255,162,148,.5); }
@@ -33214,6 +33220,8 @@ const SAGE_CSS = `
       .assoc-act:hover { background:rgba(194,54,31,.08); }
       .s2-rowfoot { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
         padding:0 19px 11px 19px; font-size:10.5px; color:var(--ink-2); }
+      /* the re-evaluate form sits under the X that opened it, not across the room */
+      .s2-rowfoot.rf-right { justify-content:flex-end; padding-right:26px; }
       .s2-rowbtn { border:1px solid var(--line); border-radius:99px; background:var(--card);
         padding:6px 13px; cursor:pointer; font:600 10.5px var(--font-display); color:var(--ink-2); }
       .s2-rowbtn.stop { border-color:rgba(194,54,31,.35); color:#C13529; }
