@@ -2784,11 +2784,22 @@ export default function LeadPerformanceCalculator() {
     // but nothing is written into the per-day activity history.
     const actDay = monthScope ? pickDay.slice(0, 7) + "-01" : pickDay;
     const month = actDay.slice(0, 7); const day = actDay;
+    /* The date picker above is the DAILY ACTIVITY picker, and it must govern the
+       activity report alone. Every other report is month-to-date and lands the
+       day it is uploaded -- but each one used to be ticked under the picker's
+       day, so uploading Video with "Yesterday" selected filed the tick under
+       yesterday and today's checklist sat at "waiting" over a report that had
+       plainly landed. When seeding a PAST month the anchor day stands, because
+       "today" is not in that month and its checklist reads the whole month. */
+    const tickDayFor = (type) => (type === "activity" || month !== today().slice(0, 7)) ? day : today();
     try { console.log("[LPC import] activityDay=" + activityDay + " actDay=" + actDay + " month=" + month + " today=" + today() + " types=" + JSON.stringify((entries || []).map((e) => e && e.type))); } catch (e) {}
     let next = JSON.parse(JSON.stringify(storeData));
     const snapT = snapshotStore(next, "Before import");
     if (!next.months[month]) next.months[month] = { stats: {}, imports: {}, names: {} };
     const M = next.months[month];
+    // A month written by an older build can exist without one of these, and the
+    // pipeline already hardens them the same way (see api/ingest.mjs).
+    M.stats = M.stats || {}; M.names = M.names || {}; M.imports = M.imports || {};
     if (!M.imports[day]) M.imports[day] = {};
     const log = []; const importedFiles = [];
 
@@ -2802,6 +2813,7 @@ export default function LeadPerformanceCalculator() {
     const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
 
     for (const { rows, type, fileName } of entries) {
+      const tickDay = tickDayFor(type);
       /* ---- The store's own line, which is not a person and never becomes one ----
          The Delivery Summary exports twice: one row per user, and one row for the
          store. Only the store row counts a delivery once -- the people rows credit
@@ -2813,10 +2825,11 @@ export default function LeadPerformanceCalculator() {
         if (!roll) { log.push({ ok: false, msg: `${fileName} looked like a store roll-up but its one row could not be read, so it was skipped.` }); continue; }
         M.stated = {
           deliveries: roll.deals, sold: roll.sold, opps: roll.opps,
-          storeName: roll.storeName, day, at: new Date().toISOString(),
+          storeName: roll.storeName, day: tickDay, at: new Date().toISOString(),
           file: fileName, source: "roll-up",
         };
-        M.imports[day]["store-rollup"] = true;
+        if (!M.imports[tickDay]) M.imports[tickDay] = {};
+        M.imports[tickDay]["store-rollup"] = true;
         log.push({ ok: true, msg: `${fileName} → ${roll.deals} deliveries at ${roll.storeName}. Filed as the store's own count; no person was changed.` });
         importedFiles.push("Store roll-up (1)");
         next.importLog = [{ id: uid(), t: new Date().toISOString(), type, label: "Store roll-up",
@@ -2997,27 +3010,28 @@ export default function LeadPerformanceCalculator() {
           if (rec[ch + "Units"] == null) continue;
           const storedU = prevStat[ch + "Units"];
           const storedUDay = pctDay["u_" + ch];
-          if (storedU != null && storedUDay && storedUDay !== day) prevUnits[ch] = storedU;
-          pctDay["u_" + ch] = day;
+          if (storedU != null && storedUDay && storedUDay !== tickDay) prevUnits[ch] = storedU;
+          pctDay["u_" + ch] = tickDay;
         }
         for (const ch of ["internet", "phone", "showroom"]) {   // campaign has no pct by design
           if (rec[ch + "Pct"] == null) continue;
           const storedVal = prevStat[ch + "Pct"];
           const storedDay = pctDay[ch];
-          if (storedVal != null && storedDay && storedDay !== day) {
+          if (storedVal != null && storedDay && storedDay !== tickDay) {
             trend[ch] = storedVal; // yesterday's figure becomes the comparison baseline
           }
-          pctDay[ch] = day;
+          pctDay[ch] = tickDay;
           // running history, one point per day, so a real trend can be drawn
-          hist[ch] = (hist[ch] || []).filter((p) => p.d !== day);
-          hist[ch].push({ d: day, v: rec[ch + "Pct"] });
+          hist[ch] = (hist[ch] || []).filter((p) => p.d !== tickDay);
+          hist[ch].push({ d: tickDay, v: rec[ch + "Pct"] });
           hist[ch] = hist[ch].sort((a, b) => (a.d < b.d ? -1 : 1)).slice(-30);
         }
-        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, prevUnits, pctDay, pctHistory: hist, [`${type}Updated`]: day };
+        M.stats[key] = { ...prevStat, ...rec, prevPct: trend, prevUnits, pctDay, pctHistory: hist, [`${type}Updated`]: tickDay };
         if (type !== "activity") count++;
       }
 
-      M.imports[day][type] = true;
+      if (!M.imports[tickDay]) M.imports[tickDay] = {};
+      M.imports[tickDay][type] = true;
       // a full log of every upload, not just a tick for the day
       next.importLog = [
         { id: uid(), t: new Date().toISOString(), type, label, file: fileName, count, skipped,
@@ -3030,11 +3044,11 @@ export default function LeadPerformanceCalculator() {
       if (type === "delivery-summary") {
         // One file satisfies every delivery checklist item.
         for (const k of ["delivery", "delivery-internet", "delivery-phone", "delivery-showroom", "delivery-campaign"]) {
-          M.imports[day][k] = true;
+          M.imports[tickDay][k] = true;
         }
       }
-      if (type === "delivery-internet") M.imports[day]["delivery"] = true;
-      if (type === "delivery") M.imports[day]["delivery-internet"] = true;
+      if (type === "delivery-internet") M.imports[tickDay]["delivery"] = true;
+      if (type === "delivery") M.imports[tickDay]["delivery-internet"] = true;
       importedFiles.push(`${label} (${count})`);
       log.push({ ok: true, msg: `${fileName} → ${label} · ${count} associates updated${skipped ? `, ${skipped} excluded row${skipped === 1 ? "" : "s"} skipped` : ""}.` });
 
@@ -18023,7 +18037,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
 
   return (
     <div ref={cardRef}
-      className={"assoc-card " + (ev.status || "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "") + (picked ? " is-picked" : "")}>
+      className={"assoc-card " + (ev.status || "") + (first ? " is-first" : "") + (incomplete ? " incomplete" : "") + (restrictedNow ? " is-restricted" : "") + (focused ? " is-focused" : "") + (rolled ? " rolled" : "") + (picked ? " is-picked" : "")}>
       <div className="assoc-row" onClick={(e) => {
         // a tap on a gauge is a glance, not a request to unfold the whole row
         if (e.target.closest && e.target.closest(".bloop-host")) return;
@@ -33096,7 +33110,7 @@ const SAGE_CSS = `
         text-transform:uppercase; color:var(--ink-3); white-space:nowrap; }
       /* The captions hang above the first row's instruments, so that row needs
          the room. Without it they climbed into the section header. */
-      .s2-rolecard .assoc-card:first-of-type .assoc-row { padding-top:24px; }
+      .s2-rolecard .assoc-card.is-first .assoc-row { padding-top:24px; }
       .mclust + .mclust .mccap { left:19px; }
       /* the channel cell: a column in that channel's own colour, drawn against
          the standard as a rule across it. Above the rule is above standard, and
@@ -33175,7 +33189,7 @@ const SAGE_CSS = `
       .s2-rolecard .assoc-card::before { content:""; position:absolute; left:0; right:0; top:0; height:1px;
         pointer-events:none;
         background:linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--line) 45%, transparent) 26%, var(--line) 55%); }
-      .s2-rolecard .assoc-card:first-of-type::before { display:none; }
+      .s2-rolecard .assoc-card.is-first::before { display:none; }
       .s2-rolecard .assoc-row:hover { background:color-mix(in srgb, var(--p2) 7%, transparent); }
       .s2-hflex { flex:1; }
       .warmhead .s2-fchip { border:0; border-radius:99px; padding:5px 11px; cursor:pointer;
@@ -33186,8 +33200,8 @@ const SAGE_CSS = `
       .warmhead .s2-fchip.on { outline:2px solid currentColor; outline-offset:1px; }
       /* the quiet strip under a row: the action, not a restatement */
       /* the confirm, in the row rather than under it */
-      .assoc-act { flex:0 0 auto; border:1px solid rgba(194,54,31,.42); background:transparent; color:#C13529;
-        border-radius:99px; padding:6px 13px; cursor:pointer; white-space:nowrap;
+      .assoc-act { flex:0 1 auto; min-width:0; border:1px solid rgba(194,54,31,.42); background:transparent; color:#C13529;
+        border-radius:99px; padding:6px 13px; cursor:pointer; white-space:normal; text-align:center;
         font:600 11px var(--font-display); }
       .assoc-act:hover { background:rgba(194,54,31,.08); }
       .s2-rowfoot { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
