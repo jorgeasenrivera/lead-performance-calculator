@@ -288,6 +288,15 @@ const langName = (code) => LANG_NAMES[String(code || "").toUpperCase()] || Strin
 const unitsOf = (s) =>
   (s?.internetUnits ?? 0) + (s?.phoneUnits ?? 0) + (s?.showroomUnits ?? 0) + (s?.campaignUnits ?? 0);
 
+/* The store's own delivered count, as DriveCentric filed it (the store roll-up
+   or the Delivery Summary's own totals row). This is the ONLY figure that counts
+   a delivery once: the people rows credit a car to the salesperson and again to
+   whoever set the appointment, and split deals live in halves, so a roster sum
+   runs high and drifts against what the manager sees inside DriveCentric.
+   Everywhere the STORE's month is shown prefers this; per-person figures stay
+   exactly as the report credited them. */
+const statedOf = (M) => (M?.stated?.deliveries != null ? M.stated : null);
+
 // How well someone is holding their standards, whether or not they clear all of
 // them: the share of requirements met, plus a bonus for how far past they are.
 function qualityOf(ev) {
@@ -16761,6 +16770,17 @@ function buildDigest(args) {
       uu = (uu || 0) + (st.usedUnits ?? 0);
     }
   }
+  /* The cumulative series prefers DriveCentric's own count for the same reason
+     the hero does: the day-by-day pace chart is read against the goal, and a
+     series built from double-credited rows overstates every point on it. The
+     stock split keeps the people's figures scaled onto the count, so the two
+     lines of the day detail cannot disagree. */
+  const stated = statedOf(M);
+  if (stated) {
+    if (u > 0 && nu != null) { const f = stated.deliveries / u;
+      nu = Math.round(nu * f * 10) / 10; uu = Math.round(uu * f * 10) / 10; }
+    u = stated.deliveries;
+  }
   return { d: today(), ev: e.evaluated, v: e.verdicts, below: e.failBy, ch, u, nu, uu };
 }
 
@@ -17032,6 +17052,9 @@ function RoundUp({ config, store, data, M }) {
       : Object.values(row.ch || {}).reduce((n, c) => n + (c.u || 0), 0);
     const pacePts = days.map(([day, row]) => ({ day: +day.slice(8, 10), v: cumOf(row) }));
     const sold = (() => {   // month to date, live, exact
+      // DriveCentric's own count when it is on file; the roster sum runs high.
+      const st = statedOf(M);
+      if (st) return st.deliveries;
       let n = 0;
       for (const a of data.roster || []) n += unitsOf(M?.stats?.[norm(a.name)]);
       return Math.round(n * 10) / 10;
@@ -22629,7 +22652,15 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
   const halves = halfStory(data, M, closingRoster);
 
-  const totalUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  const rosterUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  /* The headline is DriveCentric's own count whenever one is on file. A manager
+     who sees this number disagree with the screen inside DriveCentric stops
+     believing everything else on the page, and the roster sum ALWAYS disagrees:
+     shared credit and split halves push it high. The roster sum stays as the
+     fallback for a month with no filed figure, and the popup says which one is
+     showing. */
+  const statedM = statedOf(M);
+  const totalUnits = statedM ? statedM.deliveries : rosterUnits;
   /* ---- Where the store stands against what it was asked for ----
 
      The one thing a manager wants off this screen and could not get: how the
@@ -22707,8 +22738,19 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
       nw += st.newUnits ?? 0; us += st.usedUnits ?? 0; other += st.otherUnits ?? 0;
     }
     const known = nw + us + other;
-    return { seen, nw, us, other, known,
-      newPct: known > 0 ? nw / known : null, usedPct: known > 0 ? us / known : null };
+    // The proportions come from the figures as credited, BEFORE any scaling.
+    const newPct = known > 0 ? nw / known : null;
+    const usedPct = known > 0 ? us / known : null;
+    /* The mix is what this bar is for, and the mix survives the double counting:
+       a split deal splits inside one stock type. But the printed counts must sum
+       to the headline, or the card contradicts itself two lines apart -- so when
+       DriveCentric's own count is on file, the people's split is scaled onto it. */
+    if (statedM && known > 0) {
+      const f = statedM.deliveries / known;
+      nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10;
+      other = Math.round(other * f * 10) / 10;
+    }
+    return { seen, nw, us, other, known, newPct, usedPct };
   })();
   const thr = normThresholds(store.thresholds);
   const chanTone = (id, v) => v == null ? "dim"
@@ -22913,6 +22955,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 <BloopWin cls="dn s2-pacewin">
                   <div className="bw-title">The month, against the ask</div>
                   <div className="bw-big">{fmtNum(totalUnits)} <small>of {fmtNum(storePace.goal.bar)} · {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}</small></div>
+                  <div className="bw-desc">{statedM
+                    ? <>DriveCentric's own count, filed {new Date(statedM.at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. The people's rows add to <b>{fmtNum(rosterUnits)}</b> because shared and split deals credit more than one name.</>
+                    : <>Added up from the people's rows. Shared and split deals credit more than one name, so this runs above DriveCentric's own count until the store roll-up is on file.</>}</div>
                   {!storePace.tooEarly && (
                     <div className="bw-sub">{storePace.aheadBy >= 0
                       ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
@@ -24186,7 +24231,16 @@ function GMSummary({ config, data, stores }) {
   for (const m of trail) for (const c of chFor(m)) (trailPct[c.id] = trailPct[c.id] || []).push(c.pct);
   const moLabel = (m) => new Date(m + "-15T12:00").toLocaleDateString("en-US", { month: "short" });
 
-  const totalUnits = rows.reduce((n, r) => n + (r.stats?.unitsDelivered || 0), 0);
+  /* Per store: DriveCentric's own count when it is on file, the people's rows
+     when it is not. Mixing the two across stores is fine -- each store's figure
+     is the best one that store has. */
+  const totalUnits = stores.reduce((tot, s) => {
+    const M = data[s.id]?.months?.[month];
+    const st = statedOf(M);
+    if (st) return tot + st.deliveries;
+    return tot + rows.filter((r) => r.store === s.name)
+      .reduce((n, r) => n + (r.stats?.unitsDelivered || 0), 0);
+  }, 0);
   const measureFor = (mKey) => {
     let any = false; const t = { units: 0, opps: 0, appts: 0, shows: 0, videos: 0, calls: 0 };
     for (const s of stores) {
