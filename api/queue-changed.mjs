@@ -24,7 +24,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl } from "./_env.mjs";
-import { decide, contentState } from "./_queue-notify.mjs";
+import { decide, contentState, assistPlan } from "./_queue-notify.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
 import { sendAlert, worthSending } from "./_report-alert.mjs";
@@ -77,6 +77,10 @@ export default async function handler(req, res) {
 
   const { store, date, kind } = partsOf(after.id, body.table);
   const plan = decide(before && before.data, after.data);
+  /* FlyBy asks ride in the floor row beside the line. A new ask goes to the
+     managers the board stamped onto the row, a claim goes back to the person
+     waiting on it, an unclaimed T.O. re-pings after two minutes. */
+  if (kind === "floor") plan.push(...assistPlan(before && before.data, after.data));
   if (!plan.length) return res.status(200).json({ ok: true, sent: 0 });
 
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,

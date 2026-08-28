@@ -111,3 +111,43 @@ test("contentState carries what a standing display reads", () => {
   assert.equal(st.up, false);
   assert.equal(st.store, "hh");
 });
+
+/* ---- FlyBy assists ---- */
+const { assistPlan } = await import("../api/_queue-notify.mjs");
+const ask = (over = {}) => ({ id: "x1", t: "2026-08-28T14:00:00Z", kind: "to",
+  byId: "p7", byName: "Devon Carter", table: 7, ...over });
+
+test("a new ask pings every stamped manager and nobody else", () => {
+  const after = { assists: [ask()], assistTargets: ["m1", "m2"] };
+  const plan = assistPlan(null, after);
+  assert.equal(plan.length, 2);
+  assert.deepEqual(plan.map((p) => p.id).sort(), ["m1", "m2"]);
+  assert.match(plan[0].title, /T\.O\./);
+  assert.match(plan[0].body, /table 7/);
+});
+
+test("a claim tells the one person waiting, not the managers", () => {
+  const before = { assists: [ask()], assistTargets: ["m1"] };
+  const afterr = { assists: [ask({ claimedBy: "Marcus" })], assistTargets: ["m1"] };
+  const plan = assistPlan(before, afterr);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].id, "p7");
+  assert.match(plan[0].title, /Marcus is on the way/);
+});
+
+test("an escalation re-pings the managers once", () => {
+  const before = { assists: [ask()], assistTargets: ["m1", "m2"] };
+  const afterr = { assists: [ask({ escalatedAt: "2026-08-28T14:02:10Z" })], assistTargets: ["m1", "m2"] };
+  const plan = assistPlan(before, afterr);
+  assert.equal(plan.length, 2);
+  assert.match(plan[0].body, /2 minutes/);
+  // and the same escalated row again produces nothing new
+  assert.equal(assistPlan(afterr, afterr).length, 0);
+});
+
+test("the lot pin reads as the lot", () => {
+  const after = { assists: [ask({ table: null, spot: "lot", kind: "fly" })], assistTargets: ["m1"] };
+  const plan = assistPlan(null, after);
+  assert.match(plan[0].body, /out on the lot/);
+  assert.match(plan[0].title, /FlyBy/);
+});
