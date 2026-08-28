@@ -114,3 +114,56 @@ export function contentState(s, extra = {}) {
     ...extra,
   };
 }
+
+/* =========================================================================
+   FlyBy assists. A salesperson at a table asks the floor for a manager, and
+   the ask rides in the same per-day floor row the queue lives in, so the same
+   webhook sees it. This works out who a change in that list is worth
+   interrupting: a NEW ask goes to the managers the board stamped onto the row
+   (assistTargets); a CLAIM goes back to the one person waiting on it; an
+   ESCALATION re-pings the managers, because two silent minutes on a T.O. is
+   the floor failing somebody in front of a customer.
+   Pure on purpose: the webhook calls it, and the tests can too.
+   ========================================================================== */
+export function assistWhere(x) {
+  if (x.spot === "lot") return "out on the lot";
+  if (x.table != null && x.table !== "") return (String(x.table).startsWith("O") ? "office " + String(x.table).slice(1) : "table " + x.table);
+  return "on the floor";
+}
+export function assistPlan(before, after) {
+  const b = (before && before.assists) || [];
+  const a = (after && after.assists) || [];
+  const targets = (after && after.assistTargets) || [];
+  const was = new Map(b.map((x) => [x.id, x]));
+  const out = [];
+  for (const x of a) {
+    if (!x || !x.id) continue;
+    const prev = was.get(x.id);
+    const label = x.kind === "to" ? "T.O." : "FlyBy";
+    const where = assistWhere(x);
+    if (!prev && !x.doneAt && !x.claimedBy) {
+      for (const id of targets) {
+        if (id === x.byId) continue;   // a manager asking for help is not told about their own ask
+        out.push({ id, kind: "nudge", label: x.byName || "",
+          title: `${label} · ${x.byName || "the floor"}`,
+          body: `Asking at ${where}${x.note ? ` · ${x.note}` : ""}` });
+      }
+      continue;
+    }
+    if (prev && !prev.claimedBy && x.claimedBy && !x.doneAt && x.byId) {
+      out.push({ id: x.byId, kind: "nudge", label: x.byName || "",
+        title: `${x.claimedBy} is on the way`,
+        body: `Your ${label} at ${where} was picked up.` });
+      continue;
+    }
+    if (prev && !prev.escalatedAt && x.escalatedAt && !x.claimedBy && !x.doneAt) {
+      const mins = Math.max(1, Math.round((new Date(x.escalatedAt) - new Date(x.t)) / 60000));
+      for (const id of targets) {
+        out.push({ id, kind: "nudge", label: x.byName || "",
+          title: `Still waiting · ${label} at ${where}`,
+          body: `${x.byName || "Someone"} has been waiting ${mins} minute${mins === 1 ? "" : "s"}. Nobody has claimed it.` });
+      }
+    }
+  }
+  return out;
+}

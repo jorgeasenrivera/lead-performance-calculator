@@ -24,7 +24,8 @@ import {
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
-import { doorCheck } from "../api/_geofence.mjs";
+import { doorCheck, readingVerdict } from "../api/_geofence.mjs";
+import { assistWhere } from "../api/_queue-notify.mjs";
 /* A person's standing at a store, and every list and stamp a change to it
    implies. One place, because three screens used to do this and two of them were
    quietly broken in the same way. */
@@ -11646,6 +11647,273 @@ async function loadFloorDays(store, fromDate, toDate) {
   } catch (e) { console.error("loadFloorDays", e); return []; }
 }
 
+/* =========================================================================
+   FlyBy — the floor answering a table.
+   A salesperson sitting with a guest asks for a manager from their phone; the
+   ask rides in the same per-day floor row as the line, so it inherits the
+   row's serialised writes, its RLS, and the webhook that already pushes queue
+   changes to phones. Two kinds, on purpose and by name: a FlyBy is a swing-by
+   to meet the guest, part of the process; a T.O. is "send somebody now".
+   ========================================================================= */
+const DEFAULT_FLOOR_PLAN = {
+  zones: [
+    { t: "new car showroom", x: 3, y: 6, w: 46, h: 88 },
+    { t: "delivery tables", x: 53, y: 6, w: 44, h: 40 },
+    { t: "offices", x: 53, y: 52, w: 44, h: 42 },
+  ],
+  tables: [
+    { n: "1", x: 5, y: 12 }, { n: "2", x: 15, y: 12 }, { n: "3", x: 25, y: 12 }, { n: "4", x: 35, y: 12 },
+    { n: "5", x: 7, y: 38, r: 1 }, { n: "6", x: 18, y: 44, r: 1 }, { n: "7", x: 29, y: 39, r: 1 }, { n: "8", x: 40, y: 45, r: 1 },
+    { n: "9", x: 9, y: 70, r: 1 }, { n: "10", x: 21, y: 74, r: 1 }, { n: "11", x: 33, y: 70, r: 1 },
+    { n: "12", x: 56, y: 14 }, { n: "13", x: 68, y: 14 }, { n: "14", x: 80, y: 14 },
+    { n: "O1", x: 58, y: 62 }, { n: "O2", x: 70, y: 62 }, { n: "O3", x: 82, y: 62 },
+  ],
+};
+/* The drawn plan is a store setting (it lives beside the fence); the default
+   above stands in until a store draws its own. */
+function floorPlanOf(config, storeId) {
+  const st = ((config && config.stores) || []).find((x) => x.id === storeId);
+  return (st && st.floorPlan && Array.isArray(st.floorPlan.tables) && st.floorPlan.tables.length)
+    ? st.floorPlan : DEFAULT_FLOOR_PLAN;
+}
+const ASSIST_NOTES = ["Bring appraisal keys", "Payment objection", "Trade number", "Guest is leaving"];
+const activeAssists = (row) => (((row && row.assists) || []).filter((a) => a && !a.doneAt));
+const assistAge = (a) => Math.max(0, Math.floor((Date.now() - new Date(a.t).getTime()) / 1000));
+const fmtAssistAge = (sec) => Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+function useAssistTick(on) {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const t = setInterval(() => setN((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+}
+
+/* One drawing of the floor, shared by the console and the phone's picker. */
+function PlanMap({ plan, cls = "", deco, onTap }) {
+  return (
+    <div className={"fbp " + cls}>
+      {(plan.zones || []).map((z, i) => (
+        <div key={i} className="fbp-zone" style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}>{z.t}</div>
+      ))}
+      {(plan.tables || []).map((t) => {
+        const d = deco ? deco(t) : {};
+        return (
+          <button key={t.n} type="button"
+            className={"fbp-tbl" + (t.r ? " round" : "") + (d.cls ? " " + d.cls : "")}
+            style={{ left: t.x + "%", top: t.y + "%" }}
+            onClick={onTap ? () => onTap(t) : undefined}>
+            {d.flag ? <span className="fbp-flag">{d.flag}</span> : null}
+            <span>{t.n}</span>
+            {d.sub ? <span className="fbp-sub">{d.sub}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---- the salesperson's side: two buttons, a where, and the chip that waits
+   with you. Lives on the floor phone screen, under the status control. ---- */
+function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
+  const [open, setOpen] = useState(null);          // "fly" | "to" | null
+  const [where, setWhere] = useState(null);        // table n, or "lot"
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mine = activeAssists(row).find((a) => a.byId === meId) || null;
+  useAssistTick(!!mine);
+
+  /* The refinement: a phone confidently outside the BUILDING outline defaults
+     the pin to the lot. The building is its own ring on the store's fence
+     (fence.building); without one drawn, nothing is guessed. The lot ring
+     cannot answer this question -- the showroom is inside the lot. */
+  const sheetFor = (kind) => {
+    setOpen(kind); setWhere(null); setNote("");
+    try {
+      const bld = fence && fence.building && Array.isArray(fence.building.ring) ? { ring: fence.building.ring } : null;
+      if (!bld || !navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const v = readingVerdict({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }, bld);
+        if (v === "out") setWhere((w) => (w == null ? "lot" : w));
+      }, () => {}, { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 });
+    } catch (e) { /* no fix is not a reason to block the ask */ }
+  };
+
+  const send = async () => {
+    if (busy || !open) return;
+    setBusy(true);
+    try {
+      const ask = { id: uid(), t: qNowIso(), kind: open, byId: meId, byName: meName,
+        table: where === "lot" ? null : where, spot: where === "lot" ? "lot" : "floor",
+        note: note || null };
+      const next = await mutateFloorRow(store, date, (cur) => {
+        if (!cur) return null;
+        // one live ask per person: a second press replaces, never stacks
+        cur.assists = [ask, ...((cur.assists || []).filter((a) => !(a.byId === meId && !a.doneAt)))].slice(0, 40);
+        return cur;
+      });
+      if (next && onRow) onRow(next);
+      setOpen(null);
+      buzz([15, 30, 15]);
+    } catch (e) { /* the row poll will tell the truth either way */ }
+    setBusy(false);
+  };
+  const cancel = async () => {
+    if (busy || !mine) return;
+    setBusy(true);
+    try {
+      const next = await mutateFloorRow(store, date, (cur) => {
+        if (!cur) return null;
+        const x = (cur.assists || []).find((a) => a.id === mine.id);
+        if (x && !x.doneAt) { x.doneAt = qNowIso(); x.cancelled = true; }
+        return cur;
+      });
+      if (next && onRow) onRow(next);
+    } catch (e) {}
+    setBusy(false);
+  };
+
+  if (mine) {
+    const age = assistAge(mine);
+    return (
+      <div className={"fba-chip" + (mine.claimedBy ? " ok" : "")}>
+        <span className="fba-ring" aria-hidden="true" />
+        <span className="fba-tx">
+          <b>{mine.claimedBy ? `${mine.claimedBy} is on the way` : "Asking the floor"}</b>
+          <i>{(mine.kind === "to" ? "T.O." : "FlyBy")} · {assistWhere(mine)}{mine.note ? ` · ${mine.note}` : ""}</i>
+        </span>
+        <span className="fba-age">{mine.claimedBy ? "" : fmtAssistAge(age)}</span>
+        {!mine.claimedBy && <button type="button" className="fba-x" disabled={busy} onClick={cancel} aria-label="Never mind">Never mind</button>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="fba-row">
+        <button type="button" className="fba-btn fly" onClick={() => sheetFor("fly")}>
+          <b>FlyBy</b><span>Swing by, meet my guest</span>
+        </button>
+        <button type="button" className="fba-btn to" onClick={() => sheetFor("to")}>
+          <b>T.O.</b><span>I need help now</span>
+        </button>
+      </div>
+      {open && (
+        <div className="fba-sheetwrap" onClick={() => setOpen(null)}>
+          <div className="fba-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="fba-cap">{open === "to" ? "T.O. · where are you?" : "FlyBy · where are you?"}</div>
+            <PlanMap plan={plan} cls="mini"
+              deco={(t) => ({ cls: where === t.n ? "sel" : "" })}
+              onTap={(t) => setWhere(t.n)} />
+            <button type="button" className={"fba-lot" + (where === "lot" ? " sel" : "")}
+              onClick={() => setWhere(where === "lot" ? null : "lot")}>Out on the lot</button>
+            <div className="fba-cap">Tell them why · optional</div>
+            <div className="fba-notes">
+              {ASSIST_NOTES.map((n) => (
+                <button key={n} type="button" className={note === n ? "sel" : ""}
+                  onClick={() => setNote(note === n ? "" : n)}>{n}</button>
+              ))}
+            </div>
+            <div className="fba-send">
+              <button type="button" className="fba-go" disabled={busy || (!where && open === "to" && false)}
+                onClick={send}>{open === "to" ? "Send the T.O." : "Send the FlyBy"}</button>
+              <button type="button" className="fba-back" onClick={() => setOpen(null)}>Back</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ---- the manager's side: the Console. The drawn floor inside the deep green
+   tube, asks glowing on their tables, a tap to claim and a second to clear,
+   the longest wait in the dot-matrix hand, and a T.O. nobody claims for two
+   minutes escalating on its own. ---- */
+function FloorConsole({ row, act, plan, managers, meName }) {
+  const asks = activeAssists(row);
+  useAssistTick(asks.length > 0);
+
+  /* The row carries who to push a NEW ask to, because the phone that writes an
+     ask has no roster to look managers up in. The board does, so it keeps the
+     stamp fresh. */
+  useEffect(() => {
+    if (!row) return;
+    const want = JSON.stringify(managers);
+    if (JSON.stringify(row.assistTargets || []) === want) return;
+    act((cur) => { cur.assistTargets = managers; return cur; });
+  }, [row ? row.token : null, JSON.stringify(managers)]); // eslint-disable-line
+
+  /* Escalation: written down, not merely displayed, so the webhook can re-ping
+     the managers' phones. Idempotent -- escalatedAt is set once. */
+  useEffect(() => {
+    const t = setInterval(() => {
+      const due = activeAssists(row).filter((a) => a.kind === "to" && !a.claimedBy && !a.escalatedAt && assistAge(a) >= 120);
+      if (!due.length) return;
+      act((cur) => {
+        let touched = false;
+        for (const d of due) {
+          const x = (cur.assists || []).find((a) => a.id === d.id);
+          if (x && !x.claimedBy && !x.escalatedAt && !x.doneAt) { x.escalatedAt = qNowIso(); touched = true; }
+        }
+        return touched ? cur : cur;
+      });
+    }, 15000);
+    return () => clearInterval(t);
+  }, [row]); // eslint-disable-line
+
+  const byTable = new Map(asks.filter((a) => a.table != null).map((a) => [String(a.table), a]));
+  const lotAsks = asks.filter((a) => a.spot === "lot");
+  const touch = (a) => act((cur) => {
+    const x = (cur.assists || []).find((y) => y.id === a.id);
+    if (!x || x.doneAt) return cur;
+    if (!x.claimedBy) { x.claimedBy = meName || "Manager"; x.claimedAt = qNowIso(); }
+    else x.doneAt = qNowIso();
+    return cur;
+  }, { action: "Floor: assist " + (a.claimedBy ? "handled" : "claimed"), detail: `${a.byName} · ${assistWhere(a)}` });
+
+  const longest = asks.filter((a) => !a.claimedBy).reduce((m, a) => Math.max(m, assistAge(a)), 0);
+  const escal = asks.some((a) => a.escalatedAt && !a.claimedBy);
+  const mm = String(Math.floor(longest / 60));
+  const ss = String(longest % 60).padStart(2, "0");
+
+  return (
+    <div className="fbc">
+      <div className="fbc-head">
+        <div><div className="fbc-cap">The floor, answering</div><b>FlyBys and T.O.s land here</b></div>
+        {asks.length > 0 && <span className="fbc-count">{asks.length} asking</span>}
+      </div>
+      <PlanMap plan={plan} cls="console"
+        deco={(t) => {
+          const a = byTable.get(String(t.n));
+          if (!a) return {};
+          return {
+            cls: (a.kind === "to" ? "to" : "fly") + (a.claimedBy ? " claimed" : ""),
+            flag: a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : (a.kind === "to" ? "T.O." : "FlyBy"),
+            sub: a.byName ? a.byName.split(" ")[0] + " · " + fmtAssistAge(assistAge(a)) : null,
+          };
+        }}
+        onTap={(t) => { const a = byTable.get(String(t.n)); if (a) touch(a); }} />
+      {lotAsks.map((a) => (
+        <button key={a.id} type="button" className={"fbc-lot " + (a.kind === "to" ? "to" : "fly") + (a.claimedBy ? " claimed" : "")}
+          onClick={() => touch(a)}>
+          <b>{a.kind === "to" ? "T.O." : "FlyBy"} · out on the lot</b>
+          <span>{a.byName}{a.note ? ` · ${a.note}` : ""}</span>
+          <i>{a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : fmtAssistAge(assistAge(a))}</i>
+        </button>
+      ))}
+      <div className="fbc-strip">
+        <span className="fbc-lbl">Longest wait</span>
+        {longest > 0
+          ? <span className="fbc-clock"><DmNumber value={mm} /><i>:</i><DmNumber value={ss} /></span>
+          : <span className="fbc-quiet">nobody is waiting</span>}
+        {escal && <span className="fbc-esc">T.O. unclaimed past 2:00 · every manager re-pinged</span>}
+        <span className="fbc-hint">Tap a glowing table to claim it; tap again when it is handled.</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---- Supabase access: the deal_events feed (read-only) ----
    Pulls events for this store's dealership_norm(s) that arrived after `sinceIso`.
    deal_events RLS allows authenticated reads; writes are service-role only. */
@@ -12229,6 +12497,8 @@ function FloorSignIn({ store, date, token, test = false }) {
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           <SfStatusSelect value={st} variant={variant} flags={FLOOR_SELF_FLAGS} busy={busy} onPick={setFlag} />
+          <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
+            fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <div className="sf-links">
             <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
               <SfIcon name="mine" size={14} /><span>My day</span>
@@ -12773,6 +13043,10 @@ function FloorBoard({ config, store, data, onData, userName }) {
           );
         })}
       </div>
+
+      <FloorConsole row={row} act={act} plan={floorPlanOf(config, store.id)}
+        managers={(data.roster || []).filter((a) => a.roleId === "manager").map((a) => a.id)}
+        meName={userName} />
 
       {expectedNotHere.length > 0 && (
         <div className="q-missing">
@@ -32563,6 +32837,98 @@ const SAGE_CSS = `
 .f-um-when{font-size:12px;color:var(--ink-3,#9aa);margin-left:auto;}
 .f-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:70;background:#0f9d76;color:#fff;font-weight:700;
   padding:10px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(15,157,118,.4);animation:ftoast .3s ease both;}
+
+/* ---- FlyBy: shared plan drawing ---- */
+.fbp{position:relative;height:340px;}
+.fbp-zone{position:absolute;border:1px dashed rgba(255,255,255,.2);border-radius:12px;padding:4px 8px;
+  font:600 9px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.45);pointer-events:none;}
+.fbp-tbl{position:absolute;width:52px;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.3);
+  background:rgba(255,255,255,.1);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  cursor:pointer;font:700 13px var(--font-mono);padding:0;transition:transform .15s ease;}
+.fbp-tbl.round{border-radius:50%;width:48px;height:48px;}
+.fbp-tbl:hover{transform:scale(1.06);}
+.fbp-tbl:focus-visible{outline:3px solid #37d3a3;outline-offset:2px;}
+.fbp-sub{font:600 7.5px var(--font-ui);color:rgba(255,255,255,.7);line-height:1.1;}
+.fbp-flag{position:absolute;top:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;
+  font:700 9px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:99px;color:#fff;background:#8A5A10;}
+.fbp-tbl.fly{background:#E8A93C;border-color:#fff;animation:fbaPulse 1.4s ease-in-out infinite;}
+.fbp-tbl.to{background:#D8483C;border-color:#fff;animation:fbaPulseR 1s ease-in-out infinite;}
+.fbp-tbl.to .fbp-flag{background:#9E2417;}
+.fbp-tbl.claimed{animation:none;box-shadow:0 0 0 4px rgba(143,227,179,.5);}
+@keyframes fbaPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,169,60,0);}50%{box-shadow:0 0 0 9px rgba(232,169,60,.3);}}
+@keyframes fbaPulseR{0%,100%{box-shadow:0 0 0 0 rgba(216,72,60,0);}50%{box-shadow:0 0 0 9px rgba(216,72,60,.28);}}
+@media (prefers-reduced-motion: reduce){.fbp-tbl{animation:none !important;transition:none;}}
+
+/* ---- the Console card on the manager board ---- */
+.fbc{position:relative;border-radius:18px;overflow:hidden;margin:16px 0;color:#fff;
+  background:linear-gradient(140deg,#7FA98A,#55795F 46%,#26382C);box-shadow:0 14px 34px -14px rgba(38,44,56,.55);}
+.fbc::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.05;
+  background:repeating-linear-gradient(0deg,#fff 0 1px,transparent 1px 3px);}
+.fbc-head{display:flex;align-items:center;gap:12px;padding:13px 18px;}
+.fbc-head b{font:700 15px var(--font-display);}
+.fbc-cap{font:700 9.5px var(--font-mono);letter-spacing:.16em;text-transform:uppercase;color:#E4C98D;}
+.fbc-count{margin-left:auto;background:rgba(255,255,255,.16);border-radius:99px;padding:4px 11px;font:700 11px var(--font-mono);}
+.fbc .fbp{background:rgba(6,14,9,.25);margin:0 14px;border-radius:14px;border:1px solid rgba(255,255,255,.14);}
+.fbc-lot{display:flex;align-items:center;gap:10px;margin:10px 14px 0;width:calc(100% - 28px);border-radius:12px;
+  border:1px solid #fff;padding:9px 13px;cursor:pointer;color:#fff;text-align:left;font:600 12px var(--font-ui);}
+.fbc-lot.fly{background:#E8A93C;}.fbc-lot.to{background:#D8483C;}
+.fbc-lot.claimed{opacity:.75;box-shadow:0 0 0 3px rgba(143,227,179,.5);}
+.fbc-lot b{font:700 12.5px var(--font-display);}
+.fbc-lot i{margin-left:auto;font:700 12px var(--font-mono);font-style:normal;}
+.fbc-strip{display:flex;align-items:center;gap:14px;padding:12px 18px;flex-wrap:wrap;position:relative;z-index:1;}
+.fbc-lbl{font:700 9px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);}
+.fbc-clock{display:inline-flex;align-items:center;gap:6px;}
+.fbc-clock i{font:700 14px var(--font-mono);font-style:normal;color:#fff;}
+/* DmNumber's layout lives under .sf (the phone screens); the console redraws
+   the same atoms at its own size. */
+.fbc-clock .dm{display:flex;gap:4px;align-items:center;}
+.fbc-clock .dm-digit{display:grid;grid-template-columns:repeat(3,4px);gap:1.6px;}
+.fbc-clock .ld{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.14);}
+.fbc-clock .ld.on{background:#fff;}
+.fbc-quiet{font:600 11px var(--font-ui);color:rgba(255,255,255,.6);}
+.fbc-esc{background:rgba(216,72,60,.28);border:1px solid #D8483C;border-radius:10px;padding:5px 11px;
+  font:600 11px var(--font-ui);animation:fbcBlink 1.1s step-end infinite;}
+@keyframes fbcBlink{50%{border-color:rgba(255,255,255,.6);}}
+@media (prefers-reduced-motion: reduce){.fbc-esc{animation:none;}}
+.fbc-hint{margin-left:auto;font:500 10.5px var(--font-ui);color:rgba(255,255,255,.5);}
+
+/* ---- the salesperson's side ---- */
+.fba-row{display:flex;gap:8px;margin-top:10px;}
+.fba-btn{flex:1;border:0;border-radius:14px;padding:11px 12px;text-align:left;cursor:pointer;color:#fff;}
+.fba-btn b{display:block;font:700 14px var(--font-display);}
+.fba-btn span{font-size:10.5px;opacity:.92;}
+.fba-btn.fly{background:linear-gradient(135deg,#E8A93C,#D08F1E);}
+.fba-btn.to{background:linear-gradient(135deg,#D8483C,#B02A1E);}
+.fba-chip{display:flex;align-items:center;gap:10px;margin-top:10px;background:#101512;color:#fff;border-radius:15px;padding:11px 13px;}
+.fba-ring{width:26px;height:26px;border-radius:50%;border:3px solid #10B981;border-top-color:transparent;
+  animation:fbaSpin 1.2s linear infinite;flex:0 0 auto;}
+.fba-chip.ok .fba-ring{border-top-color:#10B981;animation:none;}
+@keyframes fbaSpin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion: reduce){.fba-ring{animation:none;}}
+.fba-tx b{display:block;font:700 12px var(--font-display);}
+.fba-tx i{font-style:normal;font-size:10px;color:rgba(255,255,255,.65);}
+.fba-age{margin-left:auto;font:700 12.5px var(--font-mono);color:#10B981;}
+.fba-x{border:1px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.8);border-radius:99px;
+  padding:5px 9px;font:600 9.5px var(--font-ui);cursor:pointer;flex:0 0 auto;}
+.fba-sheetwrap{position:fixed;inset:0;z-index:80;background:rgba(16,21,18,.5);display:flex;align-items:flex-end;justify-content:center;}
+.fba-sheet{width:min(420px,100%);background:#F2F4EF;border-radius:22px 22px 0 0;padding:16px 16px 22px;color:#223126;}
+.fba-cap{font:700 9.5px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:#8B988E;margin:8px 0 6px;}
+.fba-sheet .fbp.mini{height:200px;background:#E9EFE7;border:1px solid rgba(34,49,38,.12);border-radius:14px;}
+.fba-sheet .fbp.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
+.fba-sheet .fbp.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
+  border-color:rgba(34,49,38,.25);color:#5A6B5E;}
+.fba-sheet .fbp.mini .fbp-tbl.round{width:31px;height:31px;}
+.fba-sheet .fbp.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
+.fba-lot{width:100%;margin-top:8px;border:1.5px dashed rgba(34,49,38,.3);background:#fff;border-radius:12px;
+  padding:9px 0;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+.fba-lot.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
+.fba-notes{display:flex;flex-wrap:wrap;gap:6px;}
+.fba-notes button{border:1px solid rgba(34,49,38,.15);background:#fff;border-radius:99px;padding:6px 11px;
+  font:600 10.5px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+.fba-notes button.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
+.fba-send{display:flex;gap:8px;margin-top:14px;}
+.fba-go{flex:1;border:0;border-radius:99px;background:#2E4A38;color:#fff;padding:12px 0;font:700 13px var(--font-display);cursor:pointer;}
+.fba-back{border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;padding:0 18px;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
 @keyframes ftoast{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
 /* settings */
 .f-settings .f-toggle{display:flex;align-items:center;gap:10px;font-weight:600;margin-top:8px;cursor:pointer;}
