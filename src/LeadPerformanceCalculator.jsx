@@ -3630,6 +3630,8 @@ export default function LeadPerformanceCalculator() {
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
       appModule={appModule} onToolChange={switchTool} onImport={goImport}
+      corner={(isAdmin || session.role === "manager") && currentStore
+        ? <AssistWatcher store={currentStore.id} meName={session.name} /> : null}
       brand={currentStore?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeData={storeData}
@@ -11830,19 +11832,35 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
    tube, asks glowing on their tables, a tap to claim and a second to clear,
    the longest wait in the dot-matrix hand, and a T.O. nobody claims for two
    minutes escalating on its own. ---- */
+const COVERAGE_STATES = ["desk", "floor", "offsite"];
+const COVERAGE_LABEL = { desk: "desk", floor: "floor", offsite: "off-site" };
 function FloorConsole({ row, act, plan, managers, meName }) {
   const asks = activeAssists(row);
   useAssistTick(asks.length > 0);
+  /* The coverage rail. Where each manager is standing is a tap on their own
+     chip -- desk, floor, off-site -- kept in the floor row so every screen
+     agrees. The chip is the same person-colour Live Floor uses everywhere.
+     When the native shell lands its background geofencing, the same field is
+     where the automatic verdicts will write; the tap stays as the override. */
+  const covOf = (id) => (row && row.coverage && row.coverage[id] && row.coverage[id].state) || "desk";
+  const cycleCov = (m) => act((cur) => {
+    cur.coverage = cur.coverage || {};
+    const now = (cur.coverage[m.id] && cur.coverage[m.id].state) || "desk";
+    const nx = COVERAGE_STATES[(COVERAGE_STATES.indexOf(now) + 1) % COVERAGE_STATES.length];
+    cur.coverage[m.id] = { state: nx, at: qNowIso(), by: meName || "-" };
+    return cur;
+  }, { action: "Floor: coverage", detail: m.name });
 
   /* The row carries who to push a NEW ask to, because the phone that writes an
      ask has no roster to look managers up in. The board does, so it keeps the
      stamp fresh. */
+  const managerIds = managers.map((m) => m.id);
   useEffect(() => {
     if (!row) return;
-    const want = JSON.stringify(managers);
+    const want = JSON.stringify(managerIds);
     if (JSON.stringify(row.assistTargets || []) === want) return;
-    act((cur) => { cur.assistTargets = managers; return cur; });
-  }, [row ? row.token : null, JSON.stringify(managers)]); // eslint-disable-line
+    act((cur) => { cur.assistTargets = managerIds; return cur; });
+  }, [row ? row.token : null, JSON.stringify(managerIds)]); // eslint-disable-line
 
   /* Escalation: written down, not merely displayed, so the webhook can re-ping
      the managers' phones. Idempotent -- escalatedAt is set once. */
@@ -11881,6 +11899,16 @@ function FloorConsole({ row, act, plan, managers, meName }) {
     <div className="fbc">
       <div className="fbc-head">
         <div><div className="fbc-cap">The floor, answering</div><b>FlyBys and T.O.s land here</b></div>
+        <div className="fbc-cover">
+          {managers.map((m) => (
+            <button key={m.id} type="button" className={"fbc-mgr " + covOf(m.id)}
+              title={`${m.name} · ${COVERAGE_LABEL[covOf(m.id)]} · tap to change`}
+              onClick={() => cycleCov(m)}>
+              <i style={{ background: `hsl(${hueFromName(m.name)} 62% 46%)` }}>{initialsOf(m.name)}</i>
+              {m.name.split(" ")[0]} · {COVERAGE_LABEL[covOf(m.id)]}
+            </button>
+          ))}
+        </div>
         {asks.length > 0 && <span className="fbc-count">{asks.length} asking</span>}
       </div>
       <PlanMap plan={plan} cls="console"
@@ -11910,6 +11938,58 @@ function FloorConsole({ row, act, plan, managers, meName }) {
         {escal && <span className="fbc-esc">T.O. unclaimed past 2:00 · every manager re-pinged</span>}
         <span className="fbc-hint">Tap a glowing table to claim it; tap again when it is handled.</span>
       </div>
+    </div>
+  );
+}
+
+/* The corner prompt that follows a manager anywhere in Sage. The Console only
+   helps a manager standing on the Live Floor page; this watches the same row
+   from every other page and surfaces unclaimed asks in the corner, with the
+   claim right in it. Off-site phones are covered separately by the push. */
+function AssistWatcher({ store, meName }) {
+  const [asks, setAsks] = useState([]);
+  const [hidden, setHidden] = useState({});     // ids dismissed on THIS screen
+  useEffect(() => {
+    let dead = false;
+    const poll = async () => {
+      try {
+        const row = await loadFloorRow(store, today());
+        if (!dead) setAsks(row ? activeAssists(row) : []);
+      } catch (e) { /* the next poll tells the truth */ }
+    };
+    poll();
+    const t = setInterval(poll, 25000);
+    return () => { dead = true; clearInterval(t); };
+  }, [store]);
+  const show = asks.filter((a) => !a.claimedBy && !hidden[a.id]);
+  useAssistTick(show.length > 0);
+  const claim = async (a) => {
+    try {
+      const next = await mutateFloorRow(store, today(), (cur) => {
+        if (!cur) return null;
+        const x = (cur.assists || []).find((y) => y.id === a.id);
+        if (x && !x.claimedBy && !x.doneAt) { x.claimedBy = meName || "Manager"; x.claimedAt = qNowIso(); }
+        return cur;
+      });
+      if (next) setAsks(activeAssists(next));
+    } catch (e) {}
+  };
+  if (!show.length) return null;
+  return (
+    <div className="aswatch">
+      {show.slice(0, 3).map((a) => (
+        <div key={a.id} className={"aswatch-t " + (a.kind === "to" ? "to" : "fly")}>
+          <span className="aswatch-dot">{a.table != null ? a.table : "LOT"}</span>
+          <span className="aswatch-tx">
+            <b>{a.kind === "to" ? "T.O. · needs help" : "FlyBy"}</b>
+            <i>{a.byName} · {assistWhere(a)}{a.note ? ` · ${a.note}` : ""}</i>
+          </span>
+          <span className="aswatch-age">{fmtAssistAge(assistAge(a))}</span>
+          <button type="button" className="aswatch-go" onClick={() => claim(a)}>On my way</button>
+          <button type="button" className="aswatch-x" aria-label="Dismiss on this screen"
+            onClick={() => setHidden((h) => ({ ...h, [a.id]: true }))}>&times;</button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -13045,7 +13125,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
       </div>
 
       <FloorConsole row={row} act={act} plan={floorPlanOf(config, store.id)}
-        managers={(data.roster || []).filter((a) => a.roleId === "manager").map((a) => a.id)}
+        managers={(data.roster || []).filter((a) => a.roleId === "manager").map((a) => ({ id: a.id, name: a.name }))}
         meName={userName} />
 
       {expectedNotHere.length > 0 && (
@@ -13574,6 +13654,102 @@ function FloorBacklog({ store, data, userName, open, onCount }) {
 /* =========================================================================
    FloorConfigEditor — admin per-store settings for the floor.
    ========================================================================= */
+/* The floor, drawn once by a manager and saved with the store the way the
+   fence is: every phone already loads the config, so the plan costs nothing to
+   carry. Drag a table where it really stands; tap one to rename it, make it
+   round, or take it off; the default room stands in until a store draws its
+   own. Percent coordinates, so the same plan fits a phone and a TV. */
+function FloorPlanEditor({ config, storeId, onChange, onClose }) {
+  const store = config.stores.find((x) => x.id === storeId);
+  const base = (store && store.floorPlan && Array.isArray(store.floorPlan.tables) && store.floorPlan.tables.length)
+    ? store.floorPlan : DEFAULT_FLOOR_PLAN;
+  const [tables, setTables] = useState(() => JSON.parse(JSON.stringify(base.tables)));
+  const zones = base.zones && base.zones.length ? base.zones : DEFAULT_FLOOR_PLAN.zones;
+  const [sel, setSel] = useState(null);
+  const boxRef = useRef(null);
+  const dragRef = useRef(null);
+
+  const down = (e, t) => {
+    e.preventDefault();
+    const box = boxRef.current.getBoundingClientRect();
+    dragRef.current = { n: t.n, box, moved: false, dx: e.clientX, dy: e.clientY };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const move = (e) => {
+    const d = dragRef.current;
+    if (!d) return;
+    if (Math.abs(e.clientX - d.dx) + Math.abs(e.clientY - d.dy) > 4) d.moved = true;
+    if (!d.moved) return;
+    const x = Math.max(0, Math.min(93, ((e.clientX - d.box.left) / d.box.width) * 100 - 2));
+    const y = Math.max(0, Math.min(88, ((e.clientY - d.box.top) / d.box.height) * 100 - 4));
+    setTables((ts) => ts.map((t) => (t.n === d.n ? { ...t, x: +x.toFixed(1), y: +y.toFixed(1) } : t)));
+  };
+  const up = (e, t) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (d && !d.moved) setSel(sel === t.n ? null : t.n);
+  };
+  const selT = tables.find((t) => t.n === sel) || null;
+  const rename = (name) => {
+    const nm = name.trim();
+    if (!nm || tables.some((t) => t.n === nm && t.n !== sel)) return;
+    setTables((ts) => ts.map((t) => (t.n === sel ? { ...t, n: nm } : t)));
+    setSel(nm);
+  };
+  const add = (round) => {
+    let i = 1;
+    while (tables.some((t) => String(t.n) === String(i))) i++;
+    setTables((ts) => [...ts, { n: String(i), x: 44, y: 44, ...(round ? { r: 1 } : {}) }]);
+    setSel(String(i));
+  };
+  const save = () => {
+    const next = JSON.parse(JSON.stringify(config));
+    const st = next.stores.find((x) => x.id === storeId);
+    st.floorPlan = { zones, tables, updatedAt: new Date().toISOString() };
+    onChange(next, { store: storeId, action: "Arranged the floor plan", detail: `${store.name}: ${tables.length} tables` });
+    onClose();
+  };
+
+  return (
+    <div className="fpe">
+      <div className="fpe-box" ref={boxRef} onPointerMove={move}>
+        {zones.map((z, i) => (
+          <div key={i} className="fbp-zone fpe-zone" style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}>{z.t}</div>
+        ))}
+        {tables.map((t) => (
+          <button key={t.n} type="button"
+            className={"fbp-tbl fpe-tbl" + (t.r ? " round" : "") + (sel === t.n ? " sel" : "")}
+            style={{ left: t.x + "%", top: t.y + "%" }}
+            onPointerDown={(e) => down(e, t)} onPointerUp={(e) => up(e, t)}>
+            <span>{t.n}</span>
+          </button>
+        ))}
+      </div>
+      <div className="fpe-bar">
+        {selT ? (
+          <>
+            <input className="fpe-name" value={selT.n} aria-label="Table name"
+              onChange={(e) => rename(e.target.value)} />
+            <button className="btn secondary" onClick={() => { setTables((ts) => ts.map((t) => (t.n === sel ? (t.r ? (({ r, ...rest }) => rest)(t) : { ...t, r: 1 }) : t))); }}>
+              {selT.r ? "Make it square" : "Make it round"}
+            </button>
+            <button className="btn secondary danger" onClick={() => { setTables((ts) => ts.filter((t) => t.n !== sel)); setSel(null); }}>Take it off</button>
+          </>
+        ) : (
+          <>
+            <button className="btn secondary" onClick={() => add(true)}>Add a table</button>
+            <button className="btn secondary" onClick={() => add(false)}>Add a desk or office</button>
+            <span className="hint">Drag anything where it really stands. Tap one to rename it.</span>
+          </>
+        )}
+        <span className="fpe-spacer" />
+        <button className="btn" onClick={save} disabled={!tables.length}>Save the floor</button>
+        <button className="btn-quiet" onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function FloorConfigEditor({ config, storeId, onChange }) {
   const store = config.stores.find((s) => s.id === storeId);
   const cfg = floorCfg(store);
@@ -13582,6 +13758,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
   const [evEvent, setEvEvent] = useState("");
   const [evAction, setEvAction] = useState("checkin");
   const [drawing, setDrawing] = useState(false);
+  const [arranging, setArranging] = useState(false);
 
   /* The lot lives on the store's config rather than in its data document, for one
      practical reason: every phone already loads the config, and none of them
@@ -13712,6 +13889,27 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           <React.Suspense fallback={<p className="hint">Loading the map…</p>}>
             <FenceEditor store={store} fence={fence} onSave={saveFence} onCancel={() => setDrawing(false)} />
           </React.Suspense>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>The floor plan</h3>
+        <p className="hint">
+          The room the FlyBy system draws: the Console on the board and the "where are you" tap on
+          every salesperson's phone both use this. Until it is arranged, a sensible default room
+          stands in.
+        </p>
+        {store.floorPlan && store.floorPlan.updatedAt && !arranging && (
+          <p className="hint"><b>{(store.floorPlan.tables || []).length} tables</b> drawn · last changed {new Date(store.floorPlan.updatedAt).toLocaleDateString()}.</p>
+        )}
+        {!arranging ? (
+          <div className="inline-form">
+            <button className="btn" onClick={() => setArranging(true)}>
+              {store.floorPlan ? "Rearrange the floor" : "Arrange the floor"}
+            </button>
+          </div>
+        ) : (
+          <FloorPlanEditor config={config} storeId={storeId} onChange={onChange} onClose={() => setArranging(false)} />
         )}
       </div>
 
@@ -27165,7 +27363,7 @@ function TubeGlass() {
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
   right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
-  storeData, storeName, brand, children,
+  storeData, storeName, brand, children, corner,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -27217,6 +27415,7 @@ function AppShell({
         onToolChange={(mod) => { onToolChange(mod); setDrawerOpen(false); }} />
       <Style />
       {help}
+          {corner}
     </Shell>
   );
 }
@@ -32929,6 +33128,47 @@ const SAGE_CSS = `
 .fba-send{display:flex;gap:8px;margin-top:14px;}
 .fba-go{flex:1;border:0;border-radius:99px;background:#2E4A38;color:#fff;padding:12px 0;font:700 13px var(--font-display);cursor:pointer;}
 .fba-back{border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;padding:0 18px;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+
+/* ---- the coverage rail ---- */
+.fbc-cover{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;}
+.fbc-mgr{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.13);border:1px solid transparent;
+  border-radius:99px;padding:4px 10px 4px 5px;font:600 10.5px var(--font-ui);color:#fff;cursor:pointer;}
+.fbc-mgr i{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+  font:700 8px var(--font-mono);font-style:normal;color:#fff;}
+.fbc-mgr.floor{border-color:#8FE3B3;}
+.fbc-mgr.offsite{opacity:.55;}
+.fbc-cover + .fbc-count{margin-left:0;}
+
+/* ---- the floor plan editor ---- */
+.fpe-box{position:relative;height:380px;border-radius:14px;background:linear-gradient(160deg,#EDF2EA,#E2EAE0);
+  border:1px solid rgba(34,49,38,.12);touch-action:none;overflow:hidden;}
+.fpe-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
+.fpe-tbl{background:#fff;border-color:rgba(34,49,38,.25);color:#5A6B5E;cursor:grab;}
+.fpe-tbl:hover{transform:none;}
+.fpe-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
+.fpe-bar{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.fpe-name{border:1px solid rgba(34,49,38,.2);border-radius:10px;padding:8px 11px;font:700 13px var(--font-mono);width:110px;}
+.fpe-spacer{flex:1;}
+.fpe-bar .danger{color:#C13529;border-color:rgba(194,54,31,.42);}
+.fence-mode{display:inline-flex;gap:0;border-radius:10px;overflow:hidden;}
+.fence-mode .btn.on,.fence-mode .btn.secondary.on{background:#2E4A38;color:#fff;border-color:#2E4A38;}
+
+/* ---- the corner prompt, anywhere in Sage ---- */
+.aswatch{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;z-index:75;}
+.aswatch-t{display:flex;align-items:center;gap:11px;background:#fff;border:1px solid rgba(34,49,38,.12);
+  border-radius:16px;padding:11px 13px;width:330px;max-width:calc(100vw - 36px);
+  box-shadow:0 14px 34px -14px rgba(38,56,44,.5);}
+.aswatch-dot{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font:700 12px var(--font-mono);color:#fff;flex:0 0 auto;}
+.aswatch-t.fly .aswatch-dot{background:#E8A93C;}
+.aswatch-t.to .aswatch-dot{background:#D8483C;}
+.aswatch-tx{min-width:0;}
+.aswatch-tx b{display:block;font:700 13px var(--font-display);color:#223126;}
+.aswatch-tx i{font-style:normal;font-size:11px;color:#5A6B5E;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.aswatch-age{margin-left:auto;font:700 12px var(--font-mono);color:#5A6B5E;flex:0 0 auto;}
+.aswatch-go{border:0;background:#2E4A38;color:#fff;border-radius:99px;padding:7px 12px;
+  font:600 11px var(--font-ui);cursor:pointer;flex:0 0 auto;}
+.aswatch-x{border:0;background:transparent;color:#8B988E;font-size:15px;cursor:pointer;flex:0 0 auto;padding:2px 4px;}
 @keyframes ftoast{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
 /* settings */
 .f-settings .f-toggle{display:flex;align-items:center;gap:10px;font-weight:600;margin-top:8px;cursor:pointer;}

@@ -41,6 +41,13 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
   const layers = useRef({ poly: null, circle: null, dots: [] });
   const [L, setL] = useState(null);
   const [ring, setRing] = useState(() => (fence && Array.isArray(fence.ring) ? fence.ring : []));
+  /* The building is its own, smaller ring inside the lot. It exists for one
+     decision: a FlyBy from a phone confidently OUTSIDE it defaults its pin to
+     the lot instead of the showroom map. The lot ring cannot answer that --
+     the showroom is inside the lot -- so the building is traced separately,
+     and nothing is guessed for stores that have not drawn one. */
+  const [bring, setBring] = useState(() => (fence && fence.building && Array.isArray(fence.building.ring) ? fence.building.ring : []));
+  const [mode, setMode] = useState("lot");   // which ring a tap adds to
   const [msg, setMsg] = useState("");
   const [locating, setLocating] = useState(false);
 
@@ -55,13 +62,19 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
   }, []);
 
   // Build the map once Leaflet is in hand.
+  const modeRef = useRef("lot");
+  useEffect(() => { modeRef.current = mode; }, [mode]);
   useEffect(() => {
     if (!L || !holder.current || mapRef.current) return;
     const start = ring.length ? ring[0] : (store && store.lat ? { lat: store.lat, lng: store.lng } : FALLBACK);
     const map = L.map(holder.current, { zoomControl: true, attributionControl: true })
       .setView([start.lat, start.lng], ring.length ? 17 : 15);
     L.tileLayer(OSM_TILES, { maxZoom: 19, attribution: OSM_CREDIT }).addTo(map);
-    map.on("click", (e) => setRing((r) => [...r, { lat: +e.latlng.lat.toFixed(6), lng: +e.latlng.lng.toFixed(6) }]));
+    map.on("click", (e) => {
+      const pt = { lat: +e.latlng.lat.toFixed(6), lng: +e.latlng.lng.toFixed(6) };
+      if (modeRef.current === "building") setBring((r) => [...r, pt]);
+      else setRing((r) => [...r, pt]);
+    });
     mapRef.current = map;
     /* The container is sized by CSS that may not have settled when Leaflet
        measured it, which leaves the map rendered into a strip a few pixels tall
@@ -92,6 +105,22 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
         fill: false, interactive: false,
       }).addTo(map);
     }
+    if (l.bpoly) { map.removeLayer(l.bpoly); l.bpoly = null; }
+    for (const d of (l.bdots || [])) map.removeLayer(d);
+    l.bdots = [];
+    if (bring.length >= 2) {
+      l.bpoly = L.polygon(bring.map((p) => [p.lat, p.lng]), {
+        color: "#D0821E", weight: 2.5, fillColor: "#D0821E", fillOpacity: 0.14, dashArray: "4 4",
+      }).addTo(map);
+    }
+    bring.forEach((p, i) => {
+      const dot = L.circleMarker([p.lat, p.lng], {
+        radius: 6, color: "#fff", weight: 2, fillColor: "#D0821E", fillOpacity: 1,
+      }).addTo(map);
+      dot.bindTooltip(`Building corner ${i + 1} · tap to remove`, { direction: "top" });
+      dot.on("click", (e) => { L.DomEvent.stopPropagation(e); setBring((r) => r.filter((_, k) => k !== i)); });
+      l.bdots.push(dot);
+    });
     ring.forEach((p, i) => {
       const dot = L.circleMarker([p.lat, p.lng], {
         radius: 7, color: "#fff", weight: 2, fillColor: "#0FB37E", fillOpacity: 1,
@@ -112,7 +141,7 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
       });
       l.dots.push(dot);
     });
-  }, [L, ring]);
+  }, [L, ring, bring]);
 
   const useMyLocation = useCallback(() => {
     if (!navigator.geolocation) { setMsg("This browser will not share a location."); return; }
@@ -135,7 +164,8 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
 
   const save = () => {
     if (ring.length < 3) { setMsg("A lot needs at least three corners."); return; }
-    onSave({ ring, updatedAt: new Date().toISOString() });
+    if (bring.length > 0 && bring.length < 3) { setMsg("The building has only " + bring.length + " corner" + (bring.length === 1 ? "" : "s") + ". Trace at least three, or take them off."); return; }
+    onSave({ ring, building: bring.length >= 3 ? { ring: bring } : undefined, updatedAt: new Date().toISOString() });
   };
 
   return (
@@ -147,7 +177,9 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
             Tap the map at each corner of the property to trace it, and tap a corner again to take it
             off. The green shape is the lot. The dashed circle is what a phone can actually watch in
             the background: crossing it is what wakes the app, and the shape is what the app then
-            checks, so the circle is always a little wider than the lot itself.
+            checks, so the circle is always a little wider than the lot itself. Switch to
+            "The building" to trace the showroom in sand: a FlyBy from a phone standing outside it
+            offers "out on the lot" first. Optional, and nothing is guessed without it.
           </p>
         </div>
       </div>
@@ -155,13 +187,19 @@ export default function FenceEditor({ store, fence, onSave, onCancel }) {
       <div className="fence-map" ref={holder} />
 
       <div className="fence-bar">
+        <div className="fence-mode" role="group" aria-label="Which outline a tap draws">
+          <button className={"btn secondary" + (mode === "lot" ? " on" : "")} onClick={() => setMode("lot")}>The lot</button>
+          <button className={"btn secondary" + (mode === "building" ? " on" : "")} onClick={() => setMode("building")}>The building</button>
+        </div>
         <button className="btn secondary" onClick={useMyLocation} disabled={locating}>
           {locating ? "Finding you…" : "Go to my location"}
         </button>
-        <button className="btn secondary" disabled={!ring.length} onClick={() => setRing((r) => r.slice(0, -1))}>
+        <button className="btn secondary" disabled={mode === "building" ? !bring.length : !ring.length}
+          onClick={() => (mode === "building" ? setBring((r) => r.slice(0, -1)) : setRing((r) => r.slice(0, -1)))}>
           Undo last corner
         </button>
-        <button className="btn secondary" disabled={!ring.length} onClick={() => setRing([])}>Start again</button>
+        <button className="btn secondary" disabled={mode === "building" ? !bring.length : !ring.length}
+          onClick={() => (mode === "building" ? setBring([]) : setRing([]))}>Start again</button>
         <span className="fence-count">
           {ring.length === 0 ? "No corners yet"
             : ring.length < 3 ? `${ring.length} corner${ring.length === 1 ? "" : "s"}, three at least`

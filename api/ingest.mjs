@@ -239,6 +239,7 @@ async function refreshBoardRow(storeId, sdata) {
 /* ---------- the merge: a faithful port of the app's applyEntries ---------- */
 function applyToStore(data, entries, sourceLabel) {
   const month = ymET(); const day = todayET();
+  const archiveDue = [];   // activitySnaps day keys old enough for the cold store
   const next = JSON.parse(JSON.stringify(data || {}));
   next.roster = next.roster || [];
   next.months = next.months || {};
@@ -418,17 +419,20 @@ function applyToStore(data, entries, sourceLabel) {
       const daySnaps = (next.activitySnaps[actDay] || []).filter((x) => x.t !== nowISO);
       daySnaps.push({ t: nowISO, rows: snapRows });
       next.activitySnaps[actDay] = daySnaps.slice(-16);
-      /* And the days themselves are pruned. Sixteen intraday copies of every
-         person's counters, kept for every day forever, is the other quiet
-         weight in the hot row. Three weeks are kept because the hourly coaching
-         view refuses to draw from fewer than fourteen days (HOURLY_MIN_DAYS)
-         and needs headroom over that; everything older can only be read by
-         nothing. */
+      /* And the days themselves leave the hot row after three weeks -- but they
+         are ARCHIVED, not deleted. The intraday deltas are the only record of
+         WHEN in the day the work happened, and Jorge wants the whole history
+         kept: this is meant to grow into a performance database. So each pruned
+         day is folded into a cold per-month key (lpc:hourly:<store>:<month>)
+         that nothing on the hot path ever downloads; the hot row keeps three
+         weeks because the hourly coaching view refuses to draw from fewer than
+         fourteen days (HOURLY_MIN_DAYS) and needs headroom over that. */
       const keepFrom = new Date(new Date(actDay + "T12:00").getTime() - 21 * 86400000)
         .toISOString().slice(0, 10);
-      for (const k of Object.keys(next.activitySnaps)) {
-        if (k < keepFrom) delete next.activitySnaps[k];
-      }
+      /* This function is synchronous and knows no store id, so it only NAMES
+         the days that are due to leave; the caller archives them and deletes
+         only what the archive confirmed holding. Nothing is dropped here. */
+      archiveDue.push(...Object.keys(next.activitySnaps).filter((k) => k < keepFrom));
     }
 
     for (const [key, rec] of Object.entries(parsed)) {
@@ -477,7 +481,7 @@ function applyToStore(data, entries, sourceLabel) {
     }
     results.push({ file: fileName, type, day: type === "activity" ? actDay : day, count, skipped, held: heldCount });
   }
-  return { next, results };
+  return { next, results, archiveDue };
 }
 
 /* ---------- routing helpers ---------- */
@@ -726,10 +730,10 @@ export default async function handler(req, res) {
       }
       // Apply inside the swap, so a retry re-applies to whatever the row now holds
       // rather than replaying against the copy we first read.
-      let next = null, lastResults = [];
+      let next = null, lastResults = [], lastArchiveDue = [];
       const swap = await sbSwap(key, (cur) => {
         const out = applyToStore(cur, mine, "Auto-import (email)");
-        next = out.next; lastResults = out.results;
+        next = out.next; lastResults = out.results; lastArchiveDue = out.archiveDue;
         return out.next;
       });
       if (!swap.ok) {
@@ -739,6 +743,38 @@ export default async function handler(req, res) {
         continue;
       }
       const results = lastResults;
+
+      /* ---- the cold store ----
+         Intraday activity older than three weeks moves out of the hot document
+         into a per-month key nothing on the hot path ever downloads. Archived
+         first, deleted second: a day leaves the document only once the archive
+         write came back ok, so a failed write just means the same day is tried
+         again on tomorrow's import. This is the "keep everything" answer to the
+         egress bill -- the history all survives, it just stops riding along on
+         every page load. */
+      if (lastArchiveDue && lastArchiveDue.length) {
+        const byMonth = {};
+        for (const k of lastArchiveDue) (byMonth[k.slice(0, 7)] = byMonth[k.slice(0, 7)] || []).push(k);
+        const held = [];
+        for (const [mo, ks] of Object.entries(byMonth)) {
+          const coldKey = `lpc:hourly:${st.id}:${mo}`;
+          try {
+            const cold = (await sbGet(coldKey)) || { days: {} };
+            cold.days = cold.days || {};
+            for (const k of ks) if (!cold.days[k] && next.activitySnaps && next.activitySnaps[k]) cold.days[k] = next.activitySnaps[k];
+            await sbPut(coldKey, cold);
+            held.push(...ks);
+          } catch (e) { console.error("ingest: hourly archive failed", coldKey, String(e.message || e)); }
+        }
+        if (held.length) {
+          const trim = await sbSwap(key, (curDoc) => {
+            if (!curDoc || !curDoc.activitySnaps) return curDoc;
+            for (const k of held) delete curDoc.activitySnaps[k];
+            return curDoc;
+          });
+          if (!trim.ok) console.error("ingest: archive trim failed", st.id, trim.why);
+        }
+      }
 
       // The day rows the import just touched, each written on its own. A failure here
       // is worth reporting but not worth failing the import: the same data is in the
