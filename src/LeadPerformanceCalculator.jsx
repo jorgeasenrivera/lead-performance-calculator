@@ -2181,14 +2181,27 @@ export default function LeadPerformanceCalculator() {
       root.classList.add("sage-assemble");
       undo = radialAssemble();
       root.classList.remove("refresh-hold");
+      /* The beat. The sign-in landing has the flash of the jump to announce it;
+         a refresh has nothing, and a flight with no impact reads as cards
+         drifting in. One bloom out of the same centre the parts fly from. */
+      try {
+        const flash = document.createElement("div");
+        flash.className = "refresh-flash";
+        document.body.appendChild(flash);
+        setTimeout(() => flash.remove(), 750);
+      } catch (e) {}
       doneT = setTimeout(() => { undo(); undo = () => {}; clear(); }, 1500);
     };
     const wait = () => {
-      /* The session lands before the store's data does, so the first thing on
-         screen is the loading view. Fly when the real dashboard is in the DOM;
-         if it never shows inside three seconds, let the page simply appear. */
+      /* The session lands long before the store's data does on a real network,
+         so the first thing on screen is the loading view, which has none of the
+         flying parts in it -- holding through it costs nothing to look at. The
+         old three-second give-up was shorter than a real cold load, which is
+         why the arrival played in the harness and never at the desk: the hold
+         cleared while the spinner was still up and the dashboard then walked
+         on plain. Wait as long as the load takes, within reason. */
       if (document.querySelector(".hero, .card")) { fly(2); return; }
-      if (++tries > 180) { clear(); return; }
+      if (++tries > 1800) { clear(); return; }
       raf = requestAnimationFrame(wait);
     };
     wait();
@@ -23016,24 +23029,31 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 </div>
                 <BloopWin cls="dn s2-pacewin">
                   <div className="bw-title">The month, against the ask</div>
-                  <div className="bw-big">{fmtNum(totalUnits)} <small>of {fmtNum(storePace.goal.bar)} · {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}</small></div>
-                  {!storePace.tooEarly && (
-                    <div className="bw-sub">{storePace.aheadBy >= 0
-                      ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
-                      : `${fmtNum(Math.round(-storePace.aheadBy * 10) / 10)} behind where today should be`}</div>
-                  )}
-                  {/* The 85% objective, spelled out on its own line. Some managers
-                      are paid on clearing 85% of the goal, and whether that number
-                      is still in reach matters to them more than the headline ask.
-                      Skipped when the ask IS 85%, because then the line above
-                      already answers it. */}
-                  {!storePace.tooEarly && storePace.goal.pct !== 85 && (() => {
-                    const b85 = Math.round(storePace.goal.units * 0.85 * 10) / 10;
+                  {/* The 85% OBJECTIVE is the headline here, not the month total:
+                      the hero card already says the total, and a popup that
+                      restates the card teaches people not to open it. Some
+                      managers are paid on clearing 85% of the goal, so the number
+                      they can still be paid on is the one printed big. Rounded UP
+                      on purpose: 85% of 282 is 239.7, and a manager who delivers
+                      239 has not cleared it, so the honest print is 240. */}
+                  {(() => {
+                    const b85 = Math.ceil(storePace.goal.units * 0.85);
                     const short = Math.round((b85 - totalUnits) * 10) / 10;
-                    if (short <= 0) return <div className="bw-sub" style={{ color: "#1E8A4C" }}>85% objective ({fmtNum(b85)}) already cleared</div>;
                     const need = storePace.daysLeft > 0 ? Math.ceil((short / storePace.daysLeft) * 10) / 10 : null;
-                    const lands = storePace.projected >= b85;
-                    return <div className="bw-sub">85% objective is {fmtNum(b85)} · {fmtNum(short)} to go{need != null ? ` · ${fmtNum(need)} a day from here` : ""}{lands ? " · current pace gets there" : " · current pace falls short"}</div>;
+                    const lands = !storePace.tooEarly && storePace.projected >= b85;
+                    return (
+                      <>
+                        <div className="bw-big">{fmtNum(b85)} <small>the 85% objective · 85% of {fmtNum(storePace.goal.units)}</small></div>
+                        {!storePace.tooEarly && (
+                          <div className="bw-sub">{storePace.aheadBy >= 0
+                            ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
+                            : `${fmtNum(Math.round(-storePace.aheadBy * 10) / 10)} behind where today should be`}</div>
+                        )}
+                        {short <= 0
+                          ? <div className="bw-sub" style={{ color: "#1E8A4C" }}>Cleared, {fmtNum(Math.round(-short * 10) / 10)} past it</div>
+                          : <div className="bw-sub">{fmtNum(short)} to go{need != null ? ` · ${fmtNum(need)} a day from here` : ""}{storePace.tooEarly ? "" : lands ? " · current pace gets there" : " · current pace falls short"}</div>}
+                      </>
+                    );
                   })()}
                   <div className="bw-desc">{statedM
                     ? <>DriveCentric's own count, filed {new Date(statedM.at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. The people's rows add to <b>{fmtNum(rosterUnits)}</b> because shared and split deals credit more than one name.</>
@@ -29391,6 +29411,14 @@ const SAGE_CSS = `
       /* A page reload holds every flying part invisible until the mount is done
          and the radial flight begins; each part's own animation then takes over. */
       .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip) { opacity:0; }
+      .refresh-flash { position:fixed; inset:0; z-index:80; pointer-events:none;
+        background:radial-gradient(circle at 50% 46%, rgba(255,255,255,.95), rgba(169,196,172,.35) 26%, transparent 46%);
+        animation:refreshFlash .62s cubic-bezier(.2,.7,.3,1) both; }
+      @keyframes refreshFlash {
+        0%   { opacity:0; transform:scale(.18); }
+        16%  { opacity:1; }
+        100% { opacity:0; transform:scale(2.4); }
+      }
       /* The whole page takes the hit: one breath out from the centre. */
       .sage-assemble .lpc { animation: saBreath .34s cubic-bezier(.2,.6,.3,1) .12s both;
         transform-origin: var(--jx, 50%) var(--jy, 46%); }
