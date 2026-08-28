@@ -1165,6 +1165,18 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
   }
 }
 
+/* Renders its children one frame after mounting. The associate board is the
+   heaviest part of the dashboard tree -- twenty-odd rows of dials and bars --
+   and mounting it in the same frame as everything else is most of what made
+   the first paint after a refresh one long frame. Takes a FUNCTION so the
+   subtree is not even built until the frame it mounts in. Reveal-on-scroll
+   picks the cards up whenever they appear, so nothing arrives invisible. */
+function Late({ children }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => { const r = requestAnimationFrame(() => setOn(true)); return () => cancelAnimationFrame(r); }, []);
+  return on ? children() : null;
+}
+
 /* Fades sections in as they come into view. One-shot per element: once it has
    arrived it is left alone, so scrolling back up never re-triggers anything. */
 function useReveal() {
@@ -2139,15 +2151,48 @@ export default function LeadPerformanceCalculator() {
     setIntroPlaying(true);
   };
   const sawSession = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!session || sawSession.current) return;
     sawSession.current = true;
     /* Unless the arrival is already doing this. See jumpOwnsEntrance: two
        entrances at once is what made the landing segmented. */
     if (jumpOwnsEntrance) return;
-    setEntering(true);
-    const t = setTimeout(() => setEntering(false), 1100);
-    return () => clearTimeout(t);
+    /* A refresh restores the session with nobody pressing sign-in, so the jump
+       never plays and the app used to fall back to the old top/bottom entrance
+       (.is-entering) -- which started on the very frame React mounted the whole
+       tree, so its first third was eaten by the mount and it read as choppy,
+       and it never came from the centre the way the landing does. Same radial
+       arrival as the jump now: the page is HELD invisible through the expensive
+       mount frames, and the flight starts from the centre of the screen only
+       once two clean frames have painted. A layout effect, not an effect,
+       because the hold has to be on before the first paint. */
+    let reduce = false;
+    try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (reduce) return;
+    const root = document.documentElement;
+    root.classList.add("refresh-hold");
+    let undo = () => {}, raf = 0, doneT = 0, tries = 0;
+    const clear = () => root.classList.remove("sage-assemble", "refresh-hold");
+    const fly = (n) => {
+      /* Two spare frames between "the dashboard exists" and "it flies": the
+         board mounts one frame late (see Late) and the flight must not start
+         mid-mount, or its first beats drop and it reads as the old chop. */
+      if (n > 0) { raf = requestAnimationFrame(() => fly(n - 1)); return; }
+      root.classList.add("sage-assemble");
+      undo = radialAssemble();
+      root.classList.remove("refresh-hold");
+      doneT = setTimeout(() => { undo(); undo = () => {}; clear(); }, 1500);
+    };
+    const wait = () => {
+      /* The session lands before the store's data does, so the first thing on
+         screen is the loading view. Fly when the real dashboard is in the DOM;
+         if it never shows inside three seconds, let the page simply appear. */
+      if (document.querySelector(".hero, .card")) { fly(2); return; }
+      if (++tries > 180) { clear(); return; }
+      raf = requestAnimationFrame(wait);
+    };
+    wait();
+    return () => { cancelAnimationFrame(raf); clearTimeout(doneT); undo(); clear(); };
   }, [session]);
   // The cinematic intro plays once per calendar day per user. null = not decided yet.
   const [introDone, setIntroDone] = useState(false);
@@ -17606,7 +17651,8 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
           <button className="s2-showall" onClick={onClearFilter}>Show everyone</button>
         </div>
       )}
-      {sections.map(({ role, people, counts }) => (
+      {/* One frame late, so the rest of the page paints first. See Late. */}
+      <Late>{() => sections.map(({ role, people, counts }) => (
         <section key={role.id} className="da-tbl lite s2-rolecard" style={{ "--role": role.color }}>
           {/* The section header carries the bucket chips: the counts belong to
               the people underneath them, and a chip is where the eye already is
@@ -17663,7 +17709,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
             </button>
           )}
         </section>
-      ))}
+      ))}</Late>
       {unassigned.length > 0 && (
         <section className="da-tbl lite s2-rolecard unassigned" style={{ "--role": "#8E8E93" }}>
           <div className="warmhead">
@@ -22971,14 +23017,27 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 <BloopWin cls="dn s2-pacewin">
                   <div className="bw-title">The month, against the ask</div>
                   <div className="bw-big">{fmtNum(totalUnits)} <small>of {fmtNum(storePace.goal.bar)} · {storePace.goal.pct}% of {fmtNum(storePace.goal.units)}</small></div>
-                  <div className="bw-desc">{statedM
-                    ? <>DriveCentric's own count, filed {new Date(statedM.at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. The people's rows add to <b>{fmtNum(rosterUnits)}</b> because shared and split deals credit more than one name.</>
-                    : <>Added up from the people's rows. Shared and split deals credit more than one name, so this runs above DriveCentric's own count until the store roll-up is on file.</>}</div>
                   {!storePace.tooEarly && (
                     <div className="bw-sub">{storePace.aheadBy >= 0
                       ? `${fmtNum(Math.round(storePace.aheadBy * 10) / 10)} ahead of where today should be`
                       : `${fmtNum(Math.round(-storePace.aheadBy * 10) / 10)} behind where today should be`}</div>
                   )}
+                  {/* The 85% objective, spelled out on its own line. Some managers
+                      are paid on clearing 85% of the goal, and whether that number
+                      is still in reach matters to them more than the headline ask.
+                      Skipped when the ask IS 85%, because then the line above
+                      already answers it. */}
+                  {!storePace.tooEarly && storePace.goal.pct !== 85 && (() => {
+                    const b85 = Math.round(storePace.goal.units * 0.85 * 10) / 10;
+                    const short = Math.round((b85 - totalUnits) * 10) / 10;
+                    if (short <= 0) return <div className="bw-sub" style={{ color: "#1E8A4C" }}>85% objective ({fmtNum(b85)}) already cleared</div>;
+                    const need = storePace.daysLeft > 0 ? Math.ceil((short / storePace.daysLeft) * 10) / 10 : null;
+                    const lands = storePace.projected >= b85;
+                    return <div className="bw-sub">85% objective is {fmtNum(b85)} · {fmtNum(short)} to go{need != null ? ` · ${fmtNum(need)} a day from here` : ""}{lands ? " · current pace gets there" : " · current pace falls short"}</div>;
+                  })()}
+                  <div className="bw-desc">{statedM
+                    ? <>DriveCentric's own count, filed {new Date(statedM.at || Date.now()).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. The people's rows add to <b>{fmtNum(rosterUnits)}</b> because shared and split deals credit more than one name.</>
+                    : <>Added up from the people's rows. Shared and split deals credit more than one name, so this runs above DriveCentric's own count until the store roll-up is on file.</>}</div>
                   {vehicleSplit.seen && vehicleSplit.known > 0 && !storePace.tooEarly && (
                     <div className="bw-desc">By stock, at today's mix: new pace <b>{Math.round(storePace.projected * vehicleSplit.newPct)}</b> · used pace <b>{Math.round(storePace.projected * vehicleSplit.usedPct)}</b></div>
                   )}
@@ -29329,6 +29388,9 @@ const SAGE_CSS = `
                animation-timing-function: cubic-bezier(.3,0,.4,1); }
         100% { opacity:1; transform: none; }
       }
+      /* A page reload holds every flying part invisible until the mount is done
+         and the radial flight begins; each part's own animation then takes over. */
+      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip) { opacity:0; }
       /* The whole page takes the hit: one breath out from the centre. */
       .sage-assemble .lpc { animation: saBreath .34s cubic-bezier(.2,.6,.3,1) .12s both;
         transform-origin: var(--jx, 50%) var(--jy, 46%); }
