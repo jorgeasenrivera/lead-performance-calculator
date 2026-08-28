@@ -663,6 +663,12 @@ function looksAbsent(data, aId, d) {
 }
 
 function isOff(data, aId, d) {
+  /* A manager's own Mark off is authoritative. The workedAnyway override below
+     exists for the UPLOADED schedule -- somebody listed off who plainly came in
+     -- but it was also overriding the button: one logged call, or a sign-in to
+     the floor, and Mark off did nothing at all, silently. An explicit mark made
+     by a person standing there beats evidence collected before they made it. */
+  if (data.forcedOff?.[aId]?.includes(d)) return true;
   if (!(data.daysOff?.[aId] && data.daysOff[aId].includes(d))) return false;
   return !workedAnyway(data, aId, d);
 }
@@ -13701,10 +13707,17 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
     const next = JSON.parse(JSON.stringify(data));
     next.daysOff = next.daysOff || {};
     const list = new Set(next.daysOff[a.id] || []);
-    if (list.has(day)) list.delete(day); else list.add(day);
+    const turningOff = !list.has(day) || !isOff(data, a.id, day);
+    if (turningOff) list.add(day); else list.delete(day);
     next.daysOff[a.id] = [...list].sort();
+    /* The explicit mark, which nothing second-guesses -- see isOff. Days worked
+       for the month reads isOff day by day, so it follows this on its own. */
+    next.forcedOff = next.forcedOff || {};
+    const forced = new Set(next.forcedOff[a.id] || []);
+    if (turningOff) forced.add(day); else forced.delete(day);
+    next.forcedOff[a.id] = [...forced].sort();
     next.daysOffAt = { ...(next.daysOffAt || {}), [a.id]: new Date().toISOString() };
-    onChange(next, { action: list.has(day) ? "Marked day off" : "Cleared day off", detail: `${a.name} · ${day}` });
+    onChange(next, { action: turningOff ? "Marked day off" : "Cleared day off", detail: `${a.name} · ${day}` });
   };
 
   const q = norm(query);

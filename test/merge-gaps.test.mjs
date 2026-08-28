@@ -129,3 +129,21 @@ test("repeatFlags is dropped rather than merged, from either side", () => {
   const out = merge({ repeatFlags: { keep: 1 } }, { repeatFlags: { other: 2 } });
   assert.ok(!("repeatFlags" in out), "still there: " + JSON.stringify(out.repeatFlags));
 });
+
+/* ---- the explicit Mark off travels with the schedule ---- */
+test("a newer Mark off from another tab arrives with its schedule", () => {
+  const server = { daysOff: { a1: ["2026-08-28"] }, forcedOff: { a1: ["2026-08-28"] }, daysOffAt: { a1: T(5) } };
+  const mine   = { daysOff: { a1: [] }, daysOffAt: { a1: T(2) } };
+  const out = merge(mine, server);
+  assert.deepEqual(out.daysOff.a1, ["2026-08-28"]);
+  assert.deepEqual(out.forcedOff.a1, ["2026-08-28"], "the explicit mark was dropped in the merge");
+});
+
+test("clearing a Mark off wins over a tab that still holds it", () => {
+  const server = { daysOff: { a1: [] }, daysOffAt: { a1: T(6) } };
+  const mine   = { daysOff: { a1: ["2026-08-28"] }, forcedOff: { a1: ["2026-08-28"] }, daysOffAt: { a1: T(3) } };
+  const out = merge(mine, server);
+  assert.deepEqual(out.daysOff.a1, []);
+  assert.ok(!(out.forcedOff && out.forcedOff.a1 && out.forcedOff.a1.length),
+    "the cleared mark came back: " + JSON.stringify(out.forcedOff));
+});
