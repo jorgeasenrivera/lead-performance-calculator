@@ -272,8 +272,15 @@ function applyToStore(data, entries, sourceLabel) {
   const snapT = new Date().toISOString();
   const alreadyToday = entries.every((e) => M.imports?.[day]?.[e.type]);
   if (!alreadyToday) {
+    /* Six, not forty. Every snapshot carries a near-complete copy of the store,
+       and they live INSIDE the store document, so forty of them made the hot
+       row roughly forty times its own weight -- and that row is downloaded on
+       every app load and once per store on the admin overview. That is what ate
+       the database's egress allowance. Six covers most of a week of daily
+       imports, which is as far back as anyone has ever actually restored; the
+       undo screen already says the right thing when a point has aged out. */
     next.snapshots = [{ t: snapT, by: "Auto-import", reason: "Before email import", data: snapCopy },
-      ...(next.snapshots || [])].slice(0, 40);
+      ...(next.snapshots || [])].slice(0, 6);
   }
 
   const nowISO = new Date().toISOString();
@@ -411,6 +418,17 @@ function applyToStore(data, entries, sourceLabel) {
       const daySnaps = (next.activitySnaps[actDay] || []).filter((x) => x.t !== nowISO);
       daySnaps.push({ t: nowISO, rows: snapRows });
       next.activitySnaps[actDay] = daySnaps.slice(-16);
+      /* And the days themselves are pruned. Sixteen intraday copies of every
+         person's counters, kept for every day forever, is the other quiet
+         weight in the hot row. Three weeks are kept because the hourly coaching
+         view refuses to draw from fewer than fourteen days (HOURLY_MIN_DAYS)
+         and needs headroom over that; everything older can only be read by
+         nothing. */
+      const keepFrom = new Date(new Date(actDay + "T12:00").getTime() - 21 * 86400000)
+        .toISOString().slice(0, 10);
+      for (const k of Object.keys(next.activitySnaps)) {
+        if (k < keepFrom) delete next.activitySnaps[k];
+      }
     }
 
     for (const [key, rec] of Object.entries(parsed)) {
