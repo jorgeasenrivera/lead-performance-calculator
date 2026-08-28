@@ -210,3 +210,36 @@ test("a split deal's half unit survives the read", () => {
   const parsed = P.parseDeliverySummaryRows(got.rows);
   assert.equal(parsed["alex demo"].internetUnits, 20.5);
 });
+
+/* ---- the store roll-up: the one figure that counts a delivery once ---- */
+
+const rollupRows = [
+  ["Delivery Summary", "8/1/2026 - 8/27/2026"],
+  ["Store", "Opportunities", "Net Opportunities", "Sold", "Sold %", "Deals Delivered", "Delivered %"],
+  ["Holler Honda", "1620", "1549", "257", "16.6%", "254", "16.4%"],
+];
+
+test("the store roll-up reads, and is detected as its own report", () => {
+  const got = P.parseStoreRollup(rollupRows);
+  assert.ok(got, "the roll-up should read");
+  assert.equal(got.storeName, "Holler Honda");
+  assert.equal(got.deals, 254);
+  assert.equal(got.sold, 257);
+  assert.equal(got.opps, 1549);
+  assert.equal(P.detectReportType(rollupRows, "StandardDelivery_Summary_20260827.csv"), "store-rollup");
+});
+
+test("the per-person list is never read as the store roll-up", () => {
+  const rows = [
+    ["Delivery Summary", "8/1/2026 - 8/27/2026"],
+    ["User", "Store", "Opportunities", "Net Opportunities", "Sold", "Sold %",
+     "Units Delivered", "Deals Delivered", "Delivered %"],
+    ["Alex Demo", "Holler Honda", "60", "58", "9", "15%", "8.5", "9", "15%"],
+  ];
+  assert.equal(P.parseStoreRollup(rows), null);
+  assert.notEqual(P.detectReportType(rows, "StandardDelivery_Summary_20260827_1.csv"), "store-rollup");
+});
+
+test("a file with no Deals Delivered column is not a roll-up", () => {
+  assert.equal(P.parseStoreRollup([["Store", "Sold"], ["Holler Honda", "257"]]), null);
+});

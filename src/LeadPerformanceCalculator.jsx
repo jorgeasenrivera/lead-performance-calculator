@@ -13,7 +13,7 @@ import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED, 
    found in production. See api/_report-parsers.mjs. */
 import {
   norm, toNum,
-  detectReportType, parseReport, parseDeliverySummaryRows,
+  detectReportType, parseReport, parseDeliverySummaryRows, parseStoreRollup,
   mapDailyActivityGrid, mapDeliverySummaryGrid, reportBelongsElsewhere,
 } from "../api/_report-parsers.mjs";
 import {
@@ -167,6 +167,7 @@ const REPORTS = {
 // are not in it.
 const reportLabel = (t) =>
   (t === "delivery-summary" ? "Delivery Summary" : null) ||
+  (t === "store-rollup" ? "Store roll-up" : null) ||
   REPORTS[t]?.label ||
   LEADERBOARD_REPORTS[t]?.label ||
   (t === "activity" ? "Daily Activity" : t);
@@ -2792,6 +2793,28 @@ export default function LeadPerformanceCalculator() {
     const canon = (k) => aliases[k] || k; // a renamed person folds into their existing record
 
     for (const { rows, type, fileName } of entries) {
+      /* ---- The store's own line, which is not a person and never becomes one ----
+         The Delivery Summary exports twice: one row per user, and one row for the
+         store. Only the store row counts a delivery once -- the people rows credit
+         a car to the salesperson and again to whoever set the appointment -- so it
+         is filed beside the month's people rather than among them. Nothing about
+         the roster changes; this is what the board gets checked against. */
+      if (type === "store-rollup") {
+        const roll = parseStoreRollup(rows);
+        if (!roll) { log.push({ ok: false, msg: `${fileName} looked like a store roll-up but its one row could not be read, so it was skipped.` }); continue; }
+        M.stated = {
+          deliveries: roll.deals, sold: roll.sold, opps: roll.opps,
+          storeName: roll.storeName, day, at: new Date().toISOString(),
+          file: fileName, source: "roll-up",
+        };
+        M.imports[day]["store-rollup"] = true;
+        log.push({ ok: true, msg: `${fileName} → ${roll.deals} deliveries at ${roll.storeName}. Filed as the store's own count; no person was changed.` });
+        importedFiles.push("Store roll-up (1)");
+        next.importLog = [{ id: uid(), t: new Date().toISOString(), type, label: "Store roll-up",
+          file: fileName, count: 1, skipped: 0, by: session?.name || "Import", snapT, day: null },
+          ...(next.importLog || [])].slice(0, 200);
+        continue;
+      }
       // The PDF Delivery Summary is one grid holding all four channels, so it has
       // its own reader. Everything else is the familiar column-per-metric export.
       const raw = type === "delivery-summary" ? parseDeliverySummaryRows(rows) : parseReport(rows, type);
@@ -23165,6 +23188,21 @@ function CrossCheck({ store, data, config, onClose }) {
   /* The store roll-up is a separate export from the per-person list, so it is
      held on its own and survives reading the other one. */
   const [roll, setRoll] = useState(null);
+  /* What the scheduled report already said. The store roll-up arrives by email
+     every morning and is filed with the month, so the figure worth checking
+     against is usually here before anybody opens this screen and there is
+     nothing to drop in at all. A file dropped by hand still wins: somebody
+     standing here with today's export in their hand has the newer number. */
+  const filed = useMemo(() => {
+    const st = data.months?.[ym()]?.stated;
+    if (!st || st.deliveries == null) return null;
+    return { store: st.storeName || store.name, deals: st.deliveries,
+      sold: st.sold ?? null, opps: st.opps ?? null, fileName: st.file || null,
+      day: st.day || null, source: st.source || null, emailed: true };
+  }, [data, store]);
+  const shownRoll = roll || filed;
+  const dayWord = (d) => new Date(d + "T12:00").toLocaleDateString("en-US",
+    { weekday: "long", month: "short", day: "numeric" });
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -23276,7 +23314,7 @@ function CrossCheck({ store, data, config, onClose }) {
       const halfHolders = rows.filter((r) => r.fu != null && Math.abs(r.fu - Math.round(r.fu)) > 0.001);
       setRes({
         stated,
-        roll,
+        roll: roll || filed,
         halfHolders,
         kind: /\.pdf$/i.test(file.name) ? "pdf" : "csv",
         fileTotal: +sum(rows, (r) => r.fu).toFixed(2),
@@ -23323,14 +23361,18 @@ function CrossCheck({ store, data, config, onClose }) {
                   away: nothing is imported.
                 </div>
               </label>
-              {roll && (
+              {shownRoll && (
                 <div className="xc-roll">
-                  <div className="xc-cap">The store roll-up says</div>
+                  <div className="xc-cap">{shownRoll.emailed
+                    ? (shownRoll.source === "roll-up" ? "The store roll-up on file says" : "The Delivery Summary on file says")
+                    : "The store roll-up says"}</div>
                   <div className="xc-rollrow">
-                    <span className="xc-n">{roll.deals}</span>
-                    <span className="xc-note">deliveries at {roll.store}{roll.sold != null ? ` \u00b7 ${roll.sold} sold` : ""}{roll.opps != null ? ` \u00b7 ${roll.opps} opportunities` : ""}</span>
+                    <span className="xc-n">{shownRoll.deals}</span>
+                    <span className="xc-note">deliveries at {shownRoll.store}{shownRoll.sold != null ? ` \u00b7 ${shownRoll.sold} sold` : ""}{shownRoll.opps != null ? ` \u00b7 ${shownRoll.opps} opportunities` : ""}</span>
                   </div>
-                  <p className="xc-note">Now drop the per-person list and this sits next to what the board adds up to.</p>
+                  <p className="xc-note">{shownRoll.emailed && shownRoll.day
+                    ? `Read from the report filed ${dayWord(shownRoll.day)}. Drop the per-person list and this sits next to what the board adds up to.`
+                    : "Now drop the per-person list and this sits next to what the board adds up to."}</p>
                 </div>
               )}
               {err && <p className="sched-err">{err}</p>}
