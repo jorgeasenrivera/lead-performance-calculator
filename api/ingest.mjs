@@ -12,7 +12,7 @@ import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
    top of that file for what living as two copies cost. */
 import {
   norm, toNum, squashT,
-  detectReportType, parseReport, parseDeliverySummaryRows,
+  detectReportType, parseReport, parseDeliverySummaryRows, parseStoreRollup,
   mapDailyActivityGrid, mapDeliverySummaryGrid, matchStoreByName,
 } from "./_report-parsers.mjs";
 /* Where a store's figures live and which of them travel, shared with the app for
@@ -277,8 +277,38 @@ function applyToStore(data, entries, sourceLabel) {
   }
 
   const nowISO = new Date().toISOString();
-  for (const { rows, type, fileName, actDay: fileDay } of entries) {
+  for (const { rows, type, fileName, actDay: fileDay, rollup, stated } of entries) {
     const actDay = (fileDay && fileDay <= day) ? fileDay : day;
+    /* ---- The store's own line, which is not a person and never becomes one ----
+       Filed beside the month's people rather than among them, because it answers
+       a different question: the people rows say who sold what, and this says how
+       many cars the store delivered. Summing the people to get the second answer
+       counts the split deals and the appointment-setters twice, which is the gap
+       the cross-check screen exists to explain. */
+    if (type === "store-rollup") {
+      M.stated = {
+        deliveries: rollup.deals, sold: rollup.sold, opps: rollup.opps,
+        storeName: rollup.storeName, day, at: nowISO, file: fileName, source: "roll-up",
+      };
+      M.imports[day]["store-rollup"] = true;
+      next.importLog = [
+        { id: uid(), t: nowISO, type, label: type, file: fileName, count: 1, skipped: 0,
+          by: sourceLabel, snapT, day: null },
+        ...(next.importLog || []),
+      ].slice(0, 200);
+      results.push({ file: fileName, type, day, count: 1, skipped: 0, held: 0 });
+      continue;
+    }
+    /* The PDF grid prints the same totals above its people. It is second best to
+       the roll-up -- it counts F&I deliveries rather than deals -- so it fills the
+       figure in when no roll-up has landed this month and stands aside when one
+       has. */
+    if (stated && stated.total != null && M.stated?.source !== "roll-up") {
+      M.stated = {
+        deliveries: stated.total, units: stated.units, leads: stated.leads,
+        day, at: nowISO, file: fileName, source: "summary-grid",
+      };
+    }
     const raw = type === "delivery-summary"
       ? parseDeliverySummaryRows(rows)
       : parseReport(rows, type);
@@ -508,6 +538,23 @@ export default async function handler(req, res) {
       const text = Buffer.from(a.content).toString("utf8").replace(/^\ufeff/, "");
       const rows = Papa.parse(text, { skipEmptyLines: true }).data;
       let type = detectReportType(rows, a.filename || "");
+      /* The store roll-up carries no people at all, and it names its own store in
+         its one row, so it does not depend on the address the way the other CSVs
+         do. It is the store's own count of deliveries and it is filed as that. */
+      if (type === "store-rollup") {
+        const rollup = parseStoreRollup(rows);
+        const hit = matchStoreByName(cfg?.stores, rollup.storeName);
+        const st = hit ? hit.store : addressStore;
+        if (!st) {
+          const why = `store roll-up names "${rollup.storeName}", which matches no store, and this address names no store either`;
+          skippedFiles.push({ file: a.filename, why });
+          failures.push({ file: a.filename, why });
+          continue;
+        }
+        entries.push({ store: st, rows, type, fileName: a.filename || "email.csv",
+          actDay: null, rollup });
+        continue;
+      }
       if (type === "delivery" || (type && type.startsWith("delivery"))) {
         const ch = channelFrom(subject) || channelFrom(a.filename);
         if (!ch) { skippedFiles.push({ file: a.filename, why: "delivery report with no channel word in subject or filename" }); continue; }
@@ -558,7 +605,11 @@ export default async function handler(req, res) {
           entries.push({ store: hit.store, rows: mapped.rows, type: kind, fileName: a.filename || "email.pdf",
             actDay: kind === "activity"
               ? (activityDateFrom(a.filename) || activityDateFrom(subject))
-              : null });
+              : null,
+            /* The grid prints the store's own totals above the people. They used
+               to be read and thrown away; they are the one figure that counts a
+               delivery once, so they are filed alongside the people now. */
+            stated: kind === "delivery-summary" ? mapped.stated : null });
           const read = { file: a.filename, kind, store: mapped.storeName,
             matchedStore: hit.store.id, matchQuality: hit.quality,
             people: mapped.rows.length - 2, mapped: true,

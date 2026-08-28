@@ -33,10 +33,42 @@ const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 
 /* ---------------- CSV parsing ---------------- */
 
+/* ---- The store's own line of the Delivery Summary ----
+   The same report exports twice: one row per user, and one row for the STORE.
+   The store row has no "Units Delivered" column at all -- it counts deals -- and
+   it is the only figure in the pair that counts a delivery once. The people rows
+   credit a car to the salesperson AND to whoever set the appointment, so they sum
+   to half again as much as the store did. Reading only the people file and calling
+   the sum the store's month is how a store came to show 258.5 against DriveCentric's
+   254.
+
+   Returns null unless the file really is that shape, so it can be tried first
+   against every CSV without swallowing anything else. */
+function parseStoreRollup(rows) {
+  const hi = (rows || []).findIndex((r) => (r || []).some((c) => /^store$/i.test(String(c).trim())));
+  if (hi < 0) return null;
+  const head = rows[hi].map((c) => String(c).trim());
+  const dealAt = head.findIndex((c) => /^deals delivered$/i.test(c));
+  // A per-user file can also carry a Store column. The absence of a per-person
+  // column is what says this row is the store rather than somebody standing in it.
+  const hasUser = head.some((c) => /^(user|name|salesperson)$/i.test(c));
+  const r = rows[hi + 1];
+  if (dealAt < 0 || hasUser || !r) return null;
+  const at = (re) => { const j = head.findIndex((c) => re.test(c)); return j < 0 ? null : toNum(r[j]); };
+  const storeName = String(r[head.findIndex((c) => /^store$/i.test(c))] || "").trim();
+  const deals = toNum(r[dealAt]);
+  if (!storeName || deals == null) return null;
+  return { storeName, deals, sold: at(/^sold$/i), opps: at(/^net opportunities$/i) };
+}
+
 function detectReportType(rows, filename = "") {
   const h2 = (rows[1] || []).join("|").toLowerCase();
   const h1 = (rows[0] || []).join("|").toLowerCase();
   const fn = filename.toLowerCase();
+  // The store roll-up first, and it is safe there: it is recognised only by a
+  // Store column with a Deals Delivered column and NO per-person column, which
+  // no other export has.
+  if (parseStoreRollup(rows)) return "store-rollup";
   // ACTIVITY MUST BE CHECKED FIRST. The Daily Activity export also carries a
   // "Units Delivered" column, so testing for that first swallowed it as a delivery
   // summary and quietly wrote activity numbers into the wrong place. Only the
@@ -568,7 +600,7 @@ export function reportBelongsElsewhere(stores, parsedName, currentStoreId) {
 
 export {
   norm, toNum, squashT,
-  detectReportType, parseReport, parseDeliverySummaryRows,
+  detectReportType, parseReport, parseDeliverySummaryRows, parseStoreRollup,
   dedupeName, stripVocabWith, vocabCountWith,
   DA_VOCAB, mapDailyActivityGrid,
   DS_VOCAB, DS_SOURCES, DS_VEHICLE, mapDeliverySummaryGrid,
