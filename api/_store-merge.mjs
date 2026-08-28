@@ -240,6 +240,7 @@ export const FIELD_POLICY = {
   importLog:     { how: "unionById", why: "It is the evidence months and activity are judged by, so it must lose nothing." },
   daysOff:       { how: "perKeyNewest", why: "An empty schedule from an old tab used to wipe the month for everybody." },
   daysOffAt:     { how: "perKeyNewest", why: "The per-person stamp that made that possible." },
+  forcedOff:     { how: "perKeyNewest", why: "The manager's explicit Mark off, which nothing second-guesses. Rides the same per-person stamp as daysOff because the button writes both together." },
 
   /* ---- the seven that used to have no rule ----
      Each is a map or a list that one manager edits while another edits a
@@ -548,15 +549,25 @@ export function mergeAgainstServer(next, serverCopy) {
         {
           const mine = { ...(next.daysOff || {}) };
           const mineAt = { ...(next.daysOffAt || {}) };
+          const mineF = { ...(next.forcedOff || {}) };
           const srv = serverCopy.daysOff || {};
           const srvAt = serverCopy.daysOffAt || {};
-          for (const id of Object.keys(srv)) {
+          const srvF = serverCopy.forcedOff || {};
+          for (const id of Object.keys({ ...srv, ...srvF })) {
             const theirs = srvAt[id] || "";
             const ours = mineAt[id] || "";
-            if (!(id in mine) || theirs > ours) { mine[id] = srv[id]; mineAt[id] = theirs || ours; }
+            if (!(id in mine) || theirs > ours) {
+              if (id in srv) mine[id] = srv[id];
+              /* forcedOff travels with daysOff under the same stamp: the Mark off
+                 button writes both in one save, so whichever side's schedule wins
+                 for a person brings that side's explicit marks with it. */
+              if (id in srvF) mineF[id] = srvF[id]; else delete mineF[id];
+              mineAt[id] = theirs || ours;
+            }
           }
           next.daysOff = mine;
           next.daysOffAt = mineAt;
+          next.forcedOff = mineF;
         }
 
         /* ---- the seven that had no rule at all ----
