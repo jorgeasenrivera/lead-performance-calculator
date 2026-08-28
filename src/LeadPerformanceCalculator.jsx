@@ -18135,8 +18135,10 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
             opens the re-evaluate form below, which is the only part that
             genuinely needs a second line. */}
         {ev.status === "fail" && !grace && !incomplete && !restrictedNow && !readOnly && ev.atCap && !showRestrict && (
-          <button className="assoc-act" onClick={(e) => { e.stopPropagation(); setShowRestrict(true); }}>
-            Confirm removed from leads
+          <button className="assoc-act" aria-label="Confirm removed from leads"
+            title="They are off leads? Press to confirm it and set the re-check date"
+            onClick={(e) => { e.stopPropagation(); setShowRestrict(true); }}>
+            <PixIcon glyph="check" size={11} />
           </button>
         )}
         <span className="s2-rgo" aria-hidden="true">›</span>
@@ -33200,9 +33202,15 @@ const SAGE_CSS = `
       .warmhead .s2-fchip.on { outline:2px solid currentColor; outline-offset:1px; }
       /* the quiet strip under a row: the action, not a restatement */
       /* the confirm, in the row rather than under it */
-      .assoc-act { flex:0 1 auto; min-width:0; border:1px solid rgba(194,54,31,.42); background:transparent; color:#C13529;
-        border-radius:99px; padding:6px 13px; cursor:pointer; white-space:normal; text-align:center;
-        font:600 11px var(--font-display); }
+      /* One glyph, not a sentence. The verdict pill beside it already says
+         "Restrict leads"; spelling the action out again made the row's right
+         side read twice and, on a tight desk, run past the card edge -- every
+         child of this row is fixed-width on purpose, so the only honest fix is
+         an action that takes no width worth arguing over. The words live in the
+         tooltip and the aria label, and the form that opens says the rest. */
+      .assoc-act { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center;
+        width:28px; height:28px; padding:0; border-radius:50%;
+        border:1px solid rgba(194,54,31,.42); background:transparent; color:#C13529; cursor:pointer; }
       .assoc-act:hover { background:rgba(194,54,31,.08); }
       .s2-rowfoot { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
         padding:0 19px 11px 19px; font-size:10.5px; color:var(--ink-2); }
