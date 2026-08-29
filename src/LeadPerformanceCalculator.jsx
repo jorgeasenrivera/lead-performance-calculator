@@ -11673,9 +11673,10 @@ async function loadFloorDays(store, fromDate, toDate) {
    to meet the guest, part of the process; a T.O. is "send somebody now".
    ========================================================================= */
 const DEFAULT_FLOOR_PLAN = {
+  /* Neutral on purpose. Every floor is different: no "delivery tables", no
+     "new side" -- a store that wants those labels draws them. */
   zones: [
-    { t: "new car showroom", x: 3, y: 6, w: 46, h: 88 },
-    { t: "delivery tables", x: 53, y: 6, w: 44, h: 40 },
+    { t: "showroom", x: 3, y: 6, w: 46, h: 88 },
     { t: "offices", x: 53, y: 52, w: 44, h: 42 },
   ],
   tables: [
@@ -11685,15 +11686,19 @@ const DEFAULT_FLOOR_PLAN = {
     { n: "12", x: 56, y: 14 }, { n: "13", x: 68, y: 14 }, { n: "14", x: 80, y: 14 },
     { n: "O1", x: 58, y: 62 }, { n: "O2", x: 70, y: 62 }, { n: "O3", x: 82, y: 62 },
   ],
-  door: { x: 1.5, y: 44 },
+  doors: [{ x: 1.5, y: 44, main: 1 }],
 };
 /* The drawn plan is a store setting (it lives beside the fence); the default
-   above stands in until a store draws its own. */
+   above stands in until a store draws its own. Older plans stored one `door`;
+   they read as a doors list with that one door as the waiting door. */
 function floorPlanOf(config, storeId) {
   const st = ((config && config.stores) || []).find((x) => x.id === storeId);
-  return (st && st.floorPlan && Array.isArray(st.floorPlan.tables) && st.floorPlan.tables.length)
+  const plan = (st && st.floorPlan && Array.isArray(st.floorPlan.tables) && st.floorPlan.tables.length)
     ? st.floorPlan : DEFAULT_FLOOR_PLAN;
+  if (!plan.doors && plan.door) return { ...plan, doors: [{ ...plan.door, main: 1 }] };
+  return plan;
 }
+const mainDoorOf = (plan) => (plan.doors || []).find((d) => d.main) || (plan.doors || [])[0] || null;
 const ASSIST_NOTES = ["Bring appraisal keys", "Payment objection", "Trade number", "Guest is leaving"];
 const activeAssists = (row) => (((row && row.assists) || []).filter((a) => a && !a.doneAt));
 const assistAge = (a) => Math.max(0, Math.floor((Date.now() - new Date(a.t).getTime()) / 1000));
@@ -11720,9 +11725,14 @@ function PlanMap({ plan, cls = "", deco, onTap, children }) {
       {(plan.zones || []).map((z, i) => (
         <div key={i} className="fbp-zone" style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}>{z.t}</div>
       ))}
-      {plan.door && (
-        <span className="fbp-door" style={{ left: plan.door.x + "%", top: plan.door.y + "%" }}>DOOR</span>
-      )}
+      {(plan.doors || (plan.door ? [{ ...plan.door, main: 1 }] : [])).map((d, i) => (
+        <span key={"d" + i} className={"fbp-door" + (d.main ? " main" : "")}
+          style={{ left: d.x + "%", top: d.y + "%" }}>DOOR</span>
+      ))}
+      {(plan.cars || []).map((c, i) => (
+        <span key={"c" + i} className={"fbp-car" + (c.r90 ? " r90" : "")}
+          style={{ left: c.x + "%", top: c.y + "%" }} aria-hidden="true"><PixIcon glyph="car" size={22} /></span>
+      ))}
       {(plan.tables || []).map((t) => {
         const d = deco ? deco(t) : {};
         return (
@@ -12014,7 +12024,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
 
   /* the door dock: everyone in line, in up order, statuses worn as icons */
   const waiting = line.filter((p) => p.status !== "customer");
-  const doorAt = plan.door || { x: 1.5, y: 30 };
+  const doorAt = mainDoorOf(plan) || { x: 1.5, y: 30 };
 
   return (
     <div className={"fbc" + (disp ? " disp" : "")}>
@@ -13833,14 +13843,19 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
     ? store.floorPlan : DEFAULT_FLOOR_PLAN;
   const [tables, setTables] = useState(() => JSON.parse(JSON.stringify(base.tables)));
   const [zones, setZones] = useState(() => JSON.parse(JSON.stringify(base.zones && base.zones.length ? base.zones : DEFAULT_FLOOR_PLAN.zones)));
-  const [door, setDoor] = useState(() => (base.door ? { ...base.door } : null));
+  const [doors, setDoors] = useState(() => JSON.parse(JSON.stringify(
+    base.doors || (base.door ? [{ ...base.door, main: 1 }] : []))));
+  /* Cars on the showroom floor. Scenery with a wink: they block nothing in the
+     software, they just make the room read like the room -- and yes, you can
+     recreate this morning's showroom-blocked layout tile for tile. */
+  const [cars, setCars] = useState(() => JSON.parse(JSON.stringify(base.cars || [])));
   /* How much longer than wide the room is. 1 fits the card; anything more
      scrolls sideways, in the editor and on every screen that draws the plan. */
   const [stretch, setStretch] = useState(() => base.stretch || 1);
   /* One selection across every kind of thing on the plan:
      {k:"t", n} a table, {k:"z", i} a zone, {k:"door"} the door. */
   const [sel, setSel] = useState(null);
-  const [placing, setPlacing] = useState(false);   // next tap on the box drops the door
+  const [placing, setPlacing] = useState(null);    // "door" | "car": the next tap on the box drops one
   const boxRef = useRef(null);
   const dragRef = useRef(null);
 
@@ -13868,7 +13883,9 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
     } else if (d.k === "zr") {
       setZones((zs) => zs.map((z, i) => (i === d.i ? { ...z, w: +Math.max(10, Math.min(97 - z.x, x - z.x)).toFixed(1), h: +Math.max(8, Math.min(97 - z.y, y - z.y)).toFixed(1) } : z)));
     } else if (d.k === "door") {
-      setDoor({ x: +Math.max(0, Math.min(95, x - 2)).toFixed(1), y: +Math.max(0, Math.min(94, y - 2)).toFixed(1) });
+      setDoors((ds) => ds.map((dd, i) => (i === d.i ? { ...dd, x: +Math.max(0, Math.min(95, x - 2)).toFixed(1), y: +Math.max(0, Math.min(94, y - 2)).toFixed(1) } : dd)));
+    } else if (d.k === "car") {
+      setCars((cs) => cs.map((c, i) => (i === d.i ? { ...c, x: +Math.max(0, Math.min(95, x - 2)).toFixed(1), y: +Math.max(0, Math.min(92, y - 3)).toFixed(1) } : c)));
     }
   };
   const endDrag = (e, kind) => {
@@ -13883,11 +13900,16 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
        said what they meant, and their click bubbles up through here. */
     if (!placing) { if (e.target === boxRef.current) setSel(null); return; }
     const box = boxRef.current.getBoundingClientRect();
-    const x = ((e.clientX - box.left) / box.width) * 100;
-    const y = ((e.clientY - box.top) / box.height) * 100;
-    setDoor({ x: +Math.max(0, Math.min(95, x - 2)).toFixed(1), y: +Math.max(0, Math.min(94, y - 2)).toFixed(1) });
-    setPlacing(false);
-    setSel({ k: "door" });
+    const x = +Math.max(0, Math.min(95, ((e.clientX - box.left) / box.width) * 100 - 2)).toFixed(1);
+    const y = +Math.max(0, Math.min(94, ((e.clientY - box.top) / box.height) * 100 - 2)).toFixed(1);
+    if (placing === "car") {
+      setCars((cs) => [...cs, { x, y }]);
+      setSel({ k: "car", i: cars.length });
+    } else {
+      setDoors((ds) => [...ds, { x, y, ...(ds.length ? {} : { main: 1 }) }]);
+      setSel({ k: "door", i: doors.length });
+    }
+    setPlacing(null);
   };
 
   const selT = sel && sel.k === "t" ? tables.find((t) => t.n === sel.n) : null;
@@ -13914,7 +13936,8 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
   const save = () => {
     const next = JSON.parse(JSON.stringify(config));
     const st = next.stores.find((x) => x.id === storeId);
-    st.floorPlan = { zones, tables, ...(door ? { door } : {}), ...(stretch > 1 ? { stretch } : {}), updatedAt: new Date().toISOString() };
+    st.floorPlan = { zones, tables, ...(doors.length ? { doors } : {}), ...(cars.length ? { cars } : {}),
+      ...(stretch > 1 ? { stretch } : {}), updatedAt: new Date().toISOString() };
     onChange(next, { store: storeId, action: "Arranged the floor plan", detail: `${store.name}: ${tables.length} tables, ${zones.length} areas` });
     onClose();
   };
@@ -13944,12 +13967,20 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
             )}
           </div>
         ))}
-        {door && (
-          <span className={"fbp-door fpe-door" + (sel && sel.k === "door" ? " sel" : "")}
-            style={{ left: door.x + "%", top: door.y + "%" }}
-            onPointerDown={(e) => startDrag(e, { k: "door" })}
-            onPointerUp={(e) => endDrag(e, { k: "door" })}>DOOR</span>
-        )}
+        {doors.map((d, i) => (
+          <span key={"d" + i}
+            className={"fbp-door fpe-door" + (d.main ? " main" : "") + (sel && sel.k === "door" && sel.i === i ? " sel" : "")}
+            style={{ left: d.x + "%", top: d.y + "%" }}
+            onPointerDown={(e) => startDrag(e, { k: "door", i })}
+            onPointerUp={(e) => endDrag(e, { k: "door", i })}>{d.main ? "DOOR · WAIT" : "DOOR"}</span>
+        ))}
+        {cars.map((c, i) => (
+          <span key={"c" + i}
+            className={"fbp-car fpe-car" + (c.r90 ? " r90" : "") + (sel && sel.k === "car" && sel.i === i ? " sel" : "")}
+            style={{ left: c.x + "%", top: c.y + "%" }}
+            onPointerDown={(e) => startDrag(e, { k: "car", i })}
+            onPointerUp={(e) => endDrag(e, { k: "car", i })}><PixIcon glyph="car" size={22} /></span>
+        ))}
         {tables.map((t) => (
           <button key={t.n} type="button"
             className={"fbp-tbl fpe-tbl" + (t.r ? " round" : "") + (t.s === "s" ? " sz-s" : t.s === "l" ? " sz-l" : "") + (sel && sel.k === "t" && sel.n === t.n ? " sel" : "")}
@@ -13980,22 +14011,35 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
           </>
         ) : sel && sel.k === "door" ? (
           <>
-            <span className="hint">The door: where the up rotation stands. Drag it to the real entrance.</span>
-            <button className="btn secondary danger" onClick={() => { setDoor(null); setSel(null); }}>Remove the door</button>
+            {doors[sel.i] && doors[sel.i].main
+              ? <span className="hint">This is the waiting door: the up rotation stands here. The others are drawn for the room's shape.</span>
+              : <button className="btn secondary" onClick={() => setDoors((ds) => ds.map((d, i) => (i === sel.i ? { ...d, main: 1 } : (({ main, ...rest }) => rest)(d))))}>
+                  Make this the waiting door
+                </button>}
+            <button className="btn secondary danger" onClick={() => { setDoors((ds) => ds.filter((_, i) => i !== sel.i)); setSel(null); }}>Remove this door</button>
+          </>
+        ) : sel && sel.k === "car" ? (
+          <>
+            <button className="btn secondary" onClick={() => setCars((cs) => cs.map((c, i) => (i === sel.i ? { ...c, r90: c.r90 ? undefined : 1 } : c)))}>Turn it</button>
+            <span className="hint">Scenery. It blocks nothing but the view, exactly like the real one.</span>
+            <button className="btn secondary danger" onClick={() => { setCars((cs) => cs.filter((_, i) => i !== sel.i)); setSel(null); }}>Drive it out</button>
           </>
         ) : (
           <>
             <button className="btn secondary" onClick={() => addT(true)}>Add a table</button>
             <button className="btn secondary" onClick={() => addT(false)}>Add a desk or office</button>
             <button className="btn secondary" onClick={addZ}>Add an area</button>
-            <button className={"btn secondary" + (placing ? " on" : "")} onClick={(e) => { e.stopPropagation(); setPlacing(!placing); }}>
-              {door ? "Move the door" : "Place the door"}
+            <button className={"btn secondary" + (placing === "door" ? " on" : "")} onClick={(e) => { e.stopPropagation(); setPlacing(placing === "door" ? null : "door"); }}>
+              Add a door
+            </button>
+            <button className={"btn secondary" + (placing === "car" ? " on" : "")} onClick={(e) => { e.stopPropagation(); setPlacing(placing === "car" ? null : "car"); }}>
+              Park a car
             </button>
             <button className="btn secondary" title="A room longer than it is wide scrolls sideways on every screen."
               onClick={() => setStretch(stretch >= 3 ? 1 : stretch === 1 ? 1.5 : stretch === 1.5 ? 2 : 3)}>
               Room length ×{stretch}
             </button>
-            <span className="hint">{placing ? "Tap the plan where the entrance is." : "Drag anything where it really stands. Tap a thing to change it."}</span>
+            <span className="hint">{placing === "door" ? "Tap the plan where the entrance is." : placing === "car" ? "Tap the plan to park it." : "Drag anything where it really stands. Tap a thing to change it."}</span>
           </>
         )}
         <span className="fpe-spacer" />
@@ -33477,7 +33521,13 @@ const SAGE_CSS = `
 .fbp-door{position:absolute;font:700 8px var(--font-mono);letter-spacing:.14em;color:#fff;
   background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);border-radius:6px;
   padding:3px 6px;pointer-events:none;}
+.fbp-door.main{background:rgba(255,255,255,.4);border-width:2px;font-weight:700;}
+.fbp-car{position:absolute;color:rgba(255,255,255,.34);pointer-events:none;display:inline-flex;}
+.fbp-car.r90{transform:rotate(90deg);}
+.fpe-car{pointer-events:auto;cursor:grab;color:rgba(34,49,38,.4);}
+.fpe-car.sel{color:#2E4A38;filter:drop-shadow(0 0 3px rgba(46,74,56,.5));}
 .fpe-door{pointer-events:auto;cursor:grab;color:#2E4A38;background:#fff;border-color:rgba(34,49,38,.4);}
+.fpe-door.main{background:#2E4A38;color:#fff;border-color:#2E4A38;}
 .fpe-door.sel{border-color:#2E4A38;box-shadow:0 0 0 3px rgba(46,74,56,.25);}
 .fbp-tbl.sz-s{width:40px;height:32px;font-size:11px;}
 .fbp-tbl.sz-s.round{width:36px;height:36px;}
