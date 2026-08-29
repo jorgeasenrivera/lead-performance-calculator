@@ -1192,7 +1192,22 @@ function useReveal() {
     const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce || typeof IntersectionObserver === "undefined") {
       els.forEach((el) => el.classList.add("is-in"));
-      return;
+      /* Cards that appear LATER still need marking, or they sit at opacity 0
+         forever -- the moving path below has a MutationObserver for exactly
+         this, and skipping it here left every late-mounted card (a settings
+         panel opened on demand, a coaching card) invisible for anyone with
+         reduce-motion on, which is every TV this app runs on. */
+      const moQuiet = new MutationObserver((muts) => {
+        for (const m of muts) {
+          for (const n of m.addedNodes) {
+            if (n.nodeType !== 1) continue;
+            if (n.matches && n.matches(".card, .reveal")) n.classList.add("is-in");
+            if (n.querySelectorAll) n.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => el.classList.add("is-in"));
+          }
+        }
+      });
+      moQuiet.observe(document.body, { childList: true, subtree: true });
+      return () => moQuiet.disconnect();
     }
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
@@ -11670,6 +11685,7 @@ const DEFAULT_FLOOR_PLAN = {
     { n: "12", x: 56, y: 14 }, { n: "13", x: 68, y: 14 }, { n: "14", x: 80, y: 14 },
     { n: "O1", x: 58, y: 62 }, { n: "O2", x: 70, y: 62 }, { n: "O3", x: 82, y: 62 },
   ],
+  door: { x: 1.5, y: 44 },
 };
 /* The drawn plan is a store setting (it lives beside the fence); the default
    above stands in until a store draws its own. */
@@ -11698,11 +11714,14 @@ function PlanMap({ plan, cls = "", deco, onTap }) {
       {(plan.zones || []).map((z, i) => (
         <div key={i} className="fbp-zone" style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}>{z.t}</div>
       ))}
+      {plan.door && (
+        <span className="fbp-door" style={{ left: plan.door.x + "%", top: plan.door.y + "%" }}>DOOR</span>
+      )}
       {(plan.tables || []).map((t) => {
         const d = deco ? deco(t) : {};
         return (
           <button key={t.n} type="button"
-            className={"fbp-tbl" + (t.r ? " round" : "") + (d.cls ? " " + d.cls : "")}
+            className={"fbp-tbl" + (t.r ? " round" : "") + (t.s === "s" ? " sz-s" : t.s === "l" ? " sz-l" : "") + (d.cls ? " " + d.cls : "")}
             style={{ left: t.x + "%", top: t.y + "%" }}
             onClick={onTap ? () => onTap(t) : undefined}>
             {d.flag ? <span className="fbp-flag">{d.flag}</span> : null}
@@ -13664,15 +13683,24 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
   const base = (store && store.floorPlan && Array.isArray(store.floorPlan.tables) && store.floorPlan.tables.length)
     ? store.floorPlan : DEFAULT_FLOOR_PLAN;
   const [tables, setTables] = useState(() => JSON.parse(JSON.stringify(base.tables)));
-  const zones = base.zones && base.zones.length ? base.zones : DEFAULT_FLOOR_PLAN.zones;
+  const [zones, setZones] = useState(() => JSON.parse(JSON.stringify(base.zones && base.zones.length ? base.zones : DEFAULT_FLOOR_PLAN.zones)));
+  const [door, setDoor] = useState(() => (base.door ? { ...base.door } : null));
+  /* One selection across every kind of thing on the plan:
+     {k:"t", n} a table, {k:"z", i} a zone, {k:"door"} the door. */
   const [sel, setSel] = useState(null);
+  const [placing, setPlacing] = useState(false);   // next tap on the box drops the door
   const boxRef = useRef(null);
   const dragRef = useRef(null);
 
-  const down = (e, t) => {
-    e.preventDefault();
+  const pct = (e, d) => {
+    const x = ((e.clientX - d.box.left) / d.box.width) * 100;
+    const y = ((e.clientY - d.box.top) / d.box.height) * 100;
+    return { x, y };
+  };
+  const startDrag = (e, kind) => {
+    e.preventDefault(); e.stopPropagation();
     const box = boxRef.current.getBoundingClientRect();
-    dragRef.current = { n: t.n, box, moved: false, dx: e.clientX, dy: e.clientY };
+    dragRef.current = { ...kind, box, moved: false, dx: e.clientX, dy: e.clientY };
     e.currentTarget.setPointerCapture?.(e.pointerId);
   };
   const move = (e) => {
@@ -13680,47 +13708,100 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
     if (!d) return;
     if (Math.abs(e.clientX - d.dx) + Math.abs(e.clientY - d.dy) > 4) d.moved = true;
     if (!d.moved) return;
-    const x = Math.max(0, Math.min(93, ((e.clientX - d.box.left) / d.box.width) * 100 - 2));
-    const y = Math.max(0, Math.min(88, ((e.clientY - d.box.top) / d.box.height) * 100 - 4));
-    setTables((ts) => ts.map((t) => (t.n === d.n ? { ...t, x: +x.toFixed(1), y: +y.toFixed(1) } : t)));
+    const { x, y } = pct(e, d);
+    if (d.k === "t") {
+      setTables((ts) => ts.map((t) => (t.n === d.n ? { ...t, x: +Math.max(0, Math.min(93, x - 2)).toFixed(1), y: +Math.max(0, Math.min(88, y - 4)).toFixed(1) } : t)));
+    } else if (d.k === "z") {
+      setZones((zs) => zs.map((z, i) => (i === d.i ? { ...z, x: +Math.max(0, Math.min(96 - z.w, x - d.gx)).toFixed(1), y: +Math.max(0, Math.min(96 - z.h, y - d.gy)).toFixed(1) } : z)));
+    } else if (d.k === "zr") {
+      setZones((zs) => zs.map((z, i) => (i === d.i ? { ...z, w: +Math.max(10, Math.min(97 - z.x, x - z.x)).toFixed(1), h: +Math.max(8, Math.min(97 - z.y, y - z.y)).toFixed(1) } : z)));
+    } else if (d.k === "door") {
+      setDoor({ x: +Math.max(0, Math.min(95, x - 2)).toFixed(1), y: +Math.max(0, Math.min(94, y - 2)).toFixed(1) });
+    }
   };
-  const up = (e, t) => {
+  const endDrag = (e, kind) => {
     const d = dragRef.current;
     dragRef.current = null;
-    if (d && !d.moved) setSel(sel === t.n ? null : t.n);
+    if (d && !d.moved && kind) setSel((cur) => (JSON.stringify(cur) === JSON.stringify(kind) ? null : kind));
   };
-  const selT = tables.find((t) => t.n === sel) || null;
-  const rename = (name) => {
+  const boxTap = (e) => {
+    /* Placing the door accepts a tap anywhere, zones included, because zones
+       cover most of a real floor. Otherwise a tap only clears the selection
+       when it landed on the bare box: taps on the things themselves already
+       said what they meant, and their click bubbles up through here. */
+    if (!placing) { if (e.target === boxRef.current) setSel(null); return; }
+    const box = boxRef.current.getBoundingClientRect();
+    const x = ((e.clientX - box.left) / box.width) * 100;
+    const y = ((e.clientY - box.top) / box.height) * 100;
+    setDoor({ x: +Math.max(0, Math.min(95, x - 2)).toFixed(1), y: +Math.max(0, Math.min(94, y - 2)).toFixed(1) });
+    setPlacing(false);
+    setSel({ k: "door" });
+  };
+
+  const selT = sel && sel.k === "t" ? tables.find((t) => t.n === sel.n) : null;
+  const selZ = sel && sel.k === "z" ? zones[sel.i] : null;
+  const renameT = (name) => {
     const nm = name.trim();
-    if (!nm || tables.some((t) => t.n === nm && t.n !== sel)) return;
-    setTables((ts) => ts.map((t) => (t.n === sel ? { ...t, n: nm } : t)));
-    setSel(nm);
+    if (!nm || tables.some((t) => t.n === nm && t.n !== sel.n)) return;
+    setTables((ts) => ts.map((t) => (t.n === sel.n ? { ...t, n: nm } : t)));
+    setSel({ k: "t", n: nm });
   };
-  const add = (round) => {
+  const addT = (round) => {
     let i = 1;
     while (tables.some((t) => String(t.n) === String(i))) i++;
     setTables((ts) => [...ts, { n: String(i), x: 44, y: 44, ...(round ? { r: 1 } : {}) }]);
-    setSel(String(i));
+    setSel({ k: "t", n: String(i) });
   };
+  const addZ = () => {
+    setZones((zs) => [...zs, { t: "new area", x: 30, y: 30, w: 30, h: 26 }]);
+    setSel({ k: "z", i: zones.length });
+  };
+  const sizeCycle = () => setTables((ts) => ts.map((t) => (t.n === sel.n
+    ? { ...t, s: t.s === "s" ? undefined : t.s === "l" ? "s" : "l" } : t)));
+
   const save = () => {
     const next = JSON.parse(JSON.stringify(config));
     const st = next.stores.find((x) => x.id === storeId);
-    st.floorPlan = { zones, tables, updatedAt: new Date().toISOString() };
-    onChange(next, { store: storeId, action: "Arranged the floor plan", detail: `${store.name}: ${tables.length} tables` });
+    st.floorPlan = { zones, tables, ...(door ? { door } : {}), updatedAt: new Date().toISOString() };
+    onChange(next, { store: storeId, action: "Arranged the floor plan", detail: `${store.name}: ${tables.length} tables, ${zones.length} areas` });
     onClose();
   };
 
   return (
     <div className="fpe">
-      <div className="fpe-box" ref={boxRef} onPointerMove={move}>
+      <div className={"fpe-box" + (placing ? " placing" : "")} ref={boxRef} onPointerMove={move} onClick={boxTap}>
         {zones.map((z, i) => (
-          <div key={i} className="fbp-zone fpe-zone" style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}>{z.t}</div>
+          <div key={i}
+            className={"fbp-zone fpe-zone" + (sel && sel.k === "z" && sel.i === i ? " sel" : "")}
+            style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}
+            onPointerDown={(e) => {
+              /* the grab point inside the zone, so it does not jump to the cursor */
+              const box = boxRef.current.getBoundingClientRect();
+              const gx = ((e.clientX - box.left) / box.width) * 100 - z.x;
+              const gy = ((e.clientY - box.top) / box.height) * 100 - z.y;
+              startDrag(e, { k: "z", i }); dragRef.current.gx = gx; dragRef.current.gy = gy;
+            }}
+            onPointerUp={(e) => endDrag(e, { k: "z", i })}>
+            {z.t}
+            {sel && sel.k === "z" && sel.i === i && (
+              <span className="fpe-resize"
+                onPointerDown={(e) => startDrag(e, { k: "zr", i })}
+                onPointerUp={(e) => endDrag(e, null)} />
+            )}
+          </div>
         ))}
+        {door && (
+          <span className={"fbp-door fpe-door" + (sel && sel.k === "door" ? " sel" : "")}
+            style={{ left: door.x + "%", top: door.y + "%" }}
+            onPointerDown={(e) => startDrag(e, { k: "door" })}
+            onPointerUp={(e) => endDrag(e, { k: "door" })}>DOOR</span>
+        )}
         {tables.map((t) => (
           <button key={t.n} type="button"
-            className={"fbp-tbl fpe-tbl" + (t.r ? " round" : "") + (sel === t.n ? " sel" : "")}
+            className={"fbp-tbl fpe-tbl" + (t.r ? " round" : "") + (t.s === "s" ? " sz-s" : t.s === "l" ? " sz-l" : "") + (sel && sel.k === "t" && sel.n === t.n ? " sel" : "")}
             style={{ left: t.x + "%", top: t.y + "%" }}
-            onPointerDown={(e) => down(e, t)} onPointerUp={(e) => up(e, t)}>
+            onPointerDown={(e) => startDrag(e, { k: "t", n: t.n })}
+            onPointerUp={(e) => endDrag(e, { k: "t", n: t.n })}>
             <span>{t.n}</span>
           </button>
         ))}
@@ -13728,18 +13809,34 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
       <div className="fpe-bar">
         {selT ? (
           <>
-            <input className="fpe-name" value={selT.n} aria-label="Table name"
-              onChange={(e) => rename(e.target.value)} />
-            <button className="btn secondary" onClick={() => { setTables((ts) => ts.map((t) => (t.n === sel ? (t.r ? (({ r, ...rest }) => rest)(t) : { ...t, r: 1 }) : t))); }}>
+            <input className="fpe-name" value={selT.n} aria-label="Table name" onChange={(e) => renameT(e.target.value)} />
+            <button className="btn secondary" onClick={() => setTables((ts) => ts.map((t) => (t.n === sel.n ? (t.r ? (({ r, ...rest }) => rest)(t) : { ...t, r: 1 }) : t)))}>
               {selT.r ? "Make it square" : "Make it round"}
             </button>
-            <button className="btn secondary danger" onClick={() => { setTables((ts) => ts.filter((t) => t.n !== sel)); setSel(null); }}>Take it off</button>
+            <button className="btn secondary" onClick={sizeCycle}>{selT.s === "s" ? "Small" : selT.s === "l" ? "Large" : "Medium"}</button>
+            <button className="btn secondary danger" onClick={() => { setTables((ts) => ts.filter((t) => t.n !== sel.n)); setSel(null); }}>Take it off</button>
+          </>
+        ) : selZ ? (
+          <>
+            <input className="fpe-name wide" value={selZ.t} aria-label="Area name"
+              onChange={(e) => setZones((zs) => zs.map((z, i) => (i === sel.i ? { ...z, t: e.target.value } : z)))} />
+            <span className="hint">Drag the area to move it; drag the corner dot to resize.</span>
+            <button className="btn secondary danger" onClick={() => { setZones((zs) => zs.filter((_, i) => i !== sel.i)); setSel(null); }}>Remove the area</button>
+          </>
+        ) : sel && sel.k === "door" ? (
+          <>
+            <span className="hint">The door: where the up rotation stands. Drag it to the real entrance.</span>
+            <button className="btn secondary danger" onClick={() => { setDoor(null); setSel(null); }}>Remove the door</button>
           </>
         ) : (
           <>
-            <button className="btn secondary" onClick={() => add(true)}>Add a table</button>
-            <button className="btn secondary" onClick={() => add(false)}>Add a desk or office</button>
-            <span className="hint">Drag anything where it really stands. Tap one to rename it.</span>
+            <button className="btn secondary" onClick={() => addT(true)}>Add a table</button>
+            <button className="btn secondary" onClick={() => addT(false)}>Add a desk or office</button>
+            <button className="btn secondary" onClick={addZ}>Add an area</button>
+            <button className={"btn secondary" + (placing ? " on" : "")} onClick={(e) => { e.stopPropagation(); setPlacing(!placing); }}>
+              {door ? "Move the door" : "Place the door"}
+            </button>
+            <span className="hint">{placing ? "Tap the plan where the entrance is." : "Drag anything where it really stands. Tap a thing to change it."}</span>
           </>
         )}
         <span className="fpe-spacer" />
@@ -13749,7 +13846,6 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
     </div>
   );
 }
-
 function FloorConfigEditor({ config, storeId, onChange }) {
   const store = config.stores.find((s) => s.id === storeId);
   const cfg = floorCfg(store);
@@ -33150,6 +33246,22 @@ const SAGE_CSS = `
 .fpe-name{border:1px solid rgba(34,49,38,.2);border-radius:10px;padding:8px 11px;font:700 13px var(--font-mono);width:110px;}
 .fpe-spacer{flex:1;}
 .fpe-bar .danger{color:#C13529;border-color:rgba(194,54,31,.42);}
+.fpe-name.wide{width:200px;font:600 12.5px var(--font-ui);}
+.fpe-bar .btn.secondary.on{background:#2E4A38;color:#fff;border-color:#2E4A38;}
+.fpe-box.placing{cursor:crosshair;}
+.fpe-zone{pointer-events:auto;cursor:grab;}
+.fpe-zone.sel{border-color:#2E4A38;border-style:solid;color:#2E4A38;background:rgba(46,74,56,.05);}
+.fpe-resize{position:absolute;right:-7px;bottom:-7px;width:14px;height:14px;border-radius:50%;
+  background:#2E4A38;border:2px solid #fff;cursor:nwse-resize;}
+.fbp-door{position:absolute;font:700 8px var(--font-mono);letter-spacing:.14em;color:#fff;
+  background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);border-radius:6px;
+  padding:3px 6px;pointer-events:none;}
+.fpe-door{pointer-events:auto;cursor:grab;color:#2E4A38;background:#fff;border-color:rgba(34,49,38,.4);}
+.fpe-door.sel{border-color:#2E4A38;box-shadow:0 0 0 3px rgba(46,74,56,.25);}
+.fbp-tbl.sz-s{width:40px;height:32px;font-size:11px;}
+.fbp-tbl.sz-s.round{width:36px;height:36px;}
+.fbp-tbl.sz-l{width:76px;height:56px;}
+.fbp-tbl.sz-l.round{width:66px;height:66px;}
 .fence-mode{display:inline-flex;gap:0;border-radius:10px;overflow:hidden;}
 .fence-mode .btn.on,.fence-mode .btn.secondary.on{background:#2E4A38;color:#fff;border-color:#2E4A38;}
 
