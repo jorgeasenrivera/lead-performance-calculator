@@ -17892,6 +17892,18 @@ function useRoundUpOpener(fn) {
   }, [fn]);
 }
 
+/* The page behind the round-up must hold still: without this a flick on the
+   sheet scrolled the dashboard underneath and the sheet itself refused to
+   move, which on a phone read as the sheet being broken. */
+function RuBodyLock() {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+  return null;
+}
+
 function RoundUp({ config, store, data, M }) {
   const [digests, setDigests] = useState(null);
   const ru = useMemo(() => buildRoundUp({ config, store, data, M, digests }),
@@ -18019,6 +18031,7 @@ function RoundUp({ config, store, data, M }) {
   if (full) {
     return (
       <Overlay>
+        <RuBodyLock />
         <div className="ru-scrim" onClick={close}>
           <div className="ru-sheet" role="dialog" aria-label="Your round-up" onClick={(e) => e.stopPropagation()}>
             <div className="ru-sheet-body">
@@ -18051,6 +18064,9 @@ function RoundUp({ config, store, data, M }) {
                     <div className="ru-verdict-sub">{ru2.up} of {ru2.up + ru2.down} measures improved</div>
                   </div>
                 )}
+                <button type="button" className="ru-x" onClick={close} aria-label="Close the round-up">
+                  <PixIcon glyph="close" size={13} />
+                </button>
               </div>
 
               {/* ---- the month, as the Performance page draws it ---- */}
@@ -28502,7 +28518,11 @@ const SAGE_CSS = `
          stagger. Short screens, where the content genuinely cannot fit, get a
          real scrollbar with its gutter reserved so nothing shifts. */
       .ru-sheet-body { flex:1; overflow:hidden; background:var(--card); }
-      @media (max-height: 700px) {
+      /* Short windows AND phones scroll the sheet itself. The phone case was
+         missing: a tall viewport on a narrow screen kept overflow hidden, so a
+         flick found nothing to move inside the sheet and moved the page behind
+         it instead. */
+      @media (max-height: 700px), (max-width: 560px) {
         .ru-sheet-body { overflow-y:auto; overscroll-behavior:contain;
           -webkit-overflow-scrolling:touch; scrollbar-gutter:stable; }
       }
@@ -28528,8 +28548,19 @@ const SAGE_CSS = `
       .ru-head-id { display:flex; align-items:center; gap:13px; position:relative; z-index:1; }
       .ru-sheet-head .s2-ava { width:46px; height:46px; }
       .ru-sheet-head .s2-ava::after { inset:-6px; }
-      .ru-verdict { position:absolute; right:24px; top:22px; text-align:right; z-index:1;
+      .ru-verdict { position:absolute; right:52px; top:22px; text-align:right; z-index:1;
         opacity:0; animation:ruBloop .6s var(--ease-bloop) .3s both; }
+      .ru-x { position:absolute; right:16px; top:16px; z-index:2; width:30px; height:30px; border-radius:50%;
+        border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.14); color:#fff;
+        display:flex; align-items:center; justify-content:center; cursor:pointer; }
+      /* On a phone the verdict was absolutely positioned straight through the
+         store's name. It steps out of the corner and under the identity row. */
+      @media (max-width: 560px) {
+        .ru-verdict { position:static; text-align:left; margin-top:10px;
+          display:flex; align-items:baseline; gap:8px; }
+        .ru-verdict-sub { margin-top:0; }
+        .ru-sheet-store { padding-right:34px; }
+      }
       .ru-verdict-word { font-family:var(--font-display); font-size:15px; font-weight:700; }
       .ru-verdict-sub { font-size:11px; opacity:.78; margin-top:2px; }
       /* ---- the pace chart, in the Performance page's own vocabulary ---- */

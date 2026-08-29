@@ -243,3 +243,31 @@ test("the per-person list is never read as the store roll-up", () => {
 test("a file with no Deals Delivered column is not a roll-up", () => {
   assert.equal(P.parseStoreRollup([["Store", "Sold"], ["Holler Honda", "257"]]), null);
 });
+
+/* ---- texts and emails stay with their own person ----
+   A store reported Sage showing one person's texts and emails against the name
+   below them. The mapper reads every figure from that person's own "All" row,
+   and this pins it: two adjacent people with distinct texts and emails each
+   keep exactly their own, page break included. */
+test("texts and emails stay with their own person, across a page break", () => {
+  const rowFor = (texts, emails) =>
+    `All 14 1 3 6 4 5 4 ? 0 40 7 ${texts} ${emails} 22 29% 730 79 0 0% 4`;
+  const ls = [
+    ...heading("Drivers Mart Winter Park"), line(ROW.replace(/^All/, "New")), line(ROW),
+    ...heading("Juan Pablo Diaz"), line(rowFor(54, 40).replace(/^All/, "New")), line(rowFor(54, 40)),
+    // the page break repeats the column headers between two people
+    line(H1), line(H2), line(H3),
+    ...heading("Mitch Marius"), line(rowFor(23, 35).replace(/^All/, "New")), line(rowFor(23, 35)),
+    ...heading("Chase Cabney"), line(ROW.replace(/^All/, "New")), line(ROW),
+  ];
+  const got = P.mapDailyActivityGrid(ls);
+  assert.ok(got, "the grid should read");
+  const head = got.rows[1];
+  const tx = head.indexOf("Text"), em = head.indexOf("Email");
+  const rowOf = (nm) => got.rows.slice(2).find((r) => r[0] === nm);
+  assert.equal(rowOf("Juan Pablo Diaz")[tx], 54);
+  assert.equal(rowOf("Juan Pablo Diaz")[em], 40);
+  assert.equal(rowOf("Mitch Marius")[tx], 23, "Mitch carried Juan's texts");
+  assert.equal(rowOf("Mitch Marius")[em], 35, "Mitch carried Juan's emails");
+  assert.ok(rowOf("Chase Cabney"), "the person after the break survived");
+});
