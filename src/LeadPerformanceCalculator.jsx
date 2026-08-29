@@ -3340,12 +3340,17 @@ export default function LeadPerformanceCalculator() {
   const floorParams = (() => {
     try {
       const p = new URLSearchParams(window.location.search);
-      const f = p.get("f"), d = p.get("d"), t = p.get("t");
-      return f && d && t ? { store: f, date: d, token: t } : null;
+      const f = p.get("f"), d = p.get("d"), t = p.get("t"), tbl = p.get("tbl");
+      if (f && d && t) return { store: f, date: d, token: t, tag: tbl };
+      /* A TABLE TAG: an NFC sticker or QR on the table itself, written once and
+         never rotated. It carries only WHERE -- who you are still comes from
+         today's sign-in code, so a tag read off a table at home does nothing. */
+      if (f && tbl) return { store: f, date: today(), token: null, tag: tbl };
+      return null;
     } catch { return null; }
   })();
   if (floorParams) {
-    return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} /><Style /></Shell>;
+    return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
   }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
   /* ---- the sign-in screen is a LAYER, not a branch ----
@@ -12336,7 +12341,7 @@ function floorSignInUrl(storeId, date, token) {
    Mirrors QueueSignIn (name fuzzy-match + PIN, curtain wipe, reuse identities);
    the "done" screen adds the accidental-check-in self-reverse.
    ========================================================================= */
-function FloorSignIn({ store, date, token, test = false }) {
+function FloorSignIn({ store, date, token, tag = null, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
@@ -12392,7 +12397,39 @@ function FloorSignIn({ store, date, token, test = false }) {
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   const isToday = date === today();
-  const valid = isToday && row && row.token && row.token === token;
+  /* A table tag carries no daily token; it is valid only for a phone that is
+     already signed in today, which is the whole security model: the tag says
+     where, never who. */
+  const valid = isToday && row && ((row.token && row.token === token) || (tag && meId && (row.line || []).some((p) => p.id === meId)));
+  /* Tapping the tag on a table means one thing on a sales floor: I am sitting
+     down here with a guest. So the tap flips the person to "with customer" AND
+     seats them, in one write, once per open. A phone that is not signed in
+     today falls through to the ordinary screens instead. */
+  const tagDone = useRef(false);
+  useEffect(() => {
+    if (!tag || tagDone.current || !row || !meId) return;
+    if (!(row.line || []).some((p) => p.id === meId)) return;
+    tagDone.current = true;
+    (async () => {
+      try {
+        const next = await mutateFloorRow(store, date, (cur) => {
+          if (!cur) return null;
+          const q = (cur.line || []).find((x) => x.id === meId);
+          if (!q) return cur;
+          if (q.status !== "customer") {
+            cur.history = cur.history || [];
+            cur.history.push({ t: qNowIso(), action: "checkin", id: q.id, who: q.label, by: "table-tag" });
+            q.status = "customer"; q.statusAt = qNowIso(); q.awayReason = null; q.autoFlip = false;
+          }
+          q.table = tag;
+          return cur;
+        });
+        if (next) setRow(next);
+        try { localStorage.setItem(`lpcf:seat:${store}`, String(tag)); } catch (e) {}
+        buzz([15, 30, 15]);
+      } catch (e) { /* the poll corrects the screen either way */ }
+    })();
+  }, [tag, row ? 1 : 0, meId]); // eslint-disable-line
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
   // Filtered out entirely unless the address asked for it, so it cannot be picked
@@ -14209,6 +14246,30 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           </div>
         ) : (
           <FloorPlanEditor config={config} storeId={storeId} onChange={onChange} onClose={() => setArranging(false)} />
+        )}
+        {!arranging && (
+          <details className="tagt">
+            <summary>Table tags · NFC and QR</summary>
+            <p className="hint">
+              Each table has a permanent link. Write it to a cheap NFC sticker under the table's edge
+              (any tag-writer app can), or print it as a QR on the table tent -- the same link works as
+              both. A salesperson who taps it with a signed-in phone is seated there with a guest, one
+              tap, no map. The tag only says WHERE: who you are still comes from today's sign-in code,
+              so a tag read off a table at home does nothing.
+            </p>
+            <div className="tagt-list">
+              {floorPlanOf(config, storeId).tables.map((t) => {
+                const url = `${window.location.origin}${window.location.pathname}?f=${encodeURIComponent(storeId)}&tbl=${encodeURIComponent(t.n)}`;
+                return (
+                  <div key={t.n} className="tagt-row">
+                    <b>{String(t.n).startsWith("O") ? "Office " + String(t.n).slice(1) : "Table " + t.n}</b>
+                    <code>{url}</code>
+                    <button className="btn secondary" onClick={() => { try { navigator.clipboard.writeText(url); } catch (e) {} }}>Copy</button>
+                  </div>
+                );
+              })}
+            </div>
+          </details>
         )}
       </div>
 
@@ -33500,6 +33561,13 @@ const SAGE_CSS = `
 .fbc-cover + .fbc-count{margin-left:0;}
 
 /* ---- the floor plan editor ---- */
+.tagt{margin-top:12px;}
+.tagt summary{cursor:pointer;font:600 12.5px var(--font-ui);color:var(--ink-2);}
+.tagt-list{display:flex;flex-direction:column;gap:6px;margin-top:10px;}
+.tagt-row{display:flex;align-items:center;gap:10px;font-size:12px;}
+.tagt-row b{width:84px;flex:0 0 auto;font:700 11.5px var(--font-ui);}
+.tagt-row code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:500 11px var(--font-mono);color:var(--ink-2);background:rgba(16,32,52,.05);border-radius:7px;padding:5px 9px;}
 .fpe-scroll{overflow-x:auto;overflow-y:hidden;border-radius:14px;border:1px solid rgba(34,49,38,.12);}
 .fpe-box{position:relative;height:380px;min-width:100%;background:linear-gradient(160deg,#EDF2EA,#E2EAE0);
   touch-action:none;}
