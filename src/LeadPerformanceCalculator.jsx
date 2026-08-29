@@ -11708,9 +11708,15 @@ function useAssistTick(on) {
 }
 
 /* One drawing of the floor, shared by the console and the phone's picker. */
-function PlanMap({ plan, cls = "", deco, onTap }) {
+function PlanMap({ plan, cls = "", deco, onTap, children }) {
+  /* Rooms are not squares. A store longer than it is wide sets stretch on its
+     plan and the room simply grows past the card's edge and scrolls; the
+     percent coordinates stay relative to the WHOLE room, so nothing drawn in
+     the editor ever moves when the shape changes. */
+  const stretch = (plan && plan.stretch) || 1;
   return (
-    <div className={"fbp " + cls}>
+    <div className={"fbp-scroll " + cls}>
+    <div className="fbp" style={stretch > 1 ? { width: (stretch * 100) + "%" } : undefined}>
       {(plan.zones || []).map((z, i) => (
         <div key={i} className="fbp-zone" style={{ left: z.x + "%", top: z.y + "%", width: z.w + "%", height: z.h + "%" }}>{z.t}</div>
       ))}
@@ -11723,6 +11729,7 @@ function PlanMap({ plan, cls = "", deco, onTap }) {
           <button key={t.n} type="button"
             className={"fbp-tbl" + (t.r ? " round" : "") + (t.s === "s" ? " sz-s" : t.s === "l" ? " sz-l" : "") + (d.cls ? " " + d.cls : "")}
             style={{ left: t.x + "%", top: t.y + "%" }}
+            onMouseEnter={d.onHover || undefined} onMouseLeave={d.onLeave || undefined}
             onClick={onTap ? () => onTap(t) : undefined}>
             {d.flag ? <span className="fbp-flag">{d.flag}</span> : null}
             <span>{t.n}</span>
@@ -11730,6 +11737,8 @@ function PlanMap({ plan, cls = "", deco, onTap }) {
           </button>
         );
       })}
+      {children}
+    </div>
     </div>
   );
 }
@@ -11847,20 +11856,84 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
   );
 }
 
+/* ---- the seat: one tap when you take a guest, and the map is true ---- */
+function SeatBlock({ store, date, meId, plan, row, onRow }) {
+  const me = ((row && row.line) || []).find((p) => p.id === meId);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!me || me.status !== "customer") return null;
+  const seat = async (n) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const next = await mutateFloorRow(store, date, (cur) => {
+        if (!cur) return null;
+        const p = (cur.line || []).find((x) => x.id === meId);
+        if (p) p.table = n;
+        return cur;
+      });
+      if (next && onRow) onRow(next);
+      try { localStorage.setItem(`lpcf:seat:${store}`, String(n)); } catch (e) {}
+      setOpen(false);
+      buzz(12);
+    } catch (e) {}
+    setBusy(false);
+  };
+  const remembered = (() => { try { return localStorage.getItem(`lpcf:seat:${store}`); } catch (e) { return null; } })();
+  if (me.table && !open) {
+    return (
+      <div className="fba-seated">
+        You two are at <b>{String(me.table).startsWith("O") ? "office " + String(me.table).slice(1) : "table " + me.table}</b>
+        <button type="button" onClick={() => setOpen(true)}>Change</button>
+      </div>
+    );
+  }
+  if (!open) {
+    return (
+      <div className="fba-seatask">
+        <b>Where are you two sitting?</b>
+        <span>One tap and the desk knows where to find you.</span>
+        <div className="fba-seatrow">
+          {remembered && <button type="button" className="fba-go" disabled={busy} onClick={() => seat(remembered)}>
+            {String(remembered).startsWith("O") ? "Office " + String(remembered).slice(1) : "Table " + remembered} again</button>}
+          <button type="button" className={remembered ? "fba-back" : "fba-go"} onClick={() => setOpen(true)}>Pick on the map</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="fba-seatask">
+      <b>Tap your table</b>
+      <PlanMap plan={plan} cls="mini"
+        deco={(t) => ({ cls: String(me.table) === String(t.n) ? "sel" : "" })}
+        onTap={(t) => seat(t.n)} />
+      <button type="button" className="fba-back" style={{ marginTop: 6 }} onClick={() => setOpen(false)}>Not now</button>
+    </div>
+  );
+}
+
 /* ---- the manager's side: the Console. The drawn floor inside the deep green
    tube, asks glowing on their tables, a tap to claim and a second to clear,
    the longest wait in the dot-matrix hand, and a T.O. nobody claims for two
    minutes escalating on its own. ---- */
 const COVERAGE_STATES = ["desk", "floor", "offsite"];
 const COVERAGE_LABEL = { desk: "desk", floor: "floor", offsite: "off-site" };
-function FloorConsole({ row, act, plan, managers, meName }) {
+/* Status glyphs for the door dock: the rail is gone, so the chip itself has to
+   say lunch, away, nudged. */
+const DOCK_GLYPH = { lunch: "clock", away: "door" };
+
+function FloorConsole({ row, act, plan, managers, meName, data, date, realName }) {
+  /* One layout for the desk and the wall. Display turns the type and the
+     tables up for a room-distance read, and the choice sticks to THIS screen,
+     the way the TV board's text size does: the wall remembers being a wall. */
+  const [disp, setDisp] = useState(() => { try { return localStorage.getItem("lpcf:disp") === "1"; } catch (e) { return false; } });
+  const flipDisp = () => { const v = !disp; setDisp(v); try { localStorage.setItem("lpcf:disp", v ? "1" : "0"); } catch (e) {} };
   const asks = activeAssists(row);
-  useAssistTick(asks.length > 0);
-  /* The coverage rail. Where each manager is standing is a tap on their own
-     chip -- desk, floor, off-site -- kept in the floor row so every screen
-     agrees. The chip is the same person-colour Live Floor uses everywhere.
-     When the native shell lands its background geofencing, the same field is
-     where the automatic verdicts will write; the tap stays as the override. */
+  const line = (row && row.line) || [];
+  useAssistTick(asks.length > 0 || line.some((p) => p.status === "customer"));
+  const [moveFrom, setMoveFrom] = useState(null);   // seat correction: the person being re-seated
+  const [hover, setHover] = useState(null);          // { id, x, y }
+
   const covOf = (id) => (row && row.coverage && row.coverage[id] && row.coverage[id].state) || "desk";
   const cycleCov = (m) => act((cur) => {
     cur.coverage = cur.coverage || {};
@@ -11870,9 +11943,6 @@ function FloorConsole({ row, act, plan, managers, meName }) {
     return cur;
   }, { action: "Floor: coverage", detail: m.name });
 
-  /* The row carries who to push a NEW ask to, because the phone that writes an
-     ask has no roster to look managers up in. The board does, so it keeps the
-     stamp fresh. */
   const managerIds = managers.map((m) => m.id);
   useEffect(() => {
     if (!row) return;
@@ -11881,27 +11951,25 @@ function FloorConsole({ row, act, plan, managers, meName }) {
     act((cur) => { cur.assistTargets = managerIds; return cur; });
   }, [row ? row.token : null, JSON.stringify(managerIds)]); // eslint-disable-line
 
-  /* Escalation: written down, not merely displayed, so the webhook can re-ping
-     the managers' phones. Idempotent -- escalatedAt is set once. */
   useEffect(() => {
     const t = setInterval(() => {
       const due = activeAssists(row).filter((a) => a.kind === "to" && !a.claimedBy && !a.escalatedAt && assistAge(a) >= 120);
       if (!due.length) return;
       act((cur) => {
-        let touched = false;
         for (const d of due) {
           const x = (cur.assists || []).find((a) => a.id === d.id);
-          if (x && !x.claimedBy && !x.escalatedAt && !x.doneAt) { x.escalatedAt = qNowIso(); touched = true; }
+          if (x && !x.claimedBy && !x.escalatedAt && !x.doneAt) x.escalatedAt = qNowIso();
         }
-        return touched ? cur : cur;
+        return cur;
       });
     }, 15000);
     return () => clearInterval(t);
   }, [row]); // eslint-disable-line
 
   const byTable = new Map(asks.filter((a) => a.table != null).map((a) => [String(a.table), a]));
+  const seatByTable = new Map(line.filter((p) => p.status === "customer" && p.table != null).map((p) => [String(p.table), p]));
   const lotAsks = asks.filter((a) => a.spot === "lot");
-  const touch = (a) => act((cur) => {
+  const touchAsk = (a) => act((cur) => {
     const x = (cur.assists || []).find((y) => y.id === a.id);
     if (!x || x.doneAt) return cur;
     if (!x.claimedBy) { x.claimedBy = meName || "Manager"; x.claimedAt = qNowIso(); }
@@ -11909,15 +11977,49 @@ function FloorConsole({ row, act, plan, managers, meName }) {
     return cur;
   }, { action: "Floor: assist " + (a.claimedBy ? "handled" : "claimed"), detail: `${a.byName} · ${assistWhere(a)}` });
 
-  const longest = asks.filter((a) => !a.claimedBy).reduce((m, a) => Math.max(m, assistAge(a)), 0);
-  const escal = asks.some((a) => a.escalatedAt && !a.claimedBy);
-  const mm = String(Math.floor(longest / 60));
-  const ss = String(longest % 60).padStart(2, "0");
+  const tapTable = (t) => {
+    const a = byTable.get(String(t.n));
+    if (a) { touchAsk(a); return; }
+    const seated = seatByTable.get(String(t.n));
+    if (moveFrom) {
+      /* the desk fixing a seat: land the move on any table without an ask */
+      const from = moveFrom;
+      setMoveFrom(null);
+      act((cur) => {
+        const p = (cur.line || []).find((x) => x.id === from);
+        if (p && p.status === "customer") p.table = t.n;
+        return cur;
+      }, { action: "Floor: re-seated", detail: `${realName(from)} → ${t.n}` });
+      return;
+    }
+    if (seated) setMoveFrom(seated.id);
+  };
+
+  const mins = (iso) => Math.max(0, Math.floor((Date.now() - new Date(iso || Date.now()).getTime()) / 60000));
+  const fmtSit = (iso) => { const m = mins(iso); return Math.floor(m / 60) + ":" + String(m % 60).padStart(2, "0"); };
+
+  /* the hover card: who this is and how their day and month are running */
+  const hoverStats = (id) => {
+    const name = realName(id);
+    const rec = (data.activity?.[date] || {})[norm(name)] || {};
+    const M = data.months?.[ym()]?.stats?.[norm(name)] || {};
+    return { name, visits: rec.visits, calls: rec.calls, video: rec.video,
+      units: Math.round(unitsOf(M) * 10) / 10,
+      pct: M.deliveredPct != null ? fmtPct(M.deliveredPct) : null };
+  };
+  const showHover = (id) => (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setHover({ id, x: r.left + r.width / 2, y: r.top });
+  };
+
+  /* the door dock: everyone in line, in up order, statuses worn as icons */
+  const waiting = line.filter((p) => p.status !== "customer");
+  const doorAt = plan.door || { x: 1.5, y: 30 };
 
   return (
-    <div className="fbc">
+    <div className={"fbc" + (disp ? " disp" : "")}>
       <div className="fbc-head">
-        <div><div className="fbc-cap">The floor, answering</div><b>FlyBys and T.O.s land here</b></div>
+        <div><div className="fbc-cap">Live Floor</div><b>The room</b></div>
         <div className="fbc-cover">
           {managers.map((m) => (
             <button key={m.id} type="button" className={"fbc-mgr " + covOf(m.id)}
@@ -11929,21 +12031,58 @@ function FloorConsole({ row, act, plan, managers, meName }) {
           ))}
         </div>
         {asks.length > 0 && <span className="fbc-count">{asks.length} asking</span>}
+        <button type="button" className="fbc-disp" aria-pressed={disp} onClick={flipDisp}>Display</button>
       </div>
       <PlanMap plan={plan} cls="console"
         deco={(t) => {
           const a = byTable.get(String(t.n));
-          if (!a) return {};
-          return {
+          if (a) return {
             cls: (a.kind === "to" ? "to" : "fly") + (a.claimedBy ? " claimed" : ""),
             flag: a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : (a.kind === "to" ? "T.O." : "FlyBy"),
             sub: a.byName ? a.byName.split(" ")[0] + " · " + fmtAssistAge(assistAge(a)) : null,
           };
+          const seated = seatByTable.get(String(t.n));
+          if (seated) return {
+            cls: "seated" + (mins(seated.statusAt) >= 45 ? " longsit" : "") + (moveFrom === seated.id ? " moving" : ""),
+            sub: realName(seated.id).split(" ")[0] + " · " + fmtSit(seated.statusAt),
+            onHover: showHover(seated.id), onLeave: () => setHover(null),
+          };
+          return { cls: moveFrom ? "movetarget" : "" };
         }}
-        onTap={(t) => { const a = byTable.get(String(t.n)); if (a) touch(a); }} />
+        onTap={tapTable}>
+        {/* the dock: the up rotation standing at the real door */}
+        <div className="fbc-dock" style={{ left: doorAt.x + "%", top: Math.min(doorAt.y, 62) + "%" }}>
+          {waiting.slice(0, 7).map((p, i) => {
+            const nm = realName(p.id);
+            const off = p.status !== "waiting";
+            return (
+              <span key={p.id} className={"fbc-chip" + (i === 0 && !off ? " first" : "") + (off ? " off" : "")}
+                style={{ background: `hsl(${hueFromName(nm)} 62% 46%)` }}
+                onMouseEnter={showHover(p.id)} onMouseLeave={() => setHover(null)}>
+                {initialsOf(nm)}
+                {off ? <i className="fbc-st"><PixIcon glyph={DOCK_GLYPH[p.status] || "question"} size={8} /></i>
+                  : <i className="fbc-ord">{waiting.filter((x, k) => k < i && x.status === "waiting").length + 1}</i>}
+                {p.nudgedAt && <i className="fbc-st nudge"><PixIcon glyph="warn" size={8} /></i>}
+              </span>
+            );
+          })}
+          {waiting.length > 7 && <span className="fbc-more">+{waiting.length - 7}</span>}
+        </div>
+      </PlanMap>
+      {/* the hover card, over everything */}
+      {hover && (() => {
+        const st = hoverStats(hover.id);
+        return (
+          <div className="fbc-hover" style={{ left: hover.x, top: hover.y }}>
+            <b>{st.name}</b>
+            <span>{st.visits != null ? `${st.visits} ups today` : "no report yet today"}{st.calls != null ? ` · ${st.calls} calls` : ""}{st.video != null ? ` · ${st.video} videos` : ""}</span>
+            <span>{st.units} units this month{st.pct ? ` · closing ${st.pct}` : ""}</span>
+          </div>
+        );
+      })()}
       {lotAsks.map((a) => (
         <button key={a.id} type="button" className={"fbc-lot " + (a.kind === "to" ? "to" : "fly") + (a.claimedBy ? " claimed" : "")}
-          onClick={() => touch(a)}>
+          onClick={() => touchAsk(a)}>
           <b>{a.kind === "to" ? "T.O." : "FlyBy"} · out on the lot</b>
           <span>{a.byName}{a.note ? ` · ${a.note}` : ""}</span>
           <i>{a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : fmtAssistAge(assistAge(a))}</i>
@@ -11951,11 +12090,16 @@ function FloorConsole({ row, act, plan, managers, meName }) {
       ))}
       <div className="fbc-strip">
         <span className="fbc-lbl">Longest wait</span>
-        {longest > 0
-          ? <span className="fbc-clock"><DmNumber value={mm} /><i>:</i><DmNumber value={ss} /></span>
-          : <span className="fbc-quiet">nobody is waiting</span>}
-        {escal && <span className="fbc-esc">T.O. unclaimed past 2:00 · every manager re-pinged</span>}
-        <span className="fbc-hint">Tap a glowing table to claim it; tap again when it is handled.</span>
+        {(() => {
+          const longest = asks.filter((a) => !a.claimedBy).reduce((m, a) => Math.max(m, assistAge(a)), 0);
+          const mm = String(Math.floor(longest / 60)); const ss = String(longest % 60).padStart(2, "0");
+          return longest > 0
+            ? <span className="fbc-clock"><DmNumber value={mm} /><i>:</i><DmNumber value={ss} /></span>
+            : <span className="fbc-quiet">nobody is waiting</span>;
+        })()}
+        <span className="fbc-lbl" style={{ marginLeft: 10 }}>{waiting.filter((p) => p.status === "waiting").length} at the door · {seatByTable.size} with guests</span>
+        {asks.some((a) => a.escalatedAt && !a.claimedBy) && <span className="fbc-esc onair">T.O. unclaimed past 2:00 · every manager re-pinged</span>}
+        <span className="fbc-hint">{moveFrom ? `Re-seating ${realName(moveFrom).split(" ")[0]}: tap the right table.` : "Tap a glowing table to claim it. Tap a seated table twice to re-seat somebody."}</span>
       </div>
     </div>
   );
@@ -12596,6 +12740,7 @@ function FloorSignIn({ store, date, token, test = false }) {
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           <SfStatusSelect value={st} variant={variant} flags={FLOOR_SELF_FLAGS} busy={busy} onPick={setFlag} />
+          <SeatBlock store={store} date={date} meId={meId} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
             fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <div className="sf-links">
@@ -12996,6 +13141,14 @@ function FloorBoard({ config, store, data, onData, userName }) {
         </div>
       )}
 
+      {/* The room, front and centre: the drawn floor with the up rotation
+          docked at the real door, guests on their tables, asks glowing over
+          everything. Jorge picked this composition (draft B, "The Door");
+          everything the old board led with still lives below it. */}
+      <FloorConsole row={row} act={act} plan={floorPlanOf(config, store.id)}
+        managers={(data.roster || []).filter((a) => a.roleId === "manager").map((a) => ({ id: a.id, name: a.name }))}
+        meName={userName} data={data} date={date} realName={realName} />
+
       {(() => {
         const M = computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned", "auto-checkin", "auto-appt-show"] });
         const nextP = line.find((x) => x.status === "waiting" && !isTestId(x.id));
@@ -13142,10 +13295,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
           );
         })}
       </div>
-
-      <FloorConsole row={row} act={act} plan={floorPlanOf(config, store.id)}
-        managers={(data.roster || []).filter((a) => a.roleId === "manager").map((a) => ({ id: a.id, name: a.name }))}
-        meName={userName} />
 
       {expectedNotHere.length > 0 && (
         <div className="q-missing">
@@ -13685,6 +13834,9 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
   const [tables, setTables] = useState(() => JSON.parse(JSON.stringify(base.tables)));
   const [zones, setZones] = useState(() => JSON.parse(JSON.stringify(base.zones && base.zones.length ? base.zones : DEFAULT_FLOOR_PLAN.zones)));
   const [door, setDoor] = useState(() => (base.door ? { ...base.door } : null));
+  /* How much longer than wide the room is. 1 fits the card; anything more
+     scrolls sideways, in the editor and on every screen that draws the plan. */
+  const [stretch, setStretch] = useState(() => base.stretch || 1);
   /* One selection across every kind of thing on the plan:
      {k:"t", n} a table, {k:"z", i} a zone, {k:"door"} the door. */
   const [sel, setSel] = useState(null);
@@ -13762,14 +13914,16 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
   const save = () => {
     const next = JSON.parse(JSON.stringify(config));
     const st = next.stores.find((x) => x.id === storeId);
-    st.floorPlan = { zones, tables, ...(door ? { door } : {}), updatedAt: new Date().toISOString() };
+    st.floorPlan = { zones, tables, ...(door ? { door } : {}), ...(stretch > 1 ? { stretch } : {}), updatedAt: new Date().toISOString() };
     onChange(next, { store: storeId, action: "Arranged the floor plan", detail: `${store.name}: ${tables.length} tables, ${zones.length} areas` });
     onClose();
   };
 
   return (
     <div className="fpe">
-      <div className={"fpe-box" + (placing ? " placing" : "")} ref={boxRef} onPointerMove={move} onClick={boxTap}>
+      <div className="fpe-scroll">
+      <div className={"fpe-box" + (placing ? " placing" : "")} ref={boxRef} onPointerMove={move} onClick={boxTap}
+        style={stretch > 1 ? { width: (stretch * 100) + "%" } : undefined}>
         {zones.map((z, i) => (
           <div key={i}
             className={"fbp-zone fpe-zone" + (sel && sel.k === "z" && sel.i === i ? " sel" : "")}
@@ -13806,6 +13960,7 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
           </button>
         ))}
       </div>
+      </div>
       <div className="fpe-bar">
         {selT ? (
           <>
@@ -13835,6 +13990,10 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
             <button className="btn secondary" onClick={addZ}>Add an area</button>
             <button className={"btn secondary" + (placing ? " on" : "")} onClick={(e) => { e.stopPropagation(); setPlacing(!placing); }}>
               {door ? "Move the door" : "Place the door"}
+            </button>
+            <button className="btn secondary" title="A room longer than it is wide scrolls sideways on every screen."
+              onClick={() => setStretch(stretch >= 3 ? 1 : stretch === 1 ? 1.5 : stretch === 1.5 ? 2 : 3)}>
+              Room length ×{stretch}
             </button>
             <span className="hint">{placing ? "Tap the plan where the entrance is." : "Drag anything where it really stands. Tap a thing to change it."}</span>
           </>
@@ -33134,7 +33293,8 @@ const SAGE_CSS = `
   padding:10px 18px;border-radius:999px;box-shadow:0 10px 30px rgba(15,157,118,.4);animation:ftoast .3s ease both;}
 
 /* ---- FlyBy: shared plan drawing ---- */
-.fbp{position:relative;height:340px;}
+.fbp-scroll{overflow-x:auto;overflow-y:hidden;border-radius:14px;}
+.fbp{position:relative;height:340px;min-width:100%;}
 .fbp-zone{position:absolute;border:1px dashed rgba(255,255,255,.2);border-radius:12px;padding:4px 8px;
   font:600 9px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.45);pointer-events:none;}
 .fbp-tbl{position:absolute;width:52px;height:42px;border-radius:11px;border:1px solid rgba(255,255,255,.3);
@@ -33163,7 +33323,7 @@ const SAGE_CSS = `
 .fbc-head b{font:700 15px var(--font-display);}
 .fbc-cap{font:700 9.5px var(--font-mono);letter-spacing:.16em;text-transform:uppercase;color:#E4C98D;}
 .fbc-count{margin-left:auto;background:rgba(255,255,255,.16);border-radius:99px;padding:4px 11px;font:700 11px var(--font-mono);}
-.fbc .fbp{background:rgba(6,14,9,.25);margin:0 14px;border-radius:14px;border:1px solid rgba(255,255,255,.14);}
+.fbc .fbp-scroll{background:rgba(6,14,9,.25);margin:0 14px;border:1px solid rgba(255,255,255,.14);}
 .fbc-lot{display:flex;align-items:center;gap:10px;margin:10px 14px 0;width:calc(100% - 28px);border-radius:12px;
   border:1px solid #fff;padding:9px 13px;cursor:pointer;color:#fff;text-align:left;font:600 12px var(--font-ui);}
 .fbc-lot.fly{background:#E8A93C;}.fbc-lot.to{background:#D8483C;}
@@ -33187,6 +33347,65 @@ const SAGE_CSS = `
 @media (prefers-reduced-motion: reduce){.fbc-esc{animation:none;}}
 .fbc-hint{margin-left:auto;font:500 10.5px var(--font-ui);color:rgba(255,255,255,.5);}
 
+.fbc-disp{border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);border-radius:99px;
+  padding:6px 13px;font:600 11px var(--font-ui);color:#fff;cursor:pointer;}
+.fbc-disp[aria-pressed="true"]{background:#fff;color:#26382C;}
+/* the wall read: same layout, everything turned up */
+.fbc.disp .fbp{height:520px;}
+.fbc.disp .fbp-tbl{width:78px;height:62px;font-size:17px;border-radius:15px;}
+.fbc.disp .fbp-tbl.round{width:70px;height:70px;border-radius:50%;}
+.fbc.disp .fbp-tbl.sz-s{width:54px;height:44px;font-size:14px;}
+.fbc.disp .fbp-tbl.sz-s.round{width:48px;height:48px;border-radius:50%;}
+.fbc.disp .fbp-tbl.sz-l{width:100px;height:76px;}
+.fbc.disp .fbp-tbl.sz-l.round{width:88px;height:88px;border-radius:50%;}
+.fbc.disp .fbp-sub{font-size:10px;}
+.fbc.disp .fbp-zone{font-size:11px;}
+.fbc.disp .fbc-chip{width:54px;height:54px;font-size:16px;}
+.fbc.disp .fbc-head b{font-size:21px;}
+.fbc.disp .fbc-strip{font-size:14px;}
+.fbc.disp .fbc-lbl{font-size:11px;}
+
+/* ---- the door dock ---- */
+.fbc-dock{position:absolute;display:flex;flex-direction:column;gap:7px;align-items:center;z-index:3;}
+.fbc-chip{position:relative;width:40px;height:40px;border-radius:50%;color:#fff;border:2px solid #fff;
+  display:flex;align-items:center;justify-content:center;font:700 12px var(--font-mono);cursor:default;}
+.fbc-chip.first{box-shadow:0 0 0 5px rgba(143,227,179,.4);}
+.fbc-chip.off{opacity:.55;border-style:dashed;}
+.fbc-ord{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#fff;
+  color:#26382C;font:700 9px var(--font-mono);font-style:normal;display:flex;align-items:center;justify-content:center;}
+.fbc-st{position:absolute;bottom:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:#26382C;
+  border:1px solid rgba(255,255,255,.5);font-style:normal;display:flex;align-items:center;justify-content:center;color:#F6E3C3;}
+.fbc-st.nudge{right:auto;left:-5px;background:#8A5A10;}
+.fbc-more{font:700 10px var(--font-mono);color:rgba(255,255,255,.6);}
+.fbp-tbl.moving{box-shadow:0 0 0 4px rgba(143,227,179,.6);border-style:dashed;}
+
+/* ---- the hover card ---- */
+.fbc-hover{position:fixed;transform:translate(-50%,calc(-100% - 10px));z-index:90;background:#fff;color:#223126;
+  border-radius:13px;border:1px solid rgba(34,49,38,.12);box-shadow:0 14px 34px -14px rgba(38,56,44,.5);
+  padding:9px 13px;pointer-events:none;white-space:nowrap;}
+.fbc-hover b{display:block;font:700 12.5px var(--font-display);}
+.fbc-hover span{display:block;font:500 10.5px var(--font-ui);color:#5A6B5E;}
+
+/* ---- the seat, on the phone ---- */
+.fba-seated{display:flex;align-items:center;gap:8px;margin-top:10px;background:#fff;border:1px solid rgba(34,49,38,.12);
+  border-radius:13px;padding:9px 13px;font:500 12px var(--font-ui);color:#5A6B5E;}
+.fba-seated b{color:#223126;}
+.fba-seated button{margin-left:auto;border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;
+  padding:5px 11px;font:600 10.5px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+.fba-seatask{margin-top:10px;background:#fff;border:1px solid rgba(34,49,38,.12);border-radius:15px;padding:12px 13px;}
+.fba-seatask > b{display:block;font:700 13px var(--font-display);color:#223126;}
+.fba-seatask > span{display:block;font:500 11px var(--font-ui);color:#8B988E;margin:2px 0 8px;}
+.fba-seatask .fbp-scroll.mini{background:#E9EFE7;border:1px solid rgba(34,49,38,.12);margin-top:8px;}
+.fba-seatask .fbp-scroll.mini .fbp{height:190px;}
+.fba-seatask .fbp-scroll.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
+  border-color:rgba(34,49,38,.25);color:#5A6B5E;}
+.fba-seatask .fbp-scroll.mini .fbp-tbl.round{width:31px;height:31px;}
+.fba-seatask .fbp-scroll.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
+.fba-seatask .fbp-scroll.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
+.fba-seatrow{display:flex;gap:8px;}
+.fba-seatrow .fba-go{padding:9px 14px;flex:0 1 auto;}
+.fba-seatrow .fba-back{padding:9px 14px;}
+
 /* ---- the salesperson's side ---- */
 .fba-row{display:flex;gap:8px;margin-top:10px;}
 .fba-btn{flex:1;border:0;border-radius:14px;padding:11px 12px;text-align:left;cursor:pointer;color:#fff;}
@@ -33208,12 +33427,13 @@ const SAGE_CSS = `
 .fba-sheetwrap{position:fixed;inset:0;z-index:80;background:rgba(16,21,18,.5);display:flex;align-items:flex-end;justify-content:center;}
 .fba-sheet{width:min(420px,100%);background:#F2F4EF;border-radius:22px 22px 0 0;padding:16px 16px 22px;color:#223126;}
 .fba-cap{font:700 9.5px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:#8B988E;margin:8px 0 6px;}
-.fba-sheet .fbp.mini{height:200px;background:#E9EFE7;border:1px solid rgba(34,49,38,.12);border-radius:14px;}
-.fba-sheet .fbp.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
-.fba-sheet .fbp.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
+.fba-sheet .fbp-scroll.mini{background:#E9EFE7;border:1px solid rgba(34,49,38,.12);}
+.fba-sheet .fbp-scroll.mini .fbp{height:200px;}
+.fba-sheet .fbp-scroll.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
+.fba-sheet .fbp-scroll.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
   border-color:rgba(34,49,38,.25);color:#5A6B5E;}
-.fba-sheet .fbp.mini .fbp-tbl.round{width:31px;height:31px;}
-.fba-sheet .fbp.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
+.fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:31px;height:31px;}
+.fba-sheet .fbp-scroll.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
 .fba-lot{width:100%;margin-top:8px;border:1.5px dashed rgba(34,49,38,.3);background:#fff;border-radius:12px;
   padding:9px 0;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
 .fba-lot.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
@@ -33236,8 +33456,9 @@ const SAGE_CSS = `
 .fbc-cover + .fbc-count{margin-left:0;}
 
 /* ---- the floor plan editor ---- */
-.fpe-box{position:relative;height:380px;border-radius:14px;background:linear-gradient(160deg,#EDF2EA,#E2EAE0);
-  border:1px solid rgba(34,49,38,.12);touch-action:none;overflow:hidden;}
+.fpe-scroll{overflow-x:auto;overflow-y:hidden;border-radius:14px;border:1px solid rgba(34,49,38,.12);}
+.fpe-box{position:relative;height:380px;min-width:100%;background:linear-gradient(160deg,#EDF2EA,#E2EAE0);
+  touch-action:none;}
 .fpe-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
 .fpe-tbl{background:#fff;border-color:rgba(34,49,38,.25);color:#5A6B5E;cursor:grab;}
 .fpe-tbl:hover{transform:none;}
