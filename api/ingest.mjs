@@ -20,7 +20,7 @@ import {
    that drifts writes a row of the right shape in the right place with one column
    missing, and says nothing at all. */
 import {
-  storeKey, actKey, floorStatsKey, boardKey,
+  storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "./_store-keys.mjs";
 /* A person's standing at a store, shared with the app so an import and a screen
@@ -132,6 +132,20 @@ async function sbGet(key) {
   if (!r.ok) throw new Error(`supabase read ${r.status}`);
   const rows = await r.json();
   return rows.length ? rows[0].value : null;
+}
+async function sbDelete(key) {
+  const { url, key: k } = SB();
+  await fetch(`${url}/rest/v1/app_data?key=eq.${encodeURIComponent(key)}`, {
+    method: "DELETE", headers: { apikey: k, Authorization: `Bearer ${k}` },
+  });
+}
+async function sbListKeys(likePattern) {
+  const { url, key: k } = SB();
+  const r = await fetch(`${url}/rest/v1/app_data?key=like.${encodeURIComponent(likePattern)}&select=key`, {
+    headers: { apikey: k, Authorization: `Bearer ${k}` },
+  });
+  if (!r.ok) return [];
+  return (await r.json()).map((row) => row.key);
 }
 async function sbPut(key, value) {
   const { url, key: k } = SB();
@@ -574,7 +588,8 @@ export default async function handler(req, res) {
           continue;
         }
         entries.push({ store: st, rows, type, fileName: a.filename || "email.csv",
-          actDay: null, rollup });
+          actDay: null, rollup,
+          fileB64: Buffer.from(a.content).toString("base64"), fileMime: "text/csv" });
         continue;
       }
       if (type === "delivery" || (type && type.startsWith("delivery"))) {
@@ -595,7 +610,8 @@ export default async function handler(req, res) {
         continue;
       }
       entries.push({ store: addressStore, rows, type, fileName: a.filename || "email.csv",
-        actDay: activityDateFrom(a.filename) });
+        actDay: activityDateFrom(a.filename),
+        fileB64: Buffer.from(a.content).toString("base64"), fileMime: "text/csv" });
     }
 
     // PDFs: each grid names its own store, so ONE shared address works for
@@ -631,7 +647,8 @@ export default async function handler(req, res) {
             /* The grid prints the store's own totals above the people. They used
                to be read and thrown away; they are the one figure that counts a
                delivery once, so they are filed alongside the people now. */
-            stated: kind === "delivery-summary" ? mapped.stated : null });
+            stated: kind === "delivery-summary" ? mapped.stated : null,
+            fileB64: Buffer.from(a.content).toString("base64"), fileMime: "application/pdf" });
           const read = { file: a.filename, kind, store: mapped.storeName,
             matchedStore: hit.store.id, matchQuality: hit.quality,
             people: mapped.rows.length - 2, mapped: true,
@@ -743,6 +760,31 @@ export default async function handler(req, res) {
         continue;
       }
       const results = lastResults;
+
+      /* ---- the report files themselves, kept ----
+         These emails go NOWHERE but here: once parsed, the PDF a disputed
+         number came from used to be gone forever. Every attachment that fed
+         this store is archived exactly as it arrived, keyed by store, day and
+         filename, and Upload History grows a View button that opens it. A
+         same-day resend overwrites its earlier self. Sixty days are kept;
+         anything a dispute has not surfaced in two months, nothing will.
+         Best effort throughout: an archive failure must never fail an import. */
+      for (const e of mine) {
+        if (!e.fileB64 || e.fileB64.length > 6_000_000) continue;
+        try {
+          await sbPut(reportFileKey(st.id, todayET(), e.fileName), {
+            name: e.fileName, mime: e.fileMime || "application/octet-stream",
+            at: new Date().toISOString(), b64: e.fileB64,
+          });
+        } catch (err) { console.error("ingest: report archive failed", e.fileName, String(err.message || err)); }
+      }
+      try {
+        const cutoff = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+        for (const k of await sbListKeys(`lpc:reportfile:${st.id}:%`)) {
+          const day = String(k).split(":")[3] || "";
+          if (day && day < cutoff) await sbDelete(k);
+        }
+      } catch (err) { console.error("ingest: report archive prune failed", String(err.message || err)); }
 
       /* ---- the cold store ----
          Intraday activity older than three weeks moves out of the hot document

@@ -17,7 +17,7 @@ import {
   mapDailyActivityGrid, mapDeliverySummaryGrid, reportBelongsElsewhere,
 } from "../api/_report-parsers.mjs";
 import {
-  storeKey, actKey, floorStatsKey, boardKey,
+  storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "../api/_store-keys.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -20291,9 +20291,39 @@ function BaselineImport({ data, onChange }) {
 }
 
 /* ---------------- Upload history ---------------- */
-function UploadHistory({ data, onChange }) {
+function UploadHistory({ data, onChange, storeId }) {
   const log = data.importLog || [];
   const [busy, setBusy] = useState(false);
+  const [fileBusy, setFileBusy] = useState("");
+  /* The emailed reports live nowhere but the pipeline, which now archives each
+     attachment under a key derived from the store, the ET day it arrived and
+     its filename. That derivation, not a stored pointer, is what this button
+     uses, so every archived file is reachable even from log entries written
+     before the pointer existed. */
+  const viewFile = async (u) => {
+    if (!supabase || fileBusy) return;
+    const day = new Date(u.t).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const key = reportFileKey(storeId, day, u.file);
+    setFileBusy(u.id || u.t);
+    try {
+      const { data: row, error } = await supabase.from("app_data").select("value").eq("key", key).maybeSingle();
+      if (error) throw error;
+      const v = row && row.value;
+      if (!v || !v.b64) {
+        alert("This file is not in the archive. Files are kept for reports that arrived by email after the archive shipped, for sixty days; hand-dropped files never leave this browser.");
+        return;
+      }
+      const bin = atob(v.b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: v.mime || "application/octet-stream" }));
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch (e) {
+      alert("The archive could not be read just now. Try again in a moment.");
+    }
+    setFileBusy("");
+  };
   if (log.length === 0) return null;
 
   // Two genuinely different situations, and pretending they're the same would lose data.
@@ -20396,6 +20426,12 @@ function UploadHistory({ data, onChange }) {
             <b>{u.file}</b>
             <span className="up-tag">{u.label}</span>
             <span className="when">{new Date(u.t).toLocaleString([], { hour: "numeric", minute: "2-digit" })} · {lands}</span>
+            {String(u.by || "").startsWith("Auto") && storeId && (
+              <button className="act-b" disabled={!!fileBusy} onClick={() => viewFile(u)}
+                title="Open the file exactly as it arrived by email">
+                {fileBusy === (u.id || u.t) ? "Opening…" : "View the file"}
+              </button>
+            )}
             {canSurgical ? (
               <button className="act-b" disabled={busy} onClick={() => deleteActivityDay(u)}>Delete</button>
             ) : u.snapT ? (
@@ -24614,7 +24650,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         {xcheck && <CrossCheck store={store} data={data} config={config} onClose={() => setXcheck(false)} />}
         {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
-        <UploadHistory data={data} onChange={onChange} />
+        <UploadHistory data={data} onChange={onChange} storeId={store.id} />
 
       </div>
     );
@@ -24718,7 +24754,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
             <div className="s2-cw"><PixIcon glyph="clock" size={11} style={{ color: "#8B93A2" }} />
               <span>Yesterday's landed <b>{stampAt(ydayStamp)}</b></span></div>
           )}
-          <UploadHistory data={data} onChange={onChange} />
+          <UploadHistory data={data} onChange={onChange} storeId={store.id} />
         </div>
       </div>
 
