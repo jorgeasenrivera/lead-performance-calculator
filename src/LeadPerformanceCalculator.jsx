@@ -15461,20 +15461,22 @@ function parsePdfSchedule(items, pageWidth, roster, targetYear, targetMonth) {
 }
 
 function loadPdfJs() {
-  if (typeof window !== "undefined" && window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  /* Bundled, not fetched. This used to come from cdnjs at the moment a manager
+     dropped a PDF in -- the same shape of dependency that once took out the QR
+     library: a dealership that blocks the CDN, or a bad connection, and the
+     import path just dies. The pipeline already ships pdfjs-dist as a real
+     dependency; the app now ships the same build, split into its own chunk that
+     only loads when a PDF actually arrives. */
   if (_pdfjsPromise) return _pdfjsPromise;
-  _pdfjsPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-    s.async = true;
-    s.onload = () => {
-      if (!window.pdfjsLib) { reject(new Error("pdf.js failed to initialize")); return; }
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-      resolve(window.pdfjsLib);
-    };
-    s.onerror = () => { _pdfjsPromise = null; reject(new Error("pdf.js failed to load")); };
-    document.head.appendChild(s);
-  });
+  _pdfjsPromise = (async () => {
+    const [pdfjs, worker] = await Promise.all([
+      import("pdfjs-dist/build/pdf"),
+      import("pdfjs-dist/build/pdf.worker.min.js?url"),
+    ]);
+    const lib = pdfjs.default || pdfjs;
+    lib.GlobalWorkerOptions.workerSrc = worker.default;
+    return lib;
+  })().catch((e) => { _pdfjsPromise = null; throw e; });
   return _pdfjsPromise;
 }
 
