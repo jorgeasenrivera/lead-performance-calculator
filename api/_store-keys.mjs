@@ -25,6 +25,12 @@ export const storeKey     = (storeId) => `lpc:store:${storeId}:v2`;
 export const actKey       = (storeId, day) => `lpc:store:${storeId}:act:${day}`;
 export const floorStatsKey = (storeId, day) => `lpc:board:${storeId}:act:${day}`;
 export const boardKey     = (storeId) => `lpc:board:${storeId}:v1`;
+/* Where an emailed report's own file is archived, exactly as it arrived. The
+   reports are sent ONLY to the pipeline, so without this nobody could ever look
+   at the PDF a number came from. Keyed by store, arrival day and a sanitised
+   filename, so a same-day resend overwrites rather than piling up. */
+export const reportFileKey = (storeId, day, fileName) =>
+  `lpc:reportfile:${storeId}:${day}:${String(fileName || "file").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 80)}`;
 
 /* What the floor keeps of a day. The floor reads its own narrow copy rather
    than the whole import, so anything missing from this list does not reach it. */

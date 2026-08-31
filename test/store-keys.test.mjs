@@ -87,3 +87,11 @@ test("an older day that already has its own row keeps being written to it", () =
   assert.ok(/if \(!keep\.has\(day\) && !split\.has\(day\)\) continue;/.test(fn),
     "and skip a day only when it is both outside the window and has no row yet");
 });
+
+test("the archived report file key is stable and safe", async () => {
+  const { reportFileKey } = await import("../api/_store-keys.mjs");
+  assert.equal(reportFileKey("holler-honda", "2026-08-28", "Standard-Video 2026-08-28.pdf"),
+    "lpc:reportfile:holler-honda:2026-08-28:standard-video-2026-08-28.pdf");
+  // hostile names collapse to something a key can carry
+  assert.ok(!/[^a-z0-9._:-]/.test(reportFileKey("s", "2026-01-01", 'a b/c\\d"e.pdf').split(":").slice(3).join(":")));
+});
