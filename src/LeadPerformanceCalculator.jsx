@@ -15693,6 +15693,131 @@ function parseBlankGrid(rows, roster, targetYear, targetMonth) {
   return { matched, unmatched: Object.keys(unmatched), teams, empty: !matched.length && !Object.keys(unmatched).length };
 }
 
+
+/* dm-daterows-begin */
+/* ---------------- Date-rows team schedule (Driver's Mart Winter Park style) ------
+   One row per DATE rather than a week grid: Date | Day | store hours | one column per
+   team, each cell a shift time or OFF. The people ride a legend to the right: a
+   "Team A Wes" header (the lead's name shares the header cell) with members listed in
+   the neighboring column beneath it, until the next team header. A person's off-days
+   are the days their team's column says OFF or VAC; a shift time means working. The
+   notes column ("Labor Day - all team") is left of the legend and is never a name. */
+function drDate(v) {
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return null;
+  const MO = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const m = s.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+  if (m) {
+    const mi = MO.findIndex((mo) => m[1].toLowerCase().startsWith(mo));
+    if (mi >= 0) return `${m[3]}-${String(mi + 1).padStart(2, "0")}-${String(m[2]).padStart(2, "0")}`;
+  }
+  const n = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (n) {
+    const y = n[3].length === 2 ? 2000 + parseInt(n[3]) : parseInt(n[3]);
+    return `${y}-${String(parseInt(n[1])).padStart(2, "0")}-${String(parseInt(n[2])).padStart(2, "0")}`;
+  }
+  if (/^\d{5}$/.test(s)) {
+    const serial = parseInt(s, 10);
+    if (serial > 20000 && serial < 80000) {
+      return new Date(Date.UTC(1899, 11, 30) + serial * 86400000).toISOString().slice(0, 10);
+    }
+  }
+  return null;
+}
+
+function drHeader(rows) {
+  for (let r = 0; r < Math.min(6, rows.length); r++) {
+    const row = rows[r] || [];
+    const low = row.map((v) => String(v == null ? "" : v).trim().toLowerCase());
+    const di = low.findIndex((v) => v === "date");
+    const teamCols = [];
+    low.forEach((v, c) => {
+      const m = v.match(/^team\s+([a-z0-9])\b/);
+      if (m) teamCols.push({ c, letter: m[1].toUpperCase() });
+    });
+    if (di >= 0 && teamCols.length >= 2) return { hr: r, di, teamCols };
+  }
+  return null;
+}
+
+function looksLikeDateRows(rows) {
+  const h = drHeader(rows || []);
+  if (!h) return false;
+  let dated = 0;
+  for (let r = h.hr + 1; r < rows.length; r++) {
+    if (drDate((rows[r] || [])[h.di])) dated++;
+  }
+  return dated >= 7;
+}
+
+function parseDateRows(rows, roster, matchName) {
+  const h = drHeader(rows || []);
+  if (!h) return { matched: [], unmatched: [], teams: {}, empty: true };
+  const { hr, di, teamCols } = h;
+  const mm = matchName || ((label) => matchRosterName(label, roster));
+
+  // The legend lives to the right of the last team column. A header cell claims a
+  // team (and its lead); members are the nearest names in that header's own column
+  // or the two beside it, on the rows down to the next header. Anything in other
+  // columns (the notes column included) is not a person.
+  const legendStart = Math.max(...teamCols.map((t) => t.c)) + 1;
+  const cellAt = (r, c) => String(((rows[r] || [])[c]) == null ? "" : (rows[r] || [])[c]).trim();
+  const heads = [];
+  for (let r = 0; r < rows.length; r++) {
+    for (let c = legendStart; c < (rows[r] || []).length; c++) {
+      const v = cellAt(r, c);
+      const m = v.match(/^team\s+([a-z0-9])\b\s*(.*)$/i);
+      if (m) heads.push({ r, c, letter: m[1].toUpperCase(), lead: m[2].trim() });
+    }
+  }
+  const teams = {};
+  heads.forEach((head, i) => {
+    const stop = i + 1 < heads.length ? heads[i + 1].r : rows.length;
+    const members = [];
+    if (head.lead) members.push(head.lead);
+    for (let r = head.r + 1; r < stop; r++) {
+      for (let c = head.c; c <= head.c + 2; c++) {
+        const v = cellAt(r, c);
+        if (!v || /^teams?$/i.test(v) || /^\d+$/.test(v)) continue;
+        members.push(v);
+        break;
+      }
+    }
+    teams[head.letter] = members;
+  });
+
+  const off = {};
+  const unmatched = {};
+  const monthCount = {};
+  for (let r = hr + 1; r < rows.length; r++) {
+    const date = drDate((rows[r] || [])[di]);
+    if (!date) continue;
+    monthCount[date.slice(0, 7)] = (monthCount[date.slice(0, 7)] || 0) + 1;
+    for (const t of teamCols) {
+      const v = cellAt(r, t.c);
+      if (!/^(off|vac|vacation)$/i.test(v)) continue;
+      for (const p of (teams[t.letter] || [])) {
+        const a = mm(p);
+        if (a) (off[a.id] = off[a.id] || new Set()).add(date);
+        else unmatched[p] = (unmatched[p] || 0) + 1;
+      }
+    }
+  }
+
+  const best = Object.entries(monthCount).sort((a, b) => b[1] - a[1])[0];
+  const ty = best ? parseInt(best[0].slice(0, 4)) : new Date().getFullYear();
+  const tm = best ? parseInt(best[0].slice(5, 7)) : new Date().getMonth() + 1;
+
+  const matched = [];
+  for (const [id, set] of Object.entries(off)) {
+    const a = roster.find((x) => x.id === id);
+    matched.push({ id, name: a?.name || id, dates: [...set].sort() });
+  }
+  return { matched, unmatched: Object.keys(unmatched), teams, ty, tm,
+    empty: !matched.length && !Object.keys(unmatched).length };
+}
+/* dm-daterows-end */
+
 const SCHED_DAYCOLS = [0, 3, 6, 9, 12, 15, 18];
 
 function looksLikeHollerGrid(rows) {
@@ -16314,7 +16439,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         const toRows = (ws) => XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
         // keep only sheets that actually contain a schedule grid (either style)
         const gridSheets = wb.SheetNames.filter((n) => {
-          try { const rr = toRows(wb.Sheets[n]); return looksLikeHollerGrid(rr) || looksLikeBlankGrid(rr) || looksLikeNameGrid(rr); } catch (e) { return false; }
+          try { const rr = toRows(wb.Sheets[n]); return looksLikeHollerGrid(rr) || looksLikeBlankGrid(rr) || looksLikeDateRows(rr) || looksLikeNameGrid(rr); } catch (e) { return false; }
         });
         const usable = gridSheets.length ? gridSheets : wb.SheetNames;
         if (usable.length === 1) {
@@ -16371,6 +16496,19 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
         matched: res.matched, unmatched: res.unmatched, total, grid: true, blankGrid: true,
         monthLabel: monthLabel(`${ty}-${String(tm).padStart(2, "0")}`), teams: res.teams,
       });
+      return;
+    }
+
+    // ---- Date-rows style: one row per date, a column per team, legend on the right ----
+    if (looksLikeDateRows(rows)) {
+      const res = parseDateRows(rows, roster);
+      const total = res.matched.reduce((n, m) => n + m.dates.length, 0);
+      if (res.empty) {
+        setErr("Detected a per-date team schedule, but couldn't read any OFF days. The layout may differ from expected.");
+        return;
+      }
+      setPreview({ matched: res.matched, unmatched: res.unmatched, total, grid: true,
+        monthLabel: monthLabel(`${res.ty}-${String(res.tm).padStart(2, "0")}`), teams: res.teams });
       return;
     }
 
