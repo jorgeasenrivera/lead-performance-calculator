@@ -23,6 +23,7 @@ import {
   storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "./_store-keys.mjs";
+import { phoneExtras, withRocked } from "./_phone-rows.mjs";
 /* A person's standing at a store, shared with the app so an import and a screen
    cannot disagree about who this store's people are. */
 import { admitsEveryone, holdPerson } from "./_people-status.mjs";
@@ -202,8 +203,8 @@ async function sbPutActivityDay(storeId, day, rows) {
    with no account can read. Without this a salesperson can never see their own day:
    the store rows require a signed-in session and a sign-in page has none. Counts
    only, one day, for the people on the floor. */
-async function sbPutFloorStats(storeId, day, rows) {
-  await sbPut(floorStatsKey(storeId, day), slimFloorStats(rows));
+async function sbPutFloorStats(storeId, day, rows, sdata) {
+  await sbPut(floorStatsKey(storeId, day), slimFloorStats(withRocked(sdata, day, rows)));
 }
 
 /* ---------- the TV board row ----------
@@ -238,11 +239,14 @@ async function refreshBoardRow(storeId, sdata) {
     stats[norm(a.name)] = keep;
   }
 
+  const extras = phoneExtras(sdata, ((sdata && sdata.roster) || []).filter((a) => a.roleId && onBoard.has(a.roleId) && !gone.has(norm(a.name))), month, norm);
   await sbPut(boardKey(storeId), {
     ...prev,
     ym: month,
     roster,
     departed: [...gone],
+    goals: extras.goals,
+    off: extras.off,
     boardDisplay: (sdata && sdata.boardDisplay) || prev.boardDisplay || null,
     months: { [month]: { stats } },
     updatedAt: new Date().toISOString(),
@@ -828,7 +832,7 @@ export default async function handler(req, res) {
         if (!rows) continue;
         try {
           await sbPutActivityDay(st.id, r.day, rows);
-          await sbPutFloorStats(st.id, r.day, rows);
+          await sbPutFloorStats(st.id, r.day, rows, next);
           dayWrites.push(r.day);
         } catch (e) { console.error("ingest: day row write failed", st.id, r.day, String(e.message || e)); }
       }

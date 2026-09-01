@@ -41,13 +41,18 @@ export const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email"
      a deal ever appears in — the deal notification names the primary rep and
      nobody else. */
   "visits",
+  /* Whether the person qualified in RockEd that day, folded in at publish time
+     from the checkout marks so the phone's points are the desk's points. */
+  "rocked",
   "uploadedAt"];
 
 /* What the wall keeps. The lead counts are in here so a salesperson can see
    what the percentage is out of. */
 export const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", "phonePct",
   "showroomUnits", "showroomPct", "campaignUnits", "prevPct", "prevUnits",
-  "internetLeads", "phoneLeads", "showroomLeads"];
+  "internetLeads", "phoneLeads", "showroomLeads",
+  /* The new and used split, so a phone's pace bar can show both halves. */
+  "newUnits", "usedUnits"];
 
 /* Keeping only the fields that travel, which is the same operation on both
    sides and was written out twice. */
