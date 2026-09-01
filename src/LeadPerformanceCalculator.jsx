@@ -11837,10 +11837,10 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
     <>
       <div className="fba-row">
         <button type="button" className="fba-btn fly" onClick={() => sheetFor("fly")}>
-          <b>FlyBy</b><span>Swing by, meet my guest</span>
+          <PixIcon glyph="bolt" size={16} /><b>FlyBy</b><span>Swing by, meet my guest</span>
         </button>
         <button type="button" className="fba-btn to" onClick={() => sheetFor("to")}>
-          <b>T.O.</b><span>I need help now</span>
+          <PixIcon glyph="swap" size={16} /><b>T.O.</b><span>I need help now</span>
         </button>
       </div>
       {open && (
@@ -12354,6 +12354,74 @@ function floorSignInUrl(storeId, date, token) {
    line beside the date, the units riding a pinned hero, the day's three
    standards under it, then the points read (lower wins), then the board.
    The Floor tab keeps the whole existing floor screen untouched. */
+/* The line drawn as the walk to the door: it begins at the screen's left edge
+   and runs right, whoever is up next largest at the front, you glowing at your
+   spot, the people behind you trailing. Two dot streams carry the motion: one
+   enters from the left and dies at the back of the line, one leaves your dot
+   for the front. Their distances are pixels measured off the track, because
+   only transform animations stay on the compositor. */
+function McTrack({ line, meId, roster }) {
+  const ref = useRef(null);
+  const waiting = (line || []).filter((p2) => p2.status === "waiting");
+  const meIdx = waiting.findIndex((p2) => p2.id === meId);
+  const ahead = meIdx >= 0 ? waiting.slice(0, meIdx) : waiting;
+  const behind = meIdx >= 0 ? waiting.slice(meIdx + 1) : [];
+  const labelOf = (id) => {
+    const r = (roster || []).find((x) => x.id === id);
+    const nm = (r && (r.label || r.name)) || "";
+    return nm.trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2) || "\u00b7";
+  };
+  const headL = (i) => (91 - i * 15) + "%";
+  const youL = (91 - ahead.length * 15) + "%";
+  const behindL = (k) => (91 - ahead.length * 15 - (k + 1) * 13) + "%";
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const w = el.offsetWidth;
+      const tail = behind.length ? parseFloat(behindL(behind.length - 1)) : parseFloat(youL);
+      el.style.setProperty("--dA", Math.max(8, (w * tail) / 100 - 18) + "px");
+      el.style.setProperty("--bX", ((w * parseFloat(youL)) / 100 + 12) + "px");
+      el.style.setProperty("--dB", (w - 16) + "px");
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [ahead.length, behind.length]);   // eslint-disable-line
+  return (
+    <div className="mcf-track" ref={ref}>
+      <s className="fa" /><s className="fa d2" />
+      <s className="fb" /><s className="fb d2" />
+      {ahead.map((p2, i) => (
+        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ left: headL(i) }}>{labelOf(p2.id)}</span>
+      ))}
+      {behind.map((p2, k) => (
+        <span key={p2.id} className="mcf-pip bh" style={{ left: behindL(k) }}>{labelOf(p2.id)}</span>
+      ))}
+      {meIdx >= 0 && <span className="mcf-you" style={{ left: youL }}>{labelOf(meId)}</span>}
+    </div>
+  );
+}
+
+/* Two clocks on one level: how long you have been on the floor, and how long
+   since your place last changed. They tick themselves so the figures move
+   between polls; only the text nodes change. */
+function McTimers({ sinceOn, sinceMove }) {
+  const [, force] = useState(0);
+  useEffect(() => { const t = setInterval(() => force((n) => n + 1), 1000); return () => clearInterval(t); }, []);
+  const fmt = (iso) => {
+    if (!iso) return "0:00";
+    const t = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+  };
+  return (
+    <div className="mcf-tmr">
+      <span><span className="v"><PixIcon glyph="clock" size={11} /> <b>{fmt(sinceOn)}</b></span><span className="l">ON THE FLOOR</span></span>
+      <span><span className="v"><PixIcon glyph="arrowup" size={11} /> <b>{fmt(sinceMove)}</b></span><span className="l">LAST MOVE</span></span>
+    </div>
+  );
+}
+
 const MC_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 const mcMet = (got, need) => (need > 0 ? (got || 0) >= need * 0.8 : (got || 0) > 0);
 const mcClock = (iso) => {
@@ -13048,31 +13116,41 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
     const nudgedMins = me.nudgedAt ? qMinsSince(me.nudgedAt) : null;
     const nudgeOn = nudgedMins != null && nudgedMins < 10;
     content = (
-      <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
-        <div className="sf-top">
-          <span className="q-mark q-mark-live"><span className="sf-live-dot" />
-            <PixIcon glyph="door" size={18} /><span>Live Floor</span></span>
-        </div>
+      <div className={"sf-live mcf" + (st !== "waiting" ? " sf-off" : "")}>
         {nudgeOn && (
           <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you on the floor</div>
         )}
-        {/* The ring carries the position, and around it the two facts that belonged to
-            it anyway: how long you have been on, and how many are on with you. Said
-            once, in the place the eye already is. */}
-        <div className="sf-poswrap">
-          <div className="sf-aura" />
-          <div className="sf-ringwrap">
-          <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
-          <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <SfIcon name={st} size={74} />}</div></div>
+        {/* The approved floor screen: the count of available people ahead in the
+            dot matrix, the line drawn from the screen's left edge to the door,
+            the two clocks on one level, and the title. When you are standing
+            down the line steps aside for the status and its clock. */}
+        {st === "waiting" ? (
+          <div className="mcf-top">
+            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={7} gap={3} dim="transparent" /></span>
+            <div className="mcf-cap">TO THE DOOR</div>
+            <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
+            <McTimers sinceOn={me.joinedAt} sinceMove={me.statusAt || me.joinedAt} />
+            <div className="mcf-title">{title}</div>
           </div>
-          <div className="sf-meta">
-            <div className="sf-line-1">{title}</div>
-            <div className="sf-line-2">{sub}</div>
+        ) : (
+          <div className="mcf-top">
+            <span className="mcf-sticon"><SfIcon name={st} size={64} /></span>
+            <McTimers sinceOn={me.joinedAt} sinceMove={me.statusAt || me.joinedAt} />
+            <div className="mcf-title">{title}</div>
+            <div className="mcf-sub">{sub}</div>
           </div>
-        </div>
+        )}
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
-          <SfStatusSelect value={st} variant={variant} flags={FLOOR_SELF_FLAGS} busy={busy} onPick={setFlag} />
+          <div className="mcf-chips" role="radiogroup" aria-label="Where you are">
+            {["waiting", ...FLOOR_SELF_FLAGS].map((s2) => (
+              <button key={s2} type="button" role="radio" aria-checked={s2 === st} disabled={busy}
+                className={"mcf-chip" + (s2 === st ? " on" : "")} onClick={() => setFlag(s2)}>
+                <PixIcon glyph={s2 === "waiting" ? "user" : s2} size={14} />
+                <span>{s2 === "waiting" ? "Here" : s2 === "lunch" ? "Lunch" : "Away"}</span>
+              </button>
+            ))}
+          </div>
           <SeatBlock store={store} date={date} meId={meId} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
             fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
@@ -33831,8 +33909,54 @@ const SAGE_CSS = `
   justify-content:center; transition:transform .12s ease; }
 .mc-tab:active{ transform:scale(.88); }
 .mc-tab.on{ color:#e4c98d; }
+/* ---- the floor, final ----------------------------------------------------- */
+.mcf .sf-actions{ width:min(430px,100%); margin:0 auto; }
+.mcf-top{ width:min(430px,100%); margin:0 auto; display:flex; flex-direction:column;
+  align-items:center; padding-top:26px; }
+.mcf-count{ display:flex; justify-content:center; }
+.mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
+  color:rgba(237,242,234,.55); margin-top:8px; }
+.mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 0;
+  border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
+.mcf-track .fa, .mcf-track .fb{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px;
+  border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
+.mcf-track .fa{ left:4px; animation:mcfA 2.4s linear infinite; }
+.mcf-track .fb{ left:0; animation:mcfB 2.4s linear infinite; }
+.mcf-track .d2{ animation-delay:1.2s; }
+@keyframes mcfA{ 0%{ transform:translateX(0); opacity:0; } 14%{ opacity:.9; }
+  80%{ opacity:.9; } 96%,100%{ transform:translateX(var(--dA,80px)); opacity:0; } }
+@keyframes mcfB{ 0%{ transform:translateX(var(--bX,120px)); opacity:0; } 16%{ opacity:.9; }
+  82%{ opacity:.9; } 100%{ transform:translateX(var(--dB,240px)); opacity:0; } }
+.mcf-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:20px; height:20px;
+  border-radius:50%; background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center;
+  justify-content:center; font-family:var(--sfmono); font-size:6.5px; font-weight:700;
+  transition:left .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
+.mcf-pip.hd{ width:26px; height:26px; font-size:7.5px; background:rgba(232,238,242,.34); }
+.mcf-pip.bh{ width:16px; height:16px; font-size:5.5px; background:rgba(232,238,242,.16); }
+.mcf-you{ position:absolute; top:50%; transform:translate(-50%,-50%); width:20px; height:20px;
+  border-radius:50%; background:#8fd8af; color:#12251b; display:flex; align-items:center;
+  justify-content:center; font-family:var(--sfmono); font-size:6.5px; font-weight:700;
+  box-shadow:0 0 12px rgba(143,216,175,.95);
+  transition:left .65s cubic-bezier(.3,1.3,.4,1); }
+.mcf-tmr{ display:flex; gap:22px; margin-top:16px; }
+.mcf-tmr > span{ display:flex; flex-direction:column; align-items:center; }
+.mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:14px;
+  font-family:var(--sfmono); font-size:11px; font-weight:700; color:rgba(237,242,234,.85); }
+.mcf-tmr .l{ font-family:var(--sfmono); font-size:6.5px; font-weight:700; letter-spacing:.14em;
+  color:rgba(237,242,234,.4); margin-top:3px; }
+.mcf-title{ font-family:var(--sfdisp,inherit); font-size:22px; font-weight:700; margin-top:14px;
+  color:#fff; text-align:center; }
+.mcf-sub{ font-size:12.5px; color:rgba(237,242,234,.6); margin-top:4px; text-align:center; }
+.mcf-sticon{ margin-top:10px; opacity:.9; }
+.mcf-chips{ display:flex; gap:8px; margin-top:6px; }
+.mcf-chip{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;
+  padding:11px 0 9px; border-radius:13px; background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.09); color:#e8eef2; font-size:10px; font-weight:600;
+  cursor:pointer; transition:transform .12s ease; }
+.mcf-chip:active{ transform:scale(.94); }
+.mcf-chip.on{ border-color:rgba(228,201,141,.6); color:#e4c98d; background:rgba(228,201,141,.08); }
 @media (prefers-reduced-motion: reduce){
-  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind{ animation:none; transition:none; }
+  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind, .mcf-track .fa, .mcf-track .fb{ animation:none; transition:none; }
 }
 
 /* ---- the status selector ----
@@ -34167,11 +34291,14 @@ const SAGE_CSS = `
 
 /* ---- the salesperson's side ---- */
 .fba-row{display:flex;gap:8px;margin-top:10px;}
-.fba-btn{flex:1;border:0;border-radius:14px;padding:11px 12px;text-align:left;cursor:pointer;color:#fff;}
+.fba-btn{flex:1;border-radius:17px;padding:16px 10px 13px;text-align:center;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:7px;background:rgba(255,255,255,.04);
+  border:1.5px solid; transition:transform .12s ease;}
+.fba-btn:active{transform:scale(.96);}
+.fba-btn.fly{color:#e8a93c;border-color:rgba(232,169,60,.5);}
+.fba-btn.to{color:#f08a80;border-color:rgba(216,72,60,.5);}
 .fba-btn b{display:block;font:700 14px var(--font-display);}
-.fba-btn span{font-size:10.5px;opacity:.92;}
-.fba-btn.fly{background:linear-gradient(135deg,#E8A93C,#D08F1E);}
-.fba-btn.to{background:linear-gradient(135deg,#D8483C,#B02A1E);}
+.fba-btn span{font-size:10px;opacity:.7;}
 .fba-chip{display:flex;align-items:center;gap:10px;margin-top:10px;background:#101512;color:#fff;border-radius:15px;padding:11px 13px;}
 .fba-ring{width:26px;height:26px;border-radius:50%;border:3px solid #10B981;border-top-color:transparent;
   animation:fbaSpin 1.2s linear infinite;flex:0 0 auto;}
