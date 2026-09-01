@@ -10459,10 +10459,10 @@ const LED_FONT = {
   "8": ["111", "101", "111", "101", "111"],
   "9": ["111", "101", "111", "001", "111"],
   "#": ["101", "111", "101", "111", "101"],
+  ".": ["000", "000", "000", "000", "010"],
 };
-function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3 }) {
+function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3, dim = "rgba(255,255,255,.07)" }) {
   const chars = String(value).split("");
-  const dim = "rgba(255,255,255,.07)";
   return (
     <div className="led-num" style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
       {chars.map((ch, di) => {
@@ -12341,10 +12341,296 @@ function floorSignInUrl(storeId, date, token) {
    Mirrors QueueSignIn (name fuzzy-match + PIN, curtain wipe, reuse identities);
    the "done" screen adds the accidental-check-in self-reverse.
    ========================================================================= */
+/* =========================================================================
+   MyCorner - the salesperson's own home
+   =========================================================================
+   The first screen a signed-in salesperson lands on. Everything on it is a
+   number that already exists somewhere a phone can read without an account:
+   today from the split day row, the month from the board's published row,
+   the last ten days from the same day rows the coaching bands read. Nothing
+   here is typed by a thumb; the reports fill it, and the screen says when.
+
+   The layout is the one settled in the drafts: the month calendar and the
+   line beside the date, the units riding a pinned hero, the day's three
+   standards under it, then the points read (lower wins), then the board.
+   The Floor tab keeps the whole existing floor screen untouched. */
+const MC_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+const mcMet = (got, need) => (need > 0 ? (got || 0) >= need * 0.8 : (got || 0) > 0);
+const mcClock = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(" ", "").toLowerCase();
+};
+
+function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
+                    monthStats, boardThr, line, myPos, availableAhead, toFloor }) {
+  const [days, setDays] = useState(null);
+  const [sheet, setSheet] = useState(null);   // "closing" | "board" | null
+  useEffect(() => {
+    let dead = false;
+    loadMyDays(store, date, [norm(meFull || ""), norm(meLabel || "")])
+      .then((d) => { if (!dead) setDays(d); })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [store, date, meFull, meLabel]);
+
+  const a = mine || {};
+  const needCalls = std.minCalls || 0, needVideos = std.minVideos || 0;
+  const needTasks = a.tasksPosted || 0;
+  const rows = [
+    { label: "Calls", got: a.calls || 0, need: needCalls, met: mcMet(a.calls, needCalls) },
+    { label: "Videos", got: a.video || 0, need: needVideos, met: mcMet(a.video, needVideos) },
+    { label: "Tasks", got: a.tasks || 0, need: needTasks, met: needTasks > 0 ? mcMet(a.tasks, needTasks) : (a.tasks || 0) > 0 },
+  ];
+
+  // The month, from the row the wall already publishes for this store.
+  const ms = (monthStats && (monthStats[norm(meFull)] || monthStats[norm(meLabel)])) || null;
+  const units = ms
+    ? (ms.internetUnits || 0) + (ms.phoneUnits || 0) + (ms.showroomUnits || 0) + (ms.campaignUnits || 0)
+    : null;
+  const dayN = parseInt(date.slice(8, 10)), y = parseInt(date.slice(0, 4)), mo = parseInt(date.slice(5, 7));
+  const daysInMonth = new Date(y, mo, 0).getDate();
+  /* A projection off one or two days is a coin toss dressed as a number; the
+     bar waits until the month has enough days to mean something. */
+  const pace = units != null && dayN >= 3 ? Math.round((units / dayN) * daysInMonth * 10) / 10 : null;
+
+  // A clean day met every standard its report can grade. A missed worked day
+  // costs one point; nobody can tap it away, only work it away.
+  const graded = (r) => {
+    if (!r) return null;
+    const tp = r.tasksPosted || 0;
+    return mcMet(r.calls, needCalls) && mcMet(r.video, needVideos) && (tp > 0 ? mcMet(r.tasks, tp) : true);
+  };
+  const byDay = {};
+  for (const d of (days || [])) byDay[d.day] = d.row;
+  const monthPrefix = date.slice(0, 7);
+  let points = 0, streak = 0;
+  for (const d of (days || [])) {
+    if (!d.row || !d.day.startsWith(monthPrefix) || d.day > date) continue;
+    if (graded(d.row) === false && d.day !== date) points++;
+  }
+  for (let i = 1; i <= SF_DAYS; i++) {
+    const dd = new Date(y, mo - 1, dayN - i);
+    const k = dd.toISOString().slice(0, 10);
+    const r = byDay[k];
+    if (!r) continue;                      // a day off does not break a run
+    if (graded(r)) streak++; else break;
+  }
+  const week = [];
+  for (let i = 6; i >= 0; i--) {
+    const dd = new Date(y, mo - 1, dayN - i);
+    const k = `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, "0")}-${String(dd.getDate()).padStart(2, "0")}`;
+    const r = byDay[k];
+    week.push({ wd: "SMTWTFS"[dd.getDay()], today: i === 0, state: i === 0 ? "now" : (r ? (graded(r) ? "ok" : "bad") : "off") });
+  }
+
+  // The calendar: a dot per day on its true weekday column, warmed by how much
+  // the day's report carried. Only the days the phone can still read light up.
+  const cal = [];
+  const lead = new Date(y, mo - 1, 1).getDay();
+  for (let i = 0; i < lead; i++) cal.push(null);
+  let bestDay = null, bestScore = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const k = `${monthPrefix}-${String(d).padStart(2, "0")}`;
+    const r = byDay[k];
+    const score = r ? (r.units || 0) * 10 + Math.min(2, (r.calls || 0) / Math.max(1, needCalls)) : 0;
+    if (r && score > bestScore) { bestScore = score; bestDay = d; }
+    cal.push({ d, past: d <= dayN, r, score });
+  }
+
+  // The line, small: whoever is up, the dots behind them, you in green.
+  const ahead = (line || []).slice(0, Math.max(0, myPos - 1));
+  const headP = ahead[0] || null;
+
+  const board = (() => {
+    if (!monthStats) return null;
+    const all = Object.entries(monthStats).map(([k, s2]) => ({
+      k, units: (s2.internetUnits || 0) + (s2.phoneUnits || 0) + (s2.showroomUnits || 0) + (s2.campaignUnits || 0),
+    })).filter((r) => r.units > 0 || r.k === norm(meFull) || r.k === norm(meLabel));
+    all.sort((x2, y2) => y2.units - x2.units || x2.k.localeCompare(y2.k));
+    const meIdx = all.findIndex((r) => r.k === norm(meFull) || r.k === norm(meLabel));
+    return { all, meIdx };
+  })();
+  const title = (k) => k.split(" ").map((w) => w ? w[0].toUpperCase() + w.slice(1) : w).join(" ");
+  const chColors = { internet: "#5B9BE8", phone: "#F09B3C", showroom: "#3DC383" };
+  const closing = ms ? [
+    { k: "internet", label: "Internet", pct: ms.internetPct, leads: ms.internetLeads, u: ms.internetUnits },
+    { k: "phone", label: "Phone", pct: ms.phonePct, leads: ms.phoneLeads, u: ms.phoneUnits },
+    { k: "showroom", label: "Showroom", pct: ms.showroomPct, leads: ms.showroomLeads, u: ms.showroomUnits },
+  ].filter((c) => c.pct != null || c.u) : [];
+  const prev = (ms && ms.prevPct) || {};
+  const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0));
+
+  return (
+    <div className="mc">
+      <div className="mc-head">
+        <div className="mc-calw">
+          <div className="mc-calhead"><PixIcon glyph="calendar" size={11} /><span>{MC_MONTHS[mo - 1]}</span></div>
+          <div className="mc-cal">
+            {cal.map((c, i) => c === null
+              ? <s key={"p" + i} />
+              : <s key={c.d} className={
+                  (c.d === dayN ? "today " : "") + (c.d === bestDay ? "best" : (c.r ? (c.score >= 10 ? "h3" : c.score >= 1.4 ? "h2" : "h1") : (c.past ? "" : "off")))
+                } />)}
+          </div>
+        </div>
+        <div className="mc-side">
+          <span className="mc-date">{new Date(y, mo - 1, dayN).toLocaleDateString([], { weekday: "long" }).toUpperCase()}</span>
+          {me && me.status === "waiting" && (
+            <button type="button" className="mc-qmini" onClick={() => { buzz(8); toFloor(); }} aria-label="The line">
+              {headP && <s className="hd">{shortLabel(headP.label || "").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</s>}
+              {ahead.slice(1).map((p) => <s key={p.id} />)}
+              <s className="me2" />
+              <b>{availableAhead === 0 ? "YOU ARE UP" : availableAhead + " AHEAD"}</b>
+            </button>
+          )}
+          {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
+        </div>
+      </div>
+
+      <div className="mc-hero">
+        <div className="mc-hero-top">
+          {units != null
+            ? <span className="mc-units"><LedNumber value={units} color="#F2F6F2" cell={7} gap={3} dim="transparent" /></span>
+            : <span className="mc-units mc-units-none">No month row yet</span>}
+          <span className="mc-units-lbl">units<br />this month</span>
+          {closing.length > 0 && (
+            <button type="button" className="mc-icobtn" onClick={() => { buzz(8); setSheet("closing"); }} aria-label="Closing detail">
+              <span className="mc-cbars">
+                <i style={{ height: 4, background: chColors.internet }} />
+                <i style={{ height: 8, background: chColors.phone }} />
+                <i style={{ height: 12, background: chColors.showroom }} />
+              </span>
+            </button>
+          )}
+        </div>
+        {pace != null && (
+          <div className="mc-pace">
+            <span className="nm">Pace</span>
+            <span className="tr"><i style={{ width: Math.round((dayN / daysInMonth) * 100) + "%" }} /></span>
+            <span className="num">{pace}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="mc-cap">TODAY &middot; FILLS ITSELF</div>
+      <div className="mc-card mc-today">
+        {rows.map((r2) => (
+          <div className="mc-row" key={r2.label}>
+            <span className="mc-num"><LedNumber value={r2.got} color={r2.met ? "#8FD8AF" : "#E9CE96"} cell={4} gap={2} dim="transparent" /></span>
+            <span className="mc-tx">
+              <b>{r2.label}</b>
+              {r2.met
+                ? <span className="mc-made"><PixIcon glyph="check" size={10} /><span>MADE IT</span></span>
+                : <>
+                    <span className="st">OF {r2.need}</span>
+                    <span className="bar"><i style={{ width: Math.min(100, Math.round(((r2.got || 0) / Math.max(1, r2.need)) * 100)) + "%" }} /></span>
+                  </>}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mc-cap">POINTS &middot; LOWER WINS</div>
+      <div className="mc-card">
+        <div className="mc-ptshead">
+          <span className="mc-num"><LedNumber value={points} color="#F08A80" cell={5} gap={2} dim="transparent" /></span>
+          <span className="mc-ptslbl">
+            <b>this month so far</b>
+            {streak > 0 && <span className="mc-streak">CLEAN {streak} DAY{streak === 1 ? "" : "S"} RUNNING</span>}
+          </span>
+        </div>
+        <div className="mc-week">
+          {week.map((w, i) => (
+            <i key={i}>
+              <span className={"c " + w.state}>{w.state === "ok" ? <PixIcon glyph="check" size={9} /> : w.state === "bad" ? "+1" : "\u00b7"}</span>
+              <span className="wd">{w.wd}</span>
+            </i>
+          ))}
+        </div>
+      </div>
+
+      {board && board.all.length > 1 && (
+        <>
+          <div className="mc-cap">THE BOARD</div>
+          <button type="button" className="mc-card mc-boardbtn" onClick={() => { buzz(8); setSheet("board"); }}>
+            <div className="mc-hb">
+              {board.all.slice(0, 3).concat(board.meIdx > 2 ? [board.all[board.meIdx]] : []).map((r2, i) => {
+                const meRow = r2.k === norm(meFull) || r2.k === norm(meLabel);
+                const rank = board.all.indexOf(r2) + 1;
+                return (
+                  <div className={"r" + (meRow ? " me" : "")} key={r2.k}>
+                    <span className="rk">{rank}</span>
+                    <span className="tk"><i style={{ width: Math.round((r2.units / Math.max(1, board.all[0].units)) * 100) + "%" }} /></span>
+                    <span className="un">{r2.units}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <span className="mc-boardsub">{board.meIdx >= 0 ? `you are ${board.meIdx + 1}${["st", "nd", "rd"][board.meIdx] || "th"} of ${board.all.length}` : `${board.all.length} on the board`}</span>
+          </button>
+        </>
+      )}
+
+      {sheet && (
+        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
+          <div className="mc-sheet">
+            <div className="mc-sheet-head">
+              <b>{sheet === "closing" ? "Closing" : "The board"}</b>
+              <button type="button" className="mc-x" onClick={() => setSheet(null)} aria-label="Close"><PixIcon glyph="close" size={11} /></button>
+            </div>
+            {sheet === "closing" && (
+              <>
+                <div className="mc-clrow">
+                  {closing.map((c) => (
+                    <div className="mc-cl" key={c.k}>
+                      <b style={{ color: chColors[c.k] }}>{c.pct != null ? c.pct + "%" : "\u00b7"}</b>
+                      <span className="vb"><i style={{ height: Math.round(((c.pct || 0) / maxPct) * 100) + "%", background: chColors[c.k] }} /></span>
+                      <span className="lb" style={{ color: chColors[c.k] }}>{c.label}</span>
+                      {prev[c.k] != null && c.pct != null && (
+                        <span className={"dl " + (c.pct >= prev[c.k] ? "up" : "dn")}>
+                          <PixIcon glyph={c.pct >= prev[c.k] ? "triup" : "tridown"} size={9} /> {Math.abs(Math.round((c.pct - prev[c.k]) * 10) / 10)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="mc-clfoot">
+                  {closing.map((c) => c.leads != null ? `${c.label.toLowerCase()} ${c.u || 0} of ${c.leads}` : null).filter(Boolean).join(" \u00b7 ")}
+                </div>
+              </>
+            )}
+            {sheet === "board" && board && (
+              <div className="mc-hb mc-hb-full">
+                {board.all.map((r2, i) => {
+                  const meRow = r2.k === norm(meFull) || r2.k === norm(meLabel);
+                  return (
+                    <div className={"r" + (meRow ? " me" : "")} key={r2.k}>
+                      <span className="rk">{i + 1}</span>
+                      <span className="nm2">{meRow ? "You" : title(r2.k)}</span>
+                      <span className="tk"><i style={{ width: Math.round((r2.units / Math.max(1, board.all[0].units)) * 100) + "%" }} /></span>
+                      <span className="un">{r2.units}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FloorSignIn({ store, date, token, tag = null, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
+  /* The salesperson's home. Corner is the default room; the floor screen is one
+     tap on the pill, and being up next drags the view there on its own because
+     that overlay is the one thing that must never be missed. */
+  const [tab, setTab] = useState("corner");
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
@@ -12811,6 +13097,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
         {doorAside && <p className="sf-door-aside">{doorAside}</p>}
       </div>
     );
+    if (tab === "corner" && !(isNext && !tookIt)) {
+      content = (
+        <MyCorner store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
+          mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
+          line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")} />
+      );
+    }
   } else if (eff === "switch" && selected && switchTo) {
     content = (
       <SfAsk variant={variant} spine={queueSpine}
@@ -12857,6 +13150,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   return (
     <div className="q-page f-page sf sf-floor" ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
+      {eff === "done" && me && (
+        <div className="mc-pill" role="tablist">
+          <span className="mc-ind" style={{ transform: tab === "corner" ? "translateX(0)" : "translateX(100%)" }} />
+          <button type="button" role="tab" aria-selected={tab === "corner"} className={"mc-tab" + (tab === "corner" ? " on" : "")}
+            onClick={() => { buzz(8); setTab("corner"); }} aria-label="My corner"><PixIcon glyph="user" size={15} /></button>
+          <button type="button" role="tab" aria-selected={tab !== "corner"} className={"mc-tab" + (tab !== "corner" ? " on" : "")}
+            onClick={() => { buzz(8); setTab("floor"); }} aria-label="The floor"><PixIcon glyph="door" size={15} /></button>
+        </div>
+      )}
       <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
@@ -33387,6 +33689,151 @@ const SAGE_CSS = `
   color:#fff; white-space:nowrap; }
 .sf-off .sf-timer-fg{ stroke:var(--sfink3); filter:none; }
 .sf-actions{ display:flex; flex-direction:column; gap:2px; }
+
+/* ---- My Corner ------------------------------------------------------------
+   The salesperson home. Same ink and glow as the floor screens around it;
+   sand for effort, garden green for made-it, red only where a point costs.
+   Every animation is transform or opacity so the compositor carries it. */
+.mc{ width:min(430px, 100%); margin:0 auto; padding:12px 16px 84px; text-align:left;
+  display:flex; flex-direction:column; gap:11px; }
+.mc-head{ display:flex; gap:16px; align-items:flex-start; margin-top:6px; }
+.mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
+  font-size:9.5px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
+.mc-cal{ display:grid; grid-template-columns:repeat(7, 9px); gap:5px 6px; margin-top:7px; }
+.mc-cal s{ width:9px; height:9px; border-radius:50%; background:rgba(232,238,242,.12); }
+.mc-cal s.h1{ background:rgba(169,196,172,.38); }
+.mc-cal s.h2{ background:rgba(169,196,172,.62); }
+.mc-cal s.h3{ background:#a9c4ac; }
+.mc-cal s.best{ background:#e4c98d; box-shadow:0 0 5px rgba(228,201,141,.55); }
+.mc-cal s.today{ outline:1.5px solid rgba(242,246,242,.85); outline-offset:1.5px; }
+.mc-cal s.off{ background:rgba(232,238,242,.05); }
+.mc-side{ flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+.mc-date{ font-family:var(--sfmono); font-size:11px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
+.mc-qmini{ display:flex; align-items:center; gap:6px; border:0; background:none; padding:0; cursor:pointer; }
+.mc-qmini s{ width:11px; height:11px; border-radius:50%; background:rgba(232,238,242,.2); flex:0 0 auto; }
+.mc-qmini s.hd{ width:17px; height:17px; border-radius:5px; background:rgba(232,238,242,.28);
+  display:flex; align-items:center; justify-content:center; font-family:var(--sfmono);
+  font-size:6.5px; font-weight:700; color:#e8eef2; }
+.mc-qmini s.me2{ background:#8fd8af; box-shadow:0 0 5px rgba(143,216,175,.7);
+  outline:1.5px solid rgba(143,216,175,.5); outline-offset:1.5px; }
+.mc-qmini b{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.12em;
+  color:rgba(232,238,242,.55); margin-left:3px; }
+.mc-asof{ display:inline-flex; align-items:center; gap:6px; font-family:var(--sfmono);
+  font-size:9px; font-weight:700; letter-spacing:.13em; color:rgba(232,238,242,.5); }
+.mc-asof s{ width:6px; height:6px; border-radius:50%; background:#e4c98d;
+  box-shadow:0 0 7px rgba(228,201,141,.9); animation:mcRec 2.4s ease-in-out infinite; }
+@keyframes mcRec{ 0%,100%{ opacity:.25; } 50%{ opacity:1; } }
+.mc-hero{ position:sticky; top:6px; z-index:6; border-radius:15px; padding:13px 13px 11px;
+  overflow:hidden; border:1px solid rgba(169,196,172,.28);
+  background:linear-gradient(150deg, rgba(127,169,138,.3), rgba(46,74,56,.28) 60%), #203127;
+  box-shadow:0 8px 20px -8px rgba(0,0,0,.55); }
+.mc-hero::after{ content:""; position:absolute; inset:0; pointer-events:none; opacity:.05;
+  background:repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 3px); }
+.mc-hero-top{ display:flex; align-items:center; gap:12px; position:relative; z-index:1; }
+.mc-units-lbl{ font-size:11px; font-weight:600; color:rgba(237,242,234,.65); line-height:1.25; }
+.mc-units-none{ font-size:12px; color:rgba(237,242,234,.55); }
+.mc-icobtn{ margin-left:auto; width:28px; height:28px; border-radius:50%;
+  border:1px solid rgba(228,201,141,.5); background:rgba(228,201,141,.12); cursor:pointer;
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+  transition:transform .12s ease; }
+.mc-icobtn:active{ transform:scale(.88); }
+.mc-cbars{ display:flex; align-items:flex-end; gap:2.5px; height:12px; }
+.mc-cbars i{ display:block; width:3.5px; border-radius:2px; }
+.mc-pace{ display:flex; align-items:center; gap:9px; margin-top:11px; position:relative; z-index:1; }
+.mc-pace .nm{ font-size:10.5px; font-weight:600; color:rgba(237,242,234,.68); width:32px; }
+.mc-pace .tr{ flex:1; height:12px; border-radius:999px; background:rgba(255,255,255,.1); overflow:hidden; }
+.mc-pace .tr i{ display:block; height:100%; border-radius:999px; background:#e4c98d; }
+.mc-pace .num{ font-family:var(--sfmono); font-size:11px; font-weight:700; color:#e4c98d; }
+.mc-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.15em;
+  color:rgba(237,242,234,.45); margin-top:3px; }
+.mc-card{ background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.09);
+  border-radius:15px; padding:12px 13px; color:#e8eef2; }
+.mc-row{ display:flex; align-items:center; gap:12px; padding:8px 0; }
+.mc-row + .mc-row{ border-top:1px solid rgba(255,255,255,.07); }
+.mc-num{ min-width:44px; display:flex; justify-content:center; flex:0 0 auto; }
+.mc-tx{ flex:1; min-width:0; }
+.mc-tx b{ display:block; font-size:14px; }
+.mc-tx .st{ display:block; font-family:var(--sfmono); font-size:9px; font-weight:700;
+  letter-spacing:.13em; color:rgba(232,238,242,.5); margin-top:2px; }
+.mc-tx .bar{ display:block; height:4px; border-radius:999px; background:rgba(255,255,255,.1);
+  margin-top:6px; overflow:hidden; }
+.mc-tx .bar i{ display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg, #567d61, #a9c4ac); }
+.mc-made{ position:relative; display:flex; align-items:center; gap:7px; margin-top:5px; height:19px;
+  border-radius:7px; overflow:hidden; padding:0 9px; color:#bff0d6;
+  font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.17em;
+  background:linear-gradient(90deg, rgba(61,195,131,.2), rgba(143,216,175,.4)); }
+.mc-made::after{ content:""; position:absolute; top:0; bottom:0; width:46px; left:-60px;
+  background:linear-gradient(100deg, transparent, rgba(255,255,255,.4), transparent);
+  animation:mcShine 2.8s ease-in-out infinite; }
+@keyframes mcShine{ 0%{ transform:translateX(0); } 60%,100%{ transform:translateX(330px); } }
+.mc-ptshead{ display:flex; align-items:center; gap:12px; }
+.mc-ptslbl b{ display:block; font-size:13.5px; }
+.mc-streak{ display:block; font-family:var(--sfmono); font-size:9px; font-weight:700;
+  letter-spacing:.11em; color:#e4c98d; margin-top:2px; }
+.mc-week{ display:flex; gap:4px; margin-top:9px; }
+.mc-week i{ width:20px; text-align:center; font-style:normal; }
+.mc-week .c{ display:flex; align-items:center; justify-content:center; width:18px; height:18px;
+  margin:0 auto; border-radius:50%; font-family:var(--sfmono); font-size:9px; font-weight:700;
+  overflow:hidden; }
+.mc-week .c.ok{ background:rgba(94,200,140,.18); color:#8fd8af; }
+.mc-week .c.bad{ background:rgba(216,72,60,.18); color:#f08a80; }
+.mc-week .c.now{ border:1.5px dashed rgba(237,242,234,.4); color:rgba(237,242,234,.5); }
+.mc-week .c.off{ color:rgba(237,242,234,.3); }
+.mc-week .wd{ display:block; font-family:var(--sfmono); font-size:7px; font-weight:700;
+  color:rgba(237,242,234,.4); margin-top:3px; }
+.mc-boardbtn{ display:block; width:100%; text-align:left; cursor:pointer;
+  transition:transform .12s ease; }
+.mc-boardbtn:active{ transform:scale(.985); }
+.mc-hb{ display:flex; flex-direction:column; gap:6px; }
+.mc-hb .r{ display:flex; align-items:center; gap:8px; }
+.mc-hb .rk{ width:16px; font-family:var(--sfmono); font-size:9px; font-weight:700;
+  color:rgba(232,238,242,.45); }
+.mc-hb .nm2{ width:96px; font-size:12px; font-weight:600; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap; }
+.mc-hb .tk{ flex:1; height:11px; border-radius:999px; background:rgba(255,255,255,.08); overflow:hidden; }
+.mc-hb .tk i{ display:block; height:100%; border-radius:999px; background:rgba(169,196,172,.55); }
+.mc-hb .r.me .tk i{ background:#e4c98d; }
+.mc-hb .un{ width:30px; text-align:right; font-family:var(--sfmono); font-size:10.5px; font-weight:700; }
+.mc-boardsub{ display:block; margin-top:8px; font-family:var(--sfmono); font-size:9px;
+  font-weight:700; letter-spacing:.12em; color:rgba(232,238,242,.55); }
+.mc-ov{ position:fixed; inset:0; z-index:60; display:flex; flex-direction:column;
+  justify-content:flex-end; background:rgba(6,10,8,.66); }
+.mc-sheet{ background:#1a2820; border-top:1px solid rgba(228,201,141,.35);
+  border-radius:20px 20px 0 0; padding:16px 15px 78px; max-height:82vh; overflow-y:auto;
+  color:#e8eef2; animation:mcSheet .26s cubic-bezier(.2,.9,.3,1) both; }
+@keyframes mcSheet{ from{ opacity:.35; transform:translateY(26px); } to{ opacity:1; transform:none; } }
+.mc-sheet-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.mc-sheet-head b{ font-size:16px; }
+.mc-x{ border:0; background:rgba(255,255,255,.1); color:#e8eef2; width:26px; height:26px;
+  border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.mc-clrow{ display:flex; justify-content:space-around; align-items:flex-end; padding:6px 0 2px; }
+.mc-cl{ text-align:center; width:72px; }
+.mc-cl b{ display:block; font-family:var(--sfmono); font-size:14px; font-weight:700; }
+.mc-cl .vb{ display:block; position:relative; height:110px; margin:6px auto; width:26px;
+  border-radius:8px; background:rgba(255,255,255,.08); }
+.mc-cl .vb i{ position:absolute; left:0; right:0; bottom:0; border-radius:8px; }
+.mc-cl .lb{ display:block; font-size:10.5px; font-weight:600; }
+.mc-cl .dl{ display:inline-flex; align-items:center; gap:4px; margin-top:4px;
+  font-family:var(--sfmono); font-size:9px; font-weight:700; }
+.mc-cl .dl.up{ color:#8fd8af; } .mc-cl .dl.dn{ color:#f08a80; }
+.mc-clfoot{ margin-top:10px; font-size:11px; color:rgba(237,242,234,.5); }
+.mc-hb-full .r{ padding:3px 0; }
+.mc-pill{ position:fixed; left:50%; transform:translateX(-50%); bottom:14px; z-index:50;
+  display:flex; background:rgba(6,10,8,.85); border:1px solid rgba(255,255,255,.13);
+  border-radius:999px; padding:4px; backdrop-filter:blur(6px);
+  box-shadow:0 10px 24px -10px rgba(0,0,0,.7); }
+.mc-ind{ position:absolute; left:4px; top:4px; bottom:4px; width:46px; border-radius:999px;
+  background:rgba(228,201,141,.16);
+  transition:transform .38s cubic-bezier(.3,1.6,.4,1); will-change:transform; }
+.mc-tab{ position:relative; z-index:1; width:46px; border:0; background:none; border-radius:999px;
+  padding:9px 0; cursor:pointer; color:rgba(237,242,234,.55); display:flex; align-items:center;
+  justify-content:center; transition:transform .12s ease; }
+.mc-tab:active{ transform:scale(.88); }
+.mc-tab.on{ color:#e4c98d; }
+@media (prefers-reduced-motion: reduce){
+  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind{ animation:none; transition:none; }
+}
 
 /* ---- the status selector ----
    Four states, one track, one indicator. The grid of chunky tiles it replaces
