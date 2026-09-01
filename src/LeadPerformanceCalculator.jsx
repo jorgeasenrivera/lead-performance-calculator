@@ -33910,9 +33910,13 @@ const SAGE_CSS = `
 .mc-tab:active{ transform:scale(.88); }
 .mc-tab.on{ color:#e4c98d; }
 /* ---- the floor, final ----------------------------------------------------- */
+/* The approved layout breathes across the whole screen: the count, the line and
+   the clocks center in the space above the actions, and the actions keep clear
+   of the floating pill. */
 .mcf .sf-actions{ width:min(430px,100%); margin:0 auto; }
-.mcf-top{ width:min(430px,100%); margin:0 auto; display:flex; flex-direction:column;
-  align-items:center; padding-top:26px; }
+.sf-live.mcf{ padding-bottom:calc(clamp(24px,5vh,34px) + 62px); }
+.mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; padding:8px 0 18px; }
 .mcf-count{ display:flex; justify-content:center; }
 .mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
   color:rgba(237,242,234,.55); margin-top:8px; }
