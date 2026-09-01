@@ -20,6 +20,7 @@ import {
   storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "../api/_store-keys.mjs";
+import { phoneExtras, withRocked, pointsForDay, stampLineMoves } from "../api/_phone-rows.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
@@ -5810,10 +5811,13 @@ function buildBoardPayload(config, storeId, sdata) {
       if (dir === "up" && len >= 3) ticker.push(`&#128293; ${a.name} is on a ${len}-day streak`);
     } catch (e) {}
   }
+  const extras = phoneExtras(sdata, roster.map((r) => ((sdata && sdata.roster) || []).find((a) => a.name === r.name) || r), key, norm);
   return {
     storeId,
     storeName: store?.name || "Store",
     icon: store?.icon || null,
+    goals: extras.goals,
+    off: extras.off,
     brand: store?.brand || DEFAULT_BRAND,
     thresholds: normThresholds(store?.thresholds),
     roles: (config?.roles || []).filter((r) => r.onBoard !== false).map((r) => ({ id: r.id })),
@@ -5835,7 +5839,9 @@ async function publishBoard(config, storeId, sdata) {
     // Today's floor figures, in the one place a signed-out phone can read them.
     const t = today();
     const rows = ((sdata && sdata.activity) || {})[t];
-    if (rows) { try { await saveShared(floorStatsKey(storeId, t), slimFloorStats(rows)); } catch (e) {} }
+    const store = (config?.stores || []).find((s2) => s2.id === storeId);
+    const bar = (store?.activityStandards || {}).rockEdStars ?? DEFAULT_ACTIVITY_STANDARDS.rockEdStars;
+    if (rows) { try { await saveShared(floorStatsKey(storeId, t), slimFloorStats(withRocked(sdata, t, rows, bar))); } catch (e) {} }
     const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
     if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
     return { ok, err: ok ? null : (lastSaveError || "unknown") };
@@ -11644,6 +11650,8 @@ async function mutateFloorRow(store, date, fn) {
     if (cur === undefined) throw new Error("The floor could not be read just now, so nothing was changed.");
     const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
     if (!next) return cur;
+    // Whoever moved up gets a stamp, so a phone's "last move" means that.
+    stampLineMoves(cur, next, qNowIso());
     await saveFloorRow(store, date, next);
     return next;
   };
@@ -13129,7 +13137,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
             <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={7} gap={3} dim="transparent" /></span>
             <div className="mcf-cap">TO THE DOOR</div>
             <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
-            <McTimers sinceOn={me.joinedAt} sinceMove={me.statusAt || me.joinedAt} />
+            <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
             <div className="mcf-title">{title}</div>
           </div>
         ) : (
