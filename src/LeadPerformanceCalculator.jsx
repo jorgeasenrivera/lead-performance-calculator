@@ -46,7 +46,7 @@ import { goalStanding, dayBelow, didWork, notesFor, owesNote, makeNote, addNote,
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
    the server and the screen can never drift into judging people differently. */
-import { reconcile as reconcilePresence, judge as judgePresence, upheldFor } from "../api/_floor-presence.mjs";
+import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
 import qrcodeGen from "qrcode-generator";
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -798,6 +798,9 @@ const PIX = {
   lunch:     ["10101","10101","01001","01001","01001"],
   away:      ["00000","01110","10001","01110","00000"],
   swap:      ["00100","01110","00000","01110","00100"],
+  /* The Corner tab: a roof over a door. Two cells from user and from door,
+     checked against both by eye. */
+  home:      ["00100","01110","11111","01010","01110"],
 };
 // A question mark, on the grid: it needs the counter and the gap under the
 // hook to read as a question rather than a smudge.
@@ -12440,17 +12443,11 @@ const mcClock = (iso) => {
 };
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
-                    monthStats, boardThr, goals, off, line, myPos, availableAhead, toFloor }) {
-  const [days, setDays] = useState(null);
+                    monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
+                    line, myPos, availableAhead, toFloor }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   const [pickDay, setPickDay] = useState(null);
-  useEffect(() => {
-    let dead = false;
-    loadMyDays(store, date, [norm(meFull || ""), norm(meLabel || "")])
-      .then((d) => { if (!dead) setDays(d); })
-      .catch(() => {});
-    return () => { dead = true; };
-  }, [store, date, meFull, meLabel]);
+  const offDim = offToday && offState !== "in";
 
   const a = mine || {};
   const needCalls = std.minCalls || 0, needVideos = std.minVideos || 0;
@@ -12552,7 +12549,21 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const maxPct = Math.max(20, ...closing.map((c) => c.pct || 0));
 
   return (
-    <div className="mc">
+    <div className={"mc" + (offDim ? " mc-off" : "")}>
+      {offToday && offState !== "in" && (
+        <div className="mc-offc">
+          <b>{offState === "no2" ? "Enjoy it." : offState === "no1" && activityNow ? "Numbers are coming in." : "Day off today"}</b>
+          {offState !== "no2" && <span className="hint">{offState === "no1" && activityNow ? "Working today after all?" : "Working anyway? Say so and the day starts counting. Your stats stay open either way."}</span>}
+          {offState === "no2" && <span className="hint">Your stats stay open. The day is not counting.</span>}
+          {(offState === "" || (offState === "no1" && activityNow)) && (
+            <div className="mc-offb">
+              <button type="button" className="yes" onClick={() => onOffAnswer(true)}>I&rsquo;m in today</button>
+              <button type="button" className="no" onClick={() => onOffAnswer(false)}>Not today</button>
+            </div>
+          )}
+          {offState === "no1" && !activityNow && <div className="mc-offb"><button type="button" className="yes" onClick={() => onOffAnswer(true)}>I&rsquo;m in after all</button></div>}
+        </div>
+      )}
       <div className="mc-head">
         <button type="button" className="mc-calw" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
           <div className="mc-calhead"><PixIcon glyph="calendar" size={11} /><span>{MC_MONTHS[mo - 1]}</span></div>
@@ -12576,6 +12587,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           )}
           {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
         </div>
+        <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={12} /></button>
       </div>
 
       <div className="mc-hero">
@@ -12821,6 +12833,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   // whether a number is green.
   const [boardThr, setBoardThr] = useState(null);
   const [boardExtra, setBoardExtra] = useState({ goals: {}, off: {} });
+  /* The moments. The ticket prints when they leave, then files itself to the
+     desk; a milestone takes the screen once; a scheduled day off asks whether
+     they are working before the day starts counting; Help is one sheet. */
+  const [days, setDays] = useState(null);
+  const [ticket, setTicket] = useState(null);       // null | "printing" | "sending" | "sent" | "failed"
+  const [mile, setMile] = useState(null);           // the unit count that just landed
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpPanel, setHelpPanel] = useState(false);
+  const [offState, setOffState] = useState(() => { try { return localStorage.getItem(`lpcf:offday:${store}:${date}`) || ""; } catch { return ""; } });
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
@@ -12908,6 +12929,84 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
     const t = setInterval(pull, 120000);
     return () => { dead = true; clearInterval(t); };
   }, [store, date, meFull, meLabel]);
+  useEffect(() => {
+    if (!meFull && !meLabel) return;
+    let dead = false;
+    loadMyDays(store, date, [norm(meFull || ""), norm(meLabel || "")]).then((d) => { if (!dead) setDays(d); }).catch(() => {});
+    return () => { dead = true; };
+  }, [store, date, meFull, meLabel, mineAt]);   // eslint-disable-line
+
+  // A milestone is every fifth unit and the goal itself, seen once. The last
+  // one celebrated is remembered per month so a reload never replays it.
+  const myMonth = (monthStats && (monthStats[norm(meFull)] || monthStats[norm(meLabel)])) || null;
+  const myUnits = myMonth ? (myMonth.internetUnits || 0) + (myMonth.phoneUnits || 0) + (myMonth.showroomUnits || 0) + (myMonth.campaignUnits || 0) : null;
+  const myGoal = (boardExtra.goals[norm(meFull)] ?? boardExtra.goals[norm(meLabel)]) ?? null;
+  useEffect(() => {
+    if (myUnits == null || !meId) return;
+    try {
+      if (localStorage.getItem("lpcf:pref:mile") === "0") return;
+      const k = `lpcf:mile:${store}:${date.slice(0, 7)}:${meId}`;
+      const seen = parseFloat(localStorage.getItem(k) || "0");
+      const marks = [];
+      for (let m = 5; m <= Math.max(5, Math.floor(myUnits)); m += 5) marks.push(m);
+      if (myGoal) marks.push(myGoal);
+      const hit = marks.filter((m) => m > seen && myUnits >= m).sort((a2, b2) => b2 - a2)[0];
+      if (hit) { setMile(hit); localStorage.setItem(k, String(hit)); buzz([20, 40, 20, 40, 60]); }
+      else if (!localStorage.getItem(k)) localStorage.setItem(k, String(Math.floor(myUnits / 5) * 5));
+    } catch (e) {}
+  }, [myUnits, myGoal, meId]);   // eslint-disable-line
+  const myOff = (boardExtra.off[norm(meFull)] || boardExtra.off[norm(meLabel)] || []);
+  const offToday = myOff.includes(date);
+  const activityNow = !!(mine && ((mine.calls || 0) > 0 || (mine.video || 0) > 0 || (mine.units || 0) > 0));
+  const answerOff = async (working) => {
+    let nextState = working ? "in" : (offState === "no1" && activityNow ? "no2" : "no1");
+    setOffState(nextState);
+    try { localStorage.setItem(`lpcf:offday:${store}:${date}`, nextState); } catch (e) {}
+    buzz(12);
+    if (nextState === "no2") {
+      // Twice no, with numbers on the record: the facts go where a manager reads them.
+      try {
+        await mutateFloorRow(store, date, (cur) => {
+          if (!cur) return null;
+          cur.presence = cur.presence || { events: [], state: {} };
+          if (!(cur.presence.events || []).some((e) => e.kind === "offday" && e.personId === meId)) {
+            cur.presence.events.push(onOffDayWorked({ personId: meId, label: meLabel || meFull, at: Date.now(),
+              activity: { calls: mine && mine.calls, video: mine && mine.video, units: mine && mine.units } }));
+          }
+          return cur;
+        });
+      } catch (e) {}
+    }
+  };
+  // The ticket: print, then file to the desk, then good night.
+  const startTicket = () => { if (busy || !meId) return; buzz(10); setTicket("printing"); };
+  useEffect(() => {
+    if (ticket !== "printing") return;
+    const t = setTimeout(async () => {
+      setTicket("sending");
+      try {
+        const snap = { calls: mine && mine.calls, video: mine && mine.video, tasks: mine && mine.tasks,
+          tasksPosted: mine && mine.tasksPosted, units: mine && mine.units, rocked: mine && mine.rocked,
+          points: pointsForDay(mine || {}, std).points, asOf: mineAt || null };
+        await mutateFloorRow(store, date, (cur) => {
+          if (!cur) return null;
+          cur.checkouts = (cur.checkouts || []).filter((c) => c.id !== meId);
+          cur.checkouts.push({ id: meId, who: meLabel || meFull, name: meFull || meLabel, t: qNowIso(), ...snap });
+          return cur;
+        });
+        setTicket("sent");
+      } catch (e) { setTicket("failed"); }
+    }, 2700);
+    return () => clearTimeout(t);
+  }, [ticket]);   // eslint-disable-line
+  const daysClean = (() => {
+    if (!days) return 0;
+    let n = 0;
+    const sorted = days.slice().sort((a2, b2) => (a2.day < b2.day ? 1 : -1));
+    for (const d of sorted) { if (d.day >= date) continue; if (!d.row) continue; if (myOff.includes(d.day)) continue;
+      const pd = pointsForDay(d.row, std); if (pd.noData) continue; if (pd.points === 0) n++; else break; }
+    return n;
+  })();
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
@@ -13252,7 +13351,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
             <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
               <SfIcon name="mine" size={14} /><span>My day</span>
             </button>
-            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={leave}>
+            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={startTicket}>
               <SfIcon name="door" size={14} /><span>Leave the floor</span>
             </button>
           </div>
@@ -13273,7 +13372,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
       content = (
         <MyCorner store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
           mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
-          goals={boardExtra.goals} off={boardExtra.off}
+          goals={boardExtra.goals} off={boardExtra.off} days={days}
+          offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
+          onHelp={() => { buzz(8); setHelpOpen(true); }}
           line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")} />
       );
     }
@@ -13321,17 +13422,93 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   }
 
   return (
-    <div className="q-page f-page sf sf-floor" ref={pageRef}>
+    <div className={"q-page f-page sf sf-floor" + (eff === "done" && me ? " mc-shell" : "")} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
-      {eff === "done" && me && (
-        <div className="mc-pill" role="tablist">
-          <span className="mc-ind" style={{ transform: tab === "corner" ? "translateX(0)" : "translateX(100%)" }} />
-          <button type="button" role="tab" aria-selected={tab === "corner"} className={"mc-tab" + (tab === "corner" ? " on" : "")}
-            onClick={() => { buzz(8); setTab("corner"); }} aria-label="My corner"><PixIcon glyph="user" size={15} /></button>
-          <button type="button" role="tab" aria-selected={tab !== "corner"} className={"mc-tab" + (tab !== "corner" ? " on" : "")}
-            onClick={() => { buzz(8); setTab("floor"); }} aria-label="The floor"><PixIcon glyph="door" size={15} /></button>
+      {eff === "done" && me && (() => {
+        const idx = line.findIndex((p2) => p2.id === meId);
+        const upRoot = me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
+        return (
+          <div className="mc-pill" role="tablist">
+            <span className="mc-ind" style={{ transform: tab === "corner" ? "translateX(0)" : "translateX(100%)" }} />
+            <button type="button" role="tab" aria-selected={tab === "corner"} className={"mc-tab" + (tab === "corner" ? " on" : "")}
+              onClick={() => { buzz(8); setTab("corner"); }} aria-label="My corner"><PixIcon glyph="home" size={15} /></button>
+            <button type="button" role="tab" aria-selected={tab !== "corner"} className={"mc-tab" + (tab !== "corner" ? " on" : "") + (upRoot ? " alert" : "")}
+              onClick={() => { buzz(8); setTab("floor"); }} aria-label="The floor"><PixIcon glyph="door" size={15} /></button>
+          </div>
+        );
+      })()}
+      {eff === "done" && me && ticket && (
+        <div className="mc-tkov" onClick={(e) => { if (e.target === e.currentTarget && ticket !== "sending") setTicket(null); }}>
+          <div className="mc-slot" />
+          <div className="mc-tkt">
+            <div className="mc-tk-h">{(row && row.storeName) || "Live Floor"} &middot; DAY CLOSED {mcClock(new Date().toISOString())}</div>
+            <div className="mc-tk-n">{(meFull || meLabel || "").toUpperCase()}</div>
+            <div className="mc-tk-big">
+              <span className="mc-tk-dm"><LedNumber value={myUnits != null ? myUnits : 0} color="#2A2418" cell={7} gap={3} dim="transparent" /></span>
+              <span className="mc-tk-r">{myGoal != null && <>GOAL {myGoal}<br /></>}TODAY {mine && mine.units ? mine.units : 0}</span>
+            </div>
+            {[["CALLS", `${(mine && mine.calls) || 0} / ${std.minCalls || 0}`, (mine && mine.calls || 0) >= (std.minCalls || 0)],
+              ["VIDEOS", `${(mine && mine.video) || 0} / ${std.minVideos || 0}`, (mine && mine.video || 0) >= (std.minVideos || 0)],
+              ["TASKS", mine && mine.tasksPosted ? `${mine.tasks || 0} / ${mine.tasksPosted}` : String((mine && mine.tasks) || 0), mine && mine.tasksPosted ? (mine.tasks || 0) >= mine.tasksPosted : true],
+              ["ROCKED", mine && mine.rocked === true ? "YES" : mine && mine.rocked === false ? "NO" : "\u00b7", mine && mine.rocked === true]].map(([l, v, ok]) => (
+              <div className="mc-tk-row" key={l}><span>{l}</span><i /><span className={ok ? "ok" : ""}>{v}</span></div>
+            ))}
+            <div className="mc-tk-foot">
+              <span className="mc-stamp">{daysClean > 0 ? `${daysClean} DAY${daysClean === 1 ? "" : "S"} CLEAN` : `${pointsForDay(mine || {}, std).points} PTS TODAY`}</span>
+              <span className="mc-tk-note">ROCKED,<br />THEN HOME</span>
+            </div>
+            <div className="mc-bcode" />
+            <button type="button" className="mc-tk-go" disabled={ticket !== "sent" && ticket !== "failed"}
+              onClick={() => { setTicket(null); leave(); }}>Good night</button>
+          </div>
+          <div className={"mc-send" + (ticket === "sent" ? " done" : ticket === "failed" ? " fail" : "")}>
+            {ticket === "sent" ? <>ON THE DAILY TRACKER <PixIcon glyph="check" size={10} /></>
+              : ticket === "failed" ? "THE DESK DID NOT ANSWER. TRY AGAIN IN A MOMENT."
+              : ticket === "printing" ? <><s /><s /><s />PRINTING</>
+              : <><s /><s /><s />SENDING TO THE DESK</>}
+          </div>
         </div>
       )}
+      {eff === "done" && me && mile != null && (
+        <div className="mc-flash">
+          <span className="bloom" />
+          {[0, 1, 2, 3, 4, 5, 6].map((i2) => <span key={i2} className="burst" style={{ "--dx": Math.round(Math.cos(i2 * 0.9) * (110 + (i2 % 3) * 30)) + "px", "--dy": Math.round(Math.sin(i2 * 0.9) * (110 + (i2 % 3) * 30)) + "px", animationDelay: (i2 * 0.03) + "s" }}><PixIcon glyph="car" size={i2 % 2 ? 16 : 11} /></span>)}
+          <span className="drv"><PixIcon glyph="car" size={14} /></span>
+          <span className="mc-flash-dm"><LedNumber value={mile} color="#E9CE96" cell={9} gap={4} dim="transparent" /></span>
+          <div className="mc-flash-t">{mile === myGoal ? "Goal made." : `Unit ${mile}.`}</div>
+          <div className="mc-flash-s">{mile === myGoal ? "The month is yours with days to spare." : `${Math.max(0, new Date(parseInt(date.slice(0, 4)), parseInt(date.slice(5, 7)), 0).getDate() - parseInt(date.slice(8, 10)))} days left in the month.`}</div>
+          <button type="button" className="mc-flash-b" onClick={() => setMile(null)}>Back to work</button>
+        </div>
+      )}
+      {eff === "done" && me && helpOpen && (
+        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
+          <div className="mc-sheet">
+            <div className="mc-sheet-head"><b>Help</b>
+              <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={11} /></button></div>
+            <div className="mc-set-row mc-set-who">
+              <span className="mc-set-av" style={{ background: `hsl(${(String(meFull || meLabel).split("").reduce((h2, c2) => (h2 * 31 + c2.charCodeAt(0)) % 360, 0))} 62% 46%)` }}>{String(meLabel || meFull).trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</span>
+              <span>{meFull || meLabel}<span className="hint">{(row && row.storeName) || ""}</span></span>
+            </div>
+            <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
+              <span>Something looks wrong<span className="hint">Send a number or a ticket back with a note</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+            <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
+              <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+            <div className="mc-set-row"><span>My month goal<span className="hint">Set with your manager</span></span><span className="on">{myGoal != null ? myGoal : "\u00b7"}</span></div>
+            {[["lpcf:pref:streak", "Streak warnings"], ["lpcf:pref:mile", "Milestone moments"], ["lpcf:pref:notif", "Notifications \u00b7 Live Activity"]].map(([k, l]) => {
+              let on = true; try { on = localStorage.getItem(k) !== "0"; } catch (e) {}
+              return (
+                <button type="button" className="mc-set-row" key={k} onClick={() => { try { localStorage.setItem(k, on ? "0" : "1"); } catch (e) {} setHelpOpen(false); setTimeout(() => setHelpOpen(true), 0); }}>
+                  <span>{l}</span><span className="on">{on ? "ON" : "OFF"}</span></button>
+              );
+            })}
+            <div className="mc-set-row"><span>The second door<span className="hint">The daily QR still signs you in</span></span><span className="on">LIVE</span></div>
+            <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>
+          </div>
+        </div>
+      )}
+      {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`}
+        figures={mine ? [{ label: "Calls today", value: mine.calls }, { label: "Videos today", value: mine.video }, { label: "Tasks today", value: mine.tasks }, { label: "Units this month", value: myUnits }] : []}
+        onClose={() => setHelpPanel(false)} />}
       <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
@@ -34095,8 +34272,89 @@ const SAGE_CSS = `
   cursor:pointer; transition:transform .12s ease; }
 .mcf-chip:active{ transform:scale(.94); }
 .mcf-chip.on{ border-color:rgba(228,201,141,.6); color:#e4c98d; background:rgba(228,201,141,.08); }
+/* ---- the moments -------------------------------------------------------- */
+.mc-shell .help-fab{ display:none; }
+.mc-head{ position:relative; }
+.mc-help{ position:absolute; top:-2px; right:-8px; width:26px; height:26px; border-radius:50%;
+  border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05); color:rgba(237,242,234,.8);
+  cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform .12s ease; }
+.mc-help:active{ transform:scale(.88); }
+.mc-tab.alert{ color:#8fd8af; }
+.mc-tab.alert svg, .mc-tab.alert span{ animation:mcRec 1.4s ease-in-out infinite; }
+.mc-off > *:not(.mc-offc){ opacity:.32; }
+.mc-offc{ border:1px solid rgba(228,201,141,.55); background:#1c2b23; border-radius:15px; padding:13px; margin-top:6px;
+  animation:mcIn .3s ease-out backwards; }
+@keyframes mcIn{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
+.mc-offc b{ display:block; font-size:15px; }
+.mc-offc .hint{ display:block; font-size:11.5px; color:rgba(237,242,234,.65); margin-top:3px; }
+.mc-offb{ display:flex; gap:8px; margin-top:11px; }
+.mc-offb button{ border:0; border-radius:999px; padding:8px 16px; font-size:11px; font-weight:700; cursor:pointer; }
+.mc-offb .yes{ background:#e4c98d; color:#2a2418; } .mc-offb .no{ background:rgba(255,255,255,.1); color:#edf2ea; }
+.mc-set-row{ display:flex; align-items:center; gap:10px; padding:11px 2px; border-bottom:1px solid rgba(255,255,255,.07);
+  font-size:12.5px; font-weight:600; width:100%; text-align:left; background:none; border-left:0; border-right:0; border-top:0;
+  color:#e8eef2; cursor:pointer; }
+.mc-set-row:last-child{ border-bottom:0; }
+.mc-set-row .hint{ display:block; font-size:10.5px; font-weight:500; color:rgba(237,242,234,.5); margin-top:1px; }
+.mc-set-row .on{ margin-left:auto; font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.12em; color:#e4c98d;
+  display:inline-flex; align-items:center; }
+.mc-set-av{ width:34px; height:34px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center;
+  font-family:var(--sfmono); font-size:11px; font-weight:700; flex:0 0 auto; }
+.mc-set-out{ color:#f08a80; }
+.mc-tkov{ position:fixed; inset:0; z-index:70; display:flex; flex-direction:column; background:rgba(6,10,8,.72); padding:0 0 16px; }
+.mc-slot{ height:9px; margin:0 22px; background:#0a0f0c; border-radius:0 0 9px 9px; box-shadow:0 5px 12px rgba(0,0,0,.5); position:relative; z-index:2; flex:0 0 auto; }
+.mc-tkt{ margin:0 16px; background:#f7eed9; color:#2a2418; border-radius:0 0 8px 8px; padding:15px 14px; position:relative;
+  box-shadow:0 14px 34px -12px rgba(0,0,0,.7); animation:mcPrint 2.6s steps(22,end) both; }
+@keyframes mcPrint{ from{ transform:translateY(-104%); } to{ transform:none; } }
+.mc-tkt::after{ content:""; position:absolute; left:0; right:0; bottom:-1px; height:8px; transform:scaleY(-1);
+  background:radial-gradient(circle at 6px 0px, #10160f 5px, transparent 5.5px) repeat-x; background-size:16px 8px; }
+.mc-tk-h{ text-align:center; font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.18em; }
+.mc-tk-n{ text-align:center; font-size:15px; font-weight:700; margin-top:2px; }
+.mc-tk-big{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+.mc-tk-dm .ld{ box-shadow:inset 0 1.5px 2.5px rgba(0,0,0,.7), inset 0 -1px 1px rgba(255,255,255,.25) !important; }
+.mc-tk-dm .ld.on{ background:rgba(16,22,17,.82) !important; }
+.mc-tk-r{ text-align:right; font-family:var(--sfmono); font-size:10px; font-weight:600; }
+.mc-tk-row{ display:flex; align-items:baseline; gap:7px; font-family:var(--sfmono); font-size:12px; font-weight:600; padding:4.5px 0; }
+.mc-tk-row i{ flex:1; border-bottom:2px dotted rgba(42,36,24,.35); }
+.mc-tk-row .ok{ color:#1e7a46; }
+.mc-tk-foot{ display:flex; justify-content:space-between; align-items:center; gap:14px; margin:12px 0 6px; }
+.mc-stamp{ display:inline-block; border:3px solid #1e7a46; color:#1e7a46; transform:rotate(-4deg); padding:2px 10px;
+  font-size:11px; font-weight:700; border-radius:7px; letter-spacing:.04em; }
+.mc-tk-note{ font-family:var(--sfmono); font-size:8px; font-weight:600; letter-spacing:.1em; color:rgba(42,36,24,.55); text-align:right; }
+.mc-bcode{ height:24px; margin-top:8px;
+  background:repeating-linear-gradient(90deg,#2a2418 0 2px,transparent 2px 5px,#2a2418 5px 6px,transparent 6px 10px); }
+.mc-tk-go{ margin-top:12px; width:100%; border:0; background:#2a2418; color:#f7eed9; border-radius:999px; padding:10px;
+  font-size:12px; font-weight:700; cursor:pointer; }
+.mc-tk-go:disabled{ opacity:.35; cursor:default; }
+.mc-send{ display:flex; align-items:center; justify-content:center; gap:5px; margin-top:14px; font-family:var(--sfmono);
+  font-size:9px; font-weight:700; letter-spacing:.14em; color:#e4c98d; text-align:center; padding:0 20px; }
+.mc-send s{ width:6px; height:6px; border-radius:50%; background:#e4c98d; animation:mcSend 1s infinite; }
+.mc-send s:nth-child(2){ animation-delay:.18s; } .mc-send s:nth-child(3){ animation-delay:.36s; }
+@keyframes mcSend{ 0%,100%{ opacity:.2; } 50%{ opacity:1; } }
+.mc-send.done{ color:#8fd8af; } .mc-send.fail{ color:#f08a80; }
+.mc-flash{ position:fixed; inset:0; z-index:80; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; padding:20px; color:#fff; overflow:hidden;
+  background:linear-gradient(140deg,#7FA98A,#26382C); }
+.mc-flash .bloom{ position:absolute; left:50%; top:42%; width:60px; height:60px; margin:-30px; border:2px solid rgba(255,255,255,.7);
+  border-radius:50%; pointer-events:none; animation:mcBloom 1.1s ease-out both; }
+@keyframes mcBloom{ from{ transform:scale(.2); opacity:.9; } to{ transform:scale(9); opacity:0; } }
+.mc-flash .burst{ position:absolute; left:50%; top:40%; color:rgba(255,255,255,.8); animation:mcBurst 1.05s cubic-bezier(.15,.75,.3,1) both; }
+@keyframes mcBurst{ 0%{ transform:translate(-50%,-50%) scale(.3); opacity:0; } 18%{ opacity:1; }
+  100%{ transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(1); opacity:0; } }
+.mc-flash .drv{ position:absolute; left:12px; bottom:12px; color:rgba(255,255,255,.85); animation:mcDrive 10s linear 1.15s infinite; }
+@keyframes mcDrive{ 0%{ transform:translate(0,0) rotate(0); } 22%{ transform:translate(calc(100vw - 48px),0) rotate(0); }
+  25%{ transform:translate(calc(100vw - 48px),0) rotate(-90deg); } 47%{ transform:translate(calc(100vw - 48px),calc(-100vh + 48px)) rotate(-90deg); }
+  50%{ transform:translate(calc(100vw - 48px),calc(-100vh + 48px)) rotate(180deg); } 72%{ transform:translate(0,calc(-100vh + 48px)) rotate(180deg); }
+  75%{ transform:translate(0,calc(-100vh + 48px)) rotate(90deg); } 97%{ transform:translate(0,0) rotate(90deg); } 100%{ transform:translate(0,0) rotate(0); } }
+.mc-flash-dm{ animation:mcPop .8s cubic-bezier(.18,1.5,.3,1) both; margin-bottom:26px; }
+@keyframes mcPop{ 0%{ transform:scale(.3); opacity:0; } 60%{ transform:scale(1.12); opacity:1; } 100%{ transform:scale(1); } }
+.mc-flash-t{ font-size:26px; font-weight:700; animation:mcRise .5s .3s both; }
+.mc-flash-s{ font-size:13px; opacity:.85; margin-top:6px; animation:mcRise .5s .45s both; }
+.mc-flash-b{ margin-top:18px; border:1px solid rgba(255,255,255,.4); background:rgba(255,255,255,.14); color:#fff; border-radius:999px;
+  padding:9px 20px; font-size:12px; font-weight:600; cursor:pointer; animation:mcRise .5s .6s both; }
+@keyframes mcRise{ from{ transform:translateY(16px); opacity:0; } to{ transform:none; opacity:1; } }
 @media (prefers-reduced-motion: reduce){
-  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind, .mcf-track .fa, .mcf-track .fb{ animation:none; transition:none; }
+  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind, .mcf-track .fa, .mcf-track .fb, .mc-tab.alert svg, .mc-offc,
+  .mc-tkt, .mc-send s, .mc-flash .bloom, .mc-flash .burst, .mc-flash .drv, .mc-flash-dm, .mc-flash-t, .mc-flash-s, .mc-flash-b{ animation:none; transition:none; }
 }
 
 /* ---- the status selector ----

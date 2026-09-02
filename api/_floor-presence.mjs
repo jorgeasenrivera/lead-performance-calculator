@@ -59,6 +59,17 @@ export function onLeft({ personId, label, at, inLine, status }) {
   };
 }
 
+/**
+ * Scheduled off, asked twice whether they were working, said no twice, and the
+ * day's report showed activity anyway. The phone records the facts it saw; a
+ * manager reads them beside the other flags and draws the conclusion.
+ */
+export function onOffDayWorked({ personId, label, at, activity }) {
+  if (!personId) return null;
+  return { id: `${personId}:off:${at}`, personId, label: label || "", at, kind: "offday",
+    activity: activity || {}, resolved: false };
+}
+
 /** They answered the prompt. One tap, and it sets their real status too. */
 export function answerLeft(event, reason, at) {
   if (!event || !AWAY_REASONS.includes(reason)) return event;
@@ -133,6 +144,16 @@ export function reconcile(presence, customerActions, opts = {}) {
 
   const flags = [];
   for (const e of presence.events || []) {
+    if (e.kind === "offday") {
+      const a = e.activity || {};
+      const bits = [a.calls ? `${a.calls} calls` : "", a.video ? `${a.video} videos` : "", a.units ? `${a.units} units` : ""].filter(Boolean);
+      flags.push({
+        id: e.id, personId: e.personId, label: e.label, at: e.at, claimed: "off",
+        reason: `Scheduled off, said twice they were not working, and the day's report showed ${bits.length ? bits.join(", ") : "activity"} anyway.`,
+        status: "unverified",
+      });
+      continue;
+    }
     if (e.kind !== "left" || !e.inLine) continue;
 
     /* Somebody who said they were at lunch, or away, has claimed nothing that
