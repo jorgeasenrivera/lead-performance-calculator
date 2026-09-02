@@ -3357,7 +3357,7 @@ export default function LeadPerformanceCalculator() {
     } catch { return null; }
   })();
   if (floorParams) {
-    return <Shell><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
+    return <Shell ground={false}><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
   }
   if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
   /* ---- the sign-in screen is a LAYER, not a branch ----
@@ -28455,9 +28455,12 @@ function LogoCropper({ src, onCancel, onSave }) {
 }
 
 /* ---------------- Shell + styles ---------------- */
-function Shell({ children, entering, style }) {
+function Shell({ children, entering, style, ground = true }) {
   return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
-      <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>
+      {/* A phone page sits fixed over the whole app, so under it the ground's
+          drifting blobs, dot field and streaks would animate and composite for
+          nobody. The phone routes ask for no ground at all. */}
+      {ground && <div className="bg-live" aria-hidden="true"><div className="bg-live-inner" /></div>}
       {/* ---- the ground, mounted once and never again ----
           It used to live inside the sign-in screen and inside the arrival, which
           meant it was destroyed with each of them: the arrival's overlay faded
@@ -28466,7 +28469,7 @@ function Shell({ children, entering, style }) {
           end. One instance at the root, behind everything, for the whole life of
           the app — which is what the handoff meant by the same layer continuing
           through the join rather than being swapped at it. */}
-      <SageGround />
+      {ground && <SageGround />}
       {children}
       <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
 }
@@ -34301,6 +34304,14 @@ const SAGE_CSS = `
   cursor:pointer; transition:transform .12s ease; }
 .mcf-chip:active{ transform:scale(.94); }
 .mcf-chip.on{ border-color:rgba(228,201,141,.6); color:#e4c98d; background:rgba(228,201,141,.08); }
+/* ---- nothing paints that nobody sees --------------------------------------
+   The phone pages sit fixed over the app's ground, so the ground's four
+   drifting blobs, its dot field and its streaks were animating and
+   compositing behind an opaque screen for nothing, so the phone routes mount
+   no ground (see Shell). The pill's blur goes too: a backdrop blur is
+   re-sampled every frame the content under it scrolls. */
+.mc-pill{ backdrop-filter:none; background:rgba(6,10,8,.94); }
+.mc-card{ contain:content; }
 /* ---- the garden dark ------------------------------------------------------
    The shell wears the draft's palette end to end: the ink is the garden's,
    the glow at the foot of the screen is the garden's, the cards are the
