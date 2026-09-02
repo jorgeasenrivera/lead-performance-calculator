@@ -13033,6 +13033,21 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpPanel, setHelpPanel] = useState(false);
   const [offState, setOffState] = useState(() => { try { return localStorage.getItem(`lpcf:offday:${store}:${date}`) || ""; } catch { return ""; } });
+  /* The bars the browser draws around the page take their colour from this
+     tag. The phone screens are the garden's dark ink, so the bars are too, and
+     the light dashboard colour comes back when the screen is left. */
+  useEffect(() => {
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (!m) return;
+    const was = m.getAttribute("content");
+    m.setAttribute("content", "#15211B");
+    return () => { m.setAttribute("content", was || "#F5F5F7"); };
+  }, []);
+  /* Whether the app is on the home screen already. When it is not, Help offers
+     the way to put it there; when it is, the row is not shown. */
+  const standalone = (() => { try { return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true; } catch (e) { return false; } })();
+  const [installOpen, setInstallOpen] = useState(false);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
@@ -13728,6 +13743,35 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           <button type="button" className="mc-flash-b" onClick={() => setMile(null)}>Back to work</button>
         </div>
       )}
+      {installOpen && (
+        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setInstallOpen(false); }}>
+          <div className="mc-sheet">
+            <div className="mc-sheet-head"><b>On your home screen</b>
+              <button type="button" className="mc-x" onClick={() => setInstallOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
+            {isIOS ? (
+              <ol className="mc-steps">
+                <li>Tap the <b>Share</b> button at the bottom of Safari.</li>
+                <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+                <li>Tap <b>Add</b>. Sage opens full screen from then on.</li>
+              </ol>
+            ) : window.__lpcInstall ? (
+              <>
+                <p className="mc-steps-p">One tap and Sage gets its own icon and opens full screen.</p>
+                <button type="button" className="sf-go mcf-go" onClick={async () => {
+                  try { const ev = window.__lpcInstall; window.__lpcInstall = null; ev.prompt(); await ev.userChoice; } catch (e) {}
+                  setInstallOpen(false);
+                }}>Install Sage</button>
+              </>
+            ) : (
+              <ol className="mc-steps">
+                <li>Open the browser menu (the three dots).</li>
+                <li>Tap <b>Add to Home screen</b> or <b>Install app</b>.</li>
+                <li>Confirm. Sage opens full screen from then on.</li>
+              </ol>
+            )}
+          </div>
+        </div>
+      )}
       {inShell && helpOpen && (
         <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
           <div className="mc-sheet">
@@ -13749,6 +13793,10 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   <span>{l}</span><span className="on">{on ? "ON" : "OFF"}</span></button>
               );
             })}
+            {!standalone && (
+              <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setInstallOpen(true); }}>
+                <span>Put Sage on your home screen<span className="hint">Opens full screen, with its own icon</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+            )}
             <div className="mc-set-row"><span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
             {me && <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>}
             {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); onSignOut(); }}><span>Sign out<span className="hint">Somebody else's phone, or the wrong name</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
@@ -29078,6 +29126,8 @@ const SAGE_CSS = `
          does not cover — and iOS uncovers a strip below it the moment the
          keyboard opens — showed the light --bg underneath as a white band. */
       html:has(.q-page.sf), body:has(.q-page.sf) { background:#06090F; }
+      html:has(.q-page.sf.mc-shell), body:has(.q-page.sf.mc-shell) { background:#15211B; }
+      html:has(.q-page.sf.mc-floor), body:has(.q-page.sf.mc-floor) { background:#070A08; }
       /* A page whose content is a full-screen fixed layer has nothing to scroll,
          but .lpc underneath is min-height:100vh with a bottom padding on top of
          it — there is no global border-box here — so the document scrolled by
@@ -34649,6 +34699,10 @@ const SAGE_CSS = `
 .mcf-go{ margin-top:22px; width:min(320px, 100%); }
 .mcf-home .sf-door{ margin-top:14px; }
 .mc-qjoin s.hd{ background:#E9CE96; }
+.mc-steps{ margin:6px 0 4px; padding:0 0 0 22px; font-size:15px; line-height:1.5; color:#EDF2EA; }
+.mc-steps li{ margin:8px 0; }
+.mc-steps b{ color:#E9CE96; }
+.mc-steps-p{ font-size:15px; line-height:1.5; color:rgba(237,242,234,.8); margin:6px 0 4px; }
 .mc-qjoin b{ color:#E9CE96; }
 .mcf-sticon{ margin-top:10px; opacity:.9; }
 .mcf-chips{ display:flex; gap:8px; margin-top:6px; }
