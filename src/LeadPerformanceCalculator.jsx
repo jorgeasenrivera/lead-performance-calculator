@@ -2516,6 +2516,7 @@ export default function LeadPerformanceCalculator() {
             console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
             continue;
           }
+          if (!d.__storeId) d.__storeId = s.id;   // only ever stamps a document that arrived without one
           all[s.id] = d;
         }
         setAdminData(all);
@@ -2562,6 +2563,7 @@ export default function LeadPerformanceCalculator() {
           console.error("store document belongs to another store", { key: s.id, claims: d.__storeId });
           continue;
         }
+        if (!d.__storeId) d.__storeId = s.id;
         add[s.id] = d;
       }
       if (Object.keys(add).length) setAdminData((p) => ({ ...p, ...add }));
@@ -15304,22 +15306,51 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   // Load this store's data once and share it with both boards. Persisting writes the
   // store row and an audit entry, matching how the rest of the app saves — so The Line's
   // coaching mirror (data.queue[date]) keeps flowing exactly as before.
+  const dataRef = useRef(null); dataRef.current = data;
+  const storeRef = useRef(null); storeRef.current = store;
+  const failRef = useRef(false); failRef.current = loadFailed;
   useEffect(() => {
     let dead = false;
     if (!store) { setData(null); return; }
     setData(null); setLoadFailed(false);
-    loadStore(store.id, emptyStoreData(), true)
-      .then((d) => { if (!dead) setData(d); })
+    const want = store.id;
+    loadStore(want, emptyStoreData(), true)
+      .then((d) => {
+        if (dead) return;
+        /* Same rule as the dashboard's loader: a document that says it belongs
+           to another store is never shown as this one's, and never saved back. */
+        if (d && d.__storeId && d.__storeId !== want) {
+          console.error("store document belongs to another store", { key: want, claims: d.__storeId });
+          setData(emptyStoreData()); setLoadFailed(true);
+          return;
+        }
+        if (d && typeof d === "object" && !d.__storeId) d.__storeId = want;
+        setData(d);
+      })
       .catch(() => { if (!dead) { setData(emptyStoreData()); setLoadFailed(true); } });
     return () => { dead = true; };
   }, [store?.id]); // eslint-disable-line
 
+  /* ---- this used to write to the wrong store ----
+     The mirror below runs on an interval built once, so the `persist` it held
+     was the first render's: `store` inside it was whichever store the module
+     was opened on, for as long as the tab lived. Switch stores and the next
+     mirror tick wrote the store on screen's whole document under the first
+     store's key. The store is read at call time now, the document's own stamp
+     is checked against it, and a document that arrived without a stamp gets
+     one on the way out. */
   const persist = async (next, audit) => {
-    if (!store) return;
-    if (loadFailed) { alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
+    const st = storeRef.current;
+    if (!st) return;
+    if (failRef.current) { alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
+    if (next && next.__storeId && next.__storeId !== st.id) {
+      console.error("refused cross-store save", { belongsTo: next.__storeId, wouldWriteTo: st.id });
+      return;
+    }
+    if (next && typeof next === "object") next.__storeId = st.id;
     setData(next); setSaving(true);
-    await saveShared(storeKey(store.id), next);
-    if (audit) await appendAudit({ user: session?.name, store: store.id, ...audit });
+    await saveShared(storeKey(st.id), next);
+    if (audit) await appendAudit({ user: session?.name, store: st.id, ...audit });
     setSaving(false);
   };
 
@@ -15335,9 +15366,6 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
      scope so the interval is not town down and rebuilt on every save, it writes
      only when the event counts have actually moved, and it carries no audit entry:
      it is a record of what the queues already did, not a manager's action. */
-  const dataRef = useRef(null); dataRef.current = data;
-  const storeRef = useRef(null); storeRef.current = store;
-  const failRef = useRef(false); failRef.current = loadFailed;
   const mirrorSig = useRef("");
   useEffect(() => {
     mirrorSig.current = "";           // a different store is a different record
@@ -15367,6 +15395,9 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
         if (mirrorSig.current === sig) return;
         const cur = dataRef.current;
         if (!cur) return;
+        /* The store may have changed while the rows were being read. */
+        if (!storeRef.current || storeRef.current.id !== st.id) return;
+        if (cur.__storeId && cur.__storeId !== st.id) return;
         const next = JSON.parse(JSON.stringify(cur));
         next.queue = next.queue || {};
         next.floor = next.floor || {};
@@ -20564,6 +20595,37 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
     } finally { setBusy(false); }
   };
 
+  /* ---- the other answer ----
+     When the row holds this store's own people under another store's label,
+     restoring a backup throws away real days to fix one field. This keeps every
+     byte and corrects the label, after saving the row as it stands. */
+  const relabelLive = async () => {
+    const want = recStore;
+    const name = config.stores.find((x) => x.id === want)?.name || want;
+    const live = await loadShared(storeKey(want), null);
+    if (!live) { setRecSaid("There is nothing saved under that store."); return; }
+    const from = config.stores.find((x) => x.id === live.__storeId)?.name || live.__storeId || "no store";
+    if (!window.confirm(
+      `Keep everything in the ${name} row and change its label from ${from} to ${name}?\n\n` +
+      `Do this only if the people in it (${(live.roster || []).slice(0, 5).map((a) => a && a.name).filter(Boolean).join(", ")}) ` +
+      `are ${name}'s own. The row as it is now is saved first so this can be undone.`)) return;
+    setBusy(true); setRecSaid("");
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const kept = await saveShared(backupStoreKey(want, `before-relabel-${stamp}`), live);
+      if (!kept) { setRecSaid(`Stopped: the current row could not be saved first, so nothing was changed. ${lastSaveError || ""}`); return; }
+      const put = { ...live, __storeId: want };
+      const ok = await saveShared(storeKey(want), put);
+      if (!ok) { setRecSaid(`Could not write: ${lastSaveError || "unknown"}`); return; }
+      await appendAudit({ user: session?.name, action: "Fixed store label",
+        detail: `${name}: row said ${from}, data kept as is` });
+      setRecSaid(`${name} now says it is ${name}. Reload the page to open it. The row as it was is kept as before-relabel-${stamp}.`);
+      setRecLive(describe(put, want));
+    } catch (e) {
+      setRecSaid(`Could not write: ${String(e.message || e)}`);
+    } finally { setBusy(false); }
+  };
+
   const recoverFrom = async (row) => {
     const want = recStore;
     const name = config.stores.find((x) => x.id === want)?.name || want;
@@ -20759,9 +20821,20 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
           <div className="snap-list" style={{ marginLeft: 0 }}>
             <p className="hint">
               Live now: {recLive
-                ? <>stamped <code>{recLive.stamp || "unstamped"}</code>, {recLive.roster} on the roster{recLive.names.length ? <>: {recLive.names.join(", ")}</> : null}</>
+                ? <>stamped <code>{recLive.stamp || "unstamped"}</code>, {recLive.roster} on the roster{recLive.names.length ? <>: {recLive.names.join(", ")}</> : null}
+                  {recLive.months ? `; ${recLive.months} months (${recLive.firstMonth} to ${recLive.lastMonth})` : ""}</>
                 : "nothing saved"}
             </p>
+            {recLive && recLive.foreign && (
+              <div className="snap-row">
+                <span className="snap-reason">
+                  <b>The live row is labelled for another store.</b> If the people named above are this store's own,
+                  the data is intact and only the label is wrong. Fix the label and keep every day; restoring a
+                  backup below is for when they are the other store's people.
+                </span>
+                <button className="btn-x" disabled={busy} onClick={relabelLive}>Keep the data, fix the label</button>
+              </div>
+            )}
             {recDays && recDays.count > 0 ? (
               <p className="hint">
                 <b>Read this before restoring.</b> {recDays.count} day{recDays.count === 1 ? "" : "s"} of activity
