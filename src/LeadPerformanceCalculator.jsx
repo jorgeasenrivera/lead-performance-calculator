@@ -13441,7 +13441,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   }
 
   return (
-    <div className={"q-page f-page sf sf-floor" + (eff === "done" && me ? " mc-shell" : "")} ref={pageRef}>
+    <div className={"q-page f-page sf sf-floor" + (eff === "done" && me ? " mc-shell" : "") + (eff === "done" && me && tab !== "corner" ? " mc-floor" : "")} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       {eff === "done" && me && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
@@ -34329,6 +34329,22 @@ const SAGE_CSS = `
 .mc-spine.made .rt{ color:#8FD8AF; }
 .mc-spine.made .sp i{ background:linear-gradient(0deg,#567D61,#8FD8AF); }
 .mc-spine.made .sp b{ background:#8FD8AF; box-shadow:0 0 11px rgba(143,216,175,1); }
+/* The floor goes to deep black under the garden glow: it is read at arm's
+   length across a showroom, so the ink drops to near black and every surface
+   on it sits a step deeper, and the line and the title get the contrast. */
+.q-page.sf.mc-shell.mc-floor{
+  background:radial-gradient(closest-side at 50% 116%, rgba(127,169,138,.42), rgba(127,169,138,.1) 55%, transparent 76%), #070A08; }
+.mc-floor .mcf-track{ background:#0D130F; box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
+.mc-floor .mcf-pip{ background:#243229; }
+.mc-floor .mcf-pip.hd{ background:#2E4034; }
+.mc-floor .mcf-chip, .mc-floor .fba-btn{ background:#0B100D; border-color:rgba(255,255,255,.12); }
+.mc-floor .mcf-chip.on{ border-color:rgba(228,201,141,.65); background:#151A12; }
+.mc-floor .fba-btn.fly{ border-color:rgba(232,169,60,.6); }
+.mc-floor .fba-btn.to{ border-color:rgba(216,72,60,.6); }
+.mc-floor .mcf-title{ color:#FFFFFF; }
+.mc-floor .mcf-tmr .v{ color:#F2F6F2; }
+.mc-floor .mcf-cap{ color:rgba(237,242,234,.62); }
+.mc-floor .mc-pill{ background:rgba(3,5,4,.9); }
 /* ---- the moments -------------------------------------------------------- */
 .mc-shell .help-fab{ display:none; }
 .mc-head{ position:relative; }
