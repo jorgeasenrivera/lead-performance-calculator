@@ -45,3 +45,17 @@ export function checkLink({ links = [], userId, store, personId, roster = null }
   }
   return null;
 }
+
+/* ---- the account door ----
+   A signed-in salesperson opens the app and should land on their own corner
+   without a daily code: the link IS the identity. This picks which link is home
+   when an account is joined at more than one store (a floater, or somebody who
+   moved rooftops and was never unlinked from the old one): the store they were
+   on last, if it is still linked, otherwise the first link there is. Null means
+   nobody has linked this account anywhere, and the waiting screen is right. */
+export function homeLinkFor(links, remembered = null) {
+  const list = (links || []).filter((l) => l && l.store && l.person_id);
+  if (!list.length) return null;
+  const last = remembered ? list.find((l) => l.store === remembered) : null;
+  return last || list[0];
+}
