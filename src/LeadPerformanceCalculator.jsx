@@ -1289,7 +1289,10 @@ function useFavicon() {
         document.head.appendChild(pre);
         const f = document.createElement("link");
         f.id = "lpc-fonts"; f.rel = "stylesheet";
-        f.href = "https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap";
+        // Geist Mono rides along: the phone's caps, clocks and counts are set in
+        // it, and a face that never loads falls back to a different mono on
+        // every phone, which is the mismatch a salesperson notices first.
+        f.href = "https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap";
         document.head.appendChild(f);
       }
     } catch {}
@@ -12587,7 +12590,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <div className="mc-calhead"><PixIcon glyph="calendar" size={14} /><span>{MC_MONTHS[mo - 1]}</span></div>
           <div className="mc-cal">
             {cal.map((c, i) => c === null
-              ? <s key={"p" + i} />
+              ? <span key={"p" + i} />
               : <s key={c.d} className={
                   (c.d === dayN ? "today " : "") + (c.isOff ? "hol" : c.d === bestDay ? "best" : (c.r ? (c.score >= 10 ? "h3" : c.score >= 1.4 ? "h2" : "h1") : (c.past ? "" : "off")))
                 } />)}
@@ -34382,10 +34385,10 @@ const SAGE_CSS = `
 .mc-made{ height:28px; font-size:11.5px; gap:9px; margin-top:7px; border-radius:9px; }
 .mc-ptslbl b{ font-size:16.5px; }
 .mc-streak{ font-size:10.5px; }
-.mc-week{ gap:6px; margin-top:12px; }
-.mc-week i{ width:28px; }
-.mc-week .c{ width:26px; height:26px; font-size:11.5px; }
-.mc-week .wd{ font-size:9px; margin-top:4px; }
+.mc-week{ gap:0; margin-top:12px; justify-content:space-between; padding:0 2px; }
+.mc-week i{ width:auto; flex:0 0 auto; }
+.mc-week .c{ width:32px; height:32px; font-size:12.5px; }
+.mc-week .wd{ font-size:9.5px; margin-top:5px; }
 .mc-list{ margin-top:10px; }
 .mc-li{ padding:11px 0; font-size:15.5px; gap:12px; }
 .mc-li .ck{ width:28px; height:28px; border-radius:9px; }
