@@ -22,6 +22,7 @@ import {
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves } from "../api/_phone-rows.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
+import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
@@ -9706,16 +9707,22 @@ async function printQueueSignIn({ store, url, date, by }) {
    numeral is a typeface rather than an icon. */
 // analog LED numeral: each digit is keyed by its value so it remounts and "flips" on change
 // light haptic feedback where supported (no-op elsewhere)
-function buzz(pattern) { try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {} }
-// bridge to the native app shell (Expo WebView) for iOS Live Activities / widgets. No-op in a normal browser.
-function postToNativeShell(payload) {
+/* Inside the phone app the WebView swallows vibrate, so the buzz is also sent
+   to the shell, which turns it into a real haptic. */
+function buzz(pattern) {
+  try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+  nativePost("buzz", pattern);
+}
+// bridge to the native app shell (Expo WebView). No-op in a normal browser.
+function nativePost(type, payload) {
   try {
     const w = typeof window !== "undefined" ? window : null;
     if (w && w.ReactNativeWebView && typeof w.ReactNativeWebView.postMessage === "function") {
-      w.ReactNativeWebView.postMessage(JSON.stringify({ type: "queue", payload }));
+      w.ReactNativeWebView.postMessage(JSON.stringify({ type, payload }));
     }
   } catch (e) {}
 }
+const postToNativeShell = (payload) => nativePost("queue", payload);
 function DmNumber({ value, up }) {
   const s = String(value);
   return (
@@ -13050,6 +13057,28 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   /* The phone app is the app. Inside the native shell this row is not shown;
      in a browser it points at the store, or says the app is on its way. */
   const inNative = !!window.ReactNativeWebView;
+  /* ---- the phone's push token ----
+     The shell hands the page the phone's own token; the page holds the session
+     and the store, so it does the registering. Once per token per store: the
+     endpoint merges, so a repeat costs nothing but a round trip. */
+  useEffect(() => {
+    if (!account) return;
+    let dead = false;
+    const send = async (nat) => {
+      const body = registrationBody(nat, store);
+      if (!body) return;
+      const k = `lpcf:dev:${store}:${body.device_id}:${body.apns_token || body.fcm_token}`;
+      try { if (localStorage.getItem(k) === "1") return; } catch (e) {}
+      const r = await apiCall("/api/register-device", { method: "POST", body });
+      if (dead) return;
+      if (!r.error) { try { localStorage.setItem(k, "1"); } catch (e) {} }
+      else console.error("register-device", r.error);
+    };
+    if (window.__lpcNative) send(window.__lpcNative);
+    const on = (e) => send(e.detail || window.__lpcNative);
+    window.addEventListener("lpc:native", on);
+    return () => { dead = true; window.removeEventListener("lpc:native", on); };
+  }, [account, store]);   // eslint-disable-line
   const [appOpen, setAppOpen] = useState(false);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
   const appLink = isIOS ? APP_STORE_LINKS.ios : APP_STORE_LINKS.android;
