@@ -34063,7 +34063,7 @@ const SAGE_CSS = `
    The salesperson home. Same ink and glow as the floor screens around it;
    sand for effort, garden green for made-it, red only where a point costs.
    Every animation is transform or opacity so the compositor carries it. */
-.mc{ width:min(430px, 100%); margin:0 auto; padding:12px 16px 84px; text-align:left;
+.mc{ width:min(430px, 100%); margin:0 auto; padding:12px 16px 84px; text-align:left; font-family:var(--font-ui);
   display:flex; flex-direction:column; gap:11px; }
 .mc-head{ display:flex; gap:16px; align-items:flex-start; margin-top:6px; }
 .mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
@@ -34162,7 +34162,7 @@ const SAGE_CSS = `
 .mc-row + .mc-row{ border-top:1px solid rgba(255,255,255,.07); }
 .mc-num{ min-width:44px; display:flex; justify-content:center; flex:0 0 auto; }
 .mc-tx{ flex:1; min-width:0; }
-.mc-tx b{ display:block; font-size:14px; }
+.mc-tx b{ display:block; font-size:14px; font-family:var(--font-display); }
 .mc-tx .st{ display:block; font-family:var(--sfmono); font-size:9px; font-weight:700;
   letter-spacing:.13em; color:rgba(232,238,242,.5); margin-top:2px; }
 .mc-tx .bar{ display:block; height:4px; border-radius:999px; background:rgba(255,255,255,.1);
@@ -34178,7 +34178,7 @@ const SAGE_CSS = `
   animation:mcShine 2.8s ease-in-out infinite; }
 @keyframes mcShine{ 0%{ transform:translateX(0); } 60%,100%{ transform:translateX(330px); } }
 .mc-ptshead{ display:flex; align-items:center; gap:12px; }
-.mc-ptslbl b{ display:block; font-size:13.5px; }
+.mc-ptslbl b{ display:block; font-size:13.5px; font-family:var(--font-display); }
 .mc-streak{ display:block; font-family:var(--sfmono); font-size:9px; font-weight:700;
   letter-spacing:.11em; color:#e4c98d; margin-top:2px; }
 .mc-week{ display:flex; gap:4px; margin-top:9px; }
@@ -34214,7 +34214,7 @@ const SAGE_CSS = `
   color:#e8eef2; animation:mcSheet .26s cubic-bezier(.2,.9,.3,1) both; }
 @keyframes mcSheet{ from{ opacity:.35; transform:translateY(26px); } to{ opacity:1; transform:none; } }
 .mc-sheet-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-.mc-sheet-head b{ font-size:16px; }
+.mc-sheet-head b{ font-size:16px; font-family:var(--font-display); }
 .mc-x{ border:0; background:rgba(255,255,255,.1); color:#e8eef2; width:26px; height:26px;
   border-radius:50%; cursor:pointer; display:flex; align-items:center; justify-content:center; }
 .mc-clrow{ display:flex; justify-content:space-around; align-items:flex-end; padding:6px 0 2px; }
@@ -34246,13 +34246,14 @@ const SAGE_CSS = `
    the clocks center in the space above the actions, and the actions keep clear
    of the floating pill. */
 .mcf .sf-actions{ width:min(430px,100%); margin:0 auto; }
+.mcf, .mcf button{ font-family:var(--font-ui); }
 .sf-live.mcf{ padding-bottom:calc(clamp(24px,5vh,34px) + 62px); }
 .mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center; padding:8px 0 18px; }
 .mcf-count{ display:flex; justify-content:center; }
 .mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
   color:rgba(237,242,234,.55); margin-top:8px; }
-.mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 0;
+.mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 calc(50% - 50vw);
   border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
 .mcf-track .fa, .mcf-track .fb{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px;
   border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
@@ -34280,8 +34281,8 @@ const SAGE_CSS = `
   font-family:var(--sfmono); font-size:11px; font-weight:700; color:rgba(237,242,234,.85); }
 .mcf-tmr .l{ font-family:var(--sfmono); font-size:6.5px; font-weight:700; letter-spacing:.14em;
   color:rgba(237,242,234,.4); margin-top:3px; }
-.mcf-title{ font-family:var(--sfdisp,inherit); font-size:22px; font-weight:700; margin-top:14px;
-  color:#fff; text-align:center; }
+.mcf-title{ font-family:var(--font-display); font-size:22px; font-weight:700; margin-top:14px;
+  color:#fff; text-align:center; letter-spacing:-.01em; }
 .mcf-sub{ font-size:12.5px; color:rgba(237,242,234,.6); margin-top:4px; text-align:center; }
 .mcf-sticon{ margin-top:10px; opacity:.9; }
 .mcf-chips{ display:flex; gap:8px; margin-top:6px; }
@@ -34335,7 +34336,7 @@ const SAGE_CSS = `
 .mc-offc{ border:1px solid rgba(228,201,141,.55); background:#1c2b23; border-radius:15px; padding:13px; margin-top:6px;
   animation:mcIn .3s ease-out backwards; }
 @keyframes mcIn{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:none; } }
-.mc-offc b{ display:block; font-size:15px; }
+.mc-offc b{ display:block; font-size:15px; font-family:var(--font-display); }
 .mc-offc .hint{ display:block; font-size:11.5px; color:rgba(237,242,234,.65); margin-top:3px; }
 .mc-offb{ display:flex; gap:8px; margin-top:11px; }
 .mc-offb button{ border:0; border-radius:999px; padding:8px 16px; font-size:11px; font-weight:700; cursor:pointer; }
@@ -34358,7 +34359,7 @@ const SAGE_CSS = `
 .mc-tkt::after{ content:""; position:absolute; left:0; right:0; bottom:-1px; height:8px; transform:scaleY(-1);
   background:radial-gradient(circle at 6px 0px, #10160f 5px, transparent 5.5px) repeat-x; background-size:16px 8px; }
 .mc-tk-h{ text-align:center; font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.18em; }
-.mc-tk-n{ text-align:center; font-size:15px; font-weight:700; margin-top:2px; }
+.mc-tk-n{ text-align:center; font-size:15px; font-weight:700; margin-top:2px; font-family:var(--font-display); }
 .mc-tk-big{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
 .mc-tk-dm .ld{ box-shadow:inset 0 1.5px 2.5px rgba(0,0,0,.7), inset 0 -1px 1px rgba(255,255,255,.25) !important; }
 .mc-tk-dm .ld.on{ background:rgba(16,22,17,.82) !important; }
@@ -34397,7 +34398,7 @@ const SAGE_CSS = `
   75%{ transform:translate(0,calc(-100vh + 48px)) rotate(90deg); } 97%{ transform:translate(0,0) rotate(90deg); } 100%{ transform:translate(0,0) rotate(0); } }
 .mc-flash-dm{ animation:mcPop .8s cubic-bezier(.18,1.5,.3,1) both; margin-bottom:26px; }
 @keyframes mcPop{ 0%{ transform:scale(.3); opacity:0; } 60%{ transform:scale(1.12); opacity:1; } 100%{ transform:scale(1); } }
-.mc-flash-t{ font-size:26px; font-weight:700; animation:mcRise .5s .3s both; }
+.mc-flash-t{ font-size:26px; font-weight:700; font-family:var(--font-display); animation:mcRise .5s .3s both; }
 .mc-flash-s{ font-size:13px; opacity:.85; margin-top:6px; animation:mcRise .5s .45s both; }
 .mc-flash-b{ margin-top:18px; border:1px solid rgba(255,255,255,.4); background:rgba(255,255,255,.14); color:#fff; border-radius:999px;
   padding:9px 20px; font-size:12px; font-weight:600; cursor:pointer; animation:mcRise .5s .6s both; }
