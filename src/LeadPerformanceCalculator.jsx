@@ -11848,10 +11848,10 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
     <>
       <div className="fba-row">
         <button type="button" className="fba-btn fly" onClick={() => sheetFor("fly")}>
-          <PixIcon glyph="bolt" size={16} /><b>FlyBy</b><span>Swing by, meet my guest</span>
+          <PixIcon glyph="bolt" size={22} /><b>FlyBy</b><span>Swing by, meet my guest</span>
         </button>
         <button type="button" className="fba-btn to" onClick={() => sheetFor("to")}>
-          <PixIcon glyph="swap" size={16} /><b>T.O.</b><span>I need help now</span>
+          <PixIcon glyph="swap" size={22} /><b>T.O.</b><span>I need help now</span>
         </button>
       </div>
       {open && (
@@ -12427,8 +12427,8 @@ function McTimers({ sinceOn, sinceMove }) {
   };
   return (
     <div className="mcf-tmr">
-      <span><span className="v"><PixIcon glyph="clock" size={11} /> <b>{fmt(sinceOn)}</b></span><span className="l">ON THE FLOOR</span></span>
-      <span><span className="v"><PixIcon glyph="arrowup" size={11} /> <b>{fmt(sinceMove)}</b></span><span className="l">LAST MOVE</span></span>
+      <span><span className="v"><PixIcon glyph="clock" size={14} /> <b>{fmt(sinceOn)}</b></span><span className="l">ON THE FLOOR</span></span>
+      <span><span className="v"><PixIcon glyph="arrowup" size={14} /> <b>{fmt(sinceMove)}</b></span><span className="l">LAST MOVE</span></span>
     </div>
   );
 }
@@ -12584,7 +12584,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       )}
       <div className="mc-head">
         <button type="button" className="mc-calw" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
-          <div className="mc-calhead"><PixIcon glyph="calendar" size={11} /><span>{MC_MONTHS[mo - 1]}</span></div>
+          <div className="mc-calhead"><PixIcon glyph="calendar" size={14} /><span>{MC_MONTHS[mo - 1]}</span></div>
           <div className="mc-cal">
             {cal.map((c, i) => c === null
               ? <s key={"p" + i} />
@@ -12605,14 +12605,14 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           )}
           {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
         </div>
-        <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={12} /></button>
+        <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={16} /></button>
       </div>
       <McSpine rows={rows} />
 
       <div className="mc-hero">
         <div className="mc-hero-top">
           {units != null
-            ? <span className="mc-units"><LedNumber value={units} color="#F2F6F2" cell={7} gap={3} dim="transparent" /></span>
+            ? <span className="mc-units"><LedNumber value={units} color="#F2F6F2" cell={9} gap={4} dim="transparent" /></span>
             : <span className="mc-units mc-units-none">No month row yet</span>}
           <span className="mc-units-lbl">units<br />this month</span>
           {closing.length > 0 && (
@@ -12660,11 +12660,11 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       <div className="mc-card mc-today">
         {rows.map((r2) => (
           <div className="mc-row" key={r2.label}>
-            <span className="mc-num"><LedNumber value={r2.got} color={r2.met ? "#8FD8AF" : "#E9CE96"} cell={4} gap={2} dim="transparent" /></span>
+            <span className="mc-num"><LedNumber value={r2.got} color={r2.met ? "#8FD8AF" : "#E9CE96"} cell={5.5} gap={2.5} dim="transparent" /></span>
             <span className="mc-tx">
               <b>{r2.label}</b>
               {r2.met
-                ? <span className="mc-made"><PixIcon glyph="check" size={10} /><span>MADE IT</span></span>
+                ? <span className="mc-made"><PixIcon glyph="check" size={13} /><span>MADE IT</span></span>
                 : <>
                     <span className="st">OF {r2.need}</span>
                     <span className="bar"><i style={{ width: Math.min(100, Math.round(((r2.got || 0) / Math.max(1, r2.need)) * 100)) + "%" }} /></span>
@@ -12677,7 +12677,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       <div className="mc-cap">POINTS &middot; LOWER WINS</div>
       <div className="mc-card">
         <div className="mc-ptshead">
-          <span className="mc-num"><LedNumber value={points} color="#F08A80" cell={5} gap={2} dim="transparent" /></span>
+          <span className="mc-num"><LedNumber value={points} color="#F08A80" cell={6.5} gap={3} dim="transparent" /></span>
           <span className="mc-ptslbl">
             <b>this month so far</b>
             {streak > 0 && <span className="mc-streak">CLEAN {streak} DAY{streak === 1 ? "" : "S"} RUNNING</span>}
@@ -12686,7 +12686,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         <div className="mc-week">
           {week.map((w, i) => (
             <i key={i}>
-              <span className={"c " + w.state}>{w.state === "ok" ? <PixIcon glyph="check" size={9} /> : w.state === "bad" ? "+" + w.pts : "\u00b7"}</span>
+              <span className={"c " + w.state}>{w.state === "ok" ? <PixIcon glyph="check" size={12} /> : w.state === "bad" ? "+" + w.pts : "\u00b7"}</span>
               <span className="wd">{w.wd}</span>
             </i>
           ))}
@@ -12699,7 +12699,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             { l: "Tasks clear", d: needTasks > 0 ? (a.tasks || 0) >= needTasks : (a.tasks || 0) > 0 },
           ].map((it) => (
             <div className={"mc-li" + (it.d ? " done" : "")} key={it.l}>
-              <span className="ck">{it.d && <PixIcon glyph="check" size={10} />}</span><span>{it.l}</span>
+              <span className="ck">{it.d && <PixIcon glyph="check" size={13} />}</span><span>{it.l}</span>
             </div>
           ))}
         </div>
@@ -12732,7 +12732,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <div className="mc-sheet">
             <div className="mc-sheet-head">
               <b>{sheet === "closing" ? "Closing" : sheet === "sched" ? new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long" }) : "The board"}</b>
-              <button type="button" className="mc-x" onClick={() => setSheet(null)} aria-label="Close"><PixIcon glyph="close" size={11} /></button>
+              <button type="button" className="mc-x" onClick={() => setSheet(null)} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
             </div>
             {sheet === "closing" && (
               <>
@@ -13338,7 +13338,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
             down the line steps aside for the status and its clock. */}
         {st === "waiting" ? (
           <div className="mcf-top">
-            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={7} gap={3} dim="transparent" /></span>
+            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={10} gap={4} dim="transparent" /></span>
             <div className="mcf-cap">TO THE DOOR</div>
             <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
             <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
@@ -13358,7 +13358,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
             {["waiting", ...FLOOR_SELF_FLAGS].map((s2) => (
               <button key={s2} type="button" role="radio" aria-checked={s2 === st} disabled={busy}
                 className={"mcf-chip" + (s2 === st ? " on" : "")} onClick={() => setFlag(s2)}>
-                <PixIcon glyph={s2 === "waiting" ? "user" : s2} size={14} />
+                <PixIcon glyph={s2 === "waiting" ? "user" : s2} size={19} />
                 <span>{s2 === "waiting" ? "Here" : s2 === "lunch" ? "Lunch" : "Away"}</span>
               </button>
             ))}
@@ -13450,9 +13450,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
           <div className="mc-pill" role="tablist">
             <span className="mc-ind" style={{ transform: tab === "corner" ? "translateX(0)" : "translateX(100%)" }} />
             <button type="button" role="tab" aria-selected={tab === "corner"} className={"mc-tab" + (tab === "corner" ? " on" : "")}
-              onClick={() => { buzz(8); setTab("corner"); }} aria-label="My corner"><PixIcon glyph="home" size={15} /></button>
+              onClick={() => { buzz(8); setTab("corner"); }} aria-label="My corner"><PixIcon glyph="home" size={21} /></button>
             <button type="button" role="tab" aria-selected={tab !== "corner"} className={"mc-tab" + (tab !== "corner" ? " on" : "") + (upRoot ? " alert" : "")}
-              onClick={() => { buzz(8); setTab("floor"); }} aria-label="The floor"><PixIcon glyph="door" size={15} /></button>
+              onClick={() => { buzz(8); setTab("floor"); }} aria-label="The floor"><PixIcon glyph="door" size={21} /></button>
           </div>
         );
       })()}
@@ -13503,7 +13503,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
         <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>Help</b>
-              <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={11} /></button></div>
+              <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
             <div className="mc-set-row mc-set-who">
               <span className="mc-set-av" style={{ background: `hsl(${(String(meFull || meLabel).split("").reduce((h2, c2) => (h2 * 31 + c2.charCodeAt(0)) % 360, 0))} 62% 46%)` }}>{String(meLabel || meFull).trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</span>
               <span>{meFull || meLabel}<span className="hint">{(row && row.storeName) || ""}</span></span>
@@ -34345,6 +34345,103 @@ const SAGE_CSS = `
 .mc-floor .mcf-tmr .v{ color:#F2F6F2; }
 .mc-floor .mcf-cap{ color:rgba(237,242,234,.62); }
 .mc-floor .mc-pill{ background:rgba(3,5,4,.9); }
+/* ---- reach ----------------------------------------------------------------
+   Read at arm's length, tapped with a thumb: nothing smaller than 44px to
+   hit, nothing smaller than 11px to read, and the numerals scale with it. */
+.mc{ gap:14px; padding-left:18px; padding-right:48px; }
+.mc-calhead{ font-size:11.5px; }
+.mc-cal{ grid-template-columns:repeat(7, 12px); gap:6px 8px; margin-top:9px; }
+.mc-cal s{ width:12px; height:12px; }
+.mc-date{ font-size:13px; }
+.mc-qmini{ gap:7px; min-height:24px; }
+.mc-qmini s{ width:14px; height:14px; }
+.mc-qmini s.hd{ width:22px; height:22px; border-radius:6px; font-size:8px; }
+.mc-qmini b{ font-size:10px; }
+.mc-asof{ font-size:10.5px; }
+.mc-asof s{ width:8px; height:8px; }
+.mc-help{ width:40px; height:40px; top:-6px; right:-12px; }
+.mc-hero{ padding:16px 15px 14px; }
+.mc-units-lbl{ font-size:13.5px; }
+.mc-icobtn{ width:42px; height:42px; }
+.mc-cbars{ height:16px; gap:3px; } .mc-cbars i{ width:4.5px; }
+.mc-pace{ margin-top:14px; gap:10px; }
+.mc-pace .nm{ font-size:12.5px; width:38px; }
+.mc-pace .tr{ height:16px; }
+.mc-pace .tr .togo{ font-size:9.5px; }
+.mc-pacew .pm{ height:22px; top:-3px; width:3.5px; }
+.mc-pace .num{ font-size:13.5px; }
+.mc-legend{ font-size:9.5px; gap:14px; margin-top:8px; }
+.mc-legend s{ width:9px; height:9px; }
+.mc-cap{ font-size:11px; }
+.mc-card{ padding:14px 16px; border-radius:18px; }
+.mc-row{ gap:14px; padding:11px 0; }
+.mc-num{ min-width:58px; }
+.mc-tx b{ font-size:17px; }
+.mc-tx .st{ font-size:11px; margin-top:3px; }
+.mc-tx .bar{ height:6px; margin-top:8px; }
+.mc-made{ height:28px; font-size:11.5px; gap:9px; margin-top:7px; border-radius:9px; }
+.mc-ptslbl b{ font-size:16.5px; }
+.mc-streak{ font-size:10.5px; }
+.mc-week{ gap:6px; margin-top:12px; }
+.mc-week i{ width:28px; }
+.mc-week .c{ width:26px; height:26px; font-size:11.5px; }
+.mc-week .wd{ font-size:9px; margin-top:4px; }
+.mc-list{ margin-top:10px; }
+.mc-li{ padding:11px 0; font-size:15.5px; gap:12px; }
+.mc-li .ck{ width:28px; height:28px; border-radius:9px; }
+.mc-hb{ gap:9px; }
+.mc-hb .rk{ font-size:11px; width:20px; }
+.mc-hb .tk{ height:14px; }
+.mc-hb .un{ font-size:12.5px; width:36px; }
+.mc-hb .nm2{ font-size:14px; width:110px; }
+.mc-boardsub{ font-size:10.5px; margin-top:10px; }
+.mc-boardbtn{ min-height:44px; }
+.mc-sheet{ padding:18px 17px 84px; }
+.mc-sheet-head b{ font-size:19px; }
+.mc-x{ width:36px; height:36px; }
+.mc-cl b{ font-size:16px; } .mc-cl .lb{ font-size:12.5px; } .mc-cl .dl{ font-size:10.5px; }
+.mc-cl .vb{ height:130px; width:30px; }
+.mc-clfoot{ font-size:12.5px; }
+.mc-sc{ gap:10px 0; margin-top:10px; } .mc-sc b{ font-size:10px; } .mc-sc s{ width:20px; height:20px; }
+.mc-scr{ font-size:13px; padding:6px 0; } .mc-scd-hint{ font-size:12.5px; }
+.mc-set-row{ padding:14px 2px; font-size:15px; min-height:44px; }
+.mc-set-row .hint{ font-size:12px; }
+.mc-set-row .on{ font-size:10.5px; }
+.mc-set-av{ width:40px; height:40px; font-size:12.5px; }
+.mc-offc b{ font-size:17px; } .mc-offc .hint{ font-size:13px; }
+.mc-offb button{ padding:11px 20px; font-size:13px; min-height:44px; }
+.mc-spine{ width:26px; right:9px; }
+.mc-spine .rt{ font-size:9.5px; }
+.mc-spine .sp{ width:5px; }
+.mc-spine .sp b{ width:13px; height:13px; }
+.mc-pill{ padding:5px; }
+.mc-ind{ left:5px; top:5px; bottom:5px; width:60px; }
+.mc-tab{ width:60px; padding:12px 0; }
+.mcf-cap{ font-size:11px; margin-top:10px; }
+.mcf-track{ height:40px; margin-top:14px; }
+.mcf-pip{ width:26px; height:26px; font-size:9px; }
+.mcf-pip.hd{ width:34px; height:34px; font-size:10.5px; }
+.mcf-pip.bh{ width:20px; height:20px; font-size:7.5px; }
+.mcf-you{ width:26px; height:26px; font-size:9px; }
+.mcf-track .fa, .mcf-track .fb{ width:8px; height:8px; margin-top:-4px; }
+.mcf-tmr{ gap:28px; margin-top:18px; }
+.mcf-tmr .v{ font-size:14px; height:18px; gap:7px; }
+.mcf-tmr .l{ font-size:8.5px; margin-top:4px; }
+.mcf-title{ font-size:27px; margin-top:16px; }
+.mcf-sub{ font-size:14px; }
+.mcf-chips{ gap:10px; margin-top:8px; }
+.mcf-chip{ padding:14px 0 12px; font-size:12.5px; gap:8px; border-radius:16px; min-height:64px; }
+.mcf .fba-row{ gap:10px; margin-top:12px; }
+.mcf .fba-btn{ padding:18px 10px 15px; min-height:96px; gap:8px; }
+.mcf .fba-btn b{ font-size:17px; }
+.mcf .fba-btn span{ font-size:12px; }
+.mcf .sf-links{ margin-top:14px; gap:18px; }
+.mcf .sf-link{ font-size:14.5px; min-height:44px; white-space:nowrap; }
+.mc-tk-h{ font-size:10px; } .mc-tk-n{ font-size:17px; } .mc-tk-row{ font-size:13.5px; padding:6px 0; }
+.mc-tk-go{ padding:13px; font-size:14px; min-height:48px; }
+.mc-send{ font-size:10.5px; }
+.mc-flash-t{ font-size:30px; } .mc-flash-s{ font-size:15px; }
+.mc-flash-b{ padding:12px 26px; font-size:14px; min-height:48px; }
 /* ---- the moments -------------------------------------------------------- */
 .mc-shell .help-fab{ display:none; }
 .mc-head{ position:relative; }
