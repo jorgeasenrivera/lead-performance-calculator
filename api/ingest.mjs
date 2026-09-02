@@ -231,7 +231,7 @@ async function refreshBoardRow(storeId, sdata) {
   for (const a of (sdata && sdata.roster) || []) {
     if (!a.roleId || !onBoard.has(a.roleId)) continue;
     if (gone.has(norm(a.name))) continue;
-    roster.push({ name: a.name, roleId: a.roleId });
+    roster.push({ id: a.id, name: a.name, roleId: a.roleId });
     const s = src[norm(a.name)];
     if (!s) continue;
     const keep = {};

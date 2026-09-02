@@ -21,6 +21,7 @@ import {
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves } from "../api/_phone-rows.mjs";
+import { homeLinkFor } from "../api/_people-link.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
@@ -1881,6 +1882,21 @@ async function myFloorPerson(store) {
   } catch (e) { console.error("myFloorPerson", e); return null; }
 }
 
+/* Every store this account is somebody at. Same policy, same one-row-per-store
+   answer; this is the account door asking "where is home?" before it knows a
+   store to ask about. */
+async function myFloorLinks() {
+  if (!supabase) return [];
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return [];
+    const { data, error } = await supabase.from("floor_people")
+      .select("store, person_id").eq("user_id", session.user.id);
+    if (error) throw error;
+    return data || [];
+  } catch (e) { console.error("myFloorLinks", e); return []; }
+}
+
 async function loadFloorLinks(store) {
   const r = await apiCall(`/api/link-person?store=${encodeURIComponent(store)}`);
   return r.error ? { error: r.error, links: [] } : { links: r.links || [] };
@@ -2140,6 +2156,26 @@ export default function LeadPerformanceCalculator() {
   setGroupHolidays(config?.holidays);
   const [session, setSession] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  /* ---- the account door ----
+     A salesperson's account is linked to their name on a floor by a manager,
+     and from then on the link is the identity: signing in lands them on their
+     own corner, today, with no daily code. undefined = not asked yet; [] = asked
+     and nobody has linked this account, so the waiting screen is the truth. */
+  const [floorLinks, setFloorLinks] = useState(undefined);
+  const [doorDay, setDoorDay] = useState(() => today());
+  const wantsFloor = !!session && session.role !== "admin" && (session.pending || (session.wants || session.requested_role) === "associate");
+  useEffect(() => {
+    if (!wantsFloor) { setFloorLinks(undefined); return; }
+    let dead = false;
+    myFloorLinks().then((l) => { if (!dead) setFloorLinks(l); });
+    return () => { dead = true; };
+  }, [wantsFloor, session && session.id]);   // eslint-disable-line
+  /* The phone stays open across midnight; the corner has to roll over with it. */
+  useEffect(() => {
+    if (!wantsFloor) return;
+    const t = setInterval(() => { const d = today(); setDoorDay((cur) => (cur === d ? cur : d)); }, 60000);
+    return () => clearInterval(t);
+  }, [wantsFloor]);
   const [entered, setEntered] = useState(false);
   const [introPlaying, setIntroPlaying] = useState(false);
   /* True while the sign-in screen is taking itself apart. See where it is read. */
@@ -3427,8 +3463,24 @@ export default function LeadPerformanceCalculator() {
       <button className="lf-go lf-solo" onClick={signOut}><span>Sign out</span></button>
     </div></div><Style /></Shell>);
   }
-  if (session.role !== "admin" && session.pending) {
-    return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>);
+  if (wantsFloor) {
+    if (floorLinks === undefined) return wrap(<Shell><LoadingScreen /><Style /></Shell>);
+    let remembered = null;
+    try { remembered = localStorage.getItem("lpcf:home"); } catch (e) {}
+    const home = homeLinkFor(floorLinks, remembered);
+    if (home) {
+      try { localStorage.setItem("lpcf:home", home.store); } catch (e) {}
+      /* Their corner, through the account. The daily QR stays the second door
+         into the very same screen. No ground: the phone routes draw their own. */
+      return wrap(<Shell ground={false}>
+        <FloorSignIn key={home.store + ":" + doorDay} store={home.store} date={doorDay} token={null}
+          account={home.person_id} onSignOut={signOut} />
+        <Style />
+      </Shell>);
+    }
+    if (session.pending) {
+      return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>);
+    }
   }
 
   // The Tools chooser is gone. Signing in drops the person straight into the
@@ -5805,7 +5857,10 @@ function buildBoardPayload(config, storeId, sdata) {
   for (const a of (sdata && sdata.roster) || []) {
     if (!a.roleId || !onBoard.has(a.roleId)) continue;
     if (gone.has(norm(a.name))) continue;
-    roster.push({ name: a.name, roleId: a.roleId });
+    /* The id rides along for the phone: an account is linked to a roster id, and
+       on a morning the floor is not open yet the board row is the only public
+       place that can turn that id back into a name. */
+    roster.push({ id: a.id, name: a.name, roleId: a.roleId });
     const s = src[norm(a.name)];
     if (s) {
       const keep = {};
@@ -12465,7 +12520,7 @@ function McSpine({ rows }) {
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
-                    line, myPos, availableAhead, toFloor }) {
+                    line, myPos, availableAhead, toFloor, joinable = false }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   const [pickDay, setPickDay] = useState(null);
   const offDim = offToday && offState !== "in";
@@ -12604,6 +12659,11 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               {ahead.slice(1).map((p) => <s key={p.id} />)}
               <s className="me2" />
               <b>{availableAhead === 0 ? "YOU ARE UP" : availableAhead + " AHEAD"}</b>
+            </button>
+          )}
+          {!me && joinable && (
+            <button type="button" className="mc-qmini mc-qjoin" onClick={() => { buzz(8); toFloor(); }} aria-label="Get on the floor">
+              <s className="hd" /><b>GET ON THE FLOOR</b>
             </button>
           )}
           {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
@@ -12817,10 +12877,15 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   );
 }
 
-function FloorSignIn({ store, date, token, tag = null, test = false }) {
+/* account: the roster id this signed-in account is linked to, when the page was
+   reached through the account door rather than a scanned code. The link is the
+   identity and the day is always today, so there is no token to check, no name
+   to type and no PIN; the corner is home whether or not they are on the line
+   yet, and the floor tab is where they get on. */
+function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
-  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
+  const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one
      tap on the pill, and being up next drags the view there on its own because
      that overlay is the one thing that must never be missed. */
@@ -12855,6 +12920,10 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   // whether a number is green.
   const [boardThr, setBoardThr] = useState(null);
   const [boardExtra, setBoardExtra] = useState({ goals: {}, off: {} });
+  /* The board's roster, ids and names, for the morning the floor row does not
+     exist yet: an account knows its roster id and nothing else, and this is the
+     one public place that turns the id back into a name. */
+  const [boardRoster, setBoardRoster] = useState([]);
   /* The moments. The ticket prints when they leave, then files itself to the
      desk; a milestone takes the screen once; a scheduled day off asks whether
      they are working before the day starts counting; Help is one sheet. */
@@ -12872,6 +12941,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
         if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
         setBoardThr(b.thresholds || null);
         setBoardExtra({ goals: b.goals || {}, off: b.off || {} });
+        setBoardRoster(Array.isArray(b.roster) ? b.roster : []);
       })
       .catch(() => {});
     return () => { dead = true; };
@@ -12891,7 +12961,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   /* A table tag carries no daily token; it is valid only for a phone that is
      already signed in today, which is the whole security model: the tag says
      where, never who. */
-  const valid = isToday && row && ((row.token && row.token === token) || (tag && meId && (row.line || []).some((p) => p.id === meId)));
+  const valid = isToday && (account
+    ? true
+    : row && ((row.token && row.token === token) || (tag && meId && (row.line || []).some((p) => p.id === meId))));
   /* Tapping the tag on a table means one thing on a sales floor: I am sitting
      down here with a guest. So the tap flips the person to "with customer" AND
      seats them, in one write, once per open. A phone that is not signed in
@@ -12927,7 +12999,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   // by accident by somebody scrolling the name list.
   const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
   const variant = FLOOR_VARIANT;
-  const meEntry = ((row && row.roster) || []).find((r) => r.id === meId) || null;
+  const boardMe = account && meId ? boardRoster.find((r) => r && r.id === meId) || null : null;
+  const meEntry = ((row && row.roster) || []).find((r) => r.id === meId)
+    || (boardMe ? { id: boardMe.id, name: boardMe.name, label: shortLabel(boardMe.name) } : null);
   const meLabel = (meEntry && meEntry.label) || "";
   // Reports are keyed by the full name, never the short label.
   const meFull = (meEntry && meEntry.name) || "";
@@ -13059,18 +13133,23 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
      The name-and-PIN path stays exactly as it was underneath. It is what the
      podium uses, what somebody with no account uses, and what everybody uses on
      the morning the sign-in service is having a bad day. */
-  const [knownAs, setKnownAs] = useState(undefined);   // undefined = still asking
+  const [knownAs, setKnownAs] = useState(account || undefined);   // undefined = still asking
   useEffect(() => {
+    if (account) return;
     let dead = false;
     myFloorPerson(store).then((id) => { if (!dead) setKnownAs(id || null); });
     return () => { dead = true; };
-  }, [store]);
-  const accountPerson = knownAs ? ((row && row.roster) || []).find((r) => r.id === knownAs) || null : null;
+  }, [store, account]);
+  const accountPerson = knownAs
+    ? ((row && row.roster) || []).find((r) => r.id === knownAs) || (account && meEntry ? meEntry : null)
+    : null;
 
   let screen;
   if (row === undefined || identities === null || knownAs === undefined) screen = "loading";
   else if (!isToday || !valid) screen = "invalid";
   else if (step === "done" && me) screen = "done";
+  /* Through the door and not on the line: the corner is still home. */
+  else if (account && !me) screen = "home";
   else if (step === "pin" && switchTo) screen = "switch";
   else if (step === "pin" && selected) screen = "pin";
   else if (step === "pick") screen = "pick";
@@ -13251,13 +13330,17 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
       if (p) { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), action: "left", id: meId, who: p.label, by: "self" }); }
       return cur;
     });
-    remember(null);
+    // Through the door the account stays who they are; only the line entry goes.
+    remember(account || null);
     if (next) setRow(next);
     setStep("name"); setBusy(false);
   }
 
   const storeName = (row && row.storeName) || "Live Floor";
-  const eff = (shown === "done" && !me) ? "name" : shown;
+  const eff = (shown === "done" && !me) ? (account ? "home" : "name") : shown;
+  /* The salesperson shell: pill, palette and moments. On the line, or through
+     the door and about to be. */
+  const inShell = (eff === "done" && !!me) || eff === "home";
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
@@ -13312,6 +13395,49 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
         </button>
       </SfScreen>
     );
+  } else if (eff === "home") {
+    /* Through the account door, not on the line yet. The corner needs no line;
+       the floor tab is the way on, with the line drawn so they can see what they
+       are joining, and a plain word when the desk has not opened the day. */
+    const who = String(meFull || meLabel || "").split(/\s+/)[0];
+    const open = !!row;
+    const onCount = line.filter((p) => p.status === "waiting").length;
+    content = (
+      <div className="sf-live mcf sf-off mcf-home">
+        <div className="mcf-top">
+          <div className="mcf-cap">{open ? (onCount ? `${onCount} ON THE FLOOR` : "NOBODY ON YET") : "FLOOR NOT OPEN"}</div>
+          {open && <McTrack line={line} meId={null} roster={(row && row.roster) || []} />}
+          <div className="mcf-title">{open ? (who ? `Morning, ${who}` : "Morning") : "The floor isn't open yet"}</div>
+          <div className="mcf-sub">{open
+            ? (onCount ? "Get on and take your place in the line." : "You would be first.")
+            : "The desk opens Live Floor to start the day. Your corner is ready meanwhile."}</div>
+          {doorNote && !doorNote.allow && (
+            <div className="sf-door sf-door-no">
+              <b>Not on the lot yet</b>
+              <span>{doorNote.note}</span>
+            </div>
+          )}
+          {open && accountPerson && (
+            <button className="sf-go mcf-go" disabled={busy} onClick={() => { buzz(10); joinAs({ id: accountPerson.id, label: accountPerson.label || shortLabel(accountPerson.name || "") }); }}>
+              {busy ? "Checking\u2026" : "Get me on"}
+            </button>
+          )}
+          {open && !accountPerson && (
+            <div className="mcf-sub">Your name is not on today's roster. Ask the desk.</div>
+          )}
+        </div>
+      </div>
+    );
+    if (tab === "corner") {
+      content = (
+        <MyCorner store={store} date={date} me={null} meId={meId} meFull={meFull} meLabel={meLabel}
+          mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
+          goals={boardExtra.goals} off={boardExtra.off} days={days}
+          offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
+          onHelp={() => { buzz(8); setHelpOpen(true); }}
+          line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")} />
+      );
+    }
   } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
     const availableAhead = line.slice(0, myPos - 1).filter((p) => p.status === "waiting").length;
@@ -13444,11 +13570,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   }
 
   return (
-    <div className={"q-page f-page sf sf-floor" + (eff === "done" && me ? " mc-shell" : "") + (eff === "done" && me && tab !== "corner" ? " mc-floor" : "")} ref={pageRef}>
+    <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "")} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
-      {eff === "done" && me && (() => {
+      {inShell && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
-        const upRoot = me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
+        const upRoot = !!me && me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
         return (
           <div className="mc-pill" role="tablist">
             <span className="mc-ind" style={{ transform: tab === "corner" ? "translateX(0)" : "translateX(100%)" }} />
@@ -13491,7 +13617,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
           </div>
         </div>
       )}
-      {eff === "done" && me && mile != null && (
+      {inShell && mile != null && (
         <div className="mc-flash">
           <span className="bloom" />
           {[0, 1, 2, 3, 4, 5, 6].map((i2) => <span key={i2} className="burst" style={{ "--dx": Math.round(Math.cos(i2 * 0.9) * (110 + (i2 % 3) * 30)) + "px", "--dy": Math.round(Math.sin(i2 * 0.9) * (110 + (i2 % 3) * 30)) + "px", animationDelay: (i2 * 0.03) + "s" }}><PixIcon glyph="car" size={i2 % 2 ? 16 : 11} /></span>)}
@@ -13502,7 +13628,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
           <button type="button" className="mc-flash-b" onClick={() => setMile(null)}>Back to work</button>
         </div>
       )}
-      {eff === "done" && me && helpOpen && (
+      {inShell && helpOpen && (
         <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>Help</b>
@@ -13523,8 +13649,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
                   <span>{l}</span><span className="on">{on ? "ON" : "OFF"}</span></button>
               );
             })}
-            <div className="mc-set-row"><span>The second door<span className="hint">The daily QR still signs you in</span></span><span className="on">LIVE</span></div>
-            <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>
+            <div className="mc-set-row"><span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
+            {me && <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>}
+            {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); onSignOut(); }}><span>Sign out<span className="hint">Somebody else's phone, or the wrong name</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
           </div>
         </div>
       )}
@@ -34296,6 +34423,12 @@ const SAGE_CSS = `
 .mcf-title{ font-family:var(--font-display); font-size:22px; font-weight:700; margin-top:14px;
   color:#fff; text-align:center; letter-spacing:-.01em; }
 .mcf-sub{ font-size:12.5px; color:rgba(237,242,234,.6); margin-top:4px; text-align:center; }
+.mcf-home .mcf-top{ justify-content:center; }
+.mcf-home .mcf-title{ margin-top:18px; }
+.mcf-go{ margin-top:22px; width:min(320px, 100%); }
+.mcf-home .sf-door{ margin-top:14px; }
+.mc-qjoin s.hd{ background:#E9CE96; }
+.mc-qjoin b{ color:#E9CE96; }
 .mcf-sticon{ margin-top:10px; opacity:.9; }
 .mcf-chips{ display:flex; gap:8px; margin-top:6px; }
 .mcf-chip{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;
