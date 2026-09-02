@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { onLeft, onReturned, answerLeft, dueToPassOver, skipSet, reconcile, judge, upheldFor, emptyPresence }
+import { onLeft, onReturned, answerLeft, dueToPassOver, skipSet, reconcile, judge, upheldFor, emptyPresence, onOffDayWorked }
   from "../api/_floor-presence.mjs";
 const T = (h,m=0) => Date.UTC(2026,7,20,h,m,0);
 const iso = (t) => new Date(t).toISOString();
@@ -140,4 +140,19 @@ test("the secondary salesperson: the case the Visit column exists for", () => {
       reconcile(p, [], { visits: { p2: 3 } }).length === 1);
     assert.ok(
       /line|visit/i.test(reconcile(p, [])[0].reason), reconcile(p, [])[0].reason);
+});
+
+test("a day off worked after two denials is a flag that states the facts", () => {
+  const pr = emptyPresence();
+  pr.events.push(onOffDayWorked({ personId: "a2", label: "Bri", at: T(15), activity: { calls: 12, units: 1 } }));
+  const flags = reconcile(pr, []);
+  assert.equal(flags.length, 1);
+  assert.equal(flags[0].personId, "a2");
+  assert.equal(flags[0].claimed, "off");
+  assert.equal(flags[0].status, "unverified");
+  assert.match(flags[0].reason, /said twice they were not working/);
+  assert.match(flags[0].reason, /12 calls, 1 units/);
+  // upheld or excused by a manager exactly like any other flag
+  const j = judge(flags[0], "excused", "Jorge", T(16), "Was covering for Mo");
+  assert.equal(upheldFor([j], "a2").length, 0);
 });
