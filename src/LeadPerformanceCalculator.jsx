@@ -7776,6 +7776,10 @@ function TicketsPanel({ config, onChange }) {
   );
 }
 
+/* Where the phone app lives, once it does. Empty until then, and the Help row
+   says the app is coming instead of pointing anywhere. */
+const APP_STORE_LINKS = { ios: "", android: "" };
+
 /* ---------------- Claim your name ----------------
    Which store, and which name on its roster. The roster comes from the store's
    published board row, which is readable with no account at all, so this works
@@ -13043,11 +13047,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     m.setAttribute("content", "#15211B");
     return () => { m.setAttribute("content", was || "#F5F5F7"); };
   }, []);
-  /* Whether the app is on the home screen already. When it is not, Help offers
-     the way to put it there; when it is, the row is not shown. */
-  const standalone = (() => { try { return (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true; } catch (e) { return false; } })();
-  const [installOpen, setInstallOpen] = useState(false);
+  /* The phone app is the app. Inside the native shell this row is not shown;
+     in a browser it points at the store, or says the app is on its way. */
+  const inNative = !!window.ReactNativeWebView;
+  const [appOpen, setAppOpen] = useState(false);
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const appLink = isIOS ? APP_STORE_LINKS.ios : APP_STORE_LINKS.android;
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
@@ -13743,32 +13748,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           <button type="button" className="mc-flash-b" onClick={() => setMile(null)}>Back to work</button>
         </div>
       )}
-      {installOpen && (
-        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setInstallOpen(false); }}>
+      {appOpen && (
+        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setAppOpen(false); }}>
           <div className="mc-sheet">
-            <div className="mc-sheet-head"><b>On your home screen</b>
-              <button type="button" className="mc-x" onClick={() => setInstallOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
-            {isIOS ? (
-              <ol className="mc-steps">
-                <li>Tap the <b>Share</b> button at the bottom of Safari.</li>
-                <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
-                <li>Tap <b>Add</b>. Sage opens full screen from then on.</li>
-              </ol>
-            ) : window.__lpcInstall ? (
-              <>
-                <p className="mc-steps-p">One tap and Sage gets its own icon and opens full screen.</p>
-                <button type="button" className="sf-go mcf-go" onClick={async () => {
-                  try { const ev = window.__lpcInstall; window.__lpcInstall = null; ev.prompt(); await ev.userChoice; } catch (e) {}
-                  setInstallOpen(false);
-                }}>Install Sage</button>
-              </>
-            ) : (
-              <ol className="mc-steps">
-                <li>Open the browser menu (the three dots).</li>
-                <li>Tap <b>Add to Home screen</b> or <b>Install app</b>.</li>
-                <li>Confirm. Sage opens full screen from then on.</li>
-              </ol>
-            )}
+            <div className="mc-sheet-head"><b>The Sage app</b>
+              <button type="button" className="mc-x" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
+            <p className="mc-steps-p">The Sage app is on its way to the App Store and Google Play. It is the way to carry your corner and the line, with a buzz when you are up. Until it lands, this page in your browser is the same screen.</p>
           </div>
         </div>
       )}
@@ -13793,9 +13778,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   <span>{l}</span><span className="on">{on ? "ON" : "OFF"}</span></button>
               );
             })}
-            {!standalone && (
-              <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setInstallOpen(true); }}>
-                <span>Put Sage on your home screen<span className="hint">Opens full screen, with its own icon</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+            {!inNative && (
+              <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); if (appLink) window.open(appLink, "_blank", "noopener"); else setAppOpen(true); }}>
+                <span>Get the Sage app<span className="hint">{appLink ? (isIOS ? "On the App Store" : "On Google Play") : "Coming to your phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
             )}
             <div className="mc-set-row"><span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
             {me && <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>}
@@ -34699,9 +34684,6 @@ const SAGE_CSS = `
 .mcf-go{ margin-top:22px; width:min(320px, 100%); }
 .mcf-home .sf-door{ margin-top:14px; }
 .mc-qjoin s.hd{ background:#E9CE96; }
-.mc-steps{ margin:6px 0 4px; padding:0 0 0 22px; font-size:15px; line-height:1.5; color:#EDF2EA; }
-.mc-steps li{ margin:8px 0; }
-.mc-steps b{ color:#E9CE96; }
 .mc-steps-p{ font-size:15px; line-height:1.5; color:rgba(237,242,234,.8); margin:6px 0 4px; }
 .mc-qjoin b{ color:#E9CE96; }
 .mcf-sticon{ margin-top:10px; opacity:.9; }
