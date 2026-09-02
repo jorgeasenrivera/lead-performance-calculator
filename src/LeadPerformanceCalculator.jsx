@@ -34317,6 +34317,10 @@ const SAGE_CSS = `
    the glow at the foot of the screen is the garden's, the cards are the
    draft's card, and nothing on either tab is tinted by the old teal. */
 .q-page.sf.mc-shell{
+  /* One face for everything a salesperson reads: Space Grotesk carries the
+     copy as well as the titles on the phone. The mono stays for caps, clocks
+     and counts, which is its own job. */
+  --font-ui: var(--font-display); --sffont: var(--font-display);
   --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --glow:rgba(127,169,138,.38); --ld-off:rgba(143,216,175,.14);
   --sfink:#EDF2EA; --sfink2:#A7B3A9; --sfink3:#6E7A70; --sfcard:#1C2B23; --sfstroke:rgba(255,255,255,.09);
   background:radial-gradient(closest-side at 50% 112%, rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%), #15211B; }
