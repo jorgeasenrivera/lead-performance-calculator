@@ -34063,9 +34063,11 @@ const SAGE_CSS = `
    The salesperson home. Same ink and glow as the floor screens around it;
    sand for effort, garden green for made-it, red only where a point costs.
    Every animation is transform or opacity so the compositor carries it. */
-.mc{ width:min(430px, 100%); margin:0 auto; padding:12px 16px 84px; text-align:left; font-family:var(--font-ui);
+/* The top clears the camera: the notch, the island, whatever the phone puts
+   there, by the phone's own measure, with a floor for phones that report none. */
+.mc{ width:min(430px, 100%); margin:0 auto; padding:max(28px, calc(14px + env(safe-area-inset-top, 0px))) 16px 84px; text-align:left; font-family:var(--font-ui);
   display:flex; flex-direction:column; gap:11px; }
-.mc-head{ display:flex; gap:16px; align-items:flex-start; margin-top:6px; }
+.mc-head{ display:flex; gap:16px; align-items:flex-start; margin-top:4px; }
 .mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
   font-size:9.5px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
 .mc-cal{ display:grid; grid-template-columns:repeat(7, 9px); gap:5px 6px; margin-top:7px; }
@@ -34247,7 +34249,11 @@ const SAGE_CSS = `
    of the floating pill. */
 .mcf .sf-actions{ width:min(430px,100%); margin:0 auto; }
 .mcf, .mcf button{ font-family:var(--font-ui); }
-.sf-live.mcf{ padding-bottom:calc(clamp(24px,5vh,34px) + 62px); }
+.sf-live.mcf{ padding-top:max(clamp(52px,8vh,70px), calc(28px + env(safe-area-inset-top, 0px)));
+  padding-bottom:calc(clamp(24px,5vh,34px) + 62px + env(safe-area-inset-bottom, 0px)); }
+.mc-pill{ bottom:calc(14px + env(safe-area-inset-bottom, 0px)); }
+.mc-tkov{ padding-top:env(safe-area-inset-top, 0px); }
+.mc-offc{ margin-top:0; }
 .mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center; padding:8px 0 18px; }
 .mcf-count{ display:flex; justify-content:center; }
@@ -34308,7 +34314,7 @@ const SAGE_CSS = `
 .mc-shell .sf-link-quiet{ color:rgba(237,242,234,.42); }
 .mc-shell .mcf-title{ color:#EDF2EA; }
 .mc{ padding-right:44px; }
-.mc-spine{ position:fixed; right:7px; top:118px; bottom:82px; width:22px; z-index:7; display:flex;
+.mc-spine{ position:fixed; right:7px; top:max(126px, calc(112px + env(safe-area-inset-top, 0px))); bottom:82px; width:22px; z-index:7; display:flex;
   flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
 .mc-spine .rt{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.18em;
   color:rgba(237,242,234,.42); writing-mode:vertical-rl; }
