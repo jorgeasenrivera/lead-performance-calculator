@@ -59,3 +59,33 @@ export function homeLinkFor(links, remembered = null) {
   const last = remembered ? list.find((l) => l.store === remembered) : null;
   return last || list[0];
 }
+
+/* ---- claim your name ----
+   At sign-up a salesperson says which store they work at and which name on its
+   roster is theirs. That is a CLAIM, not a link: it rides in the account's own
+   metadata, where the person can write it and nobody else can act on it, and a
+   manager turns it into a link with one tap. Same rule as before about who
+   decides; the claim just means the manager no longer has to guess which of
+   thirty email addresses is the new hire.
+
+   users: auth users as the admin API lists them (id, email, user_metadata).
+   The claims for this store are the ones not already linked here. */
+export function claimsFor(users, links, store) {
+  if (!store) return [];
+  const linked = new Set((links || []).filter((l) => l && l.store === store).map((l) => l.user_id));
+  const out = [];
+  for (const u of users || []) {
+    const m = (u && u.user_metadata) || {};
+    if (!u || !u.id || m.claim_store !== store) continue;
+    if (linked.has(u.id)) continue;
+    out.push({
+      user_id: u.id,
+      email: u.email || "",
+      name: m.name || "",
+      person_id: m.claim_person || null,
+      claim_name: m.claim_name || "",
+      at: m.claim_at || u.created_at || null,
+    });
+  }
+  return out.sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+}

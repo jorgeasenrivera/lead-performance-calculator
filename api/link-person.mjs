@@ -11,15 +11,16 @@
  * The caller's own profile is read server-side to check they manage that store.
  * A role sent in the body would be worth exactly nothing.
  *
- * GET  ?store=X                            who is linked to whom, and whose
- *                                          phone has actually registered
+ * GET  ?store=X                            who is linked to whom, whose phone
+ *                                          has actually registered, and who is
+ *                                          asking to be joined (their claim)
  * POST { store, person_id, user_id }        link (or move) an account
  * POST { store, user_id, unlink: true }     take a link away
  *
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
  */
 import { createClient } from "@supabase/supabase-js";
-import { checkLink } from "./_people-link.mjs";
+import { checkLink, claimsFor } from "./_people-link.mjs";
 import { supabaseUrl, anonKey, envGap } from "./_env.mjs";
 
 /* ---- why every failure below now says what went wrong ----
@@ -108,8 +109,20 @@ async function run(req, res) {
       byPerson.set(d.person_id, cur);
     }
 
+    /* And who is asking to be joined. The claim lives in the account's own
+       metadata, which only the admin API can list, so this is the one place a
+       manager can see it. A failure here is not a failure of the links: the
+       list simply comes back without claims rather than not at all. */
+    let claims = [];
+    try {
+      const { data: listed, error: listErr } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      if (listErr) throw listErr;
+      claims = claimsFor((listed && listed.users) || [], links || [], store);
+    } catch (e) { console.error("link-person: claims", e); }
+
     return res.status(200).json({
       links: (links || []).map((l) => ({ ...l, ...(byPerson.get(l.person_id) || { devices: 0, platforms: [], lastSeen: null }) })),
+      claims,
     });
   }
 

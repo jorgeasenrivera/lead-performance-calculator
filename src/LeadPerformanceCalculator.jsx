@@ -1796,7 +1796,22 @@ async function authGetProfile() {
   const { data, error } = await supabase
     .from("profiles").select("*").eq("id", session.user.id).maybeSingle();
   if (error || !data) return null;
-  return data;
+  /* The claim (which store, which name on its roster) lives in the account's
+     own metadata rather than the profile row, so it needs no database change
+     and only the person and a manager can ever see it. */
+  const m = (session.user && session.user.user_metadata) || {};
+  const claim = m.claim_store ? { store: m.claim_store, person: m.claim_person || null, name: m.claim_name || "", at: m.claim_at || null } : null;
+  return { ...data, claim, wants: data.wants || m.wants || null };
+}
+/* "I am this name at this store." Written by the person themselves; nothing
+   acts on it until a manager taps Join. */
+const claimMeta = (claim) => claim && claim.store
+  ? { claim_store: claim.store, claim_person: claim.person || "", claim_name: claim.name || "", claim_at: new Date().toISOString() }
+  : {};
+async function authClaimName(claim) {
+  if (!supabase) return { error: "No database connection" };
+  const { error } = await supabase.auth.updateUser({ data: claimMeta(claim) });
+  return { error: error ? error.message : null };
 }
 async function authSignIn(email, password) {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -1815,9 +1830,9 @@ const ACCOUNT_KINDS = {
   associate: { label: "Salesperson", sub: "You take ups, calls and leads" },
   manager: { label: "Manager", sub: "You watch the floor and the numbers" },
 };
-async function authSignUp(email, password, name, kind) {
+async function authSignUp(email, password, name, kind, claim = null) {
   const { error } = await supabase.auth.signUp({
-    email, password, options: { data: { name, wants: kind || "associate" } },
+    email, password, options: { data: { name, wants: kind || "associate", ...claimMeta(claim) } },
   });
   return { error: error ? error.message : null };
 }
@@ -1899,7 +1914,7 @@ async function myFloorLinks() {
 
 async function loadFloorLinks(store) {
   const r = await apiCall(`/api/link-person?store=${encodeURIComponent(store)}`);
-  return r.error ? { error: r.error, links: [] } : { links: r.links || [] };
+  return r.error ? { error: r.error, links: [], claims: [] } : { links: r.links || [], claims: r.claims || [] };
 }
 const linkFloorPerson = (store, userId, personId) =>
   apiCall("/api/link-person", { method: "POST", body: { store, user_id: userId, person_id: personId } });
@@ -2167,8 +2182,12 @@ export default function LeadPerformanceCalculator() {
   useEffect(() => {
     if (!wantsFloor) { setFloorLinks(undefined); return; }
     let dead = false;
-    myFloorLinks().then((l) => { if (!dead) setFloorLinks(l); });
-    return () => { dead = true; };
+    const ask = () => myFloorLinks().then((l) => { if (!dead) setFloorLinks(l); });
+    ask();
+    /* Somebody sitting on the waiting screen is waiting for exactly one thing,
+       and it should not take a sign-out to notice it happened. */
+    const t = setInterval(() => { if (!document.hidden) ask(); }, 30000);
+    return () => { dead = true; clearInterval(t); };
   }, [wantsFloor, session && session.id]);   // eslint-disable-line
   /* The phone stays open across midnight; the corner has to roll over with it. */
   useEffect(() => {
@@ -3479,7 +3498,7 @@ export default function LeadPerformanceCalculator() {
       </Shell>);
     }
     if (session.pending) {
-      return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} /><Style /></Shell>);
+      return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} config={config} onClaimed={refreshProfile} /><Style /></Shell>);
     }
   }
 
@@ -7755,6 +7774,56 @@ function TicketsPanel({ config, onChange }) {
   );
 }
 
+/* ---------------- Claim your name ----------------
+   Which store, and which name on its roster. The roster comes from the store's
+   published board row, which is readable with no account at all, so this works
+   on the sign-up screen before there is one. A store whose board has never been
+   opened has no published roster; the person still names the store and types
+   their name, and the manager picks the roster name when they join them. */
+function ClaimPicker({ config, value, onChange, onName }) {
+  const stores = (config && config.stores) || [];
+  const [roster, setRoster] = useState(null);
+  const store = value && value.store ? value.store : "";
+  useEffect(() => {
+    if (!store) { setRoster(null); return; }
+    let dead = false;
+    setRoster(null);
+    loadShared(`lpc:board:${store}:v1`, null).then((b) => {
+      if (dead) return;
+      const list = (b && Array.isArray(b.roster) ? b.roster : []).filter((r) => r && r.id && r.name);
+      setRoster(list.slice().sort((a, b2) => String(a.name).localeCompare(String(b2.name))));
+    }).catch(() => { if (!dead) setRoster([]); });
+    return () => { dead = true; };
+  }, [store]);
+  return (
+    <>
+      <label className="lf-label">Your store</label>
+      <select className="lf-in lf-sel" value={store} onChange={(e) => onChange({ store: e.target.value, person: null, name: "" })}>
+        <option value="">Pick your store…</option>
+        {stores.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+      </select>
+      {store && roster === null && <p className="lf-kindnote">Reading the roster…</p>}
+      {store && roster && roster.length > 0 && (
+        <>
+          <label className="lf-label">Your name on the roster</label>
+          <select className="lf-in lf-sel" value={value.person || ""}
+            onChange={(e) => {
+              const r = roster.find((x) => x.id === e.target.value) || null;
+              onChange({ store, person: r ? r.id : null, name: r ? r.name : "" });
+              if (r && onName) onName(r.name);
+            }}>
+            <option value="">Pick your name…</option>
+            {roster.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </>
+      )}
+      {store && roster && roster.length === 0 && (
+        <p className="lf-kindnote">This store has not published its roster yet. Type your name below and your manager will match it.</p>
+      )}
+    </>
+  );
+}
+
 /* ---------------- Login (real accounts) ---------------- */
 function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
@@ -7763,6 +7832,7 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [name, setName] = useState("");
+  const [claim, setClaim] = useState({ store: "", person: null, name: "" });
   const [err, setErr] = useState("");
   const [ok, setOk] = useState("");
   const [busy, setBusy] = useState(false);
@@ -7935,8 +8005,9 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
       setErr("Email must be on an approved company domain (" + domains.join(", ") + ").");
       return;
     }
+    if (kind === "associate" && !claim.store && (config.stores || []).length > 0) { setErr("Pick your store."); return; }
     setBusy(true);
-    const res = await authSignUp(e, password, name.trim(), kind);
+    const res = await authSignUp(e, password, name.trim(), kind, kind === "associate" ? claim : null);
     setBusy(false);
     if (res.error) { setErr(res.error); return; }
     setOk("Account created.");
@@ -8047,8 +8118,12 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
             <p className="lf-kindnote">
               {kind === "manager"
                 ? "Your group admin grants you the stores you look after. You will see the dashboard once they do."
-                : "You do not need the dashboard. Your manager joins this account to your name on the floor, and then the line, your standards and your day show up on your phone."}
+                : "You do not need the dashboard. Say which store and which name is yours; your manager joins the two with one tap, and then the line, your standards and your day show up on your phone."}
             </p>
+            {kind === "associate" && (
+              <ClaimPicker config={config} value={claim} onChange={(c) => { setClaim(c); setErr(""); }}
+                onName={(nm) => { if (!name.trim()) setName(nm); }} />
+            )}
             <label className="lf-label">Work email</label>
             <input className="lf-in" value={email} onChange={(e) => { setEmail(e.target.value); setErr(""); }}
               placeholder="you@company.com" autoComplete="username" />
@@ -9159,8 +9234,21 @@ function SageField() {
 }
 
 /* ---------------- Waiting on approval ---------------- */
-function PendingScreen({ profile, onSignOut }) {
+function PendingScreen({ profile, onSignOut, config = null, onClaimed = null }) {
   const first = (profile.name || "").split(" ")[0];
+  const [claim, setClaim] = useState({ store: "", person: null, name: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const storeName = (id) => (((config && config.stores) || []).find((st) => st.id === id) || {}).name || id;
+  const claimed = profile.claim && profile.claim.store ? profile.claim : null;
+  const sendClaim = async () => {
+    if (!claim.store) { setErr("Pick your store."); return; }
+    setBusy(true); setErr("");
+    const r = await authClaimName(claim);
+    setBusy(false);
+    if (r.error) { setErr(r.error); return; }
+    if (onClaimed) onClaimed();
+  };
   /* What they asked to be at sign-up, if the account carries it. Two people wait
      on this screen for opposite reasons and the old copy only described one of
      them: a salesperson was told to wait for store access they will never be
@@ -9175,20 +9263,30 @@ function PendingScreen({ profile, onSignOut }) {
         {/* The first screen after signing up, so it speaks the same language as
             the one they just left rather than the app's general chrome. */}
         <p className="lf-note">
-          {isAssociate ? (<>
-            Your account exists{first ? ", " + first : ""}. The last step is on the floor: ask your
-            manager to open <b>Live Floor &rarr; Phones</b> and join this account to your name. After
-            that the line, your standards and your day are on your phone, and you will not need this
-            screen again.
+          {isAssociate ? (claimed ? (<>
+            You are in{first ? ", " + first : ""}. Your manager at <b>{storeName(claimed.store)}</b> has
+            a note that this account is <b>{claimed.name || "you"}</b>; one tap from them and the line,
+            your standards and your day are on this phone. This screen will let you through on its own.
           </>) : (<>
+            Your account exists{first ? ", " + first : ""}. Say which store you work at and which
+            name on the roster is yours. Your manager joins the two with one tap, and then the line,
+            your standards and your day are on your phone.
+          </>)) : (<>
             Your account exists{first ? ", " + first : ""}, but no store has been assigned to it yet.
             Your group admin needs to approve you and grant access. Once they do, sign in again and you are in.
           </>)}
         </p>
         {/* The one thing this screen can hand somebody that is useful to the
             person on the other end of the conversation. */}
+        {isAssociate && !claimed && (
+          <div className="lf-mode">
+            <ClaimPicker config={config} value={claim} onChange={(c) => { setClaim(c); setErr(""); }} />
+            {err && <div className="login-err">{err}</div>}
+            <button className="lf-go lf-solo" onClick={sendClaim} disabled={busy}><span>{busy ? "Sending…" : "That's me"}</span></button>
+          </div>
+        )}
         <p className="lf-note lf-acctid">Account <b>{String(profile.id || "").slice(0, 8)}</b> · {profile.email || ""}</p>
-        <button className="lf-go lf-solo" onClick={onSignOut}><span>Sign out</span></button>
+        <button className={isAssociate && !claimed ? "lf-alt" : "lf-go lf-solo"} onClick={onSignOut}>{isAssociate && !claimed ? "Sign out" : <span>Sign out</span>}</button>
       </div>
     </div>
   );
@@ -13679,6 +13777,12 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [showQR, setShowQR] = useState(false);
   const [showPins, setShowPins] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
+  const [asking, setAsking] = useState(0);
+  useEffect(() => {
+    let dead = false;
+    loadFloorLinks(store.id).then((l) => { if (!dead) setAsking((l.claims || []).length); }).catch(() => {});
+    return () => { dead = true; };
+  }, [store.id]);
   /* A nudge is a note on their own entry, which their phone screen reads the
      next time it polls: "the desk is asking for you". It is deliberately not a
      silent flag - it goes in the history too, because asking somebody to come
@@ -13958,7 +14062,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
       <div className="q-topline">
         <div className="q-topline-actions">
           <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
-          <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
+          <button className={"btn" + (asking > 0 && !showPhones ? " f-asking" : "")} onClick={() => setShowPhones((v) => !v)}>
+            {showPhones ? "Hide phones" : asking > 0 ? `Phones · ${asking} asking` : "Phones"}</button>
           {/* Only ever shown when there is something in it. A button that reads
               "0 to review" every day of the year teaches a manager to stop
               looking at exactly the place they are meant to look. */}
@@ -14042,7 +14147,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
       <MissedStandards store={store} data={data} roster={salesRoster} userName={userName}
         open={showBehind} onCount={setBehindCount} />
 
-      {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} />}
+      {showPhones && <FloorPhones store={store} roster={salesRoster} onClose={() => setShowPhones(false)} onClaims={setAsking} />}
 
       {showPins && (
         <ToolSheet title="Salesperson PINs" sub="Shared with the phone line · created the first time each person signs in"
@@ -14243,18 +14348,24 @@ const backlogTime = (ms) =>
    itself on the night nobody's phone buzzes and a customer stands in the doorway.
    So the row says plainly whether a phone has ever arrived, and when it last did.
    ========================================================================= */
-function FloorPhones({ store, roster, onClose }) {
+function FloorPhones({ store, roster, onClose, onClaims = null }) {
   const [links, setLinks] = useState(null);
+  const [claims, setClaims] = useState([]);
   const [accounts, setAccounts] = useState(null);
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
+  /* Which roster name a claim is being joined to. Starts as what they claimed;
+     a manager who knows better changes it before tapping Join. */
+  const [pick, setPick] = useState({});
 
   const load = useCallback(async () => {
     const [l, a] = await Promise.all([loadFloorLinks(store.id), listProfiles()]);
     if (l.error) setErr(l.error);
     setLinks(l.links);
+    setClaims(l.claims || []);
+    if (onClaims) onClaims((l.claims || []).length);
     setAccounts(a);
-  }, [store.id]);
+  }, [store.id]);   // eslint-disable-line
   useEffect(() => { load(); }, [load]);
 
   const byPerson = useMemo(() => {
@@ -14295,6 +14406,39 @@ function FloorPhones({ store, roster, onClose }) {
 
       {err && <p className="f-backlog-err">{err}</p>}
       {(links === null || accounts === null) && <p className="muted">Reading the links…</p>}
+
+      {/* Asking to be joined. The person said who they are at sign-up; the
+          manager's whole job here is one tap, or a different name and one tap. */}
+      {links !== null && claims.length > 0 && (
+        <div className="f-claims">
+          <h4>Asking to be joined</h4>
+          {claims.map((c) => {
+            const chosen = pick[c.user_id] !== undefined ? pick[c.user_id] : (c.person_id || "");
+            const takenPeople = new Set((links || []).map((l) => l.person_id));
+            const known = chosen && roster.some((p) => p.id === chosen);
+            return (
+              <div className="f-claim" key={c.user_id}>
+                <div className="f-claim-who">
+                  <b>{c.name || c.email}</b>
+                  <span className="mono">{c.email}</span>
+                </div>
+                <span className="f-claim-says">says they are</span>
+                <select className="q-flag-sel" value={known ? chosen : ""} disabled={busy === c.user_id}
+                  onChange={(e) => setPick((cur) => ({ ...cur, [c.user_id]: e.target.value }))}>
+                  <option value="">{c.claim_name ? `${c.claim_name} (not on the roster)` : "Pick a name…"}</option>
+                  {roster.map((p) => (
+                    <option key={p.id} value={p.id} disabled={takenPeople.has(p.id)}>{p.name}{takenPeople.has(p.id) ? " · linked" : ""}</option>
+                  ))}
+                </select>
+                <button className="btn btn-sm" disabled={busy === c.user_id || !known}
+                  onClick={() => act(() => linkFloorPerson(store.id, c.user_id, chosen), c.user_id)}>
+                  {busy === c.user_id ? "Joining…" : "Join"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {links !== null && accounts !== null && (
         <table className="roster-table wide f-phones-table">
@@ -31449,6 +31593,10 @@ const SAGE_CSS = `
         transition: border-color .2s var(--ease); }
       .login-card input.lf-in:focus { border:0; border-bottom:1.5px solid #2F7F72;
         outline:none; box-shadow:none; }
+      .login-card select.lf-sel { width:100%; box-sizing:border-box; background:none; border:0;
+        border-bottom:1.5px solid #C9CBC9; border-radius:0; padding:0 0 9px; margin:6px 0 0;
+        font:inherit; font-size:16px; color:#2E3A32; outline:none; box-shadow:none; appearance:auto; }
+      .login-card select.lf-sel:focus { border-bottom-color:#2F7F72; }
       /* The only reliable notice a browser gives that it filled a field for you:
          it matches :-webkit-autofill, and starting an animation there fires an
          animationstart the screen can hear. The animation itself does nothing —
@@ -34870,6 +35018,15 @@ const SAGE_CSS = `
 .f-phones-head h3{margin:0 0 6px;font-size:15px;letter-spacing:.2px;}
 .f-phones .hint{margin:0 0 12px;font-size:12px;line-height:1.55;max-width:76ch;}
 .f-phones-table td{vertical-align:middle;}
+.f-claims{margin:0 0 14px;padding:12px 14px;border-radius:12px;background:rgba(228,201,141,.08);border:1px solid rgba(228,201,141,.28);}
+.f-claims h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#e4c98d;}
+.f-claim{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid rgba(255,255,255,.07);}
+.f-claim:first-of-type{border-top:0;}
+.f-claim-who{display:flex;flex-direction:column;min-width:160px;}
+.f-claim-who .mono{font-size:11px;opacity:.7;}
+.f-claim-says{font-size:12px;opacity:.7;}
+.f-claim .q-flag-sel{max-width:220px;}
+.f-asking{box-shadow:0 0 0 1.5px rgba(228,201,141,.6) inset;}
 .f-ph-dev{font-size:11.5px;color:var(--sfink3);}
 .f-ph-dev.f-ph-none{color:#ffc08a;}
 @media (max-width:760px){
