@@ -12442,6 +12442,24 @@ const mcClock = (iso) => {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(" ", "").toLowerCase();
 };
 
+/* The spine on the right edge: the three standards averaged into one fill,
+   notched at each third, with the head carrying the temperature so a manager
+   across the room reads the day from the color alone. */
+function McSpine({ rows }) {
+  const fr = rows.map((r) => r.need > 0 ? Math.min(1, (r.got || 0) / r.need) : ((r.got || 0) > 0 ? 1 : 0));
+  const pct = fr.length ? Math.round((fr.reduce((a2, b2) => a2 + b2, 0) / fr.length) * 100) : 0;
+  const temp = pct >= 100 ? "made" : pct < 34 ? "cold" : "warm";
+  return (
+    <div className={"mc-spine " + temp} aria-label={pct + " percent of the day"}>
+      <span className="rt">{temp === "made" ? "DAY MADE" : pct + "%"}</span>
+      <span className="sp">
+        <u style={{ bottom: "33%" }} /><u style={{ bottom: "66%" }} />
+        <i style={{ height: pct + "%" }} /><b style={{ bottom: pct + "%" }} />
+      </span>
+    </div>
+  );
+}
+
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
                     line, myPos, availableAhead, toFloor }) {
@@ -12589,6 +12607,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         </div>
         <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={12} /></button>
       </div>
+      <McSpine rows={rows} />
 
       <div className="mc-hero">
         <div className="mc-hero-top">
@@ -34272,6 +34291,37 @@ const SAGE_CSS = `
   cursor:pointer; transition:transform .12s ease; }
 .mcf-chip:active{ transform:scale(.94); }
 .mcf-chip.on{ border-color:rgba(228,201,141,.6); color:#e4c98d; background:rgba(228,201,141,.08); }
+/* ---- the garden dark ------------------------------------------------------
+   The shell wears the draft's palette end to end: the ink is the garden's,
+   the glow at the foot of the screen is the garden's, the cards are the
+   draft's card, and nothing on either tab is tinted by the old teal. */
+.q-page.sf.mc-shell{
+  --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --glow:rgba(127,169,138,.38); --ld-off:rgba(143,216,175,.14);
+  --sfink:#EDF2EA; --sfink2:#A7B3A9; --sfink3:#6E7A70; --sfcard:#1C2B23; --sfstroke:rgba(255,255,255,.09);
+  background:radial-gradient(closest-side at 50% 112%, rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%), #15211B; }
+.mc-shell .mc-card, .mc-shell .mcf-chip, .mc-shell .fba-btn, .mc-shell .mc-offc{ background:#1C2B23; }
+.mc-shell .mc-sheet{ background:#1A2820; }
+.mc-shell .mc-hero{ background:linear-gradient(150deg, rgba(127,169,138,.3), rgba(46,74,56,.28) 60%), #203127; }
+.mc-shell .sf-nudge{ background:rgba(228,201,141,.14); color:#E4C98D; }
+.mc-shell .sf-link{ color:rgba(237,242,234,.7); }
+.mc-shell .sf-link-quiet{ color:rgba(237,242,234,.42); }
+.mc-shell .mcf-title{ color:#EDF2EA; }
+.mc{ padding-right:44px; }
+.mc-spine{ position:fixed; right:7px; top:118px; bottom:82px; width:22px; z-index:7; display:flex;
+  flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
+.mc-spine .rt{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.18em;
+  color:rgba(237,242,234,.42); writing-mode:vertical-rl; }
+.mc-spine .sp{ position:relative; width:4px; flex:1; border-radius:999px; background:rgba(255,255,255,.11); }
+.mc-spine .sp i{ position:absolute; left:0; right:0; bottom:0; border-radius:999px;
+  background:linear-gradient(0deg,#567D61,#A9C4AC); transition:height .6s cubic-bezier(.2,.8,.2,1); }
+.mc-spine .sp u{ position:absolute; left:-3px; right:-3px; height:2px; background:rgba(237,242,234,.3); }
+.mc-spine .sp b{ position:absolute; left:50%; transform:translate(-50%,50%); width:10px; height:10px; border-radius:50%;
+  background:#E9CE96; box-shadow:0 0 9px rgba(228,201,141,.95); transition:bottom .6s cubic-bezier(.2,.8,.2,1); }
+.mc-spine.cold .sp i{ background:linear-gradient(0deg,#8A4A42,#F08A80); }
+.mc-spine.cold .sp b{ background:#F08A80; box-shadow:0 0 9px rgba(240,138,128,.9); }
+.mc-spine.made .rt{ color:#8FD8AF; }
+.mc-spine.made .sp i{ background:linear-gradient(0deg,#567D61,#8FD8AF); }
+.mc-spine.made .sp b{ background:#8FD8AF; box-shadow:0 0 11px rgba(143,216,175,1); }
 /* ---- the moments -------------------------------------------------------- */
 .mc-shell .help-fab{ display:none; }
 .mc-head{ position:relative; }
