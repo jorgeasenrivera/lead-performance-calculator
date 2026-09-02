@@ -12440,9 +12440,10 @@ const mcClock = (iso) => {
 };
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
-                    monthStats, boardThr, line, myPos, availableAhead, toFloor }) {
+                    monthStats, boardThr, goals, off, line, myPos, availableAhead, toFloor }) {
   const [days, setDays] = useState(null);
-  const [sheet, setSheet] = useState(null);   // "closing" | "board" | null
+  const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
+  const [pickDay, setPickDay] = useState(null);
   useEffect(() => {
     let dead = false;
     loadMyDays(store, date, [norm(meFull || ""), norm(meLabel || "")])
@@ -12470,21 +12471,31 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   /* A projection off one or two days is a coin toss dressed as a number; the
      bar waits until the month has enough days to mean something. */
   const pace = units != null && dayN >= 3 ? Math.round((units / dayN) * daysInMonth * 10) / 10 : null;
+  const goal = (goals && (goals[norm(meFull)] ?? goals[norm(meLabel)])) ?? null;
+  const newU = ms && ms.newUnits != null ? ms.newUnits : null;
+  const usedU = ms && ms.usedUnits != null ? ms.usedUnits : null;
+  const scale = goal ? Math.max(goal, units || 0, pace || 0) : null;
+  const pct = (v) => (scale ? Math.min(100, Math.round((v / scale) * 100)) : 0);
+  const toGo = goal != null && units != null ? Math.max(0, Math.round((goal - units) * 10) / 10) : null;
+  const offMine = (off && (off[norm(meFull)] || off[norm(meLabel)])) || [];
 
   // A clean day met every standard its report can grade. A missed worked day
   // costs one point; nobody can tap it away, only work it away.
+  // The desk's arithmetic, not an approximation: a missed standard is a point.
   const graded = (r) => {
     if (!r) return null;
-    const tp = r.tasksPosted || 0;
-    return mcMet(r.calls, needCalls) && mcMet(r.video, needVideos) && (tp > 0 ? mcMet(r.tasks, tp) : true);
+    const pd = pointsForDay(r, std);
+    return pd.noData ? null : pd.points === 0;
   };
   const byDay = {};
   for (const d of (days || [])) byDay[d.day] = d.row;
   const monthPrefix = date.slice(0, 7);
   let points = 0, streak = 0;
   for (const d of (days || [])) {
-    if (!d.row || !d.day.startsWith(monthPrefix) || d.day > date) continue;
-    if (graded(d.row) === false && d.day !== date) points++;
+    if (!d.row || !d.day.startsWith(monthPrefix) || d.day > date || d.day === date) continue;
+    if (offMine.includes(d.day)) continue;
+    const pd = pointsForDay(d.row, std);
+    if (!pd.noData) points += pd.points;
   }
   for (let i = 1; i <= SF_DAYS; i++) {
     const dd = new Date(y, mo - 1, dayN - i);
@@ -12498,7 +12509,9 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     const dd = new Date(y, mo - 1, dayN - i);
     const k = `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, "0")}-${String(dd.getDate()).padStart(2, "0")}`;
     const r = byDay[k];
-    week.push({ wd: "SMTWTFS"[dd.getDay()], today: i === 0, state: i === 0 ? "now" : (r ? (graded(r) ? "ok" : "bad") : "off") });
+    const isOffDay = offMine.includes(k);
+    week.push({ wd: "SMTWTFS"[dd.getDay()], today: i === 0, k, pts: r ? pointsForDay(r, std).points : 0,
+      state: i === 0 ? "now" : (isOffDay ? "off" : (r ? (graded(r) ? "ok" : "bad") : "off")) });
   }
 
   // The calendar: a dot per day on its true weekday column, warmed by how much
@@ -12512,7 +12525,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     const r = byDay[k];
     const score = r ? (r.units || 0) * 10 + Math.min(2, (r.calls || 0) / Math.max(1, needCalls)) : 0;
     if (r && score > bestScore) { bestScore = score; bestDay = d; }
-    cal.push({ d, past: d <= dayN, r, score });
+    cal.push({ d, k, past: d <= dayN, r, score, isOff: offMine.includes(k) });
   }
 
   // The line, small: whoever is up, the dots behind them, you in green.
@@ -12541,16 +12554,16 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   return (
     <div className="mc">
       <div className="mc-head">
-        <div className="mc-calw">
+        <button type="button" className="mc-calw" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
           <div className="mc-calhead"><PixIcon glyph="calendar" size={11} /><span>{MC_MONTHS[mo - 1]}</span></div>
           <div className="mc-cal">
             {cal.map((c, i) => c === null
               ? <s key={"p" + i} />
               : <s key={c.d} className={
-                  (c.d === dayN ? "today " : "") + (c.d === bestDay ? "best" : (c.r ? (c.score >= 10 ? "h3" : c.score >= 1.4 ? "h2" : "h1") : (c.past ? "" : "off")))
+                  (c.d === dayN ? "today " : "") + (c.isOff ? "hol" : c.d === bestDay ? "best" : (c.r ? (c.score >= 10 ? "h3" : c.score >= 1.4 ? "h2" : "h1") : (c.past ? "" : "off")))
                 } />)}
           </div>
-        </div>
+        </button>
         <div className="mc-side">
           <span className="mc-date">{new Date(y, mo - 1, dayN).toLocaleDateString([], { weekday: "long" }).toUpperCase()}</span>
           {me && me.status === "waiting" && (
@@ -12581,10 +12594,32 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             </button>
           )}
         </div>
-        {pace != null && (
+        {goal != null && units != null ? (
+          <>
+            <div className="mc-pace">
+              <span className="nm">Pace</span>
+              <span className="mc-pacew">
+                <span className="tr">
+                  {newU != null || usedU != null
+                    ? <><i className="nw" style={{ width: pct(newU || 0) + "%" }} /><i className="us" style={{ left: pct(newU || 0) + "%", width: pct(usedU || 0) + "%" }} /></>
+                    : <i className="nw" style={{ width: pct(units) + "%" }} />}
+                  {toGo > 0 && <span className="togo" style={{ left: Math.min(78, pct(units) + 3) + "%" }}>{toGo}</span>}
+                </span>
+                {pace != null && <span className="pm" style={{ left: pct(pace) + "%" }} />}
+              </span>
+              <span className="num">{pace != null ? pace : goal}</span>
+            </div>
+            {(newU != null || usedU != null) && (
+              <div className="mc-legend">
+                <span><s className="nw" />NEW {newU || 0}</span>
+                <span><s className="us" />USED {usedU || 0}</span>
+              </div>
+            )}
+          </>
+        ) : pace != null && (
           <div className="mc-pace">
             <span className="nm">Pace</span>
-            <span className="tr"><i style={{ width: Math.round((dayN / daysInMonth) * 100) + "%" }} /></span>
+            <span className="mc-pacew"><span className="tr"><i className="nw" style={{ width: Math.round((dayN / daysInMonth) * 100) + "%" }} /></span></span>
             <span className="num">{pace}</span>
           </div>
         )}
@@ -12620,9 +12655,21 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         <div className="mc-week">
           {week.map((w, i) => (
             <i key={i}>
-              <span className={"c " + w.state}>{w.state === "ok" ? <PixIcon glyph="check" size={9} /> : w.state === "bad" ? "+1" : "\u00b7"}</span>
+              <span className={"c " + w.state}>{w.state === "ok" ? <PixIcon glyph="check" size={9} /> : w.state === "bad" ? "+" + w.pts : "\u00b7"}</span>
               <span className="wd">{w.wd}</span>
             </i>
+          ))}
+        </div>
+        <div className="mc-list">
+          {[
+            { l: `${needCalls} calls`, d: (a.calls || 0) >= needCalls },
+            { l: `${needVideos} video${needVideos === 1 ? "" : "s"}`, d: (a.video || 0) >= needVideos },
+            { l: "RockEd", d: a.rocked === true },
+            { l: "Tasks clear", d: needTasks > 0 ? (a.tasks || 0) >= needTasks : (a.tasks || 0) > 0 },
+          ].map((it) => (
+            <div className={"mc-li" + (it.d ? " done" : "")} key={it.l}>
+              <span className="ck">{it.d && <PixIcon glyph="check" size={10} />}</span><span>{it.l}</span>
+            </div>
           ))}
         </div>
       </div>
@@ -12653,7 +12700,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head">
-              <b>{sheet === "closing" ? "Closing" : "The board"}</b>
+              <b>{sheet === "closing" ? "Closing" : sheet === "sched" ? new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long" }) : "The board"}</b>
               <button type="button" className="mc-x" onClick={() => setSheet(null)} aria-label="Close"><PixIcon glyph="close" size={11} /></button>
             </div>
             {sheet === "closing" && (
@@ -12674,6 +12721,43 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                 </div>
                 <div className="mc-clfoot">
                   {closing.map((c) => c.leads != null ? `${c.label.toLowerCase()} ${c.u || 0} of ${c.leads}` : null).filter(Boolean).join(" \u00b7 ")}
+                </div>
+              </>
+            )}
+            {sheet === "sched" && (
+              <>
+                <div className="mc-sc">
+                  {"SMTWTFS".split("").map((c, i) => <b key={"w" + i}>{c}</b>)}
+                  {cal.map((c, i) => c === null
+                    ? <span key={"p" + i} />
+                    : <s key={c.d} onClick={() => setPickDay(c.d)} className={
+                        (pickDay === c.d ? "sel " : "") + (c.d === dayN ? "today " : "") + (c.isOff ? "hol" : c.d === bestDay ? "best" : (c.r ? (c.score >= 10 ? "h3" : c.score >= 1.4 ? "h2" : "h1") : (c.past ? "" : "off")))
+                      } />)}
+                </div>
+                <div className="mc-legend mc-legend-sc">
+                  <span><s className="best" />BEST DAY</span><span><s className="big" />BIG DAY</span><span><s className="hol" />OFF</span>
+                </div>
+                <div className="mc-scd">
+                  {(() => {
+                    if (!pickDay) return <span className="mc-scd-hint">Tap a day: its numbers and its hours.</span>;
+                    const c = cal.find((x2) => x2 && x2.d === pickDay);
+                    const r = c && c.r;
+                    const lbl = `${MC_MONTHS[mo - 1]} ${pickDay}`;
+                    if (c && c.isOff) return <><div className="mc-scr"><span>{lbl}</span><i /><span>DAY OFF</span></div><span className="mc-scd-hint">Scheduled off. Your stats stay open.</span></>;
+                    if (!c || !c.past) return <><div className="mc-scr"><span>{lbl}</span><i /><span>SCHEDULED</span></div><span className="mc-scd-hint">Ahead of you. On the floor, RockEd by ten.</span></>;
+                    if (!r) return <><div className="mc-scr"><span>{lbl}</span><i /><span>NO REPORT</span></div><span className="mc-scd-hint">Nothing the phone can still read for this day.</span></>;
+                    const pd = pointsForDay(r, std);
+                    return (
+                      <>
+                        <div className="mc-scr"><span>{lbl}{c.d === bestDay ? " \u00b7 BEST DAY" : ""}</span><i /><span>{pd.noData ? "\u00b7" : pd.points === 0 ? "CLEAN" : "+" + pd.points}</span></div>
+                        <div className="mc-scr"><span>UNITS</span><i /><span>{r.units || 0}</span></div>
+                        <div className="mc-scr"><span>CALLS \u00b7 VIDEOS</span><i /><span>{r.calls || 0} \u00b7 {r.video || 0}</span></div>
+                        <div className="mc-scr"><span>TASKS</span><i /><span>{r.tasks || 0}{r.tasksPosted ? " / " + r.tasksPosted : ""}</span></div>
+                        <div className="mc-scr"><span>ROCKED</span><i /><span>{r.rocked === true ? "YES" : r.rocked === false ? "NO" : "\u00b7"}</span></div>
+                        {pd.missed.length > 0 && <span className="mc-scd-hint">Slipped on {pd.missed.join(", ")}. That is where the {pd.points === 1 ? "point" : "points"} came from.</span>}
+                      </>
+                    );
+                  })()}
                 </div>
               </>
             )}
@@ -12736,6 +12820,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
   // its percentages by these, so the wall and the phone can never disagree about
   // whether a number is green.
   const [boardThr, setBoardThr] = useState(null);
+  const [boardExtra, setBoardExtra] = useState({ goals: {}, off: {} });
   useEffect(() => {
     let dead = false;
     loadShared(`lpc:board:${store}:v1`, null)
@@ -12743,6 +12828,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
         if (dead || !b) return;
         if (b.months) setMonthStats((b.months[b.ym] || {}).stats || null);
         setBoardThr(b.thresholds || null);
+        setBoardExtra({ goals: b.goals || {}, off: b.off || {} });
       })
       .catch(() => {});
     return () => { dead = true; };
@@ -13187,6 +13273,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false }) {
       content = (
         <MyCorner store={store} date={date} me={me} meId={meId} meFull={meFull} meLabel={meLabel}
           mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
+          goals={boardExtra.goals} off={boardExtra.off}
           line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")} />
       );
     }
@@ -33793,6 +33880,47 @@ const SAGE_CSS = `
 .mc-cal s.best{ background:#e4c98d; box-shadow:0 0 5px rgba(228,201,141,.55); }
 .mc-cal s.today{ outline:1.5px solid rgba(242,246,242,.85); outline-offset:1.5px; }
 .mc-cal s.off{ background:rgba(232,238,242,.05); }
+.mc-cal s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.3); }
+.mc-calw{ border:0; background:none; padding:0; text-align:left; cursor:pointer; }
+.mc-pacew{ position:relative; flex:1; display:flex; }
+.mc-pace .tr{ position:relative; }
+.mc-pace .tr i{ position:absolute; top:0; bottom:0; left:0; }
+.mc-pace .tr i.nw{ background:#e4c98d; border-radius:999px 0 0 999px; }
+.mc-pace .tr i.us{ background:#a9c4ac; border-radius:0 999px 999px 0; }
+.mc-pace .tr .togo{ position:absolute; top:50%; transform:translateY(-50%); font-family:var(--sfmono);
+  font-size:7.5px; font-weight:700; letter-spacing:.07em; color:rgba(237,242,234,.72); white-space:nowrap; }
+.mc-pacew .pm{ position:absolute; top:-3px; height:18px; width:3px; border-radius:2px; margin-left:-1px;
+  background:#b8d2bb; box-shadow:0 0 6px rgba(169,196,172,.9); }
+.mc-legend{ display:flex; gap:12px; margin-top:6px; position:relative; z-index:1;
+  font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.55); }
+.mc-legend s{ display:inline-block; width:7px; height:7px; border-radius:2px; vertical-align:-1px; margin-right:4px; }
+.mc-legend s.nw{ background:#e4c98d; } .mc-legend s.us{ background:#a9c4ac; }
+.mc-legend s.best{ background:#e4c98d; border-radius:50%; } .mc-legend s.big{ background:#a9c4ac; border-radius:50%; }
+.mc-legend s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.35); border-radius:50%; }
+.mc-legend-sc{ margin-top:12px; font-size:8px; }
+.mc-list{ margin-top:8px; }
+.mc-li{ display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px dashed rgba(255,255,255,.1); font-size:12.5px; }
+.mc-li:last-child{ border-bottom:0; }
+.mc-li .ck{ width:21px; height:21px; border-radius:7px; border:1.5px solid rgba(255,255,255,.26); flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center; }
+.mc-li.done .ck{ background:#3d8a62; border-color:#3d8a62; color:#eaf6ee; }
+.mc-li.done span:last-child{ opacity:.55; text-decoration:line-through; }
+.mc-sc{ display:grid; grid-template-columns:repeat(7,1fr); gap:8px 0; justify-items:center; margin-top:8px; }
+.mc-sc b{ font-family:var(--sfmono); font-size:8.5px; font-weight:700; color:rgba(237,242,234,.45); }
+.mc-sc s{ display:block; width:15px; height:15px; border-radius:50%; background:rgba(237,242,234,.13); cursor:pointer;
+  transition:transform .12s ease; }
+.mc-sc s:active{ transform:scale(.8); }
+.mc-sc s.h1{ background:rgba(169,196,172,.38); } .mc-sc s.h2{ background:rgba(169,196,172,.62); }
+.mc-sc s.h3{ background:#a9c4ac; }
+.mc-sc s.best{ background:#e4c98d; box-shadow:0 0 6px rgba(228,201,141,.55); }
+.mc-sc s.today{ outline:1.5px solid rgba(242,246,242,.85); outline-offset:1.5px; }
+.mc-sc s.off{ background:rgba(237,242,234,.05); }
+.mc-sc s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.3); }
+.mc-sc s.sel{ outline:2px solid #8fd8af; outline-offset:1.5px; }
+.mc-scd{ margin-top:12px; border-top:1px solid rgba(255,255,255,.08); padding-top:10px; }
+.mc-scr{ display:flex; align-items:baseline; gap:7px; font-family:var(--sfmono); font-size:11.5px; font-weight:600; padding:4.5px 0; }
+.mc-scr i{ flex:1; border-bottom:2px dotted rgba(237,242,234,.2); }
+.mc-scd-hint{ display:block; font-size:11px; color:rgba(237,242,234,.55); margin-top:6px; }
 .mc-side{ flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
 .mc-date{ font-family:var(--sfmono); font-size:11px; font-weight:700; letter-spacing:.16em; color:#e8eef2; }
 .mc-qmini{ display:flex; align-items:center; gap:6px; border:0; background:none; padding:0; cursor:pointer; }
