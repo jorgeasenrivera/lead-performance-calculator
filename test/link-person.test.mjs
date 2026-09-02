@@ -15,11 +15,13 @@ process.env.SUPABASE_URL="https://stub.local"; process.env.SUPABASE_SERVICE_ROLE
 const API = new URL("../api", import.meta.url).pathname;
 
 let DEVICES=[];
+let USERS=[];
 let LINKS=[], PROFILE={ role:"manager", stores:["honda"] }, SESSION="mgr-1", sessionOk=true;
 let upserts=[], deletes=[];
 const j = (o,s=200)=>new Response(JSON.stringify(o),{status:s,headers:{"content-type":"application/json"}});
 globalThis.fetch = async (url, opt={}) => {
   const u=String(url), m=(opt.method||"GET").toUpperCase();
+  if (u.includes("/auth/v1/admin/users")) return j({ users: USERS, aud: "authenticated" });
   if (u.includes("/auth/v1/user")) return sessionOk ? j({ id: SESSION }) : j({ msg:"bad" }, 401);
   if (u.includes("/rest/v1/profiles")) return j(PROFILE ? [PROFILE] : []);
   if (u.includes("/rest/v1/floor_people")) {
@@ -143,6 +145,20 @@ test("reading the links back, which is what the manager's screen does", async ()
       jason && jason.devices === 0, jason);
     assert.ok(
       !JSON.stringify(res.body).match(/apns|fcm|activity_token/i), res.body);
+});
+test("the claims ride along, minus anybody already linked", async () => {
+    SESSION="mgr-1"; PROFILE={ role:"manager", stores:["honda"] };
+    LINKS = [{ id:"honda:user-luis", user_id:"user-luis", store:"honda", person_id:"roster-luis" }];
+    USERS = [
+      { id:"user-luis", email:"luis@x.com", user_metadata:{ claim_store:"honda", claim_person:"roster-luis" } },
+      { id:"user-casey", email:"casey@x.com", user_metadata:{ name:"Casey Newbie", claim_store:"honda", claim_person:"roster-casey", claim_name:"Casey N." } },
+      { id:"user-kia", email:"kia@x.com", user_metadata:{ claim_store:"kia", claim_person:"k1" } },
+    ];
+    const res = await get(link, { store:"honda" });
+    assert.equal(res.code, 200);
+    assert.deepEqual((res.body.claims||[]).map(c=>c.user_id), ["user-casey"]);
+    assert.equal(res.body.claims[0].person_id, "roster-casey");
+    USERS = [];
 });
 test("a manager of another store cannot read them", async () => {
     PROFILE={ role:"manager", stores:["other"] };
