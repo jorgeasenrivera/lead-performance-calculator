@@ -227,6 +227,7 @@ export const FIELD_POLICY = {
   unignored:     { how: "tombstones", why: "And when that was lifted. The pair is what lets somebody change their mind twice." },
   returned:      { how: "tombstones", why: "When a leaver came back, so the departed union cannot bury it." },
   pendingPeople: { how: "heldUnion", why: "Two reports can each hold half of the same unclaimed person." },
+  heldFigures:   { how: "heldUnion", why: "Figures set aside by a not-ours, per name, so a mistaken click is undone with nothing lost. A union, minus anyone since put back, whose figures are on the months again." },
 
   // ---- the plate log, the most contended thing in the document ----
   plates:        { how: "perEntryNewest", why: "Every manager on the floor writes today's day key at once." },
@@ -517,6 +518,29 @@ export function mergeAgainstServer(next, serverCopy) {
           ]);
           for (const k of Object.keys(heldOut)) if (settled.has(k)) delete heldOut[k];
           next.pendingPeople = heldOut;
+
+          /* ---- figures set aside by a not-ours ----
+             Same shape of problem. Both copies may hold a parcel for the same
+             name; keep both, the newer piece winning per month and per day. A
+             name that is back on the roster or the departed list has had its
+             parcel folded back in already, so the parcel goes. */
+          const heldFig = {};
+          const backOn = new Set([
+            ...next.roster.map((a) => norm(a.name)),
+            ...(next.departed || []).map((d) => norm(d && d.name)),
+          ]);
+          for (const src of [serverCopy.heldFigures || {}, next.heldFigures || {}]) {
+            for (const [k, v] of Object.entries(src)) {
+              if (!v || backOn.has(k)) continue;
+              const cur = heldFig[k] || { months: {}, activity: {}, at: "" };
+              heldFig[k] = {
+                months: { ...cur.months, ...(v.months || {}) },
+                activity: { ...cur.activity, ...(v.activity || {}) },
+                at: (v.at || "") > cur.at ? v.at : cur.at,
+              };
+            }
+          }
+          next.heldFigures = heldFig;
         }
         /* ---- The plate log ----
            This used to be mergeField("plates"), which fills in whole DAYS the client

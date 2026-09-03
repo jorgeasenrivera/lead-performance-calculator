@@ -8,7 +8,7 @@
    Setup (Cloudflare dashboard):
    1. Workers & Pages → Create Worker → paste this file → Deploy.
    2. Worker → Settings → Variables:
-        INGEST_URL    = https://<your-vercel-app>.vercel.app/api/ingest
+        INGEST_URL    = https://www.sageonline.io/api/ingest
         INGEST_SECRET = the same long random string set in Vercel
    3. Email → Email Routing → enable for the domain, then add a routing rule
       per store:  lpc-classicmazda@yourdomain  →  Send to Worker → this worker.

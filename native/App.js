@@ -30,7 +30,16 @@ import Constants from "expo-constants";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-const SITE = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.siteUrl) || "https://SET-ME.vercel.app";
+const SITE = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.siteUrl) || "https://www.sageonline.io";
+/* The site's own name, with or without www: sageonline.io redirects to
+   www.sageonline.io and both are inside. Anything else is outside. */
+const SITE_HOST = (() => { try { return new URL(SITE).hostname.replace(/^www\./, ""); } catch (e) { return ""; } })();
+const isOurs = (url) => {
+  try {
+    const h = new URL(url).hostname.replace(/^www\./, "");
+    return h === SITE_HOST || h.endsWith("." + SITE_HOST);
+  } catch (e) { return false; }
+};
 const INK = "#15211B";
 
 /* A notification that arrives while the app is open still shows: a salesperson
@@ -123,7 +132,7 @@ export default function App() {
      dialler. */
   const onShouldStart = useCallback((req) => {
     const url = req.url || "";
-    if (url.startsWith(SITE) || url.startsWith("about:")) return true;
+    if (isOurs(url) || url.startsWith("about:")) return true;
     Linking.openURL(url).catch(() => {});
     return false;
   }, []);

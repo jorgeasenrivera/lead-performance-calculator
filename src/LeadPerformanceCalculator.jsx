@@ -27736,7 +27736,9 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
           did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
           delivered. Somebody who was <b>never here</b> loses theirs, because the store never earned them
-          and they are inflating its totals. That difference is the whole reason both exist.
+          and they are inflating its totals. That difference is the whole reason both exist. A not-ours said
+          by mistake is one click to undo: the figures are set aside, not thrown away, and putting the person
+          back on the floor puts the figures back with them.
         </Explain>
 
         <div className="pp-bar">
@@ -27916,7 +27918,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                   )}
                   {p.status !== "ignored" && (
                     <button className="pp-act danger" onClick={() => { move(p.name, "ignored"); setOpenStanding(null); }}>
-                      <PixIcon glyph="close" size={11} /><span>Not ours · take the figures back</span>
+                      <PixIcon glyph="close" size={11} /><span>Not ours · set the figures aside</span>
                     </button>
                   )}
                 </div>
