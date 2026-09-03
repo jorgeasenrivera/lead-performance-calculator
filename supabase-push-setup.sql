@@ -45,12 +45,43 @@ create or replace function public.prune_device_tokens() returns void language sq
   delete from public.device_tokens where updated_at < now() - interval '90 days';
 $$;
 
-/* The webhook, set up in the dashboard rather than here:
-     Database → Webhooks → Create
-       table   public.queue_public
-       events  INSERT, UPDATE
-       type    HTTP Request, POST
-       URL     https://<your-app>/api/queue-changed
-       header  x-lpc-secret: <the value of QUEUE_HOOK_SECRET>
-   The payload Supabase sends carries `record` and `old_record`, which is exactly
-   the before-and-after the endpoint diffs. */
+/* ---- the webhooks ----
+   Two of them, one per table, both pointing at /api/queue-changed with the
+   shared secret in a header. Supabase's dashboard has them under
+   Integrations → Database Webhooks (it used to be Database → Webhooks). The
+   form: table public.queue_public then public.floor_public, events INSERT and
+   UPDATE, type HTTP Request, method POST, URL https://www.sageonline.io/api/queue-changed,
+   one header x-lpc-secret with the value of QUEUE_HOOK_SECRET.
+
+   Or make them here. A dashboard webhook is nothing but a trigger calling
+   supabase_functions.http_request, so this is the same thing without the
+   clicking. Replace the secret and run; safe to re-run. */
+create extension if not exists pg_net;
+create schema if not exists supabase_functions;
+
+drop trigger if exists queue_changed on public.queue_public;
+create trigger queue_changed
+  after insert or update on public.queue_public
+  for each row execute function supabase_functions.http_request(
+    'https://www.sageonline.io/api/queue-changed',
+    'POST',
+    '{"Content-type":"application/json","x-lpc-secret":"REPLACE_WITH_QUEUE_HOOK_SECRET"}',
+    '{}',
+    '5000'
+  );
+
+drop trigger if exists floor_changed on public.floor_public;
+create trigger floor_changed
+  after insert or update on public.floor_public
+  for each row execute function supabase_functions.http_request(
+    'https://www.sageonline.io/api/queue-changed',
+    'POST',
+    '{"Content-type":"application/json","x-lpc-secret":"REPLACE_WITH_QUEUE_HOOK_SECRET"}',
+    '{}',
+    '5000'
+  );
+
+/* The payload Supabase sends carries `record` and `old_record`, which is exactly
+   the before-and-after the endpoint diffs. If supabase_functions.http_request
+   does not exist yet, open Integrations → Database Webhooks once and press
+   Enable webhooks: that installs it. */
