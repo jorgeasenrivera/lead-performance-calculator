@@ -18,9 +18,12 @@
       "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "NSCameraUsageDescription": "Sage uses the camera to scan the daily floor code.",
-        "NSLocationWhenInUseUsageDescription": "Sage checks you are at the store when you get on the floor."
+        "NSLocationWhenInUseUsageDescription": "Sage checks you are at the store when you get on the floor.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -30,16 +33,29 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2E3A32"
       },
-      "permissions": ["POST_NOTIFICATIONS", "VIBRATE", "ACCESS_FINE_LOCATION", "CAMERA"],
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA"
+      ],
       "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-splash-screen",
-      ["expo-notifications", { "color": "#15211B", "defaultChannel": "floor" }]
+      [
+        "expo-notifications",
+        {
+          "color": "#15211B",
+          "defaultChannel": "floor"
+        }
+      ]
     ],
     "extra": {
       "siteUrl": "https://SET-ME.vercel.app",
-      "eas": { "projectId": "" }
+      "eas": {
+        "projectId": ""
+      }
     }
   }
 }
