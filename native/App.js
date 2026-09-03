@@ -18,7 +18,7 @@
  *   - opens outside links in the phone's browser rather than inside itself.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
+import { BackHandler, Linking, Platform, SafeAreaView, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -81,6 +81,21 @@ export default function App() {
   const web = useRef(null);
   const [ready, setReady] = useState(false);
   const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null });
+  /* ---- the safe area ----
+     The page is kept out from under the clock and the home bar. iOS keeps the
+     strip under the clock for itself, so anything the page drew there could be
+     seen and never tapped, and the site's own bottom bar sat on top of content.
+     The strips take whatever colour the page says it is (its theme-color meta,
+     posted by the page whenever it changes), so the join does not show: the
+     garden ink on the salesperson screens, the light ground on the desk's. */
+  const [chrome, setChrome] = useState(INK);
+  const lightChrome = (() => {
+    const m = /^#([0-9a-f]{6})$/i.exec(chrome);
+    if (!m) return false;
+    const v = parseInt(m[1], 16);
+    const lum = 0.299 * (v >> 16) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255);
+    return lum > 140;
+  })();
 
   useEffect(() => {
     let dead = false;
@@ -119,6 +134,10 @@ export default function App() {
     let msg = null;
     try { msg = JSON.parse(e.nativeEvent.data); } catch (err) { return; }
     if (!msg || typeof msg !== "object") return;
+    if (msg.type === "theme" && typeof msg.payload === "string" && /^#[0-9a-f]{6}$/i.test(msg.payload)) {
+      setChrome(msg.payload);
+      return;
+    }
     if (msg.type === "buzz") {
       const p = msg.payload;
       const heavy = Array.isArray(p) ? p.length > 1 : Number(p) >= 20;
@@ -140,8 +159,8 @@ export default function App() {
   }, []);
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" backgroundColor={INK} />
+    <SafeAreaView style={[styles.root, { backgroundColor: chrome }]}>
+      <StatusBar style={lightChrome ? "dark" : "light"} backgroundColor={chrome} />
       <WebView
         ref={web}
         source={{ uri: SITE }}
@@ -167,11 +186,11 @@ export default function App() {
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: INK },
-  web: { flex: 1, backgroundColor: INK },
+  web: { flex: 1, backgroundColor: "transparent" },
 });
