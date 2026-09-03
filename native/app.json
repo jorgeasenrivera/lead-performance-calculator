@@ -14,7 +14,7 @@
       "backgroundColor": "#15211B"
     },
     "ios": {
-      "bundleIdentifier": "com.sage",
+      "bundleIdentifier": "com.sageonline",
       "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
@@ -27,7 +27,7 @@
       }
     },
     "android": {
-      "package": "com.sage",
+      "package": "com.sageonline",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

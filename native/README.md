@@ -7,12 +7,12 @@ The site is the product; this is its shell. See the comment at the top of
 
 1. **Site address.** `app.json` points at https://www.sageonline.io. If the
    site ever moves, `extra.siteUrl` is the only value in this folder to change.
-2. **Apple.** An Apple Developer account. Create the App ID `com.sage` with the
+2. **Apple.** An Apple Developer account. Create the App ID `com.sageonline` with the
    Push Notifications capability, and an APNs key (.p8). The API's push env
-   (`APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.sage`, `APNS_KEY_P8`)
+   (`APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.sageonline`, `APNS_KEY_P8`)
    comes from that key.
 3. **Google.** A Firebase project with an Android app whose package is
-   `com.sage`. Download `google-services.json` into this folder. The API's FCM
+   `com.sageonline`. Download `google-services.json` into this folder. The API's FCM
    env comes from the same project.
 4. **Expo.** `npm i -g eas-cli`, `eas login`, then `eas init` here, which fills
    `extra.eas.projectId`.
