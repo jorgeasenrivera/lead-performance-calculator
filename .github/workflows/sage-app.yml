@@ -10,6 +10,7 @@
 #   ASC_ISSUER_ID      the Issuer ID shown above the keys list
 #   APPLE_TEAM_ID      developer.apple.com → Membership details
 #   APPLE_TEAM_TYPE    COMPANY_OR_ORGANIZATION or INDIVIDUAL (how the account was enrolled)
+#   ASC_APP_ID         optional: the app's Apple ID number, App Store Connect → Sage → App Information
 #   IOS_DIST_P12_BASE64      the Apple Distribution certificate with its private key, as a .p12, base64
 #   IOS_DIST_P12_PASSWORD    the password that .p12 was made with
 #   IOS_PROFILE_BASE64       the App Store provisioning profile for com.sageonline, base64
@@ -31,6 +32,10 @@ on:
         default: ios
       submit:
         description: Upload to TestFlight / Google Play when the build finishes
+        type: boolean
+        default: true
+      rebuild:
+        description: Compile a new build (untick to upload the last finished build only)
         type: boolean
         default: true
 
@@ -123,15 +128,33 @@ jobs:
         run: eas init --force --non-interactive
 
       - name: Build
+        if: inputs.rebuild
         run: eas build --platform ${{ inputs.platform }} --profile production --non-interactive --wait
+
+      # eas submit reads the App Store Connect key from a submit profile in
+      # eas.json rather than from flags. Written here for the run and never
+      # committed: the ids are secrets. ASC_APP_ID (the app's Apple ID number
+      # in App Store Connect → App Information) is optional; without it Expo
+      # looks the app up by bundle id.
+      - name: Submit profile
+        if: inputs.submit && inputs.platform == 'ios'
+        run: |
+          node -e '
+            const fs = require("fs");
+            const j = JSON.parse(fs.readFileSync("eas.json", "utf8"));
+            j.submit = j.submit || {}; j.submit.production = j.submit.production || {};
+            const ios = { ascApiKeyPath: "./asc-key.p8", ascApiKeyId: process.env.EXPO_ASC_KEY_ID,
+                          ascApiKeyIssuerId: process.env.EXPO_ASC_ISSUER_ID, appleTeamId: process.env.EXPO_APPLE_TEAM_ID };
+            if (process.env.ASC_APP_ID) ios.ascAppId = process.env.ASC_APP_ID;
+            j.submit.production.ios = ios;
+            fs.writeFileSync("eas.json", JSON.stringify(j, null, 2));
+          '
+        env:
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
 
       - name: Upload to TestFlight
         if: inputs.submit && inputs.platform == 'ios'
-        run: >
-          eas submit --platform ios --latest --non-interactive
-          --asc-api-key-path "$EXPO_ASC_API_KEY_PATH"
-          --asc-api-key-id "$EXPO_ASC_KEY_ID"
-          --asc-api-key-issuer-id "$EXPO_ASC_ISSUER_ID"
+        run: eas submit --platform ios --latest --profile production --non-interactive
 
       - name: Upload to Google Play
         if: inputs.submit && inputs.platform == 'android'
@@ -143,4 +166,4 @@ jobs:
 
       - name: Forget the keys
         if: always()
-        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision credentials.json
+        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision credentials.json && git checkout -- eas.json app.json 2>/dev/null || true
