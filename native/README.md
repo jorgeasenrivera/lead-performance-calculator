@@ -17,22 +17,26 @@ The site is the product; this is its shell. See the comment at the top of
 4. **Expo.** `npm i -g eas-cli`, `eas login`, then `eas init` here, which fills
    `extra.eas.projectId`.
 
-## Running
+## Building, from a browser
+
+Nothing needs installing anywhere. GitHub → Actions → **Sage app** → Run
+workflow, pick the platform, leave "upload" ticked. Expo compiles the app and
+uploads it to TestFlight or Google Play. The secrets the workflow needs are
+listed at the top of `.github/workflows/sage-app.yml`; every one of them is
+made on a website and pasted into the repo's Settings → Secrets.
+
+Apple is spoken to with an App Store Connect API key, so no Apple ID login or
+two-factor code is ever needed. That key is different from the push key the
+server uses: one lets Expo sign and upload builds, the other lets the server
+send notifications.
+
+## Running on a computer, if one is available
 
 ```
 cd native
 npm install
 npx expo run:ios        # a simulator (no push tokens there)
 npx expo run:android
-```
-
-## Building for the stores
-
-```
-npm run build:ios
-npm run build:android
-eas submit --platform ios
-eas submit --platform android
 ```
 
 ## How push reaches a person

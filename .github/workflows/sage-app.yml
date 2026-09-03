@@ -1,0 +1,109 @@
+# Builds the Sage phone app and hands it to TestFlight or Google Play, from a
+# browser: Actions → Sage app → Run workflow. Nothing is installed on anybody's
+# computer. Expo compiles the app; Apple is spoken to with an App Store Connect
+# API key so no Apple ID login or two-factor code is ever needed here.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   EXPO_TOKEN         expo.dev → Account settings → Access tokens
+#   ASC_API_KEY_P8     App Store Connect → Users and Access → Integrations → the .p8, whole file
+#   ASC_KEY_ID         its Key ID
+#   ASC_ISSUER_ID      the Issuer ID shown above the keys list
+#   APPLE_TEAM_ID      developer.apple.com → Membership details
+#   APPLE_TEAM_TYPE    COMPANY_OR_ORGANIZATION or INDIVIDUAL (how the account was enrolled)
+#   GOOGLE_SERVICES_JSON     Android only: Firebase's google-services.json, whole file
+#   GOOGLE_PLAY_SERVICE_JSON Android only: a Play Console service account key, for uploads
+name: Sage app
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Which phone
+        type: choice
+        options: [ios, android]
+        default: ios
+      submit:
+        description: Upload to TestFlight / Google Play when the build finishes
+        type: boolean
+        default: true
+
+concurrency:
+  group: sage-app-${{ inputs.platform }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ inputs.platform }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: native
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_ASC_API_KEY_PATH: ${{ github.workspace }}/native/asc-key.p8
+      EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      EXPO_APPLE_TEAM_TYPE: ${{ secrets.APPLE_TEAM_TYPE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install the app's packages
+        run: npm install --no-audit --no-fund
+
+      - name: Check the site address was set
+        run: |
+          if grep -q "SET-ME" app.json; then
+            echo "::error::native/app.json still says SET-ME for extra.siteUrl. Set it to the deployed site first."
+            exit 1
+          fi
+
+      - name: Apple key
+        if: inputs.platform == 'ios'
+        run: printf '%s' "$ASC_API_KEY_P8" > asc-key.p8
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+
+      - name: Google services file
+        if: inputs.platform == 'android'
+        run: printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
+      # Ties this folder to a project on the Expo account. Idempotent: the same
+      # account and slug resolve to the same project every run.
+      - name: Expo project
+        run: eas init --force --non-interactive
+
+      - name: Build
+        run: eas build --platform ${{ inputs.platform }} --profile production --non-interactive --wait
+
+      - name: Upload to TestFlight
+        if: inputs.submit && inputs.platform == 'ios'
+        run: >
+          eas submit --platform ios --latest --non-interactive
+          --asc-api-key-path "$EXPO_ASC_API_KEY_PATH"
+          --asc-api-key-id "$EXPO_ASC_KEY_ID"
+          --asc-api-key-issuer-id "$EXPO_ASC_ISSUER_ID"
+
+      - name: Upload to Google Play
+        if: inputs.submit && inputs.platform == 'android'
+        run: |
+          printf '%s' "$GOOGLE_PLAY_SERVICE_JSON" > play-key.json
+          eas submit --platform android --latest --non-interactive --key play-key.json --track internal
+        env:
+          GOOGLE_PLAY_SERVICE_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_JSON }}
+
+      - name: Forget the keys
+        if: always()
+        run: rm -f asc-key.p8 play-key.json google-services.json
