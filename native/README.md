@@ -5,8 +5,8 @@ The site is the product; this is its shell. See the comment at the top of
 
 ## Before the first build
 
-1. **Site address.** In `app.json`, set `extra.siteUrl` to the deployed site.
-   That is the only value in this folder that has to change.
+1. **Site address.** `app.json` points at https://www.sageonline.io. If the
+   site ever moves, `extra.siteUrl` is the only value in this folder to change.
 2. **Apple.** An Apple Developer account. Create the App ID `com.sage` with the
    Push Notifications capability, and an APNs key (.p8). The API's push env
    (`APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID=com.sage`, `APNS_KEY_P8`)

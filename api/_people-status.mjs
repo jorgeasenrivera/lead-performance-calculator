@@ -81,6 +81,9 @@ export function setStatus(data, names, status, opts = {}) {
   next.unignored = next.unignored || {};
   next.returned = next.returned || {};
   next.peopleLog = next.peopleLog || [];
+  /* Figures set aside when somebody is marked not ours, so a mistaken click can
+     be undone without a report. Keyed by the normalised name. */
+  next.heldFigures = next.heldFigures || {};
 
   const wanted = (Array.isArray(names) ? names : [names]).map((n) => (typeof n === "string" ? n : n && n.name)).filter(Boolean);
   const keys = new Set(wanted.map(nm));
@@ -108,13 +111,24 @@ export function setStatus(data, names, status, opts = {}) {
     }
     next.roster = next.roster.filter((a) => !keys.has(nm(a.name)));
     next.departed = next.departed.filter((d) => !keys.has(nm(d && d.name)));
-    /* Their figures were never this store's to count. */
-    for (const m of Object.values(next.months || {})) {
-      if (!m || !m.stats) continue;
-      for (const k of Object.keys(m.stats)) if (keys.has(k)) delete m.stats[k];
-    }
-    for (const day of Object.keys(next.activity || {})) {
-      for (const k of Object.keys(next.activity[day] || {})) if (keys.has(k)) delete next.activity[day][k];
+    /* Their figures were never this store's to count, so they come off the
+       months and the days. They are not thrown away: they are set aside under
+       the name, so "not ours" said by mistake is one click to undo with nothing
+       lost. The totals stop counting them the moment they are aside. */
+    for (const k of keys) {
+      const held = next.heldFigures[k] || { months: {}, activity: {} };
+      for (const [ym, m] of Object.entries(next.months || {})) {
+        if (!m || !m.stats || !m.stats[k]) continue;
+        held.months[ym] = { ...(held.months[ym] || {}), ...m.stats[k] };
+        delete m.stats[k];
+      }
+      for (const day of Object.keys(next.activity || {})) {
+        const rec = next.activity[day] && next.activity[day][k];
+        if (!rec) continue;
+        held.activity[day] = { ...(held.activity[day] || {}), ...rec };
+        delete next.activity[day][k];
+      }
+      next.heldFigures[k] = { ...held, at };
     }
   }
 
@@ -137,7 +151,9 @@ export function setStatus(data, names, status, opts = {}) {
     }
     next.roster = next.roster.filter((a) => !keys.has(nm(a.name)));
     next.excluded = next.excluded.filter((x) => !keys.has(nm(x)));
-    // Figures stay: the store did sell those cars.
+    // Figures stay: the store did sell those cars. And anything set aside by an
+    // earlier "not ours" comes back, for the same reason.
+    for (const k of keys) restoreHeld(next, k);
   }
 
   if (status === "active") {
@@ -154,6 +170,7 @@ export function setStatus(data, names, status, opts = {}) {
     }
     next.excluded = next.excluded.filter((x) => !keys.has(nm(x)));
     next.departed = next.departed.filter((d) => !keys.has(nm(d && d.name)));
+    for (const k of keys) restoreHeld(next, k);
   }
 
   for (const k of keys) {
@@ -162,6 +179,25 @@ export function setStatus(data, names, status, opts = {}) {
   }
   next.peopleLog = next.peopleLog.slice(0, 500);
   return next;
+}
+
+/* Put a person's set-aside figures back on the months and the days. Where a
+   figure has arrived since, the newer one stands; held figures only fill gaps. */
+function restoreHeld(next, k) {
+  const held = next.heldFigures && next.heldFigures[k];
+  if (!held) return;
+  next.months = next.months || {};
+  for (const [ym, s] of Object.entries(held.months || {})) {
+    next.months[ym] = next.months[ym] || { stats: {} };
+    next.months[ym].stats = next.months[ym].stats || {};
+    next.months[ym].stats[k] = { ...s, ...(next.months[ym].stats[k] || {}) };
+  }
+  next.activity = next.activity || {};
+  for (const [day, rec] of Object.entries(held.activity || {})) {
+    next.activity[day] = next.activity[day] || {};
+    next.activity[day][k] = { ...rec, ...(next.activity[day][k] || {}) };
+  }
+  delete next.heldFigures[k];
 }
 
 /**

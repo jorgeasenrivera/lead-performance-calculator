@@ -281,7 +281,7 @@ function applyToStore(data, entries, sourceLabel) {
        aliases back and loses the record of which ones somebody had undone. */
     aliases: next.aliases, aliasesAt: next.aliasesAt, aliasesGone: next.aliasesGone,
     stars: next.stars, goals: next.goals, baselines: next.baselines, qualified: next.qualified,
-    excluded: next.excluded, departed: next.departed,
+    excluded: next.excluded, departed: next.departed, heldFigures: next.heldFigures,
     daysOff: next.daysOff, daysOffAt: next.daysOffAt,
     statsExcluded: next.statsExcluded, plateRegistry: next.plateRegistry,
   }));

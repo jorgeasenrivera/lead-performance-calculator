@@ -619,3 +619,42 @@ test("departing somebody whose ignore has no stamp lifts it for good", () => {
   assert.equal(d.unignored["round robin"], "2026-09-03T12:00:00.000Z");
   assert.equal(statusOf(mergeAgainstServer(d, { ...old, rev: 1 }), "Round Robin"), "departed");
 });
+
+/* ---- not ours, said by mistake ----
+   The figures come off the months and the days, so the totals stop counting
+   them, but they are set aside rather than thrown away. Bringing the person
+   back puts every one of them back. */
+test("ignoring sets the figures aside instead of destroying them", () => {
+  const d = setStatus(store(), ["Angel Perez"], "ignored", { at: "2026-09-01T12:00:00.000Z" });
+  assert.equal(d.months["2026-08"].stats["angel perez"], undefined);
+  assert.equal(d.activity["2026-08-19"]["angel perez"], undefined);
+  assert.deepEqual(d.heldFigures["angel perez"].months["2026-08"], { displayName: "Angel Perez", internetUnits: 4 });
+  assert.deepEqual(d.heldFigures["angel perez"].activity["2026-08-19"], { calls: 5, video: 0, tasks: 1 });
+});
+
+test("and bringing them back puts the figures back", () => {
+  const gone = setStatus(store(), ["Angel Perez"], "ignored", { at: "2026-09-01T12:00:00.000Z" });
+  const back = setStatus(gone, ["Angel Perez"], "active", { at: "2026-09-02T12:00:00.000Z" });
+  assert.equal(statusOf(back, "Angel Perez"), "active");
+  assert.deepEqual(back.months["2026-08"].stats["angel perez"], { displayName: "Angel Perez", internetUnits: 4 });
+  assert.deepEqual(back.activity["2026-08-19"]["angel perez"], { calls: 5, video: 0, tasks: 1 });
+  assert.equal(back.heldFigures["angel perez"], undefined);
+});
+
+test("marking a mistaken not-ours as left also restores the figures", () => {
+  const gone = setStatus(store(), ["Angel Perez"], "ignored", { at: "2026-09-01T12:00:00.000Z" });
+  const left = setStatus(gone, ["Angel Perez"], "departed", { at: "2026-09-02T12:00:00.000Z" });
+  assert.equal(left.months["2026-08"].stats["angel perez"].internetUnits, 4);
+});
+
+test("the set-aside figures survive the merge, and go once folded back", () => {
+  const server = { ...store(), rev: 2 };
+  const gone = setStatus(JSON.parse(JSON.stringify(server)), ["Angel Perez"], "ignored", { at: "2026-09-01T12:00:00.000Z" });
+  const merged = mergeAgainstServer(gone, server);
+  assert.ok(merged.heldFigures["angel perez"], "kept through the save");
+  assert.equal(merged.months["2026-08"].stats["angel perez"], undefined);
+  const back = setStatus(merged, ["Angel Perez"], "active", { at: "2026-09-02T12:00:00.000Z" });
+  const merged2 = mergeAgainstServer(back, { ...merged, rev: 3 });
+  assert.equal(merged2.heldFigures["angel perez"], undefined, "folded back, so the parcel goes");
+  assert.equal(merged2.months["2026-08"].stats["angel perez"].internetUnits, 4);
+});
