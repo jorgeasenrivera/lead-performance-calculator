@@ -26,7 +26,11 @@ listed at the top of `.github/workflows/sage-app.yml`; every one of them is
 made on a website and pasted into the repo's Settings → Secrets.
 
 Apple is spoken to with an App Store Connect API key, so no Apple ID login or
-two-factor code is ever needed. That key is different from the push key the
+two-factor code is ever needed. The signing certificate and provisioning
+profile are made once in the browser (Expo uses them unattended but will not
+create the first ones) and kept as secrets: `IOS_DIST_P12_BASE64`,
+`IOS_DIST_P12_PASSWORD`, `IOS_PROFILE_BASE64`. Build numbers are tracked by
+Expo (`appVersionSource: remote`) so every upload is new to TestFlight. That key is different from the push key the
 server uses: one lets Expo sign and upload builds, the other lets the server
 send notifications.
 
