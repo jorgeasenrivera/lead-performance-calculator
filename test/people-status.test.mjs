@@ -588,3 +588,34 @@ test("an empty batch changes nothing", () => {
   assert.equal(mergeManglings(d, [], {}), d);
   assert.equal(mergeManglings(d, null, {}), d);
 });
+
+/* ---- the ignore that could not be undone ----
+   An ignore older than the tombstone window, or one made before stamps existed,
+   carries no ignoredAt. Un-ignoring used to stamp nothing in that case, and the
+   save's merge, a union of ignore lists, put the name straight back. Chase at
+   Driver's Mart Winter Park was the example. */
+import { mergeAgainstServer } from "../api/_store-merge.mjs";
+
+test("un-ignoring somebody whose ignore has no stamp is still stamped", () => {
+  const old = store(); delete old.ignoredAt["round robin"];
+  const d = setStatus(old, ["Round Robin"], "active", { at: "2026-09-03T12:00:00.000Z" });
+  assert.equal(statusOf(d, "Round Robin"), "active");
+  assert.equal(d.unignored["round robin"], "2026-09-03T12:00:00.000Z");
+});
+
+test("and the merge respects it, so they stay back", () => {
+  const server = store(); delete server.ignoredAt["round robin"];
+  server.__storeId = "s"; server.rev = 4;
+  const mine = setStatus(JSON.parse(JSON.stringify(server)), ["Round Robin"], "active", { at: new Date().toISOString() });
+  const merged = mergeAgainstServer(mine, server);
+  assert.equal(statusOf(merged, "Round Robin"), "active");
+  assert.ok(!merged.excluded.some((x) => /round robin/i.test(x)));
+  assert.ok(merged.roster.some((a) => a.name === "Round Robin"));
+});
+
+test("departing somebody whose ignore has no stamp lifts it for good", () => {
+  const old = store(); delete old.ignoredAt["round robin"];
+  const d = setStatus(old, ["Round Robin"], "departed", { at: "2026-09-03T12:00:00.000Z" });
+  assert.equal(d.unignored["round robin"], "2026-09-03T12:00:00.000Z");
+  assert.equal(statusOf(mergeAgainstServer(d, { ...old, rev: 1 }), "Round Robin"), "departed");
+});

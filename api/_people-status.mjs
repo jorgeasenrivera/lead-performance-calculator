@@ -127,8 +127,13 @@ export function setStatus(data, names, status, opts = {}) {
         at, by });
       delete next.returned[k];
       /* Leaving is not the same as never having been here, so an old ignore is
-         lifted rather than left to fight with this. */
-      if (next.ignoredAt[k]) next.unignored[k] = at;
+         lifted rather than left to fight with this. Stamped whenever they WERE
+         ignored, not only when the ignore still carries its own stamp: an ignore
+         older than the tombstone window, or one made before stamps existed, has
+         none, and without this mark the merge's union put the name straight
+         back on the list on every save. That is what "I can't bring them back
+         in" looked like. */
+      if (before[k] === "ignored" || next.ignoredAt[k]) next.unignored[k] = at;
     }
     next.roster = next.roster.filter((a) => !keys.has(nm(a.name)));
     next.excluded = next.excluded.filter((x) => !keys.has(nm(x)));
@@ -137,7 +142,8 @@ export function setStatus(data, names, status, opts = {}) {
 
   if (status === "active") {
     for (const k of keys) {
-      if (next.ignoredAt[k]) next.unignored[k] = at;
+      // Same reasoning as above: the mark is what lets the decision survive the merge.
+      if (before[k] === "ignored" || next.ignoredAt[k]) next.unignored[k] = at;
       if (wasDeparted.has(k)) next.returned[k] = at;
       if (!next.roster.some((a) => nm(a.name) === k)) {
         const prev = wasDeparted.get(k) || {};
