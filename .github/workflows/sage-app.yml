@@ -48,6 +48,7 @@ jobs:
         working-directory: native
     env:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EAS_BUILD_NO_EXPO_GO_WARNING: "true"
       EXPO_ASC_API_KEY_PATH: ${{ github.workspace }}/native/asc-key.p8
       EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -66,7 +67,7 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install the app's packages
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Check the site address was set
         run: |

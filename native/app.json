@@ -15,7 +15,6 @@
     },
     "ios": {
       "bundleIdentifier": "com.sageonline",
-      "buildNumber": "1",
       "supportsTablet": false,
       "infoPlist": {
         "UIBackgroundModes": [
@@ -28,7 +27,6 @@
     },
     "android": {
       "package": "com.sageonline",
-      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2E3A32"
@@ -38,8 +36,7 @@
         "VIBRATE",
         "ACCESS_FINE_LOCATION",
         "CAMERA"
-      ],
-      "googleServicesFile": "./google-services.json"
+      ]
     },
     "plugins": [
       "expo-splash-screen",
