@@ -46,7 +46,9 @@ const INK = "#15211B";
    with the corner up and the phone face-up on the desk is exactly who "you're
    up" is for. */
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: false }),
+  handleNotification: async () => ({
+    shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false,
+  }),
 });
 
 /* The phone's own push token, the kind the API already speaks: raw APNs on iOS
