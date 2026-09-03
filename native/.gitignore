@@ -4,3 +4,4 @@ ios/
 android/
 google-services.json
 *.p8
+credentials.json
