@@ -122,6 +122,36 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
 
+      # Ask Apple whether the App Store Connect key is real before spending a
+      # build on it: sign a token the way Apple's API wants and list the apps.
+      # A 401 here means the key id, the issuer id and the .p8 do not belong
+      # together, which no later step can say this plainly.
+      - name: Check the App Store Connect key with Apple
+        if: inputs.platform == 'ios'
+        run: |
+          node -e '
+            const crypto = require("crypto"), fs = require("fs");
+            const pem = fs.readFileSync("asc-key.p8", "utf8");
+            let key; try { key = crypto.createPrivateKey(pem); } catch (e) {
+              console.log("::error::asc-key.p8 is not a readable private key. Re-paste ASC_API_KEY_P8 from the App Store Connect key file."); process.exit(1); }
+            const now = Math.floor(Date.now() / 1000);
+            const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+            const head = b64({ alg: "ES256", kid: process.env.EXPO_ASC_KEY_ID, typ: "JWT" });
+            const body = b64({ iss: process.env.EXPO_ASC_ISSUER_ID, iat: now, exp: now + 600, aud: "appstoreconnect-v1" });
+            const sig = crypto.sign("sha256", Buffer.from(head + "." + body), { key, dsaEncoding: "ieee-p1363" }).toString("base64url");
+            fetch("https://api.appstoreconnect.apple.com/v1/apps?limit=5", { headers: { Authorization: "Bearer " + head + "." + body + "." + sig } })
+              .then(async (r) => {
+                const t = await r.text();
+                if (r.status !== 200) {
+                  console.log("::error::App Store Connect refused the API key (" + r.status + "). ASC_API_KEY_P8, ASC_KEY_ID and ASC_ISSUER_ID must all come from the same key on App Store Connect → Users and Access → Integrations → Team Keys. The push key from developer.apple.com is a different key and belongs only in Vercel.");
+                  console.log(t.slice(0, 500)); process.exit(1);
+                }
+                const apps = JSON.parse(t).data.map((a) => a.attributes.bundleId);
+                console.log("App Store Connect key accepted. Apps this key can see: " + apps.join(", "));
+                if (!apps.includes("com.sageonline")) console.log("::warning::com.sageonline is not among them yet; the App Store Connect entry may not exist or the key may lack access.");
+              });
+          '
+
       # Ties this folder to a project on the Expo account. Idempotent: the same
       # account and slug resolve to the same project every run.
       - name: Expo project
