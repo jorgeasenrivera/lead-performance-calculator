@@ -29071,6 +29071,13 @@ function AppShell({
    There is nothing dynamic in here to justify the cost: not one interpolation in
    353KB. So it goes in once and stays. */
 const SAGE_CSS = `
+      /* ---- the safe areas, from either source ----
+         In Safari and in the iOS shell the page reads the notch and the home
+         bar itself through env(). Android's WebView does not report them
+         reliably, so the phone shell measures its own insets, including the
+         three-button bar, and sets --shell-inset-*; whichever is larger wins. */
+      :root { --sat:max(env(safe-area-inset-top, 0px), var(--shell-inset-top, 0px));
+        --sab:max(env(safe-area-inset-bottom, 0px), var(--shell-inset-bottom, 0px)); }
       :root {
         --bg: #F5F5F7; --card: #FFFFFF; --ink: #1D1D1F; --ink-2: #6E6E73; --ink-3: #AEAEB2;
         --line: rgba(0,0,0,.08); --green: #30B155; --red: #E5473C; --amber: #C77800; --lime: #C1D730;
@@ -29879,7 +29886,7 @@ const SAGE_CSS = `
         opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
       .ru-sec-h h4 { font-size:12.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); margin:0; }
       .ru-count { font-family:var(--font-display); font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
-      .ru-sheet-foot { padding:14px 24px calc(18px + env(safe-area-inset-bottom, 0px)); background:var(--card);
+      .ru-sheet-foot { padding:14px 24px calc(18px + var(--sab)); background:var(--card);
         border-top:1px solid var(--line); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
       .ru-btn { width:100%; font:inherit; font-size:15px; font-weight:700; padding:13px; border-radius:13px;
         cursor:pointer; border:1px solid var(--blue); background:var(--blue); color:#fff;
@@ -31659,7 +31666,7 @@ const SAGE_CSS = `
          four-field sign-up on a short screen — has to be able to scroll instead
          of having its top cut off, and align-items:center cuts. */
       .login { position:relative; z-index:1; display:flex; justify-content:center;
-        padding-top:env(safe-area-inset-top, 0px); padding-bottom:env(safe-area-inset-bottom, 0px);
+        padding-top:var(--sat); padding-bottom:var(--sab);
         /* border-box, because this sheet sets no global box-sizing and the
            padding was being ADDED to the 100%: an 980px box inside a 900px
            layer, which is what made the screen scroll and put the form 40px
@@ -33114,7 +33121,7 @@ const SAGE_CSS = `
         /* Inside the phone app the page runs under the clock; the header pads
            itself past that strip, which iOS keeps for its own taps, and the
            header's own blur continues up behind the clock. Zero in a browser. */
-        .topbar { padding:calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; gap:10px;
+        .topbar { padding:calc(10px + var(--sat)) 14px 10px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
         /* The <=720px block above still forces topbar-right onto its own
@@ -33139,7 +33146,7 @@ const SAGE_CSS = `
         /* the bar measures 55px and now floats 9px clear of the bottom edge, so
            the help button clears 64px of it before the home-indicator inset. At
            bottom:18px it sat on top of the More tab and swallowed its taps. */
-        .help-fab:not(.inline) { bottom:calc(76px + env(safe-area-inset-bottom, 0px)); }
+        .help-fab:not(.inline) { bottom:calc(76px + var(--sab)); }
         .btn-quiet { padding:7px 10px; }
         /* The sections moved to the chip strip, so the desktop tab control goes —
            but the associate search lives in this same row, and hiding the whole
@@ -33154,7 +33161,7 @@ const SAGE_CSS = `
         /* --- page gets out of the way of the bar --- */
         .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
         .settings, .checkout, .coaching, .plates {
-          padding:16px 14px calc(116px + env(safe-area-inset-bottom, 0px)); }
+          padding:16px 14px calc(116px + var(--sab)); }
         /* --- cards are solid on a phone ---
            The desk's cards are translucent over the backdrop, which reads as
            depth on a wide screen and as washed-out on a phone in daylight. */
@@ -33181,7 +33188,7 @@ const SAGE_CSS = `
            list you tapped from — off screen, and you had to hunt for it. */
         .coach-detail-open { position:fixed; inset:auto 0 0 0; top:56px; z-index:360;
           background:var(--card); border-radius:18px 18px 0 0; overflow-y:auto;
-          overscroll-behavior:contain; padding:16px 14px calc(94px + env(safe-area-inset-bottom, 0px));
+          overscroll-behavior:contain; padding:16px 14px calc(94px + var(--sab));
           box-shadow:0 -8px 40px rgba(16,40,68,.28); animation:coachUp .38s var(--ease-bloop) both; }
         @keyframes coachUp { from { opacity:0; transform:translateY(24px); } to { opacity:1; transform:none; } }
         .coach-close { display:flex; position:sticky; top:0; margin-left:auto; z-index:2;
@@ -33232,7 +33239,7 @@ const SAGE_CSS = `
            underneath it on all four sides. */
         .botnav { position:fixed; left:10px; right:10px; z-index:340; display:flex;
           align-items:flex-end;
-          bottom:calc(9px + env(safe-area-inset-bottom, 0px));
+          bottom:calc(9px + var(--sab));
           padding:7px 5px 8px; border-radius:26px;
           background:rgba(255,255,255,.82); backdrop-filter:blur(22px) saturate(180%);
           -webkit-backdrop-filter:blur(22px) saturate(180%);
@@ -33430,7 +33437,7 @@ const SAGE_CSS = `
         .ru-sheet-head { padding:20px 18px 4px; }
         .ru-sheet-store { font-size:22px; }
         .ru-sec { padding:12px 18px 4px; }
-        .ru-sheet-foot { padding:12px 18px calc(14px + env(safe-area-inset-bottom, 0px)); }
+        .ru-sheet-foot { padding:12px 18px calc(14px + var(--sab)); }
 
         /* --- upload history stacks; its six fixed columns need 643px and so
                dragged the whole page sideways on a phone --- */
@@ -34010,8 +34017,8 @@ const SAGE_CSS = `
 .sf-view{ display:flex; width:100%; min-height:100dvh; align-items:stretch; }
 .sf-body{
   flex:1 1 auto; min-width:0; display:flex; flex-direction:column;
-  padding:calc(18px + env(safe-area-inset-top,0px)) 6px
-          calc(26px + env(safe-area-inset-bottom,0px) + var(--kb,0px)) 22px;
+  padding:calc(18px + var(--sat)) 6px
+          calc(26px + var(--sab) + var(--kb,0px)) 22px;
   /* --kb is the keyboard's height, measured off visualViewport. Growing the
      bottom padding lifts the field, and the transition is what makes it rise
      into place instead of jumping as the keyboard lands. */
@@ -34024,8 +34031,8 @@ const SAGE_CSS = `
 /* ---- the spine ---- */
 .sf-spine{
   flex:0 0 46px; display:flex; flex-direction:column; align-items:center;
-  padding:calc(20px + env(safe-area-inset-top,0px)) 0
-          calc(26px + env(safe-area-inset-bottom,0px) + var(--kb,0px));
+  padding:calc(20px + var(--sat)) 0
+          calc(26px + var(--sab) + var(--kb,0px));
   transition:padding-bottom .26s var(--ease);
 }
 /* the spine's label starts below the help button, which shares this corner */
@@ -34501,7 +34508,7 @@ const SAGE_CSS = `
    Every animation is transform or opacity so the compositor carries it. */
 /* The top clears the camera: the notch, the island, whatever the phone puts
    there, by the phone's own measure, with a floor for phones that report none. */
-.mc{ width:min(430px, 100%); margin:0 auto; padding:max(28px, calc(14px + env(safe-area-inset-top, 0px))) 16px 84px; text-align:left; font-family:var(--font-ui);
+.mc{ width:min(430px, 100%); margin:0 auto; padding:max(28px, calc(14px + var(--sat))) 16px 84px; text-align:left; font-family:var(--font-ui);
   display:flex; flex-direction:column; gap:11px; }
 .mc-head{ display:flex; gap:16px; align-items:flex-start; margin-top:4px; }
 .mc-calhead{ display:flex; align-items:center; gap:6px; font-family:var(--sfmono);
@@ -34685,10 +34692,10 @@ const SAGE_CSS = `
    of the floating pill. */
 .mcf .sf-actions{ width:min(430px,100%); margin:0 auto; }
 .mcf, .mcf button{ font-family:var(--font-ui); }
-.sf-live.mcf{ padding-top:max(clamp(52px,8vh,70px), calc(28px + env(safe-area-inset-top, 0px)));
-  padding-bottom:calc(clamp(24px,5vh,34px) + 62px + env(safe-area-inset-bottom, 0px)); }
-.mc-pill{ bottom:calc(14px + env(safe-area-inset-bottom, 0px)); }
-.mc-tkov{ padding-top:env(safe-area-inset-top, 0px); }
+.sf-live.mcf{ padding-top:max(clamp(52px,8vh,70px), calc(28px + var(--sat)));
+  padding-bottom:calc(clamp(24px,5vh,34px) + 62px + var(--sab)); }
+.mc-pill{ bottom:calc(14px + var(--sab)); }
+.mc-tkov{ padding-top:var(--sat); }
 .mc-offc{ margin-top:0; }
 .mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center; padding:8px 0 18px; }
@@ -34769,7 +34776,7 @@ const SAGE_CSS = `
 .mc-shell .sf-link-quiet{ color:rgba(237,242,234,.42); }
 .mc-shell .mcf-title{ color:#EDF2EA; }
 .mc{ padding-right:44px; }
-.mc-spine{ position:fixed; right:7px; top:max(126px, calc(112px + env(safe-area-inset-top, 0px))); bottom:82px; width:22px; z-index:7; display:flex;
+.mc-spine{ position:fixed; right:7px; top:max(126px, calc(112px + var(--sat))); bottom:82px; width:22px; z-index:7; display:flex;
   flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
 .mc-spine .rt{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.18em;
   color:rgba(237,242,234,.42); writing-mode:vertical-rl; }

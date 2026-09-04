@@ -27,6 +27,7 @@ import * as Device from "expo-device";
 import * as Application from "expo-application";
 import * as Haptics from "expo-haptics";
 import Constants from "expo-constants";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -78,7 +79,20 @@ async function readDeviceId() {
 }
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <Shell />
+    </SafeAreaProvider>
+  );
+}
+
+function Shell() {
   const web = useRef(null);
+  /* The phone's own insets: the notch or island, the home bar, and on Android
+     the three-button bar, measured natively and handed to the page as CSS
+     variables. iOS pages can read these through env() as well; Android's
+     WebView cannot, so this is how edge to edge stays tappable there. */
+  const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
   const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null });
   /* ---- the safe areas belong to the page ----
@@ -119,6 +133,17 @@ export default function App() {
       } catch (e) {}
     })(); true;`, [native]);
   useEffect(() => { if (ready && web.current) web.current.injectJavaScript(handoff); }, [handoff, ready]);
+  const insetJs = useMemo(() => `
+    (function(){
+      try {
+        var r = document.documentElement.style;
+        r.setProperty("--shell-inset-top", "${Math.round(insets.top)}px");
+        r.setProperty("--shell-inset-bottom", "${Math.round(insets.bottom)}px");
+        r.setProperty("--shell-inset-left", "${Math.round(insets.left)}px");
+        r.setProperty("--shell-inset-right", "${Math.round(insets.right)}px");
+      } catch (e) {}
+    })(); true;`, [insets.top, insets.bottom, insets.left, insets.right]);
+  useEffect(() => { if (ready && web.current) web.current.injectJavaScript(insetJs); }, [insetJs, ready]);
 
   /* Android's back button walks the site's history rather than leaving. */
   useEffect(() => {
@@ -160,7 +185,7 @@ export default function App() {
 
   return (
     <View style={[styles.root, { backgroundColor: chrome }]}>
-      <StatusBar style={lightChrome ? "dark" : "light"} backgroundColor={chrome} />
+      <StatusBar style={lightChrome ? "dark" : "light"} translucent backgroundColor="transparent" />
       <WebView
         ref={web}
         source={{ uri: SITE }}
@@ -168,7 +193,7 @@ export default function App() {
         onLoadEnd={() => { setReady(true); SplashScreen.hideAsync().catch(() => {}); }}
         onMessage={onMessage}
         onShouldStartLoadWithRequest={onShouldStart}
-        injectedJavaScriptBeforeContentLoaded={handoff}
+        injectedJavaScriptBeforeContentLoaded={handoff + insetJs}
         /* Sign in once. The page's own storage is what keeps the session. */
         domStorageEnabled
         sharedCookiesEnabled
