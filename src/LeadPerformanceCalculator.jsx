@@ -787,6 +787,7 @@ const PIX = {
      say "ask a question" has been a featureless blob. */
   question:  ["01110","10001","00110","00000","00100"],
   plus:      ["00100","00100","11111","00100","00100"],
+  minus:     ["00000","00000","11111","00000","00000"],
   arrowup:   ["00100","01110","11111","00100","00100"],
   arrowdown: ["00100","00100","11111","01110","00100"],
   arrow:     ["00100","00110","11111","00110","00100"],
@@ -13871,6 +13872,725 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
 /* =========================================================================
    FloorBoard — the manager board. Runs the event engine while it's open.
    ========================================================================= */
+/* =========================================================================
+   The room on a phone.
+
+   The manager's Live Floor on a phone is one screen: the drawn plan, the line
+   under it as the same rail the salesperson sees while waiting, and the day's
+   coverage. Everything else is a pop in the centre of the screen: a person,
+   a table, an ask, the whole line, the schedule, the record, the sign-in
+   code, the ups, the roster. Nothing scrolls off under a thumb.
+
+   Desktop keeps the console and the lists. This is only ever rendered when the
+   viewport is a phone's.
+   ========================================================================= */
+function usePhoneLayout() {
+  const q = "(max-width: 700px)";
+  const [on, setOn] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(q).matches : false));
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const m = window.matchMedia(q);
+    const f = () => setOn(m.matches);
+    if (m.addEventListener) m.addEventListener("change", f); else m.addListener(f);
+    return () => { if (m.removeEventListener) m.removeEventListener("change", f); else m.removeListener(f); };
+  }, []);
+  return on;
+}
+
+/* One colour per tag, so a manager can look down the line and go straight to
+   the blue one. Languages first, then earned strengths, then skills; a custom
+   tag typed on the desk takes a colour from its own name. */
+const FR_TAG_COLOR = {
+  SPAN: "#2E7DE0", HAIT: "#1BA7A0", PORT: "#2F9E8F", FREN: "#3B6FD4", ARAB: "#0F8FA8", URDU: "#2A6FB8", HIND: "#2A6FB8",
+  MAND: "#1E7FA0", VIET: "#1E7FA0", RUSS: "#2A6FB8", GERM: "#3B6FD4", ITAL: "#3B6FD4", TAGA: "#1E7FA0", KORE: "#1E7FA0",
+  JAPA: "#1E7FA0", POLI: "#2A6FB8", SINH: "#1E7FA0", ASL: "#2E7DE0",
+  closer: "#E4C98D", phone: "#EB6834", internet: "#6C5CE7", video: "#E0559A",
+  trucks: "#7C8B3A", finance: "#8E5BD6", ev: "#1BAF7A", fleet: "#5B6874", firsttime: "#C98A00",
+};
+const FR_TAG_LIGHT = new Set(["closer"]);
+const frTagLabel = (t) => LANG_NAMES[String(t).toUpperCase()]
+  || (STRENGTH_METRICS.find((x) => x.id === t) || {}).label
+  || (DEFAULT_TAGS.find((x) => x.id === t) || {}).label
+  || String(t);
+const frTagColor = (t) => FR_TAG_COLOR[t] || FR_TAG_COLOR[langCode(t)] || FR_TAG_COLOR[String(t).toLowerCase()] || `hsl(${hueFromName(String(t))} 50% 45%)`;
+const frTagLight = (t) => FR_TAG_LIGHT.has(t) || FR_TAG_LIGHT.has(String(t).toLowerCase());
+const frTime = (iso) => {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleTimeString("en-US", { timeZone: STORE_TZ, hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, "");
+};
+const FR_MOVE_REASONS = ["Language match", "Closer", "Manager call"];
+const FR_UP_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
+
+/* The pop: the one card that answers a tap, in the centre, over a dimmed room. */
+function FrPop({ title, onClose, children, cls }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="fr-pop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={"fr-sheet" + (cls ? " " + cls : "")} role="dialog" aria-label={title}>
+        <button type="button" className="fr-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
+        {children}
+      </div>
+    </div>, document.body);
+}
+
+/* The line as the salesperson sees it: a rail from the screen's left edge to
+   the door, the head of the line biggest, the flow toward the door, and the
+   same spring when somebody joins or takes an up. When the tail of a long line
+   runs out of rail it bunches at the start, and a tap on the bunch opens the
+   whole line as a list. */
+function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch }) {
+  const ref = useRef(null);
+  const posOf = (i) => { const x = 91 - i * 15; return x >= 24 ? x : 24 - Math.ceil((24 - x) / 15) * 6; };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const place = () => {
+      const w = el.offsetWidth;
+      const tail = people.length ? posOf(people.length - 1) : 91;
+      el.style.setProperty("--dA", Math.max(8, (w * tail) / 100 - 26) + "px");
+      el.style.setProperty("--bX", ((w * 91) / 100 + 12) + "px");
+      el.style.setProperty("--dB", (w - 16) + "px");
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [people.length]);   // eslint-disable-line
+  return (
+    <div className="fr-rail" ref={ref}>
+      <s className="fa" /><s className="fa d2" /><s className="fb" /><s className="fb d2" />
+      {people.map((p, i) => {
+        const bunched = (91 - i * 15) < 24;
+        const c = colorOf(p.id);
+        const nm = nameOf(p.id);
+        const nudged = p.nudgedAt && qMinsSince(p.nudgedAt) < 10;
+        return (
+          <button key={p.id} type="button"
+            className={"fr-pip" + (i === 0 ? " hd" : "") + (bunched ? " bunch" : "") + (c ? " tg" : "") + (c && lightOf(p.id) ? " lt" : "")}
+            style={{ left: posOf(i) + "%", zIndex: 40 - i, background: c || undefined }}
+            onClick={() => (bunched ? onBunch() : onPick(p.id))}
+            aria-label={nm + (bunched ? ", and the rest of the line" : "")}>
+            {initialsOf(nm)}
+            {nudged && <i className="fr-badge warn"><PixIcon glyph="warn" size={9} /></i>}
+          </button>
+        );
+      })}
+      <span className="fr-raildoor">DOOR</span>
+    </div>
+  );
+}
+
+function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName, act, busy, date, userName,
+  identities, resetPin, regenToken, nudge, addPerson, removePerson, decline, setFlag, onData, asking }) {
+  const plan = floorPlanOf(config, store.id);
+  const managers = (data.roster || []).filter((a) => a.roleId === "manager").map((a) => ({ id: a.id, name: a.name }));
+  const asks = activeAssists(row);
+  useAssistTick(asks.length > 0 || line.some((p) => p.status === "customer"));
+  const [pop, setPop] = useState(null);
+  const [reseat, setReseat] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [pendingReason, setPendingReason] = useState(null);
+  const [needReason, setNeedReason] = useState(false);
+  const [ref, setRef] = useState("");
+  const [sendPick, setSendPick] = useState(false);
+  const close = useCallback(() => { setPop(null); setNeedReason(false); setSendPick(false); }, []);
+  const pushH = (cur, ev) => { cur.history = cur.history || []; cur.history.push({ t: qNowIso(), ...ev }); };
+
+  /* ---- who is who, and what colour they wear ---- */
+  const rosterOf = (id) => (row.roster || []).find((r) => r.id === id) || {};
+  const tagsOf = (id) => {
+    const r = rosterOf(id);
+    const custom = ((data && data.repTags) || {})[id] || [];
+    return [...(r.langs || []), ...(r.strengths || []), ...(r.skills || []), ...custom].filter(Boolean);
+  };
+  const colorOf = (id) => { const t = tagsOf(id); return t.length ? frTagColor(t[0]) : null; };
+  const lightOf = (id) => { const t = tagsOf(id); return t.length ? frTagLight(t[0]) : false; };
+  const avStyle = (id) => {
+    const c = colorOf(id);
+    return c ? { background: c, color: lightOf(id) ? "#15211B" : "#fff" } : { background: `hsl(${hueFromName(realName(id))} 52% 42%)` };
+  };
+  const pills = (id) => {
+    const t = tagsOf(id);
+    return t.map((x, k) => k === 0
+      ? <span key={k} className={"fr-tagp" + (frTagLight(x) ? " lt" : "")} style={{ background: frTagColor(x) }}>{frTagLabel(x)}</span>
+      : <span key={k} className="fr-tagd" style={{ background: frTagColor(x) }} title={frTagLabel(x)} />);
+  };
+
+  const waiting = withoutTest(line).filter((p) => p.status === "waiting");
+  const offRail = withoutTest(line).filter((p) => p.status === "lunch" || p.status === "away");
+  const byTable = new Map(asks.filter((a) => a.table != null).map((a) => [String(a.table), a]));
+  const seatByTable = new Map(line.filter((p) => p.status === "customer" && p.table != null).map((p) => [String(p.table), p]));
+  const flyAsks = asks.filter((a) => a.kind !== "to");
+  const toAsks = asks.filter((a) => a.kind === "to");
+  const isHead = (id) => waiting.length > 0 && waiting[0].id === id;
+  const mins = (iso) => Math.max(0, Math.floor((Date.now() - new Date(iso || Date.now()).getTime()) / 60000));
+
+  /* ---- what a tap does ---- */
+  const takeUp = (id, reason) => {
+    const rf = ref.trim();
+    act((cur) => {
+      const i = (cur.line || []).findIndex((x) => x.id === id);
+      if (i < 0) return cur;
+      const p = cur.line[i];
+      pushH(cur, { action: "assigned", id, who: p.label, by: "manager", reason: reason || undefined, ref: rf });
+      const [q] = cur.line.splice(i, 1);
+      q.joinedAt = qNowIso(); q.status = "waiting"; q.statusAt = qNowIso(); q.awayReason = null; q.autoFlip = false; q.appt = false; q.proposal = false;
+      cur.line.push(q);
+      return cur;
+    }, { action: reason ? "Floor: assigned (out of order)" : "Floor: assigned next", detail: realName(id) + (reason ? ": " + reason : "") + (rf ? " · " + rf : "") });
+    setRef(""); close();
+  };
+  const moveInLine = (id, dir) => {
+    const i = line.findIndex((p) => p.id === id); const j = i + dir;
+    if (i < 0 || j < 0 || j >= line.length) return;
+    act((cur) => {
+      const a = cur.line || []; const ci = a.findIndex((p) => p.id === id); const cj = ci + dir;
+      if (ci < 0 || cj < 0 || cj >= a.length) return cur;
+      const [p] = a.splice(ci, 1); a.splice(cj, 0, p);
+      pushH(cur, { action: "reordered", id, who: p.label, by: "manager", detail: `to #${cj + 1}`, dir: dir < 0 ? "up" : "down" });
+      return cur;
+    }, { action: "Floor: reordered", detail: `${realName(id)} to #${j + 1}` });
+    setPendingReason({ id });
+    setPop({ k: "line" });
+  };
+  const giveReason = (why) => {
+    const who = pendingReason && pendingReason.id;
+    if (!who) return;
+    act((cur) => {
+      const h = cur.history || [];
+      for (let i = h.length - 1; i >= 0; i--) {
+        if (h[i].action === "reordered" && h[i].id === who && !h[i].reason) { h[i].reason = why; break; }
+      }
+      return cur;
+    });
+    setPendingReason(null);
+  };
+  const claimAsk = (a) => act((cur) => {
+    const x = (cur.assists || []).find((y) => y.id === a.id);
+    if (x && !x.doneAt && !x.claimedBy) { x.claimedBy = userName || "Manager"; x.claimedAt = qNowIso(); }
+    return cur;
+  }, { action: "Floor: assist claimed", detail: `${a.byName} · ${assistWhere(a)}` });
+  const doneAsk = (a) => { act((cur) => {
+    const x = (cur.assists || []).find((y) => y.id === a.id);
+    if (x && !x.doneAt) x.doneAt = qNowIso();
+    return cur;
+  }, { action: "Floor: assist handled", detail: `${a.byName} · ${assistWhere(a)}` }); close(); };
+  const sendAsk = (a, m) => { act((cur) => {
+    const x = (cur.assists || []).find((y) => y.id === a.id);
+    if (x && !x.doneAt) { x.claimedBy = m.name; x.claimedAt = qNowIso(); x.sentBy = userName || "Manager"; }
+    return cur;
+  }, { action: "Floor: assist sent", detail: `${a.byName} · ${assistWhere(a)} → ${m.name}` }); setSendPick(false); };
+  const skipAsk = (a) => { act((cur) => {
+    const x = (cur.assists || []).find((y) => y.id === a.id);
+    if (x && !x.doneAt) { x.doneAt = qNowIso(); x.skipped = true; x.skippedBy = userName || "Manager"; }
+    return cur;
+  }, { action: "Floor: assist skipped", detail: `${a.byName} · ${assistWhere(a)}` }); close(); };
+  /* The desk doing its own FlyBy or T.O. at a table: the ask is raised and
+     claimed in one go, so the room shows the manager on the way and the record
+     keeps that the table was visited. */
+  const raiseAsk = (kind, table) => { act((cur) => {
+    cur.assists = cur.assists || [];
+    cur.assists.push({ id: uid(), t: qNowIso(), kind, byId: null, byName: userName || "Manager", table, spot: "floor", note: null,
+      claimedBy: userName || "Manager", claimedAt: qNowIso(), fromDesk: true });
+    return cur;
+  }, { action: "Floor: " + (kind === "to" ? "T.O." : "FlyBy"), detail: `Table ${table} · ${userName || "Manager"}` }); close(); };
+  const reseatTo = (n) => {
+    const from = reseat;
+    setReseat(null);
+    act((cur) => {
+      const p = (cur.line || []).find((x) => x.id === from);
+      if (p && p.status === "customer") p.table = n;
+      return cur;
+    }, { action: "Floor: re-seated", detail: `${realName(from)} → ${n}` });
+  };
+  const tapTable = (t) => {
+    if (reseat) { reseatTo(t.n); return; }
+    const a = byTable.get(String(t.n));
+    if (a) { setPop({ k: "ask", id: a.id }); return; }
+    if (seatByTable.get(String(t.n))) setPop({ k: "table", n: t.n });
+  };
+
+  /* ---- the plan, zoomed and panned ---- */
+  const vpRef = useRef(null);
+  const [vpW, setVpW] = useState(0);
+  useEffect(() => {
+    const el = vpRef.current;
+    if (!el) return undefined;
+    const measure = () => setVpW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  /* The plan is drawn for a desk. On a phone it keeps those proportions and
+     is fitted to the viewport, so the room does not squash; pinch or the two
+     buttons zoom, and the viewport pans. */
+  const stretch = (plan && plan.stretch) || 1;
+  const natW = Math.max(vpW, 560) * stretch;
+  const natH = 340;
+  const fit = vpW > 0 ? Math.min(vpW / natW, 280 / natH) : 1;
+  const z = zoom * fit;
+  const bump = (d) => setZoom((v) => Math.min(2.6, Math.max(0.7, +(v * (d > 0 ? 1.25 : 0.8)).toFixed(3))));
+
+  /* ---- the day ---- */
+  const hours = useMemo(() => coverageByHour({ store, line, history: row.history }), [store, line, row.history]);
+  const gaps = hours.filter((x) => x.state === "gap").length;
+  const thin = hours.filter((x) => x.state === "thin").length;
+  const nowH = new Date().getHours();
+  const upsToday = (row.history || []).filter((e) => FR_UP_ACTIONS.has(e.action) && e.id && !isTestId(e.id)).length;
+  const inLine = new Map(line.map((p) => [p.id, p]));
+  const scheduled = salesRoster.filter((a) => !isOff(data, a.id, date));
+  const inButOff = salesRoster.filter((a) => isOff(data, a.id, date) && inLine.has(a.id));
+  const offToday = salesRoster.filter((a) => isOff(data, a.id, date) && !inLine.has(a.id));
+  const notInLine = salesRoster.filter((a) => !inLine.has(a.id));
+  const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const url = floorSignInUrl(store.id, date, row.token);
+
+  const statusOf = (p) => {
+    if (!p) return null;
+    const cls = p.status === "customer" ? "cust" : p.status === "lunch" ? "lunch" : p.status === "away" ? "away" : "in";
+    const label = p.status === "customer" ? "with guest" : p.status === "lunch" ? "lunch" : p.status === "away" ? "away" : "in";
+    return <span className={"fr-st " + cls}>{label}</span>;
+  };
+
+  /* ---- the record: everything today, newest first ---- */
+  const record = useMemo(() => {
+    const out = [];
+    for (const e of row.history || []) {
+      if (!e.t) continue;
+      if (isTestId(e.id)) continue;
+      const nm = e.id ? realName(e.id) : (e.who || "");
+      let r = null;
+      switch (e.action) {
+        case "signed-in": r = { g: "door", c: "", what: `${nm} signed in`, who: e.by === "manager" ? "put on by the desk" : "" }; break;
+        case "assigned": r = { g: "handshake", c: "up", what: `${nm} took an up`, who: [e.ref, e.reason].filter(Boolean).join(" · ") || "next in line" }; break;
+        case "auto-checkin": r = { g: "handshake", c: "up", what: `${nm} checked in a guest`, who: e.ref || "" }; break;
+        case "auto-appt-show": r = { g: "handshake", c: "up", what: `${nm} appointment showed`, who: e.ref || "" }; break;
+        case "reordered": r = { g: e.dir === "down" ? "arrowdown" : "arrowup", c: "mv", what: `${nm} ${e.dir === "down" ? "down" : "up"} the line`, who: [e.reason, e.detail].filter(Boolean).join(" · ") }; break;
+        case "declined": r = { g: "close", c: "warn", what: `${nm} declined`, who: "to the back" }; break;
+        case "lunch": r = { g: "lunch", c: "lunch", what: `${nm} on lunch`, who: "" }; break;
+        case "away": r = { g: "away", c: "lunch", what: `${nm} away`, who: "" }; break;
+        case "back": r = { g: "dot", c: "", what: `${nm} back in line`, who: e.from ? "from " + e.from : "" }; break;
+        case "nudged": r = { g: "warn", c: "warn", what: `${nm} nudged`, who: "by the desk" }; break;
+        case "timer-pass": r = { g: "clock", c: "", what: `${nm} passed on the timer`, who: "" }; break;
+        case "removed": case "left": r = { g: "door", c: "", what: `${nm} off the floor`, who: "" }; break;
+        case "cleared": r = { g: "close", c: "warn", what: "Line cleared", who: "" }; break;
+        case "closed": r = { g: "check", c: "up", what: `${nm} · ${OPP_OUTCOMES[e.outcome] || e.outcome || "closed"}`, who: "" }; break;
+        default: r = null;
+      }
+      if (r) out.push({ ...r, t: e.t });
+    }
+    for (const a of (row.assists || [])) {
+      const where = a.table != null ? `Table ${a.table}` : "on the lot";
+      const kind = a.kind === "to" ? "T.O." : "FlyBy";
+      const tail = a.doneAt ? (a.skipped ? `skipped by ${a.skippedBy || "the desk"}` : `handled by ${a.claimedBy || "the desk"}`)
+        : a.claimedBy ? `${a.claimedBy} on the way` : "open";
+      out.push({ g: a.kind === "to" ? "swap" : "bolt", c: a.kind === "to" ? "to" : "fly", what: `${kind} · ${where}`, who: `${a.byName || "someone"} asked · ${tail}`, t: a.t });
+    }
+    out.sort((a, b) => String(b.t).localeCompare(String(a.t)));
+    return out;
+  }, [row.history, row.assists, realName]);
+
+  const personPop = (id) => {
+    const p = inLine.get(id);
+    if (!p) return null;
+    const nm = realName(id);
+    const head = isHead(id);
+    const w = qWaitLabel(qMinsSince(p.status === "waiting" ? p.joinedAt : p.statusAt));
+    const idx = line.findIndex((x) => x.id === id);
+    return (
+      <>
+        <div className="fr-hd">
+          <span className="fr-av" style={avStyle(id)}>{initialsOf(nm)}</span>
+          <div className="fr-hdt">
+            <div className="fr-nm">{nm}</div>
+            <div className="fr-meta">{head && p.status === "waiting" && <span className="fr-next">NEXT</span>}{pills(id)}{statusOf(p)}<span className="fr-w">{w}</span></div>
+          </div>
+        </div>
+        {needReason ? (
+          <div className="fr-why">
+            {FR_MOVE_REASONS.map((r) => <button key={r} type="button" onClick={() => takeUp(id, r)}>{r}</button>)}
+          </div>
+        ) : (
+          <div className="fr-acts">
+            {p.status === "waiting" && (
+              <>
+                <input className="fr-ref" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Stock # or lead name" inputMode="text" />
+                <button type="button" className="fr-b pri" disabled={busy} onClick={() => (head ? takeUp(id, null) : setNeedReason(true))}>Got one</button>
+              </>
+            )}
+            {p.status === "customer" && p.autoFlip && <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "waiting"); close(); }}>Not a customer</button>}
+            <button type="button" className="fr-b" disabled={busy || idx <= 0} onClick={() => moveInLine(id, -1)}><PixIcon glyph="arrowup" size={16} />Move up</button>
+            <button type="button" className="fr-b" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(id, 1)}><PixIcon glyph="arrowdown" size={16} />Move down</button>
+            {p.status === "waiting" ? (
+              <>
+                <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "lunch"); close(); }}><PixIcon glyph="lunch" size={16} />Lunch</button>
+                <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "away"); close(); }}><PixIcon glyph="away" size={16} />Away</button>
+                <button type="button" className="fr-b warn" disabled={busy} onClick={() => { decline(id); close(); }}>Decline</button>
+              </>
+            ) : (
+              <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "waiting"); close(); }}>Back in line</button>
+            )}
+            <button type="button" className="fr-b warn" disabled={busy} onClick={() => { removePerson(id); close(); }}>Off the floor</button>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const tablePop = (n) => {
+    const p = seatByTable.get(String(n));
+    if (!p) return null;
+    const nm = realName(p.id);
+    return (
+      <>
+        <div className="fr-hd">
+          <span className="fr-av" style={avStyle(p.id)}>{initialsOf(nm)}</span>
+          <div className="fr-hdt">
+            <div className="fr-nm">{nm}</div>
+            <div className="fr-meta"><span className="fr-st cust">table {n}</span><span className="fr-st cust">with guest</span><span className="fr-w">{qWaitLabel(mins(p.statusAt))}</span></div>
+          </div>
+        </div>
+        <div className="fr-acts">
+          <button type="button" className="fr-b pri" disabled={busy} onClick={() => { setFlag(p.id, "waiting"); close(); }}>Guest left</button>
+          <button type="button" className="fr-b seat" disabled={busy} onClick={() => { setReseat(p.id); close(); }}><PixIcon glyph="arrow" size={16} />Re-seat</button>
+          <button type="button" className="fr-b fly" disabled={busy} onClick={() => raiseAsk("fly", n)}><PixIcon glyph="bolt" size={16} />FlyBy</button>
+          <button type="button" className="fr-b to" disabled={busy} onClick={() => raiseAsk("to", n)}><PixIcon glyph="swap" size={16} />T.O.</button>
+        </div>
+      </>
+    );
+  };
+
+  const askPop = (id) => {
+    const a = asks.find((x) => x.id === id);
+    if (!a) return <p className="fr-empty">That one is handled.</p>;
+    const to = a.kind === "to";
+    return (
+      <>
+        <div className="fr-hd">
+          <span className={"fr-av " + (to ? "to" : "fly")}><PixIcon glyph={to ? "swap" : "bolt"} size={20} /></span>
+          <div className="fr-hdt">
+            <div className="fr-nm">{to ? "T.O." : "FlyBy"} · {a.table != null ? `Table ${a.table}` : "on the lot"}</div>
+            <div className="fr-meta"><span className={"fr-st " + (to ? "away" : "cust")}>{a.byName || "someone"}</span>{a.note && <span className="fr-w">{a.note}</span>}<span className="fr-w">{fmtAssistAge(assistAge(a))}</span>{a.claimedBy && <span className="fr-st in">{a.claimedBy.split(" ")[0]} on the way</span>}</div>
+          </div>
+        </div>
+        {sendPick ? (
+          <div className="fr-why">
+            {managers.filter((m) => m.name !== userName).map((m) => <button key={m.id} type="button" onClick={() => sendAsk(a, m)}>{m.name}</button>)}
+            {managers.filter((m) => m.name !== userName).length === 0 && <span className="fr-empty">Nobody else is on the desk.</span>}
+          </div>
+        ) : (
+          <div className="fr-acts">
+            {a.claimedBy
+              ? <button type="button" className="fr-b pri" disabled={busy} onClick={() => doneAsk(a)}>Done</button>
+              : <button type="button" className="fr-b pri" disabled={busy} onClick={() => claimAsk(a)}>On my way</button>}
+            <button type="button" className="fr-b" disabled={busy} onClick={() => setSendPick(true)}>Send someone</button>
+            <button type="button" className="fr-b warn" disabled={busy} onClick={() => skipAsk(a)}>Skip</button>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const asksPop = (kind) => {
+    const list = kind === "to" ? toAsks : flyAsks;
+    return (
+      <>
+        <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">{kind === "to" ? "T.O." : "FlyBy"}</div></div></div>
+        <div className="fr-list">
+          {list.length === 0 && <p className="fr-empty">Nobody is asking.</p>}
+          {list.map((a) => (
+            <button key={a.id} type="button" className="fr-row" onClick={() => setPop({ k: "ask", id: a.id })}>
+              <span className={"fr-av sm " + (a.kind === "to" ? "to" : "fly")}><PixIcon glyph={a.kind === "to" ? "swap" : "bolt"} size={16} /></span>
+              <span className="fr-rowt"><span className="fr-nm">{a.table != null ? `Table ${a.table}` : "On the lot"}</span><span className="fr-meta"><span className="fr-w">{a.byName}</span>{a.claimedBy && <span className="fr-st in">{a.claimedBy.split(" ")[0]} on the way</span>}</span></span>
+              <span className="fr-wt">{fmtAssistAge(assistAge(a))}</span>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  };
+
+  const linePop = () => (
+    <>
+      <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">In line</div></div></div>
+      {pendingReason && (
+        <div className="fr-why">
+          {FR_MOVE_REASONS.map((r) => <button key={r} type="button" onClick={() => giveReason(r)}>{r}</button>)}
+        </div>
+      )}
+      <div className="fr-list grid">
+        {withoutTest(line).filter((p) => p.status !== "customer" && p.status !== "lunch" && p.status !== "away").map((p, i) => {
+          const nm = realName(p.id);
+          const idx = line.findIndex((x) => x.id === p.id);
+          return (
+            <div key={p.id} className="fr-row">
+              <span className="fr-rk">{i + 1}</span>
+              <button type="button" className="fr-av sm" style={avStyle(p.id)} onClick={() => setPop({ k: "person", id: p.id })}>{initialsOf(nm)}</button>
+              <button type="button" className="fr-rowt" onClick={() => setPop({ k: "person", id: p.id })}><span className="fr-nm">{nm}</span><span className="fr-meta">{pills(p.id)}</span></button>
+              <span className="fr-wt">{qWaitLabel(qMinsSince(p.joinedAt))}</span>
+              <span className="fr-mv">
+                <button type="button" disabled={busy || idx <= 0} onClick={() => moveInLine(p.id, -1)} aria-label="Move up"><PixIcon glyph="arrowup" size={14} /></button>
+                <button type="button" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(p.id, 1)} aria-label="Move down"><PixIcon glyph="arrowdown" size={14} /></button>
+              </span>
+            </div>
+          );
+        })}
+        {offRail.map((p) => {
+          const nm = realName(p.id);
+          return (
+            <div key={p.id} className="fr-row off">
+              <span className="fr-rk" />
+              <button type="button" className="fr-av sm" style={{ background: "rgba(21,33,27,.12)", color: "#5C6660" }} onClick={() => setPop({ k: "person", id: p.id })}>{initialsOf(nm)}</button>
+              <button type="button" className="fr-rowt" onClick={() => setPop({ k: "person", id: p.id })}><span className="fr-nm">{nm}</span><span className="fr-meta">{statusOf(p)}</span></button>
+              <span className="fr-wt">{qWaitLabel(qMinsSince(p.statusAt))}</span>
+              <span className="fr-mv" />
+            </div>
+          );
+        })}
+        {withoutTest(line).length === 0 && <p className="fr-empty">Nobody is on the floor yet.</p>}
+      </div>
+      {(() => {
+        const moves = record.filter((r) => r.c === "mv").slice(0, 4);
+        return moves.length ? (
+          <div className="fr-rec">
+            {moves.map((r, i) => <div key={i}><b>{r.what}</b>{r.who ? ` · ${r.who}` : ""} · {frTime(r.t)}</div>)}
+          </div>
+        ) : null;
+      })()}
+    </>
+  );
+
+  const covPop = () => {
+    const group = (title, list, action) => list.length > 0 && (
+      <>
+        <div className="fr-sec">{title} · {list.length}</div>
+        {list.map((a) => {
+          const p = inLine.get(a.id);
+          return (
+            <div key={a.id} className={"fr-row sched" + (!p && action === "off" ? " off" : "")}>
+              <span className="fr-av sm" style={avStyle(a.id)}>{initialsOf(a.name)}</span>
+              <span className="fr-rowt"><span className="fr-nm">{a.name}</span></span>
+              {p ? statusOf(p)
+                : action === "off" ? <span className="fr-st off">off</span>
+                : <button type="button" className="fr-b warn sm" disabled={busy} onClick={() => addPerson(a.id)}>Put on</button>}
+            </div>
+          );
+        })}
+      </>
+    );
+    return (
+      <>
+        <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Coverage today</div></div></div>
+        {hours.length > 0 && (
+          <>
+            <div className="fr-bighours">
+              {hours.map((x) => <i key={x.h} className={x.state + (x.h === nowH ? " now" : "")} title={x.state === "ahead" ? `${hourLabel(x.h)} · not yet` : `${hourLabel(x.h)} · ${x.n} on the floor`} />)}
+            </div>
+            <div className="fr-hrs">{hours.map((x) => <span key={x.h}>{x.h % 12 || 12}</span>)}</div>
+          </>
+        )}
+        <div className="fr-list">
+          {group("Scheduled today", scheduled, "put")}
+          {group("In, marked off today", inButOff, "in")}
+          {group("Off today", offToday, "off")}
+        </div>
+      </>
+    );
+  };
+
+  const recPop = () => (
+    <>
+      <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Record</div></div></div>
+      <div className="fr-list">
+        {record.length === 0 && <p className="fr-empty">Nothing yet today.</p>}
+        {record.map((r, i) => (
+          <div key={i} className="fr-row rec">
+            <span className={"fr-ic " + r.c}><PixIcon glyph={r.g} size={16} /></span>
+            <span className="fr-rowt"><span className="fr-what">{r.what}</span>{r.who && <span className="fr-who">{r.who}</span>}</span>
+            <span className="fr-wt">{frTime(r.t)}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
+  const upsPop = () => {
+    const by = {};
+    for (const e of row.history || []) {
+      if (!FR_UP_ACTIONS.has(e.action) || !e.id || isTestId(e.id)) continue;
+      const b = by[e.id] || (by[e.id] = { id: e.id, n: 0, refs: [] });
+      b.n += 1; if (e.ref) b.refs.push(e.ref);
+    }
+    const rows = Object.values(by).sort((a, b) => b.n - a.n || realName(a.id).localeCompare(realName(b.id)));
+    return (
+      <>
+        <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Ups today · {upsToday}</div></div></div>
+        <div className="fr-list">
+          {rows.length === 0 && <p className="fr-empty">Nobody has taken an up yet.</p>}
+          {rows.map((r) => (
+            <div key={r.id} className="fr-row sched">
+              <span className="fr-av sm" style={avStyle(r.id)}>{initialsOf(realName(r.id))}</span>
+              <span className="fr-rowt"><span className="fr-nm">{realName(r.id)}</span>{r.refs.length > 0 && <span className="fr-who">{r.refs.join(" · ")}</span>}</span>
+              <span className="fr-n">{r.n}</span>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  };
+
+  const codePop = () => (
+    <>
+      <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Sign-in code</div></div></div>
+      <div className="fr-qr"><QueueQR url={url} cell={5} /></div>
+      <div className="fr-acts">
+        <button type="button" className="fr-b pri" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print</button>
+        <button type="button" className="fr-b" onClick={() => window.open(url, "_blank")}>Open page</button>
+        <button type="button" className="fr-b warn" onClick={regenToken}>New code</button>
+      </div>
+    </>
+  );
+
+  const [rosterTab, setRosterTab] = useState("floor");
+  const rosterPop = () => (
+    <>
+      <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Roster</div></div></div>
+      <div className="fr-tabs">
+        {[["floor", "Put on"], ["phones", "Phones" + (asking > 0 ? " · " + asking : "")], ["pins", "PINs"]].map(([k, l]) => (
+          <button key={k} type="button" className={rosterTab === k ? "on" : ""} onClick={() => setRosterTab(k)}>{l}</button>
+        ))}
+      </div>
+      {rosterTab === "floor" && (
+        <div className="fr-list">
+          {notInLine.length === 0 && <p className="fr-empty">Everyone is on the floor.</p>}
+          {notInLine.map((a) => (
+            <div key={a.id} className="fr-row sched">
+              <span className="fr-av sm" style={avStyle(a.id)}>{initialsOf(a.name)}</span>
+              <span className="fr-rowt"><span className="fr-nm">{a.name}</span><span className="fr-meta">{pills(a.id)}{isOff(data, a.id, date) && <span className="fr-st off">off today</span>}</span></span>
+              <button type="button" className="fr-b sm" disabled={busy} onClick={() => addPerson(a.id)}>Put on</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {rosterTab === "phones" && <div className="fr-phones"><FloorPhones store={store} roster={salesRoster} onClose={() => setRosterTab("floor")} /></div>}
+      {rosterTab === "pins" && (
+        <div className="fr-list">
+          {pinPeople.length === 0 && <p className="fr-empty">No PINs yet. They are made the first time each person signs in.</p>}
+          {pinPeople.map((p) => (
+            <div key={p.id} className="fr-row sched">
+              <span className="fr-av sm" style={avStyle(p.id)}>{initialsOf(p.name)}</span>
+              <span className="fr-rowt"><span className="fr-nm">{p.name}</span></span>
+              <button type="button" className="fr-b warn sm" onClick={() => resetPin(p.id)}>Reset</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const popBody = () => {
+    if (!pop) return null;
+    switch (pop.k) {
+      case "person": return personPop(pop.id);
+      case "table": return tablePop(pop.n);
+      case "ask": return askPop(pop.id);
+      case "asks": return asksPop(pop.kind);
+      case "line": return linePop();
+      case "cov": return covPop();
+      case "rec": return recPop();
+      case "ups": return upsPop();
+      case "code": return codePop();
+      case "roster": return rosterPop();
+      default: return null;
+    }
+  };
+  const popTitle = pop ? ({ person: "Person", table: "Table", ask: "Ask", asks: "Asks", line: "In line", cov: "Coverage today", rec: "Record", ups: "Ups today", code: "Sign-in code", roster: "Roster" })[pop.k] : "";
+  const openAsks = (kind) => {
+    const list = kind === "to" ? toAsks : flyAsks;
+    if (list.length === 1) setPop({ k: "ask", id: list[0].id });
+    else setPop({ k: "asks", kind });
+  };
+
+  return (
+    <div className={"fr-page" + (reseat ? " reseating" : "")}>
+      <div className="fr-top">
+        <div className="fr-brand"><span className="fr-cap">Sage</span><span className="fr-title">Live Floor</span></div>
+        <div className="fr-asks">
+          <button type="button" className={"fr-ask fly" + (flyAsks.length ? "" : " quiet")} onClick={() => openAsks("fly")} aria-label={`FlyBy, ${flyAsks.length} asking`}>
+            <PixIcon glyph="bolt" size={16} />FLYBY{flyAsks.length > 0 && <em>{flyAsks.length}</em>}
+          </button>
+          <button type="button" className={"fr-ask to" + (toAsks.length ? "" : " quiet")} onClick={() => openAsks("to")} aria-label={`T.O., ${toAsks.length} asking`}>
+            <PixIcon glyph="swap" size={16} />T.O.{toAsks.length > 0 && <em>{toAsks.length}</em>}
+          </button>
+        </div>
+      </div>
+
+      <div className="fr-hero">
+        <div className="fr-planbox">
+          <div className="fr-planvp" ref={vpRef} style={{ height: vpW > 0 ? Math.min(280, Math.round(natH * fit)) : 220 }}>
+            <div className="fr-planwrap" style={{ width: natW * z, height: natH * z }}>
+              <div className="fr-planin" style={{ width: natW || "100%", height: natH, transform: `scale(${z})` }}>
+                {vpW > 0 && (
+                  <PlanMap plan={plan} cls="fr"
+                    deco={(t) => {
+                      const a = byTable.get(String(t.n));
+                      if (a) return {
+                        cls: (a.kind === "to" ? "to" : "fly") + (a.claimedBy ? " claimed" : ""),
+                        flag: a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : (a.kind === "to" ? "T.O." : "FlyBy"),
+                        sub: a.byName ? a.byName.split(" ")[0] + " · " + fmtAssistAge(assistAge(a)) : null,
+                      };
+                      const seated = seatByTable.get(String(t.n));
+                      if (seated) return {
+                        cls: "seated glow" + (mins(seated.statusAt) >= 45 ? " longsit" : "") + (reseat === seated.id ? " moving" : ""),
+                        sub: realName(seated.id).split(" ")[0] + " · " + qWaitLabel(mins(seated.statusAt)),
+                      };
+                      return { cls: reseat ? "movetarget" : "" };
+                    }}
+                    onTap={tapTable} />
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="fr-zoom">
+            <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
+            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
+          </div>
+          {reseat && <button type="button" className="fr-reseat" onClick={() => setReseat(null)}>Re-seating {realName(reseat).split(" ")[0]}: tap a table · cancel</button>}
+        </div>
+        <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
+          onPick={(id) => setPop({ k: "person", id })} onBunch={() => setPop({ k: "line" })} />
+      </div>
+
+      <div className="fr-card">
+        <button type="button" className="fr-warm" onClick={() => setPop({ k: "cov" })}>
+          <PixIcon glyph="clock" size={16} style={{ color: "#D0821E" }} />Coverage today
+          {gaps > 0 ? <span className="fr-tag gap">{gaps} {gaps === 1 ? "gap" : "gaps"}</span>
+            : thin > 0 ? <span className="fr-tag thin">{thin} thin</span>
+            : <span className="fr-tag ok">covered so far</span>}
+        </button>
+        <button type="button" className="fr-cov" onClick={() => setPop({ k: "cov" })}>
+          <div className="fr-hours">{hours.map((x) => <i key={x.h} className={x.state} />)}</div>
+          {hours.length > 0 && <div className="fr-scale"><span>{hourLabel(hours[0].h)}</span><span>{hourLabel(hours[hours.length - 1].h + 1)}</span></div>}
+        </button>
+        <div className="fr-tools">
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}><PixIcon glyph="door" size={16} />Sign-in code</button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "rec" })}><PixIcon glyph="clipboard" size={16} />Record</button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "ups" })}><PixIcon glyph="tap" size={16} />Ups today <em>{upsToday}</em></button>
+          <button type="button" className={"fr-tool" + (asking > 0 ? " asking" : "")} onClick={() => setPop({ k: "roster" })}><PixIcon glyph="users" size={16} />Roster{asking > 0 && <em>{asking} asking</em>}</button>
+        </div>
+      </div>
+
+      {pop && <FrPop title={popTitle} onClose={close} cls={"fr-k-" + pop.k}>{popBody()}</FrPop>}
+    </div>
+  );
+}
+
 function FloorBoard({ config, store, data, onData, userName }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState({});
@@ -13918,6 +14638,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [, force] = useReducer((x) => x + 1, 0);
   const prevLine = useRef([]);
   const [toast, setToast] = useState(null);
+  const phone = usePhoneLayout();
 
   const date = today();
   const cfg = floorCfg(store);
@@ -14156,6 +14877,22 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const withCust = line.filter((p) => p.status === "customer").length;
   const pinPeople = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) })).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const unmatched = (row && row.unmatched) || [];
+
+  /* A phone gets the room: the plan, the line as the salesperson's rail, and
+     the coverage, with every action in a pop. The console and the lists below
+     are the desk's, and the desk keeps them. */
+  if (phone) {
+    return (
+      <div className="checkout q-tab f-tab mf mf-floor">
+        <FloorRoomPhone config={config} store={store} data={data} row={row} line={line} salesRoster={salesRoster}
+          realName={realName} act={act} busy={busy} date={date} userName={userName}
+          identities={identities} resetPin={resetPin} regenToken={regenToken}
+          nudge={nudge} addPerson={addPerson} removePerson={removePerson} decline={decline} setFlag={setFlag}
+          onData={onData} asking={asking} />
+        {toast && <div className="f-toast">{toast}</div>}
+      </div>
+    );
+  }
 
   return (
     <div className="checkout q-tab f-tab mf mf-floor">
@@ -36939,6 +37676,167 @@ const SAGE_CSS = `
         .s2-rgo { display:none; }
         .s2g4 { width:auto; }
       }
+
+/* ---- the room on a phone: Live Floor, manager side ----
+   One screen: plan, the line as the salesperson's rail, coverage. Every tap
+   answers in a pop in the centre. The garden palette and the pix glyphs, and
+   nothing else. ---- */
+.fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
+  --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
+.fr-page{ margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
+.fr-page *,.fr-pop *{ box-sizing:border-box; }
+.fr-page button{ font-family:inherit; cursor:pointer; }
+.fr-top{ display:flex; align-items:center; gap:10px; padding:2px 4px 10px; }
+.fr-brand{ display:flex; flex-direction:column; }
+.fr-cap{ font:700 9.5px var(--font-mono); letter-spacing:.22em; text-transform:uppercase; color:var(--frsand2); margin-bottom:3px; }
+.fr-title{ font:700 17px/1 var(--font-display); letter-spacing:-.01em; white-space:nowrap; color:var(--frink); }
+.fr-asks{ margin-left:auto; display:flex; gap:8px; }
+.fr-ask{ width:46px; height:40px; border-radius:13px; border:1.5px solid; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  position:relative; font:700 8px var(--font-mono); letter-spacing:.06em; padding:0; }
+.fr-ask.fly{ background:var(--frfly); border-color:var(--frfly); color:var(--frink); }
+.fr-ask.to{ background:var(--frto); border-color:var(--frto); color:var(--frink); }
+.fr-ask.quiet{ background:#fff; color:#B4BBB6; border-color:var(--frline); }
+.fr-ask em{ position:absolute; top:-6px; right:-6px; width:17px; height:17px; border-radius:50%; background:var(--frink); color:#fff;
+  font:700 9px var(--font-mono); font-style:normal; display:grid; place-items:center; border:2px solid #fff; }
+
+/* the hero: the plan and the rail */
+.fr-hero{ isolation:isolate; border-radius:24px; padding:10px 14px 8px; color:#fff; position:relative; overflow:hidden;
+  background:linear-gradient(150deg,#7FA98A,#55795F 55%,#26382C); box-shadow:0 14px 30px -14px rgba(38,56,44,.5); }
+.fr-hero::after{ content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.055) 0 1px,transparent 1px 3px); pointer-events:none; }
+.fr-planbox{ position:relative; }
+.fr-planvp{ position:relative; border-radius:16px; background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.12);
+  overflow:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; touch-action:pan-x pan-y; }
+.fr-planvp::-webkit-scrollbar{ display:none; }
+.fr-planwrap{ position:relative; }
+.fr-planin{ position:absolute; left:0; top:0; transform-origin:0 0; }
+.fr-planin .fbp-scroll{ overflow:visible; border-radius:0; background:none; }
+.fr-planin .fbp{ height:340px; }
+.fr-planin .fbp-tbl.seated{ background:var(--frsand); border-color:var(--frsand); color:#2A2418; }
+.fr-planin .fbp-tbl.seated .fbp-sub{ color:rgba(42,36,24,.75); }
+.fr-planin .fbp-tbl.glow{ box-shadow:0 0 0 5px rgba(228,201,141,.28),0 0 22px rgba(228,201,141,.55); animation:frGlow 2.2s ease-in-out infinite alternate; }
+.fr-planin .fbp-tbl.seated.longsit{ background:#D0821E; border-color:#D0821E; color:#fff; }
+.fr-planin .fbp-tbl.moving{ outline:3px solid #fff; outline-offset:2px; }
+.fr-planin .fbp-tbl.movetarget{ border-style:dashed; border-color:rgba(255,255,255,.7); }
+.fr-planin .fbp-tbl:hover{ transform:none; }
+@keyframes frGlow{ to{ box-shadow:0 0 0 7px rgba(228,201,141,.16),0 0 30px rgba(228,201,141,.7); } }
+.fr-zoom{ position:absolute; right:8px; bottom:8px; display:flex; gap:6px; z-index:2; }
+.fr-zoom button{ width:30px; height:30px; border-radius:10px; background:rgba(7,10,8,.7); border:1px solid rgba(255,255,255,.2); display:grid; place-items:center; color:#fff; padding:0; }
+.fr-reseat{ position:absolute; left:8px; right:8px; top:8px; z-index:2; border:0; border-radius:10px; background:var(--frsand); color:#2A2418;
+  font:700 11px var(--font-mono); letter-spacing:.06em; padding:8px 10px; }
+
+/* the line: McTrack from the salesperson's screen, sized for a thumb */
+.fr-rail{ position:relative; height:50px; margin:12px 26px 4px -14px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
+.fr-rail s{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
+.fr-rail .fa{ left:4px; animation:mcfA 2.4s linear infinite; }
+.fr-rail .fb{ left:0; animation:mcfB 2.4s linear infinite; }
+.fr-rail .d2{ animation-delay:1.2s; }
+.fr-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%; border:0; padding:0;
+  background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center; justify-content:center; font:700 11px var(--font-mono);
+  transition:left .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
+.fr-pip.hd{ width:42px; height:42px; font-size:13px; background:rgba(232,238,242,.34); }
+.fr-pip.tg{ color:#fff; }
+.fr-pip.tg.lt{ color:var(--frink); }
+.fr-pip.bunch{ box-shadow:0 0 0 1.5px rgba(232,238,242,.35); }
+.fr-badge{ position:absolute; right:-4px; top:-5px; width:15px; height:15px; border-radius:50%; background:#0B100D; display:grid; place-items:center;
+  border:1.5px solid rgba(255,255,255,.5); color:#ffcf7a; font-style:normal; }
+.fr-raildoor{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font:700 8.5px var(--font-mono); letter-spacing:.16em; color:rgba(255,255,255,.7); writing-mode:vertical-rl; }
+
+/* the lower card: coverage and the four tools */
+.fr-card{ background:#fff; border:1px solid var(--frline); border-radius:20px; margin-top:12px; overflow:hidden; box-shadow:0 8px 24px rgba(31,54,86,.06); }
+.fr-warm{ display:flex; align-items:center; gap:8px; padding:10px 14px 0; font:700 14px var(--font-display); width:100%; border:0; background:none; color:var(--frink); text-align:left; }
+.fr-tag{ margin-left:auto; border-radius:99px; padding:3px 10px; font:700 10px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; }
+.fr-tag.ok{ background:#E3F3E9; color:var(--frok); } .fr-tag.thin{ background:#FFF3DE; color:var(--frthin); } .fr-tag.gap{ background:#FBE5E0; color:var(--frgap); }
+.fr-cov{ display:block; width:100%; border:0; background:none; padding:8px 14px 10px; text-align:left; }
+.fr-hours{ display:flex; gap:3px; }
+.fr-hours i{ flex:1; height:22px; border-radius:5px; background:rgba(16,32,52,.08); }
+.fr-hours i.ok{ background:var(--frok); } .fr-hours i.thin{ background:var(--frthin); } .fr-hours i.gap{ background:var(--frgap); } .fr-hours i.ahead{ background:rgba(16,32,52,.07); }
+.fr-scale{ display:flex; justify-content:space-between; margin-top:5px; font:700 8.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--frink3); }
+.fr-tools{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:12px 12px 12px; border-top:1px solid var(--frline); }
+.fr-tool{ background:var(--frpaper); border:1px solid var(--frline); border-radius:14px; padding:10px 4px; text-align:center; font:600 11px var(--font-ui); color:var(--frink2);
+  min-height:60px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; }
+.fr-tool .pix{ color:var(--frp2d); }
+.fr-tool em{ font:700 10px var(--font-mono); color:var(--frsand2); font-style:normal; }
+.fr-tool.asking{ border-color:var(--frsand); }
+
+/* the pop */
+.fr-pop{ position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(7,10,8,.72);
+  -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); animation:frIn .18s ease; }
+.fr-sheet{ position:relative; width:100%; max-width:420px; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); overflow:auto; background:#fff; border-radius:24px;
+  border:2px solid var(--frsand); box-shadow:0 0 0 6px rgba(228,201,141,.22),0 40px 80px -20px rgba(0,0,0,.8); animation:frUp .22s cubic-bezier(.2,.9,.3,1.2);
+  color:var(--frink); font-family:var(--font-ui); }
+@keyframes frIn{ from{ opacity:0; } }
+@keyframes frUp{ from{ transform:translateY(16px) scale(.94); } }
+.fr-x{ position:absolute; top:12px; right:12px; width:32px; height:32px; border-radius:50%; background:var(--frpaper); border:0; display:grid; place-items:center; color:var(--frink2); z-index:2; }
+.fr-hd{ display:flex; align-items:flex-start; gap:12px; padding:16px 52px 8px 16px; background:linear-gradient(180deg,#F3F6F2,#fff); }
+.fr-hdt{ flex:1; min-width:0; }
+.fr-av{ width:52px; height:52px; border-radius:50%; display:grid; place-items:center; color:#fff; font:700 16px var(--font-display); flex:0 0 auto; border:0; padding:0; }
+.fr-av.sm{ width:32px; height:32px; font-size:11px; }
+.fr-av.fly{ background:var(--frfly); color:var(--frink); } .fr-av.to{ background:var(--frto); color:var(--frink); }
+.fr-nm{ font:700 20px/1.1 var(--font-display); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; }
+.fr-meta{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; row-gap:4px; margin-top:5px; font:500 12px var(--font-mono); color:var(--frink3); }
+.fr-next{ background:var(--frsand); color:#3A2A08; font:700 9.5px var(--font-mono); letter-spacing:.1em; padding:2px 7px; border-radius:7px; }
+.fr-tagp{ display:inline-flex; align-items:center; gap:4px; padding:2px 7px; border-radius:7px; font:700 9px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; color:#fff; }
+.fr-tagp.lt{ color:var(--frink); }
+.fr-tagp::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; opacity:.9; }
+.fr-tagd{ display:inline-block; width:9px; height:9px; border-radius:50%; vertical-align:middle; }
+.fr-st{ padding:1px 7px; border-radius:8px; font:700 9.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
+.fr-st.in{ background:#E8F1EA; color:var(--frok); } .fr-st.cust{ background:#FCEBD6; color:var(--frsand2); } .fr-st.lunch{ background:#FFF3DE; color:var(--frthin); }
+.fr-st.away{ background:#FBE5E0; color:var(--frgap); } .fr-st.off{ background:#EEF0F2; color:#5C6660; }
+.fr-w{ font:500 12px var(--font-mono); color:var(--frink3); }
+.fr-acts{ display:flex; flex-wrap:wrap; gap:10px; padding:10px 14px 16px; }
+.fr-ref{ flex-basis:100%; width:100%; min-height:48px; border:1.5px solid var(--frline); border-radius:14px; padding:0 14px; font:600 15px var(--font-ui); color:var(--frink); background:#fff; }
+.fr-b{ flex:1 1 44%; min-height:58px; border-radius:16px; border:2px solid var(--frline); background:#fff; color:var(--frink); font:700 16px var(--font-ui);
+  display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; }
+.fr-b:disabled{ opacity:.45; }
+.fr-b.pri{ flex-basis:100%; min-height:64px; font-size:17px; background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
+.fr-b.warn{ color:var(--frto); border-color:#F1C9C5; background:#FFF3F2; }
+.fr-b.seat,.fr-b.fly,.fr-b.to{ flex-direction:column; gap:4px; font:700 15px var(--font-display); color:var(--frink); }
+.fr-b.seat{ background:var(--frsand); border-color:var(--frsand); }
+.fr-b.fly{ background:var(--frfly); border-color:var(--frfly); }
+.fr-b.to{ background:var(--frto); border-color:var(--frto); }
+.fr-b.sm{ flex:0 0 auto; min-height:32px; padding:0 10px; font-size:12px; border-radius:10px; border-width:1.5px; }
+.fr-why{ display:flex; gap:6px; flex-wrap:wrap; padding:10px 16px 12px; border-bottom:1px solid var(--frline); background:#F3F6F2; }
+.fr-why button{ padding:9px 12px; border-radius:10px; border:1.5px solid var(--frp2d); background:#fff; color:var(--frp2d); font:700 13px var(--font-ui); }
+.fr-empty{ margin:0; padding:14px 16px 18px; font:500 13px var(--font-ui); color:var(--frink3); }
+
+/* lists inside the pop */
+.fr-list{ padding-bottom:4px; }
+.fr-row{ display:grid; grid-template-columns:32px minmax(0,1fr) auto; column-gap:8px; align-items:center; padding:0 12px; min-height:52px; border-bottom:1px solid var(--frline);
+  width:100%; border-left:0; border-right:0; border-top:0; background:none; text-align:left; color:var(--frink); font-family:inherit; }
+.fr-row:last-child{ border-bottom:0; }
+.fr-list.grid .fr-row{ grid-template-columns:12px 32px minmax(0,1fr) 30px 62px; height:64px; }
+.fr-row.off{ background:#F3F6F2; }
+.fr-row.sched{ grid-template-columns:30px minmax(0,1fr) auto; height:50px; }
+.fr-row.rec{ grid-template-columns:30px minmax(0,1fr) 44px; height:52px; }
+.fr-rk{ font:700 12px var(--font-mono); color:var(--frink3); }
+.fr-rowt{ min-width:0; display:flex; flex-direction:column; border:0; background:none; padding:0; text-align:left; color:inherit; }
+.fr-rowt .fr-nm{ font:600 14px/1.2 var(--font-ui); }
+.fr-rowt .fr-meta{ margin-top:4px; flex-wrap:nowrap; overflow:hidden; white-space:nowrap; }
+.fr-wt{ font:700 10px var(--font-mono); color:var(--frink3); text-align:right; white-space:nowrap; }
+.fr-mv{ display:flex; gap:6px; justify-content:flex-end; }
+.fr-mv button{ width:28px; height:28px; border-radius:9px; border:1.5px solid var(--frline); background:#fff; display:grid; place-items:center; color:var(--frink2); padding:0; }
+.fr-mv button:disabled{ opacity:.35; }
+.fr-rec{ padding:8px 16px 12px; font:500 11px var(--font-mono); color:var(--frink3); border-top:1px solid var(--frline); }
+.fr-rec div{ padding:3px 0; } .fr-rec b{ color:var(--frink2); font-weight:600; }
+.fr-sec{ padding:8px 16px 4px; font:700 9.5px var(--font-mono); letter-spacing:.18em; text-transform:uppercase; color:var(--frsand2); border-top:1px solid var(--frline); }
+.fr-bighours{ display:flex; gap:4px; padding:6px 16px 0; }
+.fr-bighours i{ flex:1; height:40px; border-radius:7px; background:rgba(16,32,52,.08); }
+.fr-bighours i.ok{ background:var(--frok); } .fr-bighours i.thin{ background:var(--frthin); } .fr-bighours i.gap{ background:var(--frgap); } .fr-bighours i.ahead{ background:rgba(16,32,52,.07); }
+.fr-bighours i.now{ outline:2px solid var(--frink); outline-offset:2px; }
+.fr-hrs{ display:flex; padding:4px 16px 10px; font:700 8.5px var(--font-mono); color:var(--frink3); letter-spacing:.04em; }
+.fr-hrs span{ flex:1; text-align:center; }
+.fr-ic{ width:30px; height:30px; border-radius:9px; display:grid; place-items:center; background:var(--frpaper); color:var(--frink2); }
+.fr-ic.up{ background:#E8F1EA; color:var(--frok); } .fr-ic.mv{ background:#EAF2FF; color:#2E7DE0; } .fr-ic.fly{ background:var(--frfly); color:var(--frink); }
+.fr-ic.to{ background:var(--frto); color:var(--frink); } .fr-ic.lunch{ background:#FFF3DE; color:var(--frthin); } .fr-ic.warn{ background:#FBE5E0; color:var(--frgap); }
+.fr-what{ font:600 13.5px var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fr-who{ font:500 10.5px var(--font-mono); color:var(--frink3); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fr-n{ font:700 18px var(--font-display); color:var(--frink); }
+.fr-qr{ display:flex; justify-content:center; padding:6px 16px 4px; }
+.fr-tabs{ display:flex; gap:6px; padding:6px 16px 10px; border-bottom:1px solid var(--frline); }
+.fr-tabs button{ flex:1; min-height:36px; border-radius:10px; border:1.5px solid var(--frline); background:#fff; color:var(--frink2); font:700 12px var(--font-ui); }
+.fr-tabs button.on{ background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
+.fr-phones .f-phones{ margin:0; border:0; border-radius:0; background:none; padding:12px 16px 16px; color:var(--frink); }
+.fr-phones .f-phones-head button{ display:none; }
 
     `;
 
