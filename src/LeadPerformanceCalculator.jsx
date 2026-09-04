@@ -2386,6 +2386,10 @@ export default function LeadPerformanceCalculator() {
   const [boardFilter, setBoardFilter] = useState(null); // null | cleared | attention | off | unassigned
   const [assocQuery, setAssocQuery] = useState("");
   const [focusAssoc, setFocusAssoc] = useState(null);
+  const phone = usePhoneLayout();
+  /* Coach, from a person's pop on the phone: the tool switch lands on the
+     check-out sheet by default, so the tab to land on is held for applyTool. */
+  const coachAfter = useRef(false);
   // Which day a Daily Activity import should land on. Reports are often pulled the
   // next morning, so the manager can aim an import at yesterday without renaming files.
   const [activityDay, setActivityDay] = useState(today());
@@ -3671,7 +3675,8 @@ export default function LeadPerformanceCalculator() {
       if (first) setView(first.id);
     }
     setAppModule(mod);
-    setTab(mod === "activity" ? "checkout" : "board");
+    setTab(mod === "activity" ? (coachAfter.current ? "coaching" : "checkout") : "board");
+    coachAfter.current = false;
   };
 
 
@@ -3982,6 +3987,15 @@ export default function LeadPerformanceCalculator() {
                         setSession((s) => ({ ...s, onboarded: true }));
                       }} />
                     )}
+                    {/* A phone gets the Board as one screen: the site's hero and one
+                        row a person, everything a tap into a pop. The desk keeps the
+                        hero, the focus grid and the role cards. */}
+                    {phone ? (
+                      <BoardRoomPhone config={config} store={currentStore} data={storeData} session={session}
+                        canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig}
+                        onSetRestriction={setRestriction}
+                        onCoach={() => { coachAfter.current = true; switchTool("activity"); }} />
+                    ) : (<>
                     <StoreHero config={config} store={currentStore} data={storeData} session={session} onGoTab={setTab}
                       filter={boardFilter} onFilter={setBoardFilter} onFocus={setFocusAssoc}
                       canSetGoal={isAdmin || session.role === "manager"} onSaveConfig={persistConfig} />
@@ -3991,6 +4005,7 @@ export default function LeadPerformanceCalculator() {
                       filter={boardFilter} onFilter={setBoardFilter} onClearFilter={() => setBoardFilter(null)}
                       query={assocQuery} focusName={focusAssoc} onFocus={setFocusAssoc}
                       onIgnore={ignoreNames} />
+                    </>)}
                   </div>
                 )}
                 {/* The gutter the Dashboard has had all along. These four were
@@ -20778,7 +20793,7 @@ function MetricStrip({ ev, stats, thr, first }) {
    carries what the drafts asked for: where the units came from, the new/used
    split, how they are trending against their coaching goal, the months behind
    them, the four standards, and the one thing they are best at. */
-function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose }) {
+function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, actions = null }) {
   const thr = normThresholds(thresholds);
   const [closing, setClosing] = useState(false);
   const boxRef = useRef(null);
@@ -20906,6 +20921,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose }) 
             {" vs "}{best.def.kind === "pct" ? best.min + "%" : best.min}
           </span>
         </>)}
+        {actions}
       </div>
     </div>, document.body);
 }
@@ -25525,6 +25541,467 @@ function AvaSeat({ children }) {
 
 function TapMark() {
   return <span className="tapmark" aria-hidden="true"><PixIcon glyph="tap" size={13} /></span>;
+}
+
+/* =========================================================================
+   The Board on a phone.
+
+   The Performance dashboard on a phone is one screen: the store's month as
+   the site's own hero, then the people as one row each with the limit bar,
+   the five standards as dots, and units. Everything on it dives: a tap on
+   the digits, the pace strip, the new and used bar, the calendar, the on and
+   off pill, a tube, a dial, or a person opens a pop in the centre with the
+   numbers behind it, and the person pop is the website's own card.
+
+   The desk keeps the desktop hero, the focus grid and the role cards. This
+   is only rendered when the viewport is a phone's.
+   ========================================================================= */
+const BP_TAG_ORDER = ["closer", "phone", "internet", "video"];
+function bpDotState(v, green, yellow) {
+  if (v == null || green == null) return "na";
+  const pct = v * 100;
+  if (pct >= green) return "ok";
+  if (yellow != null && pct >= yellow) return "warn";
+  return "bad";
+}
+const bpFirstTag = (a, strengths) => {
+  const l = Array.isArray(a.langs) ? a.langs : [];
+  const st = (strengths[norm(a.name)] || []).map((s) => s.id);
+  const sk = Array.isArray(a.skills) ? a.skills : [];
+  return [...l, ...st, ...sk].filter(Boolean)[0] || null;
+};
+
+function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig, onSetRestriction, onCoach }) {
+  const M = data.months?.[ym()];
+  const thr = normThresholds(store.thresholds);
+  const restrictions = data.restrictions || {};
+  const isRestricted = (a) => { const r = restrictions[a.id]; return !!(r && (!r.until || new Date(r.until) > new Date())); };
+  const roster = (data.roster || []).filter((a) => a.roleId);
+  const boardRoles = (config.roles || []).filter((r) => r.onBoard !== false);
+  const boardRoleIds = new Set(boardRoles.map((r) => r.id));
+  const boardRoster = roster.filter((a) => boardRoleIds.has(a.roleId));
+  const tiersOf = (roleId) => config.standards?.[store.id]?.[roleId]?.tiers;
+  const strengths = useMemo(() => earnedStrengths(data, boardRoster), [data, boardRoster.length]); // eslint-disable-line
+
+  /* ---- the month, as the hero counts it ---- */
+  const closingRoster = monthRoster(data, M, boardRoster);
+  const closing = channelRates(M, closingRoster);
+  const campaignUnits = closingRoster.reduce((n, a) => n + (M?.stats?.[norm(a.name)]?.campaignUnits ?? 0), 0);
+  const rosterUnits = closing.reduce((n, c) => n + c.units, 0) + campaignUnits;
+  const statedM = statedOf(M);
+  const totalUnits = statedM ? statedM.deliveries : rosterUnits;
+  const pace = (() => {
+    const monthKey = ym();
+    const goal = storeGoalFor(store, monthKey);
+    const hol = new Set((config.holidays || []).map((h) => (typeof h === "string" ? h : h.date)));
+    const isHol = (d) => hol.has(d);
+    const daysAll = storeDaysInMonth(monthKey, isHol);
+    const daysDone = storeDaysDone(monthKey, isHol, today());
+    const daysLeft = Math.max(0, daysAll - daysDone);
+    if (daysDone < 3 || !(daysAll > 0)) return { tooEarly: true, goal, daysAll, daysDone, daysLeft };
+    const perDay = totalUnits / daysDone;
+    const projected = perDay * daysAll;
+    const out = { goal, daysAll, daysDone, daysLeft, perDay, projected, units: totalUnits };
+    if (goal) {
+      out.short = Math.max(0, goal.bar - totalUnits);
+      out.needPerDay = daysLeft > 0 ? out.short / daysLeft : null;
+      out.parToday = goal.bar * (daysDone / daysAll);
+      out.aheadBy = totalUnits - out.parToday;
+      out.tone = out.aheadBy >= 0 ? "g" : out.aheadBy > -(goal.bar * 0.05) ? "y" : "r";
+    }
+    return out;
+  })();
+  const split = (() => {
+    let nw = 0, us = 0, other = 0, seen = false;
+    for (const a of closingRoster) {
+      const st = M?.stats?.[norm(a.name)];
+      if (!st) continue;
+      if (st.newUnits == null && st.usedUnits == null && st.otherUnits == null) continue;
+      seen = true; nw += st.newUnits ?? 0; us += st.usedUnits ?? 0; other += st.otherUnits ?? 0;
+    }
+    const known = nw + us + other;
+    const newPct = known > 0 ? nw / known : null, usedPct = known > 0 ? us / known : null;
+    if (statedM && known > 0) { const f = statedM.deliveries / known; nw = Math.round(nw * f * 10) / 10; us = Math.round(us * f * 10) / 10; }
+    return { seen, nw, us, known, newPct, usedPct };
+  })();
+  const digests = useDigests(store.id);
+  const dayUnits = useMemo(() => {
+    if (!digests) return {};
+    const keys = Object.keys(digests).sort();
+    const out = {}; let prev = null;
+    for (const k of keys) {
+      const r = digests[k];
+      if (r && r.u != null && prev && prev.u != null && r.u >= prev.u) out[k] = { u: r.u - prev.u, nu: r.nu != null && prev.nu != null ? Math.max(0, r.nu - prev.nu) : null, uu: r.uu != null && prev.uu != null ? Math.max(0, r.uu - prev.uu) : null };
+      prev = r;
+    }
+    return out;
+  }, [digests]);
+  const chDelta = useMemo(() => {
+    if (!digests) return {};
+    const keys = Object.keys(digests).sort();
+    const o = {};
+    for (const id of ["internet", "phone", "showroom"]) {
+      const usable = keys.filter((k) => { const r = digests[k]?.ch?.[id]; return r && r.l > 0; });
+      if (usable.length < 2) continue;
+      const ra = digests[usable[usable.length - 2]].ch[id], rb = digests[usable[usable.length - 1]].ch[id];
+      o[id] = Math.round(((rb.u / rb.l) - (ra.u / ra.l)) * 1000) / 10;
+    }
+    return o;
+  }, [digests]);
+  const series = useMemo(() => (digests ? dailySeries(digests, thr) : null), [digests, thr]); // eslint-disable-line
+  const floorRoster = activityRoster(config, data);
+  const offToday = floorRoster.filter((a) => (data.daysOff?.[a.id] || []).includes(today()));
+  const onToday = floorRoster.filter((a) => !offToday.includes(a));
+  const mcal = useMemo(() => {
+    const mk = ym();
+    const dim = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 0).getDate();
+    const off = new Date(mk + "-01T12:00").getDay();
+    const dNow = +today().slice(8, 10);
+    let satsLeft = 0;
+    for (let d = dNow; d <= dim; d++) if (new Date(`${mk}-${String(d).padStart(2, "0")}T12:00`).getDay() === 6) satsLeft++;
+    let best = null;
+    for (const [k, v] of Object.entries(dayUnits)) if (k.slice(0, 7) === mk && v.u != null && (!best || v.u > best.u)) best = { d: k, u: v.u };
+    return { mk, dim, off, dNow, satsLeft, best };
+  }, [dayUnits]);
+  const lastImport = (data.importLog || [])[0] || null;
+  const updatedAt = (() => {
+    const stamps = [];
+    if (lastImport && lastImport.t) stamps.push(lastImport.t);
+    for (const rows of Object.values(data.activity || {})) for (const r of Object.values(rows || {})) if (r && r.uploadedAt) stamps.push(r.uploadedAt);
+    stamps.sort();
+    return stamps.length ? stamps[stamps.length - 1] : null;
+  })();
+  /* The three video standards, averaged the way the hero does it: each person
+     against the target their tier sets, capped at the target. */
+  const videoDials = (() => {
+    const roll = {};
+    for (const role of config.roles || []) {
+      const tiers = tiersOf(role.id);
+      if (!tiers || !tiers.length) continue;
+      for (const a of roster.filter((x) => x.roleId === role.id)) {
+        const st = M?.stats?.[norm(a.name)];
+        const ev = evaluateAssociate(st, tiers);
+        const own = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
+        const all = new Map();
+        for (const t of tiers) for (const r of t.requirements || []) all.set(r.metric, Math.min(all.has(r.metric) ? all.get(r.metric) : Infinity, r.min));
+        for (const m of ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"]) {
+          if (!all.has(m)) continue;
+          const min = own.has(m) ? own.get(m) : all.get(m);
+          const need = min / 100;
+          if (need <= 0) continue;
+          const got = Math.min(1, (st?.[m] ?? 0) / need);
+          const r = roll[m] || (roll[m] = { below: 0, total: 0, sum: 0, min });
+          r.total++; r.sum += got; if (got < 1) r.below++;
+        }
+      }
+    }
+    return ["apptVideoDayPct", "engagedVideoPct", "bhVideoPct"].map((m) => (roll[m] ? { m, mean: roll[m].sum / roll[m].total, below: roll[m].below, total: roll[m].total, min: roll[m].min } : null)).filter(Boolean);
+  })();
+
+  /* ---- the people ---- */
+  const people = useMemo(() => boardRoster.map((a) => {
+    const st = M?.stats?.[norm(a.name)];
+    const ev = evaluateAssociate(st, tiersOf(a.roleId));
+    const reqs = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
+    const five = FIVE.map((f) => {
+      const green = reqs.has(f.key) ? reqs.get(f.key) : (thr[f.id] ? thr[f.id].green : null);
+      const yellow = thr[f.id] ? thr[f.id].yellow : (green != null ? green * 0.5 : null);
+      return { id: f.id, key: f.key, label: f.label, v: st?.[f.key] ?? null, state: bpDotState(st?.[f.key], green, yellow) };
+    });
+    const restricted = isRestricted(a);
+    const stand = restricted ? ["bad", "Off leads"]
+      : ev.status === "pass" ? ["ok", "Clear"]
+      : ev.status === "fail" && ev.atCap ? ["bad", "Restrict"]
+      : ev.status === "fail" && (ev.capUse ?? 0) >= 0.8 ? ["warn", "Nearing"]
+      : ev.status === "fail" ? ["warn", "Below"]
+      : ["na", ev.status === "no-data" ? "No figures" : "No standards"];
+    const tag = bpFirstTag(a, strengths);
+    return { a, st, ev, five, units: unitsOf(st) || 0, restricted, stand, tag,
+      atLimit: !restricted && ev.status === "fail" && (ev.atCap || (ev.capUse ?? 0) >= 0.8) };
+  }), [boardRoster, M, thr, restrictions, strengths]); // eslint-disable-line
+
+  const [roleFilter, setRoleFilter] = useState(boardRoles[0] ? boardRoles[0].id : null);
+  const [limitOnly, setLimitOnly] = useState(false);
+  const [drill, setDrill] = useState(null);   // { kind: "channel"|"below", id, label }
+  const [pop, setPop] = useState(null);
+  const [goalDraft, setGoalDraft] = useState("");
+  const close = useCallback(() => setPop(null), []);
+  const limitCount = people.filter((p) => p.atLimit).length;
+  const rows = useMemo(() => {
+    let list = people.filter((p) => (limitOnly ? p.atLimit : (!roleFilter || p.a.roleId === roleFilter)));
+    if (drill && drill.kind === "below") list = list.filter((p) => { const d = p.five.find((x) => x.key === drill.id); return d && (d.state === "bad" || d.state === "warn"); });
+    if (drill && drill.kind === "channel") list = list.slice().sort((x, y) => ((y.st?.[drill.id + "Pct"] ?? -1) - (x.st?.[drill.id + "Pct"] ?? -1)));
+    else list = list.slice().sort((x, y) => y.units - x.units || x.a.name.localeCompare(y.a.name));
+    return list;
+  }, [people, roleFilter, limitOnly, drill]);
+
+  const saveGoal = () => {
+    const n = Math.max(0, parseInt(goalDraft, 10) || 0);
+    if (!n || !onSaveConfig) return;
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === store.id);
+    if (!s) return;
+    const g = s.goal || {};
+    s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [ym()]: n } };
+    onSaveConfig(next, { store: store.id, action: "Set the monthly unit goal", detail: `${store.name}: ${n} units` });
+    close();
+  };
+  const avStyle = (p) => {
+    const t = p.tag;
+    if (t) return { background: frTagColor(t), color: frTagLight(t) ? "#15211B" : "#fff" };
+    return { background: `hsl(${hueFromName(p.a.name)} 52% 42%)` };
+  };
+  const paceCls = pace.tooEarly || !pace.goal ? "" : pace.tone === "g" ? " bp-good" : pace.tone === "y" ? " bp-mid" : " bp-bad";
+  const paceWord = pace.tooEarly ? "too early" : pace.goal ? `pace ${Math.round(pace.projected)}` : `${Math.round(pace.projected)} pace`;
+  const goalUnits = pace.goal ? pace.goal.units : 0;
+  const goalBar = pace.goal ? pace.goal.bar : 0;
+  const dotN = 28;
+  const litDots = goalBar > 0 ? Math.round(Math.min(1, totalUnits / goalBar) * dotN) : 0;
+  const parX = pace.goal && !pace.tooEarly ? Math.min(100, (pace.parToday / goalBar) * 100) : null;
+  const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/\s?[AP]M$/i, ""); };
+
+  /* ---- the pops ---- */
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "dial") {
+      const v = videoDials.find((x) => x.m === pop.m);
+      if (!v) return null;
+      const under = Math.round(v.mean * 100) < 100;
+      return (<>
+        {hd(METRICS[pop.m].label, <><span className={"fr-st " + (under ? "away" : "in")}>{Math.round(v.mean * 100)}% of target</span><span className="fr-w">{v.below} of {v.total} below</span><span className="fr-w">target {v.min}%</span></>)}
+        <div className="bp-defn">{METRIC_DESC[pop.m] || "Measured month to date."}</div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { setDrill({ kind: "below", id: pop.m, label: "Below " + (METRIC_TINY[pop.m] || METRICS[pop.m].short) }); setLimitOnly(false); close(); }}>Who is below</button></div>
+      </>);
+    }
+    if (pop.k === "chan") {
+      const c = closing.find((x) => x.id === pop.id);
+      if (!c) return null;
+      const target = thr[c.id].green;
+      const pctV = c.pct == null ? null : c.pct * 100;
+      const s = series && series.find((x) => x.id === c.id);
+      const pts = s ? s.pts.filter((p) => p.pct != null) : [];
+      const col = CHANNEL_HUE[c.id];
+      const maxV = Math.max(target, ...pts.map((p) => p.pct), 1) * 1.15;
+      const yOf = (v) => 100 - (v / maxV) * 88;
+      const line = pts.map((p, i) => `${(pts.length > 1 ? (i / (pts.length - 1)) * 292 : 146) + 4},${yOf(p.pct).toFixed(1)}`).join(" ");
+      const last = pts[pts.length - 1];
+      return (<>
+        {hd((METRICS[c.id + "Pct"] && METRICS[c.id + "Pct"].label) || c.label, <><span className="fr-w">{fmtNum(c.units)} from {c.leads > 0 ? Math.round(c.leads) : 0} leads</span><span className="fr-w">target {target}%</span></>)}
+        <div className="bp-divider" />
+        {pts.length > 1 ? (
+          <div className="bp-lg">
+            <svg viewBox="0 0 300 110" preserveAspectRatio="none">
+              <line x1="0" y1={yOf(target)} x2="300" y2={yOf(target)} stroke={col} strokeOpacity=".5" strokeDasharray="6 5" strokeWidth="1.5" />
+              <text x="4" y={Math.max(10, yOf(target) - 6)} fontFamily="var(--font-mono)" fontWeight="700" fontSize="9" fill={col} fillOpacity=".7">target {target}%</text>
+              <polyline fill="none" stroke={col} strokeWidth="2.5" strokeLinejoin="round" points={line} />
+              <circle cx="296" cy={yOf(last.pct)} r="4" fill={col} />
+              <text x="292" y={yOf(last.pct) > 50 ? yOf(last.pct) - 12 : yOf(last.pct) + 20} textAnchor="end" fontFamily="var(--font-mono)" fontWeight="700" fontSize="12" fill={pctV != null && pctV >= target ? "#1E8A4C" : "#C2361F"}>{fmtPct(c.pct)}</text>
+            </svg>
+            <div className="bp-lgl"><span>{new Date(pts[0].key + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}</span><span>{new Date(last.key + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()}</span></div>
+            <div className="bp-lgleg"><span><i style={{ background: col }} />{c.label}</span><span className="bp-dim">dashed = target</span></div>
+          </div>
+        ) : <p className="fr-empty">{pctV == null ? "No figures yet this month." : `${fmtPct(c.pct)} so far. The line draws once two days are on file.`}</p>}
+        <div className="bp-defn">Units delivered against the {c.label.toLowerCase()} leads worked, month to date.</div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { setDrill({ kind: "channel", id: c.id, label: c.label + " closing" }); close(); }}>By person</button></div>
+      </>);
+    }
+    if (pop.k === "pace" || pop.k === "units") {
+      const b85 = goalUnits ? Math.ceil(goalUnits * 0.85) : 0;
+      const short = b85 ? Math.round((b85 - totalUnits) * 10) / 10 : null;
+      const need = short != null && pace.daysLeft > 0 ? Math.ceil((short / pace.daysLeft) * 10) / 10 : null;
+      return (<>
+        {hd("Sold by day", <><span className="fr-st in">{new Date().toLocaleDateString("en-US", { month: "long" })}</span><span className="fr-w">day {mcal.dNow} of {mcal.dim}</span></>)}
+        <div className="bp-swg">
+          {Array.from({ length: mcal.off }, (_, i) => <span key={"e" + i} className="bp-e" />)}
+          {Array.from({ length: mcal.dim }, (_, i) => {
+            const d = i + 1, key = `${mcal.mk}-${String(d).padStart(2, "0")}`;
+            const v = dayUnits[key];
+            if (d >= mcal.dNow) return <span key={d} className={"bp-f" + (d === mcal.dNow ? " bp-t" : "")}><em>{d}</em><b>·</b></span>;
+            return <span key={d} style={{ background: v && v.u ? `color-mix(in srgb, #6E9678 ${Math.min(52, v.u * 9)}%, #fff)` : undefined }}><em>{d}</em><b>{v && v.u != null ? fmtNum(v.u) : "·"}</b></span>;
+          })}
+        </div>
+        <div className="bp-ask">
+          <b>{fmtNum(totalUnits)}</b><small>{goalUnits ? (goalBar !== goalUnits ? <>of {fmtNum(goalBar)} · {pace.goal.pct}% of {fmtNum(goalUnits)}</> : <>of {fmtNum(goalUnits)}</>) : "no goal set"}</small>
+          {!pace.tooEarly && pace.goal && (
+            <div className={pace.aheadBy >= 0 ? "bp-ok" : "bp-bad"}>{pace.aheadBy >= 0 ? `${fmtNum(Math.round(pace.aheadBy * 10) / 10)} ahead of where today should be` : `${fmtNum(Math.round(-pace.aheadBy * 10) / 10)} behind where today should be`}</div>
+          )}
+          {b85 > 0 && (
+            <div className="bp-ln">{short <= 0 ? <>The 85% objective, {fmtNum(b85)}: cleared, {fmtNum(Math.round(-short * 10) / 10)} past it</> : <>The 85% objective, {fmtNum(b85)}: {fmtNum(short)} to go{need != null ? ` · ${fmtNum(need)} a day from here` : ""}</>}</div>
+          )}
+          {split.seen && split.known > 0 && !pace.tooEarly && (
+            <div className="bp-ln">By stock, at today's mix: new pace <b className="bp-sm">{Math.round(pace.projected * split.newPct)}</b> · used pace <b className="bp-sm">{Math.round(pace.projected * split.usedPct)}</b></div>
+          )}
+          <div className="bp-tiny">{pace.daysDone} of {pace.daysAll} days counted · through yesterday</div>
+        </div>
+        {canSetGoal && (
+          <div className="fr-acts">
+            <input className="fr-ref" type="number" min="0" inputMode="numeric" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
+            <button type="button" className="fr-b pri" onClick={saveGoal}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
+          </div>
+        )}
+      </>);
+    }
+    if (pop.k === "stock") {
+      const nPace = !pace.tooEarly && split.newPct != null ? Math.round(pace.projected * split.newPct) : null;
+      const uPace = !pace.tooEarly && split.usedPct != null ? Math.round(pace.projected * split.usedPct) : null;
+      const nGoal = goalBar && split.newPct != null ? Math.round(goalBar * split.newPct) : null;
+      const uGoal = goalBar && split.usedPct != null ? Math.round(goalBar * split.usedPct) : null;
+      const tone = (p, g) => (p == null || g == null ? ["na", ""] : p >= g ? ["in", "on pace"] : p >= g * 0.9 ? ["cust", "close"] : ["away", "behind"]);
+      const nt = tone(nPace, nGoal), ut = tone(uPace, uGoal);
+      return (<>
+        {hd("Month pace · by stock", <><span className="fr-w">{fmtNum(split.nw)} new</span><span className="fr-w">{fmtNum(split.us)} used</span></>)}
+        <div className="bp-stk">
+          <div className="bp-rw"><PixIcon glyph="car" size={12} style={{ color: "#D0821E" }} />New: pace <b>{nPace == null ? "–" : nPace}</b> · goal <b>{nGoal == null ? "–" : nGoal}</b>{nt[1] && <span className={"fr-st " + nt[0]}>{nt[1]}</span>}</div>
+          <div className="bp-rw"><PixIcon glyph="car" size={12} style={{ color: "var(--p2d)" }} />Used: pace <b>{uPace == null ? "–" : uPace}</b> · goal <b>{uGoal == null ? "–" : uGoal}</b>{ut[1] && <span className={"fr-st " + ut[0]}>{ut[1]}</span>}</div>
+          <div className="bp-bar2"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></div>
+          <div className="bp-barl"><span>{split.newPct != null ? Math.round(split.newPct * 100) : 0}% new</span><span>{split.usedPct != null ? Math.round(split.usedPct * 100) : 0}% used</span></div>
+          <div className="bp-defn" style={{ padding: "10px 0 0" }}>Where the month lands by stock at today's mix, against each side of the goal.</div>
+        </div>
+      </>);
+    }
+    if (pop.k === "month") {
+      return (<>
+        {hd(new Date().toLocaleDateString("en-US", { month: "long" }) + " at a glance", <><span className="fr-w">{pace.daysLeft} selling {pace.daysLeft === 1 ? "day" : "days"} left</span></>)}
+        <div className="bp-cw">
+          {!pace.tooEarly && pace.goal && pace.short > 0 && pace.daysLeft > 0 && <div><PixIcon glyph="bolt" size={12} style={{ color: "#C98A00" }} /><span>Need <b>{(Math.round(pace.needPerDay * 10) / 10).toFixed(1)}</b> a day the rest of the way</span></div>}
+          {mcal.best && <div><PixIcon glyph="trophy" size={12} style={{ color: "#C99700" }} /><span>Best day so far: {new Date(mcal.best.d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · <b>{fmtNum(mcal.best.u)}</b> units</span></div>}
+          <div><PixIcon glyph="calendar" size={12} style={{ color: "var(--p2)" }} /><span><b>{mcal.satsLeft}</b> {mcal.satsLeft === 1 ? "Saturday" : "Saturdays"} left</span></div>
+          {lastImport && lastImport.t && <div><PixIcon glyph="doc" size={12} style={{ color: "#8B93A2" }} /><span>Last import: <b>{new Date(lastImport.t).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })}</b></span></div>}
+        </div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => setPop({ k: "pace" })}>Sold by day</button></div>
+      </>);
+    }
+    if (pop.k === "onoff") {
+      const row = (a, on) => (
+        <div key={a.id} className={"fr-row sched" + (on ? "" : " off")}>
+          <span className="fr-av sm" style={{ background: on ? `hsl(${hueFromName(a.name)} 52% 42%)` : "rgba(21,33,27,.12)", color: on ? "#fff" : "#5C6660" }}>{initialsOf(a.name)}</span>
+          <span className="fr-rowt"><span className="fr-nm">{a.name}</span></span>
+          <span className={"fr-st " + (on ? "in" : "off")}>{on ? "on" : "off"}</span>
+        </div>
+      );
+      return (<>
+        {hd("Today", <><span className="fr-st in">{onToday.length} on</span><span className="fr-st away">{offToday.length} off</span></>)}
+        <div className="fr-list">{onToday.map((a) => row(a, true))}{offToday.map((a) => row(a, false))}</div>
+      </>);
+    }
+    return null;
+  };
+  const popTitle = pop ? pop.k : "";
+  const person = pop && pop.k === "person" ? people.find((p) => p.a.id === pop.id) : null;
+
+  return (
+    <div className="bp-page">
+      <div className="fr-top">
+        <div className="fr-brand"><span className="fr-cap">Sage</span><span className="fr-title">The Board</span></div>
+      </div>
+
+      <div className="bp-hero">
+        {updatedAt && <div className="bp-upd"><i />Updated {fmtTime(updatedAt)}</div>}
+        <div className="bp-h5">
+          <button type="button" className="bp-l1" onClick={() => setPop({ k: "units" })}>
+            <span className="bp-num"><DotNum value={String(Math.round(totalUnits))} dot={11} color="#fff" /></span>
+            <span className="bp-goal">{goalUnits ? `/ ${fmtNum(goalBar)} goal` : canSetGoal ? "/ set a goal" : ""}</span>
+          </button>
+          <button type="button" className="bp-r1" onClick={() => setPop({ k: "month" })}>
+            <span className="bp-mo"><PixIcon glyph="calendar" size={12} />{new Date().toLocaleDateString("en-US", { month: "short", year: "numeric" }).toUpperCase()}</span>
+            <span className="bp-grid">
+              {Array.from({ length: mcal.off }, (_, i) => <i key={"e" + i} className="bp-o" />)}
+              {Array.from({ length: mcal.dim }, (_, i) => { const d = i + 1; return <i key={d} className={d < mcal.dNow ? "bp-p" : d === mcal.dNow ? "bp-t" : ""} />; })}
+            </span>
+            <span className="bp-left">{pace.daysLeft} selling {pace.daysLeft === 1 ? "day" : "days"} left</span>
+          </button>
+          <button type="button" className="bp-l2" onClick={() => setPop({ k: "pace" })}>
+            <span className="bp-strip">
+              <span className="bp-dots">{Array.from({ length: dotN }, (_, i) => <i key={i} className={i < litDots ? "bp-d" : ""} />)}</span>
+              {parX != null && <span className={"bp-mk bp-td" + paceCls} style={{ left: parX + "%" }} />}
+              {goalBar > 0 && <span className="bp-mk bp-goalmk" style={{ left: "99%" }} />}
+            </span>
+            <span className="bp-stripl"><span>today</span><span className={"bp-pc" + paceCls}>{paceWord}</span><span>{goalBar ? `${fmtNum(goalBar)} to hit` : ""}</span></span>
+          </button>
+          <button type="button" className="bp-l3" onClick={() => setPop({ k: "stock" })}>
+            <span className="bp-nu"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></span>
+            <span className="bp-nul"><span><b>{fmtNum(split.nw)}</b> new</span><span><b>{fmtNum(split.us)}</b> used</span></span>
+          </button>
+          <button type="button" className="bp-r3" onClick={() => setPop({ k: "onoff" })}>
+            <span className="bp-onoff">{onToday.length} on{offToday.length ? <> · <em>{offToday.length} off</em></> : null}</span>
+          </button>
+        </div>
+        <div className="bp-secdiv" />
+        <div className="bp-five">
+          {closing.map((c) => {
+            const target = thr[c.id].green;
+            const pctV = c.pct == null ? null : c.pct * 100;
+            const h = pctV == null ? 0 : Math.min(pctV / target * 100, 120) / 1.2;
+            const d = chDelta[c.id];
+            return (
+              <button type="button" key={c.id} className={"bp-t5" + (d == null ? "" : d >= 0 ? " bp-up" : " bp-down")} onClick={() => setPop({ k: "chan", id: c.id })}>
+                <span className={"bp-pct " + (pctV == null ? "" : pctV >= target ? "bp-ok" : "bp-low")}>{pctV == null ? "–" : fmtPct(c.pct)}</span>
+                <span className="bp-body"><span className="bp-tb"><i style={{ height: h.toFixed(1) + "%", background: CHANNEL_HUE[c.id] }} /></span><span className="bp-tgt" style={{ bottom: `${(100 / 1.2).toFixed(0)}%` }} /></span>
+                <span className="bp-tl">{c.label}</span>
+              </button>
+            );
+          })}
+          <span className="bp-sep" />
+          {videoDials.map((v) => {
+            const t = goalTier(v.mean, 1);
+            return (
+              <button type="button" key={v.m} className="bp-dial" onClick={() => setPop({ k: "dial", m: v.m })} style={{ "--v": Math.round(v.mean * 100), "--c": t.col }}>
+                <span className="bp-ring"><span>{Math.round(v.mean * 100)}%</span></span>
+                <span className="bp-dl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bp-stand">
+        <div className="bp-filt">
+          {boardRoles.map((r) => {
+            const n = people.filter((p) => p.a.roleId === r.id).length;
+            return <button type="button" key={r.id} className={!limitOnly && roleFilter === r.id ? "on" : ""} onClick={() => { setRoleFilter(r.id); setLimitOnly(false); }}>{r.name} · {n}</button>;
+          })}
+          <button type="button" className={limitOnly ? "on" : ""} onClick={() => setLimitOnly((v) => !v)}>At the limit · {limitCount}</button>
+          {drill && <button type="button" className="on drill" onClick={() => setDrill(null)}>{drill.label} <PixIcon glyph="close" size={10} /></button>}
+        </div>
+        <div className="bp-fivehead"><span /><span className="bp-lbl">Limit</span>
+          <PixIcon glyph="globe" size={13} /><PixIcon glyph="phone" size={13} /><PixIcon glyph="door" size={13} /><PixIcon glyph="calendar" size={13} /><PixIcon glyph="tap" size={13} />
+          <span className="bp-lbl bp-r">units</span></div>
+        {rows.length === 0 && <p className="fr-empty">Nobody here.</p>}
+        {rows.map((p) => (
+          <button type="button" key={p.a.id} className="bp-row" onClick={() => setPop({ k: "person", id: p.a.id })}>
+            <span className="fr-av bp-sm" style={avStyle(p)}>{initialsOf(p.a.name)}</span>
+            <span className="bp-who">
+              <span className="bp-nmx">{p.a.name}</span>
+              <span className="bp-lim">
+                <span className="bp-pb"><i className={"bp-" + p.stand[0]} style={{ width: (p.ev.cap ? Math.min(100, (p.ev.opps / p.ev.cap) * 100) : 0) + "%" }} /></span>
+                <b>{p.ev.cap != null ? `${p.ev.opps ?? 0}/${p.ev.cap}` : "–"}</b>
+                {p.stand[0] !== "ok" && p.stand[0] !== "na" && <span className={"bp-stnd bp-" + p.stand[0]}>{p.stand[1]}</span>}
+              </span>
+            </span>
+            {p.five.map((f) => <span key={f.key} className={"bp-dotc bp-" + f.state}><i /></span>)}
+            <span className="bp-un">{fmtNum(p.units)}</span>
+          </button>
+        ))}
+      </div>
+
+      {pop && pop.k !== "person" && <FrPop title={popTitle} onClose={close} cls={"fr-k-" + pop.k}>{popBody()}</FrPop>}
+      {person && (
+        <AssocCard a={person.a} stats={person.st} ev={person.ev} data={data} config={config} thresholds={store.thresholds}
+          origin={frLastTap.x != null ? { x: frLastTap.x, y: frLastTap.y } : null} onClose={close}
+          actions={
+            <div className="fr-acts ac-acts">
+              {person.restricted
+                ? <button type="button" className="fr-b pri" onClick={() => { onSetRestriction(person.a, null); close(); }}>Clear to grab leads</button>
+                : <button type="button" className="fr-b pri warnpri" onClick={() => { onSetRestriction(person.a, { since: new Date().toISOString(), until: null, reasons: failureText(person.ev) }); close(); }}>Restrict leads</button>}
+              {onCoach && <button type="button" className="fr-b" onClick={() => { close(); onCoach(person.a); }}><PixIcon glyph="user" size={16} />Coach</button>}
+            </div>
+          } />
+      )}
+    </div>
+  );
 }
 
 function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, onFocus, canSetGoal, onSaveConfig }) {
@@ -37768,6 +38245,143 @@ const SAGE_CSS = `
         .s2-rgo { display:none; }
         .s2g4 { width:auto; }
       }
+
+/* ---- the Board on a phone ----
+   The site's hero, phone-sized, then one row a person. Shares the pop and
+   the row pieces with the room (.fr-*). ---- */
+.bp-page{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
+  --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61;
+  margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
+.bp-page *{ box-sizing:border-box; }
+.bp-page button{ font-family:inherit; cursor:pointer; border:0; background:none; padding:0; color:inherit; text-align:left; }
+.bp-hero{ isolation:isolate; border-radius:24px; padding:12px 14px 12px; color:#fff; position:relative; overflow:hidden;
+  background:linear-gradient(150deg,#7FA98A,#55795F 55%,#26382C); box-shadow:0 14px 30px -14px rgba(38,56,44,.5); }
+.bp-hero::after{ content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.055) 0 1px,transparent 1px 3px); pointer-events:none; }
+.bp-upd{ position:absolute; top:10px; right:14px; display:flex; align-items:center; gap:6px; font:700 8.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); z-index:1; }
+.bp-upd i{ width:6px; height:6px; border-radius:50%; background:#F08A80; box-shadow:0 0 6px rgba(240,138,128,.9); animation:bpBlink 1.6s ease-in-out infinite; }
+@keyframes bpBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
+.bp-h5{ display:grid; grid-template-columns:minmax(0,1fr) 118px; grid-template-rows:auto auto auto; column-gap:12px; align-items:center; }
+.bp-l1{ grid-column:1; grid-row:1; align-self:start; display:flex; align-items:flex-end; gap:10px; min-width:0; padding-top:4px; }
+.bp-num{ display:block; }
+.bp-goal{ font:600 13px var(--font-mono); color:rgba(255,255,255,.55); padding-bottom:4px; white-space:nowrap; }
+.bp-r1{ grid-column:2; grid-row:1/3; align-self:end; display:flex; flex-direction:column; align-items:flex-end; }
+.bp-mo{ display:flex; align-items:center; gap:5px; font:700 10px var(--font-mono); letter-spacing:.14em; color:var(--frsand); }
+.bp-grid{ display:grid; grid-template-columns:repeat(7,12px); gap:4px; margin-top:8px; }
+.bp-grid i{ width:9px; height:9px; border-radius:50%; background:rgba(255,255,255,.18); }
+.bp-grid i.bp-p{ background:rgba(255,255,255,.85); } .bp-grid i.bp-t{ background:var(--frsand); box-shadow:0 0 8px rgba(228,201,141,.8); } .bp-grid i.bp-o{ background:transparent; }
+.bp-left{ font:600 9.5px var(--font-mono); color:rgba(255,255,255,.75); margin-top:6px; white-space:nowrap; }
+.bp-l2{ grid-column:1; grid-row:2; align-self:center; padding-top:8px; display:block; }
+.bp-strip{ position:relative; display:block; height:14px; }
+.bp-strip .bp-dots{ display:flex; justify-content:space-between; align-items:center; height:14px; width:100%; }
+.bp-strip .bp-dots i{ width:5px; height:5px; border-radius:50%; background:rgba(255,255,255,.3); }
+.bp-strip .bp-dots i.bp-d{ background:#fff; }
+.bp-strip .bp-mk{ position:absolute; top:-2px; width:2px; height:18px; border-radius:1px; }
+.bp-strip .bp-mk.bp-td{ background:#F08A80; } .bp-strip .bp-mk.bp-td.bp-good{ background:#8fd8af; } .bp-strip .bp-mk.bp-td.bp-mid{ background:var(--frsand); }
+.bp-strip .bp-mk.bp-goalmk{ background:#fff; }
+.bp-stripl{ display:flex; justify-content:space-between; font:600 9px var(--font-mono); color:rgba(255,255,255,.65); margin-top:4px; }
+.bp-stripl .bp-pc{ font-weight:700; color:#F08A80; } .bp-stripl .bp-pc.bp-good{ color:#8fd8af; } .bp-stripl .bp-pc.bp-mid{ color:var(--frsand); }
+.bp-l3{ grid-column:1; grid-row:3; align-self:center; padding-top:10px; display:block; }
+.bp-nu{ display:flex; height:12px; border-radius:99px; background:rgba(255,255,255,.14); overflow:hidden; }
+.bp-nu i{ height:100%; } .bp-nu .bp-n{ background:var(--frsand); } .bp-nu .bp-u{ background:rgba(255,255,255,.45); }
+.bp-nul{ display:flex; justify-content:space-between; font:600 9.5px var(--font-mono); color:rgba(255,255,255,.75); margin-top:4px; }
+.bp-nul b{ color:#fff; }
+.bp-r3{ grid-column:2; grid-row:3; align-self:center; padding-top:10px; display:flex; justify-content:flex-end; }
+.bp-onoff{ background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.12); border-radius:9px; padding:5px 8px; font:700 11px var(--font-mono); color:#fff; white-space:nowrap; }
+.bp-onoff em{ font-style:normal; color:#F08A80; }
+.bp-secdiv{ margin-top:12px; border-top:2px dotted rgba(255,255,255,.28); }
+.bp-five{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) 1px repeat(3,minmax(0,1fr)); gap:4px; align-items:end; margin-top:6px; padding-top:4px; }
+.bp-five .bp-sep{ background:rgba(255,255,255,.18); height:64px; }
+.bp-t5{ display:flex; flex-direction:column; align-items:center; gap:4px; min-width:0; }
+.bp-t5 .bp-pct{ font:700 10px var(--font-mono); color:#fff; } .bp-t5 .bp-pct.bp-ok{ color:#8fd8af; } .bp-t5 .bp-pct.bp-low{ color:#F08A80; }
+.bp-t5 .bp-body{ position:relative; display:flex; align-items:flex-end; height:44px; }
+.bp-t5 .bp-tb{ position:relative; display:block; width:18px; height:44px; border-radius:9px; background:rgba(255,255,255,.16); border:1px solid rgba(255,255,255,.28);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.25), inset 0 -6px 10px rgba(0,0,0,.12); overflow:hidden; }
+.bp-t5 .bp-tb i{ position:absolute; left:0; right:0; bottom:0; border-radius:0 0 9px 9px; }
+.bp-t5.bp-up .bp-tb i::after, .bp-t5.bp-down .bp-tb i::after{ content:""; position:absolute; left:0; right:0; height:38%;
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.28),transparent); animation:bpSheen 2.6s ease-in-out infinite; }
+.bp-t5.bp-down .bp-tb i::after{ animation-name:bpSheenDn; }
+@keyframes bpSheen{ 0%{ bottom:-40%; } 100%{ bottom:100%; } }
+@keyframes bpSheenDn{ 0%{ bottom:100%; } 100%{ bottom:-40%; } }
+.bp-t5 .bp-tgt{ position:absolute; left:-6px; width:30px; border-top:2px dashed rgba(255,255,255,.65); }
+.bp-t5 .bp-tl{ font:700 7px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; color:rgba(255,255,255,.8); white-space:nowrap; }
+.bp-dial{ display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; }
+.bp-dial .bp-ring{ width:44px; height:44px; border-radius:50%; display:grid; place-items:center; font:700 9.5px var(--font-mono); color:#fff;
+  background:conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.14) 0); position:relative; }
+.bp-dial .bp-ring::before{ content:""; position:absolute; inset:5px; border-radius:50%; background:#3d5a48; }
+.bp-dial .bp-ring span{ position:relative; }
+.bp-dial .bp-dl{ font:700 7px/1.15 var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:rgba(255,255,255,.75); text-align:center; max-width:52px; }
+/* the standings */
+.bp-stand{ background:#fff; border:1px solid var(--frline); border-radius:20px; margin-top:12px; overflow:hidden; box-shadow:0 8px 24px rgba(31,54,86,.06); }
+.bp-filt{ display:flex; gap:6px; padding:10px 12px 8px; flex-wrap:wrap; }
+.bp-filt button{ padding:6px 11px; border-radius:99px; border:1.5px solid var(--frline); font:700 11px var(--font-ui); color:var(--frink2); }
+.bp-filt button.on{ background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
+.bp-filt button.drill{ background:var(--frsand2); border-color:var(--frsand2); display:inline-flex; align-items:center; gap:6px; }
+.bp-fivehead{ display:grid; grid-template-columns:28px minmax(0,1fr) repeat(5,22px) 34px; column-gap:5px; align-items:center; padding:8px 10px 4px; border-bottom:1px solid var(--frline); }
+.bp-fivehead .pix{ color:var(--frink3); justify-self:center; }
+.bp-fivehead .bp-lbl{ font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); }
+.bp-fivehead .bp-lbl.bp-r{ text-align:right; }
+.bp-row{ display:grid; grid-template-columns:28px minmax(0,1fr) repeat(5,22px) 34px; column-gap:5px; align-items:center; height:56px; padding:0 10px; border-bottom:1px solid var(--frline); width:100%; }
+.bp-row:last-child{ border-bottom:0; }
+.bp-row .fr-av.bp-sm{ width:28px; height:28px; font-size:9.5px; }
+.bp-row .bp-who{ min-width:0; display:flex; flex-direction:column; }
+.bp-row .bp-nmx{ font:600 13px var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bp-row .bp-lim{ display:flex; align-items:center; gap:5px; margin-top:3px; white-space:nowrap; overflow:hidden; }
+.bp-row .bp-pb{ flex:0 0 auto; width:70px; height:5px; border-radius:99px; background:rgba(16,32,52,.08); overflow:hidden; }
+.bp-row .bp-pb i{ display:block; height:100%; border-radius:99px; }
+.bp-row .bp-pb i.bp-ok{ background:var(--frok); } .bp-row .bp-pb i.bp-warn{ background:var(--frthin); } .bp-row .bp-pb i.bp-bad{ background:var(--frgap); } .bp-row .bp-pb i.bp-na{ background:#C9CFCB; }
+.bp-row .bp-lim b{ font:700 8.5px var(--font-mono); color:var(--frink3); }
+.bp-row .bp-stnd{ font:700 7.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; padding:1px 5px; border-radius:6px; }
+.bp-row .bp-stnd.bp-warn{ background:#FFF3DE; color:var(--frthin); } .bp-row .bp-stnd.bp-bad{ background:#FBE5E0; color:var(--frgap); }
+.bp-row .bp-dotc{ width:20px; height:20px; border-radius:50%; justify-self:center; display:grid; place-items:center; }
+.bp-row .bp-dotc i{ width:8px; height:8px; border-radius:50%; background:currentColor; }
+.bp-row .bp-dotc.bp-ok{ background:#E3F3E9; color:var(--frok); } .bp-row .bp-dotc.bp-warn{ background:#FFF3DE; color:var(--frthin); } .bp-row .bp-dotc.bp-bad{ background:#FBE5E0; color:var(--frgap); } .bp-row .bp-dotc.bp-na{ background:var(--frpaper); color:#B4BBB6; }
+.bp-row .bp-un{ font:700 15px var(--font-display); text-align:right; }
+/* the pops' own pieces */
+.bp-nm{ white-space:normal !important; overflow:visible !important; line-height:1.15; }
+.bp-defn{ padding:4px 16px 12px; font:500 13px/1.5 var(--font-ui); color:var(--frink2); }
+.bp-divider{ margin:6px 16px 0; border-top:2px dotted var(--frline); }
+.bp-lg{ padding:6px 16px 4px; }
+.bp-lg svg{ width:100%; height:110px; display:block; }
+.bp-lgl{ display:flex; justify-content:space-between; font:700 9px var(--font-mono); letter-spacing:.1em; color:var(--frink3); padding:4px 0 0; }
+.bp-lgleg{ display:flex; gap:12px; padding:8px 0 0; font:500 11px var(--font-ui); color:var(--frink2); }
+.bp-lgleg i{ display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:-1px; }
+.bp-lgleg .bp-dim{ margin-left:auto; color:var(--frink3); }
+.bp-swg{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; padding:6px 16px 4px; }
+.bp-swg span{ height:38px; border-radius:8px; background:var(--frpaper); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; }
+.bp-swg span em{ font:600 8.5px var(--font-mono); font-style:normal; color:var(--frink3); } .bp-swg span b{ font:700 12px var(--font-display); color:var(--frink); }
+.bp-swg span.bp-f{ background:transparent; border:1px dashed var(--frline); } .bp-swg span.bp-f b{ color:var(--frink3); }
+.bp-swg span.bp-e{ background:transparent; } .bp-swg span.bp-t{ outline:2px solid var(--frsand2); outline-offset:-2px; }
+.bp-ask{ padding:8px 16px 4px; font:500 12px/1.5 var(--font-ui); color:var(--frink2); }
+.bp-ask > b{ font:700 22px var(--font-display); color:var(--frink); margin-right:6px; } .bp-ask small{ font:500 10px var(--font-mono); color:var(--frink3); }
+.bp-ask .bp-bad{ color:var(--frgap); } .bp-ask .bp-ok{ color:var(--frok); }
+.bp-ask .bp-ln{ border-top:1px dashed var(--frline); margin:8px 0 0; padding-top:8px; font:500 11px var(--font-mono); color:var(--frink2); }
+.bp-ask .bp-ln b.bp-sm{ font:700 12px var(--font-mono); color:var(--frink); margin:0; }
+.bp-ask .bp-tiny{ font:500 10px var(--font-mono); color:var(--frink3); margin-top:6px; }
+.bp-stk{ padding:6px 16px 4px; }
+.bp-stk .bp-rw{ display:flex; align-items:center; gap:8px; font:500 13px var(--font-ui); color:var(--frink2); padding:6px 0; }
+.bp-stk .bp-rw b{ color:var(--frink); } .bp-stk .bp-rw .fr-st{ margin-left:auto; }
+.bp-stk .bp-bar2{ height:10px; border-radius:99px; overflow:hidden; display:flex; margin-top:8px; background:#E1E5E0; }
+.bp-stk .bp-bar2 i{ height:100%; } .bp-stk .bp-bar2 .bp-n{ background:var(--frsand); } .bp-stk .bp-bar2 .bp-u{ background:#A9C4AC; }
+.bp-stk .bp-barl{ display:flex; justify-content:space-between; font:600 10px var(--font-mono); color:var(--frink2); margin-top:4px; }
+.bp-cw{ padding:6px 16px 4px; }
+.bp-cw > div{ display:flex; align-items:center; gap:8px; padding:7px 0; font:500 13px var(--font-ui); color:var(--frink2); border-bottom:1px solid var(--frline); }
+.bp-cw > div:last-child{ border-bottom:0; } .bp-cw b{ color:var(--frink); }
+.fr-b.warnpri{ background:var(--frgap); border-color:var(--frgap); }
+/* the website's person card: room to breathe, and the desk's actions under it */
+.acard{ padding:18px 18px 18px; }
+.ac-head{ gap:12px; margin-bottom:6px; }
+.ac-cap{ margin:16px 0 8px; }
+.ac-ch{ gap:8px; } .ac-ch span{ padding:8px 10px; }
+.ac-splitlbl, .ac-trendlbl{ margin-top:6px; }
+.ac-gauges .mstrip{ gap:12px 4px; grid-template-columns:repeat(6, minmax(0,1fr)); }
+.ac-gauges .mclust{ display:contents; }
+.ac-gauges .s2g4 svg{ width:100%; max-width:68px; height:auto; }
+.ac-gauges .s2g4-l{ white-space:normal; overflow:visible; font-size:8px; line-height:1.2; }
+.ac-gauges .s2g4-l i{ display:block; }
+.ac-gauges .mclust + .mclust::before{ display:none; }
+.ac-gauges .s2g4{ width:auto !important; }
+.ac-acts{ padding:16px 0 0; }
+.ac-acts .fr-b{ font-family:var(--font-ui); }
 
 /* ---- the room on a phone: Live Floor, manager side ----
    One screen: plan, the line as the salesperson's rail, coverage. Every tap
