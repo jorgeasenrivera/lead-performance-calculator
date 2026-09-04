@@ -31315,6 +31315,14 @@ const SAGE_CSS = `
           overflow-x: visible;          /* the clip was the jump */
           overflow-anchor: none;        /* stop Safari re-anchoring mid-scroll */
         }
+        /* Except while a tool or tab is sliding in: the incoming page starts up
+           to 180px to the side, and with the phone pages running edge to edge
+           that overhang made the document wider than the screen for half a
+           second. Safari zooms out to fit a wider document and zooms back when
+           it shrinks, which read as the whole app snapping narrow and then
+           "fixing itself". Nobody is scrolling during the slide, so the clip
+           costs nothing here. */
+        .tool-move .lpc, .tab-move .lpc { overflow-x: clip; }
         .lpc::before, .lpc::after { display: none !important; }
 
         /* The phone keeps the desktop's colour.
