@@ -31659,6 +31659,7 @@ const SAGE_CSS = `
          four-field sign-up on a short screen — has to be able to scroll instead
          of having its top cut off, and align-items:center cuts. */
       .login { position:relative; z-index:1; display:flex; justify-content:center;
+        padding-top:env(safe-area-inset-top, 0px); padding-bottom:env(safe-area-inset-bottom, 0px);
         /* border-box, because this sheet sets no global box-sizing and the
            padding was being ADDED to the 100%: an 980px box inside a 900px
            layer, which is what made the screen scroll and put the form 40px
@@ -33110,7 +33111,10 @@ const SAGE_CSS = `
            so the store name and the greeting card collided while scrolling. It has
            to sit above page content but below the bottom bar (340), the help
            button (350) and every sheet (360+). */
-        .topbar { padding:10px 14px; gap:10px;
+        /* Inside the phone app the page runs under the clock; the header pads
+           itself past that strip, which iOS keeps for its own taps, and the
+           header's own blur continues up behind the clock. Zero in a browser. */
+        .topbar { padding:calc(10px + env(safe-area-inset-top, 0px)) 14px 10px; gap:10px;
           background:rgba(255,255,255,.86); backdrop-filter:blur(18px) saturate(160%);
           -webkit-backdrop-filter:blur(18px) saturate(160%); box-shadow:0 1px 0 rgba(16,40,68,.08); }
         /* The <=720px block above still forces topbar-right onto its own

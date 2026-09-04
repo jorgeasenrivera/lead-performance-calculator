@@ -81,15 +81,13 @@ export default function App() {
   const web = useRef(null);
   const [ready, setReady] = useState(false);
   const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null });
-  /* ---- the safe area, top only ----
-     The page is kept out from under the clock: iOS keeps that strip for itself,
-     so anything drawn there could be seen and never tapped. The strip takes
-     whatever colour the page says it is (its theme-color meta, posted by the
-     page whenever it changes), so the join does not show.
-
-     The bottom is left to the page. It already knows about the home bar
-     through env(safe-area-inset-bottom) and floats its own bars above it, and
-     an inset there drew a second, differently coloured strip under them. */
+  /* ---- the safe areas belong to the page ----
+     The page runs under the clock and the home bar, the way it does in Safari
+     with the toolbars hidden, and pads itself with env(safe-area-inset-*):
+     the ground stays continuous instead of meeting a flat strip of a nearly
+     matching colour, and the header is pushed below the strip iOS keeps for
+     itself so it can still be tapped. The colour the page reports (its
+     theme-color meta) decides only whether the clock is drawn light or dark. */
   const [chrome, setChrome] = useState(INK);
   const lightChrome = (() => {
     const m = /^#([0-9a-f]{6})$/i.exec(chrome);
@@ -160,9 +158,8 @@ export default function App() {
     return false;
   }, []);
 
-  const topInset = Platform.OS === "ios" ? (Constants.statusBarHeight || 0) : 0;
   return (
-    <View style={[styles.root, { backgroundColor: chrome, paddingTop: topInset }]}>
+    <View style={[styles.root, { backgroundColor: chrome }]}>
       <StatusBar style={lightChrome ? "dark" : "light"} backgroundColor={chrome} />
       <WebView
         ref={web}
