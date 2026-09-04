@@ -16660,10 +16660,6 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
   const upd = fresh.lastAt ? fmtClock(fresh.lastAt) : null;
   return (
     <div className="bp-page co-page">
-      <div className="fr-top">
-        <div className="fr-brand"><span className="fr-cap">Sage</span><span className="fr-title">Check Out</span></div>
-      </div>
-
       <div className="bp-hero co-hero">
         <div className="co-hh">
           <button type="button" className="co-day" onClick={() => setPop({ k: "day" })}><PixIcon glyph="calendar" size={11} />{dayLabel(day)}</button>
@@ -26285,10 +26281,6 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
 
   return (
     <div className="bp-page">
-      <div className="fr-top">
-        <div className="fr-brand"><span className="fr-cap">Sage</span><span className="fr-title">The Board</span></div>
-      </div>
-
       <div className="bp-hero">
         {updatedAt && <div className="bp-upd"><i />Updated {fmtTime(updatedAt)}</div>}
         <div className="bp-h5">
@@ -38915,6 +38907,7 @@ const SAGE_CSS = `
    see-through. The phone pages sit above it. On a phone the Board's container
    also lost its phone padding to a later desktop rule, which inset it. */
 .bp-page,.co-page,.fr-page{ position:relative; z-index:1; }
+.bp-page{ padding-top:6px; }
 @media (max-width:700px){ .board-page{ padding:18px 0 0; } .co-page{ padding:10px 0 28px; } }
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
