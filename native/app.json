@@ -36,7 +36,8 @@
         "VIBRATE",
         "ACCESS_FINE_LOCATION",
         "CAMERA"
-      ]
+      ],
+      "edgeToEdgeEnabled": true
     },
     "plugins": [
       "expo-splash-screen",
