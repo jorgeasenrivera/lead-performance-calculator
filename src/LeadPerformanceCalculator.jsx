@@ -38657,10 +38657,10 @@ const SAGE_CSS = `
   margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
 .bp-page *{ box-sizing:border-box; }
 .bp-page button{ font-family:inherit; cursor:pointer; border:0; background:none; padding:0; color:inherit; text-align:left; }
-.bp-hero{ isolation:isolate; border-radius:24px; padding:12px 14px 12px; color:#fff; position:relative; overflow:hidden;
+.bp-hero{ isolation:isolate; border-radius:24px; padding:18px 18px 16px; color:#fff; position:relative; overflow:hidden;
   background:linear-gradient(150deg,#7FA98A,#55795F 55%,#26382C); box-shadow:0 14px 30px -14px rgba(38,56,44,.5); }
 .bp-hero::after{ content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.055) 0 1px,transparent 1px 3px); pointer-events:none; }
-.bp-upd{ position:absolute; top:10px; right:14px; display:flex; align-items:center; gap:6px; font:700 8.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); z-index:1; }
+.bp-upd{ position:absolute; top:14px; right:18px; display:flex; align-items:center; gap:6px; font:700 8.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); z-index:1; }
 .bp-upd i{ width:6px; height:6px; border-radius:50%; background:#F08A80; box-shadow:0 0 6px rgba(240,138,128,.9); animation:bpBlink 1.6s ease-in-out infinite; }
 @keyframes bpBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.25; } }
 .bp-h5{ display:grid; grid-template-columns:minmax(0,1fr) 118px; grid-template-rows:auto auto auto; column-gap:12px; align-items:center; }
@@ -38712,7 +38712,7 @@ const SAGE_CSS = `
   background:conic-gradient(var(--c) calc(var(--v)*1%), rgba(255,255,255,.14) 0); position:relative; }
 .bp-dial .bp-ring::before{ content:""; position:absolute; inset:5px; border-radius:50%; background:#3d5a48; }
 .bp-dial .bp-ring span{ position:relative; }
-.bp-dial .bp-dl{ font:700 7px/1.15 var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:rgba(255,255,255,.75); text-align:center; max-width:52px; }
+.bp-dial .bp-dl{ font:700 7px/1.15 var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:rgba(255,255,255,.75); text-align:center; max-width:52px; min-height:16px; display:flex; align-items:flex-start; justify-content:center; }
 /* the standings */
 .bp-stand{ background:#fff; border:1px solid var(--frline); border-radius:20px; margin-top:12px; overflow:hidden; box-shadow:0 8px 24px rgba(31,54,86,.06); }
 .bp-filt{ display:flex; gap:6px; padding:10px 12px 8px; flex-wrap:wrap; }
@@ -38722,7 +38722,7 @@ const SAGE_CSS = `
 .bp-fivehead{ display:grid; grid-template-columns:28px minmax(0,1fr) repeat(5,22px) 34px; column-gap:5px; align-items:center; padding:8px 10px 4px; border-bottom:1px solid var(--frline); }
 .bp-fivehead .pix{ color:var(--frink3); justify-self:center; }
 .bp-fivehead .bp-lbl{ font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); }
-.bp-fivehead .bp-lbl.bp-r{ text-align:right; }
+.bp-fivehead .bp-lbl.bp-r{ text-align:center; }
 .bp-row{ display:grid; grid-template-columns:28px minmax(0,1fr) repeat(5,22px) 34px; column-gap:5px; align-items:center; height:56px; padding:0 10px; border-bottom:1px solid var(--frline); width:100%; }
 .bp-row:last-child{ border-bottom:0; }
 .bp-row .fr-av.bp-sm{ width:28px; height:28px; font-size:9.5px; }
@@ -38738,7 +38738,7 @@ const SAGE_CSS = `
 .bp-row .bp-dotc{ width:20px; height:20px; border-radius:50%; justify-self:center; display:grid; place-items:center; }
 .bp-row .bp-dotc i{ width:8px; height:8px; border-radius:50%; background:currentColor; }
 .bp-row .bp-dotc.bp-ok{ background:#E3F3E9; color:var(--frok); } .bp-row .bp-dotc.bp-warn{ background:#FFF3DE; color:var(--frthin); } .bp-row .bp-dotc.bp-bad{ background:#FBE5E0; color:var(--frgap); } .bp-row .bp-dotc.bp-na{ background:var(--frpaper); color:#B4BBB6; }
-.bp-row .bp-un{ font:700 15px var(--font-display); text-align:right; }
+.bp-row .bp-un{ font:700 15px var(--font-display); text-align:center; }
 /* the pops' own pieces */
 .bp-nm{ white-space:normal !important; overflow:visible !important; line-height:1.15; }
 .bp-defn{ padding:4px 16px 12px; font:500 13px/1.5 var(--font-ui); color:var(--frink2); }
