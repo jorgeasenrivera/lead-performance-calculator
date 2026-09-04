@@ -10277,6 +10277,16 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
   const [wiping, setWiping] = useState(false);
+  const [held, setHeld] = useState(true);
+  const holdT = useRef(null);
+  /* The curtain's exit clears itself here, on its own effect, because the
+     screen-change effect below re-runs the moment the first page is swapped
+     in, and its cleanup would cancel the timer before it fired. */
+  useEffect(() => {
+    if (wiping !== "out") return undefined;
+    const t = setTimeout(() => setWiping(false), 480);
+    return () => clearTimeout(t);
+  }, [wiping]);
   // Set the instant "Got it" is tapped, cleared when the data agrees. Without it the
   // overlay lingers for the round trip and people tap it again and again.
   const [tookIt, setTookIt] = useState(false);
@@ -10396,7 +10406,19 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   // live screen (which don't change `screen`). Key it on screen + live status.
   const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
   useEffect(() => {
-    if (liveKey === shownKey) return;
+    if (liveKey === shownKey) return undefined;
+    /* The curtain sat over the page while the line loaded, so the first page
+       is already behind it: swap it in and let the curtain leave, rather than
+       sweeping a second curtain in from the side. The line and the person
+       resolve a beat apart, and the screen in between is not worth showing,
+       so the curtain waits for the page to settle before it goes. */
+    if (held) {
+      if (screen === "loading") return undefined;
+      setShown(screen); setShownKey(liveKey);
+      clearTimeout(holdT.current);
+      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 320);
+      return undefined;
+    }
     // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
     if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
     setWiping(true);
@@ -10536,7 +10558,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   if (eff === "loading") {
     content = (
       <SfScreen spine={queueSpine} className="sf-v-wait">
-        <div className="sf-loading"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
+        <div className="sf-loading" aria-label="Loading" />
       </SfScreen>
     );
   } else if (eff === "invalid") {
@@ -10649,7 +10671,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   return (
     <div className={`q-page sf ${variant.sf}`} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
-      <div className={`q-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><QPhoneIcon className="q-curtain-mark" /></div>
+      <SageCurtain wiping={wiping} hold={held} />
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
       {myDay && (
@@ -13097,6 +13119,16 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
   const [wiping, setWiping] = useState(false);
+  const [held, setHeld] = useState(true);
+  const holdT = useRef(null);
+  /* The curtain's exit clears itself here, on its own effect, because the
+     screen-change effect below re-runs the moment the first page is swapped
+     in, and its cleanup would cancel the timer before it fired. */
+  useEffect(() => {
+    if (wiping !== "out") return undefined;
+    const t = setTimeout(() => setWiping(false), 480);
+    return () => clearTimeout(t);
+  }, [wiping]);
   // Set the instant "Got it" is tapped, cleared when the data agrees. Without it the
   // overlay lingers for the round trip and people tap it again and again.
   const [tookIt, setTookIt] = useState(false);
@@ -13403,7 +13435,19 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   // live screen (which don't change `screen`). Key it on screen + live status.
   const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
   useEffect(() => {
-    if (liveKey === shownKey) return;
+    if (liveKey === shownKey) return undefined;
+    /* The curtain sat over the page while the line loaded, so the first page
+       is already behind it: swap it in and let the curtain leave, rather than
+       sweeping a second curtain in from the side. The line and the person
+       resolve a beat apart, and the screen in between is not worth showing,
+       so the curtain waits for the page to settle before it goes. */
+    if (held) {
+      if (screen === "loading") return undefined;
+      setShown(screen); setShownKey(liveKey);
+      clearTimeout(holdT.current);
+      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 320);
+      return undefined;
+    }
     // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
     if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
     setWiping(true);
@@ -13599,7 +13643,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   if (eff === "loading") {
     content = (
       <SfScreen spine={queueSpine} className="sf-v-wait">
-        <div className="sf-loading"><div className="spin-logo" /><p>Reading today&rsquo;s line&hellip;</p></div>
+        <div className="sf-loading" aria-label="Loading" />
       </SfScreen>
     );
   } else if (eff === "invalid") {
@@ -13912,7 +13956,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`}
         figures={mine ? [{ label: "Calls today", value: mine.calls }, { label: "Videos today", value: mine.video }, { label: "Tasks today", value: mine.tasks }, { label: "Units this month", value: myUnits }] : []}
         onClose={() => setHelpPanel(false)} />}
-      <div className={`q-curtain f-curtain ${wiping ? "q-wipe" : ""}`} aria-hidden="true"><FDoorIcon className="q-curtain-mark" /></div>
+      <SageCurtain wiping={wiping} hold={held} />
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
       {myDay && (
@@ -25120,7 +25164,22 @@ function StoreMismatch({ config, mismatch, isAdmin }) {
   );
 }
 
+/* One curtain for the salesperson's phone: the app's own green, the Sage mark
+   in the middle. It sits over the page while the line loads and slides away
+   once the page is there, and it is the same curtain that sweeps between
+   screens, so opening the app is one motion rather than three loaders. */
+function SageCurtain({ wiping = false, hold = false }) {
+  const cls = "q-curtain sage-curtain" + (hold ? " q-hold" : wiping === "out" ? " q-out" : wiping ? " q-wipe" : "");
+  return (
+    <div className={cls} aria-hidden="true">
+      <span className="q-curtain-mark sage-curtain-mark"><SageMark plate={SAGE_PLATE} base={SAGE_BASE_REVERSED} cap={SAGE_CAP_REVERSED} size={84} radius={30} pad={16} /></span>
+    </div>
+  );
+}
+
 function LoadingScreen({ label = "Loading" }) {
+  const phone = usePhoneLayout();
+  if (phone) return <SageCurtain hold />;
   return (
     <div className="loadscreen">
       <div className="loadscreen-inner">
@@ -36766,7 +36825,18 @@ const SAGE_CSS = `
 }
 
 /* ===== SmartFloor / Live Floor — greens where the phone line runs blue ===== */
-.f-page .q-curtain,.f-curtain{background:linear-gradient(120deg,#0f9d76 0%,#19c58f 55%,#37d3a3 100%);}
+.f-page .q-curtain,.f-curtain,.q-curtain.sage-curtain{background:linear-gradient(150deg,#7FA98A 0%,#55795F 55%,#26382C 100%);}
+.q-curtain.q-hold{transform:none;animation:none;}
+.q-curtain.sage-curtain{z-index:9000;}
+.q-curtain.q-hold .q-curtain-mark{opacity:1;transform:none;animation:sageCurtainPulse 1.8s ease-in-out infinite;}
+@keyframes sageCurtainPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
+.q-curtain.q-out{animation:qcurtainOut .46s cubic-bezier(.76,0,.24,1) both;}
+@keyframes qcurtainOut{0%{transform:translateX(0);}100%{transform:translateX(101%);}}
+.q-curtain.q-out .q-curtain-mark{animation:qmarkOut .46s ease both;}
+@keyframes qmarkOut{0%{opacity:1;transform:scale(1);}100%{opacity:0;transform:scale(.7);}}
+.sage-curtain-mark{width:auto;height:auto;display:grid;place-items:center;}
+.sage-curtain-mark svg{display:block;filter:drop-shadow(0 12px 30px rgba(0,0,0,.35));}
+@media (prefers-reduced-motion: reduce){ .q-curtain.q-hold .q-curtain-mark{animation:none;} }
 .q-chip.f-waiting{background:rgba(255,255,255,.08);}
 .q-chip.f-customer{background:rgba(120,150,255,.20);color:#b9c9ff;}
 .q-chip.f-lunch{background:rgba(255,180,60,.18);color:#ffcf7a;}
