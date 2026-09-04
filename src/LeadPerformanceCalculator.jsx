@@ -9026,7 +9026,7 @@ function tellJumpOrigin(el) {
 /* The phone pages are built from their own blocks, not .hero and .card, and
    they fly in the same way: the Board's hero and standings, Check Out's hero,
    tiles and groups, and the Live Floor page as one. */
-const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page";
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss";
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
@@ -19000,7 +19000,295 @@ function normalizeDate(s) {
 }
 
 /* ---------------- License Plate Tracker ---------------- */
+/* ---------------- License Plates on a phone ----------------
+   The approved phone draft, whole: the day and how the store runs plates, how
+   many are out in dot matrix against how many the store owns, four counters,
+   the tools folded into the hero, the never-came-back strip, then one list of
+   the people holding a plate with the plates in their hand, the free plates in
+   a row, and the plates already back. Every trip opens as a pop with the
+   custody log and the actions. Desktop keeps PlateTracker's own layout. */
+function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, heldNow, returnedRecent, missing, missingTags,
+  registry, freeTags, roster, recordById, fmtTime, fmtTimeShort, daysOut, sinceLabel,
+  addPlate, toggleIn, handOver, setTakenTime, remove, carryForward, markReturnedPrior, dropPriorRecord,
+  setMode, addBulk, renameRegistry, setRegistryFlag, removeRegistry, plateErr, clearErr, isoToLocalInput, localInputToIso }) {
+  const [pop, setPop] = useState(null);
+  const close = useCallback(() => setPop(null), []);
+  const [pickTag, setPickTag] = useState("");
+  const [newTag, setNewTag] = useState("");
+  const [pickWho, setPickWho] = useState("");
+  const [freeWho, setFreeWho] = useState("");
+  const [bulk, setBulk] = useState("");
+  const [rename, setRename] = useState("");
+  const dayLabel = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const isMissing = (r) => missingTags.has(r.tag);
+  const backToday = returnedRecent.filter((r) => String(r.returnedAt || "").slice(0, 10) === day);
+  const knownN = registry.filter((r) => !r.retired).length;
+  const outN = heldNow.length;
+  const shortSince = (r) => {
+    const ms = Date.now() - Date.parse(r.takenAt || r.__day + "T12:00");
+    const h = Math.floor(ms / 36e5), d = Math.floor(ms / 864e5), m = Math.floor(ms / 6e4);
+    return d >= 1 ? `${d}d` : h >= 1 ? `${h}h` : `${Math.max(1, m)}m`;
+  };
+  const longSince = (r) => {
+    const ms = Date.now() - Date.parse(r.takenAt || r.__day + "T12:00");
+    const d = Math.floor(ms / 864e5); if (d >= 1) return `${d} ${d === 1 ? "day" : "days"}`;
+    const h = Math.floor(ms / 36e5), m = Math.floor((ms % 36e5) / 6e4);
+    return h >= 1 ? `${h}h ${m}m` : `${Math.max(1, m)}m`;
+  };
+  const tripLen = (r) => {
+    const ms = Date.parse(r.returnedAt || "") - Date.parse(r.takenAt || "");
+    if (!(ms > 0)) return "";
+    const h = Math.floor(ms / 36e5), m = Math.floor((ms % 36e5) / 6e4);
+    return h >= 24 ? `${Math.floor(h / 24)}d` : h >= 1 ? `${h}h ${m}m` : `${m}m`;
+  };
+  const avStyle = (name) => ({ background: `hsl(${hueFromName(name || "?")} 52% 42%)` });
+  const holders = (() => {
+    const map = new Map();
+    for (const r of heldNow) {
+      const k = r.assignee || "";
+      if (!map.has(k)) map.set(k, []);
+      map.get(k).push(r);
+    }
+    return [...map.entries()].sort((a, b) => (a[0] || "zzz").localeCompare(b[0] || "zzz"));
+  })();
+  const openAssign = (t) => { setPickTag(t || ""); setNewTag(""); setPickWho(""); setFreeWho(""); clearErr(); setPop({ k: "assign" }); };
+  const doAssign = () => {
+    const t = (pickTag === "__new" ? newTag : pickTag).trim();
+    const who = (pickWho || freeWho).trim();
+    if (!t) return;
+    const ok = addPlate(t, who);
+    if (ok) close();
+  };
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const evLabel = (h) => h.action || (h.a === "out" ? "Taken out" : h.a === "in" ? "Returned" : h.a || "Event");
+  const evCls = (h) => { const a = evLabel(h).toLowerCase(); return a.includes("late") ? "late" : a.startsWith("returned") ? "in" : a.includes("hand") || a.includes("reassign") ? "mv" : ""; };
+  const personRow = (name, on, onPick) => (
+    <button key={name} type="button" className={"pl-pr" + (on ? " on" : "")} onClick={onPick}>
+      <span className="fr-av sm" style={avStyle(name)}>{initialsOf(name)}</span><span className="pl-prn">{name}</span>{on && <span className="fr-st in">picked</span>}
+    </button>
+  );
+  const recordList = (list, empty) => (
+    <div className="fr-list pl-rl">
+      {list.map((r) => (
+        <button key={r.id} type="button" className="pl-pr" onClick={() => setPop({ k: "rec", id: r.id })}>
+          <span className="fr-av sm" style={avStyle(r.assignee)}>{initialsOf(r.assignee || "?")}</span><span className="pl-prn">{r.assignee || "Unassigned"}</span>
+          <span className={"pl-pc" + (isMissing(r) ? " miss" : "")}>{r.tag}</span>
+        </button>
+      ))}
+      {list.length === 0 && <p className="fr-empty">{empty}</p>}
+    </div>
+  );
+
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "day") {
+      const days = [day, ...plateDays.filter((d) => d !== day)];
+      return (<>{hd("Which day", <span className="fr-w">plates by day</span>)}
+        <div className="fr-list co-dlist">
+          {days.map((d) => { const l = plates[d] || []; const out = l.filter((p) => !p.checkedIn).length;
+            return <button key={d} type="button" className={"co-dr" + (d === day ? " co-on" : "")} onClick={() => { setDay(d); close(); }}>
+              <span className="co-dn">{dayLabel(d)}</span><span className="co-dm">{out} out · {l.length - out} back</span>{d === today() ? <span className="fr-st in">today</span> : <span />}</button>; })}
+        </div></>);
+    }
+    if (pop.k === "setup") {
+      return (<>{hd("How this store runs plates")}
+        <div className="pl-setup">
+          <button type="button" className={standing ? "" : "on"} onClick={() => { setMode("daily"); close(); }}><b>Taken and returned daily</b><p>Plates go out and come back by close. The log runs a day at a time and a plate that did not come back is flagged.</p></button>
+          <button type="button" className={standing ? "on" : ""} onClick={() => { setMode("standing"); close(); }}><b>Held until returned</b><p>A salesperson keeps a plate for weeks. Nothing is overdue for being out overnight; the screen shows who holds what and since when.</p></button>
+        </div>
+        <div className="bp-defn">Per store. Every trip and custody log is the same underneath either way.</div></>);
+    }
+    if (pop.k === "assign") {
+      return (<>{hd("Take a plate out", <span className="fr-st in">{dayLabel(day)}</span>)}
+        {plateErr && <div className="pl-err">{plateErr}</div>}
+        <div className="pl-sec">The plate</div>
+        <div className="pl-picks">
+          {freeTags.map((t) => <button key={t} type="button" className={"pl-pk" + (pickTag === t ? " on" : "")} onClick={() => setPickTag(t)}>{t}</button>)}
+          <button type="button" className={"pl-pk new" + (pickTag === "__new" ? " on" : "")} onClick={() => setPickTag("__new")}>+ new plate</button>
+        </div>
+        {pickTag === "__new" && <div className="pl-in"><input value={newTag} onChange={(e) => setNewTag(e.target.value.toUpperCase())} placeholder="Plate number" autoFocus autoCapitalize="characters" autoComplete="off" /></div>}
+        <div className="pl-sec">To</div>
+        <div className="pl-who">
+          {roster.map((a) => personRow(a.name, pickWho === a.name, () => { setPickWho(pickWho === a.name ? "" : a.name); setFreeWho(""); }))}
+        </div>
+        <div className="pl-in"><input value={freeWho} onChange={(e) => { setFreeWho(e.target.value); setPickWho(""); }} placeholder="Or type a name" autoComplete="off" /></div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" disabled={!(pickTag === "__new" ? newTag.trim() : pickTag)} onClick={doAssign}><PixIcon glyph="car" size={14} /> Take out · logged now</button></div></>);
+    }
+    if (pop.k === "carry") {
+      const priorDays = Object.keys(plates).filter((d) => d < day).sort().reverse();
+      const prior = priorDays.length ? plates[priorDays[0]] : [];
+      const existing = new Set(dayPlates.map((p) => p.tag));
+      const would = prior.filter((p) => !existing.has(p.tag) && p.checkedIn && !missingTags.has(p.tag));
+      return (<>{hd("Carry forward", priorDays[0] ? <span className="fr-w">from {dayLabel(priorDays[0])}</span> : null)}
+        <div className="bp-defn">Re-issue the last day's plates to the same people, logged now. Only plates that came back go out again; one that never did stays in the red strip.</div>
+        <div className="pl-picks">{would.map((p) => <span key={p.id} className="pl-pk on">{p.tag} · {(p.assignee || "unassigned").split(" ")[0]}</span>)}{would.length === 0 && <p className="fr-empty">Nothing to carry forward.</p>}</div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" disabled={!would.length} onClick={() => { carryForward(); close(); }}>Carry {would.length} forward</button></div></>);
+    }
+    if (pop.k === "master") {
+      const list = [...registry].sort((a, b) => String(a.tag).localeCompare(String(b.tag), undefined, { numeric: true }));
+      const state = (r) => missingTags.has(r.tag) ? ["away", "missing"] : heldNow.some((h) => normTag(h.tag) === normTag(r.tag)) ? ["cust", "out"] : ["in", "available"];
+      return (<>{hd("Master plate list", <><span className="fr-st in">{knownN} in service</span><span className="fr-w">{registry.length - knownN} retired</span></>)}
+        {plateErr && <div className="pl-err">{plateErr}</div>}
+        <div className="pl-add"><input value={bulk} onChange={(e) => setBulk(e.target.value)} placeholder="Paste or type plates, comma separated" autoComplete="off" /><button type="button" className="fr-b pri sm" onClick={() => { if (addBulk(bulk)) setBulk(""); }}>Add</button></div>
+        <div className="fr-list pl-ml">
+          {list.map((r) => { const [cls, word] = state(r); return (
+            <button key={r.id} type="button" className={"pl-mr" + (r.retired ? " ret" : "")} onClick={() => { setRename(r.tag); setPop({ k: "plate", id: r.id }); }}>
+              <span className="pl-pc lt">{r.tag}</span><span className="fr-w">{r.reusable ? "reusable" : "one-time"}</span><span className={"fr-st " + (r.retired ? "off" : cls)}>{r.retired ? "retired" : word}</span>
+            </button>); })}
+          {list.length === 0 && <p className="fr-empty">Nothing on the list yet. Add the drawer of dealer plates above.</p>}
+        </div>
+        <div className="bp-defn">Tap a plate to rename it, mark it reusable or one-time, retire it, or remove it.</div></>);
+    }
+    if (pop.k === "plate") {
+      const r = registry.find((x) => x.id === pop.id);
+      if (!r) return null;
+      return (<>
+        <div className="fr-hd"><div className="fr-hdt"><span className="pl-plate">{r.tag}</span>
+          <div className="fr-meta"><span className="fr-w">{r.reusable ? "reusable" : "one-time"}</span>{r.retired && <span className="fr-st off">retired</span>}</div></div></div>
+        <div className="pl-sec">Renumber</div>
+        <div className="pl-add"><input value={rename} onChange={(e) => setRename(e.target.value.toUpperCase())} autoCapitalize="characters" autoComplete="off" /><button type="button" className="fr-b pri sm" onClick={() => { renameRegistry(r.id, rename); setPop({ k: "master" }); }}>Save</button></div>
+        <div className="fr-acts">
+          <button type="button" className="fr-b" onClick={() => setRegistryFlag(r.id, "reusable", !r.reusable, r.reusable ? "Marked plate one-time" : "Marked plate reusable")}>{r.reusable ? "Make one-time" : "Make reusable"}</button>
+          <button type="button" className="fr-b" onClick={() => setRegistryFlag(r.id, "retired", !r.retired, r.retired ? "Returned plate to service" : "Retired plate")}>{r.retired ? "Back in service" : "Retire"}</button>
+          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { removeRegistry(r.id); setPop({ k: "master" }); }}><PixIcon glyph="close" size={14} /> Remove from the list</button>
+        </div></>);
+    }
+    if (pop.k === "out") return (<>{hd("Out now", <span className="fr-w">{outN} {outN === 1 ? "plate" : "plates"}</span>)}{recordList(heldNow, "Nobody is holding a plate.")}</>);
+    if (pop.k === "back") return (<>{hd("Back today", <span className="fr-w">{backToday.length} {backToday.length === 1 ? "plate" : "plates"}</span>)}{recordList(backToday, "Nothing has come back yet today.")}</>);
+    if (pop.k === "missing") {
+      return (<>{hd("Never came back", <span className="fr-st away">{missing.length} {missing.length === 1 ? "plate" : "plates"}</span>)}
+        <div className="bp-defn">Out on an earlier day and never marked returned. It cannot go out again until it is back, or removed if it was never this store's.</div>
+        <div className="fr-list pl-rl">
+          {missing.map((x) => (
+            <div key={x.plate.id} className="pl-pr static">
+              <span className="pl-pc miss">{x.plate.tag}</span><span className="pl-prn">{x.plate.assignee || "Unassigned"}<small>since {dayLabel(x.day)}</small></span>
+              <span className="co-say"><button type="button" onClick={() => { dropPriorRecord(x.day, x.plate.id); close(); }}>Not ours</button><button type="button" className="co-on" onClick={() => { markReturnedPrior(x.day, x.plate.id); close(); }}>Back</button></span>
+            </div>
+          ))}
+          {missing.length === 0 && <p className="fr-empty">Everything has come back.</p>}
+        </div></>);
+    }
+    if (pop.k === "hand") {
+      const hit = recordById(pop.id); if (!hit) return null;
+      const r = hit.p;
+      return (<>{hd(`Hand ${r.tag} over`, <span className="fr-w">from {r.assignee || "unassigned"}</span>)}
+        <div className="pl-who">{roster.filter((a) => a.name !== r.assignee).map((a) => personRow(a.name, pickWho === a.name, () => { setPickWho(pickWho === a.name ? "" : a.name); setFreeWho(""); }))}</div>
+        <div className="pl-in"><input value={freeWho} onChange={(e) => { setFreeWho(e.target.value); setPickWho(""); }} placeholder="Or type a name" autoComplete="off" /></div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" disabled={!(pickWho || freeWho.trim())} onClick={() => { handOver(r.id, pickWho || freeWho); close(); }}><PixIcon glyph="swap" size={14} /> Hand over · logged now</button></div></>);
+    }
+    if (pop.k === "time") {
+      const hit = recordById(pop.id); if (!hit) return null;
+      const r = hit.p;
+      return (<>{hd(`When ${r.tag} went out`, <span className="fr-w">now {fmtTime(r.takenAt)}</span>)}
+        <div className="pl-in"><input type="datetime-local" id={"plt-" + r.id} defaultValue={isoToLocalInput(r.takenAt)} /></div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { const v = document.getElementById("plt-" + r.id).value; setTakenTime(r.id, localInputToIso(v)); setPop({ k: "rec", id: r.id }); }}>Save the time</button></div></>);
+    }
+    if (pop.k === "rec") {
+      const hit = recordById(pop.id); if (!hit) return null;
+      const r = { ...hit.p, __day: hit.d };
+      const miss = !r.checkedIn && hit.d < day && !standing;
+      const hist = (r.history || []).slice().reverse();
+      return (<>
+        <div className="fr-hd"><div className="fr-hdt"><span className={"pl-plate" + (miss ? " miss" : "")}>{r.tag}</span>
+          <div className="fr-meta">{miss ? <span className="fr-st away">never came back</span> : r.checkedIn ? <span className="fr-st in">returned {fmtTimeShort(r.returnedAt)}</span> : <span className="fr-st cust">out</span>}
+            <span className="fr-w">{r.checkedIn ? tripLen(r) + " trip" : longSince(r) + " out"}</span></div></div></div>
+        <div className="pl-facts">
+          <div><b><span className="fr-av sm pl-fav" style={avStyle(r.assignee)}>{initialsOf(r.assignee || "?")}</span>{r.assignee || "Unassigned"}</b><span>{r.checkedIn ? "had it" : "holding it"}</span></div>
+          <div><b className={miss ? "long" : ""}>{fmtTime(r.takenAt)}</b><span>taken · by {r.by || "unknown"}</span></div>
+        </div>
+        <div className="pl-log">
+          <div className="pl-sec">Custody log · {hist.length} {hist.length === 1 ? "event" : "events"}</div>
+          {hist.map((h, i) => <div key={i} className="pl-ev"><i className={evCls(h)} /><span className="pl-evw">{evLabel(h)}<small>{h.detail ? h.detail + " · " : ""}by {h.by || "unknown"}</small></span><span className="pl-evt">{fmtTime(h.t)}</span></div>)}
+          {hist.length === 0 && <p className="fr-empty">No history recorded for this plate.</p>}
+        </div>
+        <div className="fr-acts">
+          {miss ? <><button type="button" className="fr-b pri" onClick={() => { markReturnedPrior(hit.d, r.id); close(); }}><PixIcon glyph="check" size={14} /> Returned now</button><button type="button" className="fr-b warn" onClick={() => { dropPriorRecord(hit.d, r.id); close(); }}>Not this store's</button></>
+            : r.checkedIn ? <button type="button" className="fr-b pri" onClick={() => { toggleIn(r.id); close(); }}><PixIcon glyph="car" size={14} /> Out again</button>
+            : <><button type="button" className="fr-b pri" onClick={() => { toggleIn(r.id); close(); }}><PixIcon glyph="check" size={14} /> Mark returned</button>
+              <button type="button" className="fr-b" onClick={() => { setPickWho(""); setFreeWho(""); clearErr(); setPop({ k: "hand", id: r.id }); }}><PixIcon glyph="swap" size={14} /> Hand over</button>
+              <button type="button" className="fr-b" onClick={() => setPop({ k: "time", id: r.id })}><PixIcon glyph="clock" size={14} /> Edit time</button></>}
+          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { if (window.confirm(`Remove the record of ${r.tag}?`)) { remove(r.id); close(); } }}><PixIcon glyph="close" size={14} /> Remove</button>
+        </div></>);
+    }
+    return null;
+  };
+
+  return (
+    <div className="bp-page pl-page">
+      <div className="bp-hero pl-hero">
+        <div className="pl-hh">
+          {!standing && <button type="button" className="co-day" onClick={() => setPop({ k: "day" })}><PixIcon glyph="calendar" size={11} />{dayLabel(day)}</button>}
+          <button type="button" className="pl-mode" onClick={() => setPop({ k: "setup" })}><PixIcon glyph="clock" size={11} />{standing ? "Held until returned" : "Back by close"}</button>
+        </div>
+        <button type="button" className="pl-big" onClick={() => setPop({ k: "out" })}>
+          <span className="co-ucap"><PixIcon glyph="car" size={11} />Out now</span>
+          <span className="co-unum"><DotNum value={String(outN)} dot={8} color="#fff" /><span className="pl-of">of {knownN} {knownN === 1 ? "plate" : "plates"}</span></span>
+        </button>
+        <div className="co-std">
+          <button type="button" onClick={() => setPop({ k: "out" })}><b>{outN}</b><span><PixIcon glyph="car" size={9} />Out</span></button>
+          <button type="button" onClick={() => setPop({ k: "back" })}><b>{backToday.length}</b><span><PixIcon glyph="check" size={9} />Back today</span></button>
+          <button type="button" className={missing.length ? "co-alert" : ""} onClick={() => setPop({ k: "missing" })}><b>{missing.length}</b><span><PixIcon glyph="warn" size={9} />Missing</span></button>
+          <button type="button" onClick={() => setPop({ k: "master" })}><b>{knownN}</b><span><PixIcon glyph="doc" size={9} />Known</span></button>
+        </div>
+        <div className="pl-tools">
+          <button type="button" className="fr-tool pri" style={{ gridColumn: standing ? "span 2" : "span 1" }} onClick={() => openAssign("")}><PixIcon glyph="plus" size={16} />Take out</button>
+          {!standing && <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "carry" })}><PixIcon glyph="arrow" size={16} />Carry forward</button>}
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "master" })}><PixIcon glyph="doc" size={16} />Master list</button>
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "setup" })}><PixIcon glyph="more" size={16} />Setup</button>
+        </div>
+      </div>
+
+      {plateErr && !pop && <div className="pl-err strip">{plateErr}</div>}
+
+      {missing.length > 0 && (
+        <div className="pl-miss">
+          <div className="pl-mh"><PixIcon glyph="warn" size={14} />Never came back<span className="pl-mn">{missing.length}</span></div>
+          {missing.map((x) => (
+            <div key={x.plate.id} className="pl-mr">
+              <button type="button" className="pl-pc miss" onClick={() => setPop({ k: "rec", id: x.plate.id })}>{x.plate.tag}</button>
+              <button type="button" className="pl-mwho" onClick={() => setPop({ k: "rec", id: x.plate.id })}>{x.plate.assignee || "Unassigned"}<small>since {dayLabel(x.day)} · {sinceLabel({ takenAt: x.plate.takenAt, __day: x.day })}</small></button>
+              <span className="co-say"><button type="button" className="co-on" onClick={() => markReturnedPrior(x.day, x.plate.id)}>Back</button><button type="button" onClick={() => dropPriorRecord(x.day, x.plate.id)}>Not ours</button></span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="co-grp co-gon pl-card">
+        <div className="co-gh"><PixIcon glyph="users" size={14} />Who has a plate<span className="co-gn">{holders.length}</span></div>
+        {holders.map(([name, list]) => (
+          <div key={name || "_"} className="pl-hold">
+            <span className="fr-av sm" style={avStyle(name || "?")}>{initialsOf(name || "?")}</span>
+            <span className="pl-hnm">{name || "Unassigned"}</span>
+            <span className="pl-chips">{list.map((r) => <button key={r.id} type="button" className={"pl-pc" + (isMissing(r) ? " miss" : "")} onClick={() => setPop({ k: "rec", id: r.id })}>{r.tag}<small>{shortSince(r)}</small></button>)}</span>
+          </div>
+        ))}
+        {holders.length === 0 && <p className="fr-empty">Nobody is holding a plate.</p>}
+        {freeTags.length > 0 && (
+          <div className="pl-free"><span className="pl-flbl">In the drawer · tap to take out</span>{freeTags.map((t) => <button key={t} type="button" className="pl-pc lt" onClick={() => openAssign(t)}>{t}</button>)}</div>
+        )}
+      </div>
+      {backToday.length > 0 && (
+        <div className="co-grp pl-card pl-back">
+          <div className="co-gh"><PixIcon glyph="check" size={14} />Back today<span className="co-gn">{backToday.length}</span></div>
+          {backToday.map((r) => (
+            <button key={r.id} type="button" className="pl-row" onClick={() => setPop({ k: "rec", id: r.id })}>
+              <span className="pl-pc lt big">{r.tag}</span>
+              <span className="pl-who2"><span className="pl-nm"><span className="fr-av sm" style={avStyle(r.assignee)}>{initialsOf(r.assignee || "?")}</span>{r.assignee || "Unassigned"}</span><span className="pl-meta">{fmtTimeShort(r.takenAt)} to <b>{fmtTimeShort(r.returnedAt)}</b>{r.by ? ` · by ${r.by}` : ""}</span></span>
+              <span className="pl-since ok">{tripLen(r)}<small>trip</small></span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {pop && <FrPop title={pop.k} onClose={close} cls="co-sheet">{popBody()}</FrPop>}
+    </div>
+  );
+}
+
 function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
+  const phone = usePhoneLayout();
   const [day, setDay] = useState(today());
   // Several people share this log at once. Re-read the plate fields on a short timer
   // and whenever the tab comes back to the front, so a plate someone else logged out
@@ -19153,9 +19441,9 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
      The registry stops being something the tracker only learns by accident and
      becomes a list a manager can keep straight: add the drawer of dealer plates in
      one go, fix a number that was entered wrong, retire one that has gone. */
-  const addBulkPlates = () => {
-    const wanted = bulk.split(/[\n,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-    if (!wanted.length) return;
+  const addBulkPlates = (textArg) => {
+    const wanted = String(textArg ?? bulk).split(/[\n,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    if (!wanted.length) return false;
     const have = new Set(registry.map((r) => normTag(r.tag)));
     const fresh = [];
     for (const t of wanted) {
@@ -19164,11 +19452,12 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       have.add(T);
       fresh.push({ id: uid(), tag: t, reusable: true, addedAt: new Date().toISOString() });
     }
-    if (!fresh.length) { setPlateErr("Every one of those is already on the master list."); return; }
+    if (!fresh.length) { setPlateErr("Every one of those is already on the master list."); return false; }
     const next = JSON.parse(JSON.stringify(data));
     next.plateRegistry = [...(next.plateRegistry || []), ...fresh];
     setBulk(""); setPlateErr("");
     onChange(next, { action: "Added plates to the master list", detail: fresh.map((f) => f.tag).join(", ") });
+    return true;
   };
 
   // Renaming has to carry the past with it, or the custody trail splits in two.
@@ -19209,8 +19498,8 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     next.plateRegGone = { ...(next.plateRegGone || {}), [id]: new Date().toISOString() };
     onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
   };
-  const addPlate = () => {
-    let t = tag.trim().toUpperCase(); if (!t) return;
+  const addPlate = (tagArg, whoArg) => {
+    let t = String(tagArg ?? tag).trim().toUpperCase(); if (!t) return false;
     setPlateErr("");
     // Resolve against the registry: shorthand finds the known plate, and a fuller
     // number than we knew upgrades the registry and relinks all past records.
@@ -19254,10 +19543,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     if (missingTags.has(t)) {
       const m = missing.find((x) => x.plate.tag === t);
       setPlateErr(`${t} has been out since ${m.day} (${m.plate.assignee || "unassigned"}) and was never marked returned. Mark it returned in the banner above before it goes out again.`);
-      return;
+      return false;
     }
     const now = new Date().toISOString();
-    const who = assignee.trim();
+    const who = String(whoArg ?? assignee).trim();
     const stillOut = standing
       ? heldNow.find((p) => normTag(p.tag) === normTag(t))
       : dayPlates.find((p) => p.tag === t && !p.checkedIn);
@@ -19266,7 +19555,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       // return has to be logged first, which puts the unlogged hand-back on record.
       setPlateErr(`${t} is still logged out to ${stillOut.assignee || "unassigned"} and hasn't been marked returned. ` +
         `Mark it returned first. If it's physically back, that means ${stillOut.assignee || "the previous holder"} returned it without letting a manager know.`);
-      return;
+      return false;
     }
     // A plate that was properly returned can go out again; each trip is its own record.
     const plate = {
@@ -19276,6 +19565,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     };
     save([...dayPlates, plate], { action: "Assigned plate", detail: `${t} → ${who || "unassigned"} at ${fmtTimeShort(now)}` }, registryMutate);
     setTag(""); setAssignee("");
+    return true;
   };
   const toggleIn = (id) => {
     setPlateErr("");
@@ -19450,6 +19740,16 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   const backToday = returnedRecent.filter((r) => String(r.returnedAt || "").slice(0, 10) === today()).length;
   const missingN = missing.length;
   const knownN = (registry || []).filter((r) => !r.retired).length;
+
+  if (phone) return (
+    <PlatesPhone standing={standing} day={day} setDay={setDay} plateDays={plateDays} plates={plates} dayPlates={dayPlates}
+      heldNow={heldNow} returnedRecent={returnedRecent} missing={missing} missingTags={missingTags} registry={registry} freeTags={freeTags} roster={roster}
+      recordById={recordById} fmtTime={fmtTime} fmtTimeShort={fmtTimeShort} daysOut={daysOut} sinceLabel={sinceLabel}
+      addPlate={addPlate} toggleIn={toggleIn} handOver={handOver} setTakenTime={setTakenTime} remove={remove} carryForward={carryForward}
+      markReturnedPrior={markReturnedPrior} dropPriorRecord={dropPriorRecord} setMode={setMode} addBulk={addBulkPlates}
+      renameRegistry={renameRegistry} setRegistryFlag={setRegistryFlag} removeRegistry={removeRegistry}
+      plateErr={plateErr} clearErr={() => setPlateErr("")} isoToLocalInput={isoToLocalInput} localInputToIso={localInputToIso} />
+  );
 
   return (
     <div className="plates">
@@ -33297,7 +33597,7 @@ const SAGE_CSS = `
       }
       /* A page reload holds every flying part invisible until the mount is done
          and the radial flight begins; each part's own animation then takes over. */
-      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page) { opacity:0; }
+      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss) { opacity:0; }
       .refresh-flash { position:fixed; inset:0; z-index:80; pointer-events:none;
         background:radial-gradient(circle at 50% 46%, rgba(255,255,255,.95), rgba(169,196,172,.35) 26%, transparent 46%);
         animation:refreshFlash .62s cubic-bezier(.2,.7,.3,1) both; }
@@ -38932,6 +39232,94 @@ const SAGE_CSS = `
 .bp-page .fr-tool{ padding:10px 4px; }
 .bp-page{ padding-top:6px; }
 @media (max-width:700px){ .board-page{ padding:18px 0 0; } .co-page{ padding:10px 0 28px; } }
+/* ---- License Plates on a phone ---- */
+.pl-page{ padding-top:6px; }
+.pl-hero{ padding:18px 18px 16px; }
+.pl-hh{ display:flex; align-items:center; gap:8px; position:relative; z-index:1; }
+.pl-mode{ margin-left:auto; font:700 9px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7) !important; display:flex !important; align-items:center; gap:5px; }
+.pl-mode .pix{ color:var(--frsand); }
+.pl-big{ display:block !important; margin-top:12px; position:relative; z-index:1; }
+.pl-of{ font:600 12px var(--font-mono); color:rgba(255,255,255,.65); margin-bottom:4px; }
+.pl-page .co-std{ margin-top:14px; }
+.pl-tools{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:14px; position:relative; z-index:1; }
+.pl-tools .fr-tool{ min-height:58px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center !important; padding:10px 4px !important; }
+.pl-tools .fr-tool.pri{ background:var(--frp2d) !important; border-color:var(--frp2d) !important; color:#fff !important; } .pl-tools .fr-tool.pri .pix{ color:#fff; }
+.pl-tools .fr-tool.dk{ background:rgba(0,0,0,.2) !important; border-color:rgba(255,255,255,.12) !important; color:#fff !important; } .pl-tools .fr-tool.dk .pix{ color:var(--frsand); }
+.pl-err{ margin:10px 16px 0; padding:9px 12px; border-radius:12px; background:#FBE5E0; color:var(--frgap); font:600 12.5px/1.4 var(--font-ui); }
+.pl-err.strip{ margin:12px 0 0; }
+.pl-miss{ margin-top:12px; background:#fff; border:2px solid var(--frto, #D8483C); border-radius:18px; padding:10px 12px; box-shadow:0 0 0 5px rgba(216,72,60,.14); }
+.pl-mh{ display:flex; align-items:center; gap:8px; font:700 13px var(--font-display); } .pl-mh .pix{ color:#D8483C; }
+.pl-mn{ margin-left:auto; font:700 11px var(--font-mono); color:#D8483C; background:#FBE5E0; padding:2px 8px; border-radius:9px; }
+.pl-mr{ display:flex; align-items:center; gap:8px; padding:8px 0 0; }
+.pl-mwho{ flex:1 1 60px; min-width:0; font:600 12.5px var(--font-ui) !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--frink) !important; }
+.pl-mwho small{ display:block; font:500 10px var(--font-mono); color:var(--frink3); }
+.pl-pc{ font:700 11.5px var(--font-mono) !important; letter-spacing:.05em; background:#15211B !important; color:#fff !important; padding:5px 8px !important; border-radius:8px; display:inline-flex !important; align-items:center; gap:6px; white-space:nowrap; }
+.pl-pc small{ font:600 8.5px var(--font-mono); opacity:.7; }
+.pl-pc.miss{ background:#D8483C !important; color:#15211B !important; }
+.pl-pc.lt{ background:#fff !important; color:var(--frink2) !important; border:1.5px solid var(--frline) !important; }
+.pl-pc.big{ font-size:15px !important; padding:8px 10px !important; min-width:88px; justify-content:center; }
+.pl-card .co-gh{ padding:11px 14px 6px; }
+.pl-back{ background:#F3F6F2; border:1px solid var(--frline); box-shadow:none; }
+.pl-hold{ display:flex; align-items:center; gap:10px; padding:10px 14px; border-top:1px solid var(--frline); }
+.pl-hold .fr-av.sm{ width:34px; height:34px; font-size:11px; }
+.pl-hnm{ font:700 14px var(--font-display); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+.pl-chips{ display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.pl-free{ display:flex; gap:6px; flex-wrap:wrap; padding:10px 14px 12px; border-top:1px solid var(--frline); }
+.pl-flbl{ width:100%; font:700 8.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--frink3); margin-bottom:2px; }
+.pl-row{ display:grid !important; grid-template-columns:auto minmax(0,1fr) auto; column-gap:12px; align-items:center; padding:10px 14px !important; width:100%; border-top:1px solid var(--frline); }
+.pl-who2{ min-width:0; display:flex; flex-direction:column; }
+.pl-nm{ font:700 14px var(--font-display); letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; color:var(--frink); }
+.pl-nm .fr-av.sm{ width:22px; height:22px; font-size:8px; }
+.pl-meta{ font:500 10px var(--font-mono); color:var(--frink3); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .pl-meta b{ color:var(--frink2); font-weight:600; }
+.pl-since{ text-align:right; font:700 12px var(--font-mono); color:var(--frink2); white-space:nowrap; }
+.pl-since small{ display:block; font:600 9px var(--font-mono); color:var(--frink3); letter-spacing:.06em; text-transform:uppercase; margin-top:2px; }
+.pl-since.ok{ color:var(--frok); }
+/* pops */
+.fr-pop .pl-plate{ font:700 26px/1 var(--font-mono); letter-spacing:.08em; background:#15211B; color:#fff; padding:10px 14px; border-radius:12px; display:inline-block; }
+.fr-pop .pl-plate.miss{ background:#D8483C; color:#15211B; }
+.pl-facts{ padding:6px 16px 4px; display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.pl-facts > div{ background:var(--frpaper); border-radius:12px; padding:9px 10px; min-width:0; }
+.pl-facts b{ display:block; font:700 15px/1.15 var(--font-display); color:var(--frink); } .pl-facts b.long{ color:var(--frgap); }
+.pl-facts .pl-fav{ display:inline-grid; width:20px; height:20px; font-size:7.5px; vertical-align:-4px; margin-right:6px; }
+.pl-facts span{ font:700 8px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--frink3); display:block; margin-top:3px; }
+.pl-sec{ padding:8px 16px 4px; font:700 9.5px var(--font-mono); letter-spacing:.18em; text-transform:uppercase; color:var(--frsand2); }
+.pl-log{ padding:0 16px 6px; }
+.pl-log .pl-sec{ padding:8px 0 4px; }
+.pl-ev{ display:grid; grid-template-columns:8px minmax(0,1fr) auto; gap:10px; align-items:start; padding:5px 0; }
+.pl-ev i{ width:8px; height:8px; border-radius:50%; background:var(--frp2d); margin-top:4px; display:block; }
+.pl-ev i.in{ background:var(--frok); } .pl-ev i.mv{ background:#2E7DE0; } .pl-ev i.late{ background:var(--frgap); }
+.pl-evw{ font:600 12.5px var(--font-ui); color:var(--frink); } .pl-evw small{ display:block; font:500 10px var(--font-mono); color:var(--frink3); margin-top:1px; }
+.pl-evt{ font:700 10px var(--font-mono); color:var(--frink3); white-space:nowrap; }
+.pl-picks{ display:flex; flex-wrap:wrap; gap:8px; padding:8px 16px 4px; }
+.pl-pk{ font:700 13px var(--font-mono); letter-spacing:.06em; border:1.5px solid var(--frline); background:#fff; color:var(--frink); padding:9px 12px; border-radius:10px; min-height:40px; display:inline-flex; align-items:center; cursor:pointer; }
+.pl-pk.on{ background:#15211B; border-color:#15211B; color:#fff; }
+.pl-pk.new{ border-style:dashed; color:var(--frink3); } .pl-pk.new.on{ color:#fff; border-style:solid; }
+.pl-in{ padding:8px 16px 4px; }
+.pl-in input{ width:100%; box-sizing:border-box; border:1.5px solid var(--frline); border-radius:12px; padding:11px 12px; font:600 15px var(--font-ui); color:var(--frink); background:#fff; }
+.pl-who{ padding:4px 16px 0; }
+.pl-pr{ display:grid; grid-template-columns:32px minmax(0,1fr) auto; gap:10px; align-items:center; min-height:48px; width:100%; padding:0; background:none; border:0; border-bottom:1px solid var(--frline); font-family:inherit; text-align:left; color:var(--frink); cursor:pointer; }
+.pl-pr.on{ background:#E8F1EA; margin:0 -16px; padding:0 16px; width:calc(100% + 32px); }
+.pl-pr .fr-av.sm{ width:32px; height:32px; font-size:11px; }
+.pl-prn{ font:600 14px var(--font-ui); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pl-prn small{ display:block; font:500 10px var(--font-mono); color:var(--frink3); }
+.pl-rl{ padding:0 16px; }
+.pl-pr.static{ cursor:default; }
+.pl-setup{ padding:6px 16px 4px; display:grid; gap:8px; }
+.pl-setup button{ border:2px solid var(--frline); border-radius:16px; padding:12px 14px; background:#fff; text-align:left; font-family:inherit; color:var(--frink); cursor:pointer; }
+.pl-setup button.on{ border-color:var(--frp2d); background:#F3F6F2; }
+.pl-setup b{ font:700 14px var(--font-display); display:block; } .pl-setup p{ margin:4px 0 0; font:500 12px/1.45 var(--font-ui); color:var(--frink2); }
+.pl-add{ margin:8px 16px 4px; display:flex; gap:8px; }
+.pl-add input{ flex:1; min-width:0; border:1.5px solid var(--frline); border-radius:12px; padding:10px 12px; font:600 14px var(--font-mono); color:var(--frink); background:#fff; }
+.pl-add .fr-b.sm{ min-height:44px; padding:0 16px; font-size:14px; }
+.pl-ml{ padding:0 16px; }
+.pl-mr{ display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; align-items:center; min-height:48px; padding:0; }
+.fr-pop .pl-mr{ width:100%; background:none; border:0; border-bottom:1px solid var(--frline); font-family:inherit; text-align:left; cursor:pointer; }
+.fr-pop .pl-mr.ret .pl-pc{ color:var(--frink3) !important; text-decoration:line-through; }
+.fr-pop .pl-mr .pl-pc{ justify-self:start; }
+.pl-miss .co-say .co-on{ background:var(--frok) !important; border-color:var(--frok) !important; }
+.fr-pop .pl-pr.static .co-say .co-on{ background:var(--frok); border-color:var(--frok); }
+.fr-pop .co-say{ display:inline-flex; gap:6px; }
+
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
 .fr-page{ margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
