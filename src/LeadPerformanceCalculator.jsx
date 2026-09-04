@@ -2877,13 +2877,20 @@ export default function LeadPerformanceCalculator() {
      else is there. Queue them instead — the second waits for the first, sees its
      result, and lands first time. */
   const saveChain = useRef(Promise.resolve());
+  /* Saves run one after another, and each one ships the whole store. Two taps
+     in a row used to flicker: the first save came back and wrote the server's
+     copy over the screen, undoing the second tap until its own save landed.
+     Every save takes a number, and only the newest one is allowed to write
+     what came back onto the screen. */
+  const saveSeq = useRef(0);
   const persistStore = (storeId, next, audit) => {
-    const run = () => persistStoreNow(storeId, next, audit);
+    const seq = ++saveSeq.current;
+    const run = () => persistStoreNow(storeId, next, audit, seq);
     const p = saveChain.current.then(run, run);
     saveChain.current = p.catch(() => {});
     return p;
   };
-  const persistStoreNow = async (storeId, next, audit) => {
+  const persistStoreNow = async (storeId, next, audit, seq = saveSeq.current) => {
     if (storeLoadFailed) {
       alert("This store's data didn't finish loading, so saving is paused to protect your records.\n\nReload the page, make sure everything is showing, then try again. If it keeps happening, use the Help button in the corner to report it.");
       return;
@@ -2930,8 +2937,10 @@ export default function LeadPerformanceCalculator() {
     const ok = res.ok;
     if (ok) {
       const merged = res.value || next;
-      setStoreData(merged);
-      setAdminData((p) => ({ ...p, [storeId]: merged }));
+      if (seq === saveSeq.current) {
+        setStoreData(merged);
+        setAdminData((p) => ({ ...p, [storeId]: merged }));
+      }
       if (res.conflictsResolved) console.info("save merged around", res.conflictsResolved, "other save(s)");
     }
     setSaving(false); savingRef.current = false;
@@ -38907,6 +38916,9 @@ const SAGE_CSS = `
    see-through. The phone pages sit above it. On a phone the Board's container
    also lost its phone padding to a later desktop rule, which inset it. */
 .bp-page,.co-page,.fr-page{ position:relative; z-index:1; }
+/* the page's button reset is more specific than the row and tile rules */
+.bp-page .bp-row{ padding:0 12px; }
+.bp-page .fr-tool{ padding:10px 4px; }
 .bp-page{ padding-top:6px; }
 @media (max-width:700px){ .board-page{ padding:18px 0 0; } .co-page{ padding:10px 0 28px; } }
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
