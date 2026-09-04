@@ -35776,7 +35776,11 @@ const SAGE_CSS = `
 .mc-set-av{ width:34px; height:34px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center;
   font-family:var(--sfmono); font-size:11px; font-weight:700; flex:0 0 auto; }
 .mc-set-out{ color:#f08a80; }
-.mc-tkov{ position:fixed; inset:0; z-index:70; display:flex; flex-direction:column; background:rgba(6,10,8,.72); padding:0 0 16px; }
+/* The slot the ticket prints from sits under the phone's status bar, not
+   behind it: the safe area is padding on the overlay so the paper comes out
+   below the clock, on every phone. */
+.mc-tkov{ position:fixed; inset:0; z-index:70; display:flex; flex-direction:column; background:rgba(6,10,8,.72);
+  padding:calc(var(--sat, env(safe-area-inset-top, 0px)) + 6px) 0 16px; }
 .mc-slot{ height:9px; margin:0 22px; background:#0a0f0c; border-radius:0 0 9px 9px; box-shadow:0 5px 12px rgba(0,0,0,.5); position:relative; z-index:2; flex:0 0 auto; }
 .mc-tkt{ margin:0 16px; background:#f7eed9; color:#2a2418; border-radius:0 0 8px 8px; padding:15px 14px; position:relative;
   box-shadow:0 14px 34px -12px rgba(0,0,0,.7); animation:mcPrint 2.6s steps(22,end) both; }
