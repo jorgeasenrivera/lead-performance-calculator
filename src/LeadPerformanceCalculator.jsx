@@ -71,6 +71,19 @@ const GUIDE_IMG_APPT_REPORT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASY
 const GUIDE_IMG_VIDEO_REPORT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAS0AAABHCAMAAABlJeFUAAAAYFBMVEX//////+3//9Pn//+////+/v79/P37+/z5+fr4+Pr29ff08/b/+NLS+P/r7dD0z5jZtY2d4v51turbnFO4cDBfjbxJX3aJPyNlJCE1OEUxISEhN3MhIW8hIVQhITohISH63UOYAAAB4UlEQVR42u3cbW+CMBSGYRAFZDrKO4LQ//8vd1pwZipvfliW7H5iTEU+XTk9VpLW+SDr40CA1i9pRaF/cIjNwQ+jOa0owOhngmhS64jOc44TWiE0rxK+1KKyFqvrrhXBMpXoWYsGP93qn7QorRXF5dDiNzT6by0fk+n4j1qs4OdW9Y9akMwFLbTQQgsttAhaaKGFFlpokTe1sjIZH1zEiYfWC61d1e4tUN7uc50OF93qukfrVW1lA1Fcl4F7e2aP1pTWqW7PI9qnkpGvyuLTarkyOttbVJme0bKx88+aZX3inCptIloyujS9fKcaudCnaNk52LTeMB+NVq6LwM9Ey827xDFvAil0dZegZZpU3ic7O/UyMzDz0nwUJKVU1qRDY8t0ipYtLl3Iyxm0aik02+Xjpr+YjFrDHWhJJXWVnWeiZeefzLvrfjd0/8PoRG3dFxFD4Zi+FTddoWrT5TPdpqoqPLfSpcp166E1LiL65KblCJUuc9HyzahLTWOT38Tifyzu+Z+IFlpooYUWQQsttNBCCy2CFlpooYUWWmRZi50rMzmwK2pDfHbcbUjIbs4NidgpvD4Bu9DfKC1OOFiRI6dnbG/xnMyyqbI49WexwUecKLVyBb9wohThbDe00Pr7+QKqNZ9nsT3RsQAAAABJRU5ErkJggg==";
 
 const CONFIG_KEY = "lpc:config:v2";
+/* ---- what the sign-up screen may know before anybody is signed in ----
+   The config row is readable only with a session, so a person creating an
+   account used to be shown the three example stores the app ships with, not
+   the group's own. The store list, the approved domains and whether sign-up is
+   open ride in a slim row under the board prefix, which is readable by anyone
+   already, and it is rewritten every time the config is saved. */
+const PUBLIC_STORES_KEY = "lpc:board:stores:v1";
+const publicSlice = (cfg) => ({
+  stores: ((cfg && cfg.stores) || []).map((s) => ({ id: s.id, name: s.name })),
+  approvedDomains: (cfg && cfg.approvedDomains) || [],
+  registrationOpen: !cfg || cfg.registrationOpen !== false,
+  at: new Date().toISOString(),
+});
 const AUDIT_KEY = "lpc:audit:v2";
 // A TV runs the board with nobody signed in, so it must never be able to read the
 // full store blob. The board row holds only what the screen actually draws: names,
@@ -2462,6 +2475,9 @@ export default function LeadPerformanceCalculator() {
         if (cfg.users) { delete cfg.users; dirty = true; }
         if (dirty) await saveShared(CONFIG_KEY, cfg);
         setConfig(cfg);
+        /* Signed in, so this is allowed: keep the public slice current even for
+           a config that was saved before the slice existed. */
+        if (sessionRef.current) saveShared(PUBLIC_STORES_KEY, publicSlice(cfg)).catch(() => {});
         return;
       }
 
@@ -2487,8 +2503,18 @@ export default function LeadPerformanceCalculator() {
         await saveShared(CONFIG_KEY, cfg);
       } else {
         /* Signed out, row invisible: run the login on defaults, write nothing,
-           and re-read the moment a session exists. */
+           and re-read the moment a session exists. The group's own stores,
+           domains and sign-up switch come from the public slice, so the
+           account screen offers the real rooftops rather than the examples. */
         cfgProvisional.current = true;
+        try {
+          const pub = await loadShared(PUBLIC_STORES_KEY, null);
+          if (pub && Array.isArray(pub.stores) && pub.stores.length) {
+            cfg.stores = pub.stores.map((st) => ({ ...st }));
+            if (Array.isArray(pub.approvedDomains)) cfg.approvedDomains = pub.approvedDomains;
+            if (typeof pub.registrationOpen === "boolean") cfg.registrationOpen = pub.registrationOpen;
+          }
+        } catch (e) { /* the defaults stand */ }
       }
       setConfig(cfg);
     })().catch(() => setLoadErr(true));
@@ -2796,6 +2822,7 @@ export default function LeadPerformanceCalculator() {
   const persistConfig = async (next, audit) => {
     setConfig(next); setSaving(true);
     await saveShared(CONFIG_KEY, next);
+    saveShared(PUBLIC_STORES_KEY, publicSlice(next)).catch(() => {});
     if (audit) await appendAudit({ user: session?.name, ...audit });
     setSaving(false);
   };
@@ -3776,6 +3803,7 @@ export default function LeadPerformanceCalculator() {
               <BackupPanel config={config} adminData={adminData} session={session}
                 onRestoreAll={async (backup) => {
                   await saveShared(CONFIG_KEY, backup.config);
+                  saveShared(PUBLIC_STORES_KEY, publicSlice(backup.config)).catch(() => {});
                   for (const [sid, sdata] of Object.entries(backup.stores || {})) {
                     await saveShared(storeKey(sid), sdata);
                   }
@@ -20594,6 +20622,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
     }
 
     const ok = await saveShared(CONFIG_KEY, next);
+    if (ok) saveShared(PUBLIC_STORES_KEY, publicSlice(next)).catch(() => {});
     setBusy(false);
     if (!ok) { setMsg("Couldn't save. You may not have permission."); return; }
     await appendAudit({ user: session?.name, action: "Recovered store", detail: `${name.trim()} (${o.id})` });
