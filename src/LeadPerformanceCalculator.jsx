@@ -38910,6 +38910,12 @@ const SAGE_CSS = `
 .fr-b.co-unq{ background:#fff; border-color:var(--frok); color:var(--frok); }
 .fr-sheet.co-sheet .fr-meta .co-pt{ margin-left:0; height:22px; min-width:0; }
 
+/* The ground is a fixed layer at z-index 0 that paints over anything not
+   positioned above it, which on a phone read as the white cards being
+   see-through. The phone pages sit above it. On a phone the Board's container
+   also lost its phone padding to a later desktop rule, which inset it. */
+.bp-page,.co-page,.fr-page{ position:relative; z-index:1; }
+@media (max-width:700px){ .board-page{ padding:18px 0 0; } .co-page{ padding:10px 0 28px; } }
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
 .fr-page{ margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
