@@ -5923,6 +5923,12 @@ function buildBoardPayload(config, storeId, sdata) {
     } catch (e) {}
   }
   const extras = phoneExtras(sdata, roster.map((r) => ((sdata && sdata.roster) || []).find((a) => a.name === r.name) || r), key, norm);
+  /* Who can claim a name at sign-up: everyone still on the roster, whatever
+     their role. The wall shows only the board roles, but a manager or a person
+     with no role yet is still somebody who has to be able to say "that is me". */
+  const people = (((sdata && sdata.roster) || []))
+    .filter((a) => a && a.id && a.name && !gone.has(norm(a.name)))
+    .map((a) => ({ id: a.id, name: a.name, roleId: a.roleId || null }));
   return {
     storeId,
     storeName: store?.name || "Store",
@@ -5936,6 +5942,7 @@ function buildBoardPayload(config, storeId, sdata) {
     ym: key,
     ticker,
     roster,
+    people,
     departed: [...gone],
     months: { [key]: { stats } },
     updatedAt: new Date().toISOString(),
@@ -7825,7 +7832,8 @@ function ClaimPicker({ config, value, onChange, onName }) {
     setRoster(null);
     loadShared(`lpc:board:${store}:v1`, null).then((b) => {
       if (dead) return;
-      const list = (b && Array.isArray(b.roster) ? b.roster : []).filter((r) => r && r.id && r.name);
+      const src = b && Array.isArray(b.people) ? b.people : (b && Array.isArray(b.roster) ? b.roster : []);
+      const list = src.filter((r) => r && r.id && r.name);
       setRoster(list.slice().sort((a, b2) => String(a.name).localeCompare(String(b2.name))));
     }).catch(() => { if (!dead) setRoster([]); });
     return () => { dead = true; };

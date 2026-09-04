@@ -240,10 +240,16 @@ async function refreshBoardRow(storeId, sdata) {
   }
 
   const extras = phoneExtras(sdata, ((sdata && sdata.roster) || []).filter((a) => a.roleId && onBoard.has(a.roleId) && !gone.has(norm(a.name))), month, norm);
+  /* Everyone still on the roster, any role, so the sign-up screen can offer
+     the name. The wall draws `roster`; the account door reads `people`. */
+  const people = ((sdata && sdata.roster) || [])
+    .filter((a) => a && a.id && a.name && !gone.has(norm(a.name)))
+    .map((a) => ({ id: a.id, name: a.name, roleId: a.roleId || null }));
   await sbPut(boardKey(storeId), {
     ...prev,
     ym: month,
     roster,
+    people,
     departed: [...gone],
     goals: extras.goals,
     off: extras.off,
