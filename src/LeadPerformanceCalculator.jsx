@@ -33150,7 +33150,19 @@ const SAGE_CSS = `
         /* --- page gets out of the way of the bar --- */
         .board, .import, .standards, .roster, .admin, .gm, .history, .access, .audit,
         .settings, .checkout, .coaching, .plates {
-          padding:16px 14px calc(88px + env(safe-area-inset-bottom, 0px)); }
+          padding:16px 14px calc(116px + env(safe-area-inset-bottom, 0px)); }
+        /* --- cards are solid on a phone ---
+           The desk's cards are translucent over the backdrop, which reads as
+           depth on a wide screen and as washed-out on a phone in daylight. */
+        .card { background:rgba(255,255,255,.97); }
+        .assoc-card, .co-card, .pp-row { background:#fff; }
+        /* --- Live Floor's tools, in a grid rather than a wrap ---
+           Six controls of three different shapes wrapped into three ragged
+           lines. Two columns of equal buttons, and the two copy links join
+           them as buttons of the same size. */
+        .mf .q-topline-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%; margin-left:0; }
+        .mf .q-topline-actions > * { margin:0; width:100%; justify-content:center; text-align:center;
+          min-height:44px; display:inline-flex; align-items:center; }
 
         /* --- the first five, then the rest on request --- */
         .assoc-card.rolled { display:none; }
