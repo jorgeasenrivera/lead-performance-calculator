@@ -20,7 +20,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import handler from "../api/ingest.mjs";
-import { storeKey } from "../api/_store-keys.mjs";
+import { storeKey, boardKey } from "../api/_store-keys.mjs";
 
 const SECRET = "test-secret";
 const STORE = { id: "classic-mazda", name: "Classic Mazda" };
@@ -146,4 +146,30 @@ test("a request without the shared secret gets nowhere", async () => {
     const out = await call(Buffer.from("", "utf8"), { "x-ingest-secret": "wrong" });
     assert.equal(out.code, 401, JSON.stringify(out.body));
   } finally { globalThis.fetch = realFetch; }
+});
+
+// ---- the board row names everyone who can claim a name, not only the wall ----
+test("a refreshed board row lists every roster person under people, whatever their role", async () => {
+  const seed = seeded();
+  seed[storeKey(STORE.id)] = {
+    rev: 3, months: {},
+    roster: [
+      { id: "p-fin", name: "Fin Smith", roleId: "sales" },
+      { id: "p-jo", name: "Jo Manager", roleId: "manager" },
+      { id: "p-test", name: "Test Account", roleId: null },
+      { id: "p-old", name: "Old Timer", roleId: "sales" },
+    ],
+    departed: [{ id: "p-old", name: "Old Timer" }],
+  };
+  /* A wall that has been opened once, so the pipeline refreshes it. */
+  seed[boardKey(STORE.id)] = { storeId: STORE.id, roles: [{ id: "sales" }], roster: [], months: {} };
+  const { out, db } = await run(seed, message({
+    to: `lpc-classicmazda@hollercrmreports.com`,
+    subject: "Daily Internet Delivery", filename: "delivery-internet.csv", csv: CSV,
+  }));
+  assert.equal(out.code, 200, JSON.stringify(out.body));
+  const board = db.get(boardKey(STORE.id));
+  assert.deepEqual(board.roster.map((r) => r.id), ["p-fin"], "the wall keeps the board roles only");
+  assert.deepEqual(board.people.map((r) => r.id).sort(), ["p-fin", "p-jo", "p-test"], "everyone still on the roster can claim a name");
+  assert.ok(!board.people.some((r) => r.id === "p-old"), "the departed cannot");
 });
