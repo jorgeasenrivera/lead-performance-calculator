@@ -21,7 +21,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { checkLink, claimsFor } from "./_people-link.mjs";
-import { supabaseUrl, anonKey, envGap } from "./_env.mjs";
+import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
 
 /* ---- why every failure below now says what went wrong ----
    This handler had no try/catch, so anything that threw — a malformed body, a
@@ -50,7 +50,7 @@ export default async function handler(req, res) {
 }
 
 async function run(req, res) {
-  const gap = envGap({ anon: true });
+  const gap = envGap();
   if (gap) return fail(res, 500, gap);
   const reading = req.method === "GET";
   if (!reading && req.method !== "POST") return res.status(405).json({ error: "GET or POST only" });
@@ -72,11 +72,15 @@ async function run(req, res) {
   if (!store) return res.status(400).json({ error: "store is required" });
   if (!reading && !userId) return res.status(400).json({ error: "user_id is required" });
 
-  const asUser = createClient(supabaseUrl(), anonKey(), {
-    auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
-  });
-  const { data: who, error: whoErr } = await asUser.auth.getUser();
-  if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid" });
+  /* Who is asking. The token is checked against the auth server with the
+     service client, so this does not also depend on the anon key on the server
+     matching the one the browser was built with: when those drifted apart every
+     call here failed with a message that blamed the manager's session. If the
+     token really is bad, the auth server's own words are passed along. */
+  const { data: who, error: whoErr } = await createClient(supabaseUrl(), serviceKey(), { auth: { persistSession: false } }).auth.getUser(jwt);
+  if (whoErr || !who || !who.user) {
+    return res.status(401).json({ error: "that session is not valid" + (whoErr && whoErr.message ? " (" + whoErr.message + "). Sign out and back in, then try again." : ". Sign out and back in, then try again.") });
+  }
 
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
