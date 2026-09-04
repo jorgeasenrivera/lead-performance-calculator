@@ -201,6 +201,43 @@ const LEADERBOARD_REPORTS = {
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
+/* ---- example figures for a test person ----
+   A person whose name says "test" is there to be looked at from a phone, and
+   a phone with nothing on it tests nothing. This writes them a plausible month
+   and the last twelve days of activity, the same fields a report would land,
+   so the board row, the day row and My Corner all light up the ordinary way.
+   Real people never get this: the button only shows for a test name. */
+const isTestName = (name) => /\btest\b/i.test(String(name || ""));
+const hasExampleFigures = (data, name) => {
+  const k = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return !!(data && data.months && data.months[new Date().toISOString().slice(0, 7)] && data.months[new Date().toISOString().slice(0, 7)].stats
+    && data.months[new Date().toISOString().slice(0, 7)].stats[k] && data.months[new Date().toISOString().slice(0, 7)].stats[k].example);
+};
+function seedExampleFigures(data, name) {
+  const next = JSON.parse(JSON.stringify(data || {}));
+  const k = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const month = new Date().toISOString().slice(0, 7);
+  next.months = next.months || {};
+  next.months[month] = next.months[month] || { stats: {}, imports: {} };
+  next.months[month].stats = next.months[month].stats || {};
+  next.months[month].stats[k] = {
+    internetUnits: 6, internetPct: 0.11, internetLeads: 55, phoneUnits: 4, phonePct: 0.17, phoneLeads: 24,
+    showroomUnits: 9, showroomPct: 0.25, showroomLeads: 36, campaignUnits: 1, newUnits: 11, usedUnits: 9,
+    opps: 60, unitsDelivered: 20, apptVideoDayPct: 0.52, deliveredPct: 0.12, engagedVideoPct: 0.44, example: true,
+  };
+  next.activity = next.activity || {};
+  const t0 = new Date(); t0.setHours(12, 0, 0, 0);
+  for (let b = 0; b < 12; b++) {
+    const d = new Date(t0); d.setDate(d.getDate() - b);
+    const day = d.toLocaleDateString("en-CA", { timeZone: STORE_TZ });
+    const n = parseInt(day.slice(8, 10), 10) || 1;
+    const row = next.activity[day] = next.activity[day] || {};
+    row[k] = { calls: b === 0 ? 9 : 16 + (n % 5), video: b === 0 ? 2 : 3 + (n % 2), apptCreated: 1 + (n % 3), apptShow: n % 2,
+      contacted: 12 + (n % 4), tasks: 14, tasksPosted: 16, visits: n % 3, units: n % 4 === 0 ? 1 : 0,
+      uploadedAt: new Date(day + "T18:10:00").toISOString(), example: true };
+  }
+  return next;
+}
 /* ---- Tags ----
    A tag says what somebody can be handed. Two kinds, deliberately:
 
@@ -3528,9 +3565,12 @@ export default function LeadPerformanceCalculator() {
         <Style />
       </Shell>);
     }
-    if (session.pending) {
-      return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} config={config} onClaimed={refreshProfile} /><Style /></Shell>);
-    }
+    /* No link yet. Whether or not a manager has ticked the account, a person
+       who asked for the floor has nowhere to go until they are joined to a
+       name, and the manager dashboard is the wrong place to wait: it opens on
+       whichever store the phone last saw, which reads as a glitch. They wait
+       here, with their claim, until the join is made. */
+    return wrap(<Shell><PendingScreen profile={session} onSignOut={signOut} config={config} onClaimed={refreshProfile} /><Style /></Shell>);
   }
 
   // The Tools chooser is gone. Signing in drops the person straight into the
@@ -12867,7 +12907,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         )}
       </div>
 
-      <div className="mc-cap">TODAY &middot; FILLS ITSELF</div>
+      <div className="mc-cap">TODAY</div>
       <div className="mc-card mc-today">
         {rows.map((r2) => (
           <div className="mc-row" key={r2.label}>
@@ -12885,7 +12925,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         ))}
       </div>
 
-      <div className="mc-cap">POINTS &middot; LOWER WINS</div>
+      <div className="mc-cap">POINTS</div>
       <div className="mc-card">
         <div className="mc-ptshead">
           <span className="mc-num"><LedNumber value={points} color="#F08A80" cell={6.5} gap={3} dim="transparent" /></span>
@@ -28881,6 +28921,20 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     store's lists and their cars move across. Two people who happen to share a name are
                     not this, and merging them puts one person's month onto the other.
                   </Explain>
+                  {/* A test person exists to be looked at from a phone, and an empty
+                      month shows nothing worth looking at. One tap gives them a
+                      plausible month and a fortnight of days. Only a name with
+                      "test" in it gets the button: real people get real figures. */}
+                  {isTestName(p.name) && (
+                    <div className="pp-move-row pp-samerow">
+                      <span className="pp-date">Example figures</span>
+                      <button className="btn btn-sm" onClick={() => onChange(seedExampleFigures(data, p.name),
+                        { action: "Filled example figures", detail: p.name + (storeName ? " · " + storeName : "") })}>
+                        {hasExampleFigures(data, p.name) ? "Fill again" : "Fill"}
+                      </button>
+                      {hasExampleFigures(data, p.name) && <span className="pp-off-tag">example figures in</span>}
+                    </div>
+                  )}
                 </div>
               );
             })()}
