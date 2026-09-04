@@ -3970,7 +3970,7 @@ export default function LeadPerformanceCalculator() {
             )}
             {appModule === "activity" ? (
               <>
-                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} />}
+                {(tab === "checkout" || !["coaching", "plates", "import", "actstd"].includes(tab)) && <CheckOutTracker config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} query={assocQuery} onCoach={() => setTab("coaching")} />}
                 {tab === "coaching" && <CoachingPanel config={config} store={currentStore} data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} />}
                 {tab === "plates" && <PlateTracker data={storeData} onChange={(d, audit) => persistStore(view, d, audit)} userName={session.name} storeId={view} saving={saving} onRemote={adoptRemotePlates} />}
                 {tab === "import" && <ImportPanel store={currentStore} config={config} data={storeData} log={importLog} dropActive={dropActive} setDropActive={setDropActive} onFiles={handleFiles} fileRef={fileRef} activity activityDay={activityDay} setActivityDay={setActivityDay} activityScope={activityScope} setActivityScope={setActivityScope} flags={importFlags} onHelp={() => setShowHelp(true)} onChange={(d, audit) => persistStore(view, d, audit)} />}
@@ -16378,7 +16378,322 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   );
 }
 
-function CheckOutTracker({ config, store, data, onChange, query = "" }) {
+/* ---------------- Check Out on a phone ----------------
+   The approved phone draft, whole: the team's day in dot matrix with the change
+   on the day before, four counters, the week as bars, the Biggest Loser as a
+   line, three tool tiles, then the sheet in three forms: the white card for
+   people on today, the sand card for people the schedule had off who worked
+   anyway, the dark strip for people off. Every figure in a row is a number in
+   the mono, coloured by its standard. Desktop keeps CheckOutTracker's own
+   layout; this takes over at phone width only. */
+function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, rows, onRows, anywayRows, offRows,
+  noShowSuspects, toggleOff, confirmOn, cycleQualified, offenders, missLine, tNow, tPrev, dCalls, dVideos,
+  atMin, withData, qualToday, rockedCount, fresh, taskBar, mtdPoints, monthDays, roster, sumFor,
+  onReport, onRoom, onUpload, onCoach }) {
+  const [pop, setPop] = useState(null);
+  const close = useCallback(() => setPop(null), []);
+  const shortName = (n) => { const w = String(n).trim().split(/\s+/); return w.length > 1 ? `${w[0]} ${w[w.length - 1][0]}.` : n; };
+  const dayLabel = (d, long) => new Date(d + "T12:00").toLocaleDateString("en-US", long ? { weekday: "long", month: "long", day: "numeric" } : { weekday: "short", month: "short", day: "numeric" });
+  const monthName = new Date(day + "T12:00").toLocaleDateString("en-US", { month: "long" });
+  const suspect = new Set(noShowSuspects.map((r) => r.a.id));
+  const pplWithData = (d) => {
+    const recs = data.activity?.[d] || {};
+    let n = 0;
+    for (const a of roster) { const r = recs[norm(a.name)]; if (r && (r.calls != null || r.video != null)) n++; }
+    return n;
+  };
+  /* the days around the one being read, oldest first */
+  const around = (n) => {
+    const i = activityDays.indexOf(day);
+    const list = i < 0 ? activityDays.slice(0, n) : activityDays.slice(i, i + n);
+    return list.slice().reverse().map((d) => ({ d, ...sumFor(d), n: pplWithData(d) }));
+  };
+  const week = around(7);
+  const bars = (list, key, minPer) => {
+    const max = Math.max(1, ...list.map((x) => x[key]), ...list.map((x) => x.n * minPer));
+    return { max, items: list.map((x) => ({ d: x.d, v: x[key], min: x.n * minPer, h: Math.max(3, Math.round((x[key] / max) * 100)) })) };
+  };
+  const wkC = bars(week, "c", std.minCalls), wkV = bars(week, "v", std.minVideos);
+  const minLine = (b) => { const last = b.items[b.items.length - 1]; return last && last.min > 0 ? Math.round((last.min / b.max) * 100) : null; };
+  const delta = (d) => d == null ? null
+    : <span className={"co-dlt " + (d >= 0 ? "up" : "dn")}><PixIcon glyph={d >= 0 ? "triup" : "tridown"} size={8} />{Math.abs(d)}%</span>;
+  const streakOf = (a) => { const s = currentStreak(data, a, std); return s.dir && s.len >= 3 ? s : null; };
+  const streakMark = (a) => { const s = streakOf(a); return s ? <span className={"co-stk" + (s.dir === "down" ? " dn" : "")}><PixIcon glyph={s.dir === "up" ? "triup" : "tridown"} size={8} />{s.len}</span> : null; };
+  const ptCls = (r) => !r.hasData ? "na" : r.points === 0 ? "p0" : r.points === 1 ? "p1" : "p3";
+  const ptText = (r) => !r.hasData ? "no data" : `${r.points} ${r.points === 1 ? "pt" : "pts"}`;
+
+  /* a row on the sheet */
+  const fig = (v, min, met, label, nd) => (
+    <span className={"co-f " + (nd ? "co-na" : met == null ? "co-n" : met ? "co-ok" : "co-bad")}>
+      <b>{nd || v == null ? "–" : fmtNum(v)}{min != null && <i>/{min}</i>}</b><small>{label}</small>
+    </span>
+  );
+  const sheetRow = (r) => {
+    const nd = !r.hasData;
+    const ask = suspect.has(r.a.id);
+    const k = norm(r.a.name);
+    return (
+      <div key={r.a.id} className={"co-row" + (nd ? " co-nd" : "")}>
+        <button type="button" className="co-hd1" onClick={() => setPop({ k: "person", id: r.a.id })}>
+          <span className="co-nm">{r.a.name}{streakMark(r.a)}</span>
+          {ask
+            ? <span className="co-say" onClick={(e) => e.stopPropagation()}><button type="button" onClick={() => toggleOff(r.a)}>Off</button><button type="button" className="co-on" onClick={() => confirmOn(r.a)}>On</button></span>
+            : <span className={"co-pt " + ptCls(r)}>{ptText(r)}</span>}
+        </button>
+        <div className="co-figs">
+          <span className="co-f co-ftk"><TaskDial done={nd ? null : r.tasks} posted={nd ? null : r.tasksPosted} target={taskBar} size={30} /><small>tasks</small></span>
+          {fig(r.calls ?? 0, std.minCalls, r.callsMet, "calls", nd)}
+          {fig(r.video ?? 0, std.minVideos, r.videoMet, "videos", nd)}
+          {outreach && fig(r.text, null, null, "texts", nd)}
+          {outreach && fig(r.email, null, null, "emails", nd)}
+          <button type="button" className={"co-f co-frq " + (r.qual === "yes" ? "co-yes" : "co-no")} onClick={() => cycleQualified(k)} aria-label={r.qual === "yes" ? "RockEd qualified. Tap for not yet." : "RockEd not yet. Tap to mark qualified."}>
+            <span className="co-rqp"><PixIcon glyph={r.qual === "yes" ? "check" : "close"} size={14} /></span><small className="co-case">RockEd</small>
+          </button>
+        </div>
+      </div>
+    );
+  };
+  const groupHead = (glyph, label, n, sub) => (
+    <div className="co-gh"><PixIcon glyph={glyph} size={14} />{label}{sub && <span className="co-gsub">{sub}</span>}<span className="co-gn">{n}</span></div>
+  );
+
+  /* ---- the pops ---- */
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const nameList = (yes, no) => (
+    <div className="fr-list co-nl">
+      {yes.map((r) => <div key={r.a.id} className="co-nr"><span>{r.a.name}</span><span className="fr-st in">yes</span></div>)}
+      {no.map((r) => <div key={r.a.id} className="co-nr"><span>{r.a.name}</span><span className="fr-st away">no</span></div>)}
+      {yes.length + no.length === 0 && <p className="fr-empty">Nobody with numbers yet.</p>}
+    </div>
+  );
+  const barChart = (b, cap, right, last) => (
+    <div className="co-mo">
+      <div className="co-cap2"><span>{cap}</span><span>{right}</span></div>
+      <div className="co-days">
+        {minLine(b) != null && <em style={{ bottom: minLine(b) + "%" }} />}
+        {b.items.map((x, i) => <i key={x.d} className={i === b.items.length - 1 ? "co-t" : x.min > 0 && x.v < x.min ? "co-low" : ""} style={{ height: x.h + "%" }} title={`${dayLabel(x.d)} · ${fmtNum(x.v)}`} />)}
+      </div>
+      <div className="co-dl2"><span>{b.items[0] ? dayLabel(b.items[0].d).replace(/^\w+, /, "").toUpperCase() : ""}</span><span>{last}</span></div>
+    </div>
+  );
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "day") {
+      return (<>
+        {hd("Which day", <span className="fr-w">Daily activity</span>)}
+        <div className="fr-list co-dlist">
+          {activityDays.slice(0, 21).map((d) => {
+            const f = reportFreshness(store, (data.activity || {})[d]);
+            return (
+              <button key={d} type="button" className={"co-dr" + (d === day ? " co-on" : "")} onClick={() => { setDay(d); close(); }}>
+                <span className="co-dn">{dayLabel(d)}</span><span className="co-dm">{f.lastAt ? fmtClock(f.lastAt) : ""}</span>{d === today() ? <span className="fr-st in">today</span> : <span />}
+              </button>
+            );
+          })}
+        </div>
+      </>);
+    }
+    if (pop.k === "team") {
+      const twelve = around(12);
+      const c12 = bars(twelve, "c", std.minCalls), v12 = bars(twelve, "v", std.minVideos);
+      return (<>
+        {hd("The team's day", <><span className="fr-st in">{dayLabel(day)}</span>{tPrev && <span className="fr-w">vs {dayLabel(activityDays[activityDays.indexOf(day) + 1])}</span>}</>)}
+        <div className="co-three co-two">
+          <div><b>{fmtNum(tNow.c)}</b><span>calls{tPrev ? ` · ${fmtNum(tPrev.c)} before` : ""}</span></div>
+          <div><b>{fmtNum(tNow.v)}</b><span>videos{tPrev ? ` · ${fmtNum(tPrev.v)} before` : ""}</span></div>
+        </div>
+        {barChart(c12, `Team calls · last ${twelve.length} days`, `min ${std.minCalls} each`, dayLabel(day).replace(/^\w+, /, "").toUpperCase())}
+        {barChart(v12, `Team videos · last ${twelve.length} days`, `min ${std.minVideos} each`, dayLabel(day).replace(/^\w+, /, "").toUpperCase())}
+        <div style={{ height: 12 }} />
+      </>);
+    }
+    if (pop.k === "min") {
+      const yes = withData.filter((r) => r.callsMet && r.videoMet), no = withData.filter((r) => !(r.callsMet && r.videoMet));
+      return (<>{hd("At minimums", <><span className="fr-st in">{yes.length} yes</span><span className="fr-st away">{no.length} no</span></>)}
+        <div className="bp-defn">{std.minCalls} calls and {std.minVideos} videos, among the people with numbers today.</div>{nameList(yes, no)}</>);
+    }
+    if (pop.k === "rock") {
+      const live = rows.filter((r) => !r.off);
+      const yes = live.filter((r) => r.qual === "yes"), no = live.filter((r) => r.qual !== "yes");
+      return (<>{hd("RockEd", <><span className="fr-st in">{yes.length} yes</span><span className="fr-st away">{no.length} no</span></>)}
+        <div className="bp-defn">Marked qualified today. Tap a name on the sheet to flip it.</div>{nameList(yes, no)}</>);
+    }
+    if (pop.k === "clean") {
+      const yes = withData.filter((r) => r.points === 0), no = withData.filter((r) => r.points > 0);
+      return (<>{hd("Clean sheets", <><span className="fr-st in">{yes.length} yes</span><span className="fr-st away">{no.length} no</span></>)}
+        <div className="bp-defn">Zero points today: calls, videos and RockEd all met.</div>{nameList(yes, no)}</>);
+    }
+    if (pop.k === "asks") {
+      return (<>{hd("Nothing logged", <><span className="fr-st away">{noShowSuspects.length} {noShowSuspects.length === 1 ? "name" : "names"}</span>{fresh.lastAt && <span className="fr-w">report ran {fmtClock(fresh.lastAt)}</span>}</>)}
+        <div className="bp-defn">On the schedule, no calls, no videos. Off keeps the day from counting. On counts it. Left alone it closes as a day off at midnight.</div>
+        <div className="fr-list co-nl">
+          {noShowSuspects.map((r) => (
+            <div key={r.a.id} className="co-nr"><span>{r.a.name}</span>
+              <span className="co-say"><button type="button" onClick={() => { toggleOff(r.a); close(); }}>Off</button><button type="button" className="co-on" onClick={() => { confirmOn(r.a); close(); }}>On</button></span></div>
+          ))}
+          {noShowSuspects.length === 0 && <p className="fr-empty">Everyone on the schedule has something logged.</p>}
+        </div></>);
+    }
+    if (pop.k === "lose") {
+      return (<>{hd("Biggest Loser", <><span className="fr-st away">{monthName}</span><span className="fr-w">one point per miss · low wins</span></>)}
+        <div className="fr-list co-lb">
+          {offenders.map((r, i) => (
+            <button key={r.a.id} type="button" className="co-lr" onClick={() => setPop({ k: "person", id: r.a.id })}>
+              <em className={i < 3 ? "co-m" + (i + 1) : ""}>{i + 1}</em>
+              <span className="co-lt"><span className="co-ln">{r.a.name}</span>{missLine(r) && <span className="co-lm">{missLine(r)}</span>}</span>
+              <span className={"co-pt " + (r.points >= 6 ? "p3" : r.points >= 3 ? "p1" : "p0")}>{r.points} pts</span>
+            </button>
+          ))}
+          {offenders.length === 0 && <p className="fr-empty">Nobody has a point this month. Worth saying out loud.</p>}
+        </div></>);
+    }
+    if (pop.k === "sched") {
+      const on = rows.filter((r) => !r.off), off = rows.filter((r) => r.off);
+      return (<>{hd("The schedule", <><span className="fr-st in">{on.length} on</span><span className="fr-st off">{off.length} off</span><span className="fr-w">{dayLabel(day)}</span></>)}
+        <div className="fr-list co-nl">
+          {on.map((r) => <div key={r.a.id} className="co-nr"><span>{r.a.name}</span><span className={"fr-st " + (anywayRows.includes(r) ? "cust" : "in")}>{anywayRows.includes(r) ? "off · in anyway" : "on"}</span></div>)}
+          {off.map((r) => <div key={r.a.id} className="co-nr co-dim"><span>{r.a.name}</span><span className="fr-st off">off</span></div>)}
+        </div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { close(); onRoom(); }}>Full month</button><button type="button" className="fr-b" onClick={() => { close(); onUpload(); }}><PixIcon glyph="arrowdown" size={14} /> Upload</button></div></>);
+    }
+    if (pop.k === "person") {
+      const r = rows.find((x) => x.a.id === pop.id);
+      if (!r) return null;
+      const a = r.a, k = norm(a.name);
+      const ask = suspect.has(a.id);
+      const s = streakOf(a);
+      const days = monthDays.slice().sort().map((d) => {
+        const dp = dayPoints(data, a, d, std);
+        const cls = dp.off ? "co-off" : dp.noData ? "co-nd" : "co-m" + dp.points;
+        const h = dp.off ? 30 : dp.noData ? 100 : dp.points === 0 ? 100 : dp.points === 1 ? 70 : 40;
+        return <i key={d} className={cls} style={{ height: h + "%" }} title={`${dayLabel(d)} · ${dp.off ? "off" : dp.noData ? "no data" : dp.points + " pts"}`} />;
+      });
+      const cell = (v, min, met, label) => (
+        <div><b className={!r.hasData ? "" : met == null ? "" : met ? "co-ok" : "co-bad"}>{r.hasData && v != null ? fmtNum(v) : "–"}{min != null && <small>/{min}</small>}</b><span>{label}</span></div>
+      );
+      const tk = r.tasksPosted > 0 ? (r.tasks || 0) / r.tasksPosted : null;
+      return (<>
+        <div className="fr-hd">
+          <span className="fr-av" style={{ background: `hsl(${hueFromName(a.name)} 52% 42%)` }}>{initialsOf(a.name)}</span>
+          <div className="fr-hdt"><div className="fr-nm">{a.name}</div>
+            <div className="fr-meta">
+              {r.off ? <span className="fr-st off">day off</span> : ask ? <span className="fr-st away">nothing logged</span> : <span className={"co-pt " + ptCls(r)}>{ptText(r)}{r.hasData ? " today" : ""}</span>}
+              <span className="fr-st cust">{mtdPoints[a.id] || 0} pts this month</span>
+              {s && <span className={"fr-st " + (s.dir === "up" ? "in" : "away")}>{s.len} {s.dir === "up" ? "clean days" : "days at 3"}</span>}
+            </div>
+          </div>
+        </div>
+        {!r.off && (
+          <div className="co-three">
+            {cell(r.tasks, r.tasksPosted > 0 ? r.tasksPosted : null, tk == null ? null : tk >= taskBar, "tasks")}
+            {cell(r.calls ?? 0, std.minCalls, r.hasData ? r.callsMet : null, "calls")}
+            {cell(r.video ?? 0, std.minVideos, r.hasData ? r.videoMet : null, "videos")}
+            {outreach && cell(r.text, null, null, "texts")}
+            {outreach && cell(r.email, null, null, "emails")}
+            <div><b className={r.qual === "yes" ? "co-ok" : "co-bad"}><PixIcon glyph={r.qual === "yes" ? "check" : "close"} size={18} /></b><span className="co-case">RockEd</span></div>
+          </div>
+        )}
+        <div className="co-mo">
+          <div className="co-cap2"><span>{monthName} · points by day</span><span>tall = clean</span></div>
+          <div className="co-days co-pts">{days}</div>
+          <div className="co-dl2"><span>{monthDays.length ? dayLabel(monthDays.slice().sort()[0]).replace(/^\w+, /, "").toUpperCase() : ""}</span><span>{day === today() ? "today" : dayLabel(day).replace(/^\w+, /, "").toUpperCase()}</span></div>
+        </div>
+        <div className="fr-acts">
+          {r.off ? <button type="button" className="fr-b pri" onClick={() => { toggleOff(a); close(); }}><PixIcon glyph="triup" size={14} /> Put back on</button>
+            : ask ? <><button type="button" className="fr-b pri" onClick={() => { confirmOn(a); close(); }}>On today</button><button type="button" className="fr-b" onClick={() => { toggleOff(a); close(); }}>Off today</button></>
+            : <><button type="button" className={"fr-b " + (r.qual === "yes" ? "co-unq" : "co-qual")} onClick={() => cycleQualified(k)}><PixIcon glyph={r.qual === "yes" ? "close" : "check"} size={14} /> {r.qual === "yes" ? "Not yet" : "Qualified"}</button>
+              <button type="button" className="fr-b" onClick={() => { toggleOff(a); close(); }}><PixIcon glyph="clock" size={14} /> Mark off</button></>}
+          {onCoach && <button type="button" className="fr-b" style={{ flexBasis: "100%" }} onClick={() => { close(); onCoach(a); }}><PixIcon glyph="user" size={14} /> Coach</button>}
+        </div>
+      </>);
+    }
+    return null;
+  };
+
+  const leader = offenders[0];
+  const upd = fresh.lastAt ? fmtClock(fresh.lastAt) : null;
+  return (
+    <div className="bp-page co-page">
+      <div className="fr-top">
+        <div className="fr-brand"><span className="fr-cap">Sage</span><span className="fr-title">Check Out</span></div>
+      </div>
+
+      <div className="bp-hero co-hero">
+        <div className="co-hh">
+          <button type="button" className="co-day" onClick={() => setPop({ k: "day" })}><PixIcon glyph="calendar" size={11} />{dayLabel(day)}</button>
+          <span className={"co-upd" + (upd ? "" : " co-none")}>{upd ? <><i />Updated {upd}</> : fresh.missed ? `nothing past ${fresh.cutoffLabel}` : "no report yet"}</span>
+        </div>
+        <div className="co-big">
+          <button type="button" onClick={() => setPop({ k: "team" })}><span className="co-ucap"><PixIcon glyph="phone" size={11} />Team calls</span><span className="co-unum"><DotNum value={String(tNow.c)} dot={7} color="#fff" />{delta(dCalls)}</span></button>
+          <button type="button" onClick={() => setPop({ k: "team" })}><span className="co-ucap"><PixIcon glyph="doc" size={11} />Team videos</span><span className="co-unum"><DotNum value={String(tNow.v)} dot={7} color="#fff" />{delta(dVideos)}</span></button>
+        </div>
+        <div className="co-std">
+          <button type="button" onClick={() => setPop({ k: "min" })}><b>{atMin}<small>/{withData.length}</small></b><span><PixIcon glyph="check" size={9} />At minimums</span></button>
+          <button type="button" onClick={() => setPop({ k: "rock" })}><b>{qualToday}</b><span className="co-case"><PixIcon glyph="trophy" size={9} />RockEd</span></button>
+          <button type="button" onClick={() => setPop({ k: "clean" })}><b>{rockedCount}</b><span><PixIcon glyph="bolt" size={9} />Clean sheets</span></button>
+          <button type="button" className={noShowSuspects.length ? "co-alert" : ""} onClick={() => setPop({ k: "asks" })}><b>{noShowSuspects.length}</b><span><PixIcon glyph="question" size={9} />No log</span></button>
+        </div>
+        <div className="bp-secdiv" />
+        <div className="co-wk">
+          <button type="button" onClick={() => setPop({ k: "team" })}>
+            <span className="co-cap2"><span>Calls · {week.length} days</span><b>{fmtNum(tNow.c)}</b></span>
+            <span className="co-days">{minLine(wkC) != null && <em style={{ bottom: minLine(wkC) + "%" }} />}{wkC.items.map((x, i) => <i key={x.d} className={i === wkC.items.length - 1 ? "co-t" : x.min > 0 && x.v < x.min ? "co-low" : ""} style={{ height: x.h + "%" }} />)}</span>
+            <span className="co-dl2"><span>{week[0] ? dayLabel(week[0].d).slice(0, 3).toUpperCase() : ""}</span><span>{dayLabel(day).slice(0, 3).toUpperCase()}</span></span>
+          </button>
+          <button type="button" onClick={() => setPop({ k: "team" })}>
+            <span className="co-cap2"><span>Videos · {week.length} days</span><b>{fmtNum(tNow.v)}</b></span>
+            <span className="co-days">{minLine(wkV) != null && <em style={{ bottom: minLine(wkV) + "%" }} />}{wkV.items.map((x, i) => <i key={x.d} className={i === wkV.items.length - 1 ? "co-t" : x.min > 0 && x.v < x.min ? "co-low" : ""} style={{ height: x.h + "%" }} />)}</span>
+            <span className="co-dl2"><span>{week[0] ? dayLabel(week[0].d).slice(0, 3).toUpperCase() : ""}</span><span>{dayLabel(day).slice(0, 3).toUpperCase()}</span></span>
+          </button>
+        </div>
+        <button type="button" className="co-loseline" onClick={() => setPop({ k: "lose" })}>
+          <PixIcon glyph="tridown" size={11} />Biggest Loser{leader ? <> · <b>{shortName(leader.a.name)} {leader.points}</b></> : <> · <b>nobody yet</b></>}<span className="co-go">the board</span>
+        </button>
+      </div>
+
+      <div className="co-tools">
+        <button type="button" className="fr-tool" onClick={onReport}><PixIcon glyph="doc" size={16} />Daily report</button>
+        <button type="button" className="fr-tool" onClick={() => setPop({ k: "sched" })}><PixIcon glyph="calendar" size={16} />Schedule</button>
+        <button type="button" className="fr-tool" onClick={onUpload}><PixIcon glyph="arrowdown" size={16} />Upload</button>
+      </div>
+
+      <div className="co-grp co-gon">
+        {groupHead("users", "On today", onRows.length)}
+        {onRows.map(sheetRow)}
+        {onRows.length === 0 && <p className="fr-empty">Nobody on the sheet today.</p>}
+      </div>
+      {anywayRows.length > 0 && (
+        <div className="co-grp co-gany">
+          {groupHead("user", "Off, in anyway", anywayRows.length, "schedule said off")}
+          {anywayRows.map(sheetRow)}
+        </div>
+      )}
+      {offRows.length > 0 && (
+        <div className="co-grp co-goff">
+          {groupHead("clock", "Off today", offRows.length)}
+          <div className="co-offchips">
+            {offRows.map((r) => (
+              <button key={r.a.id} type="button" className="co-offchip" onClick={() => setPop({ k: "person", id: r.a.id })}>
+                <span className="fr-av sm">{initialsOf(r.a.name)}</span>{r.a.name}<em>off</em>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="co-legend">
+        <span><b>{std.minCalls}</b> calls</span><span><b>{std.minVideos}</b> videos</span><span><b className="co-case">RockEd</b> qualified</span><span><b>{Math.round(taskBar * 100)}%</b> tasks</span>
+        {outreach && <span>texts and emails not graded</span>}
+      </div>
+
+      {pop && <FrPop title={pop.k} onClose={close} cls="co-sheet">{popBody()}</FrPop>}
+    </div>
+  );
+}
+
+function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = null }) {
+  const phone = usePhoneLayout();
   const [day, setDay] = useState(today());
   const [showSchedule, setShowSchedule] = useState(false);
   const [showRoom, setShowRoom] = useState(false);
@@ -16625,6 +16940,23 @@ function CheckOutTracker({ config, store, data, onChange, query = "" }) {
       {list.map(renderRow)}
     </div>
   );
+
+  if (phone) return (<>
+    <CheckOutPhone store={store} data={data} std={std} outreach={outreach} day={day} setDay={setDay} activityDays={activityDays}
+      rows={rows} onRows={onRows} anywayRows={anywayRows} offRows={offRows} noShowSuspects={noShowSuspects}
+      toggleOff={toggleOff} confirmOn={confirmOn} cycleQualified={cycleQualified} offenders={offenders} missLine={missLine}
+      tNow={tNow} tPrev={tPrev} dCalls={dCalls} dVideos={dVideos} atMin={atMin} withData={withData} qualToday={qualToday}
+      rockedCount={rockedCount} fresh={fresh} taskBar={taskBar} mtdPoints={mtdPoints} monthDays={monthDays} roster={roster} sumFor={sumFor}
+      onReport={() => setShowReport(true)} onRoom={() => setShowRoom(true)} onUpload={() => setShowSchedule(true)} onCoach={onCoach} />
+    {showRoom && <ScheduleRoom store={store} config={config} data={data} onChange={onChange} onClose={() => setShowRoom(false)} />}
+    {showSchedule && <ScheduleUpload store={store} roster={roster} data={data} onClose={() => setShowSchedule(false)} onChange={onChange} />}
+    {showReport && (
+      <DayReportModal store={store} day={day} rows={rows} offenders={offenders}
+        streaks={Object.fromEntries(roster.map((a) => [a.id, currentStreak(data, a, std)]))}
+        freshness={reportFreshness(store, (data.activity || {})[day])}
+        onClose={() => setShowReport(false)} />
+    )}
+  </>);
 
   return (
     <div className="checkout da-page">
@@ -38387,6 +38719,127 @@ const SAGE_CSS = `
    One screen: plan, the line as the salesperson's rail, coverage. Every tap
    answers in a pop in the centre. The garden palette and the pix glyphs, and
    nothing else. ---- */
+/* ---- Check Out on a phone ---- */
+.co-page{ margin:0; padding:10px 12px 28px; }
+.co-page .fr-title{ white-space:nowrap; }
+.co-f.co-ftk .tdial::after,.co-f.co-ftk .tdial::before{ display:none; }
+.co-f.co-ftk .tdial{ cursor:pointer; transform:none !important; }
+.co-page .co-lr,.co-page .co-dr,.fr-pop .co-lr,.fr-pop .co-dr{ background:none; border:0; border-bottom:1px solid var(--frline); text-align:left; font-family:inherit; color:inherit; cursor:pointer; }
+.fr-pop .co-lr:last-child,.fr-pop .co-dr:last-child{ border-bottom:0; }
+.fr-pop .co-say button{ height:24px; display:inline-grid; place-items:center; padding:0 10px; border:1.5px solid var(--frsand2); color:var(--frsand2); border-radius:8px; font:700 11px var(--font-ui); background:#fff; cursor:pointer; }
+.fr-pop .co-say button.co-on{ background:var(--frsand2); color:#fff; }
+.fr-pop .co-say{ display:inline-flex; gap:6px; }
+.co-hero{ padding:12px 14px 12px; }
+.co-hh{ display:flex; align-items:center; gap:8px; position:relative; z-index:1; }
+.co-day{ display:inline-flex !important; align-items:center; gap:6px; background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.14) !important; border-radius:10px; padding:5px 9px !important; font:700 10.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:#fff !important; }
+.co-day .pix{ color:var(--frsand); }
+.co-upd{ margin-left:auto; display:flex; align-items:center; gap:5px; font:700 9px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); }
+.co-upd i{ width:7px; height:7px; border-radius:50%; background:#F04A3C; box-shadow:0 0 6px #F04A3C; animation:bpBlink 1.6s ease-in-out infinite; }
+.co-upd.co-none{ letter-spacing:.08em; text-transform:none; }
+.co-big{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; position:relative; z-index:1; }
+.co-big > button{ display:block; min-width:0; }
+.co-ucap{ display:flex; align-items:center; gap:6px; font:700 9px var(--font-mono); letter-spacing:.2em; text-transform:uppercase; color:var(--frsand); }
+.co-ucap .pix{ color:var(--frsand); }
+.co-unum{ display:flex; align-items:flex-end; gap:7px; margin-top:6px; white-space:nowrap; }
+.co-unum .dotnum{ gap:9px !important; }
+.co-dlt{ font:700 10.5px var(--font-mono); letter-spacing:.02em; display:inline-flex; align-items:center; gap:3px; margin-bottom:4px; }
+.co-dlt.up{ color:#8fd8af; } .co-dlt.dn{ color:#F08A80; }
+.co-std{ display:flex; gap:6px; margin-top:12px; position:relative; z-index:1; }
+.co-std > button{ flex:1; min-width:0; background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.12) !important; border-radius:12px; padding:7px 4px !important; text-align:center !important; }
+.co-std b{ display:block; font:700 17px var(--font-display); color:#fff; line-height:1.1; }
+.co-std b small{ font:700 10px var(--font-mono); color:rgba(255,255,255,.55); }
+.co-std span{ font:700 8px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; color:rgba(255,255,255,.65); display:flex; align-items:center; justify-content:center; gap:4px; margin-top:3px; white-space:nowrap; }
+.co-std > button.co-alert{ background:rgba(216,72,60,.32); border-color:rgba(255,255,255,.2) !important; }
+.co-std > button.co-alert b{ color:#ffd7d3; }
+.co-case{ text-transform:none !important; }
+.co-wk{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px; position:relative; z-index:1; }
+.co-wk > button{ display:block; min-width:0; }
+.co-cap2{ display:flex; justify-content:space-between; font:700 8.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); }
+.co-cap2 b{ color:#fff; }
+.co-days{ display:flex; gap:3px; height:34px; margin-top:6px; align-items:flex-end; position:relative; }
+.co-days i{ flex:1; background:rgba(255,255,255,.35); border-radius:3px 3px 0 0; display:block; }
+.co-days i.co-t{ background:var(--frsand); } .co-days i.co-low{ background:#F08A80; }
+.co-days em{ position:absolute; left:0; right:0; border-top:1.5px dashed rgba(255,255,255,.55); pointer-events:none; }
+.co-dl2{ display:flex; justify-content:space-between; font:700 8px var(--font-mono); color:rgba(255,255,255,.55); margin-top:3px; }
+.co-loseline{ display:flex !important; align-items:center; gap:8px; margin-top:10px; width:100%; font:700 9.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:#ffb0b0 !important; white-space:nowrap; overflow:hidden; position:relative; z-index:1; }
+.co-loseline b{ color:#fff; font-weight:700; overflow:hidden; text-overflow:ellipsis; }
+.co-loseline .co-go{ margin-left:auto; color:rgba(255,255,255,.6); letter-spacing:.06em; flex:0 0 auto; }
+.co-tools{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+.co-tools .fr-tool{ min-height:58px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center !important; }
+/* the three groups */
+.co-grp{ margin-top:12px; border-radius:20px; overflow:hidden; }
+.co-grp.co-gon{ background:#fff; border:1px solid var(--frline); box-shadow:0 8px 24px rgba(31,54,86,.06); }
+.co-grp.co-gany{ background:#FFF6E3; border:1.5px solid var(--frsand); }
+.co-grp.co-goff{ background:#2E4A38; color:#fff; padding:10px 14px 12px; }
+.co-gh{ display:flex; align-items:center; gap:8px; padding:11px 14px 6px; font:700 13px var(--font-display); }
+.co-gh .pix{ color:var(--frp2d); } .co-grp.co-gany .co-gh .pix{ color:var(--frsand2); } .co-grp.co-goff .co-gh{ padding:0 0 8px; color:#fff; } .co-grp.co-goff .co-gh .pix{ color:var(--frsand); }
+.co-gn{ margin-left:auto; font:700 11px var(--font-mono); color:var(--frink3); } .co-grp.co-gany .co-gn{ color:var(--frsand2); } .co-grp.co-goff .co-gn{ color:rgba(255,255,255,.6); }
+.co-gsub{ font:500 10px var(--font-mono); color:var(--frink3); letter-spacing:.04em; }
+.co-offchips{ display:flex; gap:8px; flex-wrap:wrap; }
+.co-offchip{ display:inline-flex !important; align-items:center; gap:7px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18) !important; border-radius:99px; padding:4px 12px 4px 4px !important; font:600 12.5px var(--font-ui); color:#fff !important; }
+.co-offchip .fr-av{ width:24px; height:24px; font-size:8.5px; background:rgba(255,255,255,.25); }
+.co-offchip em{ font:700 9px var(--font-mono); font-style:normal; color:var(--frsand); letter-spacing:.08em; text-transform:uppercase; }
+/* a row */
+.co-row{ padding:10px 14px 9px; border-top:1px solid var(--frline); }
+.co-grp.co-gany .co-row{ border-top-color:rgba(208,130,30,.25); }
+.co-hd1{ display:flex !important; align-items:center; gap:8px; width:100%; }
+.co-nm{ font:700 14.5px var(--font-display); letter-spacing:-.01em; display:flex; align-items:center; gap:6px; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--frink); }
+.co-stk{ font:700 9px var(--font-mono); color:#2E7DE0; display:inline-flex; align-items:center; gap:2px; } .co-stk.dn{ color:var(--frgap); }
+.co-pt{ margin-left:auto; min-width:58px; height:24px; display:inline-grid; place-items:center; padding:0 8px; border-radius:8px; font:700 11px var(--font-mono); white-space:nowrap; text-align:center; flex:0 0 auto; }
+.co-pt.p0{ background:#E3F3E9; color:var(--frok); } .co-pt.p1{ background:#FFF3DE; color:var(--frthin); } .co-pt.p3{ background:#FBE5E0; color:var(--frgap); } .co-pt.na{ background:var(--frpaper); color:#B4BBB6; }
+.co-say{ margin-left:auto; display:inline-flex; gap:6px; flex:0 0 auto; }
+.co-say button{ height:24px; display:inline-grid; place-items:center; padding:0 10px !important; border:1.5px solid var(--frsand2) !important; color:var(--frsand2) !important; border-radius:8px; font:700 11px var(--font-ui); background:#fff !important; }
+.co-say button.co-on{ background:var(--frsand2) !important; color:#fff !important; }
+.co-figs{ display:flex; justify-content:space-between; align-items:stretch; margin-top:7px; gap:4px; }
+.co-f{ display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-end; min-width:0; height:46px; }
+.co-f > b{ font:700 14px var(--font-mono); letter-spacing:-.02em; line-height:1; display:flex; align-items:baseline; gap:1px; }
+.co-f > b i{ font:600 9px var(--font-mono); color:var(--frink3); font-style:normal; }
+.co-f small{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); margin-top:4px; line-height:1; }
+.co-f.co-ok > b{ color:var(--frok); } .co-f.co-bad > b{ color:var(--frgap); } .co-f.co-n > b{ color:var(--frink); } .co-f.co-na > b{ color:#B4BBB6; }
+.co-f.co-ftk{ align-items:center; }
+.co-f.co-ftk .tdial{ display:block; }
+.co-f.co-ftk .tdial svg{ display:block; }
+.co-f.co-frq{ align-items:center; gap:4px; }
+.co-f.co-frq small{ margin-top:0; }
+.co-rqp{ display:flex; align-items:center; justify-content:center; width:40px; height:26px; min-height:26px; max-height:26px; flex:none; border-radius:8px; }
+.co-f.co-frq.co-yes .co-rqp{ background:#E3F3E9; color:var(--frok); } .co-f.co-frq.co-no .co-rqp{ background:#EEF0F2; color:#7C877F; }
+.co-row.co-nd .co-figs{ opacity:.45; }
+.co-legend{ display:flex; gap:10px; flex-wrap:wrap; padding:12px 4px 0; font:600 10px var(--font-mono); color:var(--frink3); letter-spacing:.04em; }
+.co-legend b{ color:var(--frink2); }
+/* pops */
+.co-three{ display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:6px; padding:8px 14px 4px; }
+.co-three.co-two{ grid-template-columns:1fr 1fr; }
+.co-three > div{ background:var(--frpaper); border-radius:14px; padding:10px 6px; text-align:center; }
+.co-three b{ display:block; font:700 20px var(--font-display); line-height:1.1; color:var(--frink); }
+.co-three b.co-ok{ color:var(--frok); } .co-three b.co-bad{ color:var(--frgap); }
+.co-three b small{ font:700 10px var(--font-mono); color:var(--frink3); }
+.co-three > div > span{ font:700 8px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--frink3); display:block; margin-top:3px; }
+.co-mo{ padding:6px 16px 4px; }
+.co-mo .co-cap2{ color:var(--frink3); letter-spacing:.18em; font-size:9px; }
+.co-mo .co-days{ height:26px; }
+.co-mo .co-days i{ background:rgba(21,33,27,.28); } .co-mo .co-days i.co-t{ background:var(--frsand2); } .co-mo .co-days i.co-low{ background:var(--frgap); }
+.co-mo .co-days em{ border-top-color:rgba(21,33,27,.45); }
+.co-mo .co-days.co-pts i{ border-radius:3px; background:var(--frok); }
+.co-mo .co-days.co-pts i.co-m1{ background:var(--frthin); } .co-mo .co-days.co-pts i.co-m2,.co-mo .co-days.co-pts i.co-m3{ background:var(--frgap); }
+.co-mo .co-days.co-pts i.co-off{ background:var(--frline); } .co-mo .co-days.co-pts i.co-nd{ background:var(--frpaper); }
+.co-mo .co-dl2{ color:var(--frink3); font-size:9px; }
+.co-nl .co-nr{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; height:44px; padding:0 16px; border-bottom:1px solid var(--frline); font:600 14px var(--font-ui); color:var(--frink); }
+.co-nl .co-nr.co-dim{ opacity:.55; }
+.co-nl .co-nr:last-child{ border-bottom:0; }
+.co-nl .co-say{ margin-left:0; }
+.co-dlist .co-dr{ display:grid !important; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; width:100%; height:52px; padding:0 16px !important; align-items:center; border-bottom:1px solid var(--frline); }
+.co-dlist .co-dr.co-on{ background:#F3F6F2; }
+.co-dn{ font:600 14px var(--font-ui); color:var(--frink); } .co-dm{ font:700 10px var(--font-mono); color:var(--frink3); }
+.co-lb .co-lr{ display:grid !important; grid-template-columns:24px minmax(0,1fr) auto; gap:10px; width:100%; min-height:54px; padding:6px 16px !important; align-items:center; border-bottom:1px solid var(--frline); }
+.co-lb em{ width:22px; height:22px; border-radius:50%; background:var(--frpaper); color:var(--frink2); font:700 10px var(--font-mono); font-style:normal; display:grid; place-items:center; }
+.co-lb em.co-m1{ background:#F08A80; color:var(--frink); } .co-lb em.co-m2{ background:#F6C6C0; color:var(--frink); } .co-lb em.co-m3{ background:#FBE5E0; color:var(--frink); }
+.co-lt{ min-width:0; display:flex; flex-direction:column; }
+.co-ln{ font:600 14px var(--font-ui); color:var(--frink); } .co-lm{ font:500 10px var(--font-mono); color:var(--frink3); margin-top:2px; }
+.co-lb .co-pt{ margin-left:0; }
+.fr-b.co-qual{ background:var(--frok); border-color:var(--frok); color:#fff; }
+.fr-b.co-unq{ background:#fff; border-color:var(--frok); color:var(--frok); }
+.fr-sheet.co-sheet .fr-meta .co-pt{ margin-left:0; height:22px; min-width:0; }
+
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
 .fr-page{ margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
