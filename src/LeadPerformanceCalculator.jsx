@@ -25899,6 +25899,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
      month's figure and the standing fallback in one go. */
   const [goalDraft, setGoalDraft] = useState("");
   const [goalOpen, setGoalOpen] = useState(false);
+  const lastGoal = (() => {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+    const lm = storeGoalFor(store, d.toISOString().slice(0, 7));
+    return lm ? lm.units : 0;
+  })();
   const saveGoal = () => {
     const n = Math.max(0, parseInt(goalDraft, 10) || 0);
     if (!n || !onSaveConfig) { setGoalOpen(false); return; }
@@ -25940,16 +25945,22 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="s2-cap"><PixIcon glyph="car" size={11} /> Units this month</div>
             <div className="s2-big">
               <DotNum value={String(totalUnits)} dot={6} color="#fff" />
-              {storePace.goal
-                ? <span className="s2-den">/ {fmtNum(storePace.goal.bar)} to hit</span>
-                : canSetGoal && (goalOpen
-                  ? <span className="s2-goalset">
-                      <input type="number" min="0" autoFocus value={goalDraft} placeholder="85"
-                        onChange={(e) => setGoalDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") saveGoal(); if (e.key === "Escape") setGoalOpen(false); }} />
-                      <button onClick={saveGoal}>Set</button>
-                    </span>
-                  : <button className="s2-den s2-goalask" onClick={() => setGoalOpen(true)}>/ set a goal</button>)}
+              {/* The goal is read here, so it is set here: with one already on
+                  the month a tap on it opens the same field, filled in. A month
+                  with none yet offers last month's figure as the prompt, so the
+                  first of the month is one tap and Enter rather than a hunt. */}
+              {goalOpen && canSetGoal
+                ? <span className="s2-goalset">
+                    <input type="number" min="0" autoFocus value={goalDraft} placeholder={String(lastGoal || 85)}
+                      onChange={(e) => setGoalDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveGoal(); if (e.key === "Escape") setGoalOpen(false); }} />
+                    <button onClick={saveGoal}>Set</button>
+                  </span>
+                : storePace.goal
+                  ? (canSetGoal
+                      ? <button className="s2-den s2-goaledit" title="Change this month's goal" onClick={() => { setGoalDraft(String(storePace.goal.units)); setGoalOpen(true); }}>/ {fmtNum(storePace.goal.bar)} to hit</button>
+                      : <span className="s2-den">/ {fmtNum(storePace.goal.bar)} to hit</span>)
+                  : canSetGoal && <button className="s2-den s2-goalask" onClick={() => { setGoalDraft(lastGoal ? String(lastGoal) : ""); setGoalOpen(true); }}>/ set a goal{lastGoal ? ` · last month ${fmtNum(lastGoal)}` : ""}</button>}
             </div>
             {storePace.goal && (
               <div className="s2-pacewrap bloop-host" tabIndex={0}>
@@ -36647,7 +36658,7 @@ const SAGE_CSS = `
          once: the hero's instruments, then the weakest standard, then the
          rotating display, each above the one that follows it. */
       .s2-focusgrid { display:grid; grid-template-columns:288px 1fr; gap:12px; align-items:stretch;
-        margin-bottom:14px; position:relative; z-index:1; }
+        margin-bottom:14px; position:relative; z-index:3; }
       .s2-ansq { position:relative; z-index:2; border:0; border-radius:16px; padding:16px 18px 14px; color:#fff; cursor:default;
         background:linear-gradient(150deg,#D14434,#A32517); box-shadow:0 16px 38px -18px rgba(163,37,23,.6);
         display:flex; flex-direction:column; gap:4px; }
@@ -36987,6 +36998,8 @@ const SAGE_CSS = `
       .s2-imp { padding:0 14px; }
       .s2-ru { padding:0 16px; }
       /* the goal, asked for where it is read */
+      .s2-goaledit { background:none; border:0; cursor:pointer; text-decoration:underline dotted rgba(255,255,255,.35); text-underline-offset:4px; }
+      .s2-goaledit:hover { color:#fff; }
       .s2-goalask { background:none; border:1px dashed rgba(255,255,255,.5); border-radius:8px;
         padding:3px 9px; cursor:pointer; font:inherit; color:rgba(255,255,255,.75); }
       .s2-goalask:hover { color:#fff; border-color:#fff; }
