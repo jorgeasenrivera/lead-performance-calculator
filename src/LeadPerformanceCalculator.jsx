@@ -2336,7 +2336,7 @@ export default function LeadPerformanceCalculator() {
          why the arrival played in the harness and never at the desk: the hold
          cleared while the spinner was still up and the dashboard then walked
          on plain. Wait as long as the load takes, within reason. */
-      if (document.querySelector(".hero, .card")) { fly(2); return; }
+      if (document.querySelector(".hero, .card, .bp-hero, .fr-page")) { fly(2); return; }
       if (++tries > 1800) { clear(); return; }
       raf = requestAnimationFrame(wait);
     };
@@ -9023,7 +9023,10 @@ function tellJumpOrigin(el) {
    Measured once and never again: this reads layout for every block in one pass
    before writing anything back, so it costs a single forced reflow rather than
    one per element. */
-const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip";
+/* The phone pages are built from their own blocks, not .hero and .card, and
+   they fly in the same way: the Board's hero and standings, Check Out's hero,
+   tiles and groups, and the Live Floor page as one. */
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page";
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
@@ -33294,7 +33297,7 @@ const SAGE_CSS = `
       }
       /* A page reload holds every flying part invisible until the mount is done
          and the radial flight begins; each part's own animation then takes over. */
-      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip) { opacity:0; }
+      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page) { opacity:0; }
       .refresh-flash { position:fixed; inset:0; z-index:80; pointer-events:none;
         background:radial-gradient(circle at 50% 46%, rgba(255,255,255,.95), rgba(169,196,172,.35) 26%, transparent 46%);
         animation:refreshFlash .62s cubic-bezier(.2,.7,.3,1) both; }
