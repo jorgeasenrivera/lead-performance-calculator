@@ -19,7 +19,7 @@
  * Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY
  */
 import { createClient } from "@supabase/supabase-js";
-import { supabaseUrl, anonKey, envGap } from "./_env.mjs";
+import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
 
 const FIELDS = ["apns_token", "apns_pts_token", "activity_token", "fcm_token"];
 
@@ -39,13 +39,17 @@ export default async function handler(req, res) {
      the token here means an expired or revoked session is refused for us. */
   /* Both names for all three, and a sentence naming whichever is missing rather
      than a throw the phone cannot explain. See _env.mjs. */
-  const gap = envGap({ anon: true });
+  const gap = envGap();
   if (gap) return res.status(500).json({ error: gap });
-  const asUser = createClient(supabaseUrl(), anonKey(), {
-    auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${jwt}` } },
-  });
-  const { data: who, error: whoErr } = await asUser.auth.getUser();
-  if (whoErr || !who || !who.user) return res.status(401).json({ error: "that session is not valid" });
+  /* Who is asking. The token is checked against the auth server with the
+     service client, so this does not also depend on the anon key on the server
+     matching the one the browser was built with: when those drifted apart every
+     call here failed with a message that blamed the manager's session. If the
+     token really is bad, the auth server's own words are passed along. */
+  const { data: who, error: whoErr } = await createClient(supabaseUrl(), serviceKey(), { auth: { persistSession: false } }).auth.getUser(jwt);
+  if (whoErr || !who || !who.user) {
+    return res.status(401).json({ error: "that session is not valid" + (whoErr && whoErr.message ? " (" + whoErr.message + "). Sign out and back in, then try again." : ". Sign out and back in, then try again.") });
+  }
   const userId = who.user.id;
 
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
