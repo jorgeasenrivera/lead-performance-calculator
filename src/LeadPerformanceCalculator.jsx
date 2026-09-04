@@ -14478,7 +14478,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           ))}
         </div>
       )}
-      {rosterTab === "phones" && <div className="fr-phones"><FloorPhones store={store} roster={salesRoster} onClose={() => setRosterTab("floor")} /></div>}
+      {rosterTab === "phones" && <div className="fr-phones"><FloorPhones store={store} roster={salesRoster} onClose={() => setRosterTab("floor")} compact /></div>}
       {rosterTab === "pins" && (
         <div className="fr-list">
           {pinPeople.length === 0 && <p className="fr-empty">No PINs yet. They are made the first time each person signs in.</p>}
@@ -15185,7 +15185,7 @@ const backlogTime = (ms) =>
    itself on the night nobody's phone buzzes and a customer stands in the doorway.
    So the row says plainly whether a phone has ever arrived, and when it last did.
    ========================================================================= */
-function FloorPhones({ store, roster, onClose, onClaims = null }) {
+function FloorPhones({ store, roster, onClose, onClaims = null, compact = false }) {
   const [links, setLinks] = useState(null);
   const [claims, setClaims] = useState([]);
   const [accounts, setAccounts] = useState(null);
@@ -15233,13 +15233,18 @@ function FloorPhones({ store, roster, onClose, onClaims = null }) {
 
   return (
     <div className="f-phones">
-      <div className="f-phones-head">
-        <h3>Phones on the floor</h3>
-        <button className="btn-quiet" onClick={onClose}>Close</button>
-      </div>
-      <p className="hint">
-        Which account belongs to which person, and so whose phone buzzes when their customer walks in. They sign up as usual, with no stores ticked: off the dashboard, but their phone knows who they are.
-      </p>
+      {/* The phone pop says none of this: a manager on the floor is doing, not reading. */}
+      {!compact && (
+        <>
+          <div className="f-phones-head">
+            <h3>Phones on the floor</h3>
+            <button className="btn-quiet" onClick={onClose}>Close</button>
+          </div>
+          <p className="hint">
+            Which account belongs to which person, and so whose phone buzzes when their customer walks in. They sign up as usual, with no stores ticked: off the dashboard, but their phone knows who they are.
+          </p>
+        </>
+      )}
 
       {err && <p className="f-backlog-err">{err}</p>}
       {(links === null || accounts === null) && <p className="muted">Reading the links…</p>}
@@ -15259,7 +15264,7 @@ function FloorPhones({ store, roster, onClose, onClaims = null }) {
                   <b>{c.name || c.email}</b>
                   <span className="mono">{c.email}</span>
                 </div>
-                <span className="f-claim-says">says they are</span>
+                <span className="f-claim-says">{compact ? "is" : "says they are"}</span>
                 <select className="q-flag-sel" value={known ? chosen : ""} disabled={busy === c.user_id}
                   onChange={(e) => setPick((cur) => ({ ...cur, [c.user_id]: e.target.value }))}>
                   <option value="">{c.claim_name ? `${c.claim_name} (not on the roster)` : "Pick a name…"}</option>
@@ -15279,7 +15284,7 @@ function FloorPhones({ store, roster, onClose, onClaims = null }) {
 
       {links !== null && accounts !== null && (
         <table className="roster-table wide f-phones-table">
-          <thead><tr><th>On the floor</th><th>Account</th><th>Phone</th><th /></tr></thead>
+          <thead><tr><th>{compact ? "Person" : "On the floor"}</th><th>Account</th><th>Phone</th><th /></tr></thead>
           <tbody>
             {roster.map((p) => {
               const l = byPerson.get(p.id);
@@ -15293,7 +15298,7 @@ function FloorPhones({ store, roster, onClose, onClaims = null }) {
                       : (
                         <select className="q-flag-sel" value="" disabled={busy === p.id}
                           onChange={(e) => e.target.value && act(() => linkFloorPerson(store.id, e.target.value, p.id), p.id)}>
-                          <option value="">Not linked. Pick an account…</option>
+                          <option value="">{compact ? "Link an account…" : "Not linked. Pick an account…"}</option>
                           {(accounts || []).filter((x) => !taken.has(x.id) && x.active !== false)
                             .slice().sort((x, y) => String(x.email || x.name).localeCompare(String(y.email || y.name)))
                             .map((x) => <option key={x.id} value={x.id}>{x.email || x.name}</option>)}
@@ -15303,7 +15308,7 @@ function FloorPhones({ store, roster, onClose, onClaims = null }) {
                   <td className={"f-ph-dev" + (l && !l.devices ? " f-ph-none" : "")}>
                     {!l ? <span className="muted">—</span>
                       : l.devices ? seen(l)
-                      : <span title="The link is made, but no phone has ever registered against it. Nothing will buzz until the app is installed and opened once.">No phone yet</span>}
+                      : <span title="The link is made, but no phone has ever registered against it. Nothing will buzz until the app is installed and opened once.">{compact ? "No phone" : "No phone yet"}</span>}
                   </td>
                   <td>
                     {l && (
@@ -37836,7 +37841,18 @@ const SAGE_CSS = `
 .fr-tabs button{ flex:1; min-height:36px; border-radius:10px; border:1.5px solid var(--frline); background:#fff; color:var(--frink2); font:700 12px var(--font-ui); }
 .fr-tabs button.on{ background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
 .fr-phones .f-phones{ margin:0; border:0; border-radius:0; background:none; padding:12px 16px 16px; color:var(--frink); }
-.fr-phones .f-phones-head button{ display:none; }
+.fr-phones .f-phones{ padding:8px 12px 12px; }
+.fr-phones .f-claims h4{ margin:4px 0 6px; font:700 9.5px var(--font-mono); letter-spacing:.18em; text-transform:uppercase; color:var(--frsand2); }
+.fr-phones .f-phones-table{ display:block; width:100%; min-width:0; font-size:12.5px; }
+.fr-phones .f-phones-table thead{ display:none; }
+.fr-phones .f-phones-table tbody{ display:block; }
+.fr-phones .f-phones-table tr{ display:grid; grid-template-columns:minmax(0,1fr) auto; column-gap:8px; row-gap:2px; padding:8px 0; border-top:1px solid var(--frline); align-items:center; }
+.fr-phones .f-phones-table td{ display:block; padding:0; border:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fr-phones .f-phones-table td:nth-child(1){ grid-column:1; grid-row:1; font-size:14px; }
+.fr-phones .f-phones-table td:nth-child(2){ grid-column:1; grid-row:2; font:500 11px var(--font-mono); color:var(--frink2); }
+.fr-phones .f-phones-table td:nth-child(3){ grid-column:2; grid-row:1; justify-self:end; font:700 10px var(--font-mono); color:var(--frink3); }
+.fr-phones .f-phones-table td:nth-child(4){ grid-column:2; grid-row:2; justify-self:end; }
+.fr-phones .q-flag-sel{ max-width:100%; font-size:11px; }
 
     `;
 
