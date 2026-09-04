@@ -13963,15 +13963,31 @@ const FR_MOVE_REASONS = ["Language match", "Closer", "Manager call"];
 const FR_UP_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
 
 /* The pop: the one card that answers a tap, in the centre, over a dimmed room. */
+/* Where the last tap landed, so a pop can grow out from under the thumb
+   rather than rise from the bottom of the screen. Read once, when the pop
+   mounts; a pop opened by a key or a timer grows from its own centre. */
+const frLastTap = { x: null, y: null, at: 0 };
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", (e) => { frLastTap.x = e.clientX; frLastTap.y = e.clientY; frLastTap.at = Date.now(); }, { capture: true, passive: true });
+}
 function FrPop({ title, onClose, children, cls }) {
+  const sheetRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
+  useLayoutEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    if (frLastTap.x == null || Date.now() - frLastTap.at > 1500) return;
+    const r = el.getBoundingClientRect();
+    el.style.setProperty("--ox", Math.max(0, Math.min(r.width, frLastTap.x - r.left)) + "px");
+    el.style.setProperty("--oy", Math.max(0, Math.min(r.height, frLastTap.y - r.top)) + "px");
+  }, []);
   return createPortal(
     <div className="fr-pop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={"fr-sheet" + (cls ? " " + cls : "")} role="dialog" aria-label={title}>
+      <div className={"fr-sheet" + (cls ? " " + cls : "")} role="dialog" aria-label={title} ref={sheetRef}>
         <button type="button" className="fr-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
         {children}
       </div>
@@ -37838,10 +37854,10 @@ const SAGE_CSS = `
 .fr-pop{ position:fixed; inset:0; z-index:90; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(7,10,8,.72);
   -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); animation:frIn .18s ease; }
 .fr-sheet{ position:relative; width:100%; max-width:420px; max-height:calc(100vh - 36px); max-height:calc(100dvh - 36px); overflow:auto; background:#fff; border-radius:24px;
-  border:2px solid var(--frsand); box-shadow:0 0 0 6px rgba(228,201,141,.22),0 40px 80px -20px rgba(0,0,0,.8); animation:frUp .22s cubic-bezier(.2,.9,.3,1.2);
+  border:2px solid var(--frsand); box-shadow:0 0 0 6px rgba(228,201,141,.22),0 40px 80px -20px rgba(0,0,0,.8); transform-origin:var(--ox,50%) var(--oy,50%); animation:frUp .26s cubic-bezier(.2,.9,.3,1.15);
   color:var(--frink); font-family:var(--font-ui); }
 @keyframes frIn{ from{ opacity:0; } }
-@keyframes frUp{ from{ transform:translateY(16px) scale(.94); } }
+@keyframes frUp{ from{ transform:scale(.3); opacity:0; } }
 .fr-x{ position:absolute; top:12px; right:12px; width:32px; height:32px; border-radius:50%; background:var(--frpaper); border:0; display:grid; place-items:center; color:var(--frink2); z-index:2; }
 .fr-hd{ display:flex; align-items:flex-start; gap:12px; padding:16px 52px 8px 16px; background:linear-gradient(180deg,#F3F6F2,#fff); }
 .fr-hdt{ flex:1; min-width:0; }
