@@ -22,7 +22,7 @@
  *   - opens outside links in the phone's browser rather than inside itself.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
+import { AppState, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -127,10 +127,38 @@ function Shell() {
     return () => { dead = true; };
   }, []);
 
+  /* ---- the prompt to come back ----
+     The line lives on the lock screen whether the app is open or not, as long
+     as an activity is running. If the app goes to the background while the
+     person is in line and no activity is up (an older iOS, or they dismissed
+     it), a note fifteen minutes later asks them to open Sage so the line comes
+     back. Coming back to the foreground cancels it. */
+  const inLine = useRef(false);
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !SageLive.available) return;
+    let noteId = null;
+    const sub = AppState.addEventListener("change", async (st) => {
+      try {
+        if (st === "active") {
+          if (noteId) { await Notifications.cancelScheduledNotificationAsync(noteId); noteId = null; }
+          return;
+        }
+        if (st !== "background" || !inLine.current) return;
+        if (await SageLive.isRunning()) return;
+        noteId = await Notifications.scheduleNotificationAsync({
+          content: { title: "You're still in line", body: "Open Sage so the line stays on your lock screen.", sound: false },
+          trigger: { seconds: 15 * 60 },
+        });
+      } catch (e) { /* a note that fails to schedule is not worth a crash */ }
+    });
+    return () => sub.remove();
+  }, []);
+
   /* ---- buttons pressed on the lock screen ----
-     The activity's buttons run as App Intents in this process and hand over one
-     word. The page does the thing with its own session, so the shell only
-     relays. A press that arrives before the page is up waits for it. */
+     The activity's buttons run as App Intents in this process. With a session
+     in hand they act through /api/queue-action themselves; only when that is
+     not possible do they hand the page one word to do it with its own session,
+     which is what arrives here. A press before the page is up waits for it. */
   const pendingAct = useRef([]);
   const relayAct = useCallback((action) => {
     if (!action) return;
@@ -205,6 +233,12 @@ function Shell() {
       setChrome(msg.payload);
       return;
     }
+    /* The page's session, kept for the Live Activity's buttons: they act
+       through the site's API with it, so a press works with the app closed. */
+    if (msg.type === "session" && msg.payload && typeof msg.payload === "object") {
+      if (Platform.OS === "ios" && SageLive.available) SageLive.setSession(msg.payload);
+      return;
+    }
     if (msg.type === "buzz") {
       const p = msg.payload;
       const heavy = Array.isArray(p) ? p.length > 1 : Number(p) >= 20;
@@ -219,6 +253,7 @@ function Shell() {
        for a phone that was not open. */
     if (msg.type === "queue" && Platform.OS === "ios" && SageLive.available) {
       const q = msg.payload || {};
+      inLine.current = ["waiting", "up", "customer", "lunch", "away"].includes(String(q.status || ""));
       /* Standing with a customer keeps the card up now: that is where the FlyBy
          and T.O. buttons live. Lunch and away stay too, with the way back. */
       const waiting = ["waiting", "up", "customer", "lunch", "away"].includes(String(q.status || ""));

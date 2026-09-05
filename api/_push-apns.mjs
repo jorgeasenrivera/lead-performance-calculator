@@ -62,7 +62,7 @@ export function alertPayload({ title, body, data = {} }) {
 }
 
 /** Start a Live Activity from the server (iOS 17.2+, push-to-start token). */
-export function liveStartPayload({ state, attributes, attributesType, staleAfterSec = 60 * 60, now = Date.now() }) {
+export function liveStartPayload({ state, attributes, attributesType, staleAfterSec = 12 * 60 * 60, now = Date.now() }) {
   return {
     aps: {
       timestamp: Math.floor(now / 1000),
@@ -77,7 +77,7 @@ export function liveStartPayload({ state, attributes, attributesType, staleAfter
 }
 
 /** Move an activity that is already on screen. No sound, no alert. */
-export function liveUpdatePayload({ state, staleAfterSec = 60 * 60, now = Date.now(), alert = null }) {
+export function liveUpdatePayload({ state, staleAfterSec = 12 * 60 * 60, now = Date.now(), alert = null }) {
   const aps = {
     timestamp: Math.floor(now / 1000),
     event: "update",

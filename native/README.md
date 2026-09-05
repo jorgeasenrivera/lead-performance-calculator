@@ -67,10 +67,14 @@ project by `@bacons/apple-targets` at build time. What it needs, once:
 The card has buttons (iOS 17 and up): Lunch and Away while waiting, Got them and
 Pass when up, FlyBy, T.O. and Done with a customer, On my way when the desk asks,
 Back on the floor from lunch or away. Each is an App Intent (`QueueIntents.swift`,
-also compiled into both targets) that runs in the app's process and hands the
-page one word; the page does the thing with its own session, the same way its
-own buttons do. A press while the app is not running is kept and handed over
-when it next starts.
+also compiled into both targets) that runs in the app's process. It changes the
+card at once, then acts through `/api/queue-action` with the session the page
+handed the shell (`session` message), so a press works with the app in the
+background or closed; the row's webhook then settles the card. Only without a
+usable session does it hand the page one word to do with its own session.
+
+If the app goes to the background while the person is in line and no activity
+is running, a local note fifteen minutes later asks them to open Sage.
 
 The Swift struct `QueueAttributes` exists twice on purpose (the app and the
 extension each compile their own copy) and must match the server's payload

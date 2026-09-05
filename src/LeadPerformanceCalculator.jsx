@@ -12853,11 +12853,21 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const iAmUp = !!me && me.status === "waiting" && availableAhead === 0;
 
   /* ---- where the month stands against its pace ----
-     Behind, on, ahead: the projection against the goal, with a unit either way
+     The goal is set at the start of the month, and the pace to it follows the
+     person's own schedule rather than the calendar: a day off is not a day
+     behind. Expected today = goal spread evenly over the scheduled days, counted
+     up to today. Behind, on, ahead is the units against that, a unit either way
      counting as on. No goal, no verdict. */
-  const paceDiff = pace != null && goal != null ? pace - goal : null;
+  const holidays = new Set(((cfg && cfg.holidays) || []).map((h) => (h && h.date) || h));
+  const scheduled = (d) => { const k = `${monthPrefix}-${String(d).padStart(2, "0")}`; return !offMine.includes(k) && !holidays.has(k); };
+  const workDays = []; for (let d = 1; d <= daysInMonth; d++) if (scheduled(d)) workDays.push(d);
+  const workedSoFar = workDays.filter((d) => d <= dayN).length;
+  const expectedBy = (d) => goal != null && workDays.length ? goal * (workDays.filter((w) => w <= d).length / workDays.length) : null;
+  const expectedNow = expectedBy(dayN);
+  const paceDiff = expectedNow != null && units != null ? Math.round((units - expectedNow) * 10) / 10 : null;
   const paceState = paceDiff == null ? "" : paceDiff < -1 ? "behind" : paceDiff > 1 ? "ahead" : "on";
   const paceLabel = paceState === "behind" ? "BEHIND PACE" : paceState === "ahead" ? "AHEAD OF PACE" : paceState === "on" ? "ON PACE" : "";
+  const paceWord = paceState === "behind" ? `${Math.abs(paceDiff)} BEHIND` : paceState === "ahead" ? `${paceDiff} AHEAD` : paceState === "on" ? "ON PACE" : "";
 
   /* ---- the month as a line ----
      Cumulative units day by day from the daily rows, stretched so the last point
@@ -12886,7 +12896,11 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
     const areaNew = pts.length ? `M${x(1)} ${y(0)} L${newTop.join(" L")} L${x(dayN)} ${y(0)} Z` : "";
     const areaUsed = pts.length ? `M${newTop.join(" L")} L${[...line1].reverse().join(" L")} Z` : "";
     const path = pts.length ? `M${line1.join(" L")}` : "";
-    return { W, H, x, y, areaNew, areaUsed, path, hasUsed: share < 1, todayX: x(dayN), todayY: pts.length ? y(pts[pts.length - 1].v) : y(0), goalY: goal != null ? y(goal) : null, bottom: y(0) };
+    /* The pace as a step: flat across days off, climbing on scheduled days. */
+    const pacePath = goal != null && workDays.length
+      ? "M0 " + y(0) + " " + Array.from({ length: daysInMonth }, (_, i) => `L${x(i + 1)} ${y(expectedBy(i + 1))}`).join(" ")
+      : "";
+    return { W, H, x, y, areaNew, areaUsed, path, pacePath, hasUsed: share < 1, todayX: x(dayN), todayY: pts.length ? y(pts[pts.length - 1].v) : y(0), goalY: goal != null ? y(goal) : null, bottom: y(0) };
   })();
 
   const board = (() => {
@@ -13001,7 +13015,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                   <linearGradient id="mcgU" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#A9C4AC" stopOpacity=".95" /><stop offset="1" stopColor="#A9C4AC" stopOpacity=".35" /></linearGradient>
                 </defs>
                 <g className="grid"><line x1="0" y1={trail.H * .26} x2={trail.W} y2={trail.H * .26} /><line x1="0" y1={trail.H * .52} x2={trail.W} y2={trail.H * .52} /><line x1="0" y1={trail.H * .78} x2={trail.W} y2={trail.H * .78} /></g>
-                {trail.goalY != null && <path className="pace" d={`M0 ${trail.bottom} L${trail.W} ${trail.goalY}`} />}
+                {trail.pacePath && <path className="pace" d={trail.pacePath} />}
                 {trail.areaNew && <path className="area" d={trail.areaNew} fill="url(#mcgN)" />}
                 {trail.hasUsed && trail.areaUsed && <path className="area" d={trail.areaUsed} fill="url(#mcgU)" />}
                 {trail.path && <path className="edge" d={trail.path} />}
@@ -13011,7 +13025,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               </svg>
               <div className="mc-tl">
                 <span>{MC_MONTHS[mo - 1]} 1</span>
-                <span className="mid">{goal != null ? `GOAL ${goal}${toGo > 0 ? ` · ${toGo} TO GO` : " · MADE"}` : pace != null ? `PACE ${pace}` : ""}</span>
+                <span className="mid">{goal != null ? `GOAL ${goal}${toGo > 0 ? ` · ${toGo} TO GO` : " · MADE"}${paceWord ? ` · ${paceWord}` : ""}` : pace != null ? `PACE ${pace}` : ""}</span>
                 <span>{MC_MONTHS[mo - 1]} {daysInMonth}</span>
               </div>
             </div>
@@ -13708,6 +13722,28 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     setStep("name"); setBusy(false);
   }
 
+  /* ---- the session, handed to the shell ----
+     The Live Activity's buttons act through /api/queue-action, which needs the
+     session only this page holds. So the page hands the shell its access token,
+     where it is going, and the day, and again whenever the token is refreshed.
+     The shell keeps it for the intents; nothing else reads it. */
+  useEffect(() => {
+    if (!(typeof window !== "undefined" && window.ReactNativeWebView) || !supabase) return;
+    let dead = false;
+    const hand = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (dead || !session) return;
+        nativePost("session", { token: session.access_token, exp: session.expires_at || null,
+          apiBase: window.location.origin, store, date });
+      } catch (e) {}
+    };
+    hand();
+    const { data } = supabase.auth.onAuthStateChange(() => hand());
+    const t = setInterval(hand, 20 * 60 * 1000);
+    return () => { dead = true; clearInterval(t); try { data && data.subscription && data.subscription.unsubscribe(); } catch (e) {} };
+  }, [store, date]);
+
   /* ---- buttons on the lock screen ----
      The Live Activity's buttons run in the app and hand the page one word; the
      page does the thing with its own session, the same way its own buttons do.
@@ -13729,10 +13765,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             const p = cur.line[idx];
             cur.history = cur.history || [];
             cur.history.push({ t: qNowIso(), action: "declined", id: meId, who: p.label, by: "self" });
-            const after = cur.line.slice(idx + 1); const j = after.findIndex((x) => (x.status || "waiting") === "waiting");
             cur.line.splice(idx, 1);
-            const at = j < 0 ? cur.line.length : idx + j + 1;
-            cur.line.splice(Math.min(at, cur.line.length), 0, { ...p, movedAt: qNowIso() });
+            cur.line.push({ ...p, movedAt: qNowIso() });
             return cur;
           });
           if (next) setRow(next);
