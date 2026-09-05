@@ -163,7 +163,10 @@ export function setStatus(data, names, status, opts = {}) {
       if (wasDeparted.has(k)) next.returned[k] = at;
       if (!next.roster.some((a) => nm(a.name) === k)) {
         const prev = wasDeparted.get(k) || {};
-        next.roster.push({ id: prev.id || opts.newId || undefined, name: display[k],
+        /* Always with an id. A roster row without one has nothing an account can
+           be joined to and nothing a phone can register against, and the People
+           screen hides the card for it. */
+        next.roster.push({ id: prev.id || opts.newId || ("p" + at.replace(/\D/g, "").slice(-9) + Math.random().toString(36).slice(2, 6) + k.slice(0, 4).replace(/\W/g, "")), name: display[k],
           roleId: prev.roleId ?? opts.roleId ?? null, hiredAt: opts.hiredAt || prev.hiredAt || null,
           order: next.roster.length });
       }

@@ -30386,11 +30386,14 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     });
   };
 
+  /* Called with the click event from the desktop form and with the name from
+     the phone pop. Only a string is a name; anything else means "use the form". */
   const hire = (nameArg, roleArg, dateArg) => {
-    const nm = String(nameArg != null ? nameArg : nu.name).trim();
+    const fromArg = typeof nameArg === "string";
+    const nm = String(fromArg ? nameArg : nu.name).trim();
     if (!nm) return;
-    const roleId = nameArg != null ? roleArg : nu.roleId;
-    const hiredAt = nameArg != null ? dateArg : nu.hiredAt;
+    const roleId = fromArg ? roleArg : nu.roleId;
+    const hiredAt = fromArg ? dateArg : nu.hiredAt;
     const next = setPersonStatus(data, [nm], "active",
       { by: userName, roleId, hiredAt: hiredAt || null, newId: uid(), note: "hired" });
     setAdding(false); setNu({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
@@ -30489,6 +30492,28 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   const wrongRead = useMemo(() => manglings(data), [data]);
   const foldList = useMemo(() => folds(data), [data]);
   const [showFolds, setShowFolds] = useState(false);
+
+  /* ---- two repairs, once ----
+     For a few hours the desktop's Add them button handed its click event to
+     hire() as the name, which put a person called "[object Object]" on the
+     floor; they are marked not ours. And somebody put on the floor from the strangers
+     list or the phone was given no roster id, so their row had no Card and no
+     account; they are given one. Both run once: after the write nothing matches. */
+  useEffect(() => {
+    const bad = (x) => /^\[?\s*object\s+object\s*\]?$/i.test(String(x || "").trim());
+    const roster = data.roster || [];
+    const ghosts = roster.filter((a) => bad(a.name));
+    const noId = roster.filter((a) => !bad(a.name) && !a.id);
+    if (!ghosts.length && !noId.length) return;
+    let next = JSON.parse(JSON.stringify(data));
+    next.roster = (next.roster || []).map((a) => (a.id || bad(a.name) ? a : { ...a, id: uid() }));
+    /* Marked not-ours rather than deleted: the roster is a union across every
+       open tab, so a plain deletion is put straight back by the next save. The
+       ignore carries a stamp and survives the merge. */
+    if (ghosts.length) next = setPersonStatus(next, ghosts.map((g) => g.name), "ignored", { by: "Sage", note: "a broken entry, not a person" });
+    onChange(next, { action: "Repaired the people list",
+      detail: [ghosts.length ? `${ghosts.length} broken name${ghosts.length === 1 ? "" : "s"} removed` : "", noId.length ? `${noId.length} given an id` : ""].filter(Boolean).join(", ") });
+  }, [data]); // eslint-disable-line
 
   if (phone) return (
     <PeoplePhone config={config} data={data} storeId={storeId} storeName={storeName} allStores={allStores} onChange={onChange} userName={userName}
