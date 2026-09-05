@@ -10263,7 +10263,10 @@ async function writeGoalNote(store, date, note) {
 }
 
 async function loadMyDays(store, endDay, nameKeys) {
-  const days = lastDays(SF_DAYS, endDay);
+  /* Back to the first of the month at least: the corner draws the month as a
+     line, and ten days of a thirty-day month is a stub. */
+  const dayOfMonth = parseInt(String(endDay || "").slice(8, 10)) || 1;
+  const days = lastDays(Math.max(SF_DAYS, dayOfMonth), endDay);
   if (!supabase) return null;
   const keys = days.map((d) => floorStatsKey(store, d));
   try {
@@ -12757,7 +12760,7 @@ function McSpine({ rows }) {
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
-                    line, myPos, availableAhead, toFloor, joinable = false }) {
+                    line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [] }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   const [pickDay, setPickDay] = useState(null);
   const offDim = offToday && offState !== "in";
@@ -12841,6 +12844,44 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   // The line, small: whoever is up, the dots behind them, you in green.
   const ahead = (line || []).slice(0, Math.max(0, myPos - 1));
   const headP = ahead[0] || null;
+  const iAmUp = !!me && me.status === "waiting" && availableAhead === 0;
+
+  /* ---- where the month stands against its pace ----
+     Behind, on, ahead: the projection against the goal, with a unit either way
+     counting as on. No goal, no verdict. */
+  const paceDiff = pace != null && goal != null ? pace - goal : null;
+  const paceState = paceDiff == null ? "" : paceDiff < -1 ? "behind" : paceDiff > 1 ? "ahead" : "on";
+  const paceLabel = paceState === "behind" ? "BEHIND PACE" : paceState === "ahead" ? "AHEAD OF PACE" : paceState === "on" ? "ON PACE" : "";
+
+  /* ---- the month as a line ----
+     Cumulative units day by day from the daily rows, stretched so the last point
+     is the month row's total (the two can disagree by a car when a report lands
+     late). New and used are split by the month's own ratio, because the daily
+     report does not say which was which. */
+  const trail = (() => {
+    const W = 330, H = 92;
+    const total = units != null ? units : null;
+    let cum = 0; const pts = [];
+    for (let d = 1; d <= dayN; d++) {
+      const k = `${monthPrefix}-${String(d).padStart(2, "0")}`;
+      const r = byDay[k];
+      cum += r ? (r.units || 0) : 0;
+      pts.push({ d, v: cum });
+    }
+    const last = pts.length ? pts[pts.length - 1].v : 0;
+    const k2 = total != null && last > 0 ? total / last : 1;
+    for (const q of pts) q.v = total != null && last === 0 ? (q.d === dayN ? total : 0) : q.v * k2;
+    const top = Math.max(goal || 0, total || 0, pace || 0, 1);
+    const x = (d) => Math.round(((d - 1) / Math.max(1, daysInMonth - 1)) * W * 10) / 10;
+    const y = (v) => Math.round((H - 6 - (v / top) * (H - 14)) * 10) / 10;
+    const share = newU != null && usedU != null && (newU + usedU) > 0 ? newU / (newU + usedU) : (newU != null ? 1 : 0);
+    const line1 = pts.map((q) => `${x(q.d)} ${y(q.v)}`);
+    const newTop = pts.map((q) => `${x(q.d)} ${y(q.v * share)}`);
+    const areaNew = pts.length ? `M${x(1)} ${y(0)} L${newTop.join(" L")} L${x(dayN)} ${y(0)} Z` : "";
+    const areaUsed = pts.length ? `M${newTop.join(" L")} L${[...line1].reverse().join(" L")} Z` : "";
+    const path = pts.length ? `M${line1.join(" L")}` : "";
+    return { W, H, x, y, areaNew, areaUsed, path, hasUsed: share < 1, todayX: x(dayN), todayY: pts.length ? y(pts[pts.length - 1].v) : y(0), goalY: goal != null ? y(goal) : null, bottom: y(0) };
+  })();
 
   const board = (() => {
     if (!monthStats) return null;
@@ -12877,6 +12918,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           {offState === "no1" && !activityNow && <div className="mc-offb"><button type="button" className="yes" onClick={() => onOffAnswer(true)}>I&rsquo;m in after all</button></div>}
         </div>
       )}
+      <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
       <div className="mc-head">
         <button type="button" className="mc-calw" onClick={() => { buzz(8); setPickDay(null); setSheet("sched"); }} aria-label="The month">
           <div className="mc-calhead"><PixIcon glyph="calendar" size={14} /><span>{MC_MONTHS[mo - 1]}</span></div>
@@ -12891,30 +12933,43 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         <div className="mc-side">
           <span className="mc-date">{new Date(y, mo - 1, dayN).toLocaleDateString([], { weekday: "long" }).toUpperCase()}</span>
           {me && me.status === "waiting" && (
-            <button type="button" className="mc-qmini" onClick={() => { buzz(8); toFloor(); }} aria-label="The line">
-              {headP && <s className="hd">{shortLabel(headP.label || "").split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</s>}
-              {ahead.slice(1).map((p) => <s key={p.id} />)}
-              <s className="me2" />
-              <b>{availableAhead === 0 ? "YOU ARE UP" : availableAhead + " AHEAD"}</b>
-            </button>
+            <button type="button" className="mc-aheadlbl" onClick={() => { buzz(8); toFloor(); }}>{availableAhead === 0 ? "YOU ARE UP" : availableAhead + " AHEAD"}</button>
           )}
           {!me && joinable && (
             <button type="button" className="mc-qmini mc-qjoin" onClick={() => { buzz(8); toFloor(); }} aria-label="Get on the floor">
               <s className="hd" /><b>GET ON THE FLOOR</b>
             </button>
           )}
-          {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
+          {upsToday > 0 && <span className="mc-chip2"><PixIcon glyph="door" size={11} />{upsToday} {upsToday === 1 ? "UP" : "UPS"} TODAY</span>}
         </div>
-        <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={16} /></button>
+        <div className="mc-corner">
+          {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
+          <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={16} /></button>
+        </div>
       </div>
+      {/* ---- the rail ----
+          The same line the floor tab draws, from the screen's edge to the door,
+          everybody in their own colour and you lit. Tapping it goes to the floor. */}
+      {me && (line || []).length > 0 && (
+        <button type="button" className="mc-railw" onClick={() => { buzz(8); toFloor(); }} aria-label="The line">
+          <span className={"mc-rail" + (iAmUp ? " up" : "")}>
+            <s className="fa" /><s className="fb" /><s className="fa d2" />
+            {(line || []).slice(0, 8).map((p, i) => {
+              const mine2 = p.id === meId;
+              const left = Math.max(8, 90 - i * 13);
+              const lbl = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
+              return <i key={p.id || i} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
+                style={{ left: left + "%", background: mine2 ? undefined : `hsl(${hueFromName(lbl)} 62% 46%)` }}>{initialsOf(lbl)}</i>;
+            })}
+          </span>
+          <em>DOOR</em>
+        </button>
+      )}
       <McSpine rows={rows} />
 
-      <div className="mc-hero">
-        <div className="mc-hero-top">
-          {units != null
-            ? <span className="mc-units"><LedNumber value={units} color="#F2F6F2" cell={9} gap={4} dim="transparent" /></span>
-            : <span className="mc-units mc-units-none">No month row yet</span>}
-          <span className="mc-units-lbl">units<br />this month</span>
+      <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
+        <span className="mc-statecol">
+          {paceLabel && <span className="mc-state">{paceLabel}</span>}
           {closing.length > 0 && (
             <button type="button" className="mc-icobtn" onClick={() => { buzz(8); setSheet("closing"); }} aria-label="Closing detail">
               <span className="mc-cbars">
@@ -12924,43 +12979,50 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               </span>
             </button>
           )}
+        </span>
+        <div className="mc-hero-top">
+          {units != null
+            ? <span className="mc-units"><LedNumber value={units} color="#F2F6F2" cell={9} gap={4} dim="transparent" /></span>
+            : <span className="mc-units mc-units-none">No month row yet</span>}
+          <span className="mc-units-lbl">units<br />this month</span>
         </div>
-        {goal != null && units != null ? (
+        {units != null && (
           <>
-            <div className="mc-pace">
-              <span className="nm">Pace</span>
-              <span className="mc-pacew">
-                <span className="tr">
-                  {newU != null || usedU != null
-                    ? <><i className="nw" style={{ width: pct(newU || 0) + "%" }} /><i className="us" style={{ left: pct(newU || 0) + "%", width: pct(usedU || 0) + "%" }} /></>
-                    : <i className="nw" style={{ width: pct(units) + "%" }} />}
-                  {toGo > 0 && <span className="togo" style={{ left: Math.min(78, pct(units) + 3) + "%" }}>{toGo}</span>}
-                </span>
-                {pace != null && <span className="pm" style={{ left: pct(pace) + "%" }} />}
-              </span>
-              <span className="num">{pace != null ? pace : goal}</span>
-            </div>
-            {(newU != null || usedU != null) && (
-              <div className="mc-legend">
-                <span><s className="nw" />NEW {newU || 0}</span>
-                <span><s className="us" />USED {usedU || 0}</span>
+            <div className="mc-trail">
+              <svg viewBox={`0 0 ${trail.W} ${trail.H}`} preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="mcgN" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#E4C98D" stopOpacity=".95" /><stop offset="1" stopColor="#E4C98D" stopOpacity=".35" /></linearGradient>
+                  <linearGradient id="mcgU" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#A9C4AC" stopOpacity=".95" /><stop offset="1" stopColor="#A9C4AC" stopOpacity=".35" /></linearGradient>
+                </defs>
+                <g className="grid"><line x1="0" y1={trail.H * .26} x2={trail.W} y2={trail.H * .26} /><line x1="0" y1={trail.H * .52} x2={trail.W} y2={trail.H * .52} /><line x1="0" y1={trail.H * .78} x2={trail.W} y2={trail.H * .78} /></g>
+                {trail.goalY != null && <path className="pace" d={`M0 ${trail.bottom} L${trail.W} ${trail.goalY}`} />}
+                {trail.areaNew && <path className="area" d={trail.areaNew} fill="url(#mcgN)" />}
+                {trail.hasUsed && trail.areaUsed && <path className="area" d={trail.areaUsed} fill="url(#mcgU)" />}
+                {trail.path && <path className="edge" d={trail.path} />}
+                <line className="todayline" x1={trail.todayX} y1="4" x2={trail.todayX} y2={trail.H - 4} />
+                <circle className="todaydot" cx={trail.todayX} cy={trail.todayY} r="4.5" />
+                {trail.goalY != null && <circle className="goalring" cx={trail.W} cy={trail.goalY} r="4" />}
+              </svg>
+              <div className="mc-tl">
+                <span>{MC_MONTHS[mo - 1]} 1</span>
+                <span className="mid">{goal != null ? `GOAL ${goal}${toGo > 0 ? ` · ${toGo} TO GO` : " · MADE"}` : pace != null ? `PACE ${pace}` : ""}</span>
+                <span>{MC_MONTHS[mo - 1]} {daysInMonth}</span>
               </div>
-            )}
+            </div>
+            <div className="mc-legend">
+              <span><s className="nw" />NEW {newU != null ? newU : units}</span>
+              {usedU != null && <span><s className="us" />USED {usedU}</span>}
+              {goal != null && <span><s className="pc" />PACE</span>}
+            </div>
           </>
-        ) : pace != null && (
-          <div className="mc-pace">
-            <span className="nm">Pace</span>
-            <span className="mc-pacew"><span className="tr"><i className="nw" style={{ width: Math.round((dayN / daysInMonth) * 100) + "%" }} /></span></span>
-            <span className="num">{pace}</span>
-          </div>
         )}
       </div>
 
-      <div className="mc-cap">TODAY</div>
+      <div className="mc-cap mc-cap-t">TODAY</div>
       <div className="mc-card mc-today">
         {rows.map((r2) => (
-          <div className="mc-row" key={r2.label}>
-            <span className="mc-num"><LedNumber value={r2.got} color={r2.met ? "#8FD8AF" : "#E9CE96"} cell={5.5} gap={2.5} dim="transparent" /></span>
+          <div className={"mc-row" + (r2.met ? " met" : "")} key={r2.label}>
+            <span className="mc-num"><LedNumber value={r2.got} color={r2.met ? "#1E8A4C" : "#D0821E"} cell={5.5} gap={2.5} dim="transparent" /></span>
             <span className="mc-tx">
               <b>{r2.label}</b>
               {r2.met
@@ -12974,8 +13036,8 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         ))}
       </div>
 
-      <div className="mc-cap">POINTS</div>
-      <div className="mc-card">
+      <div className="mc-cap mc-cap-p">POINTS</div>
+      <div className="mc-card mc-pts">
         <div className="mc-ptshead">
           <span className="mc-num"><LedNumber value={points} color="#F08A80" cell={6.5} gap={3} dim="transparent" /></span>
           <span className="mc-ptslbl">
@@ -13007,17 +13069,19 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
 
       {board && board.all.length > 1 && (
         <>
-          <div className="mc-cap">THE BOARD</div>
-          <button type="button" className="mc-card mc-boardbtn" onClick={() => { buzz(8); setSheet("board"); }}>
-            <div className="mc-hb">
-              {board.all.slice(0, 3).concat(board.meIdx > 2 ? [board.all[board.meIdx]] : []).map((r2, i) => {
+          <div className="mc-cap mc-cap-b">THE BOARD</div>
+          <button type="button" className="mc-card mc-boardbtn mc-board" onClick={() => { buzz(8); setSheet("board"); }}>
+            <div className="mc-pod">
+              {board.all.slice(0, 3).concat(board.meIdx > 2 ? [board.all[board.meIdx]] : []).map((r2) => {
                 const meRow = r2.k === norm(meFull) || r2.k === norm(meLabel);
                 const rank = board.all.indexOf(r2) + 1;
+                const nm2 = title(r2.k);
                 return (
-                  <div className={"r" + (meRow ? " me" : "")} key={r2.k}>
-                    <span className="rk">{rank}</span>
-                    <span className="tk"><i style={{ width: Math.round((r2.units / Math.max(1, board.all[0].units)) * 100) + "%" }} /></span>
+                  <div className={"mc-pd" + (meRow ? " me" : "")} key={r2.k}>
+                    <span className="av" style={{ background: meRow ? "#E4C98D" : `hsl(${hueFromName(nm2)} 62% 46%)`, color: meRow ? "#15211B" : "#fff" }}>{initialsOf(nm2)}</span>
+                    <b>{meRow ? "You" : nm2.split(" ")[0]}</b>
                     <span className="un">{r2.units}</span>
+                    <span className="rk">{rank}{["ST", "ND", "RD"][rank - 1] || "TH"}</span>
                   </div>
                 );
               })}
@@ -13638,6 +13702,17 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   /* The salesperson shell: pill, palette and moments. On the line, or through
      the door and about to be. */
   const inShell = (eff === "done" && !!me) || eff === "home";
+  /* ---- dark or light ----
+     Follows the phone unless the person says otherwise in the help sheet. */
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem("lpcf:pref:theme") || "auto"; } catch (e) { return "auto"; } });
+  const [sysLight, setSysLight] = useState(() => { try { return window.matchMedia("(prefers-color-scheme: light)").matches; } catch (e) { return false; } });
+  useEffect(() => {
+    let mq; try { mq = window.matchMedia("(prefers-color-scheme: light)"); } catch (e) { return; }
+    const on = (e) => setSysLight(e.matches);
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
+  }, []);
+  const lightMode = theme === "light" || (theme === "auto" && sysLight);
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
@@ -13732,7 +13807,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           goals={boardExtra.goals} off={boardExtra.off} days={days}
           offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
           onHelp={() => { buzz(8); setHelpOpen(true); }}
-          line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")} />
+          line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")}
+          upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
       );
     }
   } else if (eff === "done" && me) {
@@ -13820,7 +13896,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           goals={boardExtra.goals} off={boardExtra.off} days={days}
           offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
           onHelp={() => { buzz(8); setHelpOpen(true); }}
-          line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")} />
+          line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")}
+          upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
       );
     }
   } else if (eff === "switch" && selected && switchTo) {
@@ -13867,7 +13944,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   }
 
   return (
-    <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "")} ref={pageRef}>
+    <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (inShell && tab === "corner" && lightMode ? " mc-light" : "")} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       {inShell && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
@@ -13948,6 +14025,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
               <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
             <div className="mc-set-row"><span>My month goal<span className="hint">Set with your manager</span></span><span className="on">{myGoal != null ? myGoal : "\u00b7"}</span></div>
+            <button type="button" className="mc-set-row" onClick={() => { const nextT = theme === "auto" ? "dark" : theme === "dark" ? "light" : "auto"; try { localStorage.setItem("lpcf:pref:theme", nextT); } catch (e) {} setTheme(nextT); }}>
+              <span>Look<span className="hint">{theme === "auto" ? "Follows the phone" : theme === "dark" ? "Dark, always" : "Light, always"}</span></span><span className="on">{theme === "auto" ? "AUTO" : theme.toUpperCase()}</span></button>
             {[["lpcf:pref:streak", "Streak warnings"], ["lpcf:pref:mile", "Milestone moments"], ["lpcf:pref:notif", "Notifications \u00b7 Live Activity"]].map(([k, l]) => {
               let on = true; try { on = localStorage.getItem(k) !== "0"; } catch (e) {}
               return (
@@ -37737,6 +37816,133 @@ const SAGE_CSS = `
   justify-content:center; transition:transform .12s ease; }
 .mc-tab:active{ transform:scale(.88); }
 .mc-tab.on{ color:#e4c98d; }
+
+/* ---- the corner, round three ------------------------------------------------
+   A's tones, the hero coloured by pace, the podium, the trail, and the ground
+   breathing behind it all. Motion budget: the ground and the pace glow run
+   always; everything else plays once on load or once when something changes. */
+.q-page.sf.mc-shell{ --mc-geist:'Geist','Sora',system-ui,-apple-system,'Segoe UI',sans-serif; }
+.mc{ position:relative; }
+.mc > *:not(.mc-aurora):not(.mc-spine){ position:relative; z-index:1; }
+.mc-aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+.mc-aurora i{ position:absolute; width:460px; height:460px; border-radius:50%; filter:blur(54px); opacity:.75; mix-blend-mode:screen; display:block; }
+.mc-aurora i:nth-child(1){ left:-140px; bottom:-120px; background:radial-gradient(closest-side,#567D61,transparent 70%); animation:mcDrift1 18s ease-in-out infinite; }
+.mc-aurora i:nth-child(2){ right:-180px; bottom:40px; background:radial-gradient(closest-side,#2E4A38,transparent 70%); animation:mcDrift2 24s ease-in-out infinite; }
+.mc-aurora i:nth-child(3){ left:60px; top:120px; width:300px; height:300px; background:radial-gradient(closest-side,rgba(228,201,141,.35),transparent 70%); animation:mcDrift3 28s ease-in-out infinite; opacity:.35; }
+.mc-aurora i:nth-child(4){ right:-120px; top:-140px; width:380px; height:380px; background:radial-gradient(closest-side,rgba(143,216,175,.45),transparent 70%); animation:mcDrift4 26s ease-in-out infinite; opacity:.45; }
+.mc-aurora u{ position:absolute; inset:-60px; display:block; background:radial-gradient(circle,rgba(255,255,255,.16) 1px,transparent 1.6px) 0 0/22px 22px; opacity:.5; animation:mcGrid 30s linear infinite, mcBreathe 7s ease-in-out infinite; -webkit-mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent); mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent); }
+.mc-aurora u:nth-child(6){ background-position:11px 11px; animation-delay:0s,-3.5s; -webkit-mask:radial-gradient(60% 40% at 30% 30%,#000,transparent 70%); mask:radial-gradient(60% 40% at 30% 30%,#000,transparent 70%); }
+@keyframes mcDrift1{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(130px,-220px) scale(1.2); } }
+@keyframes mcDrift2{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-170px,-140px) scale(.85); } }
+@keyframes mcDrift3{ 0%,100%{ transform:translate(0,0); } 33%{ transform:translate(-60px,80px); } 66%{ transform:translate(70px,40px); } }
+@keyframes mcDrift4{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-110px,160px) scale(1.2); } }
+@keyframes mcGrid{ from{ transform:translate(0,0); } to{ transform:translate(22px,44px); } }
+@keyframes mcBreathe{ 0%,100%{ opacity:.18; } 50%{ opacity:.6; } }
+.mc > *:not(.mc-aurora):not(.mc-spine){ animation:mcRise .6s cubic-bezier(.2,.8,.3,1) both; }
+.mc > *:nth-child(4){ animation-delay:.05s; } .mc > *:nth-child(5),.mc > *:nth-child(6){ animation-delay:.12s; } .mc > *:nth-child(7),.mc > *:nth-child(8){ animation-delay:.2s; } .mc > *:nth-child(9),.mc > *:nth-child(10){ animation-delay:.28s; }
+@keyframes mcRise{ from{ opacity:0; transform:translateY(14px); } }
+/* head */
+.mc-head{ align-items:flex-start; }
+.mc-side{ gap:8px; }
+.mc-corner{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto; }
+.mc-corner .mc-help{ position:static; }
+.mc-corner .mc-asof{ white-space:nowrap; }
+.mc-aheadlbl{ border:0; background:none; padding:0; text-align:left; cursor:pointer; font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.14em; color:rgba(232,238,242,.6); }
+.mc-chip2{ display:inline-flex; align-items:center; gap:6px; align-self:flex-start; padding:5px 9px; border-radius:9px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); font-family:var(--sfmono); font-size:8.5px; font-weight:700; letter-spacing:.12em; color:rgba(232,238,242,.75); }
+.mc-chip2 .pix{ color:#E4C98D; }
+/* the rail */
+.mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -18px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
+.mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); overflow:hidden; }
+.mc-rail s{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
+.mc-rail .fa{ left:4px; --dA:180px; animation:mcfA 2.4s linear infinite; } .mc-rail .fb{ left:0; --bX:120px; --dB:300px; animation:mcfB 2.4s linear infinite; } .mc-rail .d2{ animation-delay:1.2s; }
+.mc-rail.up{ background:rgba(143,216,175,.1); } .mc-rail.up s{ background:rgba(143,216,175,.9); }
+.mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
+.mc-pip.hd{ width:28px; height:28px; font-size:8px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
+.mc-pip.off{ opacity:.45; }
+.mc-pip.you{ background:#E4C98D; color:#12251b; text-shadow:none; box-shadow:0 0 12px rgba(228,201,141,.95); animation:mcYou 2.4s ease-in-out infinite; }
+.mc-pip.you.g{ background:#8FD8AF; box-shadow:0 0 12px rgba(143,216,175,.95); animation:mcYouG 1.6s ease-in-out infinite; }
+@keyframes mcYou{ 50%{ box-shadow:0 0 18px rgba(228,201,141,1); } } @keyframes mcYouG{ 50%{ box-shadow:0 0 20px rgba(143,216,175,1); } }
+.mc-railw > em{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.16em; color:rgba(255,255,255,.55); writing-mode:vertical-rl; font-style:normal; }
+/* hero: pace glow, CRT roll, the trail */
+.mc-hero{ transition:box-shadow .6s, border-color .6s; }
+.mc-hero::before{ content:""; position:absolute; left:0; right:0; top:-30%; height:26%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.035) 35%,rgba(255,255,255,.11) 50%,rgba(0,0,0,.10) 62%,transparent); animation:mcCrt 7s linear infinite; z-index:1; pointer-events:none; mix-blend-mode:screen; }
+.mc-hero::after{ animation:mcScan .8s steps(3) infinite; }
+@keyframes mcCrt{ 0%{ transform:translateY(0); } 70%,100%{ transform:translateY(500%); } }
+@keyframes mcScan{ from{ background-position:0 0; } to{ background-position:0 3px; } }
+.mc-hero.mc-behind{ border-color:rgba(240,138,128,.6); box-shadow:0 0 0 4px rgba(216,72,60,.12),0 16px 40px -14px rgba(216,72,60,.55); animation:mcGlowR 4s ease-in-out infinite; }
+.mc-hero.mc-on{ border-color:rgba(228,201,141,.65); box-shadow:0 0 0 4px rgba(228,201,141,.12),0 16px 40px -14px rgba(228,201,141,.55); animation:mcGlowS 4s ease-in-out infinite; }
+.mc-hero.mc-ahead{ border-color:rgba(143,216,175,.65); box-shadow:0 0 0 4px rgba(143,216,175,.12),0 16px 40px -14px rgba(143,216,175,.6); animation:mcGlowG 4s ease-in-out infinite; }
+@keyframes mcGlowR{ 50%{ box-shadow:0 0 0 5px rgba(216,72,60,.09),0 17px 44px -13px rgba(216,72,60,.65); } }
+@keyframes mcGlowS{ 50%{ box-shadow:0 0 0 5px rgba(228,201,141,.09),0 17px 44px -13px rgba(228,201,141,.6); } }
+@keyframes mcGlowG{ 50%{ box-shadow:0 0 0 5px rgba(143,216,175,.09),0 17px 44px -13px rgba(143,216,175,.7); } }
+.mc-statecol{ position:absolute; right:12px; top:12px; z-index:2; display:flex; flex-direction:column; align-items:center; gap:12px; }
+.mc-statecol .mc-icobtn{ margin:0; }
+.mc-state{ font-family:var(--sfmono); font-size:8.5px; font-weight:700; letter-spacing:.14em; padding:3px 8px; border-radius:7px; white-space:nowrap; }
+.mc-behind .mc-state{ background:rgba(216,72,60,.35); color:#FFD7D3; } .mc-on .mc-state{ background:rgba(228,201,141,.25); color:#E4C98D; } .mc-ahead .mc-state{ background:rgba(30,138,76,.4); color:#8FD8AF; }
+.mc-trail{ position:relative; z-index:1; margin-top:10px; height:92px; }
+.mc-trail svg{ width:100%; height:92px; overflow:visible; display:block; }
+.mc-trail .grid line{ stroke:rgba(255,255,255,.07); stroke-width:1; }
+.mc-trail .pace{ fill:none; stroke:rgba(255,255,255,.28); stroke-width:1.5; stroke-dasharray:3 5; }
+.mc-trail .area{ transform-origin:left; animation:mcGrow 1.2s cubic-bezier(.2,.8,.3,1) both .3s; }
+.mc-trail .edge{ fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.mc-trail .todayline{ stroke:rgba(228,201,141,.7); stroke-width:1.5; } .mc-behind .mc-trail .todayline{ stroke:rgba(240,138,128,.7); } .mc-ahead .mc-trail .todayline{ stroke:rgba(143,216,175,.7); }
+.mc-trail .todaydot{ fill:#fff; animation:mcDot 2.4s ease-in-out infinite; } @keyframes mcDot{ 50%{ r:6; } }
+.mc-trail .goalring{ fill:none; stroke:#E4C98D; stroke-width:2; }
+@keyframes mcGrow{ from{ transform:scaleX(0); } }
+.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between; font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); }
+.mc-tl .mid{ color:#E4C98D; } .mc-behind .mc-tl .mid{ color:#F08A80; } .mc-ahead .mc-tl .mid{ color:#8FD8AF; }
+.mc-hero .mc-legend{ margin-top:20px; }
+.mc-legend s.pc{ background:transparent; border-top:1.5px dashed rgba(255,255,255,.6); height:0; border-radius:0; vertical-align:2px; }
+.mc-tx .bar i{ transform-origin:left; animation:mcGrow 1.1s cubic-bezier(.2,.8,.3,1) both .3s; }
+/* type: the card titles in Geist, one voice for the cards */
+.mc-shell .mc-tx b, .mc-shell .mc-ptslbl b, .mc-shell .mc-pd b{ font-family:var(--mc-geist); font-weight:600; letter-spacing:-.005em; }
+/* tones: today on sand paper */
+.mc-cap-t{ color:#E4C98D; } .mc-cap-p{ color:#F08A80; } .mc-cap-b{ color:#A9C4AC; }
+.mc-shell .mc-card.mc-today{ background:linear-gradient(160deg,#F6E3C3,#EDD6AC); border-color:#F6E3C3; color:#2A2418; }
+.mc-today .mc-tx .st{ color:rgba(42,36,24,.55); } .mc-today .mc-row + .mc-row{ border-top-color:rgba(42,36,24,.12); }
+.mc-today .mc-tx .bar{ background:rgba(42,36,24,.12); } .mc-today .mc-tx .bar i{ background:linear-gradient(90deg,#D0821E,#E8A93C); }
+.mc-today .mc-made{ background:#1E8A4C; color:#fff; }
+.mc-made::before{ content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,transparent 1px 3px); pointer-events:none; animation:mcScan .8s steps(3) infinite; }
+.mc-made::after{ width:auto; left:0; right:0; top:-120%; bottom:auto; height:120%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.05) 35%,rgba(255,255,255,.22) 50%,rgba(0,0,0,.12) 62%,transparent); animation:mcCrt 5.5s linear infinite; mix-blend-mode:screen; }
+.mc-row:nth-child(2) .mc-made::after{ animation-delay:-2s; }
+/* points, near black */
+.mc-shell .mc-card.mc-pts{ background:#0B100D; border-color:rgba(240,138,128,.28); box-shadow:inset 0 0 0 1px rgba(240,138,128,.08); }
+.mc-pts .mc-week .c.ok{ background:rgba(94,200,140,.28); } .mc-pts .mc-week .c.bad{ background:#D8483C; color:#fff; }
+.mc-pts .mc-li.done .ck{ background:#1E8A4C; border-color:#1E8A4C; }
+.mc-week .c.now{ animation:mcBlink 3.2s ease-in-out infinite; } @keyframes mcBlink{ 50%{ border-color:#E4C98D; color:#E4C98D; } }
+.mc-spine .sp b{ animation:mcPulse 2.4s ease-in-out infinite; } @keyframes mcPulse{ 50%{ box-shadow:0 0 16px rgba(143,216,175,1); } }
+/* the board, a podium */
+.mc-shell .mc-card.mc-board{ background:rgba(169,196,172,.12); border-color:rgba(169,196,172,.35); }
+.mc-pod{ display:flex; gap:7px; }
+.mc-pd{ flex:1; min-width:0; text-align:center; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:8px 4px; background:rgba(0,0,0,.18); }
+.mc-pd.me{ border-color:#E4C98D; background:rgba(228,201,141,.16); animation:mcLift 4s ease-in-out infinite; } @keyframes mcLift{ 50%{ transform:translateY(-2px); } }
+.mc-pd .av{ margin:0 auto 4px; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:9px; font-weight:700; }
+.mc-pd b{ display:block; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mc-pd .un{ display:block; font-family:var(--sfmono); font-size:13px; font-weight:700; }
+.mc-pd .rk{ display:block; font-family:var(--sfmono); font-size:8px; font-weight:700; color:rgba(237,242,234,.45); }
+@media (prefers-reduced-motion:reduce){ .mc *,.mc *::before,.mc *::after{ animation:none !important; } }
+/* ---- light mode: the same page on paper ----
+   The site's own ground rather than a map: soft sage and sand on paper. The
+   hero takes the site's hero gradient, Today stays sand paper, Points goes ink
+   so its chips still read, the board goes sage on white. */
+.q-page.sf.mc-shell.mc-light{ background:#F1EEE4; --sfink:#1F2A22; --sfink2:#4A5A4E; --sfink3:#7E8A80; --sfcard:#FFFDF8; --sfstroke:rgba(31,42,34,.1); color:#1F2A22; }
+.mc-light .mc-aurora i{ mix-blend-mode:multiply; opacity:.5; } .mc-light .mc-aurora i:nth-child(1){ background:radial-gradient(closest-side,#A9C4AC,transparent 70%); } .mc-light .mc-aurora i:nth-child(2){ background:radial-gradient(closest-side,#CFDCCF,transparent 70%); } .mc-light .mc-aurora i:nth-child(3){ background:radial-gradient(closest-side,rgba(228,201,141,.8),transparent 70%); opacity:.45; } .mc-light .mc-aurora i:nth-child(4){ background:radial-gradient(closest-side,#B9D1BD,transparent 70%); opacity:.5; }
+.mc-light .mc-aurora u{ background-image:radial-gradient(circle,rgba(31,42,34,.22) 1px,transparent 1.6px); }
+.mc-light .mc-calhead,.mc-light .mc-date{ color:#1F2A22; } .mc-light .mc-cal s{ background:rgba(31,42,34,.12); } .mc-light .mc-cal s.h1{ background:rgba(86,125,97,.35); } .mc-light .mc-cal s.h2{ background:rgba(86,125,97,.6); } .mc-light .mc-cal s.h3{ background:#567D61; } .mc-light .mc-cal s.best{ background:#D0821E; box-shadow:0 0 5px rgba(208,130,30,.5); } .mc-light .mc-cal s.today{ outline-color:#1F2A22; } .mc-light .mc-cal s.off{ background:rgba(31,42,34,.06); } .mc-light .mc-cal s.hol{ box-shadow:inset 0 0 0 1.5px rgba(31,42,34,.3); }
+.mc-light .mc-aheadlbl,.mc-light .mc-asof,.mc-light .mc-qmini b{ color:rgba(31,42,34,.6); } .mc-light .mc-chip2{ border-color:rgba(31,42,34,.18); background:rgba(31,42,34,.05); color:rgba(31,42,34,.7); } .mc-light .mc-chip2 .pix{ color:#D0821E; }
+.mc-light .mc-help{ border-color:rgba(31,42,34,.25); color:rgba(31,42,34,.7); background:rgba(31,42,34,.04); }
+.mc-light .mc-rail{ background:rgba(31,42,34,.1); } .mc-light .mc-railw > em{ color:rgba(31,42,34,.5); } .mc-light .mc-pip.you{ background:#1E8A4C; color:#fff; box-shadow:0 0 10px rgba(30,138,76,.6); }
+.mc-light .mc-spine .rt{ color:#1E8A4C; } .mc-light .mc-spine .sp{ background:rgba(31,42,34,.12); } .mc-light .mc-spine .sp i{ background:linear-gradient(0deg,#567D61,#1E8A4C); } .mc-light .mc-spine .sp b{ background:#1E8A4C; box-shadow:0 0 9px rgba(30,138,76,.7); } .mc-light .mc-spine .sp u{ background:rgba(31,42,34,.25); }
+.mc-light .mc-cap{ color:rgba(31,42,34,.5); } .mc-light .mc-cap-t{ color:#D0821E; } .mc-light .mc-cap-p{ color:#C2361F; } .mc-light .mc-cap-b{ color:#567D61; }
+.mc-shell.mc-light .mc-hero{ background:linear-gradient(150deg,#7FA98A,#55795F 55%,#26382C); border-color:transparent; color:#EDF2EA; box-shadow:0 18px 36px -18px rgba(38,56,44,.6); }
+.mc-light .mc-hero.mc-behind{ box-shadow:0 0 0 4px rgba(194,54,31,.14),0 16px 40px -14px rgba(194,54,31,.55); } .mc-light .mc-hero.mc-on{ box-shadow:0 0 0 4px rgba(208,130,30,.16),0 16px 40px -14px rgba(208,130,30,.5); } .mc-light .mc-hero.mc-ahead{ box-shadow:0 0 0 4px rgba(30,138,76,.16),0 16px 40px -14px rgba(30,138,76,.55); }
+.mc-shell.mc-light .mc-card{ background:#FFFDF8; border-color:rgba(31,42,34,.1); box-shadow:0 10px 24px -16px rgba(31,42,34,.35); color:#1F2A22; }
+.mc-shell.mc-light .mc-card.mc-today{ background:linear-gradient(160deg,#F6E3C3,#EDD6AC); border-color:#EDD6AC; color:#2A2418; }
+.mc-shell.mc-light .mc-card.mc-pts{ background:#15211B; color:#E8EEF2; border-color:#15211B; }
+.mc-shell.mc-light .mc-card.mc-board{ background:rgba(169,196,172,.35); border-color:rgba(86,125,97,.3); } .mc-light .mc-pd{ background:rgba(255,255,255,.55); border-color:rgba(31,42,34,.08); } .mc-light .mc-pd.me{ background:#F6E3C3; border-color:#D0821E; } .mc-light .mc-pd .rk,.mc-light .mc-boardsub{ color:rgba(31,42,34,.5); }
+.mc-shell.mc-light .mc-offc{ background:#FFFDF8; color:#1F2A22; }
+.mc-light .mc-pill{ background:#15211B; border-color:#15211B; }
+.mc-shell.mc-light .mc-sheet{ background:#FFFDF8; color:#1F2A22; border-top-color:#D0821E; } .mc-light .mc-x{ background:rgba(31,42,34,.08); color:#1F2A22; } .mc-light .mc-set-row{ border-bottom-color:rgba(31,42,34,.1); } .mc-light .mc-set-row .hint{ color:rgba(31,42,34,.55); }
 /* ---- the floor, final ----------------------------------------------------- */
 /* The approved layout breathes across the whole screen: the count, the line and
    the clocks center in the space above the actions, and the actions keep clear
@@ -37872,7 +38078,7 @@ const SAGE_CSS = `
 .mc-qmini b{ font-size:10px; }
 .mc-asof{ font-size:10.5px; }
 .mc-asof s{ width:8px; height:8px; }
-.mc-help{ width:40px; height:40px; top:-6px; right:-12px; }
+.mc-help{ width:40px; height:40px; }
 .mc-hero{ padding:16px 15px 14px; }
 .mc-units-lbl{ font-size:13.5px; }
 .mc-icobtn{ width:42px; height:42px; }
