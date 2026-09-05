@@ -9026,7 +9026,7 @@ function tellJumpOrigin(el) {
 /* The phone pages are built from their own blocks, not .hero and .card, and
    they fly in the same way: the Board's hero and standings, Check Out's hero,
    tiles and groups, and the Live Floor page as one. */
-const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card, .sm-chs";
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card, .sm-chs, .pe-card";
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
@@ -29881,7 +29881,375 @@ function SameAsPicker({ data, people, name, label = "Same as someone\u2026", con
   );
 }
 
+/* ---- People on a phone ----
+   The same facts the desktop panel holds, on one screen a thumb can work: the
+   four counters, Add a person, the roster by position, and one pop per person
+   carrying their card, their position, when they started, their account and
+   their standing. Every handler is the panel's own; nothing here writes data
+   another way. */
+function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, userName,
+  people, counts, noAcct, links, accounts, linkFor, acctFor, takenAccounts, acctDo, sendReset, acctBusy, acctSaid,
+  move, hire, strangers, waiting, wrongRead, foldList, earnedFor, roleName, monthUnitsFor, confirmBatch,
+  moving, setMoving, moveTo, setMoveTo, moveBusy, doTransfer, q, setQ, only, setOnly, sel, setSel, shown, groups }) {
+  const [pop, setPop] = useState(null);
+  const [picking, setPicking] = useState(false);
+  const [sub, setSub] = useState("card");
+  const [nuName, setNuName] = useState("");
+  const [nuRole, setNuRole] = useState(config.roles?.[0]?.id || null);
+  const [nuDate, setNuDate] = useState(today());
+  const [showFolds, setShowFolds] = useState(false);
+  const [showLog, setShowLog] = useState(false);
+  const close = useCallback(() => setPop(null), []);
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const avStyle = (name) => ({ background: `hsl(${hueFromName(name)} 62% 46%)` });
+  const dayOf = (s) => {
+    if (!s) return "";
+    const d = new Date(String(s).slice(0, 10) + "T12:00:00");
+    if (isNaN(d)) return String(s).slice(0, 10);
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleDateString("en-US", sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  };
+  const cars = (n) => fmtNum(Math.round(n * 10) / 10);
+  const cased = (k) => String(k || "").replace(/\b[a-z]/g, (c) => c.toUpperCase());
+  const setPerson = (p, patch, action, detail) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, ...patch } : x));
+    onChange(next, { action, detail });
+  };
+  const picked = [...sel];
+  const pickedPeople = people.filter((p) => sel.has(p.name));
+  const toggle = (name) => setSel((s) => { const n = new Set(s); if (n.has(name)) n.delete(name); else n.add(name); return n; });
+  const stopPicking = () => { setPicking(false); setSel(new Set()); };
+
+  const standingPill = (p) => p.status === "active" ? <span className="fr-st in">on the floor</span>
+    : p.status === "departed" ? <span className="fr-st off">left{p.departedAt ? " " + dayOf(p.departedAt) : ""}</span>
+    : <span className="fr-st away">not ours</span>;
+  const acctPill = (p) => {
+    if (!storeId || links === null || !p.id || p.status === "ignored") return null;
+    const l = linkFor(p);
+    if (!l) return <span className="fr-st pe-noacct">no account</span>;
+    const a = acctFor(l);
+    return <span className={"fr-st pe-acct" + (a && a.active === false ? " pe-off" : "")}>{a && a.active === false ? "switched off" : "account"}</span>;
+  };
+  const nameList = (list, sub2, tag) => (
+    <div className="fr-list pl-rl">
+      {list.map((r, i) => (
+        <button key={i} type="button" className="pl-pr" onClick={() => { setSub("card"); setPop({ k: "person", key: r.key }); }}>
+          <span className="fr-av sm" style={avStyle(r.name)}>{initialsOf(r.name)}</span>
+          <span className="pl-prn">{r.name}{sub2 && sub2(r) && <small>{sub2(r)}</small>}</span>{tag ? tag(r) : <span />}</button>
+      ))}
+      {list.length === 0 && <p className="fr-empty">Nobody here.</p>}
+    </div>
+  );
+
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "who") {
+      const title = { active: "On the floor", departed: "Left", ignored: "Never ours", noacct: "Without an account" }[pop.s];
+      const list = pop.s === "noacct"
+        ? people.filter((p) => p.status === "active" && p.id && !(links || []).some((l) => l.person_id === p.id))
+        : people.filter((p) => p.status === pop.s);
+      const defn = { active: "Counted on the board and the sheet.", departed: "Off the board, and the cars they sold stay in the month they sold them.",
+        ignored: "Names that arrived in a report by mistake. Their figures are set aside, not counted.", noacct: "They cannot see their own card until an account is joined to their name." }[pop.s];
+      return (<>{hd(title, <span className="fr-w">{list.length}</span>)}<div className="bp-defn">{defn}</div>
+        {nameList(list, (r) => roleName(r.roleId) || null, (r) => pop.s === "noacct" ? <span className="fr-st pe-noacct">no account</span> : <span />)}<div style={{ height: 12 }} /></>);
+    }
+    if (pop.k === "why") return (<>{hd("Left, and not ours")}
+      <div className="bp-defn"><b>Left</b> keeps everything they did on file and their cars in the month they sold them, because the store did sell those. They come off the board, the sheet and the line straight away.<br /><br />
+        <b>Never ours</b> is for a name that arrived in a report by mistake. Their figures come back off the store entirely. Said by mistake, it is one tap to undo: the figures are set aside, not thrown away, and putting the person back on the floor puts them back.</div></>);
+    if (pop.k === "add") {
+      const nm = nuName.trim();
+      const reset = () => { setNuName(""); setNuRole(config.roles?.[0]?.id || null); setNuDate(today()); };
+      return (<>{hd("Add a person")}
+        <div className="pl-in"><input value={nuName} onChange={(e) => setNuName(e.target.value)} placeholder="Full name, as the reports spell it" autoFocus /></div>
+        <div className="pl-sec">Position</div>
+        <div className="pl-picks">{(config.roles || []).map((r) => <button key={r.id} type="button" className={"pl-pk" + (nuRole === r.id ? " on" : "")} onClick={() => setNuRole(r.id)}>{r.name}</button>)}</div>
+        <div className="pl-sec">Started</div>
+        <div className="pl-in"><input type="date" value={nuDate || ""} onChange={(e) => setNuDate(e.target.value)} /></div>
+        <div className="fr-acts">
+          <button type="button" className="fr-b pri" disabled={!nm} onClick={() => { hire(nm, nuRole, nuDate); reset(); close(); }}><PixIcon glyph="plus" size={12} />Add to the roster</button>
+          <button type="button" className="fr-b warn sm" disabled={!nm} onClick={() => {
+            onChange(setPersonStatus(data, [nm], "ignored", { by: userName, note: "not a person" }), { action: "Ignored a name from imports", detail: nm });
+            reset(); close();
+          }}>Not a person: never import this</button>
+        </div></>);
+    }
+    if (pop.k === "role") {
+      /* One position for everybody ticked, or for the one person the pop was
+         opened from. */
+      const targets = pop.key ? people.filter((p) => p.key === pop.key) : pickedPeople.filter((p) => p.id);
+      return (<>{hd("Position", <span className="fr-w">{targets.length === 1 ? targets[0].name : `${targets.length} people`}</span>)}
+        <div className="pl-picks">{(config.roles || []).map((r) => {
+          const on = targets.length > 0 && targets.every((p) => p.roleId === r.id);
+          return <button key={r.id} type="button" className={"pl-pk" + (on ? " on" : "")} onClick={() => {
+            const next = JSON.parse(JSON.stringify(data));
+            const ids = new Set(targets.map((p) => p.id));
+            next.roster = (next.roster || []).map((x) => (ids.has(x.id) ? { ...x, roleId: r.id } : x));
+            onChange(next, { action: "Changed position", detail: `${targets.length === 1 ? targets[0].name : targets.length + " people"}: ${r.name}` });
+            if (pop.key) setSub("card"); else { stopPicking(); close(); }
+          }}>{r.name}</button>;
+        })}</div>
+        <div className="bp-defn">Positions are the ones listed under Settings, in that order.</div></>);
+    }
+    if (pop.k === "move") {
+      const p = moving; if (!p) return null;
+      return (<>{hd(`Move ${p.name}`, <span className="fr-w">to another store</span>)}
+        <div className="bp-defn">They go on the new store's floor with everything {storeName || "this store"} knows about them. Cars sold here stay in this store's month.</div>
+        <div className="pl-sec">Which store</div>
+        <div className="pl-picks">{(allStores || []).filter((x) => x.id !== storeId).map((x) => <button key={x.id} type="button" className={"pl-pk" + (moveTo === x.id ? " on" : "")} onClick={() => setMoveTo(x.id)}>{x.name}</button>)}</div>
+        <div className="fr-acts">
+          <button type="button" className="fr-b pri" disabled={!moveTo || !!moveBusy} onClick={async () => { await doTransfer(); close(); }}>{moveBusy ? "Moving…" : "Move them"}</button>
+          <button type="button" className="fr-b" onClick={() => { setMoving(null); close(); }}>Cancel</button>
+        </div></>);
+    }
+    if (pop.k === "person") {
+      const p = people.find((x) => x.key === pop.key); if (!p) return null;
+      const l = storeId && p.id ? linkFor(p) : null;
+      const a = acctFor(l);
+      const key = p.key;
+      const free = (accounts || []).filter((x) => !takenAccounts.has(x.id) && x.active !== false)
+        .slice().sort((x, y) => String(x.email || x.name).localeCompare(String(y.email || y.name)));
+      const canEdit = !!p.id;
+      const tile = (id, glyph, label) => (
+        <button type="button" className={"fr-tool" + (sub === id ? " on" : "")} onClick={() => setSub(id)}><PixIcon glyph={glyph} size={16} />{label}</button>
+      );
+      return (<>
+        <div className="fr-hd"><span className="fr-av" style={avStyle(p.name)}>{initialsOf(p.name)}</span>
+          <div className="fr-hdt"><div className="fr-nm">{p.name}</div>
+            <div className="fr-meta"><span className="fr-w">{roleName(p.roleId) || "needs a position"}</span>{standingPill(p)}{acctPill(p)}</div></div></div>
+        {canEdit && p.status !== "ignored" && (
+          <div className="cx-acts pe-tiles">{tile("card", "chart", "Their card")}{tile("role", "user", "Role")}{tile("started", "calendar", "Started")}{storeId ? tile("account", "tap", "Account") : null}</div>
+        )}
+        {canEdit && p.status !== "ignored" && sub === "card" && (<>
+          <div className="pe-facts">
+            <div><b>{cars(monthUnitsFor(p.key))}</b><span>cars this month</span></div>
+            <div><b>{p.hiredAt ? dayOf(p.hiredAt) : "–"}</b><span>started</span></div>
+            <div><b>{l ? (a && a.active === false ? "off" : "yes") : "none"}</b><span>account</span></div>
+          </div>
+          <div className="pl-sec">Languages</div>
+          <div className="pl-in"><input defaultValue={(p.langs || []).join(", ")} placeholder="ES, HT…" title={(p.langs || []).map(langName).join(", ")}
+            onBlur={(e) => {
+              const codes = e.target.value.split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+              if (codes.join(",") === (p.langs || []).join(",")) return;
+              setPerson(p, { langs: codes }, "Changed languages", `${p.name}: ${codes.join(", ") || "none"}`);
+            }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></div>
+          <div className="pl-sec">Can take</div>
+          <div className="pl-picks">{DEFAULT_TAGS.map((t) => { const on = (p.skills || []).includes(t.id);
+            return <button key={t.id} type="button" className={"pl-pk" + (on ? " on" : "")} onClick={() => {
+              const have = new Set(p.skills || []); if (have.has(t.id)) have.delete(t.id); else have.add(t.id);
+              setPerson(p, { skills: [...have] }, "Changed what they can take", `${p.name}: ${[...have].join(", ") || "none"}`);
+            }}>{t.label}</button>; })}</div>
+          {(earnedFor[p.key] || []).length > 0 && (<>
+            <div className="pl-sec">Earned</div>
+            <div className="pl-picks">{(earnedFor[p.key] || []).map((sk) => <span key={sk.id} className="pl-pk pe-earned" title={`Earned: top three for ${sk.what}`}>{sk.label}</span>)}</div>
+            <div className="bp-defn">Worked out from what they have actually done. Nobody sets these.</div></>)}
+          <div className="pl-sec">Same person as</div>
+          <div className="pl-in pe-selwrap"><SameAsPicker data={data} people={people} name={p.name} confirm label={"Somebody already on this list…"}
+            onPick={(to) => { onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }), { action: "Folded a duplicate person", detail: `${p.name} → ${to}` }); close(); }} /></div>
+          <div className="bp-defn">Only when they are genuinely one person under two spellings. {p.name} comes off this store's lists and their cars move across.</div>
+          {isTestName(p.name) && (
+            <div className="fr-acts"><button type="button" className="fr-b sm" onClick={() => onChange(seedExampleFigures(data, p.name), { action: "Filled example figures", detail: p.name + (storeName ? " · " + storeName : "") })}>
+              {hasExampleFigures(data, p.name) ? "Fill example figures again" : "Fill example figures"}</button></div>
+          )}
+        </>)}
+        {canEdit && p.status !== "ignored" && sub === "role" && (<>
+          <div className="pl-sec">Position</div>
+          <div className="pl-picks">{(config.roles || []).map((r) => <button key={r.id} type="button" className={"pl-pk" + (p.roleId === r.id ? " on" : "")} onClick={() => {
+            setPerson(p, { roleId: r.id }, "Changed position", `${p.name}: ${r.name}`); setSub("card");
+          }}>{r.name}</button>)}</div>
+          <div className="bp-defn">The heading their row sits under, and which standards they are read against.</div>
+        </>)}
+        {canEdit && p.status !== "ignored" && sub === "started" && (<>
+          <div className="pl-sec">Started here</div>
+          <div className="pl-in"><input type="date" value={p.hiredAt || ""} onChange={(e) => { const v = e.target.value || null; setPerson(p, { hiredAt: v }, "Set a start date", `${p.name}: ${v || "cleared"}`); }} /></div>
+          <div className="bp-defn">{p.hiredAt ? "Days before this are left out of their averages, and out of the days-off close-out." : "Blank counts the whole month, as it always has."}</div>
+        </>)}
+        {canEdit && p.status !== "ignored" && sub === "account" && storeId && (<>
+          {links === null ? <div className="bp-defn">Loading accounts…</div> : !l ? (<>
+            <div className="bp-defn">Nobody signs in as {p.name} yet. They sign up on this site with a dealership address, then a manager picks the account here. This is what decides whose phone buzzes when their customer walks in.</div>
+            <div className="pl-sec">Pick an account</div>
+            <div className="pl-in pe-selwrap"><select value="" disabled={acctBusy === key}
+              onChange={(e) => e.target.value && acctDo(key, () => linkFloorPerson(storeId, e.target.value, p.id), "Joined to their account.")}>
+              <option value="">Pick an account…</option>
+              {free.map((x) => <option key={x.id} value={x.id}>{x.email || x.name}</option>)}
+            </select></div>
+            {free.length === 0 && <div className="bp-defn">Every account is already spoken for.</div>}
+          </>) : (<>
+            <div className="pe-acctline"><b>{a ? (a.email || a.name) : "An account this site no longer has a profile for"}</b>
+              <span>{a && a.active === false ? "switched off" : "active"}{" · "}{l.devices ? `${l.devices} phone${l.devices === 1 ? "" : "s"}${l.lastSeen ? `, last seen ${dayOf(l.lastSeen)}` : ""}` : "no phone registered"}</span></div>
+            <div className="fr-acts">
+              {a && a.email && <button type="button" className="fr-b sm" disabled={acctBusy === key} onClick={() => sendReset(key, a.email)}>Send a password reset</button>}
+              {a && <button type="button" className="fr-b sm" disabled={acctBusy === key} onClick={() => acctDo(key, () => setAccountActive(storeId, l.user_id, a.active === false),
+                a.active === false ? "Switched back on." : "Switched off. They cannot sign in until it is switched back on.")}>{a.active === false ? "Switch back on" : "Switch off"}</button>}
+              <button type="button" className="fr-b sm warn" disabled={acctBusy === key} onClick={() => acctDo(key, () => unlinkFloorPerson(storeId, l.user_id), "Unjoined. Their phones were unregistered with it.")}>Unjoin this account</button>
+            </div>
+            <div className="bp-defn"><b>Switching off</b> stops them signing in and leaves everything where it is. <b>Unjoining</b> only breaks the link to this person and takes their registered phones with it.</div>
+          </>)}
+          {acctSaid && acctSaid.key === key && <div className={"bp-defn pe-said" + (acctSaid.bad ? " bad" : "")}><b>{acctSaid.text}</b></div>}
+        </>)}
+        <div className="pl-sec">Standing</div>
+        <div className="fr-acts pe-acts">
+          {p.status !== "active" && <button type="button" className="fr-b pri" onClick={() => { move(p.name, "active"); close(); }}>Back on the floor</button>}
+          {p.status !== "departed" && <button type="button" className="fr-b" onClick={() => { move(p.name, "departed"); close(); }}>Left the store</button>}
+          {p.status !== "ignored" && <button type="button" className="fr-b warn" onClick={() => { move(p.name, "ignored"); close(); }}>Never ours</button>}
+          {p.status === "active" && (allStores || []).length > 1 && <button type="button" className="fr-b" onClick={() => { setMoving(p); setMoveTo(""); setPop({ k: "move" }); }}>Move store</button>}
+        </div>
+        <div className="bp-defn">Left keeps everything they did on file. Never ours takes their figures back off the store.</div>
+      </>);
+    }
+    return null;
+  };
+
+  const counter = (s, n, label, cls) => <button key={s} type="button" className={cls || ""} onClick={() => setPop({ k: "who", s })}><b>{n}</b><span>{label}</span></button>;
+  const repairRow = (name, ev, acts) => (
+    <div key={name} className="pe-fix">
+      <span className="fr-av sm" style={avStyle(name)}>{initialsOf(name)}</span>
+      <span className="pe-fixt"><span className="pe-fixn">{name}</span>{ev && <small>{ev}</small>}</span>
+      <span className="pe-fixa">{acts}</span>
+    </div>
+  );
+  const sameSel = (name, onPick, label) => (
+    <span className="pe-selwrap sm"><SameAsPicker data={data} people={people} name={name} label={label || "Same as someone…"} onPick={onPick} /></span>
+  );
+
+  return (
+    <div className="bp-page cx-page pe-phone">
+      <div className="bp-hero cx-hero">
+        <div className="cx-hh"><span className="cx-top"><PixIcon glyph="users" size={11} />People</span><span className="cx-days">{storeName || "the store"} says who works here</span></div>
+        <div className="co-std pe-std">
+          {counter("active", counts.active, "On the floor")}
+          {counter("departed", counts.departed, "Left")}
+          {counter("ignored", counts.ignored, "Never ours")}
+          {links !== null && counter("noacct", noAcct, "No account", noAcct > 0 ? "co-alert" : "")}
+        </div>
+        <div className="cx-tools pe-tools">
+          <button type="button" className="fr-tool pri" onClick={() => setPop({ k: "add" })}><PixIcon glyph="plus" size={16} />Add a person</button>
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "why" })}><PixIcon glyph="question" size={16} />Left, and not ours</button>
+        </div>
+      </div>
+
+      {wrongRead.length > 0 && (
+        <div className="pl-miss pe-miss">
+          <div className="pe-misshd"><b>{wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}</b>
+            <span>Your own people with something stuck to their name. Merging puts the figures back together and remembers the spelling.</span></div>
+          <div className="fr-acts pe-missacts"><button type="button" className="fr-b sm" onClick={() => {
+            const c = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
+            if (wrongRead.length > 1 && !window.confirm(`Merge ${wrongRead.length} misread names back into your people?\n\n` + wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") + (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") + (c > 0 ? `\n\n${cars(c)} cars move onto the right people.` : ""))) return;
+            onChange(mergeManglings(data, wrongRead, { by: userName }), { action: "Merged misread names", detail: `${wrongRead.length} at ${storeName || "this store"}` });
+          }}>Merge all {wrongRead.length}</button></div>
+          {wrongRead.slice(0, 40).map((r) => repairRow(r.from, <>→ <b>{r.to}</b>{r.units > 0 ? ` · ${cars(r.units)} cars` : ""}</>, <>
+            <button type="button" className="fr-b sm" onClick={() => onChange(mergeManglings(data, [r], { by: userName }), { action: "Merged a misread name", detail: `${r.from} → ${r.to}` })}>Merge</button>
+            {sameSel(r.from, (to) => onChange(sameAs(data, r.from, to, { by: userName, note: "picked by hand" }), { action: "Merged a misread name", detail: `${r.from} → ${to}` }), "or somebody else…")}
+          </>))}
+        </div>
+      )}
+      {waiting.length > 0 && (
+        <div className="pl-miss pe-miss">
+          <div className="pe-misshd"><b>{waiting.length === 1 ? "One name is waiting on you" : `${waiting.length} names are waiting on you`}</b>
+            <span>A report named {waiting.length === 1 ? "somebody" : "people"} not on this store's list. Nothing is in the books until you say.</span></div>
+          <div className="fr-acts pe-missacts">
+            <button type="button" className="fr-b sm" onClick={() => { const names = waiting.map((w) => w.name); if (!confirmBatch(names, 0, "Put")) return;
+              onChange(claimPending(data, names, { by: userName, roleId: config.roles?.[0]?.id || null, newId: uid() }), { action: "Claimed names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` }); }}>They all work here</button>
+            <button type="button" className="fr-b sm warn" onClick={() => { const names = waiting.map((w) => w.name); if (!confirmBatch(names, 0, "Reject")) return;
+              onChange(dropPending(data, names, { by: userName }), { action: "Rejected names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` }); }}>None are ours</button>
+          </div>
+          {waiting.map((w) => repairRow(w.name, `${w.units > 0 ? cars(w.units) + " cars held" : "no cars"}${w.days > 0 ? ` · ${w.days} ${w.days === 1 ? "day" : "days"}` : ""}${w.files.length ? ` · from ${w.files.slice(0, 2).join(", ")}` : ""}`, <>
+            <button type="button" className="fr-b sm" onClick={() => onChange(claimPending(data, [w.name], { by: userName, roleId: config.roles?.[0]?.id || null, newId: uid() }), { action: "Claimed a name from a report", detail: w.name })}>Works here</button>
+            <button type="button" className="fr-b sm warn" onClick={() => onChange(dropPending(data, [w.name], { by: userName }), { action: "Rejected a name from a report", detail: w.name })}>Not ours</button>
+            {sameSel(w.name, (to) => onChange(sameAs(data, w.name, to, { by: userName }), { action: "Folded a spelling into a person", detail: `${w.name} → ${to}` }))}
+          </>))}
+        </div>
+      )}
+      {strangers.length > 0 && (
+        <div className="pl-miss pe-miss">
+          <div className="pe-misshd"><b>{strangers.length === 1 ? "One name has figures here but is not one of your people" : `${strangers.length} names have figures here but are not your people`}</b>
+            <span>Credited with work at {storeName || "this store"}, and on none of your lists.</span></div>
+          <div className="fr-acts pe-missacts">
+            <button type="button" className="fr-b sm" onClick={() => { const names = strangers.map((x) => x.name); if (!confirmBatch(names, 0, "Put")) return; move(names, "active", "claimed from unmatched figures"); }}>They all work here</button>
+            <button type="button" className="fr-b sm warn" onClick={() => { const names = strangers.map((x) => x.name); const c = strangers.reduce((n, x) => n + (x.units || 0), 0); if (!confirmBatch(names, c, "Take")) return; move(names, "ignored", "figures belonged to another store"); }}>None are ours</button>
+          </div>
+          {strangers.map((s) => repairRow(s.name, `${s.units > 0 ? cars(s.units) + " cars" : "no cars"}${s.days > 0 ? ` · ${s.days} ${s.days === 1 ? "day" : "days"}` : ""}${s.months.length ? ` · ${s.months.join(", ")}` : ""}`, <>
+            <button type="button" className="fr-b sm" onClick={() => move(s.name, "active", "claimed from unmatched figures")}>Works here</button>
+            <button type="button" className="fr-b sm warn" onClick={() => move(s.name, "ignored", "figures belonged to another store")}>Not ours</button>
+            {sameSel(s.name, (to) => onChange(sameAs(data, s.name, to, { by: userName }), { action: "Folded a spelling into a person", detail: `${s.name} → ${to}` }))}
+          </>))}
+        </div>
+      )}
+
+      <div className="co-grp co-gon cx-card pe-card">
+        <div className="pe-search">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a name" />
+          <button type="button" className={"pe-sel" + (picking ? " on" : "")} onClick={() => (picking ? stopPicking() : setPicking(true))}>{picking ? "Done" : "Select"}</button>
+        </div>
+        <div className="pe-filters">
+          {[["active", "On the floor"], ["departed", "Left"], ["ignored", "Not ours"], ["all", "Everyone"]].map(([id, lbl]) => (
+            <button key={id} type="button" className={"pe-ft" + (only === id ? " on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
+          ))}
+        </div>
+        {picking && (
+          <div className="pe-bulk">
+            <span className="pe-bulkn">{picked.length ? `${picked.length} selected` : "Tick names, then act on all of them"}</span>
+            <div className="pe-bulkb">
+              {only !== "active" && <button type="button" className="fr-b sm" disabled={!picked.length} onClick={() => { move(picked, "active"); stopPicking(); }}>On the floor</button>}
+              {only !== "departed" && <button type="button" className="fr-b sm" disabled={!picked.length} onClick={() => { move(picked, "departed"); stopPicking(); }}>Mark left</button>}
+              <button type="button" className="fr-b sm" disabled={!pickedPeople.some((p) => p.id)} onClick={() => setPop({ k: "role" })}>Change role</button>
+              {only !== "ignored" && <button type="button" className="fr-b sm warn" disabled={!picked.length} onClick={() => {
+                const c = pickedPeople.reduce((n, p) => n + (monthUnitsFor(p.key) || 0), 0);
+                if (!confirmBatch(picked, c, "Take")) return;
+                move(picked, "ignored"); stopPicking();
+              }}>Never ours</button>}
+            </div>
+          </div>
+        )}
+        {shown.length === 0 && <p className="fr-empty">Nobody matches that.</p>}
+        {groups.map((g) => (
+          <div key={g.role.id || "none"} className="pe-grp" style={{ "--rolec": g.role.color || NO_ROLE.color }}>
+            <div className="pe-role"><RoleBadge role={g.role} count={g.rows.length} />
+              {picking && <button type="button" className="pe-selall" onClick={() => setSel((cur) => { const next = new Set(cur); const all = g.rows.every((p) => next.has(p.name)); for (const p of g.rows) { if (all) next.delete(p.name); else next.add(p.name); } return next; })}>
+                {g.rows.every((p) => sel.has(p.name)) ? "Clear these" : `Select these ${g.rows.length}`}</button>}
+            </div>
+            {g.rows.map((p) => (
+              <button key={p.key} type="button" className={"pe-row" + (p.status === "departed" ? " pe-left" : "") + (sel.has(p.name) ? " pe-on" : "")}
+                onClick={() => { if (picking) toggle(p.name); else { setSub("card"); setPop({ k: "person", key: p.key }); } }}>
+                <span className="fr-av sm" style={avStyle(p.name)}>{initialsOf(p.name)}</span>
+                <span className="pe-mid"><span className="pe-nm">{p.name}</span>
+                  <span className="pe-meta">{standingPill(p)}{acctPill(p)}{p.status === "departed" ? <span className="pe-since">keeps the cars they sold</span> : p.hiredAt ? <span className="pe-since">since {dayOf(p.hiredAt)}</span> : null}</span></span>
+                {picking ? <span className={"pe-tick" + (sel.has(p.name) ? " on" : "")}>{sel.has(p.name) && <PixIcon glyph="check" size={12} />}</span> : <span className="pe-go">card</span>}
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {(foldList.length > 0 || (data.peopleLog || []).length > 0) && (
+        <div className="co-grp co-gon cx-card pe-more">
+          {foldList.length > 0 && (<>
+            <button type="button" className="pe-toggle" onClick={() => setShowFolds((v) => !v)}><span>Spellings folded into people</span><b>{foldList.length}</b><PixIcon glyph={showFolds ? "arrowup" : "arrowdown"} size={11} /></button>
+            {showFolds && (<div className="pe-list">
+              <div className="bp-defn">Spellings this store has said belong to somebody. Reports file them under that person. Undoing one frees the spelling from the next report on; the months already merged stay merged.</div>
+              {foldList.map((f) => { const target = people.find((x) => x.key === f.to); const toName = target ? target.name : cased(f.to);
+                return <div key={f.key} className="pe-fold"><span className="pe-fixt"><span className="pe-fixn"><s>{cased(f.from)}</s> → {toName}</span>{f.at && <small>{dayOf(f.at)}</small>}</span>
+                  <button type="button" className="fr-b sm" onClick={() => { if (!window.confirm(`Stop folding "${cased(f.from)}" into ${toName}?\n\nFrom the next report onwards it is a name of its own again. The figures already merged stay merged.`)) return;
+                    onChange(unfold(data, f.from, { by: userName }), { action: "Undid a fold", detail: `${cased(f.from)} is no longer ${toName}` }); }}>Not the same</button></div>; })}
+            </div>)}
+          </>)}
+          {(data.peopleLog || []).length > 0 && (<>
+            <button type="button" className="pe-toggle" onClick={() => setShowLog((v) => !v)}><span>What has changed</span><b>{data.peopleLog.length}</b><PixIcon glyph={showLog ? "arrowup" : "arrowdown"} size={11} /></button>
+            {showLog && (<div className="pe-list">
+              {data.peopleLog.slice(0, 60).map((e, i) => <div key={i} className="pe-logrow"><small>{dayOf(e.at)}</small><span><b>{e.name}</b> {e.from} → {e.to}{e.note ? ` · ${e.note}` : ""}</span><em>{e.by || ""}</em></div>)}
+            </div>)}
+          </>)}
+        </div>
+      )}
+      {pop && <FrPop title={pop.k} onClose={close} cls="co-sheet">{popBody()}</FrPop>}
+    </div>
+  );
+}
+
 function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChange, userName }) {
+  const phone = usePhoneLayout();
   const [q, setQ] = useState("");
   /* The floor is the answer to "who works here", and it is the only one anybody
      opens this screen for. A store that has been running a while carries far more
@@ -29984,11 +30352,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     });
   };
 
-  const hire = () => {
-    const nm = nu.name.trim();
+  const hire = (nameArg, roleArg, dateArg) => {
+    const nm = String(nameArg != null ? nameArg : nu.name).trim();
     if (!nm) return;
+    const roleId = nameArg != null ? roleArg : nu.roleId;
+    const hiredAt = nameArg != null ? dateArg : nu.hiredAt;
     const next = setPersonStatus(data, [nm], "active",
-      { by: userName, roleId: nu.roleId, hiredAt: nu.hiredAt || null, newId: uid(), note: "hired" });
+      { by: userName, roleId, hiredAt: hiredAt || null, newId: uid(), note: "hired" });
     setAdding(false); setNu({ name: "", roleId: config.roles?.[0]?.id || null, hiredAt: today() });
     onChange(next, { action: "Added a person", detail: nm + (storeName ? " · " + storeName : "") });
   };
@@ -30085,6 +30455,15 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
   const wrongRead = useMemo(() => manglings(data), [data]);
   const foldList = useMemo(() => folds(data), [data]);
   const [showFolds, setShowFolds] = useState(false);
+
+  if (phone) return (
+    <PeoplePhone config={config} data={data} storeId={storeId} storeName={storeName} allStores={allStores} onChange={onChange} userName={userName}
+      people={people} counts={counts} noAcct={noAcct} links={links} accounts={accounts} linkFor={linkFor} acctFor={acctFor} takenAccounts={takenAccounts}
+      acctDo={acctDo} sendReset={sendReset} acctBusy={acctBusy} acctSaid={acctSaid} move={move} hire={hire} strangers={strangers} waiting={waiting}
+      wrongRead={wrongRead} foldList={foldList} earnedFor={earnedFor} roleName={roleName} monthUnitsFor={monthUnitsFor} confirmBatch={confirmBatch}
+      moving={moving} setMoving={setMoving} moveTo={moveTo} setMoveTo={setMoveTo} moveBusy={moveBusy} doTransfer={doTransfer}
+      q={q} setQ={setQ} only={only} setOnly={setOnly} sel={sel} setSel={setSel} shown={shown} groups={groups} />
+  );
 
   return (
     <>
@@ -34170,7 +34549,7 @@ const SAGE_CSS = `
       }
       /* A page reload holds every flying part invisible until the mount is done
          and the radial flight begins; each part's own animation then takes over. */
-      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card, .sm-chs) { opacity:0; }
+      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card, .sm-chs, .pe-card) { opacity:0; }
       .refresh-flash { position:fixed; inset:0; z-index:80; pointer-events:none;
         background:radial-gradient(circle at 50% 46%, rgba(255,255,255,.95), rgba(169,196,172,.35) 26%, transparent 46%);
         animation:refreshFlash .62s cubic-bezier(.2,.7,.3,1) both; }
@@ -40043,6 +40422,67 @@ const SAGE_CSS = `
 .hs-five em{ font:700 8px var(--font-mono); font-style:normal; display:block; margin-top:3px; } .hs-five em.up{ color:#8fd8af; } .hs-five em.dn{ color:#F08A80; } .hs-five em.na{ color:rgba(255,255,255,.4); }
 .hs-five i{ display:block; width:16px; height:3px; border-radius:2px; margin:0 auto 4px; }
 .pe-role{ display:flex; align-items:center; gap:9px; padding:11px 14px; background:linear-gradient(90deg,#F6E3C3,rgba(246,227,195,0) 72%); }
+/* ---- People on a phone ---- */
+.pe-std > button{ padding:7px 3px !important; }
+.pe-std span{ font-size:7.5px; letter-spacing:.1em; white-space:normal; line-height:1.2; }
+.pe-tools .fr-tool.pri{ background:var(--frp2d) !important; border-color:var(--frp2d) !important; color:#fff !important; } .pe-tools .fr-tool.pri .pix{ color:#fff; }
+.pe-card{ margin-top:12px; }
+.pe-search{ display:flex; gap:8px; padding:12px 12px 6px; }
+.pe-search input{ flex:1; min-width:0; border:1.5px solid var(--frline); border-radius:12px; padding:9px 12px; font:600 14px var(--font-ui); color:var(--frink); background:#fff; }
+.bp-page .pe-sel{ flex:0 0 auto; border:1.5px solid var(--frline); border-radius:12px; padding:9px 14px; font:700 12px var(--font-ui); color:var(--frp2d); background:#fff; }
+.bp-page .pe-sel.on{ background:#15211B; border-color:#15211B; color:#fff; }
+.pe-filters{ display:flex; gap:6px; padding:4px 12px 10px; overflow-x:auto; scrollbar-width:none; } .pe-filters::-webkit-scrollbar{ display:none; }
+.bp-page .pe-ft{ flex:0 0 auto; border:1.5px solid var(--frline); border-radius:999px; padding:6px 11px; font:700 10.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; color:var(--frink2); background:#fff; }
+.bp-page .pe-ft.on{ background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
+.pe-bulk{ margin:0 12px 10px; padding:10px 12px; border-radius:14px; background:#F3F6F2; border:1px solid var(--frline); }
+.pe-bulkn{ display:block; font:700 10px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); margin-bottom:8px; }
+.pe-bulkb{ display:flex; flex-wrap:wrap; gap:6px; }
+.bp-page .pe-bulkb .fr-b.sm{ flex:1 1 auto; padding:0 10px; min-height:36px; }
+.pe-grp{ border-top:1px solid var(--frline); } .pe-grp:first-of-type{ border-top:0; }
+.pe-role .pe-selall{ margin-left:auto; border:0; background:none; font:700 10px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--frp2d); }
+.bp-page .pe-row{ display:grid; grid-template-columns:36px minmax(0,1fr) auto; column-gap:10px; align-items:center; padding:10px 14px; width:100%; border:0; border-top:1px solid var(--frline); background:#fff; text-align:left; font-family:inherit; color:var(--frink); }
+.bp-page .pe-row.pe-on{ background:#E8F1EA; }
+.pe-row .fr-av.sm{ width:36px; height:36px; font-size:11px; }
+.pe-mid{ min-width:0; display:flex; flex-direction:column; }
+.pe-nm{ font:700 14px var(--font-display); letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--frink); }
+.pe-row.pe-left .pe-nm{ color:var(--frink3); text-decoration:line-through; }
+.pe-meta{ display:flex; gap:5px; margin-top:4px; flex-wrap:wrap; align-items:center; }
+.pe-meta .fr-st{ padding:2px 6px; }
+.fr-st.pe-acct{ background:#EAF2FF; color:#2E7DE0; } .fr-st.pe-acct.pe-off{ background:#EEF0F2; color:#5C6660; } .fr-st.pe-noacct{ background:var(--frpaper); color:var(--frink3); }
+.pe-since{ font:600 9.5px var(--font-mono); color:var(--frink3); }
+.pe-go{ font:700 9px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); }
+.pe-tick{ width:24px; height:24px; border-radius:7px; border:1.5px solid var(--frline); background:#fff; display:grid; place-items:center; color:#fff; }
+.pe-tick.on{ background:var(--frp2d); border-color:var(--frp2d); }
+/* the person's pop */
+.pe-tiles .fr-tool.on{ border-color:var(--frp2d); background:#E8F1EA; }
+.pe-facts{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:8px 16px 4px; }
+.pe-facts div{ background:var(--frpaper); border:1px solid var(--frline); border-radius:12px; padding:8px 4px; text-align:center; min-width:0; }
+.pe-facts b{ display:block; font:700 15px var(--font-display); color:var(--frink); line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pe-facts span{ display:block; font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); margin-top:3px; }
+.pl-pk.pe-earned{ border-style:dashed; color:var(--frsand2); border-color:var(--frsand); background:#FFF8EA; cursor:default; }
+.pe-selwrap select{ width:100%; box-sizing:border-box; border:1.5px solid var(--frline); border-radius:12px; padding:11px 12px; font:600 14px var(--font-ui); color:var(--frink); background:#fff; -webkit-appearance:none; appearance:none; }
+.pe-selwrap.sm{ flex:1 1 100%; } .pe-selwrap.sm select{ padding:7px 10px; font-size:12px; border-radius:10px; }
+.pe-acctline{ padding:8px 16px 4px; display:flex; flex-direction:column; gap:3px; } .pe-acctline b{ font:700 14px var(--font-ui); color:var(--frink); word-break:break-all; } .pe-acctline span{ font:500 11px var(--font-mono); color:var(--frink3); }
+.bp-defn.pe-said b{ color:var(--frok); } .bp-defn.pe-said.bad b{ color:var(--frgap); }
+.pe-acts .fr-b{ flex:1 1 44%; }
+.bp-page .pe-phone .fr-b.sm,.fr-sheet .pe-bsm{ border:1.5px solid var(--frline); } .bp-page .pe-phone .fr-b.sm.warn{ border-color:#F1C9C5; }
+/* the repair cards */
+.pe-miss{ padding:12px 12px 8px; }
+.pe-misshd b{ display:block; font:700 15px var(--font-display); color:var(--frink); line-height:1.2; } .pe-misshd span{ display:block; font:500 12px/1.45 var(--font-ui); color:var(--frink2); margin-top:4px; }
+.pe-missacts{ padding:8px 0 4px; gap:6px; } .bp-page .pe-missacts .fr-b.sm{ flex:1 1 auto; min-height:36px; }
+.pe-fix{ display:grid; grid-template-columns:32px minmax(0,1fr); column-gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--frline); }
+.pe-fixt{ min-width:0; display:flex; flex-direction:column; } .pe-fixn{ font:700 13.5px var(--font-display); color:var(--frink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .pe-fixn s{ color:var(--frink3); }
+.pe-fixt small{ font:500 10px var(--font-mono); color:var(--frink3); margin-top:2px; } .pe-fixt small b{ color:var(--frink); }
+.pe-fixa{ grid-column:2; display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; } .bp-page .pe-fixa .fr-b.sm{ min-height:32px; padding:0 10px; font-size:11.5px; }
+/* folds and the log */
+.pe-more{ margin-top:12px; }
+.bp-page .pe-toggle{ display:flex; align-items:center; gap:8px; width:100%; padding:13px 14px; border:0; border-top:1px solid var(--frline); background:#fff; font:700 13px var(--font-ui); color:var(--frink); text-align:left; }
+.pe-more .pe-toggle:first-child{ border-top:0; }
+.pe-toggle b{ margin-left:auto; font:700 10.5px var(--font-mono); padding:1px 7px; border-radius:8px; background:var(--frpaper); color:var(--frink2); } .pe-toggle .pix{ color:var(--frink3); }
+.pe-list{ padding:0 14px 10px; }
+.pe-fold{ display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--frline); } .pe-fold .pe-fixt{ flex:1; }
+.pe-logrow{ display:grid; grid-template-columns:44px minmax(0,1fr); column-gap:8px; padding:7px 0; border-top:1px solid var(--frline); font:500 12px/1.4 var(--font-ui); color:var(--frink2); }
+.pe-logrow small{ font:700 9.5px var(--font-mono); color:var(--frink3); padding-top:2px; } .pe-logrow b{ color:var(--frink); } .pe-logrow em{ grid-column:2; font:500 10px var(--font-mono); font-style:normal; color:var(--frink3); }
 .hs-head{ display:grid; grid-template-columns:minmax(0,1fr) repeat(5,34px); column-gap:6px; padding:4px 14px 6px; }
 .hs-head i{ display:block; height:4px; border-radius:2px; }
 .hs-row{ display:grid !important; grid-template-columns:minmax(0,1fr) repeat(5,34px); column-gap:6px; align-items:center; padding:10px 14px !important; width:100%; border-top:1px solid var(--frline); }
