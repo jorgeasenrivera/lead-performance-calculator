@@ -28315,12 +28315,25 @@ function XcList({ title, hint, rows, col }) {
 
 function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFiles, fileRef, activity, activityDay, setActivityDay, activityScope = "day", setActivityScope, flags = [], onHelp, onChange }) {
   const [xcheck, setXcheck] = useState(false);
+  const phone = usePhoneLayout();
   const M = data.months?.[ym()];
   const t = M?.imports?.[today()] || {};
   /* The page's own card, the same one every other page opens on. What it says
      depends on what the page is doing: seeding a past month is a different job
      from keeping today current, and the header is where that is said once. */
-  const ImportHero = ({ title, sub, chips }) => (
+  /* On a phone the same card is the compact hero every other tab wears: the
+     title chip and the day on one line, the counters, and the two tools as
+     tiles. Nothing else about the page changes; it is a light pass. */
+  const ImportHero = ({ title, sub, short, chips }) => phone ? (
+    <div className="bp-hero cx-hero imp-hero-ph">
+      <div className="cx-hh"><span className="cx-top"><PixIcon glyph="arrowdown" size={11} />{title}</span><span className="cx-days">{short || ""}</span></div>
+      <div className="imp-chips-ph">{chips}</div>
+      <div className="cx-tools">
+        <button type="button" className="fr-tool dk" onClick={() => setXcheck(true)}><PixIcon glyph="check" size={16} />Cross-check the board</button>
+        <button type="button" className="fr-tool dk" onClick={onHelp}><PixIcon glyph="question" size={16} />How to pull reports</button>
+      </div>
+    </div>
+  ) : (
     <div className="s2-hero import-hero">
       <i className="s2-noise" aria-hidden="true" />
       <div className="s2-tube">
@@ -28371,8 +28384,9 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
     const monthStamp = mStats.map((s) => s && s.activityMTD && s.activityMTD.uploadedAt).filter(Boolean).sort().slice(-1)[0] || null;
     const fmtStamp = (s) => new Date(s).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
     return (
-      <div className="import">
+      <div className={"import" + (phone ? " imp-ph" : "")}>
         <ImportHero title="Daily Activity import"
+          short={monthMode ? monthLabel(aMonth) : dayLabel(aDay)}
           sub={`The Check Out sheet is built from this · ${monthMode ? monthLabel(aMonth) : dayLabel(aDay)}`}
           chips={<span className="fh-chip">{monthMode ? "whole month" : aDay === today() ? "today" : "backfill"}</span>} />
         <div className="import-grid">
@@ -28462,9 +28476,10 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
     { k: "delivery-campaign", n: "Campaign Delivery Summary", when: seedT["delivery-campaign"] ? "in" : "units only, optional" },
   ];
   return (
-    <div className="import">
+    <div className={"import" + (phone ? " imp-ph" : "")}>
       <ImportHero
         title={seeding ? "Imports for " + seedMonthLabel : "Imports"}
+        short={seeding ? "a past month" : new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
         sub={seeding ? "Seeding a past month · these land in that month, not this one"
           : `${new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · the dashboard flips channels the moment a report lands`}
         chips={<>
@@ -38042,6 +38057,25 @@ const SAGE_CSS = `
 .mc-shell.mc-light .mc-offc{ background:#FFFDF8; color:#1F2A22; }
 .mc-light .mc-pill{ background:#15211B; border-color:#15211B; }
 .mc-shell.mc-light .mc-sheet{ background:#FFFDF8; color:#1F2A22; border-top-color:#D0821E; } .mc-light .mc-x{ background:rgba(31,42,34,.08); color:#1F2A22; } .mc-light .mc-set-row{ border-bottom-color:rgba(31,42,34,.1); } .mc-light .mc-set-row .hint{ color:rgba(31,42,34,.55); }
+
+/* ---- Import on a phone: a light pass ---- */
+.imp-hero-ph{ margin:0 12px; }
+.imp-chips-ph{ display:flex; gap:8px; align-items:center; margin-top:12px; position:relative; z-index:1; flex-wrap:wrap; }
+.imp-chips-ph .fh-chip{ background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.14); color:#fff; font:700 10px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; padding:7px 10px; border-radius:10px; }
+.imp-chips-ph .seed-month{ flex:1; min-width:0; background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.14); color:#fff; border-radius:10px; padding:6px 10px; font:700 12px var(--font-ui); color-scheme:dark; }
+.imp-ph{ position:relative; z-index:1; padding:0 0 110px; }
+.imp-ph .dropzone.dz2{ margin:12px; padding:18px 16px; border-radius:20px; }
+.imp-ph .dz2-ico{ width:28px; height:28px; }
+.imp-ph .dz2-t{ font-size:16px; margin-top:8px; } .imp-ph .dz2-s{ font-size:12px; line-height:1.45; }
+.imp-ph .import-grid{ display:flex; flex-direction:column; gap:12px; padding:0 12px; }
+.imp-ph .imp-panel, .imp-ph .imp-card, .imp-ph .dropzone{ border-radius:20px; }
+.imp-ph .imp-panel{ padding:14px; }
+.imp-ph .imp-row b{ font-size:14px; } .imp-ph .imp-row .when{ font-size:10px; }
+.imp-ph .imp-scope{ flex-wrap:wrap; gap:6px; } .imp-ph .imp-date{ flex:1 1 100%; }
+.imp-ph .import-log{ margin:12px; }
+.imp-ph > .explain, .imp-ph > details{ margin:12px; }
+.imp-ph .flag-banner{ margin:12px; }
+@media (max-width:700px){ .tab-page:has(> .imp-ph){ padding:10px 0 0; } }
 /* ---- the floor, final ----------------------------------------------------- */
 /* The approved layout breathes across the whole screen: the count, the line and
    the clocks center in the space above the actions, and the actions keep clear
