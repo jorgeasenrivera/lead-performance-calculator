@@ -1779,15 +1779,31 @@ async function saveShared(key, value) {
 
    Returns { ok, rev, conflictsResolved } so a caller can tell a genuine failure
    from a save that simply took two goes. */
+/* The last server copy this browser saw for a key, with its revision. A save
+   needs the server copy to merge against, and it used to download the whole
+   document to get it, every save, on every browser. Most saves follow a save
+   from the same browser and nothing else has written in between: the revision
+   says so in a few bytes, and the copy we already hold is the server's. */
+const casCache = new Map();
 async function saveStoreCAS(key, build, tries = 8) {
   if (!supabase) { lastSaveError = "No database client"; return { ok: false, rev: null }; }
   let conflicts = 0;
   for (let attempt = 0; attempt < tries; attempt++) {
     try {
-      const { data: row, error: readErr } = await supabase
-        .from("app_data").select("value").eq("key", key).maybeSingle();
-      if (readErr) throw readErr;
-      const server = row ? row.value : null;
+      let server;
+      const cached = casCache.get(key);
+      if (cached) {
+        const { data: r, error: e0 } = await supabase.from("app_data").select("rev:value->>rev").eq("key", key).maybeSingle();
+        if (e0) throw e0;
+        if (r && String(r.rev ?? "") === String(cached.rev ?? "")) server = cached.value;
+      }
+      if (server === undefined) {
+        const { data: row, error: readErr } = await supabase
+          .from("app_data").select("value").eq("key", key).maybeSingle();
+        if (readErr) throw readErr;
+        server = row ? row.value : null;
+        if (server) casCache.set(key, { rev: server.rev ?? null, value: server });
+      }
       const rev = (server && Number(server.rev)) || 0;
       const value = { ...build(server), rev: rev + 1 };
 
@@ -1800,6 +1816,7 @@ async function saveStoreCAS(key, build, tries = 8) {
           throw error;
         }
         lastSaveError = null;
+        casCache.set(key, { rev: value.rev, value });
         return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
       }
 
@@ -1816,9 +1833,11 @@ async function saveStoreCAS(key, build, tries = 8) {
       if (error) throw error;
       if (hit && hit.length) {
         lastSaveError = null;
+        casCache.set(key, { rev: value.rev, value });
         return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
       }
       // Somebody saved in between. Their work stands; go again from their copy.
+      casCache.delete(key);
       conflicts++;
       await new Promise((r) => setTimeout(r, 90 * (attempt + 1) + Math.random() * 120));
     } catch (e) {
@@ -6111,10 +6130,11 @@ function QueueBoard({ storeId, kind }) {
     const pull = async () => {
       try {
         const d = kind === "floor"
-          ? await loadFloorRow(storeId, today())
-          : await loadQueueRow(storeId, today(), kind === "online" ? "online" : "line");
+          ? await loadRowIfChanged(FLOOR_TABLE, floorRowId(storeId, today()))
+          : await loadRowIfChanged(QUEUE_TABLE, queueRowId(storeId, today(), kind === "online" ? "online" : "line"));
         if (dead) return;
         if (d === undefined) { setErr(true); return; }   // read failed: hold what is shown
+        if (d === "same") { setErr(false); return; }
         setRow(d || null); setErr(false);
       } catch (e) { if (!dead) setErr(true); }
     };
@@ -10344,8 +10364,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
   const refetch = useCallback(async () => {
-    const got = await loadQueueRow(store, date, variant.kind);
-    if (got === undefined) return;
+    const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store, date, variant.kind));
+    if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
@@ -11461,8 +11481,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   }, [data.roster, config.roles]);
 
   const refetch = useCallback(async () => {
-    const got = await loadQueueRow(store.id, date, variant.kind);
-    if (got === undefined) return;              // the read failed; keep what is on screen
+    const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store.id, date, variant.kind));
+    if (got === undefined || got === "same") return;   // failed, or nothing moved: keep what is on screen
     setRow(got || null);
   }, [store.id, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store.id, date, fn, variant.kind);
@@ -11926,6 +11946,28 @@ function FFlagIcon({ status, className }) {
 }
 
 /* ---- Supabase access: per-day floor row (floor_public) ---- */
+/* ---- a poll that costs a stamp, not a row ----
+   Every phone on the floor and every board on the wall asked for the whole
+   queue row every five seconds, all day: the line, the roster snapshot and the
+   day's history, tens of kilobytes a time, most of it unchanged since the last
+   ask. That was the egress bill. Now a poll reads updated_at (a few bytes) and
+   fetches the row only when the stamp has moved. "same" means nothing changed;
+   undefined means the read failed and the screen should hold what it has. */
+const rowStamps = new Map();
+async function loadRowIfChanged(table, id, tag) {
+  if (!supabase) return undefined;
+  const k = tag || (table + "|" + id);
+  try {
+    const { data: s, error: e1 } = await supabase.from(table).select("updated_at").eq("id", id).maybeSingle();
+    if (e1) throw e1;
+    const stamp = s ? (s.updated_at || "none") : "missing";
+    if (rowStamps.has(k) && rowStamps.get(k) === stamp) return "same";
+    const { data, error } = await supabase.from(table).select("data,updated_at").eq("id", id).maybeSingle();
+    if (error) throw error;
+    rowStamps.set(k, data ? (data.updated_at || "none") : "missing");
+    return data ? data.data : null;
+  } catch (e) { console.error("poll", table, id, e); return undefined; }
+}
 async function loadFloorRow(store, date) {
   if (!supabase) return undefined;
   try {
@@ -12446,8 +12488,9 @@ function AssistWatcher({ store, meName }) {
     let dead = false;
     const poll = async () => {
       try {
-        const row = await loadFloorRow(store, today());
-        if (!dead) setAsks(row ? activeAssists(row) : []);
+        const row = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, today()), "assist|" + store);
+        if (dead || row === undefined || row === "same") return;
+        setAsks(row ? activeAssists(row) : []);
       } catch (e) { /* the next poll tells the truth */ }
     };
     poll();
@@ -12988,6 +13031,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       <McSpine rows={rows} />
 
       <div className={"mc-hero" + (paceState ? " mc-" + paceState : "")}>
+        {paceState && <i className="mc-glow" aria-hidden="true" />}
         <span className="mc-statecol">
           {paceLabel && <span className="mc-state">{paceLabel}</span>}
           {closing.length > 0 && (
@@ -13319,8 +13363,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
   const refetch = useCallback(async () => {
-    const got = await loadFloorRow(store, date);
-    if (got === undefined) return;
+    const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, date));
+    if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date]);
   useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
@@ -14956,8 +15000,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   const loadIds = useCallback(async () => setIdentities(await loadQueueIdentities(store.id)), [store.id]);
   const refetch = useCallback(async () => {
-    const got = await loadFloorRow(store.id, date);
-    if (got === undefined) return;
+    const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store.id, date));
+    if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store.id, date]);
 
@@ -19474,14 +19518,21 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   // so the server's older copy can never land on top of a change being written.
   const savingRef = useRef(saving);
   savingRef.current = saving;
+  const plateStampRef = useRef(null);
   useEffect(() => {
     if (!storeId || !onRemote) return;
     let dead = false;
     const pull = async () => {
       if (dead || savingRef.current || document.hidden) return;
       try {
+        /* The stamp first: the plate fields are the store's whole plate log, and
+           reading them every ten seconds when nothing had moved was most of what
+           this screen cost. */
+        const stamp = await loadStoreStamp(storeKey(storeId));
+        if (dead || savingRef.current) return;
+        if (stamp && stamp === plateStampRef.current) return;
         const got = await loadPlatesOnly(storeKey(storeId));
-        if (!dead && got && !savingRef.current) onRemote(storeId, got.plates, got.registry);
+        if (!dead && got && !savingRef.current) { plateStampRef.current = stamp; onRemote(storeId, got.plates, got.registry); }
       } catch (e) { /* a blip: the next tick tries again */ }
     };
     pull();
@@ -34136,11 +34187,11 @@ const SAGE_CSS = `
       /* A wave off the Import tab while the day's uploads are still outstanding.
          It stops the moment they land, and stops if you are already on the tab. */
       .seg-wave::after { content:""; position:absolute; inset:0; border-radius:9px; pointer-events:none;
+        border:2px solid color-mix(in srgb, var(--p2) 45%, transparent); will-change:transform,opacity;
         animation: segWave 2.4s var(--ease) infinite; }
       @keyframes segWave {
-        0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p2) 40%, transparent); }
-        70%  { box-shadow: 0 0 0 11px color-mix(in srgb, var(--p2) 0%, transparent); }
-        100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--p2) 0%, transparent); }
+        0%   { transform:scale(1); opacity:.9; }
+        70%,100% { transform:scale(1.28); opacity:0; }
       }
 
       /* ---- page transition ---- */
@@ -36868,7 +36919,6 @@ const SAGE_CSS = `
 @keyframes qpop{from{opacity:0;transform:translateY(14px) scale(.98);}to{opacity:1;transform:none;}}
 
 /* live "you're in line" */
-@keyframes qpulse{0%,100%{box-shadow:0 0 0 0 rgba(55,193,126,.5);}50%{box-shadow:0 0 0 16px rgba(55,193,126,0);}}
 .spin-logo{width:36px;height:36px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#4c8bf5;animation:qspin .8s linear infinite;}
 @keyframes qspin{to{transform:rotate(360deg);}}
 
@@ -36954,7 +37004,7 @@ const SAGE_CSS = `
    the eye lands. */
 .qsel-pill::before{ content:""; position:absolute; inset:0; pointer-events:none;
   background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.26) 50%, transparent 74%);
-  transform:translateX(-120%); animation:qsweep 5.4s ease-in-out infinite; animation-delay:var(--qd,0s); }
+  transform:translateX(-120%); animation:qsweep 5.4s ease-in-out infinite; animation-delay:var(--qd,0s); will-change:transform; }
 @keyframes qsweep{ 0%{ transform:translateX(-120%); } 34%,100%{ transform:translateX(120%); } }
 .qsel-pill:hover{ transform:translateY(-1px); filter:brightness(1.06); }
 .qsel-pill:active{ transform:translateY(0); }
@@ -37039,7 +37089,6 @@ const SAGE_CSS = `
 /* banner */
 
 /* stat strip -> white / softly tinted cards, big colored numbers */
-@keyframes mfGlow{ 0%,100%{ box-shadow:0 14px 30px -12px var(--glow); } 50%{ box-shadow:0 18px 42px -8px var(--glow); } }
 
 /* buttons -> light pills */
 .mf .btn{ background:#fff; border:1px solid var(--mfline); color:var(--mfink); border-radius:12px; font-family:var(--mffont); font-weight:500; box-shadow:0 1px 2px rgba(16,32,52,.05); transition:.15s; }
@@ -37959,12 +38008,12 @@ const SAGE_CSS = `
 .mc{ position:relative; }
 .mc > *:not(.mc-aurora):not(.mc-spine){ position:relative; z-index:1; }
 .mc-aurora{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
-.mc-aurora i{ position:absolute; width:460px; height:460px; border-radius:50%; filter:blur(54px); opacity:.75; mix-blend-mode:screen; display:block; }
-.mc-aurora i:nth-child(1){ left:-140px; bottom:-120px; background:radial-gradient(closest-side,#567D61,transparent 70%); animation:mcDrift1 18s ease-in-out infinite; }
-.mc-aurora i:nth-child(2){ right:-180px; bottom:40px; background:radial-gradient(closest-side,#2E4A38,transparent 70%); animation:mcDrift2 24s ease-in-out infinite; }
-.mc-aurora i:nth-child(3){ left:60px; top:120px; width:300px; height:300px; background:radial-gradient(closest-side,rgba(228,201,141,.35),transparent 70%); animation:mcDrift3 28s ease-in-out infinite; opacity:.35; }
-.mc-aurora i:nth-child(4){ right:-120px; top:-140px; width:380px; height:380px; background:radial-gradient(closest-side,rgba(143,216,175,.45),transparent 70%); animation:mcDrift4 26s ease-in-out infinite; opacity:.45; }
-.mc-aurora u{ position:absolute; inset:-60px; display:block; background:radial-gradient(circle,rgba(255,255,255,.16) 1px,transparent 1.6px) 0 0/22px 22px; opacity:.5; animation:mcGrid 30s linear infinite, mcBreathe 7s ease-in-out infinite; -webkit-mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent); mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent); }
+.mc-aurora i{ position:absolute; width:520px; height:520px; border-radius:50%; opacity:.7; display:block; will-change:transform; }
+.mc-aurora i:nth-child(1){ left:-140px; bottom:-120px; background:radial-gradient(closest-side,rgba(86,125,97,.9),rgba(86,125,97,.35) 40%,transparent 72%); animation:mcDrift1 18s ease-in-out infinite; }
+.mc-aurora i:nth-child(2){ right:-180px; bottom:40px; background:radial-gradient(closest-side,rgba(46,74,56,.95),rgba(46,74,56,.4) 40%,transparent 72%); animation:mcDrift2 24s ease-in-out infinite; }
+.mc-aurora i:nth-child(3){ left:60px; top:120px; width:340px; height:340px; background:radial-gradient(closest-side,rgba(228,201,141,.35),rgba(228,201,141,.12) 45%,transparent 72%); animation:mcDrift3 28s ease-in-out infinite; opacity:.35; }
+.mc-aurora i:nth-child(4){ right:-120px; top:-140px; width:420px; height:420px; background:radial-gradient(closest-side,rgba(143,216,175,.45),rgba(143,216,175,.15) 45%,transparent 72%); animation:mcDrift4 26s ease-in-out infinite; opacity:.45; }
+.mc-aurora u{ position:absolute; inset:-60px; display:block; will-change:transform,opacity; background:radial-gradient(circle,rgba(255,255,255,.16) 1px,transparent 1.6px) 0 0/22px 22px; opacity:.5; animation:mcGrid 30s linear infinite, mcBreathe 7s ease-in-out infinite; -webkit-mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent); mask:linear-gradient(180deg,transparent,#000 30%,#000 70%,transparent); }
 .mc-aurora u:nth-child(6){ background-position:11px 11px; animation-delay:0s,-3.5s; -webkit-mask:radial-gradient(60% 40% at 30% 30%,#000,transparent 70%); mask:radial-gradient(60% 40% at 30% 30%,#000,transparent 70%); }
 @keyframes mcDrift1{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(130px,-220px) scale(1.2); } }
 @keyframes mcDrift2{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-170px,-140px) scale(.85); } }
@@ -37993,22 +38042,27 @@ const SAGE_CSS = `
 .mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
 .mc-pip.hd{ width:28px; height:28px; font-size:8px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
 .mc-pip.off{ opacity:.45; }
-.mc-pip.you{ background:#E4C98D; color:#12251b; text-shadow:none; box-shadow:0 0 12px rgba(228,201,141,.95); animation:mcYou 2.4s ease-in-out infinite; }
-.mc-pip.you.g{ background:#8FD8AF; box-shadow:0 0 12px rgba(143,216,175,.95); animation:mcYouG 1.6s ease-in-out infinite; }
-@keyframes mcYou{ 50%{ box-shadow:0 0 18px rgba(228,201,141,1); } } @keyframes mcYouG{ 50%{ box-shadow:0 0 20px rgba(143,216,175,1); } }
+.mc-pip.you{ background:#E4C98D; color:#12251b; text-shadow:none; box-shadow:0 0 12px rgba(228,201,141,.95); }
+.mc-pip.you::after{ content:""; position:absolute; inset:-2px; border-radius:50%; box-shadow:0 0 18px 4px rgba(228,201,141,.9); animation:mcGlowOp 2.4s ease-in-out infinite; will-change:opacity; pointer-events:none; }
+.mc-pip.you.g{ background:#8FD8AF; box-shadow:0 0 12px rgba(143,216,175,.95); }
+.mc-pip.you.g::after{ box-shadow:0 0 20px 4px rgba(143,216,175,.9); animation-duration:1.6s; }
 .mc-railw > em{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.16em; color:rgba(255,255,255,.55); writing-mode:vertical-rl; font-style:normal; }
 /* hero: pace glow, CRT roll, the trail */
 .mc-hero{ transition:box-shadow .6s, border-color .6s; }
-.mc-hero::before{ content:""; position:absolute; left:0; right:0; top:-30%; height:26%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.035) 35%,rgba(255,255,255,.11) 50%,rgba(0,0,0,.10) 62%,transparent); animation:mcCrt 7s linear infinite; z-index:1; pointer-events:none; mix-blend-mode:screen; }
-.mc-hero::after{ animation:mcScan .8s steps(3) infinite; }
+.mc-hero::before{ content:""; position:absolute; left:0; right:0; top:-30%; height:26%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.035) 35%,rgba(255,255,255,.11) 50%,rgba(0,0,0,.10) 62%,transparent); animation:mcCrt 7s linear infinite; z-index:1; pointer-events:none; will-change:transform; }
+.mc-hero::after{ top:-3px; animation:mcScan .8s steps(3) infinite; will-change:transform; }
 @keyframes mcCrt{ 0%{ transform:translateY(0); } 70%,100%{ transform:translateY(500%); } }
-@keyframes mcScan{ from{ background-position:0 0; } to{ background-position:0 3px; } }
-.mc-hero.mc-behind{ border-color:rgba(240,138,128,.6); box-shadow:0 0 0 4px rgba(216,72,60,.12),0 16px 40px -14px rgba(216,72,60,.55); animation:mcGlowR 4s ease-in-out infinite; }
-.mc-hero.mc-on{ border-color:rgba(228,201,141,.65); box-shadow:0 0 0 4px rgba(228,201,141,.12),0 16px 40px -14px rgba(228,201,141,.55); animation:mcGlowS 4s ease-in-out infinite; }
-.mc-hero.mc-ahead{ border-color:rgba(143,216,175,.65); box-shadow:0 0 0 4px rgba(143,216,175,.12),0 16px 40px -14px rgba(143,216,175,.6); animation:mcGlowG 4s ease-in-out infinite; }
-@keyframes mcGlowR{ 50%{ box-shadow:0 0 0 5px rgba(216,72,60,.09),0 17px 44px -13px rgba(216,72,60,.65); } }
-@keyframes mcGlowS{ 50%{ box-shadow:0 0 0 5px rgba(228,201,141,.09),0 17px 44px -13px rgba(228,201,141,.6); } }
-@keyframes mcGlowG{ 50%{ box-shadow:0 0 0 5px rgba(143,216,175,.09),0 17px 44px -13px rgba(143,216,175,.7); } }
+@keyframes mcScan{ from{ transform:translateY(0); } to{ transform:translateY(3px); } }
+/* The glow is its own layer whose opacity breathes. Animating a box-shadow
+   repaints the card every frame; fading a layer costs the compositor a blend. */
+.mc-hero.mc-behind{ border-color:rgba(240,138,128,.6); }
+.mc-hero.mc-on{ border-color:rgba(228,201,141,.65); }
+.mc-hero.mc-ahead{ border-color:rgba(143,216,175,.65); }
+.mc-glow{ position:absolute; inset:-1px; border-radius:inherit; pointer-events:none; z-index:0; will-change:opacity; animation:mcGlowOp 4s ease-in-out infinite; }
+.mc-behind .mc-glow{ box-shadow:0 0 0 5px rgba(216,72,60,.11),0 17px 44px -13px rgba(216,72,60,.65); }
+.mc-on .mc-glow{ box-shadow:0 0 0 5px rgba(228,201,141,.11),0 17px 44px -13px rgba(228,201,141,.6); }
+.mc-ahead .mc-glow{ box-shadow:0 0 0 5px rgba(143,216,175,.11),0 17px 44px -13px rgba(143,216,175,.7); }
+@keyframes mcGlowOp{ 0%,100%{ opacity:.75; } 50%{ opacity:1; } }
 .mc-statecol{ position:absolute; right:12px; top:12px; z-index:2; display:flex; flex-direction:column; align-items:center; gap:12px; }
 .mc-statecol .mc-icobtn{ margin:0; }
 .mc-state{ font-family:var(--sfmono); font-size:8.5px; font-weight:700; letter-spacing:.14em; padding:3px 8px; border-radius:7px; white-space:nowrap; }
@@ -38020,7 +38074,7 @@ const SAGE_CSS = `
 .mc-trail .area{ transform-origin:left; animation:mcGrow 1.2s cubic-bezier(.2,.8,.3,1) both .3s; }
 .mc-trail .edge{ fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .mc-trail .todayline{ stroke:rgba(228,201,141,.7); stroke-width:1.5; } .mc-behind .mc-trail .todayline{ stroke:rgba(240,138,128,.7); } .mc-ahead .mc-trail .todayline{ stroke:rgba(143,216,175,.7); }
-.mc-trail .todaydot{ fill:#fff; animation:mcDot 2.4s ease-in-out infinite; } @keyframes mcDot{ 50%{ r:6; } }
+.mc-trail .todaydot{ fill:#fff; transform-box:fill-box; transform-origin:center; animation:mcDot 2.4s ease-in-out infinite; } @keyframes mcDot{ 50%{ transform:scale(1.33); } }
 .mc-trail .goalring{ fill:none; stroke:#E4C98D; stroke-width:2; }
 @keyframes mcGrow{ from{ transform:scaleX(0); } }
 .mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between; font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); }
@@ -38036,15 +38090,15 @@ const SAGE_CSS = `
 .mc-today .mc-tx .st{ color:rgba(42,36,24,.55); } .mc-today .mc-row + .mc-row{ border-top-color:rgba(42,36,24,.12); }
 .mc-today .mc-tx .bar{ background:rgba(42,36,24,.12); } .mc-today .mc-tx .bar i{ background:linear-gradient(90deg,#D0821E,#E8A93C); }
 .mc-today .mc-made{ background:#1E8A4C; color:#fff; }
-.mc-made::before{ content:""; position:absolute; inset:0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,transparent 1px 3px); pointer-events:none; animation:mcScan .8s steps(3) infinite; }
-.mc-made::after{ width:auto; left:0; right:0; top:-120%; bottom:auto; height:120%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.05) 35%,rgba(255,255,255,.22) 50%,rgba(0,0,0,.12) 62%,transparent); animation:mcCrt 5.5s linear infinite; mix-blend-mode:screen; }
+.mc-made::before{ content:""; position:absolute; inset:-3px 0 0 0; background:repeating-linear-gradient(0deg,rgba(255,255,255,.07) 0 1px,transparent 1px 3px); pointer-events:none; animation:mcScan .8s steps(3) infinite; will-change:transform; }
+.mc-made::after{ width:auto; left:0; right:0; top:-120%; bottom:auto; height:120%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.05) 35%,rgba(255,255,255,.22) 50%,rgba(0,0,0,.12) 62%,transparent); animation:mcCrt 5.5s linear infinite; will-change:transform; }
 .mc-row:nth-child(2) .mc-made::after{ animation-delay:-2s; }
 /* points, near black */
 .mc-shell .mc-card.mc-pts{ background:#0B100D; border-color:rgba(240,138,128,.28); box-shadow:inset 0 0 0 1px rgba(240,138,128,.08); }
 .mc-pts .mc-week .c.ok{ background:rgba(94,200,140,.28); } .mc-pts .mc-week .c.bad{ background:#D8483C; color:#fff; }
 .mc-pts .mc-li.done .ck{ background:#1E8A4C; border-color:#1E8A4C; }
 .mc-week .c.now{ animation:mcBlink 3.2s ease-in-out infinite; } @keyframes mcBlink{ 50%{ border-color:#E4C98D; color:#E4C98D; } }
-.mc-spine .sp b{ animation:mcPulse 2.4s ease-in-out infinite; } @keyframes mcPulse{ 50%{ box-shadow:0 0 16px rgba(143,216,175,1); } }
+.mc-spine .sp b::after{ content:""; position:absolute; inset:-2px; border-radius:50%; box-shadow:0 0 16px 3px rgba(143,216,175,.95); animation:mcGlowOp 2.4s ease-in-out infinite; will-change:opacity; }
 /* the board, a podium */
 .mc-shell .mc-card.mc-board{ background:rgba(169,196,172,.12); border-color:rgba(169,196,172,.35); }
 .mc-pod{ display:flex; gap:7px; }
@@ -38060,7 +38114,7 @@ const SAGE_CSS = `
    hero takes the site's hero gradient, Today stays sand paper, Points goes ink
    so its chips still read, the board goes sage on white. */
 .q-page.sf.mc-shell.mc-light{ background:#F1EEE4; --sfink:#1F2A22; --sfink2:#4A5A4E; --sfink3:#7E8A80; --sfcard:#FFFDF8; --sfstroke:rgba(31,42,34,.1); color:#1F2A22; }
-.mc-light .mc-aurora i{ mix-blend-mode:multiply; opacity:.5; } .mc-light .mc-aurora i:nth-child(1){ background:radial-gradient(closest-side,#A9C4AC,transparent 70%); } .mc-light .mc-aurora i:nth-child(2){ background:radial-gradient(closest-side,#CFDCCF,transparent 70%); } .mc-light .mc-aurora i:nth-child(3){ background:radial-gradient(closest-side,rgba(228,201,141,.8),transparent 70%); opacity:.45; } .mc-light .mc-aurora i:nth-child(4){ background:radial-gradient(closest-side,#B9D1BD,transparent 70%); opacity:.5; }
+.mc-light .mc-aurora i{ opacity:.45; } .mc-light .mc-aurora i:nth-child(1){ background:radial-gradient(closest-side,#A9C4AC,transparent 70%); } .mc-light .mc-aurora i:nth-child(2){ background:radial-gradient(closest-side,#CFDCCF,transparent 70%); } .mc-light .mc-aurora i:nth-child(3){ background:radial-gradient(closest-side,rgba(228,201,141,.8),transparent 70%); opacity:.45; } .mc-light .mc-aurora i:nth-child(4){ background:radial-gradient(closest-side,#B9D1BD,transparent 70%); opacity:.5; }
 .mc-light .mc-aurora u{ background-image:radial-gradient(circle,rgba(31,42,34,.22) 1px,transparent 1.6px); }
 .mc-light .mc-calhead,.mc-light .mc-date{ color:#1F2A22; } .mc-light .mc-cal s{ background:rgba(31,42,34,.12); } .mc-light .mc-cal s.h1{ background:rgba(86,125,97,.35); } .mc-light .mc-cal s.h2{ background:rgba(86,125,97,.6); } .mc-light .mc-cal s.h3{ background:#567D61; } .mc-light .mc-cal s.best{ background:#D0821E; box-shadow:0 0 5px rgba(208,130,30,.5); } .mc-light .mc-cal s.today{ outline-color:#1F2A22; } .mc-light .mc-cal s.off{ background:rgba(31,42,34,.06); } .mc-light .mc-cal s.hol{ box-shadow:inset 0 0 0 1.5px rgba(31,42,34,.3); }
 .mc-light .mc-aheadlbl,.mc-light .mc-asof,.mc-light .mc-qmini b{ color:rgba(31,42,34,.6); } .mc-light .mc-chip2{ border-color:rgba(31,42,34,.18); background:rgba(31,42,34,.05); color:rgba(31,42,34,.7); } .mc-light .mc-chip2 .pix{ color:#D0821E; }
@@ -38673,12 +38727,14 @@ const SAGE_CSS = `
 .fbp-sub{font:600 7.5px var(--font-ui);color:rgba(255,255,255,.7);line-height:1.1;}
 .fbp-flag{position:absolute;top:-18px;left:50%;transform:translateX(-50%);white-space:nowrap;
   font:700 9px var(--font-mono);letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:99px;color:#fff;background:#8A5A10;}
-.fbp-tbl.fly{background:#E8A93C;border-color:#fff;animation:fbaPulse 1.4s ease-in-out infinite;}
-.fbp-tbl.to{background:#D8483C;border-color:#fff;animation:fbaPulseR 1s ease-in-out infinite;}
+.fbp-tbl.fly{background:#E8A93C;border-color:#fff;}
+.fbp-tbl.to{background:#D8483C;border-color:#fff;}
+.fbp-tbl.fly::after,.fbp-tbl.to::after{content:"";position:absolute;inset:-2px;border-radius:13px;pointer-events:none;border:3px solid rgba(232,169,60,.55);will-change:transform,opacity;animation:fbaRing 1.4s ease-in-out infinite;}
+.fbp-tbl.to::after{border-color:rgba(216,72,60,.55);animation-duration:1s;}
+@keyframes fbaRing{0%,100%{transform:scale(1);opacity:0;}50%{transform:scale(1.18);opacity:1;}}
 .fbp-tbl.to .fbp-flag{background:#9E2417;}
 .fbp-tbl.claimed{animation:none;box-shadow:0 0 0 4px rgba(143,227,179,.5);}
-@keyframes fbaPulse{0%,100%{box-shadow:0 0 0 0 rgba(232,169,60,0);}50%{box-shadow:0 0 0 9px rgba(232,169,60,.3);}}
-@keyframes fbaPulseR{0%,100%{box-shadow:0 0 0 0 rgba(216,72,60,0);}50%{box-shadow:0 0 0 9px rgba(216,72,60,.28);}}
+
 @media (prefers-reduced-motion: reduce){.fbp-tbl{animation:none !important;transition:none;}}
 
 /* ---- the Console card on the manager board ---- */
@@ -39126,7 +39182,14 @@ const SAGE_CSS = `
         align-items:flex-end; gap:10px; }
       .s2-imp { display:flex; align-items:center; gap:9px; background:#fff; color:var(--ink);
         border:0; border-radius:12px; padding:6px 12px 6px 7px; cursor:pointer; text-align:left;
-        font-family:var(--font-ui); animation:s2flash 1.6s ease-in-out infinite; transition:transform .18s ease; }
+        font-family:var(--font-ui); position:relative; transition:transform .18s ease; }
+      /* Finite, like the dots beside it: this button sits inside the .s2-tube's
+         displacement filter, and anything that moves in there makes the browser
+         re-run the filter over the whole hero every frame. Eight flashes to catch
+         the eye, on a layer that fades, then the hero holds still. */
+      .s2-imp::after { content:""; position:absolute; inset:0; border-radius:12px; pointer-events:none;
+        box-shadow:0 0 14px 4px rgba(242,193,78,.65); opacity:0; animation:s2flashOp 1.6s ease-in-out 8; will-change:opacity; }
+      .s2-imp.done::after { display:none; }
       .s2-imp:hover { transform:translateY(-2px); }
       .s2-imp.done { animation:none; }
       .s2-imp-ico { width:26px; height:26px; border-radius:8px; background:#F2C14E; color:#5A3D00; flex:0 0 auto;
@@ -39135,8 +39198,7 @@ const SAGE_CSS = `
       .s2-imp-tx b { display:block; font-size:11px; font-weight:700; line-height:1.25; }
       .s2-imp-tx i { display:block; font-style:normal; font-size:8.5px; color:var(--ink-2); line-height:1.3;
         max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      @keyframes s2flash { 0%,100% { box-shadow:0 0 0 0 rgba(242,193,78,0); }
-        50% { box-shadow:0 0 14px 4px rgba(242,193,78,.65); } }
+      @keyframes s2flashOp { 0%,100% { opacity:0; } 50% { opacity:1; } }
       .s2-rota { display:flex; align-items:center; cursor:default;
         background:rgba(255,255,255,.15); border-radius:12px; padding:9px 13px; }
       .s2-rota > b { font:700 13px var(--font-mono); color:#fff; white-space:nowrap; }
@@ -39214,12 +39276,13 @@ const SAGE_CSS = `
            re-run the whole displacement filter over the whole hero -- on the
            CPU, every frame, forever. Thirteen seconds of pulse to catch the
            eye, then the tube holds still and the filter result is cached. */
-        animation:s2vpulse 2.6s ease-in-out 5; }
+        position:relative; }
+      .s2-vdot::after { content:""; position:absolute; inset:0; border-radius:50%; box-shadow:0 0 0 6px var(--vglow, transparent);
+        animation:s2vpulseOp 2.6s ease-in-out 5; will-change:opacity; opacity:0; }
       .s2-v-g { background:#8FE3B3; --vglow:rgba(143,227,179,.5); }
       .s2-v-y { background:#F2C57C; --vglow:rgba(242,197,124,.5); }
       .s2-v-r { background:#FFA294; --vglow:rgba(255,162,148,.5); }
-      @keyframes s2vpulse { 0%,100% { box-shadow:0 0 0 0 var(--vglow, transparent); }
-        55% { box-shadow:0 0 0 6px transparent; } }
+      @keyframes s2vpulseOp { 0%,100% { opacity:0; } 30% { opacity:.6; } }
       .s2-fchip { border:0; border-radius:99px; padding:5px 11px; cursor:pointer;
         font:600 10px var(--font-ui); background:rgba(255,255,255,.15); color:#fff; }
       .s2-fchip b { font-family:var(--font-mono); }
@@ -40973,12 +41036,12 @@ const SAGE_CSS = `
 .fr-planin .fbp{ height:340px; }
 .fr-planin .fbp-tbl.seated{ background:var(--frsand); border-color:var(--frsand); color:#2A2418; }
 .fr-planin .fbp-tbl.seated .fbp-sub{ color:rgba(42,36,24,.75); }
-.fr-planin .fbp-tbl.glow{ box-shadow:0 0 0 5px rgba(228,201,141,.28),0 0 22px rgba(228,201,141,.55); animation:frGlow 2.2s ease-in-out infinite alternate; }
+.fr-planin .fbp-tbl.glow{ box-shadow:0 0 0 5px rgba(228,201,141,.28),0 0 22px rgba(228,201,141,.55); }
+.fr-planin .fbp-tbl.glow::after{ content:""; position:absolute; inset:-2px; border-radius:13px; pointer-events:none; box-shadow:0 0 0 7px rgba(228,201,141,.16),0 0 30px rgba(228,201,141,.7); animation:mcGlowOp 2.2s ease-in-out infinite; will-change:opacity; }
 .fr-planin .fbp-tbl.seated.longsit{ background:#D0821E; border-color:#D0821E; color:#fff; }
 .fr-planin .fbp-tbl.moving{ outline:3px solid #fff; outline-offset:2px; }
 .fr-planin .fbp-tbl.movetarget{ border-style:dashed; border-color:rgba(255,255,255,.7); }
 .fr-planin .fbp-tbl:hover{ transform:none; }
-@keyframes frGlow{ to{ box-shadow:0 0 0 7px rgba(228,201,141,.16),0 0 30px rgba(228,201,141,.7); } }
 .fr-zoom{ position:absolute; right:8px; bottom:8px; display:flex; gap:6px; z-index:2; }
 .fr-zoom button{ width:30px; height:30px; border-radius:10px; background:rgba(7,10,8,.7); border:1px solid rgba(255,255,255,.2); display:grid; place-items:center; color:#fff; padding:0; }
 .fr-reseat{ position:absolute; left:8px; right:8px; top:8px; z-index:2; border:0; border-radius:10px; background:var(--frsand); color:#2A2418;
