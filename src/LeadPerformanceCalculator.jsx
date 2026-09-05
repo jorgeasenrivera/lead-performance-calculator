@@ -9026,7 +9026,7 @@ function tellJumpOrigin(el) {
 /* The phone pages are built from their own blocks, not .hero and .card, and
    they fly in the same way: the Board's hero and standings, Check Out's hero,
    tiles and groups, and the Live Floor page as one. */
-const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss";
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card";
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
@@ -23496,7 +23496,332 @@ const BEHAVIOURS = [
   { id: "email", label: "Emails per day", kind: "num", impact: 9 },
 ];
 
+/* ---------------- Coaching on a phone ----------------
+   The approved phone draft, whole: the bar the strongest third sets on nine
+   habits, how many people are under it today in dot matrix, the recaps and
+   who sets the bar as tiles, then everyone by cars with their month against
+   the goal and last month's mark. A person opens as one scrolling sheet with
+   the desk's actions, own your outcome, closing, what it takes, the leads to
+   find, the baseline, habits against the top, the phone line, results, and
+   what to coach. Desktop keeps CoachingPanel's own layout. */
+function CoachingPhone({ config, store, data, onChange, userName, scored, withData, top, topAvg }) {
+  const [pop, setPop] = useState(null);
+  const close = useCallback(() => setPop(null), []);
+  const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(store.activityStandards || {}) };
+  const fmtB = (b, v) => (b.kind === "pct" ? fmtPct(v) : fmtNum(v));
+  const gapsOf = (r) => BEHAVIOURS
+    .filter((b) => r.act && r.act[b.id] != null && topAvg[b.id] != null && topAvg[b.id] > 0)
+    .map((b) => ({ ...b, mine: r.act[b.id], theirs: topAvg[b.id], ratio: r.act[b.id] / topAvg[b.id] }))
+    .sort((x, y) => x.ratio - y.ratio);
+  const under = withData.map((r) => ({ r, behind: gapsOf(r).filter((g) => g.ratio < 0.85) })).filter((x) => x.behind.length > 0);
+  const lm = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0"); })();
+  const lastUnits = (a) => { const s = data.months?.[lm]?.stats?.[norm(a.name)]; return s ? (s.internetUnits ?? 0) + (s.phoneUnits ?? 0) + (s.showroomUnits ?? 0) + (s.campaignUnits ?? 0) : null; };
+  const goalOf = (a) => data.goals?.[a.id]?.monthly ?? 0;
+  const monthFrac = (a) => { const w = personWorkingDaysInMonth(data, a); const e = Math.min(w, Math.max(1, daysWorkedThisMonth(data, a))); return w > 0 ? e / w : 0; };
+  const streakMark = (a) => { const s = currentStreak(data, a, std); return s.dir && s.len >= 3 ? <span className={"co-stk" + (s.dir === "down" ? " dn" : "")}><PixIcon glyph={s.dir === "up" ? "triup" : "tridown"} size={8} />{s.len}</span> : null; };
+  const avStyle = (name) => ({ background: `hsl(${hueFromName(name)} 52% 42%)` });
+  const shortLabel = (b) => ({ showRate: "Show rate", apptCreated: "Appts set / day", contactRate: "Contact rate", video: "Videos / day", contacted: "Contacts / day", calls: "Calls / day", tasks: "Tasks done", text: "Texts / day", email: "Emails / day" }[b.id] || b.label);
+  const benchTiles = BEHAVIOURS.filter((b) => topAvg[b.id] != null);
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const personRow = (r, sub) => (
+    <button key={r.a.id} type="button" className="pl-pr" onClick={() => setPop({ k: "person", id: r.a.id })}>
+      <span className="fr-av sm" style={avStyle(r.a.name)}>{initialsOf(r.a.name)}</span>
+      <span className="pl-prn">{r.a.name}{sub && <small>{sub}</small>}</span><span />
+    </button>
+  );
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "bench") {
+      return (<>{hd("The bar", <><span className="fr-st in">{top.length} of {withData.length}</span><span className="fr-w">every imported day</span></>)}
+        <div className="bp-defn">What the strongest third by cars do, averaged across every imported day. Anyone excluded from store stats is left out of the averages.</div>
+        <div className="cx-bench2">{benchTiles.map((b) => <div key={b.id}><b>{fmtB(b, topAvg[b.id])}</b><span>{shortLabel(b)}</span></div>)}</div>
+        <div className="pl-sec">Who sets it</div>
+        <div className="fr-list pl-rl">{top.map((r) => personRow(r, `${r.units} cars`))}{top.length === 0 && <p className="fr-empty">Nobody with activity on file yet.</p>}</div></>);
+    }
+    if (pop.k === "under") {
+      return (<>{hd("Under the bar", <><span className="fr-st away">{under.length} {under.length === 1 ? "person" : "people"}</span><span className="fr-w">of {withData.length} with activity</span></>)}
+        <div className="bp-defn">Behind the strongest third on at least one habit. Tap a name for the card.</div>
+        <div className="fr-list pl-rl">{under.map(({ r, behind }) => personRow(r, behind.slice(0, 3).map((g) => shortLabel(g).toLowerCase()).join(" · ")))}{under.length === 0 && <p className="fr-empty">Everyone with activity is at the bar.</p>}</div></>);
+    }
+    if (pop.k === "recaps") {
+      return (<>{hd("Month-end recaps", <span className="fr-w">{new Date(lm + "-15T12:00").toLocaleDateString("en-US", { month: "long" })}</span>)}
+        <div className="bp-defn">One page per person: last month against their goal, the effort it took, and this month's goal. Prints as one document.</div>
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { close(); printAllMonthEndRecaps({ store, config, data }); }}><PixIcon glyph="doc" size={14} /> Print all {scored.length}</button></div></>);
+    }
+    if (pop.k === "person") {
+      const row = scored.find((r) => r.a.id === pop.id);
+      if (!row) return null;
+      return <CoachPersonSheet config={config} store={store} data={data} onChange={onChange} userName={userName} row={row} topAvg={topAvg} topCount={top.length} gaps={gapsOf(row)} std={std} onClose={close} />;
+    }
+    return null;
+  };
+
+  return (
+    <div className="bp-page cx-page">
+      <div className="bp-hero cx-hero">
+        <div className="cx-hh">
+          <span className="cx-top"><PixIcon glyph="trophy" size={11} />The bar</span>
+          <span className="cx-days">{top.length} of {withData.length} set it</span>
+        </div>
+        <button type="button" className="cx-big" onClick={() => setPop({ k: "under" })}>
+          <DotNum value={String(under.length)} dot={8} color="#fff" />
+          <span className="cx-of">under the bar<br />of {withData.length} with activity on file</span>
+        </button>
+        {benchTiles.length > 0
+          ? <button type="button" className="cx-bench" onClick={() => setPop({ k: "bench" })}>{benchTiles.map((b) => <span key={b.id} className="cx-bt"><b>{fmtB(b, topAvg[b.id])}</b><span>{shortLabel(b)}</span></span>)}</button>
+          : <div className="cx-none">Needs Daily Activity imported before it can set a bar.</div>}
+        <div className="cx-tools">
+          {new Date().getDate() <= 10 && <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "recaps" })}><PixIcon glyph="doc" size={16} />Print all month-end recaps</button>}
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "bench" })}><PixIcon glyph="users" size={16} />Who sets the bar · {top.length}</button>
+        </div>
+      </div>
+
+      <div className="co-grp co-gon cx-card">
+        <div className="co-gh"><PixIcon glyph="users" size={14} />Everyone, by cars<span className="co-gn">{scored.length}</span></div>
+        <div className="cx-head"><span /><span>Cars against the goal · <i />last month</span><span>cars</span></div>
+        {scored.map((r) => {
+          const goal = goalOf(r.a), last = lastUnits(r.a);
+          const scale = Math.max(goal, r.units, last || 0, 1);
+          const ahead = goal > 0 && r.units >= goal * monthFrac(r.a);
+          return (
+            <button key={r.a.id} type="button" className={"cx-row" + (r.act ? "" : " dim")} onClick={() => setPop({ k: "person", id: r.a.id })}>
+              <span className="fr-av sm" style={avStyle(r.a.name)}>{initialsOf(r.a.name)}</span>
+              <span className="cx-mid">
+                <span className="cx-nm">{r.a.name}{streakMark(r.a)}</span>
+                {r.act
+                  ? <span className="cx-gap"><span className="cx-pb">{goal > 0 && <i className={ahead ? "ok" : "warn"} style={{ width: Math.min(100, (r.units / scale) * 100) + "%" }} />}{last != null && last > 0 && <em style={{ left: Math.min(100, (last / scale) * 100) + "%" }} />}</span><b>{goal > 0 ? `${fmtNum(r.units)} of ${goal}` : "no goal"}{last != null && <><i />{fmtNum(last)}</>}</b></span>
+                  : <span className="cx-sub">no activity on file yet</span>}
+              </span>
+              <span className="cx-un">{fmtNum(r.units)}<small>{goal > 0 ? `goal ${goal}` : "no goal"}</small></span>
+            </button>
+          );
+        })}
+      </div>
+
+      {pop && <FrPop title={pop.k} onClose={close} cls="co-sheet">{popBody()}</FrPop>}
+    </div>
+  );
+}
+
+/* The person, as one sheet. The same figures as the desk's card and its Own
+   your outcome block, from the same helpers, laid out for a thumb. */
+function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg, topCount, gaps, std, onClose }) {
+  const { a, stats, act, units } = row;
+  const [more, setMore] = useState(false);
+  const role = config.roles.find((x) => x.id === a.roleId);
+  const key = norm(a.name);
+  const goal = data.goals?.[a.id]?.monthly ?? 0;
+  const [goalDraft, setGoalDraft] = useState(goal ? String(goal) : "");
+  const workingDays = personWorkingDaysInMonth(data, a);
+  const mtd = oyoMTD(data, key, stats);
+  const base = oyoBaseline(data, key, a.id);
+  const ratios = oyoRatios(base);
+  const delivered = oyoUnits(mtd);
+  const worked = Math.max(1, daysWorkedThisMonth(data, a));
+  const calElapsed = Math.min(workingDays, worked);
+  const dataDays = Math.max(1, mtd.daysElapsed);
+  const remaining = Math.max(0, workingDays - calElapsed);
+  const stillNeeded = Math.max(0, goal - delivered);
+  const perDayNeeded = remaining > 0 ? stillNeeded / remaining : 0;
+  const paceKnown = calElapsed >= 3;
+  const pace = paceKnown ? (delivered / calElapsed) * workingDays : null;
+  const paceCap = Math.max(goal * 3, 30);
+  const onTrack = goal > 0 && pace != null && pace >= goal;
+  const isExcluded = (data.statsExcluded || []).map(norm).includes(key);
+  const s = currentStreak(data, a, std);
+  const behind = gaps.filter((g) => g.ratio < 0.85), ahead = gaps.filter((g) => g.ratio > 1.1);
+  const fmtB = (b, v) => (b.kind === "pct" ? fmtPct(v) : fmtNum(v));
+  const prints = (data.coachingPrints || {})[a.id] || [];
+
+  const setGoal = (v) => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.goals = next.goals || {};
+    const g = Math.max(0, parseInt(v) || 0);
+    const prevG = next.goals[a.id] || {};
+    next.goals[a.id] = { ...prevG, monthly: g, byMonth: { ...(prevG.byMonth || {}), [ym()]: g } };
+    next.goalsAt = next.goalsAt || {};
+    next.goalsAt[a.id] = new Date().toISOString();
+    onChange(next, { action: "Set monthly goal", detail: `${a.name}: ${g}` });
+  };
+  const commitGoal = () => { const g = Math.max(0, parseInt(goalDraft) || 0); if (g !== goal) setGoal(g); };
+  const recordPrint = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    next.coachingPrints = next.coachingPrints || {};
+    const list = next.coachingPrints[a.id] || [];
+    list.unshift({ by: userName || "Someone", at: new Date().toISOString() });
+    next.coachingPrints[a.id] = list.slice(0, 12);
+    onChange(next, { action: "Printed coaching one-pager", detail: a.name });
+  };
+  const printPager = () => {
+    recordPrint();
+    printOnePager({ store, config, a, stats, ev: row.ev, restriction: (data.restrictions || {})[a.id], mtd, base, ratios, goal, workingDays,
+      elapsedDays: Math.max(1, daysWorkedThisMonth(data, a)), topAvg, topCount, act, data });
+  };
+  const printRecap = () => {
+    recordPrint();
+    const lmd = new Date(); lmd.setDate(1); lmd.setMonth(lmd.getMonth() - 1);
+    const lmKey = lmd.getFullYear() + "-" + String(lmd.getMonth() + 1).padStart(2, "0");
+    const lmStats = data.months?.[lmKey]?.stats?.[key] || {};
+    const lmEv = evaluateAssociate(lmStats, config.standards?.[store.id]?.[a.roleId]?.tiers);
+    const gRec = data.goals?.[a.id] || {};
+    const goalThis = (gRec.byMonth && gRec.byMonth[ym()] != null) ? gRec.byMonth[ym()] : (gRec.monthly ?? 0);
+    const goalLast = (gRec.byMonth && gRec.byMonth[lmKey] != null) ? gRec.byMonth[lmKey] : (gRec.monthly ?? 0);
+    printMonthEndRecap({ store, a, stats: lmStats, ev: lmEv, mtd: oyoMTD(data, key, lmStats, lmKey), goalLast, goalThis, base, ratios, workingDays });
+  };
+  const copy = async () => {
+    const L = [`${a.name} · ${store.name} · ${new Date().toLocaleDateString()}`, "", `Units delivered this month: ${units}`];
+    if (stats.internetPct != null) L.push(`Internet delivered: ${fmtPct(stats.internetPct)}`);
+    if (stats.phonePct != null) L.push(`Phone delivered: ${fmtPct(stats.phonePct)}`);
+    if (stats.showroomPct != null) L.push(`Showroom delivered: ${fmtPct(stats.showroomPct)}`);
+    L.push("", `Compared with the top ${topCount} performer${topCount === 1 ? "" : "s"} at this store:`);
+    if (behind.length === 0) L.push("  You are at or above the benchmark on every behavior.");
+    for (const g of behind) L.push(`  ${g.label}: ${fmtB(g, g.mine)} vs ${fmtB(g, g.theirs)}`);
+    if (ahead.length) { L.push("", "Strengths:"); for (const g of ahead) L.push(`  ${g.label}: ${fmtB(g, g.mine)} vs ${fmtB(g, g.theirs)}`); }
+    try { await navigator.clipboard.writeText(L.join("\n")); alert("Card copied. Paste it into an email or a text."); }
+    catch (e) { alert("Couldn't copy automatically. Use Print instead."); }
+  };
+  const toggleExcluded = () => {
+    const next = JSON.parse(JSON.stringify(data));
+    const set = new Set((next.statsExcluded || []));
+    const has = [...set].some((n) => norm(n) === key);
+    next.statsExcludedAt = next.statsExcludedAt || {};
+    next.statsExcludedGone = next.statsExcludedGone || {};
+    const at = new Date().toISOString();
+    if (has) { next.statsExcluded = [...set].filter((n) => norm(n) !== key); next.statsExcludedGone[key] = at; }
+    else { next.statsExcluded = [...set, a.name]; next.statsExcludedAt[key] = at; }
+    onChange(next, { action: has ? "Included in store stats" : "Excluded from store stats", detail: a.name });
+    setMore(false);
+  };
+  const depart = () => {
+    if (!window.confirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`)) return;
+    onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
+    onClose();
+  };
+  const sec = (t) => <div className="cx-sec">{t}<span className="cx-ln" /></div>;
+  const qs = queueCoachingStats(data, a.id);
+  const mixInfo = channelMixFor(stats);
+  const leadRows = OYO_CHANNELS.filter((c) => c.id !== "campaign").map((c) => {
+    const cr = stats ? stats[c.id + "Pct"] : null;
+    const share = mixInfo.mix[c.id] ?? 0;
+    const cars = stillNeeded * share;
+    return { c, cr, cars, leads: cr && cr > 0 ? Math.ceil(cars / cr) : null };
+  });
+  const leadTotal = leadRows.reduce((t, r) => t + (r.leads ?? 0), 0);
+  const dotN = Math.max(goal, delivered, 10);
+
+  return (<>
+    <div className="fr-hd">
+      <span className="fr-av" style={{ background: `hsl(${hueFromName(a.name)} 52% 42%)` }}>{initialsOf(a.name)}</span>
+      <div className="fr-hdt"><div className="fr-nm">{a.name}</div>
+        <div className="fr-meta"><span className="fr-w">{role?.name}</span><span className="fr-st in">{fmtNum(units)} cars</span>
+          {s.dir && s.len >= 3 && <span className={"fr-st " + (s.dir === "up" ? "in" : "away")}>{s.len} {s.dir === "up" ? "clean days" : "days at 3"}</span>}
+          {isExcluded && <span className="fr-st off">out of stats</span>}</div></div>
+    </div>
+    <div className="cx-acts">
+      <button type="button" className="fr-tool pri" disabled={!goal} onClick={printPager}><PixIcon glyph="doc" size={16} />Print one-pager</button>
+      {new Date().getDate() <= 10 ? <button type="button" className="fr-tool" disabled={!goal} onClick={printRecap}><PixIcon glyph="calendar" size={16} />Month-end recap</button> : null}
+      <button type="button" className="fr-tool" onClick={copy}><PixIcon glyph="tap" size={16} />Copy summary</button>
+      <button type="button" className={"fr-tool" + (more ? " on" : "")} onClick={() => setMore((v) => !v)}><PixIcon glyph="more" size={16} />More</button>
+    </div>
+    {more && (
+      <div className="fr-acts cx-more">
+        <button type="button" className="fr-b" onClick={toggleExcluded}>{isExcluded ? "Include in store stats" : "Exclude from store stats"}</button>
+        <button type="button" className="fr-b warn" onClick={depart}>No longer here</button>
+      </div>
+    )}
+    {!goal && <div className="cx-hint">Set a monthly goal and the one-pager unlocks.</div>}
+    {prints.length > 0 && <div className="cx-hint">Last printed by <b>{prints[0].by}</b> · {new Date(prints[0].at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</div>}
+
+    {sec("Own your outcome")}
+    <div className="cx-goal">
+      <label className="cx-gnum"><input type="number" inputMode="numeric" min="0" value={goalDraft} placeholder="0" onChange={(e) => setGoalDraft(e.target.value)} onBlur={commitGoal} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /><span>goal · units</span></label>
+      <div className="cx-pace">
+        <span className="cx-strip"><span className="cx-dots">{Array.from({ length: dotN }, (_, i) => <i key={i} className={i < delivered ? "d" : ""} />)}</span>{goal > 0 && <span className="cx-mk" style={{ left: Math.min(100, (calElapsed / workingDays) * 100) + "%" }} />}</span>
+        <span className="cx-stripl"><span>today</span><span className={"cx-pc" + (goal > 0 && pace != null ? (onTrack ? " ok" : " bad") : "")}>{goal > 0 ? (pace == null ? "pace after 3 days" : `projected ${fmtNum(Math.min(pace, paceCap))}${pace > paceCap ? "+" : ""}`) : ""}</span><span>{goal > 0 ? `${goal} to hit` : "no goal"}</span></span>
+      </div>
+    </div>
+    <div className="cx-stats">
+      <div><b>{fmtNum(delivered)}</b><span>delivered</span></div>
+      <div><b>{goal > 0 ? fmtNum(stillNeeded) : "–"}</b><span>still needed</span></div>
+      <div><b>{remaining}</b><span>days left</span></div>
+      <div><b className={pace == null || !goal ? "" : onTrack ? "ok" : "bad"}>{pace == null ? "–" : fmtNum(Math.min(pace, paceCap))}</b><span>projected</span></div>
+    </div>
+    <div className="cx-lede">
+      {goal > 0 && stillNeeded > 0 && remaining > 0 ? <>That is <b>{fmtNum(perDayNeeded)} car{perDayNeeded === 1 ? "" : "s"} a day</b> for the rest of the month.</>
+        : goal > 0 && stillNeeded === 0 ? <><b>Goal met.</b> {fmtNum(delivered)} of {goal}.</>
+        : goal > 0 ? <b>Month is out of days.</b>
+        : <>Set a goal and the rest of this card turns the gap into calls, videos and leads.</>}
+    </div>
+
+    {sec("Closing rate this month")}
+    <div className="cx-tiles">
+      {OYO_CHANNELS.map((c) => {
+        const cap = c.id.charAt(0).toUpperCase() + c.id.slice(1);
+        const opp = mtd["opp" + cap] ?? 0, un = mtd["units" + cap] ?? 0;
+        const storedPct = mtd["pct" + cap];
+        const rate = storedPct != null ? storedPct : (opp > 0 ? un / opp : null);
+        const hist = ratios ? ratios["close_" + c.id] : null;
+        const better = rate != null && hist != null && rate >= hist;
+        return (<div key={c.id}><span className="cx-cn">{c.label}</span><span className="cx-cr">{rate == null ? "–" : fmtPct(rate)}</span><span className="cx-cs">{un} of {opp}</span>{hist != null && <span className={"cx-ch " + (better ? "ok" : "bad")}>{better ? "▲" : "▼"} usual {fmtPct(hist)}</span>}</div>);
+      })}
+    </div>
+
+    {sec(<>What it takes{goal > 0 && stillNeeded > 0 ? ` · ${fmtNum(stillNeeded)} more ${stillNeeded === 1 ? "car" : "cars"}` : ""}</>)}
+    {!ratios ? <div className="cx-hint">No conversion history yet. Seed their 90 days from the desktop, or wait for a few weeks of imports.</div> : (<>
+      <div className="cx-from"><b>Their own record</b> · {fmtNum(base.units)} {base.units === 1 ? "car" : "cars"} across {base.daysWorked} working days</div>
+      <div className="cx-bp">
+        <div className="cx-br h"><span>Activity</span><span>need</span><span>a day</span><span>doing</span></div>
+        {OYO_OUTREACH.map((o) => {
+          const per = ratios[o.id], need = per * stillNeeded, target = remaining > 0 ? need / remaining : 0, doing = (mtd[o.id] ?? 0) / dataDays;
+          const ok = remaining === 0 || stillNeeded === 0 || doing >= target;
+          return (<div key={o.id} className="cx-br"><span className="cx-a">{o.label}<small>{fmtNum(per)} per car</small></span><span className="cx-v">{goal > 0 ? Math.ceil(need) : "–"}</span><span className="cx-v">{goal > 0 && remaining > 0 ? fmtNum(target) : "–"}</span><span className={"cx-st2 " + (goal > 0 ? (ok ? "ok" : "bad") : "na")}>{fmtNum(doing)}</span></div>);
+        })}
+      </div>
+    </>)}
+
+    {sec("Leads to find")}
+    {goal === 0 ? <div className="cx-hint">Set a goal and the gap becomes a lead count per channel.</div>
+      : stillNeeded === 0 ? <div className="cx-hint">Goal met. Nothing left to split.</div>
+      : (<div className="cx-lead">
+          <div className="cx-ltop"><b>{fmtNum(stillNeeded)}</b><span>{stillNeeded === 1 ? "car" : "cars"} still to find, split {mixInfo.personal ? "the way this person sells" : "the typical way"}</span></div>
+          <div className="cx-mix">{leadRows.map((r) => <i key={r.c.id} style={{ flex: Math.max(0.01, mixInfo.mix[r.c.id] ?? 0), background: OYO_CHAN_COLOR[r.c.id] }} />)}</div>
+          <div className="cx-mixl">{leadRows.map((r) => `${r.c.label} ${Math.round((mixInfo.mix[r.c.id] ?? 0) * 100)}%`).join(" · ")}</div>
+          {leadRows.map((r) => <div key={r.c.id} className="cx-lr"><i style={{ background: OYO_CHAN_COLOR[r.c.id] }} /><span className="cx-c">{r.c.label}</span><span className="cx-f"><b>{Math.round(r.cars * 10) / 10}</b> cars</span><span className="cx-f">close <b>{r.cr && r.cr > 0 ? fmtPct(r.cr) : "–"}</b></span><span className="cx-ld">{r.leads == null ? "–" : r.leads}<small>leads</small></span></div>)}
+          <div className="cx-tot"><b>{leadTotal}</b><span>leads to find. {leadRows.some((r) => r.leads == null) ? "Channels with no rate yet are left out." : "Raise a closing rate and this drops."}</span></div>
+        </div>)}
+    <div className="cx-base"><b>90-day baseline</b><small>{base.source === "seed+observed" ? `seeded + ${base.daysWorked} days` : base.source === "observed" ? `${base.daysWorked} imported ${base.daysWorked === 1 ? "day" : "days"}` : "not seeded yet"} · seed it from the desktop</small></div>
+
+    {sec(`Habits vs the top ${topCount}`)}
+    {!act ? <div className="cx-hint">No Daily Activity on file for this person yet, so there is nothing to compare their habits against.</div>
+      : <div className="cx-bars">{gaps.map((g) => { const pct = Math.max(3, Math.min(100, g.ratio * 70)); const state = g.ratio < 0.85 ? "behind" : g.ratio > 1.1 ? "ahead" : "even";
+          return <div key={g.id} className="cx-bar"><span className="cx-bl"><span className="cx-l">{g.label}</span><span className="cx-tr"><i className={state} style={{ width: pct + "%" }} /><em /></span></span><span className="cx-bv">{fmtB(g, g.mine)}<small>bar {fmtB(g, g.theirs)}</small></span></div>; })}</div>}
+
+    {qs.hasData && (<>{sec("Phone line")}
+      <div className="cx-stats"><div><b>{qs.signedDays}/{qs.scheduledDays}</b><span>days in line</span></div><div><b>{qs.taken}</b><span>opps taken</span></div><div><b>{qs.declined}</b><span>declined</span></div><div><b>{qs.acceptRate == null ? "–" : fmtPct(qs.acceptRate)}</b><span>accept</span></div></div>
+      <div className="cx-hint">{qs.missedScheduled > 0 ? `Not in the line on ${qs.missedScheduled} scheduled ${qs.missedScheduled === 1 ? "day" : "days"}. ` : "In the line every scheduled day on record. "}{qs.unavailMin > 0 ? `About ${qs.unavailMin} min marked unavailable while holding a spot.` : ""}</div></>)}
+
+    {sec("Results this month")}
+    <div className="cx-stats"><div><b>{fmtNum(units)}</b><span>units</span></div><div><b>{fmtPct(stats.internetPct)}</b><span>internet</span></div><div><b>{fmtPct(stats.phonePct)}</b><span>phone</span></div><div><b>{fmtPct(stats.showroomPct)}</b><span>showroom</span></div></div>
+
+    {act && (<>
+      {sec("What to coach")}
+      {behind.length > 0 ? <div className="cx-coach">{behind.slice(0, 3).map((g, i) => (
+          <div key={g.id} className="cx-ci"><em>{i + 1}</em><div><b>{g.label}</b><div className="cx-cv">{fmtB(g, g.mine)} <small>against {fmtB(g, g.theirs)} for the strongest here</small></div>
+            {g.id === "contactRate" && <p>Effort is not the issue if calls are fine; this is about when they are calling and what they open with.</p>}
+            {g.id === "video" && <p>Personalized video is the single easiest habit to add, and it shows up in delivery rate.</p>}
+            {g.id === "showRate" && <p>Appointments are being set but not landing. Look at confirmation habits the day before.</p>}</div></div>))}</div>
+        : <div className="cx-hint">At or above the bar on everything tracked. Worth asking what they do that the report does not see.</div>}
+      {ahead.length > 0 && (<>{sec("Strengths to name out loud")}<div className="cx-str">{ahead.slice(0, 3).map((g) => <span key={g.id}>{g.label.toLowerCase()}</span>)}</div></>)}
+      <div className="cx-hint">Based on {act.days} {act.days === 1 ? "day" : "days"} of activity on file. The more days imported, the more the pattern means.</div>
+    </>)}
+    <div style={{ height: 14 }} />
+  </>);
+}
+
 function CoachingPanel({ config, store, data, onChange, userName }) {
+  const phone = usePhoneLayout();
   const [openId, setOpenId] = useState(null);
   const M = data.months?.[ym()];
 
@@ -23542,6 +23867,8 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
   // here is why the cards would not open at all.
 
   const openRow = scored.find((r) => r.a.id === openId);
+
+  if (phone) return <CoachingPhone config={config} store={store} data={data} onChange={onChange} userName={userName} scored={scored} withData={withData} top={top} topAvg={topAvg} />;
 
   return (
     <div className="coaching">
@@ -33597,7 +33924,7 @@ const SAGE_CSS = `
       }
       /* A page reload holds every flying part invisible until the mount is done
          and the radial flight begins; each part's own animation then takes over. */
-      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss) { opacity:0; }
+      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card) { opacity:0; }
       .refresh-flash { position:fixed; inset:0; z-index:80; pointer-events:none;
         background:radial-gradient(circle at 50% 46%, rgba(255,255,255,.95), rgba(169,196,172,.35) 26%, transparent 46%);
         animation:refreshFlash .62s cubic-bezier(.2,.7,.3,1) both; }
@@ -39319,6 +39646,109 @@ const SAGE_CSS = `
 .pl-miss .co-say .co-on{ background:var(--frok) !important; border-color:var(--frok) !important; }
 .fr-pop .pl-pr.static .co-say .co-on{ background:var(--frok); border-color:var(--frok); }
 .fr-pop .co-say{ display:inline-flex; gap:6px; }
+
+/* ---- Coaching on a phone ---- */
+.cx-page{ padding-top:6px; }
+.cx-hero{ padding:18px 18px 16px; }
+.cx-hh{ display:flex; align-items:center; gap:8px; position:relative; z-index:1; }
+.cx-top{ display:inline-flex; align-items:center; gap:6px; background:rgba(0,0,0,.28); border:1px solid rgba(255,255,255,.14); border-radius:10px; padding:5px 9px; font:700 10.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:#fff; white-space:nowrap; }
+.cx-top .pix{ color:var(--frsand); }
+.cx-days{ margin-left:auto; font:700 9px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:rgba(255,255,255,.7); white-space:nowrap; }
+.cx-big{ display:flex !important; align-items:flex-end; gap:10px; margin-top:12px; position:relative; z-index:1; }
+.cx-big .dotnum{ gap:9px !important; }
+.cx-of{ font:600 12px var(--font-mono); color:rgba(255,255,255,.65); margin-bottom:4px; line-height:1.3; }
+.cx-bench{ display:grid !important; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:14px; width:100%; position:relative; z-index:1; }
+.cx-bt{ background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:8px 6px; text-align:center; min-width:0; }
+.cx-bt b{ display:block; font:700 16px var(--font-display); color:#fff; line-height:1.1; }
+.cx-bt span{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:rgba(255,255,255,.65); display:block; margin-top:3px; line-height:1.2; }
+.cx-none{ margin-top:14px; font:500 12px var(--font-ui); color:rgba(255,255,255,.8); }
+.cx-tools{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; position:relative; z-index:1; }
+.cx-tools .fr-tool{ min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center !important; padding:8px 4px !important; }
+.cx-tools .fr-tool.dk{ background:rgba(0,0,0,.2) !important; border-color:rgba(255,255,255,.12) !important; color:#fff !important; } .cx-tools .fr-tool.dk .pix{ color:var(--frsand); }
+.cx-tools .fr-tool:only-child{ grid-column:span 2; }
+.cx-card .co-gh{ padding:11px 14px 6px; }
+.cx-head{ display:grid; grid-template-columns:36px minmax(0,1fr) auto; column-gap:10px; padding:0 14px 4px; font:700 8px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; color:var(--frink3); }
+.cx-head span:last-child{ text-align:right; }
+.cx-head i,.cx-gap b i{ display:inline-block; width:3px; height:9px; border-radius:2px; background:var(--frsand2); vertical-align:-1px; margin-right:3px; }
+.cx-gap b i{ margin:0 3px 0 6px; }
+.cx-row{ display:grid !important; grid-template-columns:36px minmax(0,1fr) auto; column-gap:10px; align-items:center; padding:10px 14px !important; width:100%; border-top:1px solid var(--frline); }
+.cx-row .fr-av.sm{ width:36px; height:36px; font-size:11px; }
+.cx-mid{ min-width:0; display:flex; flex-direction:column; }
+.cx-nm{ font:700 14px var(--font-display); letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px; color:var(--frink); }
+.cx-row.dim .cx-nm,.cx-row.dim .cx-un{ color:var(--frink3); }
+.cx-gap{ display:flex; align-items:center; gap:6px; margin-top:5px; }
+.cx-pb{ flex:1; height:6px; border-radius:99px; background:rgba(16,32,52,.08); position:relative; }
+.cx-pb i{ display:block; height:100%; border-radius:99px; } .cx-pb i.ok{ background:var(--frok); } .cx-pb i.warn{ background:var(--frthin); }
+.cx-pb em{ position:absolute; top:-3px; width:3px; height:12px; border-radius:2px; background:var(--frsand2); margin-left:-1px; }
+.cx-gap b{ font:700 9px var(--font-mono); color:var(--frink3); white-space:nowrap; }
+.cx-sub{ font:500 9.5px var(--font-mono); color:var(--frink3); margin-top:3px; }
+.cx-un{ font:700 18px var(--font-display); text-align:right; line-height:1; color:var(--frink); }
+.cx-un small{ display:block; font:700 8.5px var(--font-mono); color:var(--frink3); letter-spacing:.1em; text-transform:uppercase; margin-top:3px; }
+/* the sheet */
+.cx-acts{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:8px 14px 4px; }
+.cx-acts .fr-tool{ min-height:52px; font-size:10px; padding:8px 2px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; text-align:center; cursor:pointer; }
+.cx-acts .fr-tool.pri{ background:var(--frp2d); border-color:var(--frp2d); color:#fff; } .cx-acts .fr-tool.pri .pix{ color:#fff; }
+.cx-acts .fr-tool.on{ border-color:var(--frp2d); }
+.cx-acts .fr-tool:disabled{ opacity:.45; cursor:default; }
+.cx-more{ padding-top:4px; }
+.cx-hint{ padding:6px 16px 0; font:500 12px/1.45 var(--font-ui); color:var(--frink3); } .cx-hint b{ color:var(--frink2); }
+.cx-sec{ padding:12px 16px 4px; font:700 9.5px var(--font-mono); letter-spacing:.18em; text-transform:uppercase; color:var(--frsand2); display:flex; align-items:center; gap:8px; }
+.cx-ln{ flex:1; border-top:2px dotted var(--frline); }
+.cx-goal{ display:grid; grid-template-columns:auto minmax(0,1fr); gap:12px; align-items:center; padding:4px 16px; }
+.cx-gnum{ display:flex; flex-direction:column; align-items:center; background:var(--frpaper); border-radius:14px; padding:10px 12px; }
+.cx-gnum input{ width:70px; border:0; background:none; font:700 26px var(--font-display); text-align:center; color:var(--frink); padding:0; -moz-appearance:textfield; }
+.cx-gnum input::-webkit-outer-spin-button,.cx-gnum input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+.cx-gnum span{ font:700 8px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--frink3); margin-top:4px; }
+.cx-pace{ min-width:0; }
+.cx-strip{ display:block; position:relative; height:12px; }
+.cx-dots{ display:flex; justify-content:space-between; align-items:center; height:12px; }
+.cx-dots i{ width:5px; height:5px; border-radius:50%; background:rgba(21,33,27,.18); flex:0 0 auto; } .cx-dots i.d{ background:var(--frok); }
+.cx-mk{ position:absolute; top:-2px; width:2px; height:16px; border-radius:1px; background:#15211B; }
+.cx-stripl{ display:flex; justify-content:space-between; font:600 9px var(--font-mono); color:var(--frink3); margin-top:6px; }
+.cx-pc.ok{ color:var(--frok); font-weight:700; } .cx-pc.bad{ color:var(--frgap); font-weight:700; }
+.cx-stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:8px 16px 4px; }
+.cx-stats > div{ text-align:center; background:var(--frpaper); border-radius:12px; padding:8px 4px; min-width:0; }
+.cx-stats b{ display:block; font:700 16px var(--font-display); line-height:1.1; color:var(--frink); } .cx-stats b.ok{ color:var(--frok); } .cx-stats b.bad{ color:var(--frgap); }
+.cx-stats span{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); display:block; margin-top:3px; }
+.cx-lede{ padding:6px 16px 0; font:500 13px/1.45 var(--font-ui); color:var(--frink2); } .cx-lede b{ color:var(--frink); }
+.cx-tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; padding:4px 16px; }
+.cx-tiles > div{ border:1.5px solid var(--frline); border-radius:12px; padding:8px 4px; text-align:center; min-width:0; display:flex; flex-direction:column; }
+.cx-cn{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); } .cx-cr{ font:700 16px var(--font-display); margin-top:2px; color:var(--frink); }
+.cx-cs{ font:600 8.5px var(--font-mono); color:var(--frink3); } .cx-ch{ font:700 8px var(--font-mono); margin-top:3px; } .cx-ch.ok{ color:var(--frok); } .cx-ch.bad{ color:var(--frgap); }
+.cx-from{ padding:4px 16px 0; font:500 11px var(--font-mono); color:var(--frink3); } .cx-from b{ color:var(--frink2); }
+.cx-bp{ padding:6px 16px 0; }
+.cx-br{ display:grid; grid-template-columns:minmax(0,1fr) 54px 54px 56px; column-gap:6px; align-items:center; padding:7px 0; border-top:1px solid var(--frline); }
+.cx-br.h{ border-top:0; padding:2px 0 4px; font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); } .cx-br.h span{ text-align:right; } .cx-br.h span:first-child{ text-align:left; }
+.cx-a{ font:600 12.5px var(--font-ui); color:var(--frink); } .cx-a small{ display:block; font:500 9px var(--font-mono); color:var(--frink3); }
+.cx-v{ font:700 12px var(--font-mono); text-align:right; color:var(--frink3); }
+.cx-st2{ justify-self:end; font:700 10px var(--font-mono); padding:2px 6px; border-radius:6px; } .cx-st2.ok{ background:#E3F3E9; color:var(--frok); } .cx-st2.bad{ background:#FBE5E0; color:var(--frgap); } .cx-st2.na{ background:var(--frpaper); color:var(--frink3); }
+.cx-lead{ padding:6px 16px 0; }
+.cx-ltop{ display:flex; align-items:baseline; gap:8px; } .cx-ltop b{ font:700 26px/1 var(--font-display); color:var(--frink); } .cx-ltop span{ font:600 12px var(--font-ui); color:var(--frink2); }
+.cx-mix{ display:flex; height:10px; border-radius:99px; overflow:hidden; margin-top:8px; background:var(--frpaper); } .cx-mix i{ display:block; height:100%; }
+.cx-mixl{ font:600 9px var(--font-mono); color:var(--frink3); margin-top:4px; letter-spacing:.06em; text-transform:uppercase; }
+.cx-lr{ display:grid; grid-template-columns:10px minmax(0,1fr) auto auto auto; column-gap:8px; align-items:center; padding:8px 0; border-top:1px solid var(--frline); }
+.cx-lr:first-of-type{ margin-top:8px; }
+.cx-lr i{ width:10px; height:10px; border-radius:50%; display:block; } .cx-c{ font:600 12.5px var(--font-ui); color:var(--frink); }
+.cx-f{ font:600 10px var(--font-mono); color:var(--frink3); white-space:nowrap; } .cx-f b{ color:var(--frink); font-weight:700; }
+.cx-ld{ font:700 15px var(--font-display); text-align:right; min-width:52px; color:var(--frink); } .cx-ld small{ font:700 8px var(--font-mono); color:var(--frink3); letter-spacing:.08em; text-transform:uppercase; display:block; }
+.cx-tot{ display:flex; align-items:baseline; gap:8px; padding:10px 0 4px; border-top:2px solid var(--frink); } .cx-tot b{ font:700 28px/1 var(--font-display); color:var(--frp2d); } .cx-tot span{ font:500 11px var(--font-ui); color:var(--frink2); }
+.cx-base{ margin:10px 16px 4px; border:1.5px dashed var(--frline); border-radius:14px; padding:10px 12px; } .cx-base b{ font:700 13px var(--font-display); display:block; color:var(--frink); } .cx-base small{ font:500 10px var(--font-mono); color:var(--frink3); }
+.cx-bars{ padding:4px 16px 0; }
+.cx-bar{ display:grid; grid-template-columns:minmax(0,1fr) 92px; column-gap:8px; align-items:center; padding:6px 0; }
+.cx-bl{ min-width:0; display:block; } .cx-l{ font:600 11.5px var(--font-ui); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; color:var(--frink); }
+.cx-tr{ display:block; height:8px; border-radius:99px; background:rgba(16,32,52,.08); position:relative; margin-top:4px; }
+.cx-tr i{ display:block; height:100%; border-radius:99px; } .cx-tr i.behind{ background:var(--frgap); } .cx-tr i.even{ background:var(--frthin); } .cx-tr i.ahead{ background:var(--frok); }
+.cx-tr em{ position:absolute; left:70%; top:-3px; width:2px; height:14px; background:#15211B; opacity:.6; }
+.cx-bv{ font:700 11px var(--font-mono); text-align:right; white-space:nowrap; color:var(--frink); } .cx-bv small{ display:block; font:600 8.5px var(--font-mono); color:var(--frink3); }
+.cx-coach{ padding:4px 16px 0; }
+.cx-ci{ display:grid; grid-template-columns:22px minmax(0,1fr); column-gap:10px; padding:8px 0; border-top:1px solid var(--frline); } .cx-ci:first-child{ border-top:0; }
+.cx-ci em{ width:22px; height:22px; border-radius:50%; background:#FBE5E0; color:var(--frgap); font:700 10px var(--font-mono); font-style:normal; display:grid; place-items:center; }
+.cx-ci b{ font:700 13px var(--font-display); display:block; color:var(--frink); } .cx-ci p{ margin:2px 0 0; font:500 12px/1.4 var(--font-ui); color:var(--frink2); }
+.cx-cv{ font:700 10px var(--font-mono); color:var(--frgap); } .cx-cv small{ color:var(--frink3); font-weight:600; }
+.cx-str{ padding:8px 16px 0; display:flex; gap:6px; flex-wrap:wrap; } .cx-str span{ background:#E3F3E9; color:var(--frok); font:700 9.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; padding:4px 8px; border-radius:8px; }
+.cx-bench2{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:8px 16px 4px; }
+.cx-bench2 > div{ background:var(--frpaper); border-radius:12px; padding:9px 6px; text-align:center; }
+.cx-bench2 b{ display:block; font:700 17px var(--font-display); color:var(--frink); } .cx-bench2 span{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); display:block; margin-top:3px; line-height:1.2; }
 
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
