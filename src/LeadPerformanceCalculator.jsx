@@ -40465,7 +40465,7 @@ const SAGE_CSS = `
 .pe-acctline{ padding:8px 16px 4px; display:flex; flex-direction:column; gap:3px; } .pe-acctline b{ font:700 14px var(--font-ui); color:var(--frink); word-break:break-all; } .pe-acctline span{ font:500 11px var(--font-mono); color:var(--frink3); }
 .bp-defn.pe-said b{ color:var(--frok); } .bp-defn.pe-said.bad b{ color:var(--frgap); }
 .pe-acts .fr-b{ flex:1 1 44%; }
-.bp-page .pe-phone .fr-b.sm,.fr-sheet .pe-bsm{ border:1.5px solid var(--frline); } .bp-page .pe-phone .fr-b.sm.warn{ border-color:#F1C9C5; }
+.bp-page.pe-phone .fr-b.sm{ border:1.5px solid var(--frline); } .bp-page.pe-phone .fr-b.sm.warn{ border-color:#F1C9C5; }
 /* the repair cards */
 .pe-miss{ padding:12px 12px 8px; }
 .pe-misshd b{ display:block; font:700 15px var(--font-display); color:var(--frink); line-height:1.2; } .pe-misshd span{ display:block; font:500 12px/1.45 var(--font-ui); color:var(--frink2); margin-top:4px; }
