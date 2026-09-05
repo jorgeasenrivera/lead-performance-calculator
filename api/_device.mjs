@@ -7,5 +7,12 @@ export function registrationBody(native, store) {
   if (!platform) return null;
   const body = { store, platform, device_id: String(native.deviceId) };
   body[platform === "ios" ? "apns_token" : "fcm_token"] = String(native.pushToken);
+  /* The Live Activity's two tokens ride along when the shell has them (iOS
+     only; push-to-start needs 17.2). The endpoint merges, so a body without
+     them never blanks ones already filed. */
+  if (platform === "ios") {
+    if (native.ptsToken) body.apns_pts_token = String(native.ptsToken);
+    if (native.activityToken) body.activity_token = String(native.activityToken);
+  }
   return body;
 }

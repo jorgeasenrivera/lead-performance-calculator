@@ -43,6 +43,32 @@ npx expo run:ios        # a simulator (no push tokens there)
 npx expo run:android
 ```
 
+## The line on the lock screen (Live Activity)
+
+`targets/queue` is a widget extension that draws the person's place in the line
+on the lock screen and in the Dynamic Island; `modules/sage-live` is the small
+native module that hands the page the activity tokens and starts the activity
+the moment the page knows where they stand. Both are generated into the Xcode
+project by `@bacons/apple-targets` at build time. What it needs, once:
+
+1. A second App ID, `com.sageonline.queue`, on developer.apple.com (no
+   capabilities needed), and an App Store provisioning profile for it made with
+   the same distribution certificate. Base64 it into the repo secret
+   `IOS_QUEUE_PROFILE_BASE64`.
+2. The main App ID needs nothing new: Live Activities ride on the existing Push
+   Notifications capability, and `NSSupportsLiveActivities` is already in
+   `app.json`.
+3. The server side was already built: `api/queue-changed.mjs` starts, moves and
+   ends the activity with the tokens `/api/register-device` files
+   (`apns_pts_token`, `activity_token`). Push-to-start needs iOS 17.2; on 16.2
+   and 17.0 the activity appears when the app is open on the line, and the
+   server keeps it moving from there.
+
+The Swift struct `QueueAttributes` exists twice on purpose (the app and the
+extension each compile their own copy) and must match the server's payload
+exactly: the struct name is the push's `attributes-type`, the content state's
+keys are what `contentState()` writes.
+
 ## How push reaches a person
 
 The shell fetches the phone's own APNs or FCM token and hands it to the page.

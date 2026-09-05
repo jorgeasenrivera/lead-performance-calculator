@@ -14,6 +14,10 @@
  *     it against the signed-in account through /api/register-device. The
  *     shell never sees the session; the page never sees anything it did not
  *     already have;
+ *   - on iOS, hands the page the Live Activity tokens too (push-to-start, and
+ *     each running activity's own), and puts the line on the lock screen the
+ *     moment the page says where the person stands, so the server only has to
+ *     keep it moving;
  *   - turns the page's "buzz" into a real haptic, which WebViews swallow;
  *   - opens outside links in the phone's browser rather than inside itself.
  */
@@ -28,6 +32,7 @@ import * as Application from "expo-application";
 import * as Haptics from "expo-haptics";
 import Constants from "expo-constants";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import * as SageLive from "./modules/sage-live";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -94,7 +99,7 @@ function Shell() {
      WebView cannot, so this is how edge to edge stays tappable there. */
   const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
-  const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null });
+  const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null, ptsToken: null, activityToken: null });
   /* ---- the safe areas belong to the page ----
      The page runs under the clock and the home bar, the way it does in Safari
      with the toolbars hidden, and pads itself with env(safe-area-inset-*):
@@ -117,9 +122,24 @@ function Shell() {
       const deviceId = await readDeviceId();
       let pushToken = null;
       try { pushToken = await readPushToken(); } catch (e) { pushToken = null; }
-      if (!dead) setNative({ platform: Platform.OS, deviceId, pushToken });
+      if (!dead) setNative((n) => ({ ...n, platform: Platform.OS, deviceId, pushToken }));
     })();
     return () => { dead = true; };
+  }, []);
+
+  /* ---- the Live Activity's tokens ----
+     Two more ways to reach this phone, both from ActivityKit and both handed to
+     the page like the device token: the push-to-start token lets the server put
+     the line on the lock screen unasked (iOS 17.2+); a running activity's own
+     token lets it move that one. Either arriving re-sends the handoff, and the
+     page registers whatever is new. */
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !SageLive.available) return;
+    const sub = SageLive.addTokenListener((e) => {
+      if (!e || !e.token) return;
+      setNative((n) => (e.kind === "pts" ? { ...n, ptsToken: e.token } : { ...n, activityToken: e.token }));
+    });
+    return () => sub.remove();
   }, []);
 
   /* Handed to the page as a plain object plus an event, so a page that loaded
@@ -169,9 +189,23 @@ function Shell() {
       Haptics.impactAsync(heavy ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       return;
     }
-    /* "queue" carries the person's standing: position, ahead, status. Nothing
-       is done with it here yet; it is the feed a Live Activity or widget will
-       read when those are built. */
+    /* "queue" carries the person's standing: which line, how many ahead, and
+       whether they are up. The page sends it whenever it changes while they are
+       on the line, so this is the fastest way onto the lock screen: the server's
+       push follows a moment later and finds the activity already there. Off the
+       line (with a customer, lunch, away) takes it down; the server does the same
+       for a phone that was not open. */
+    if (msg.type === "queue" && Platform.OS === "ios" && SageLive.available) {
+      const q = msg.payload || {};
+      const waiting = q.status === "waiting" || q.status === "up";
+      const state = { ahead: Number(q.ahead) || 0, up: q.status === "up", status: q.status === "up" ? "waiting" : String(q.status || "waiting"), label: String(q.rep || "") };
+      if (waiting) {
+        const d = new Date(), date = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+        SageLive.start({ store: String(q.store || ""), date, kind: /up next|queue/i.test(String(q.queue || "")) ? "queue" : "floor" }, state);
+      } else {
+        SageLive.end();
+      }
+    }
   }, []);
 
   /* The site stays inside; everything else goes to the phone's browser or

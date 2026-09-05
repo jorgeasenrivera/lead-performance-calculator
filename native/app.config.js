@@ -10,5 +10,11 @@ module.exports = ({ config }) => {
   if (fs.existsSync(gs)) {
     config.android = { ...(config.android || {}), googleServicesFile: "./google-services.json" };
   }
+  /* The widget target (targets/queue) is signed against the Apple team, which
+     the build already knows as EXPO_APPLE_TEAM_ID. Read it from there rather
+     than writing the team into a file. */
+  if (process.env.EXPO_APPLE_TEAM_ID) {
+    config.ios = { ...(config.ios || {}), appleTeamId: process.env.EXPO_APPLE_TEAM_ID };
+  }
   return config;
 };

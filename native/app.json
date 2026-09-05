@@ -22,7 +22,9 @@
         ],
         "NSCameraUsageDescription": "Sage uses the camera to scan the daily floor code.",
         "NSLocationWhenInUseUsageDescription": "Sage checks you are at the store when you get on the floor.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true,
+        "NSSupportsLiveActivitiesFrequentUpdates": true
       }
     },
     "android": {
@@ -47,7 +49,8 @@
           "color": "#15211B",
           "defaultChannel": "floor"
         }
-      ]
+      ],
+      "@bacons/apple-targets"
     ],
     "extra": {
       "siteUrl": "https://www.sageonline.io",

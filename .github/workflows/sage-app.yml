@@ -14,6 +14,9 @@
 #   IOS_DIST_P12_BASE64      the Apple Distribution certificate with its private key, as a .p12, base64
 #   IOS_DIST_P12_PASSWORD    the password that .p12 was made with
 #   IOS_PROFILE_BASE64       the App Store provisioning profile for com.sageonline, base64
+#   IOS_QUEUE_PROFILE_BASE64 the App Store provisioning profile for com.sageonline.queue
+#                            (the Live Activity extension), base64. Without it the
+#                            build carries no lock-screen line, and says so.
 #
 # Expo will use signing credentials in an unattended build but will not create
 # the first ones, so the certificate and profile are made once in the browser
@@ -87,14 +90,31 @@ jobs:
           printf '%s' "$ASC_API_KEY_P8" > asc-key.p8
           printf '%s' "$IOS_DIST_P12_BASE64" | base64 -d > dist.p12
           printf '%s' "$IOS_PROFILE_BASE64" | base64 -d > sage.mobileprovision
-          cat > credentials.json <<EOF
+          # Two targets, two profiles: the app, and the widget extension that
+          # draws the Live Activity. credentials.json is keyed by Xcode target.
+          if [ -n "$IOS_QUEUE_PROFILE_BASE64" ]; then
+            printf '%s' "$IOS_QUEUE_PROFILE_BASE64" | base64 -d > queue.mobileprovision
+            cat > credentials.json <<EOF
           {
             "ios": {
-              "provisioningProfilePath": "sage.mobileprovision",
-              "distributionCertificate": { "path": "dist.p12", "password": "$IOS_DIST_P12_PASSWORD" }
+              "Sage": {
+                "provisioningProfilePath": "sage.mobileprovision",
+                "distributionCertificate": { "path": "dist.p12", "password": "$IOS_DIST_P12_PASSWORD" }
+              },
+              "SageQueue": {
+                "provisioningProfilePath": "queue.mobileprovision",
+                "distributionCertificate": { "path": "dist.p12", "password": "$IOS_DIST_P12_PASSWORD" }
+              }
             }
           }
           EOF
+            if ! openssl smime -inform der -verify -noverify -in queue.mobileprovision 2>/dev/null | grep -q "com.sageonline.queue"; then
+              echo "::error::queue.mobileprovision is not the App Store profile for com.sageonline.queue. Re-paste IOS_QUEUE_PROFILE_BASE64."; exit 1
+            fi
+          else
+            echo "::error::IOS_QUEUE_PROFILE_BASE64 is not set. The Live Activity extension (com.sageonline.queue) needs its own App ID and App Store profile; see native/README.md."
+            exit 1
+          fi
           for f in asc-key.p8 dist.p12 sage.mobileprovision; do
             if [ ! -s "$f" ]; then echo "::error::$f is empty. The matching secret is missing or blank."; exit 1; fi
           done
@@ -196,4 +216,4 @@ jobs:
 
       - name: Forget the keys
         if: always()
-        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision credentials.json && git checkout -- eas.json app.json 2>/dev/null || true
+        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json && git checkout -- eas.json app.json 2>/dev/null || true
