@@ -12,7 +12,7 @@ module.exports = {
   // ActivityKit content state needs 16.2; push-to-start needs 17.2 and is
   // checked at runtime.
   deploymentTarget: "16.2",
-  frameworks: ["SwiftUI", "WidgetKit", "ActivityKit"],
+  frameworks: ["SwiftUI", "WidgetKit", "ActivityKit", "AppIntents"],
   colors: {
     $accent: "#E4C98D",
     $widgetBackground: "#15211B",

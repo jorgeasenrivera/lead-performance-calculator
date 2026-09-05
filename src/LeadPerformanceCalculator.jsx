@@ -10392,8 +10392,13 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     if (!me || myIdx < 0) return;
     postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
       rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
-      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString() });
-  }, [me && me.status, myIdx, aheadCount, iAmUp]); // eslint-disable-line
+      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString(),
+      /* The rail the lock screen draws: everybody in line as initials and a hue,
+         with you marked. Same shape the server sends (api/_queue-notify.mjs). */
+      line: line.slice(0, 8).map((p) => { const nm = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
+        return { i: initialsOf(nm) || "\u00b7", h: hueFromName(nm), s: (p.status || "waiting") === "waiting" ? "w" : "x", me: p.id === meId }; }),
+      nudge: !!(me.nudgedAt && qMinsSince(me.nudgedAt) < 10), table: me.table != null ? String(me.table) : null, since: me.statusAt || null });
+  }, [me && me.status, myIdx, aheadCount, iAmUp, line.length, me && me.nudgedAt]); // eslint-disable-line
 
   const remember = (id) => {
     try {
@@ -13460,8 +13465,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     if (!me || myIdx < 0) return;
     postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
       rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
-      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString() });
-  }, [me && me.status, myIdx, aheadCount, iAmUp]); // eslint-disable-line
+      position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString(),
+      /* The rail the lock screen draws: everybody in line as initials and a hue,
+         with you marked. Same shape the server sends (api/_queue-notify.mjs). */
+      line: line.slice(0, 8).map((p) => { const nm = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
+        return { i: initialsOf(nm) || "\u00b7", h: hueFromName(nm), s: (p.status || "waiting") === "waiting" ? "w" : "x", me: p.id === meId }; }),
+      nudge: !!(me.nudgedAt && qMinsSince(me.nudgedAt) < 10), table: me.table != null ? String(me.table) : null, since: me.statusAt || null });
+  }, [me && me.status, myIdx, aheadCount, iAmUp, line.length, me && me.nudgedAt]); // eslint-disable-line
 
   const remember = (id) => {
     try {
@@ -13696,6 +13706,60 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     if (next) setRow(next);
     setStep("name"); setBusy(false);
   }
+
+  /* ---- buttons on the lock screen ----
+     The Live Activity's buttons run in the app and hand the page one word; the
+     page does the thing with its own session, the same way its own buttons do.
+     Lunch, away and back are the floor chips. Take is "I've got it". Pass puts
+     you behind the next person, as a manager's decline does. FlyBy and T.O. are
+     the two asks with no table named. Ack tells the desk you saw the nudge. */
+  useEffect(() => {
+    const on = async (e) => {
+      const act = String((e && e.detail && e.detail.action) || "");
+      if (!meId || !me) return;
+      try {
+        if (act === "lunch" || act === "away") await setFlag(act);
+        else if (act === "back" || act === "done") await setFlag("waiting");
+        else if (act === "take") { buzz([20, 40, 20]); setTookIt(true); await setFlag("customer"); }
+        else if (act === "pass") {
+          const next = await mutateFloorRow(store, date, (cur) => {
+            if (!cur) return null;
+            const idx = (cur.line || []).findIndex((x) => x.id === meId); if (idx < 0) return cur;
+            const p = cur.line[idx];
+            cur.history = cur.history || [];
+            cur.history.push({ t: qNowIso(), action: "declined", id: meId, who: p.label, by: "self" });
+            const after = cur.line.slice(idx + 1); const j = after.findIndex((x) => (x.status || "waiting") === "waiting");
+            cur.line.splice(idx, 1);
+            const at = j < 0 ? cur.line.length : idx + j + 1;
+            cur.line.splice(Math.min(at, cur.line.length), 0, { ...p, movedAt: qNowIso() });
+            return cur;
+          });
+          if (next) setRow(next);
+        }
+        else if (act === "fly" || act === "to") {
+          const ask = { id: uid(), t: qNowIso(), kind: act, byId: meId, byName: meFull || meLabel, table: me.table != null ? me.table : null, spot: "floor", note: null };
+          const next = await mutateFloorRow(store, date, (cur) => {
+            if (!cur) return null;
+            cur.assists = [ask, ...((cur.assists || []).filter((a) => !(a.byId === meId && !a.doneAt)))].slice(0, 40);
+            return cur;
+          });
+          if (next) setRow(next);
+        }
+        else if (act === "ack") {
+          const next = await mutateFloorRow(store, date, (cur) => {
+            if (!cur) return null;
+            const p = (cur.line || []).find((x) => x.id === meId); if (!p) return cur;
+            p.nudgedAt = null; cur.history = cur.history || [];
+            cur.history.push({ t: qNowIso(), action: "on-my-way", id: meId, who: p.label, by: "self" });
+            return cur;
+          });
+          if (next) setRow(next);
+        }
+      } catch (err) { /* the row poll tells the truth either way */ }
+    };
+    window.addEventListener("lpc:action", on);
+    return () => window.removeEventListener("lpc:action", on);
+  }, [meId, me && me.status, me && me.table, store, date]); // eslint-disable-line
 
   const storeName = (row && row.storeName) || "Live Floor";
   const eff = (shown === "done" && !me) ? (account ? "home" : "name") : shown;

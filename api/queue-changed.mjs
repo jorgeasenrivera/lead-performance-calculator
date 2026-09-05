@@ -24,7 +24,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl } from "./_env.mjs";
-import { decide, contentState, assistPlan } from "./_queue-notify.mjs";
+import { decide, contentState, assistPlan, railOf } from "./_queue-notify.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
 import { sendAlert, worthSending } from "./_report-alert.mjs";
@@ -105,8 +105,14 @@ export default async function handler(req, res) {
   const retire = [];            // tokens the platforms told us are dead
 
   await Promise.all(plan.flatMap((item) => (byPerson.get(item.id) || []).map(async (dev) => {
+    /* Beyond the standing: the rail (everybody in line, coloured), whether this
+       is the desk asking, and where they are sitting when with a customer, so
+       the card can draw the whole phase without the app open. */
+    const meRow = ((after.data && after.data.line) || []).find((x) => x && x.id === item.id) || {};
     const state = contentState({ ahead: item.ahead ?? 0, up: item.kind === "up",
-                                 status: item.status || "waiting", label: item.label });
+                                 status: item.status || "waiting", label: item.label },
+      { line: railOf(after.data, item.id), nudge: item.kind === "nudge",
+        table: meRow.table != null ? String(meRow.table) : null, since: meRow.statusAt || null });
     /* A nudge on a phone that has no Live Activity running should not start one
        claiming a place in a line the person may not be in. The alert carries the
        message; the display only follows for people who are actually queued. */

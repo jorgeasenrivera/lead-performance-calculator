@@ -5,3 +5,6 @@ android/
 google-services.json
 *.p8
 credentials.json
+
+# The local Expo module ships its own Swift; only the generated Xcode project is disposable.
+!modules/**/ios/

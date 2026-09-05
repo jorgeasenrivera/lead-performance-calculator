@@ -127,6 +127,28 @@ function Shell() {
     return () => { dead = true; };
   }, []);
 
+  /* ---- buttons pressed on the lock screen ----
+     The activity's buttons run as App Intents in this process and hand over one
+     word. The page does the thing with its own session, so the shell only
+     relays. A press that arrives before the page is up waits for it. */
+  const pendingAct = useRef([]);
+  const relayAct = useCallback((action) => {
+    if (!action) return;
+    if (!ready || !web.current) { pendingAct.current.push(action); return; }
+    web.current.injectJavaScript(`(function(){ try { window.dispatchEvent(new CustomEvent("lpc:action", { detail: { action: ${JSON.stringify(String(action))} } })); } catch (e) {} })(); true;`);
+  }, [ready]);
+  useEffect(() => {
+    if (Platform.OS !== "ios" || !SageLive.available) return;
+    const sub = SageLive.addActionListener((e) => relayAct(e && e.action));
+    SageLive.pendingAction().then((a) => { if (a) relayAct(a); });
+    return () => sub.remove();
+  }, [relayAct]);
+  useEffect(() => {
+    if (!ready || !web.current) return;
+    const q = pendingAct.current; pendingAct.current = [];
+    for (const a of q) relayAct(a);
+  }, [ready, relayAct]);
+
   /* ---- the Live Activity's tokens ----
      Two more ways to reach this phone, both from ActivityKit and both handed to
      the page like the device token: the push-to-start token lets the server put
@@ -197,8 +219,11 @@ function Shell() {
        for a phone that was not open. */
     if (msg.type === "queue" && Platform.OS === "ios" && SageLive.available) {
       const q = msg.payload || {};
-      const waiting = q.status === "waiting" || q.status === "up";
-      const state = { ahead: Number(q.ahead) || 0, up: q.status === "up", status: q.status === "up" ? "waiting" : String(q.status || "waiting"), label: String(q.rep || "") };
+      /* Standing with a customer keeps the card up now: that is where the FlyBy
+         and T.O. buttons live. Lunch and away stay too, with the way back. */
+      const waiting = ["waiting", "up", "customer", "lunch", "away"].includes(String(q.status || ""));
+      const state = { ahead: Number(q.ahead) || 0, up: q.status === "up", status: q.status === "up" ? "waiting" : String(q.status || "waiting"), label: String(q.rep || ""),
+        line: Array.isArray(q.line) ? q.line : [], nudge: !!q.nudge, table: q.table == null ? null : String(q.table), since: q.since || null };
       if (waiting) {
         const d = new Date(), date = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
         SageLive.start({ store: String(q.store || ""), date, kind: /up next|queue/i.test(String(q.queue || "")) ? "queue" : "floor" }, state);

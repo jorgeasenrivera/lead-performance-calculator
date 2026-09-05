@@ -33,3 +33,16 @@ export function addTokenListener(fn) {
   if (!Native) return { remove() {} };
   return Native.addListener("onToken", fn);
 }
+
+/** A button pressed on the Live Activity: { action } with one of
+    lunch, away, back, take, pass, fly, to, done, ack. */
+export function addActionListener(fn) {
+  if (!Native) return { remove() {} };
+  return Native.addListener("onAction", fn);
+}
+
+/** A press that happened while nobody was listening, once. */
+export async function pendingAction() {
+  if (!Native) return null;
+  try { return (await Native.pendingAction()) || null; } catch (e) { return null; }
+}
