@@ -19383,6 +19383,36 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
      full number and every past record is relinked so the plate's history stays one
      unbroken trail. */
   const registry = data.plateRegistry || [];
+  /* ---- one bad day's records ----
+     For a few hours the desktop's Add plate button handed its click event to
+     addPlate as the tag, and seven trips were logged under "[object Object]".
+     The plate numbers are gone; the names, times and custody are not. They are
+     relabelled NUMBER LOST so the log reads honestly, and a manager can
+     renumber that entry on the master list if it was one plate, or remove the
+     records if not. Runs once: after the write nothing matches. */
+  useEffect(() => {
+    const bad = (x) => /^\[?\s*object\s+object\s*\]?$/i.test(String(x || "").trim());
+    const regHit = registry.some((r) => bad(r.tag));
+    const recHit = Object.values(plates).some((l) => (l || []).some((p) => bad(p.tag)));
+    if (!regHit && !recHit) return;
+    const LOST = "NUMBER LOST", now = new Date().toISOString();
+    const next = JSON.parse(JSON.stringify(data));
+    const already = (next.plateRegistry || []).find((r) => normTag(r.tag) === normTag(LOST));
+    next.plateRegGone = { ...(next.plateRegGone || {}) };
+    next.plateRegistry = (next.plateRegistry || []).flatMap((r) => {
+      if (!bad(r.tag)) return [r];
+      if (already) { next.plateRegGone[r.id] = now; return []; }
+      return [{ ...r, tag: LOST, updatedAt: now }];
+    });
+    let n = 0;
+    for (const d of Object.keys(next.plates || {})) {
+      next.plates[d] = (next.plates[d] || []).map((p) => bad(p.tag)
+        ? (n++, { ...p, tag: LOST, history: [...(p.history || []), { t: now, by: "Sage", action: "Plate number lost", detail: "Logged under a broken tag; the number was not saved. Renumber on the master list or remove." }] })
+        : p);
+    }
+    onChange(next, { action: "Repaired plate records", detail: `${n} logged under a broken tag, relabelled ${LOST}` });
+  }, [data]); // eslint-disable-line
+
   // (normTag is defined at module level so the repair tool can use it too)
   const findRegistryMatch = (t) => {
     const T = normTag(t);
@@ -19441,8 +19471,11 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
      The registry stops being something the tracker only learns by accident and
      becomes a list a manager can keep straight: add the drawer of dealer plates in
      one go, fix a number that was entered wrong, retire one that has gone. */
+  /* Called two ways: from the desktop buttons with the click event, and from
+     the phone page with the text. Only a string is an argument; anything else
+     means "use the form". */
   const addBulkPlates = (textArg) => {
-    const wanted = String(textArg ?? bulk).split(/[\n,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
+    const wanted = String(typeof textArg === "string" ? textArg : bulk).split(/[\n,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
     if (!wanted.length) return false;
     const have = new Set(registry.map((r) => normTag(r.tag)));
     const fresh = [];
@@ -19499,7 +19532,8 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
   };
   const addPlate = (tagArg, whoArg) => {
-    let t = String(tagArg ?? tag).trim().toUpperCase(); if (!t) return false;
+    let t = String(typeof tagArg === "string" ? tagArg : tag).trim().toUpperCase(); if (!t) return false;
+    if (typeof whoArg !== "string") whoArg = undefined;
     setPlateErr("");
     // Resolve against the registry: shorthand finds the known plate, and a fuller
     // number than we knew upgrades the registry and relinks all past records.
