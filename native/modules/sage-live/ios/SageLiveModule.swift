@@ -31,6 +31,21 @@ public class SageLiveModule: Module {
       self.observe()
     }
 
+    /* The page's session, kept where the intents (same process) can read it. */
+    Function("setSession") { (s: [String: Any]) in
+      let d = UserDefaults.standard
+      d.set(s["token"] as? String, forKey: "sageLive.token")
+      d.set(s["apiBase"] as? String, forKey: "sageLive.apiBase")
+      d.set(s["store"] as? String, forKey: "sageLive.store")
+      d.set(s["date"] as? String, forKey: "sageLive.date")
+      if let e = s["exp"] as? Double { d.set(e, forKey: "sageLive.exp") } else { d.removeObject(forKey: "sageLive.exp") }
+    }
+
+    AsyncFunction("isRunning") { () -> Bool in
+      if #available(iOS 16.2, *) { return !Activity<QueueAttributes>.activities.isEmpty }
+      return false
+    }
+
     /* A press that landed while nobody was listening: handed over once. */
     AsyncFunction("pendingAction") { () -> String? in
       let a = UserDefaults.standard.string(forKey: "sageLive.pendingAction")
@@ -133,7 +148,7 @@ public class SageLiveModule: Module {
       date: (attrs["date"] as? String) ?? "",
       kind: (attrs["kind"] as? String) ?? "floor"
     )
-    let content = ActivityContent(state: contentState(state), staleDate: Date().addingTimeInterval(60 * 60))
+    let content = ActivityContent(state: contentState(state), staleDate: nil)
     /* One at a time. A second line on the lock screen for the same person is
        never right; the server's end/update logic assumes one too. */
     if let running = Activity<QueueAttributes>.activities.first {
@@ -147,7 +162,7 @@ public class SageLiveModule: Module {
 
   @available(iOS 16.2, *)
   private func update(state: [String: Any]) async -> Bool {
-    let content = ActivityContent(state: contentState(state), staleDate: Date().addingTimeInterval(60 * 60))
+    let content = ActivityContent(state: contentState(state), staleDate: nil)
     var any = false
     for a in Activity<QueueAttributes>.activities { await a.update(content); any = true }
     return any

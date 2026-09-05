@@ -46,3 +46,16 @@ export async function pendingAction() {
   if (!Native) return null;
   try { return (await Native.pendingAction()) || null; } catch (e) { return null; }
 }
+
+/** The page's session and whereabouts, for the buttons to act through the API:
+    { token, exp, apiBase, store, date }. */
+export function setSession(s) {
+  if (!Native) return;
+  try { Native.setSession(s || {}); } catch (e) {}
+}
+
+/** Whether an activity is on the lock screen right now. */
+export async function isRunning() {
+  if (!Native) return false;
+  try { return !!(await Native.isRunning()); } catch (e) { return false; }
+}
