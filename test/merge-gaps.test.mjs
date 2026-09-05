@@ -147,3 +147,26 @@ test("clearing a Mark off wins over a tab that still holds it", () => {
   assert.ok(!(out.forcedOff && out.forcedOff.a1 && out.forcedOff.a1.length),
     "the cleared mark came back: " + JSON.stringify(out.forcedOff));
 });
+
+test("a position set on the desktop survives a save from a phone that never saw it", () => {
+  const server = { roster: [{ id: "c1", name: "Chase Cabney", roleId: "sales", updatedAt: "2026-09-06T10:00:00Z" }] };
+  // The phone loaded before the change and saves its stale copy.
+  const phone = { roster: [{ id: "c1", name: "Chase Cabney", roleId: null }] };
+  const out = mergeAgainstServer(phone, server);
+  assert.equal(out.roster.find((a) => a.name === "Chase Cabney").roleId, "sales");
+});
+test("the newer edit to a person wins whichever side saves", () => {
+  const server = { roster: [{ id: "c1", name: "Chase Cabney", roleId: "sales", updatedAt: "2026-09-06T10:00:00Z" }] };
+  const later = { roster: [{ id: "c1", name: "Chase Cabney", roleId: "bdc", updatedAt: "2026-09-06T10:05:00Z" }] };
+  assert.equal(mergeAgainstServer(later, server).roster[0].roleId, "bdc");
+  assert.equal(mergeAgainstServer(server, later).roster[0].roleId, "bdc");
+});
+test("unstamped copies: the one that knows the id wins, else the saver", () => {
+  const withId = { roster: [{ id: "c1", name: "Chase Cabney", roleId: "sales" }] };
+  const without = { roster: [{ name: "Chase Cabney", roleId: null }] };
+  assert.equal(mergeAgainstServer(without, withId).roster[0].roleId, "sales");
+  assert.equal(mergeAgainstServer(without, withId).roster[0].id, "c1");
+  const a = { roster: [{ id: "c1", name: "Chase Cabney", roleId: "a" }] };
+  const b = { roster: [{ id: "c1", name: "Chase Cabney", roleId: "b" }] };
+  assert.equal(mergeAgainstServer(a, b).roster[0].roleId, "a");
+});

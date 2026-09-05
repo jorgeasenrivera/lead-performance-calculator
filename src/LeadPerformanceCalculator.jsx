@@ -3414,6 +3414,7 @@ export default function LeadPerformanceCalculator() {
     if (from === -1) return;
     const roleChanged = list[from].roleId !== roleId;
     const [item] = list.splice(from, 1);
+    if (roleChanged) item.updatedAt = new Date().toISOString();
     item.roleId = roleId;
     const to = targetName ? list.findIndex((a) => a.name === targetName) : list.length;
     list.splice(to === -1 ? list.length : to, 0, item);
@@ -30092,7 +30093,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
   const cased = (k) => String(k || "").replace(/\b[a-z]/g, (c) => c.toUpperCase());
   const setPerson = (p, patch, action, detail) => {
     const next = JSON.parse(JSON.stringify(data));
-    next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, ...patch } : x));
+    next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, ...patch, updatedAt: new Date().toISOString() } : x));
     onChange(next, { action, detail });
   };
   const picked = [...sel];
@@ -30163,7 +30164,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           return <button key={r.id} type="button" className={"pl-pk" + (on ? " on" : "")} onClick={() => {
             const next = JSON.parse(JSON.stringify(data));
             const ids = new Set(targets.map((p) => p.id));
-            next.roster = (next.roster || []).map((x) => (ids.has(x.id) ? { ...x, roleId: r.id } : x));
+            next.roster = (next.roster || []).map((x) => (ids.has(x.id) ? { ...x, roleId: r.id, updatedAt: new Date().toISOString() } : x));
             onChange(next, { action: "Changed position", detail: `${targets.length === 1 ? targets[0].name : targets.length + " people"}: ${r.name}` });
             if (pop.key) setSub("card"); else { stopPicking(); close(); }
           }}>{r.name}</button>;
@@ -30649,7 +30650,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     const noId = roster.filter((a) => !bad(a.name) && !a.id);
     if (!ghosts.length && !noId.length) return;
     let next = JSON.parse(JSON.stringify(data));
-    next.roster = (next.roster || []).map((a) => (a.id || bad(a.name) ? a : { ...a, id: uid() }));
+    next.roster = (next.roster || []).map((a) => (a.id || bad(a.name) ? a : { ...a, id: uid(), updatedAt: new Date().toISOString() }));
     /* Marked not-ours rather than deleted: the roster is a union across every
        open tab, so a plain deletion is put straight back by the next save. The
        ignore carries a stamp and survives the merge. */
@@ -31123,7 +31124,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                         onChange={(e) => {
                           const v = e.target.value || null;
                           const next = JSON.parse(JSON.stringify(data));
-                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, roleId: v } : x));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, roleId: v, updatedAt: new Date().toISOString() } : x));
                           onChange(next, { action: "Changed position", detail: `${p.name}: ${roleName(v) || "none"}` });
                         }}>
                         <option value="">needs a position</option>
@@ -31139,7 +31140,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                         onBlur={(e) => {
                           const codes = e.target.value.split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
                           const next = JSON.parse(JSON.stringify(data));
-                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, langs: codes } : x));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, langs: codes, updatedAt: new Date().toISOString() } : x));
                           onChange(next, { action: "Changed languages", detail: `${p.name}: ${codes.join(", ") || "none"}` });
                         }}
                         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
@@ -31158,7 +31159,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                               const have = new Set(p.skills || []);
                               if (have.has(t.id)) have.delete(t.id); else have.add(t.id);
                               const next = JSON.parse(JSON.stringify(data));
-                              next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, skills: [...have] } : x));
+                              next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, skills: [...have], updatedAt: new Date().toISOString() } : x));
                               onChange(next, { action: "Changed what they can take", detail: `${p.name}: ${[...have].join(", ") || "none"}` });
                             }}>{t.label}</button>
                         );
@@ -31181,7 +31182,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                         onChange={(e) => {
                           const v = e.target.value || null;
                           const next = JSON.parse(JSON.stringify(data));
-                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, hiredAt: v } : x));
+                          next.roster = (next.roster || []).map((x) => (x.id === p.id ? { ...x, hiredAt: v, updatedAt: new Date().toISOString() } : x));
                           onChange(next, { action: "Set a start date", detail: `${p.name}: ${v || "cleared"}` });
                         }} />
                     </label>
