@@ -9026,7 +9026,7 @@ function tellJumpOrigin(el) {
 /* The phone pages are built from their own blocks, not .hero and .card, and
    they fly in the same way: the Board's hero and standings, Check Out's hero,
    tiles and groups, and the Live Floor page as one. */
-const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card";
+const RADIAL_PARTS = ".topbar, .app-header, .seg-wrap, .hero, .card, .assoc-card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card, .sm-chs";
 
 /* ---- the handover does no React work at all ----
    Everything the dashboard needs in order to appear is a class on the document
@@ -28704,7 +28704,237 @@ function TrendsPanel({ config, stores, data }) {
   );
 }
 
+/* ---------------- Summary on a phone ----------------
+   The approved phone draft: the month, units delivered in dot matrix against
+   the goal, four verdict counters that each list their names, print and CSV
+   as tiles, the three channels against target with the trail under them,
+   month over month, the day-by-day chart with the desk's own controls, and
+   where the floor is losing standard. Desktop keeps GMSummary's layout. */
+function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, rows, restricted, trending, cleared, paused,
+  byStandard, channels, thr, trail, trailPct, moLabel, mNow, mPrev, measures, move, totalUnits, single, exportCSV }) {
+  const [pop, setPop] = useState(null);
+  const close = useCallback(() => setPop(null), []);
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const avStyle = (name) => ({ background: `hsl(${hueFromName(name)} 52% 42%)` });
+  const nameList = (list, sub, tag) => (
+    <div className="fr-list pl-rl">
+      {list.map((r, i) => (
+        <div key={i} className="pl-pr static"><span className="fr-av sm" style={avStyle(r.name)}>{initialsOf(r.name)}</span>
+          <span className="pl-prn">{r.name}{sub && sub(r) && <small>{sub(r)}</small>}</span>{tag ? tag(r) : <span />}</div>
+      ))}
+      {list.length === 0 && <p className="fr-empty">Nobody here.</p>}
+    </div>
+  );
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "month") return (<>{hd("Which month")}<div className="fr-list co-dlist">{(monthOptions.length ? monthOptions : [ym()]).map((m) => <button key={m} type="button" className={"co-dr" + (m === month ? " co-on" : "")} onClick={() => { setMonth(m); close(); }}><span className="co-dn">{monthLabel(m)}</span><span /><span>{m === ym() ? <span className="fr-st in">this month</span> : null}</span></button>)}</div></>);
+    if (pop.k === "below") return (<>{hd("Below standard", <span className="fr-st away">{restricted.length} of {rows.length}</span>)}{nameList(restricted, (r) => failureText(r.ev), (r) => r.ev.atCap ? <span className="fr-st away">at cap</span> : <span />)}</>);
+    if (pop.k === "paused") return (<>{hd("Leads paused right now", <span className="fr-st away">{paused.length}</span>)}<div className="bp-defn">At their cap and below standard, so the tool is holding their next lead.</div>{nameList(paused, (r) => `${r.ev.opps} / ${r.ev.cap} · ${failureText(r.ev)}`, () => <span className="fr-st away">held</span>)}</>);
+    if (pop.k === "grace") return (<>{hd("Inside grace", <span className="fr-st cust">{trending.length}</span>)}<div className="bp-defn">Below standard inside the grace days at the start of the month, so nothing is held yet.</div>{nameList(trending, (r) => failureText(r.ev))}</>);
+    if (pop.k === "holding") return (<>{hd("Holding standard", <span className="fr-st in">{cleared.length}</span>)}{nameList(cleared, (r) => `${r.ev.opps} / ${r.ev.cap} leads`)}</>);
+    if (pop.k === "chan") {
+      const c = channels.find((x) => x.id === pop.id); if (!c) return null;
+      const target = thr ? thr[c.id].green : null;
+      const vals = trailPct[c.id] || [];
+      const col = CHANNEL_HUE[c.id];
+      return (<>{hd(`${c.label} closing`, <><span className={"fr-st " + (target != null && c.pct != null && c.pct * 100 >= target ? "in" : "away")}>{c.pct == null ? "–" : fmtPct(c.pct)}</span>{target != null && <span className="fr-w">target {target}%</span>}<span className="fr-w">{fmtNum(c.units)} from {Math.round(c.leads)} leads</span></>)}
+        <div className="cx-bars">{trail.map((m, i) => { const v = vals[i]; const w = v == null ? 0 : Math.min(100, (v * 100 / Math.max(target || 1, 1)) * 70); return <div key={m} className="cx-bar"><span className="cx-bl"><span className="cx-l">{monthLabel(m)}</span><span className="cx-tr"><i style={{ width: w + "%", background: col }} /><em /></span></span><span className="cx-bv">{v == null ? "–" : fmtPct(v)}</span></div>; })}</div>
+        <div className="bp-defn">The line is the target. Units delivered against the leads worked, by month.</div></>);
+    }
+    return null;
+  };
+  const kpi = (k, n, label, cls) => <button key={k} type="button" className={cls || ""} onClick={() => setPop({ k })}><b>{n}</b><span>{label}</span></button>;
+  return (
+    <div className="bp-page cx-page sm-phone">
+      <div className="bp-hero cx-hero">
+        <div className="cx-hh"><button type="button" className="co-day" onClick={() => setPop({ k: "month" })}><PixIcon glyph="calendar" size={11} />{monthLabel(month)}</button><span className="cx-days">generated {new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</span></div>
+        <div className="cx-big" style={{ cursor: "default" }}><DotNum value={String(Math.round(totalUnits))} dot={8} color="#fff" /><span className="cx-of">delivered{single?.goal?.units ? <><br />of {fmtNum(single.goal.units)} goal</> : null}</span></div>
+        {rows.length > 0 && (
+          <div className="co-std">
+            <button type="button" onClick={() => setPop({ k: "below" })}><b>{restricted.length}<small>/{rows.length}</small></b><span><PixIcon glyph="warn" size={9} />Below</span></button>
+            <button type="button" className={paused.length ? "co-alert" : ""} onClick={() => setPop({ k: "paused" })}><b>{paused.length}</b><span><PixIcon glyph="close" size={9} />Paused</span></button>
+            <button type="button" onClick={() => setPop({ k: "grace" })}><b>{trending.length}</b><span><PixIcon glyph="clock" size={9} />In grace</span></button>
+            <button type="button" onClick={() => setPop({ k: "holding" })}><b>{cleared.length}</b><span><PixIcon glyph="check" size={9} />Holding</span></button>
+          </div>
+        )}
+        <div className="cx-tools">
+          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="doc" size={16} />Print</button>
+          <button type="button" className="fr-tool dk" onClick={exportCSV}><PixIcon glyph="arrowdown" size={16} />Export CSV</button>
+        </div>
+      </div>
+      {rows.length === 0 && <p className="fr-empty">No data for this month yet.</p>}
+
+      {channels.some((c) => c.pct != null) && (
+        <div className="sm-chs">
+          {channels.map((c) => {
+            const pctV = c.pct == null ? null : c.pct * 100;
+            const target = thr ? thr[c.id].green : null;
+            const d = pctV != null && target != null ? Math.round((pctV - target) * 10) / 10 : null;
+            const vals = trailPct[c.id] || [];
+            const mx = Math.max(1, ...vals.map((v) => (v == null ? 0 : v * 100)));
+            return (
+              <button key={c.id} type="button" className="sm-ch" style={{ "--c": CHANNEL_HUE[c.id] }} onClick={() => setPop({ k: "chan", id: c.id })}>
+                <span className="sm-cn"><i />{c.label}</span>
+                <span className={"sm-cv " + (d == null ? "" : d >= 0 ? "ok" : "bad")}>{pctV == null ? "–" : fmtPct(c.pct)}</span>
+                <span className="sm-ct">{d != null ? <><b className={d >= 0 ? "ok" : "bad"}>{d >= 0 ? "+" : ""}{d}</b> vs {target}%</> : target != null ? `target ${target}%` : ""}</span>
+                {trail.length > 1 && <><span className="sm-sp">{vals.map((v, i) => <i key={i} className={i === vals.length - 1 ? "hot" : ""} style={{ height: `${Math.max(8, ((v == null ? 0 : v * 100) / mx) * 100)}%` }} />)}</span><span className="sm-spl"><span>{moLabel(trail[0])}</span><span>{moLabel(trail[trail.length - 1])}</span></span></>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {mNow.any && (
+        <div className="co-grp co-gon cx-card sm-mo">
+          <div className="co-gh"><PixIcon glyph="calendar" size={14} />Month over month</div>
+          <div className="sm-r3 h"><span>Measure</span><span>{moLabel(month)}</span><span>{moLabel(`${month.split("-")[0]}-${month.split("-")[1]}`) && mPrev.any ? moLabel(prevOf(month)) : "before"}</span><span>move</span></div>
+          {measures.map(([label, k]) => {
+            const a = mNow[k], b = mPrev.any ? mPrev[k] : null;
+            const mv = b != null ? move(a, b) : null;
+            return (<div key={k} className="sm-r3"><span className="sm-mn">{label}</span><span className="sm-mv">{fmtNum(a)}</span><span className="sm-mv dim">{b == null ? "–" : fmtNum(b)}</span>
+              {mv == null ? <span className="sm-mm na">–</span> : <span className={"sm-mm " + (mv >= 0 ? "up" : "dn")}><PixIcon glyph={mv >= 0 ? "triup" : "tridown"} size={8} />{mv >= 0 ? "+" : ""}{mv}%</span>}</div>);
+          })}
+        </div>
+      )}
+
+      <div className="co-grp co-gon cx-card sm-trend">
+        <TrendsPanel config={config} stores={stores} data={data} />
+      </div>
+
+      {byStandard.length > 0 && (
+        <div className="co-grp co-gon cx-card">
+          <div className="co-gh"><PixIcon glyph="warn" size={14} />Where the floor is losing standard</div>
+          <div className="sm-std">
+            {byStandard.map((g) => (
+              <div key={g.metric} className="sm-g">
+                <div className="sm-gh">{METRICS[g.metric].label}<span className="sm-gn">{g.people.length} below</span></div>
+                <div className="sm-pp">{g.people.map((r, i) => <span key={i} className="sm-p"><span>{r.name}</span><em>{r.shown} <small>vs {r.need}</small></em>{r.grace && <span className="sm-t">grace</span>}{r.atCap && <span className="sm-t hot">at cap</span>}</span>)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {cleared.length > 0 && (
+        <div className="co-grp co-gon cx-card">
+          <div className="co-gh"><PixIcon glyph="check" size={14} />Holding standard<span className="co-gn">{cleared.length}</span></div>
+          <div className="sm-std"><div className="sm-pp">{cleared.map((r, i) => <span key={i} className="sm-p ok"><span>{r.name}</span><em>{r.ev.opps}/{r.ev.cap}</em></span>)}</div></div>
+        </div>
+      )}
+      {pop && <FrPop title={pop.k} onClose={close} cls="co-sheet">{popBody()}</FrPop>}
+    </div>
+  );
+}
+const prevOf = (month) => { const [py, pmo] = month.split("-").map(Number); return `${pmo === 1 ? py - 1 : py}-${String(pmo === 1 ? 12 : pmo - 1).padStart(2, "0")}`; };
+
+/* ---------------- History on a phone ----------------
+   The approved phone draft: the month against the month before, months on
+   record in dot matrix, the store's five with their move, print and the
+   targets in force as tiles, then per role a row per person with the five as
+   small bars against the target. A person opens with every month on record
+   for each of the five and the verdict trail. Desktop keeps HistoryPanel. */
+function HistoryPhone({ config, store, data, months, month, setMonth, roster, thr, M, prevKey, storeFive, valIn, before }) {
+  const [pop, setPop] = useState(null);
+  const close = useCallback(() => setPop(null), []);
+  const hd = (title, meta) => (
+    <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm bp-nm">{title}</div>{meta && <div className="fr-meta">{meta}</div>}</div></div>
+  );
+  const at = months.indexOf(month);
+  const trail4 = months.slice(at, at + 4).reverse();
+  const allTrail = months.slice(at).reverse();
+  const shortLabel = (f) => ({ internetPct: "Internet", phonePct: "Phone", showroomPct: "Showroom", apptVideoDayPct: "Appt video", engagedVideoPct: "Engaged" }[f.k] || f.label);
+  const snap = month !== ym() ? M.standardsSnapshot : null;
+  const popBody = () => {
+    if (!pop) return null;
+    if (pop.k === "month") return (<>{hd("Which month")}<div className="fr-list co-dlist">{months.map((m) => <button key={m} type="button" className={"co-dr" + (m === month ? " co-on" : "")} onClick={() => { setMonth(m); close(); }}><span className="co-dn">{monthLabel(m)}</span><span /><span>{m === ym() ? <span className="fr-st in">this month</span> : null}</span></button>)}</div></>);
+    if (pop.k === "targets") {
+      return (<>{hd("Targets in force", <span className="fr-w">{monthLabel(month)}</span>)}
+        <div className="cx-bench2">{HIST_FIVE.map((f) => <div key={f.k}><b>{f.thr(thr)}%</b><span>{shortLabel(f)}</span></div>)}</div>
+        <div className="bp-defn">{month === ym() ? "The store's targets as set under Targets." : snap ? "A past month reads against the targets that were in force then, not today's." : "This month predates target snapshots, so it is read against today's."}</div></>);
+    }
+    if (pop.k === "store") {
+      const f = storeFive.find((x) => x.k === pop.f); if (!f) return null;
+      const vals = allTrail.map((mk) => { const Mx = data.months[mk]; if (!Mx) return null;
+        if (f.k === "apptVideoDayPct" || f.k === "engagedVideoPct") { let s = 0, n = 0; for (const a of roster) { const v = Mx.stats?.[norm(a.name)]?.[f.k]; if (v != null) { s += v; n++; } } return n ? s / n : null; }
+        return channelRates(Mx, roster).find((c) => c.id === f.k.replace("Pct", ""))?.pct ?? null; });
+      const target = f.thr(thr);
+      return (<>{hd(`${shortLabel(f)} · the store`, <><span className="fr-st in">{f.now == null ? "–" : fmtPct(f.now)} in {monthLabel(month)}</span><span className="fr-w">target {target}%</span></>)}
+        <div className="cx-bars">{allTrail.map((mk, i) => { const v = vals[i]; return <div key={mk} className="cx-bar"><span className="cx-bl"><span className="cx-l">{monthLabel(mk)}</span><span className="cx-tr"><i style={{ width: (v == null ? 0 : Math.min(100, (v * 100 / target) * 70)) + "%", background: f.col }} /><em /></span></span><span className="cx-bv">{v == null ? "–" : fmtPct(v)}</span></div>; })}</div>
+        <div className="bp-defn">The line is the target. Every month on record.</div></>);
+    }
+    if (pop.k === "person") {
+      const a = roster.find((x) => x.id === pop.id); if (!a) return null;
+      const st = M.stats?.[norm(a.name)];
+      const role = config.roles.find((r) => r.id === a.roleId);
+      const held = evaluateAssociate(st, config.standards?.[store.id]?.[a.roleId]?.tiers);
+      const verdicts = allTrail.map((mk) => verdictIn(data, config, store.id, mk, a));
+      return (<>
+        <div className="fr-hd"><span className="fr-av" style={{ background: `hsl(${hueFromName(a.name)} 52% 42%)` }}>{initialsOf(a.name)}</span>
+          <div className="fr-hdt"><div className="fr-nm">{a.name}</div><div className="fr-meta"><span className="fr-w">{role?.name}</span><span className="fr-st in">{held.opps ?? 0} / {held.cap ?? "–"} leads</span>{held.status === "fail" && <span className="fr-st away">restricted in {monthLabel(month)}</span>}</div></div></div>
+        <div className="pl-sec">Verdict trail · {monthLabel(allTrail[0])} to {monthLabel(month)}</div>
+        <div className="hs-vt">{verdicts.map((v, i) => <span key={i} className={v === "pass" ? "p" : v === "fail" ? "f" : "n"}>{v === "pass" ? "ok" : v === "fail" ? "held" : "–"}</span>)}</div>
+        <div className="hs-big">
+          {HIST_FIVE.map((f) => {
+            const now = st?.[f.k] ?? null; const mv = moveOn(now, before(a.name, f.k)); const target = f.thr(thr);
+            const vals = allTrail.map((mk) => valIn(mk, a.name, f.k));
+            return (<div key={f.k} className="hs-m" style={{ "--hc": f.col }}>
+              <div className="hs-mh"><b>{shortLabel(f)}</b><span className="hs-v">{now == null ? "–" : fmtPct(now)}{mv && mv.dir !== "flat" && <small className={mv.dir}>{mv.txt}</small>}<small>target {target}%</small></span></div>
+              <div className="hs-bars"><em style={{ bottom: "80%" }} />{vals.map((v, i) => <i key={i} className={i === vals.length - 1 ? "now" : ""} style={{ height: (v == null ? 0 : Math.min(100, (v * 100 / target) * 80)) + "%" }} />)}</div>
+              <div className="hs-ml"><span>{monthLabel(allTrail[0]).slice(0, 3)}</span><span>{monthLabel(month).slice(0, 3)}</span></div>
+            </div>);
+          })}
+        </div>
+        <div style={{ height: 12 }} />
+      </>);
+    }
+    return null;
+  };
+  return (
+    <div className="bp-page cx-page hs-phone">
+      <div className="bp-hero cx-hero">
+        <div className="cx-hh"><button type="button" className="co-day" onClick={() => setPop({ k: "month" })}><PixIcon glyph="calendar" size={11} />{monthLabel(month)}</button><span className="cx-days">{prevKey ? `against ${monthLabel(prevKey)}` : "first month on record"}</span></div>
+        <div className="cx-big" style={{ cursor: "default" }}><DotNum value={String(months.length)} dot={8} color="#fff" /><span className="cx-of">months on record<br />{monthLabel(months[months.length - 1])} to {monthLabel(months[0])}</span></div>
+        <div className="hs-five">
+          {storeFive.map((f) => { const mv = f.now != null && f.prev != null ? (f.now - f.prev) * 100 : null;
+            return <button key={f.k} type="button" onClick={() => setPop({ k: "store", f: f.k })}><i style={{ background: f.col }} /><b>{f.now == null ? "–" : fmtPct(f.now)}</b><span>{shortLabel(f)}</span><em className={mv == null ? "na" : Math.abs(mv) < 0.05 ? "na" : mv > 0 ? "up" : "dn"}>{mv == null ? "–" : Math.abs(mv) < 0.05 ? "level" : `${mv > 0 ? "▲" : "▼"} ${Math.abs(mv).toFixed(1)}`}</em></button>; })}
+        </div>
+        <div className="cx-tools">
+          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="doc" size={16} />Print the month</button>
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "targets" })}><PixIcon glyph="tap" size={16} />Targets in force</button>
+        </div>
+      </div>
+
+      {config.roles.map((role) => {
+        const people = roster.filter((a) => a.roleId === role.id);
+        if (!people.length) return null;
+        return (
+          <div key={role.id} className="co-grp co-gon cx-card">
+            <div className="pe-role"><RoleBadge role={role} count={people.length} /></div>
+            <div className="hs-head"><span />{HIST_FIVE.map((f) => <i key={f.k} style={{ background: f.col }} />)}</div>
+            {people.map((a) => {
+              const st = M.stats?.[norm(a.name)];
+              const held = evaluateAssociate(st, config.standards?.[store.id]?.[role.id]?.tiers);
+              const anywhere = HIST_FIVE.some((f) => st?.[f.k] != null || trail4.some((mk) => valIn(mk, a.name, f.k) != null));
+              return (
+                <button key={a.id} type="button" className={"hs-row" + (anywhere ? "" : " empty")} onClick={() => setPop({ k: "person", id: a.id })}>
+                  <span className="hs-who"><span className="hs-nm">{a.name}</span><span className="hs-sub">{held.opps ?? 0} / {held.cap ?? "–"} leads</span></span>
+                  {anywhere ? HIST_FIVE.map((f) => { const now = st?.[f.k] ?? null; const mv = moveOn(now, before(a.name, f.k)); const target = f.thr(thr);
+                    return <span key={f.k} className="hs-c" style={{ "--hc": f.col }}><b className={mv ? mv.dir : ""}>{now == null ? "–" : fmtPct(now)}</b><span className="hs-bars4"><em style={{ bottom: "80%" }} />{trail4.map((mk, i) => { const v = valIn(mk, a.name, f.k); return <i key={mk} className={i === trail4.length - 1 ? "now" : ""} style={{ height: (v == null ? 0 : Math.min(100, (v * 100 / target) * 80)) + "%" }} />; })}</span></span>; })
+                    : <span className="hs-nf">no figures in {monthLabel(month)}</span>}
+                </button>
+              );
+            })}
+          </div>
+        );
+      })}
+      {pop && <FrPop title={pop.k} onClose={close} cls="co-sheet">{popBody()}</FrPop>}
+    </div>
+  );
+}
+
 function GMSummary({ config, data, stores }) {
+  const phone = usePhoneLayout();
   const [month, setMonth] = useState(ym());
   const monthOptions = Array.from(new Set(
     stores.flatMap((s) => Object.keys(data[s.id]?.months || {}))
@@ -28839,6 +29069,13 @@ function GMSummary({ config, data, stores }) {
       </span>
     );
   };
+
+  if (phone) return (
+    <SummaryPhone config={config} stores={stores} data={data} month={month} setMonth={setMonth} monthOptions={monthOptions}
+      rows={rows} restricted={restricted} trending={trending} cleared={cleared} paused={paused} byStandard={byStandard}
+      channels={channels} thr={thr} trail={trail} trailPct={trailPct} moLabel={moLabel} mNow={mNow} mPrev={mPrev}
+      measures={MEASURES} move={move} totalUnits={totalUnits} single={single} exportCSV={exportCSV} />
+  );
 
   return (
     <div className="gm print-area sm-page">
@@ -29084,6 +29321,7 @@ function HistBars({ vals, target, col }) {
 }
 
 function HistoryPanel({ config, store, data }) {
+  const phone = usePhoneLayout();
   const months = Object.keys(data.months || {}).sort().reverse();
   const [month, setMonth] = useState(months[0] || ym());
   const roster = useMemo(() => (data.roster || []).slice().sort((a, b) => a.order - b.order), [data.roster]);
@@ -29118,6 +29356,11 @@ function HistoryPanel({ config, store, data }) {
     const prev = prevKey ? (channelRates(data.months[prevKey], roster).find((c) => c.id === id)?.pct ?? null) : null;
     return { ...f, now, prev };
   });
+
+  if (phone) return (
+    <HistoryPhone config={config} store={store} data={data} months={months} month={month} setMonth={setMonth} roster={roster}
+      thr={thr} M={M} prevKey={prevKey} storeFive={storeFive} valIn={valIn} before={before} />
+  );
 
   return (
     <div className="history">
@@ -33927,7 +34170,7 @@ const SAGE_CSS = `
       }
       /* A page reload holds every flying part invisible until the mount is done
          and the radial flight begins; each part's own animation then takes over. */
-      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card) { opacity:0; }
+      .refresh-hold :is(.topbar, .app-header, .seg-wrap, .hero, .card, .empty, .sect-strip, .bp-hero, .bp-stand, .co-tools, .co-grp, .fr-page, .pl-miss, .cx-card, .sm-chs) { opacity:0; }
       .refresh-flash { position:fixed; inset:0; z-index:80; pointer-events:none;
         background:radial-gradient(circle at 50% 46%, rgba(255,255,255,.95), rgba(169,196,172,.35) 26%, transparent 46%);
         animation:refreshFlash .62s cubic-bezier(.2,.7,.3,1) both; }
@@ -39561,7 +39804,7 @@ const SAGE_CSS = `
 .bp-page .bp-row{ padding:0 12px; }
 .bp-page .fr-tool{ padding:10px 4px; }
 .bp-page{ padding-top:6px; }
-@media (max-width:700px){ .board-page{ padding:18px 0 0; } .co-page{ padding:10px 0 28px; } }
+@media (max-width:700px){ .board-page{ padding:18px 0 0; } .co-page{ padding:10px 0 28px; } .tab-page:has(> .bp-page){ padding:10px 0 0; } }
 /* ---- License Plates on a phone ---- */
 .pl-page{ padding-top:6px; }
 .pl-hero{ padding:18px 18px 16px; }
@@ -39758,6 +40001,67 @@ const SAGE_CSS = `
 .cx-bench2{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:8px 16px 4px; }
 .cx-bench2 > div{ background:var(--frpaper); border-radius:12px; padding:9px 6px; text-align:center; }
 .cx-bench2 b{ display:block; font:700 17px var(--font-display); color:var(--frink); } .cx-bench2 span{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); display:block; margin-top:3px; line-height:1.2; }
+
+/* ---- Summary on a phone ---- */
+.sm-chs{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+.sm-ch{ background:#fff !important; border:1px solid var(--frline) !important; border-radius:16px; padding:10px 10px 8px !important; min-width:0; display:flex !important; flex-direction:column; align-items:flex-start; }
+.sm-cn{ font:700 8px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--frink3); display:flex; align-items:center; gap:5px; }
+.sm-cn i{ width:8px; height:8px; border-radius:50%; background:var(--c); display:inline-block; }
+.sm-cv{ font:700 20px/1 var(--font-display); margin-top:6px; color:var(--frink); } .sm-cv.ok{ color:var(--frok); } .sm-cv.bad{ color:var(--frgap); }
+.sm-ct{ font:600 8.5px var(--font-mono); color:var(--frink3); margin-top:3px; white-space:nowrap; letter-spacing:-.01em; } .sm-ct b.ok{ color:var(--frok); } .sm-ct b.bad{ color:var(--frgap); }
+.sm-sp{ display:flex; align-items:flex-end; gap:3px; height:26px; margin-top:8px; width:100%; }
+.sm-sp i{ flex:1; border-radius:2px 2px 0 0; background:rgba(21,33,27,.15); display:block; } .sm-sp i.hot{ background:var(--c); }
+.sm-spl{ display:flex; justify-content:space-between; width:100%; font:600 7.5px var(--font-mono); color:var(--frink3); margin-top:3px; text-transform:uppercase; }
+.sm-r3{ display:grid; grid-template-columns:minmax(0,1fr) 52px 52px 58px; column-gap:6px; align-items:center; padding:9px 14px; border-top:1px solid var(--frline); }
+.sm-r3.h{ border-top:0; padding:4px 14px 6px; font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); }
+.sm-r3.h span{ text-align:right; } .sm-r3.h span:first-child{ text-align:left; }
+.sm-mn{ font:600 12.5px var(--font-ui); color:var(--frink); } .sm-mv{ font:700 13px var(--font-mono); text-align:right; color:var(--frink); } .sm-mv.dim{ color:var(--frink3); font-weight:600; }
+.sm-mm{ justify-self:end; font:700 10px var(--font-mono); padding:2px 6px; border-radius:6px; display:inline-flex; align-items:center; gap:3px; }
+.sm-mm.up{ background:#E3F3E9; color:var(--frok); } .sm-mm.dn{ background:#FBE5E0; color:var(--frgap); } .sm-mm.na{ background:var(--frpaper); color:var(--frink3); }
+.sm-std{ padding:4px 14px 10px; }
+.sm-g{ padding:8px 0 4px; } .sm-gh{ display:flex; align-items:center; gap:8px; font:700 13px var(--font-display); color:var(--frink); } .sm-gn{ margin-left:auto; font:700 9.5px var(--font-mono); background:#FBE5E0; color:var(--frgap); padding:2px 7px; border-radius:7px; }
+.sm-pp{ display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.sm-p{ display:inline-flex; align-items:center; gap:6px; border:1.5px solid var(--frline); border-radius:10px; padding:5px 9px; font:600 12px var(--font-ui); color:var(--frink); }
+.sm-p em{ font:700 9.5px var(--font-mono); font-style:normal; color:var(--frgap); } .sm-p em small{ color:var(--frink3); font-weight:600; }
+.sm-t{ font:700 7.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; padding:1px 5px; border-radius:5px; background:var(--frpaper); color:var(--frink3); } .sm-t.hot{ background:#FBE5E0; color:var(--frgap); }
+.sm-p.ok{ border-color:#CFE7D6; } .sm-p.ok em{ color:var(--frok); }
+/* the desk's day-by-day chart, wearing the phone's clothes */
+.sm-trend{ padding:6px 12px 12px; }
+.sm-trend .tr-panel,.sm-trend .card{ background:none; border:0; box-shadow:none; padding:0; margin:0; }
+.sm-trend .tr-range{ border-radius:99px; font:700 11px var(--font-ui); }
+.sm-trend .tr-ranges{ background:none; padding:0; gap:6px; flex-wrap:wrap; }
+.sm-trend .tr-range{ border:1.5px solid var(--frline); background:#fff; color:var(--frink2); padding:6px 11px; }
+.sm-trend .tr-range.on{ background:#15211B; border-color:#15211B; color:#fff; }
+.sm-trend .tr-stat-n .dotnum svg{ fill:var(--frink); }
+.sm-trend .tr-chip{ border-radius:99px; border:1.5px solid var(--frline); font:700 10px var(--font-ui); }
+.sm-trend .tr-chip.on{ border-color:#2E7DE0; color:#2E7DE0; }
+/* ---- History on a phone ---- */
+.hs-five{ display:grid; grid-template-columns:repeat(5,1fr); gap:5px; margin-top:14px; position:relative; z-index:1; }
+.hs-five > button{ background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.12) !important; border-radius:12px; padding:8px 3px !important; text-align:center !important; min-width:0; display:block; }
+.hs-five b{ display:block; font:700 14px var(--font-display); color:#fff; line-height:1.1; }
+.hs-five span{ font:700 7px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.65); display:block; margin-top:3px; line-height:1.2; }
+.hs-five em{ font:700 8px var(--font-mono); font-style:normal; display:block; margin-top:3px; } .hs-five em.up{ color:#8fd8af; } .hs-five em.dn{ color:#F08A80; } .hs-five em.na{ color:rgba(255,255,255,.4); }
+.hs-five i{ display:block; width:16px; height:3px; border-radius:2px; margin:0 auto 4px; }
+.pe-role{ display:flex; align-items:center; gap:9px; padding:11px 14px; background:linear-gradient(90deg,#F6E3C3,rgba(246,227,195,0) 72%); }
+.hs-head{ display:grid; grid-template-columns:minmax(0,1fr) repeat(5,34px); column-gap:6px; padding:4px 14px 6px; }
+.hs-head i{ display:block; height:4px; border-radius:2px; }
+.hs-row{ display:grid !important; grid-template-columns:minmax(0,1fr) repeat(5,34px); column-gap:6px; align-items:center; padding:10px 14px !important; width:100%; border-top:1px solid var(--frline); }
+.hs-who{ min-width:0; display:flex; flex-direction:column; }
+.hs-nm{ font:700 13.5px var(--font-display); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--frink); } .hs-sub{ font:500 9.5px var(--font-mono); color:var(--frink3); margin-top:2px; }
+.hs-row.empty .hs-nm,.hs-row.empty .hs-sub{ color:var(--frink3); } .hs-nf{ grid-column:2 / span 5; font:500 10px var(--font-mono); color:var(--frink3); text-align:right; }
+.hs-c{ display:flex; flex-direction:column; align-items:center; gap:3px; }
+.hs-c b{ font:700 10.5px var(--font-mono); color:var(--frink); } .hs-c b.up{ color:var(--frok); } .hs-c b.down{ color:var(--frgap); }
+.hs-bars4{ display:flex; align-items:flex-end; gap:2px; height:16px; width:30px; position:relative; }
+.hs-bars4 i{ flex:1; border-radius:1px 1px 0 0; background:var(--hc); opacity:.4; display:block; } .hs-bars4 i.now{ opacity:1; }
+.hs-bars4 em{ position:absolute; left:0; right:0; border-top:1px dashed var(--frink3); }
+.hs-vt{ display:flex; gap:4px; padding:8px 16px 4px; flex-wrap:wrap; } .hs-vt span{ flex:1 0 34px; text-align:center; font:700 8px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; padding:6px 0; border-radius:8px; }
+.hs-vt span.p{ background:#E3F3E9; color:var(--frok); } .hs-vt span.f{ background:#FBE5E0; color:var(--frgap); } .hs-vt span.n{ background:var(--frpaper); color:var(--frink3); }
+.hs-big{ padding:4px 16px; } .hs-m{ padding:8px 0; border-top:1px solid var(--frline); } .hs-m:first-child{ border-top:0; }
+.hs-mh{ display:flex; align-items:baseline; gap:8px; } .hs-mh b{ font:700 15px var(--font-display); color:var(--frink); } .hs-v{ margin-left:auto; font:700 14px var(--font-mono); color:var(--frink); } .hs-v small{ font:700 9px var(--font-mono); color:var(--frink3); margin-left:6px; } .hs-v small.up{ color:var(--frok); } .hs-v small.down{ color:var(--frgap); }
+.hs-bars{ display:flex; align-items:flex-end; gap:4px; height:44px; margin-top:6px; position:relative; }
+.hs-bars i{ flex:1; border-radius:3px 3px 0 0; background:var(--hc); opacity:.4; display:block; } .hs-bars i.now{ opacity:1; }
+.hs-bars em{ position:absolute; left:0; right:0; border-top:1.5px dashed var(--frink3); }
+.hs-ml{ display:flex; justify-content:space-between; font:600 7.5px var(--font-mono); color:var(--frink3); margin-top:3px; text-transform:uppercase; }
 
 .fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
