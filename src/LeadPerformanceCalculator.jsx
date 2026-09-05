@@ -29724,6 +29724,7 @@ function HistoryPanel({ config, store, data }) {
    somebody grabbing at, but it is a queue rule rather than a verdict on a
    person, so it lives in a panel instead of across the page. */
 function TargetsEditor({ config, storeId, data, onChange }) {
+  const phone = usePhoneLayout();
   const [roleId, setRoleId] = useState(config.roles[0]?.id);
   const [openTier, setOpenTier] = useState(null);
   const std = config.standards?.[storeId]?.[roleId] || { tiers: [] };
@@ -29785,7 +29786,25 @@ function TargetsEditor({ config, storeId, data, onChange }) {
   const possible = rows.reduce((n, r) => n + r.seen, 0);
 
   return (
-    <div className="standards targets">
+    <div className={"standards targets" + (phone ? " tg-ph" : "")}>
+      {phone ? (
+        /* The compact hero every other tab wears on a phone: title and store on
+           one line, the position as a pill, the four figures as counters. */
+        <div className="bp-hero cx-hero tg-hero-ph">
+          <div className="cx-hh"><span className="cx-top"><PixIcon glyph="chart" size={11} />Targets</span><span className="cx-days">{storeName}</span></div>
+          <div className="tg-role-ph">
+            <select className="hist-month" value={roleId} onChange={(e) => setRoleId(e.target.value)} title="Which position these apply to">
+              {config.roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          <div className="co-std pe-std">
+            <button type="button"><b>5</b><span>Metrics</span></button>
+            <button type="button"><b>{atGreen}<small>/{possible || "-"}</small></b><span>At green</span></button>
+            <button type="button"><b>{store?.graceDays ?? 10}</b><span>Grace days</span></button>
+            <button type="button"><b>{std.tiers.length}</b><span>Lead caps</span></button>
+          </div>
+        </div>
+      ) : (
       <div className="s2-hero tg-hero">
         <i className="s2-noise" aria-hidden="true" />
         <div className="s2-tube">
@@ -29817,6 +29836,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
         </div>
         </div>
       </div>
+      )}
 
       <div className="sec-cap tg-cap">What green and yellow mean, per metric</div>
       <div className="tg-tbl">
@@ -38076,6 +38096,26 @@ const SAGE_CSS = `
 .imp-ph > .explain, .imp-ph > details{ margin:12px; }
 .imp-ph .flag-banner{ margin:12px; }
 @media (max-width:700px){ .tab-page:has(> .imp-ph){ padding:10px 0 0; } }
+
+/* ---- Targets on a phone: a light pass ---- */
+.tg-hero-ph{ margin:0 12px; }
+.tg-hero-ph .co-std > button{ cursor:default; }
+.tg-role-ph{ margin-top:12px; position:relative; z-index:1; }
+.tg-role-ph .hist-month{ width:100%; background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.14); color:#fff; border-radius:12px; padding:9px 12px; font:700 14px var(--font-ui); color-scheme:dark; }
+.tg-ph{ position:relative; z-index:1; padding:0 0 110px; }
+.tg-ph .tg-cap, .tg-ph .sec-cap{ padding:14px 14px 6px; }
+.tg-ph .tg-tbl, .tg-ph .card{ margin:0 12px; border-radius:20px; }
+.tg-ph .tg-h{ display:none; }
+.tg-ph .tg-row{ display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; padding:12px 14px; }
+.tg-ph .tg-row .tg-name{ grid-column:1 / -1; font-size:14px; }
+.tg-ph .tg-row .tg-now{ grid-column:1 / -1; font-size:16px; }
+.tg-ph .tg-row .tg-bar{ grid-column:1 / -1; order:5; }
+.tg-ph .tg-row .tg-hitc{ grid-column:1 / -1; }
+.tg-ph .tg-row .tg-in{ font-size:12px; display:flex; flex-direction:column; align-items:flex-start; gap:4px; }
+.tg-ph .tg-row > label:nth-of-type(1)::before{ content:"Green at"; } .tg-ph .tg-row > label:nth-of-type(2)::before{ content:"Yellow at"; }
+.tg-ph .tg-row > label::before{ font:700 8.5px var(--font-mono); letter-spacing:.14em; text-transform:uppercase; color:var(--frink3, #7E8A80); }
+.tg-ph .tg-row .tg-in input{ width:64px; }
+@media (max-width:700px){ .tab-page:has(> .tg-ph){ padding:10px 0 0; } .tab-page:has(> .actstd-ph){ padding:10px 0 0; } }
 /* ---- the floor, final ----------------------------------------------------- */
 /* The approved layout breathes across the whole screen: the count, the line and
    the clocks center in the space above the actions, and the actions keep clear
