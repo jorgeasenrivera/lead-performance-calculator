@@ -104,6 +104,31 @@ export function decide(before, after, opts = {}) {
   return out;
 }
 
+/**
+ * The line as the lock screen draws it: everybody, in order, as initials and a
+ * hue, with the person's own entry marked. The colour is the same hash of the
+ * name the site uses for avatars, so a face on the lock screen matches the
+ * face on the board. Kept to eight so a long line stays a rail and not a wall.
+ */
+export function hueOf(name) {
+  let h = 0; const str = String(name || "");
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 360;
+  return h;
+}
+export function railInitials(name) {
+  const p = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return (((p[0] || "")[0] || "") + ((p[1] || "")[0] || "")).toUpperCase();
+}
+export function railOf(row, meId, max = 8) {
+  const line = (row && Array.isArray(row.line)) ? row.line : [];
+  const roster = (row && Array.isArray(row.roster)) ? row.roster : [];
+  const nameOf = (p) => p.label || (roster.find((r) => r.id === p.id) || {}).label || (roster.find((r) => r.id === p.id) || {}).name || "";
+  return line.slice(0, max).map((p) => {
+    const nm = nameOf(p);
+    return { i: railInitials(nm) || "·", h: hueOf(nm), s: (p.status || "waiting") === "waiting" ? "w" : "x", me: p.id === meId };
+  });
+}
+
 /** What a standing display should read at this moment. */
 export function contentState(s, extra = {}) {
   return {

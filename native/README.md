@@ -64,6 +64,14 @@ project by `@bacons/apple-targets` at build time. What it needs, once:
    and 17.0 the activity appears when the app is open on the line, and the
    server keeps it moving from there.
 
+The card has buttons (iOS 17 and up): Lunch and Away while waiting, Got them and
+Pass when up, FlyBy, T.O. and Done with a customer, On my way when the desk asks,
+Back on the floor from lunch or away. Each is an App Intent (`QueueIntents.swift`,
+also compiled into both targets) that runs in the app's process and hands the
+page one word; the page does the thing with its own session, the same way its
+own buttons do. A press while the app is not running is kept and handed over
+when it next starts.
+
 The Swift struct `QueueAttributes` exists twice on purpose (the app and the
 extension each compile their own copy) and must match the server's payload
 exactly: the struct name is the push's `attributes-type`, the content state's

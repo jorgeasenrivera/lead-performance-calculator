@@ -12,7 +12,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { standings, decide, contentState } from "../api/_queue-notify.mjs";
+import { standings, decide, contentState, railOf, hueOf, railInitials } from "../api/_queue-notify.mjs";
 
 const row = (line) => ({ line });
 const P = (id, status = "waiting", extra = {}) => ({ id, label: id.toUpperCase(), status, ...extra });
@@ -150,4 +150,20 @@ test("the lot pin reads as the lot", () => {
   const plan = assistPlan(null, after);
   assert.match(plan[0].body, /out on the lot/);
   assert.match(plan[0].title, /FlyBy/);
+});
+
+test("the rail names everybody in line, coloured like the site, with you marked", () => {
+  const row = { line: [{ id: "a", status: "waiting" }, { id: "b", status: "customer" }, { id: "c", label: "Casey Q." }],
+                roster: [{ id: "a", label: "Alex D.", name: "Alex Demo" }, { id: "b", name: "Brianna Demo" }] };
+  const rail = railOf(row, "b");
+  assert.deepEqual(rail.map((x) => x.i), ["AD", "BD", "CQ"]);
+  assert.deepEqual(rail.map((x) => x.s), ["w", "x", "w"]);
+  assert.deepEqual(rail.map((x) => x.me), [false, true, false]);
+  assert.equal(rail[0].h, hueOf("Alex D."));
+  assert.equal(railInitials("mitch marius"), "MM");
+  // A long line stays a rail.
+  const long = { line: Array.from({ length: 12 }, (_, i) => ({ id: "p" + i, label: "P " + i })) };
+  assert.equal(railOf(long, "p3").length, 8);
+  // Nothing to draw is an empty rail, not a crash.
+  assert.deepEqual(railOf(null, "x"), []);
 });
