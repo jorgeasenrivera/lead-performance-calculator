@@ -477,11 +477,27 @@ export function mergeAgainstServer(next, serverCopy) {
             .filter(onList);
           const ignored = new Set(next.excluded.map(norm));
 
-          const roster = [...(next.roster || [])];
-          const have = new Set(roster.map((a) => norm(a.name)));
-          for (const a of serverCopy.roster || []) {
-            if (a && a.name && !have.has(norm(a.name))) { roster.push(a); have.add(norm(a.name)); }
+          /* A person on both sides is one person, and the two copies can
+             disagree: a position set on the desktop, a copy on a phone that was
+             opened before it. The saving tab used to win outright, which is how
+             a phone that had done nothing but load undid a position change the
+             moment it saved anything. So each edit to a person carries a stamp
+             and the newer copy wins; unstamped, the copy that knows their id
+             wins; failing both, the saver's. */
+          const roster = [];
+          const theirRoster = new Map();
+          for (const a of serverCopy.roster || []) if (a && a.name) theirRoster.set(norm(a.name), a);
+          for (const a of next.roster || []) {
+            if (!a || !a.name) continue;
+            const other = theirRoster.get(norm(a.name));
+            theirRoster.delete(norm(a.name));
+            if (!other) { roster.push(a); continue; }
+            const mine = a.updatedAt || "", theirs = other.updatedAt || "";
+            if (theirs > mine) roster.push({ ...other, id: other.id || a.id, order: a.order ?? other.order });
+            else if (mine > theirs) roster.push({ ...a, id: a.id || other.id });
+            else roster.push(a.id || !other.id ? { ...a } : { ...other, order: a.order ?? other.order });
           }
+          for (const a of theirRoster.values()) roster.push(a);
           // Anyone gone or ignored comes out, whichever copy they arrived from.
           next.roster = roster.filter((a) => !gone.has(norm(a.name)) && !ignored.has(norm(a.name)));
 

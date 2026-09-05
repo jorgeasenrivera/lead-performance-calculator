@@ -168,7 +168,7 @@ export function setStatus(data, names, status, opts = {}) {
            screen hides the card for it. */
         next.roster.push({ id: prev.id || opts.newId || ("p" + at.replace(/\D/g, "").slice(-9) + Math.random().toString(36).slice(2, 6) + k.slice(0, 4).replace(/\W/g, "")), name: display[k],
           roleId: prev.roleId ?? opts.roleId ?? null, hiredAt: opts.hiredAt || prev.hiredAt || null,
-          order: next.roster.length });
+          order: next.roster.length, updatedAt: at });
       }
     }
     next.excluded = next.excluded.filter((x) => !keys.has(nm(x)));
