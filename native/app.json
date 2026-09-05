@@ -50,7 +50,8 @@
           "defaultChannel": "floor"
         }
       ],
-      "@bacons/apple-targets"
+      "@bacons/apple-targets",
+      "./plugins/withQueueIntent.js"
     ],
     "extra": {
       "siteUrl": "https://www.sageonline.io",

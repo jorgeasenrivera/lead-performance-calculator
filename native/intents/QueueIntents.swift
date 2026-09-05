@@ -17,8 +17,11 @@ import Foundation
       handed to the page (SageLive module, "onAction") to do with its own
       session when it is next up.
 
-   This file is compiled into both the app and the widget extension, which is
-   how the extension can name the intent and the app can perform it. */
+   This file is compiled into both the app (put there by plugins/withQueueIntent.js
+   at prebuild, beside a copy of QueueAttributes) and the widget extension, which
+   is how the extension can name the intent and the app can perform it. It has
+   to be a source of the app target itself: App Intents are found by the
+   metadata the app's own sources produce, not by what a library links in. */
 @available(iOS 17.0, *)
 struct QueueActionIntent: LiveActivityIntent {
   static var title: LocalizedStringResource = "Sage floor action"

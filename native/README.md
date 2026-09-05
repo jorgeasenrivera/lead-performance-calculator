@@ -76,8 +76,9 @@ usable session does it hand the page one word to do with its own session.
 If the app goes to the background while the person is in line and no activity
 is running, a local note fifteen minutes later asks them to open Sage.
 
-The Swift struct `QueueAttributes` exists twice on purpose (the app and the
-extension each compile their own copy) and must match the server's payload
+The Swift struct `QueueAttributes` exists three times on purpose (the module,
+the app target via `plugins/withQueueIntent.js`, and the extension each compile
+their own copy) and must match the server's payload
 exactly: the struct name is the push's `attributes-type`, the content state's
 keys are what `contentState()` writes.
 
