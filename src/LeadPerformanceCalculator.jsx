@@ -13203,7 +13203,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const send = async (nat) => {
       const body = registrationBody(nat, store);
       if (!body) return;
-      const k = `lpcf:dev:${store}:${body.device_id}:${body.apns_token || body.fcm_token}`;
+      const k = `lpcf:dev:${store}:${body.device_id}:${body.apns_token || body.fcm_token}:${body.apns_pts_token || ""}:${body.activity_token || ""}`;
       try { if (localStorage.getItem(k) === "1") return; } catch (e) {}
       const r = await apiCall("/api/register-device", { method: "POST", body });
       if (dead) return;

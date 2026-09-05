@@ -11,6 +11,7 @@
     "build:android": "eas build --platform android --profile production"
   },
   "dependencies": {
+    "@bacons/apple-targets": "^5.0.0",
     "expo": "~54.0.0",
     "expo-application": "~7.0.0",
     "expo-asset": "~12.0.0",
