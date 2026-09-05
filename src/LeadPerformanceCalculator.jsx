@@ -1302,7 +1302,15 @@ function useLivingBackground() {
     if (!window.matchMedia) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { root.classList.add("bg-idle"); return; }
     let cur = 0, target = 0, raf = 0, idleT = 0;
-    const settle = () => { idleT = setTimeout(() => root.classList.add("bg-idle"), 700); };
+    const settle = (ms = 700) => { clearTimeout(idleT); idleT = setTimeout(() => root.classList.add("bg-idle"), ms); };
+    /* ---- the ground drifts for a moment, then holds still ----
+       On a desktop the washes, the colour field and the blobs drifted for ever
+       under thirty-odd frosted surfaces, and a frosted surface re-blurs its
+       backdrop on every frame anything behind it moves. Measured with no GPU
+       to hide it, that was two thirds of the frame. So the drift runs while the
+       page is being used, for a few seconds after a page change, and pauses
+       once the manager is reading. A navigation wakes it through this hook. */
+    window.__bgWake = (ms) => { root.classList.remove("bg-idle"); settle(ms || 4000); };
     const tick = () => {
       cur += (target - cur) * 0.07;                 // the lag that reads as inertia
       root.style.setProperty("--bgy", cur.toFixed(1) + "px");
@@ -1321,6 +1329,7 @@ function useLivingBackground() {
       window.removeEventListener("scroll", onScroll);
       clearTimeout(idleT);
       if (raf) cancelAnimationFrame(raf);
+      delete window.__bgWake;
     };
   }, []);
 }
@@ -2388,6 +2397,7 @@ export default function LeadPerformanceCalculator() {
   const [storeMismatch, setStoreMismatch] = useState(null);
   const [adminData, setAdminData] = useState({});
   const [tab, setTab] = useState("board");
+  useEffect(() => { try { window.__bgWake && window.__bgWake(4000); } catch (e) {} }, [tab, appModule]);
   // drawerOpen now lives in AppShell, which is the only thing that opens it.
   const [adminTab, setAdminTab] = useState("overview");
   const [dropActive, setDropActive] = useState(false);
@@ -32657,6 +32667,12 @@ const SAGE_CSS = `
          app ever draws — with the frosted surfaces on top re-blurring against a
          backdrop that never holds still, it was costing roughly two thirds of the
          frame budget on its own. The saturation is now a constant on the layer. */
+      /* At rest, nothing behind the glass moves. The idle class is the one the
+         scroll parallax already sets; a page change lifts it for a few seconds. */
+      @media (min-width: 701px) {
+        .bg-idle .lpc::before, .bg-idle .lpc::after, .bg-idle .bg-live-inner, .bg-idle .sg-blob,
+        .bg-idle .qsel-pill::before { animation-play-state: paused; }
+      }
       @keyframes bgMorph {
         0%   { transform: translate3d(0,0,0) scale(1) rotate(0deg); }
         50%  { transform: translate3d(-2%,3%,0) scale(1.14) rotate(-6deg); }
@@ -34186,13 +34202,18 @@ const SAGE_CSS = `
       .seg-btn.active { color:var(--ink); }
       /* A wave off the Import tab while the day's uploads are still outstanding.
          It stops the moment they land, and stops if you are already on the tab. */
+      /* Six waves, then a still ring. The notice stays; what stops is the one
+         animation that would otherwise keep every frosted surface on the page
+         re-blurring for as long as a report is outstanding. */
       .seg-wave::after { content:""; position:absolute; inset:0; border-radius:9px; pointer-events:none;
         border:2px solid color-mix(in srgb, var(--p2) 45%, transparent); will-change:transform,opacity;
-        animation: segWave 2.4s var(--ease) infinite; }
+        animation: segWave 2.4s var(--ease) 6 forwards; }
       @keyframes segWave {
         0%   { transform:scale(1); opacity:.9; }
         70%,100% { transform:scale(1.28); opacity:0; }
       }
+      .seg-wave::before { content:""; position:absolute; inset:0; border-radius:9px; pointer-events:none;
+        border:2px solid color-mix(in srgb, var(--p2) 45%, transparent); opacity:.55; }
 
       /* ---- page transition ---- */
       .page { animation: pageIn .38s var(--spring); }
