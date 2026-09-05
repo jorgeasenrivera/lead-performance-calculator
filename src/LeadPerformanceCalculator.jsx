@@ -23802,6 +23802,9 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
       <div className="cx-stats"><div><b>{qs.signedDays}/{qs.scheduledDays}</b><span>days in line</span></div><div><b>{qs.taken}</b><span>opps taken</span></div><div><b>{qs.declined}</b><span>declined</span></div><div><b>{qs.acceptRate == null ? "–" : fmtPct(qs.acceptRate)}</b><span>accept</span></div></div>
       <div className="cx-hint">{qs.missedScheduled > 0 ? `Not in the line on ${qs.missedScheduled} scheduled ${qs.missedScheduled === 1 ? "day" : "days"}. ` : "In the line every scheduled day on record. "}{qs.unavailMin > 0 ? `About ${qs.unavailMin} min marked unavailable while holding a spot.` : ""}</div></>)}
 
+    {sec("When you actually connect")}
+    <div className="cx-hourly"><HourlyBlock data={data} name={a.name} store={store} /></div>
+
     {sec("Results this month")}
     <div className="cx-stats"><div><b>{fmtNum(units)}</b><span>units</span></div><div><b>{fmtPct(stats.internetPct)}</b><span>internet</span></div><div><b>{fmtPct(stats.phonePct)}</b><span>phone</span></div><div><b>{fmtPct(stats.showroomPct)}</b><span>showroom</span></div></div>
 
@@ -39746,6 +39749,12 @@ const SAGE_CSS = `
 .cx-ci b{ font:700 13px var(--font-display); display:block; color:var(--frink); } .cx-ci p{ margin:2px 0 0; font:500 12px/1.4 var(--font-ui); color:var(--frink2); }
 .cx-cv{ font:700 10px var(--font-mono); color:var(--frgap); } .cx-cv small{ color:var(--frink3); font-weight:600; }
 .cx-str{ padding:8px 16px 0; display:flex; gap:6px; flex-wrap:wrap; } .cx-str span{ background:#E3F3E9; color:var(--frok); font:700 9.5px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; padding:4px 8px; border-radius:8px; }
+.cx-hourly{ padding:0 16px; }
+.cx-hourly .hourly{ margin-top:4px; min-height:170px; }
+.cx-hourly .ac-h3{ display:none; }
+.cx-hourly .hourly-read{ font:500 13px/1.45 var(--font-ui); color:var(--frink2); } .cx-hourly .hourly-read b{ color:var(--frink); }
+.cx-hourly .hint{ font:500 11px/1.4 var(--font-ui); color:var(--frink3); margin:6px 0 0; }
+.cx-hourly .hr-tick{ font-size:11px; }
 .cx-bench2{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:8px 16px 4px; }
 .cx-bench2 > div{ background:var(--frpaper); border-radius:12px; padding:9px 6px; text-align:center; }
 .cx-bench2 b{ display:block; font:700 17px var(--font-display); color:var(--frink); } .cx-bench2 span{ font:700 7.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); display:block; margin-top:3px; line-height:1.2; }
