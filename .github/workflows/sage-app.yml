@@ -141,6 +141,7 @@ jobs:
           IOS_DIST_P12_BASE64: ${{ secrets.IOS_DIST_P12_BASE64 }}
           IOS_DIST_P12_PASSWORD: ${{ secrets.IOS_DIST_P12_PASSWORD }}
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+          IOS_QUEUE_PROFILE_BASE64: ${{ secrets.IOS_QUEUE_PROFILE_BASE64 }}
 
       - name: Google services file
         if: inputs.platform == 'android'
