@@ -264,6 +264,9 @@ function Shell() {
         SageLive.start({ store: String(q.store || ""), date, kind: /up next|queue/i.test(String(q.queue || "")) ? "queue" : "floor" }, state);
       } else {
         SageLive.end();
+        /* Gone for the day: nothing left to reopen the app for either. The only
+           notes this shell schedules are the "you're still in line" ones. */
+        if (q.status === "gone") Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
       }
     }
   }, []);
