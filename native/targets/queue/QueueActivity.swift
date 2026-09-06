@@ -13,7 +13,7 @@ import WidgetKit
      waiting        sand you on the rail            Lunch · Away
      next           0 ahead, sand edge              Lunch · Away
      up             mint, pulsing                   Got them · Pass
-     with customer  amber dot, since, table         FlyBy · T.O. · Done
+     with customer  amber dot, since, table         FlyBy · T.O. · They left
      desk asking    red, quicker                    On my way
      lunch / away   dimmed, rail without you        Back on the floor
      off the line   the final frame before dismiss
@@ -217,7 +217,7 @@ private struct Buttons: View {
       case .customer:
         ActionButton(label: "FlyBy", glyph: "fly", action: "fly", tint: fly, fill: fly.opacity(0.18), stroke: fly)
         ActionButton(label: "T.O.", glyph: "to", action: "to", tint: red, fill: Color(red: 216/255, green: 72/255, blue: 60/255).opacity(0.18), stroke: red)
-        ActionButton(label: "Done", glyph: "check", action: "done", tint: Color.white.opacity(0.7)).frame(width: 84)
+        ActionButton(label: "They left", glyph: "check", action: "done", tint: Color.white.opacity(0.7)).frame(width: 96)
       case .desk:
         ActionButton(label: "On my way", glyph: "arrowup", action: "ack", tint: inkDeep, fill: sand, stroke: sand)
       case .off:

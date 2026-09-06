@@ -27,7 +27,7 @@ import { registrationBody } from "../api/_device.mjs";
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
-import { doorCheck, readingVerdict } from "../api/_geofence.mjs";
+import { doorCheck, readingVerdict, settle } from "../api/_geofence.mjs";
 import { assistWhere } from "../api/_queue-notify.mjs";
 /* A person's standing at a store, and every list and stamp a change to it
    implies. One place, because three screens used to do this and two of them were
@@ -10423,8 +10423,15 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
   const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
+  const wasOn = useRef(false);
   useEffect(() => {
-    if (!me || myIdx < 0) return;
+    if (!me || myIdx < 0) {
+      /* Off the line for the day: said once, so the shell takes the card down
+         and stops asking anybody to reopen the app. */
+      if (wasOn.current) { wasOn.current = false; postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "", status: "gone", updatedAt: new Date().toISOString() }); }
+      return;
+    }
+    wasOn.current = true;
     postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
       rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
       position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString(),
@@ -13582,8 +13589,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
   const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
+  const wasOn = useRef(false);
   useEffect(() => {
-    if (!me || myIdx < 0) return;
+    if (!me || myIdx < 0) {
+      /* Off the line for the day: said once, so the shell takes the card down
+         and stops asking anybody to reopen the app. */
+      if (wasOn.current) { wasOn.current = false; postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "", status: "gone", updatedAt: new Date().toISOString() }); }
+      return;
+    }
+    wasOn.current = true;
     postToNativeShell({ queue: variant.label, store: (row && row.storeName) || "",
       rep: ((roster || []).find((r) => r.id === meId) || {}).label || "",
       position: myIdx + 1, ahead: aheadCount, status: iAmUp ? "up" : me.status, updatedAt: new Date().toISOString(),
@@ -13828,6 +13842,38 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     setStep("name"); setBusy(false);
   }
 
+  /* ---- leaving the lot ----
+     Somebody who drives off without pressing anything stays in line all
+     evening, gets called for a customer who is not theirs, and keeps a card on
+     their lock screen. So while they are on the floor the phone keeps an eye on
+     the fence, and once it is properly convinced they have left (two clean
+     readings a minute apart, the same rule the record uses) it asks: done for
+     the day? Yes prints the ticket, whose Good night takes them off; No keeps
+     them where they are and stays quiet for half an hour. No fence drawn or no
+     fix and nothing is asked. This runs while the app is open or brought back
+     to the front; the phone does not run pages in the background. */
+  const [lotAsk, setLotAsk] = useState(false);
+  const lotState = useRef(null);
+  const lotSnooze = useRef(0);
+  useEffect(() => {
+    if (!me || !storeFence || !Array.isArray(storeFence.ring) || storeFence.ring.length < 3) { lotState.current = null; return undefined; }
+    let dead = false;
+    const check = async () => {
+      if (dead || document.hidden || lotAsk || ticket || Date.now() < lotSnooze.current) return;
+      const reading = await readPosition();
+      if (dead || !reading) return;
+      const next = settle(lotState.current, reading, storeFence, Date.now(), { confirmations: 2, dwellMs: 60 * 1000 });
+      lotState.current = next;
+      if (next.crossed === "left") { setLotAsk(true); buzz([14, 40, 14]); }
+    };
+    check();
+    const t = setInterval(check, 75 * 1000);
+    const onVis = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [!!me, storeFence, lotAsk, ticket]); // eslint-disable-line
+  const lotLater = () => { buzz(8); setLotAsk(false); lotSnooze.current = Date.now() + 30 * 60 * 1000; };
+
   /* ---- the session, handed to the shell ----
      The Live Activity's buttons act through /api/queue-action, which needs the
      session only this page holds. So the page hands the shell its access token,
@@ -14026,9 +14072,10 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const doorAside = doorNote && doorNote.allow && doorNote.why !== "inside" ? doorNote.note : null;
     const canUndo = me.status === "customer" && me.autoFlip && me.accidentalUntil && new Date(me.accidentalUntil) > new Date();
     const st = me.status;
-    const title = st === "customer" ? "With a customer" : st === "lunch" ? "At lunch" : st === "away" ? "Stepped away" : isNext ? "You're up" : "You're on the floor";
-    const sub = st === "customer" ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " for your appointment" : ""}. You rejoin when they leave.</>
-      : (st === "lunch" || st === "away") ? "You'll be passed until you tap back in."
+    const title = st === "customer" ? "With a customer" : st === "lunch" ? "At lunch" : st === "away" ? "Out of the line" : isNext ? "You're up" : "You're on the floor";
+    const sub = st === "customer" ? <>Holding your spot at <strong>#{myPos}</strong>{me.appt ? " for your appointment" : ""}. Tap below when they leave.</>
+      : st === "away" ? "Still on the floor for the day, just not taking a turn. Tap Here when you want back in."
+      : st === "lunch" ? "You'll be passed until you tap back in."
       : isNext ? "Head to the door. The next one is yours." : `${availableAhead} available ahead of you`;
     /* The desk asked for them. Loud while it is fresh, then it stops shouting:
        a banner that never goes away is a banner nobody reads. */
@@ -14061,6 +14108,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         )}
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
+          {st === "customer" && (
+            <button type="button" className="sf-go mcf-go mcf-left" disabled={busy} onClick={() => { buzz([14, 40, 14]); setFlag("waiting"); }}>
+              <PixIcon glyph="check" size={16} /><span>Customer left, put me back in line</span>
+            </button>
+          )}
           <div className="mcf-chips" role="radiogroup" aria-label="Where you are">
             {["waiting", ...FLOOR_SELF_FLAGS].map((s2) => (
               <button key={s2} type="button" role="radio" aria-checked={s2 === st} disabled={busy}
@@ -14164,6 +14216,17 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           </div>
         );
       })()}
+      {eff === "done" && me && lotAsk && !ticket && (
+        <div className="mc-lotov" onClick={(e) => { if (e.target === e.currentTarget) lotLater(); }}>
+          <div className="mc-lot" role="dialog" aria-label="Leaving the lot">
+            <PixIcon glyph="door" size={26} />
+            <div className="mc-lot-h">Looks like you've left the lot</div>
+            <p className="mc-lot-p">Done for the day? Your ticket prints and the desk takes you off the floor. If you only stepped out, you stay {me.status === "away" ? "on the floor" : "in line"}.</p>
+            <button type="button" className="sf-go mcf-go mc-lot-go" onClick={() => { buzz([20, 40, 20]); setLotAsk(false); startTicket(); }}>Yes, I'm done for the day</button>
+            <button type="button" className="mc-lot-no" onClick={lotLater}>No, I'm coming back</button>
+          </div>
+        </div>
+      )}
       {eff === "done" && me && ticket && (
         <div className="mc-tkov" onClick={(e) => { if (e.target === e.currentTarget && ticket !== "sending") setTicket(null); }}>
           <div className="mc-tkwrap">
@@ -38548,6 +38611,18 @@ const SAGE_CSS = `
    a receipt taller than the screen scrolls instead of running under the edge. */
 .mc-tkwrap{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-x:hidden; overflow-y:auto; padding-bottom:12px; }
 .mc-tkwrap .mc-tkt{ flex:0 0 auto; }
+/* the customer has gone: one button, said plainly */
+.mcf .mcf-left{ margin:14px auto 0; display:flex; align-items:center; justify-content:center; gap:9px; }
+.mcf .mcf-left + .mcf-chips{ margin-top:14px; }
+/* leaving the lot */
+.mc-lotov{ position:fixed; inset:0; z-index:72; display:flex; align-items:flex-end; justify-content:center; background:rgba(6,10,8,.66); padding:0 12px calc(16px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+.mc-lot{ width:min(440px,100%); border-radius:24px; padding:22px 18px 16px; background:#101713; border:1px solid rgba(255,255,255,.12); color:#E8EEF2; text-align:center; box-shadow:0 24px 60px -20px rgba(0,0,0,.9); animation:mcRise .5s cubic-bezier(.2,.8,.3,1) both; }
+.mc-lot .pix{ color:#E4C98D; }
+.mc-lot-h{ margin-top:10px; font-family:var(--mc-geist); font-size:21px; font-weight:600; letter-spacing:-.02em; }
+.mc-lot-p{ margin:8px 0 0; font-size:14px; line-height:1.5; color:rgba(232,238,242,.72); }
+.mc-lot .mc-lot-go{ margin-top:18px; width:100%; }
+.mc-lot-no{ margin-top:10px; width:100%; border:0; background:none; color:rgba(232,238,242,.7); font:600 14px var(--font-ui); padding:12px; min-height:44px; cursor:pointer; }
+.mc-light .mc-lot{ background:#FFFDF8; color:#1F2A22; border-color:rgba(31,42,34,.1); } .mc-light .mc-lot-p{ color:#4A5A4E; } .mc-light .mc-lot-no{ color:#4A5A4E; }
 .mc-send{ display:flex; align-items:center; justify-content:center; gap:5px; margin-top:14px; font-family:var(--sfmono);
   font-size:9px; font-weight:700; letter-spacing:.14em; color:#e4c98d; text-align:center; padding:0 20px; }
 .mc-send s{ width:6px; height:6px; border-radius:50%; background:#e4c98d; animation:mcSend 1s infinite; }
