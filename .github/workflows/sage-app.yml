@@ -88,12 +88,18 @@ jobs:
         if: inputs.platform == 'ios'
         run: |
           printf '%s' "$ASC_API_KEY_P8" > asc-key.p8
-          printf '%s' "$IOS_DIST_P12_BASE64" | base64 -d > dist.p12
-          printf '%s' "$IOS_PROFILE_BASE64" | base64 -d > sage.mobileprovision
+          # A secret made with Windows' certutil arrives wrapped in BEGIN/END
+          # CERTIFICATE lines with a line break every 64 characters; one made on a
+          # Mac arrives bare. Both are the same file underneath, so strip the
+          # wrapping and the line breaks before decoding rather than asking
+          # anybody to hand-edit a secret.
+          unwrap() { grep -v '^-----' | tr -d '\r\n ' | base64 -d; }
+          printf '%s' "$IOS_DIST_P12_BASE64" | unwrap > dist.p12
+          printf '%s' "$IOS_PROFILE_BASE64" | unwrap > sage.mobileprovision
           # Two targets, two profiles: the app, and the widget extension that
           # draws the Live Activity. credentials.json is keyed by Xcode target.
           if [ -n "$IOS_QUEUE_PROFILE_BASE64" ]; then
-            printf '%s' "$IOS_QUEUE_PROFILE_BASE64" | base64 -d > queue.mobileprovision
+            printf '%s' "$IOS_QUEUE_PROFILE_BASE64" | unwrap > queue.mobileprovision
             cat > credentials.json <<EOF
           {
             "ios": {
