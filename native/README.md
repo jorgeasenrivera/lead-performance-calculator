@@ -82,6 +82,22 @@ their own copy) and must match the server's payload
 exactly: the struct name is the push's `attributes-type`, the content state's
 keys are what `contentState()` writes.
 
+## Leaving the lot
+
+While somebody is on the floor, the page hands the shell the store's lot as one
+circle (the fence drawn in Sage, with a margin), and iOS watches that region
+itself with the app closed. When the phone leaves it, a note asks "Done for the
+day?" with two buttons that work from the lock screen: "Done for the day" takes
+them off the floor through `/api/queue-action` and ends the Live Activity;
+"I'm coming back" does nothing. Tapping the note opens the app on the same
+question. Nothing is decided without an answer.
+
+This needs the "Always" location permission, which iOS asks for in two steps
+(while using, then always). If the person says no to the second step, nothing
+breaks: the page keeps its own check, which runs whenever the app is open or
+brought back to the front. No fence drawn for the store means nothing is
+watched.
+
 ## How push reaches a person
 
 The shell fetches the phone's own APNs or FCM token and hands it to the page.

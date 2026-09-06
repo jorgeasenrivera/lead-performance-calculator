@@ -14,7 +14,7 @@
  *   fly, to       an ask for a manager, from wherever you are
  *   ack           you saw the desk's nudge
  */
-export const QUEUE_ACTIONS = ["lunch", "away", "back", "done", "take", "pass", "fly", "to", "ack"];
+export const QUEUE_ACTIONS = ["lunch", "away", "back", "done", "take", "pass", "fly", "to", "ack", "leave"];
 
 export function applyQueueAction(row, personId, action, now, opts = {}) {
   if (!QUEUE_ACTIONS.includes(action)) return { row, changed: false, why: "unknown action" };
@@ -44,6 +44,13 @@ export function applyQueueAction(row, personId, action, now, opts = {}) {
     const ask = { id: opts.askId || ("a" + now.replace(/\D/g, "").slice(-9) + Math.random().toString(36).slice(2, 6)),
       t: now, kind: action, byId: personId, byName: opts.name || who, table: p.table != null ? p.table : null, spot: "floor", note: null };
     next.assists = [ask, ...((next.assists || []).filter((a) => !(a.byId === personId && !a.doneAt)))].slice(0, 40);
+  } else if (action === "leave") {
+    /* Off the floor for the day, the same event the page writes from its
+       Good night button. Reached from the "done for the day" notification
+       when the phone has left the lot. */
+    next.line.splice(idx, 1);
+    next.history.push({ t: now, action: "left", id: personId, who, by: "self" });
+    return { row: next, changed: true, status: "gone" };
   } else if (action === "ack") {
     if (!p.nudgedAt) return { row, changed: false, why: "nothing to acknowledge" };
     p.nudgedAt = null;

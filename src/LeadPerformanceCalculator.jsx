@@ -27,7 +27,7 @@ import { registrationBody } from "../api/_device.mjs";
    the store is being asked for. Its own file because it is the arithmetic a
    manager acts on, and that is worth being able to check on its own. */
 import { storeDaysInMonth, storeDaysDone, storeGoalFor } from "../api/_store-month.mjs";
-import { doorCheck, readingVerdict, settle } from "../api/_geofence.mjs";
+import { doorCheck, readingVerdict, settle, watchCircle } from "../api/_geofence.mjs";
 import { assistWhere } from "../api/_queue-notify.mjs";
 /* A person's standing at a store, and every list and stamp a change to it
    implies. One place, because three screens used to do this and two of them were
@@ -13873,6 +13873,23 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [!!me, storeFence, lotAsk, ticket]); // eslint-disable-line
   const lotLater = () => { buzz(8); setLotAsk(false); lotSnooze.current = Date.now() + 30 * 60 * 1000; };
+  /* The phone app watches the same fence natively, which works with the app in
+     a pocket. It is told the lot as one circle while somebody is on the floor
+     and told to stop when they are off. When it notices the exit it either
+     asks on the lock screen or, with the app in front, hands the question here. */
+  useEffect(() => {
+    if (!(typeof window !== "undefined" && window.ReactNativeWebView)) return undefined;
+    const ring = storeFence && Array.isArray(storeFence.ring) && storeFence.ring.length >= 3 ? storeFence.ring : null;
+    const circle = me && ring ? watchCircle(ring, 60) : null;
+    if (circle) nativePost("fence", { on: true, lat: circle.lat, lng: circle.lng, radius: Math.max(150, circle.radius) });
+    else nativePost("fence", { on: false });
+    return undefined;
+  }, [!!me, storeFence]); // eslint-disable-line
+  useEffect(() => {
+    const on = () => { if (me && !ticket) { setLotAsk(true); buzz([14, 40, 14]); } };
+    window.addEventListener("lpc:lot", on);
+    return () => window.removeEventListener("lpc:lot", on);
+  }, [!!me, ticket]); // eslint-disable-line
 
   /* ---- the session, handed to the shell ----
      The Live Activity's buttons act through /api/queue-action, which needs the
@@ -13932,6 +13949,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           });
           if (next) setRow(next);
         }
+        else if (act === "leave") { setLotAsk(false); await leave(); }
         else if (act === "ack") {
           const next = await mutateFloorRow(store, date, (cur) => {
             if (!cur) return null;
@@ -14129,7 +14147,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             {/* The corner is the main page and already carries the day, so this
                 goes back there rather than opening a second copy of it. */}
             <button type="button" className="sf-link" onClick={() => { buzz(10); setTab("corner"); }}>
-              <SfIcon name="mine" size={14} /><span>My corner</span>
+              <SfIcon name="mine" size={14} /><span>Home</span>
             </button>
             <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={() => { buzz(10); startTicket(); }}>
               <SfIcon name="door" size={14} /><span>Leave the floor</span>
@@ -14212,7 +14230,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           <div className="mc-pill" role="tablist">
             <span className="mc-ind" style={{ transform: tab === "corner" ? "translateX(0)" : "translateX(100%)" }} />
             <button type="button" role="tab" aria-selected={tab === "corner"} className={"mc-tab" + (tab === "corner" ? " on" : "")}
-              onClick={() => { buzz(8); setTab("corner"); }} aria-label="My corner"><PixIcon glyph="home" size={21} /></button>
+              onClick={() => { buzz(8); setTab("corner"); }} aria-label="Home"><PixIcon glyph="home" size={21} /></button>
             <button type="button" role="tab" aria-selected={tab !== "corner"} className={"mc-tab" + (tab !== "corner" ? " on" : "") + (upRoot ? " alert" : "")}
               onClick={() => { buzz(8); setTab("floor"); }} aria-label="The floor"><PixIcon glyph="door" size={21} /></button>
           </div>
