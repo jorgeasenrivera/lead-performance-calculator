@@ -6165,10 +6165,7 @@ function QueueBoard({ storeId, kind }) {
         channel = supabase.channel(`qb:${table}:${rowId}`)
           .on("postgres_changes",
             { event: "*", schema: "public", table, filter: `id=eq.${rowId}` },
-            (payload) => {
-              const v = payload && payload.new && payload.new.data;
-              if (!dead && v) { setRow(v); setErr(false); }
-            })
+            () => { if (!dead) pull(); })
           .subscribe();
       } catch (e) { /* no realtime: the poll below still carries it */ }
     }
@@ -10382,7 +10379,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     setRow(got || null);
   }, [store, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
-  const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), (d) => setRow(d || null));
+  const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), refetch);
   useEffect(() => { refetch(); const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
@@ -11545,7 +11542,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   useEffect(() => { ensureRow(); }, [ensureRow]);
   useEffect(() => { loadIds(); }, [loadIds]);
-  const live = useLiveRow(QUEUE_TABLE, queueRowId(store.id, date, variant.kind), (d) => setRow(d || null));
+  const live = useLiveRow(QUEUE_TABLE, queueRowId(store.id, date, variant.kind), refetch);
   useEffect(() => { const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
 
@@ -11990,27 +11987,30 @@ async function loadRowIfChanged(table, id, tag) {
     return data ? data.data : null;
   } catch (e) { console.error("poll", table, id, e); return undefined; }
 }
-/* Postgres pushes a changed row down a socket the moment it is written, so a
-   phone in line learns it is up as the desk clicks rather than on the next poll.
-   The poll underneath slows to a safety net once the socket is open and comes
-   back to five seconds if it never opens or drops. Whatever arrives on the socket
-   is stamped too, so the next poll does not fetch the same row over again. The
-   tables have to be in the supabase_realtime publication for any of this to
-   fire; supabase-realtime-setup.sql does that, and without it nothing breaks,
-   the pages simply keep polling. */
-function useLiveRow(table, id, onRow) {
+/* Postgres pushes a change down a socket the moment it is written, so a phone in
+   line learns it is up as the desk clicks rather than on the next poll. The poll
+   underneath slows to a safety net once the socket is open and comes back to
+   five seconds if it never opens or drops.
+
+   The socket is a doorbell, not a delivery. A postgres_changes message carries
+   whatever columns the publication names, and naming `data` there would push the
+   whole floor row to every phone on the floor on every single change: twenty
+   phones times a few hundred changes a day is the egress bill back again, worse
+   than the polling it replaced. So the publication names only the id and the
+   stamp (supabase-realtime-setup.sql), the message says "something moved", and
+   the page does its own stamp-gated read, which is a few bytes when nothing that
+   matters to it changed. Without the publication set up nothing breaks; the
+   pages simply keep polling. */
+function useLiveRow(table, id, onChange) {
   const [live, setLive] = useState(false);
-  const cb = useRef(onRow); cb.current = onRow;
+  const cb = useRef(onChange); cb.current = onChange;
   useEffect(() => {
     if (!supabase || !id) return undefined;
     let ch = null;
     try {
       ch = supabase.channel(`live:${table}:${id}`)
-        .on("postgres_changes", { event: "*", schema: "public", table, filter: `id=eq.${id}` }, (p) => {
-          const n = p && p.new;
-          if (!n || !("data" in n)) return;
-          rowStamps.set(table + "|" + id, n.updated_at || "none");
-          cb.current(n.data);
+        .on("postgres_changes", { event: "*", schema: "public", table, filter: `id=eq.${id}` }, () => {
+          try { cb.current(); } catch (e) {}
         })
         .subscribe((status) => setLive(status === "SUBSCRIBED"));
     } catch (e) { ch = null; }
@@ -12537,20 +12537,15 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
 function AssistWatcher({ store, meName }) {
   const [asks, setAsks] = useState([]);
   const [hidden, setHidden] = useState({});     // ids dismissed on THIS screen
-  useEffect(() => {
-    let dead = false;
-    const poll = async () => {
-      try {
-        const row = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, today()), "assist|" + store);
-        if (dead || row === undefined || row === "same") return;
-        setAsks(row ? activeAssists(row) : []);
-      } catch (e) { /* the next poll tells the truth */ }
-    };
-    poll();
-    const t = setInterval(poll, 25000);
-    return () => { dead = true; clearInterval(t); };
+  const poll = useCallback(async () => {
+    try {
+      const row = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, today()), "assist|" + store);
+      if (row === undefined || row === "same") return;
+      setAsks(row ? activeAssists(row) : []);
+    } catch (e) { /* the next poll tells the truth */ }
   }, [store]);
-  useLiveRow(FLOOR_TABLE, floorRowId(store, today()), (row) => setAsks(row ? activeAssists(row) : []));
+  useEffect(() => { poll(); const t = setInterval(poll, 25000); return () => clearInterval(t); }, [poll]);
+  useLiveRow(FLOOR_TABLE, floorRowId(store, today()), poll);
   const show = asks.filter((a) => !a.claimedBy && !hidden[a.id]);
   useAssistTick(show.length > 0);
   const claim = async (a) => {
@@ -13421,7 +13416,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date]);
-  const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), (d) => setRow(d || null));
+  const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), refetch);
   useEffect(() => { refetch(); const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
@@ -15240,7 +15235,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   useEffect(() => { loadIds(); }, [loadIds]);
   useEffect(() => { ensureRow(); }, [ensureRow]);
-  const live = useLiveRow(FLOOR_TABLE, floorRowId(store.id, date), (d) => setRow(d || null));
+  const live = useLiveRow(FLOOR_TABLE, floorRowId(store.id, date), refetch);
   useEffect(() => { const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
 
