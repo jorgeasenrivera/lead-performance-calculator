@@ -47,9 +47,16 @@ export function applyQueueAction(row, personId, action, now, opts = {}) {
   } else if (action === "leave") {
     /* Off the floor for the day, the same event the page writes from its
        Good night button. Reached from the "done for the day" notification
-       when the phone has left the lot. */
+       when the phone has left the lot.
+
+       The desk's checkout list is how a manager sees who has gone home, so
+       leaving this way files one too. The day's numbers are not here to put in
+       it, so it is marked partial and the page fills them in the next time it
+       is opened; a stub with the right name and time beats a missing line. */
     next.line.splice(idx, 1);
-    next.history.push({ t: now, action: "left", id: personId, who, by: "self" });
+    next.history.push({ t: now, action: "left", id: personId, who, by: "self", from: "lock-screen" });
+    next.checkouts = (next.checkouts || []).filter((c) => c && c.id !== personId);
+    next.checkouts.push({ id: personId, who, name: opts.name || who, t: now, partial: true });
     return { row: next, changed: true, status: "gone" };
   } else if (action === "ack") {
     if (!p.nudgedAt) return { row, changed: false, why: "nothing to acknowledge" };

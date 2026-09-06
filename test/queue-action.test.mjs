@@ -59,6 +59,8 @@ test("leave takes the person off the line for the day and logs it as left", () =
   assert.equal(out.status, "gone");
   assert.deepEqual(out.row.line.map((p) => p.id), ["b"]);
   assert.equal(out.row.history.at(-1).action, "left");
+  assert.equal(out.row.checkouts.length, 1);
+  assert.equal(out.row.checkouts[0].partial, true);
   assert.equal(applyQueueAction(out.row, "a", "leave", "2026-09-06T20:01:00.000Z").changed, false);
 });
 
