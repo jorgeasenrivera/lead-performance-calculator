@@ -1581,6 +1581,27 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 
 const AUTH_ENABLED = true;
 
+/* The same bargain loadRowIfChanged strikes, for the shared rows: ask for the
+   stamp, which is a few bytes, and ask for the value only when it has moved.
+   These rows are published a handful of times a day and read on a timer by
+   every phone and every wall board, so nearly every poll becomes the cheap
+   half. "same" means nothing changed; undefined means the read failed and the
+   screen should hold what it has. */
+const sharedStamps = new Map();
+async function loadSharedIfChanged(key, tag) {
+  if (!supabase) return undefined;
+  const k = tag || key;
+  try {
+    const { data: s, error: e1 } = await supabase.from("app_data").select("updated_at").eq("key", key).maybeSingle();
+    if (e1) throw e1;
+    const stamp = s ? (s.updated_at || "none") : "missing";
+    if (sharedStamps.has(k) && sharedStamps.get(k) === stamp) return "same";
+    const { data, error } = await supabase.from("app_data").select("value,updated_at").eq("key", key).maybeSingle();
+    if (error) throw error;
+    sharedStamps.set(k, data ? (data.updated_at || "none") : "missing");
+    return data ? data.value : null;
+  } catch (e) { console.error("poll", key, e); return undefined; }
+}
 async function loadShared(key, fallback, throwOnError) {
   if (!supabase) return fallback;
   try {
@@ -6188,7 +6209,8 @@ function QueueBoard({ storeId, kind }) {
   // top three. Read once a minute: it moves slowly and the queue does not.
   useEffect(() => {
     let dead = false;
-    const pull = () => loadShared(boardKey(storeId), null).then((b) => { if (!dead && b) setBoard(b); }).catch(() => {});
+    const pull = () => loadSharedIfChanged(boardKey(storeId), "board|" + storeId)
+      .then((b) => { if (!dead && b && b !== "same") setBoard(b); }).catch(() => {});
     pull();
     const t = setInterval(pull, 60000);
     return () => { dead = true; clearInterval(t); };
@@ -10304,18 +10326,41 @@ async function loadMyDays(store, endDay, nameKeys) {
   const days = lastDays(Math.max(SF_DAYS, dayOfMonth), endDay);
   if (!supabase) return null;
   const keys = days.map((d) => floorStatsKey(store, d));
+  /* A day row holds the whole store's numbers for that day, and this asked for
+     every day of the month to read one person's line out of each. On a floor of
+     thirty that is close to a megabyte, per salesperson, every time the corner
+     is opened, and all but today's rows are days that will never change again.
+
+     So: ask for the stamps, which are a few bytes for the month, and ask for the
+     rows only where the stamp has moved. What is kept is the one line that was
+     wanted, not the day, so a month of it is a few kilobytes and it lives on the
+     phone rather than being fetched again tomorrow. */
+  const cacheKey = `lpcf:days:${store}:${(nameKeys || []).find(Boolean) || "?"}`;
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(cacheKey) || "{}") || {}; } catch (e) { cache = {}; }
   try {
-    const { data } = await supabase.from("app_data").select("key,value").in("key", keys);
-    if (!data) return null;
-    const byKey = {};
-    for (const r of data) byKey[r.key] = r.value;
-    return days.map((d) => {
-      const v = byKey[floorStatsKey(store, d)];
-      if (!v) return { day: d, row: null };
-      let row = null;
-      for (const k of nameKeys) { if (k && v[k]) { row = v[k]; break; } }
-      return { day: d, row };
-    });
+    const { data: stamps, error } = await supabase.from("app_data").select("key,updated_at").in("key", keys);
+    if (error) throw error;
+    const stampOf = {};
+    for (const r of stamps || []) stampOf[r.key] = r.updated_at || "none";
+    const need = keys.filter((k) => !cache[k] || cache[k].s !== (stampOf[k] || "missing"));
+    if (need.length) {
+      const { data, error: e2 } = await supabase.from("app_data").select("key,value").in("key", need);
+      if (e2) throw e2;
+      const got = {};
+      for (const r of data || []) got[r.key] = r.value;
+      for (const k of need) {
+        const v = got[k];
+        let row = null;
+        if (v) for (const nk of nameKeys) { if (nk && v[nk]) { row = v[nk]; break; } }
+        cache[k] = { s: stampOf[k] || "missing", r: row };
+      }
+      // Days that have scrolled out of the month are weight on the phone.
+      const want = new Set(keys);
+      for (const k of Object.keys(cache)) if (!want.has(k)) delete cache[k];
+      try { localStorage.setItem(cacheKey, JSON.stringify(cache)); } catch (e) {}
+    }
+    return days.map((d, i) => ({ day: d, row: (cache[keys[i]] || {}).r || null }));
   } catch (e) { return null; }
 }
 
@@ -10398,11 +10443,12 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     let dead = false;
     const pull = async () => {
       try {
-        // The board prefix, not the store prefix: this page has no account.
-        const { data } = await supabase.from("app_data").select("value")
-          .eq("key", floorStatsKey(store, date)).maybeSingle();
-        if (!dead && data && data.value) {
-          const r = data.value[norm(meFull)] || data.value[norm(meLabel)] || null;
+        // The board prefix, not the store prefix: this page has no account. The
+        // row is everybody's numbers for the day and is republished a few times
+        // a day, so it is read only when its stamp has moved.
+        const v = await loadSharedIfChanged(floorStatsKey(store, date), "mine|" + store + "|" + date);
+        if (!dead && v && v !== "same") {
+          const r = v[norm(meFull)] || v[norm(meLabel)] || null;
           setMine(r);
           if (r && r.uploadedAt) setMineAt(r.uploadedAt);
         }
@@ -13492,11 +13538,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     let dead = false;
     const pull = async () => {
       try {
-        // The board prefix, not the store prefix: this page has no account.
-        const { data } = await supabase.from("app_data").select("value")
-          .eq("key", floorStatsKey(store, date)).maybeSingle();
-        if (!dead && data && data.value) {
-          const r = data.value[norm(meFull)] || data.value[norm(meLabel)] || null;
+        // The board prefix, not the store prefix: this page has no account. The
+        // row is everybody's numbers for the day and is republished a few times
+        // a day, so it is read only when its stamp has moved.
+        const v = await loadSharedIfChanged(floorStatsKey(store, date), "mine|" + store + "|" + date);
+        if (!dead && v && v !== "same") {
+          const r = v[norm(meFull)] || v[norm(meLabel)] || null;
           setMine(r);
           if (r && r.uploadedAt) setMineAt(r.uploadedAt);
         }
