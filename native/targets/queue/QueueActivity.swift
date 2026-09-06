@@ -153,23 +153,27 @@ private struct Rail: View {
       ZStack(alignment: .leading) {
         RoundedRectangle(cornerRadius: 15).fill(Color.white.opacity(up ? 0.1 : 0.07))
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
-          let x = max(0.06, 0.90 - Double(i) * 0.13) * w
+          // The door is the right-hand end of the rail and the front of the line
+          // sits on it; everyone behind steps left in fixed strides. You are the
+          // big one, wherever you stand, so the glance finds you first.
+          let x = max(14, w - 17 - Double(i) * 25)
           let you = p.me
+          let size: CGFloat = you ? 30 : (i == 0 ? 24 : 20)
           ZStack {
             Circle().fill(you ? (up ? mint : sand) : Color(hue: Double(p.h) / 360, saturation: 0.62, brightness: 0.62))
             if i == 0 { Circle().stroke(Color.white.opacity(0.35), lineWidth: 2) }
             Text(p.i)
-              .font(.system(size: i == 0 ? 8 : 7, weight: .bold, design: .monospaced))
+              .font(.system(size: you ? 10 : (i == 0 ? 8 : 7), weight: .bold, design: .monospaced))
               .foregroundStyle(you ? inkDeep : .white)
           }
-          .frame(width: i == 0 ? 26 : 20, height: i == 0 ? 26 : 20)
+          .frame(width: size, height: size)
           .opacity(p.s == "w" || you ? 1 : 0.45)
           .shadow(color: you ? (up ? mint : sand).opacity(0.9) : .clear, radius: you ? 6 : 0)
           .position(x: x, y: geo.size.height / 2)
         }
       }
     }
-    .frame(height: 30)
+    .frame(height: 34)
   }
 }
 
