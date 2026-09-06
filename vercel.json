@@ -1,7 +1,7 @@
 {
   "functions": {
-    "api/**": {
-      "includeFiles": "node_modules/pdfjs-dist/**"
+    "api/ingest.mjs": {
+      "includeFiles": "node_modules/pdfjs-dist/legacy/build/*.js"
     }
   }
 }
