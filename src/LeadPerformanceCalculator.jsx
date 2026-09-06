@@ -13558,6 +13558,34 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   };
   // The ticket: print, then file to the desk, then good night.
   const startTicket = () => { if (busy || !meId) return; buzz(10); setTicket("printing"); };
+  /* Left from the lock screen, out on the road, with no page open to print a
+     ticket or file the day's numbers. The desk got a stub at the time; this
+     fills it in the next time the app is opened and shows the person the
+     ticket they did not get to see. Once, and only for the day it happened on. */
+  const [lateTicket, setLateTicket] = useState(null);
+  useEffect(() => {
+    if (me || ticket || lateTicket) return;
+    const stub = ((row && row.checkouts) || []).find((c) => c && c.id === meId && c.partial);
+    if (!stub) return;
+    let dead = false;
+    (async () => {
+      const snap = { calls: mine && mine.calls, video: mine && mine.video, tasks: mine && mine.tasks,
+        tasksPosted: mine && mine.tasksPosted, units: mine && mine.units, rocked: mine && mine.rocked,
+        points: pointsForDay(mine || {}, std).points, asOf: mineAt || null };
+      try {
+        const next = await mutateFloorRow(store, date, (cur) => {
+          if (!cur) return null;
+          const c = (cur.checkouts || []).find((x) => x && x.id === meId && x.partial);
+          if (!c) return null;
+          Object.assign(c, snap); delete c.partial;
+          return cur;
+        });
+        if (!dead && next) setRow(next);
+      } catch (e) { /* the desk keeps the stub; this runs again next time */ }
+      if (!dead) setLateTicket(stub.t || qNowIso());
+    })();
+    return () => { dead = true; };
+  }, [row, me, meId, ticket, lateTicket]); // eslint-disable-line
   useEffect(() => {
     if (ticket !== "printing") return;
     const t = setTimeout(async () => {
@@ -14245,6 +14273,34 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <button type="button" className="sf-go mcf-go mc-lot-go" onClick={() => { buzz([20, 40, 20]); setLotAsk(false); startTicket(); }}>Yes, I'm done for the day</button>
             <button type="button" className="mc-lot-no" onClick={lotLater}>No, I'm coming back</button>
           </div>
+        </div>
+      )}
+      {lateTicket && (
+        <div className="mc-tkov" onClick={(e) => { if (e.target === e.currentTarget) setLateTicket(null); }}>
+          <div className="mc-tkwrap">
+          <div className="mc-slot" />
+          <div className="mc-tkt">
+            <div className="mc-tk-h">{(row && row.storeName) || "Live Floor"} &middot; DAY CLOSED {mcClock(lateTicket)}</div>
+            <div className="mc-tk-n">{(meFull || meLabel || "").toUpperCase()}</div>
+            <div className="mc-tk-big">
+              <span className="mc-tk-dm"><LedNumber value={myUnits != null ? myUnits : 0} color="#2A2418" cell={7} gap={3} dim="transparent" /></span>
+              <span className="mc-tk-r">{myGoal != null && <>GOAL {myGoal}<br /></>}TODAY {mine && mine.units ? mine.units : 0}</span>
+            </div>
+            {[["CALLS", `${(mine && mine.calls) || 0} / ${std.minCalls || 0}`, (mine && mine.calls || 0) >= (std.minCalls || 0)],
+              ["VIDEOS", `${(mine && mine.video) || 0} / ${std.minVideos || 0}`, (mine && mine.video || 0) >= (std.minVideos || 0)],
+              ["TASKS", mine && mine.tasksPosted ? `${mine.tasks || 0} / ${mine.tasksPosted}` : String((mine && mine.tasks) || 0), mine && mine.tasksPosted ? (mine.tasks || 0) >= mine.tasksPosted : true],
+              ["ROCKED", mine && mine.rocked === true ? "YES" : mine && mine.rocked === false ? "NO" : "\u00b7", mine && mine.rocked === true]].map(([l, v, ok]) => (
+              <div className="mc-tk-row" key={l}><span>{l}</span><i /><span className={ok ? "ok" : ""}>{v}</span></div>
+            ))}
+            <div className="mc-tk-foot">
+              <span className="mc-stamp">{daysClean > 0 ? `${daysClean} DAY${daysClean === 1 ? "" : "S"} CLEAN` : `${pointsForDay(mine || {}, std).points} PTS TODAY`}</span>
+              <span className="mc-tk-note">ROCKED,<br />THEN HOME</span>
+            </div>
+            <div className="mc-bcode" />
+            <button type="button" className="mc-tk-go" onClick={() => { buzz(10); setLateTicket(null); }}>Good night</button>
+          </div>
+          </div>
+          <div className="mc-send done">YOUR DAY WENT ON THE TRACKER <PixIcon glyph="check" size={10} /></div>
         </div>
       )}
       {eff === "done" && me && ticket && (

@@ -90,7 +90,7 @@ private func headline(_ s: QueueAttributes.ContentState, _ ph: Phase) -> String 
   case .next: return "You're next"
   case .desk: return "The desk is asking for you"
   case .customer: return "With a customer"
-  case .off: return s.status == "lunch" ? "At lunch" : "Away"
+  case .off: return s.status == "lunch" ? "At lunch" : "Out of the line"
   case .gone: return "Off the line"
   case .waiting: return "\(s.ahead) ahead of you"
   }
@@ -102,7 +102,7 @@ private func caption(_ s: QueueAttributes.ContentState, _ ph: Phase) -> String? 
   case .next: return "Nobody waiting ahead of you"
   case .desk: return "Head back to the floor."
   case .customer: return s.table.map { $0.hasPrefix("O") ? "Office \($0.dropFirst())" : "Table \($0)" } ?? "On the floor"
-  case .off: return "Off the line for now"
+  case .off: return s.status == "lunch" ? "You'll be passed until you tap back in" : "On the floor, not taking a turn"
   case .gone: return "Signed out for the day"
   case .waiting: return "In the line"
   }
@@ -205,6 +205,7 @@ private struct ActionButton: View {
 
 private struct Buttons: View {
   let ph: Phase
+  let s: QueueAttributes.ContentState
   var body: some View {
     HStack(spacing: 8) {
       switch ph {
@@ -221,7 +222,9 @@ private struct Buttons: View {
       case .desk:
         ActionButton(label: "On my way", glyph: "arrowup", action: "ack", tint: inkDeep, fill: sand, stroke: sand)
       case .off:
-        ActionButton(label: "Back on the floor", glyph: "door", action: "back", tint: inkDeep, fill: mint, stroke: mint)
+        // Away now means on the floor without taking a turn, so the way back is
+        // back into the LINE; lunch is the one you come back to the floor from.
+        ActionButton(label: s.status == "lunch" ? "Back on the floor" : "Back in line", glyph: "door", action: "back", tint: inkDeep, fill: mint, stroke: mint)
       case .gone:
         EmptyView()
       }
@@ -259,7 +262,7 @@ private struct LockScreen: View {
         Rail(line: line, up: ph == .up)
       }
       if #available(iOS 17.0, *), ph != .gone {
-        Buttons(ph: ph)
+        Buttons(ph: ph, s: s)
       }
     }
     .padding(14)
@@ -297,7 +300,7 @@ struct QueueLiveActivity: Widget {
               Rail(line: line, up: ph == .up)
             }
             if #available(iOS 17.0, *), ph != .gone {
-              Buttons(ph: ph)
+              Buttons(ph: ph, s: s)
             }
           }
         }
