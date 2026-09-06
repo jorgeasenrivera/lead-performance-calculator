@@ -38,6 +38,35 @@ import * as SageLive from "./modules/sage-live";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/* ---- a push that redraws the card ----
+   Android's Live Update is posted by the app, not by the server, so a phone
+   whose app the system has since killed would otherwise keep showing whatever
+   the line looked like when it was last awake. The server already sends a
+   data-only message on every change for exactly this reason; it now carries the
+   same content state the iOS activity is sent, and this task, which the system
+   starts whether or not the app is running, redraws the card from it. iOS does
+   not come through here: ActivityKit moves its own card.
+
+   A registration that fails is not worth a crash. The card then goes stale
+   while the app is gone and is right again the moment it is opened. */
+const PUSH_TASK = "sage-push";
+TaskManager.defineTask(PUSH_TASK, async ({ data, error }) => {
+  try {
+    if (error || Platform.OS !== "android" || !SageLive.available) return;
+    const d = (data && (data.data || data)) || {};
+    const body = d.notification && d.notification.data ? d.notification.data : d;
+    const kind = String(body.kind || "");
+    if (kind === "end") { await SageLive.end(); return; }
+    if (!body.state) return;
+    let state = null;
+    try { state = JSON.parse(String(body.state)); } catch (e) { return; }
+    if (!state || typeof state !== "object") return;
+    // start rather than update: the card may have been ended, or never posted
+    // on this launch, and start is the call that copes with both.
+    await SageLive.start({ store: String(body.store || ""), date: "", kind: String(body.kind || "floor") }, state);
+  } catch (e) { /* a card that did not redraw is not worth a crash */ }
+});
+
 /* ---- the lot ----
    The page tells the shell the lot as one circle while somebody is on the
    floor. iOS watches that region itself, app closed or not, and wakes this
@@ -174,7 +203,7 @@ function Shell() {
      back. Coming back to the foreground cancels it. */
   const inLine = useRef(false);
   useEffect(() => {
-    if (Platform.OS !== "ios" || !SageLive.available) return;
+    if (!SageLive.available) return;
     let noteId = null;
     const sub = AppState.addEventListener("change", async (st) => {
       try {
@@ -197,6 +226,11 @@ function Shell() {
      without opening the app. The same handoff the Live Activity's buttons use. */
   const sessionRef = useRef(null);
 
+  useEffect(() => {
+    if (Platform.OS !== "android" || !SageLive.available) return;
+    Notifications.registerTaskAsync(PUSH_TASK).catch(() => {});
+  }, []);
+
   /* ---- buttons pressed on the lock screen ----
      The activity's buttons run as App Intents in this process. With a session
      in hand they act through /api/queue-action themselves; only when that is
@@ -209,7 +243,7 @@ function Shell() {
     web.current.injectJavaScript(`(function(){ try { window.dispatchEvent(new CustomEvent("lpc:action", { detail: { action: ${JSON.stringify(String(action))} } })); } catch (e) {} })(); true;`);
   }, [ready]);
   useEffect(() => {
-    if (Platform.OS !== "ios" || !SageLive.available) return;
+    if (!SageLive.available) return;
     const sub = SageLive.addActionListener((e) => relayAct(e && e.action));
     SageLive.pendingAction().then((a) => { if (a) relayAct(a); });
     return () => sub.remove();
@@ -235,7 +269,7 @@ function Shell() {
             body: JSON.stringify({ store: s.store, date: s.date, action: "leave" }),
           }).catch(() => {});
         }
-        if (Platform.OS === "ios" && SageLive.available) SageLive.end();
+        if (SageLive.available) SageLive.end();
         await watchLot(null);
         relayAct("leave");
       } else if (which === Notifications.DEFAULT_ACTION_IDENTIFIER) {
@@ -328,7 +362,7 @@ function Shell() {
        through the site's API with it, so a press works with the app closed. */
     if (msg.type === "session" && msg.payload && typeof msg.payload === "object") {
       sessionRef.current = msg.payload;
-      if (Platform.OS === "ios" && SageLive.available) SageLive.setSession(msg.payload);
+      if (SageLive.available) SageLive.setSession(msg.payload);
       return;
     }
     /* Where the lot is, while they are on the floor; off when they are not. */
@@ -345,7 +379,7 @@ function Shell() {
        push follows a moment later and finds the activity already there. Off the
        line (with a customer, lunch, away) takes it down; the server does the same
        for a phone that was not open. */
-    if (msg.type === "queue" && Platform.OS === "ios" && SageLive.available) {
+    if (msg.type === "queue" && SageLive.available) {
       const q = msg.payload || {};
       inLine.current = ["waiting", "up", "customer", "lunch", "away"].includes(String(q.status || ""));
       /* Standing with a customer keeps the card up now: that is where the FlyBy

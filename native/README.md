@@ -82,6 +82,31 @@ their own copy) and must match the server's payload
 exactly: the struct name is the push's `attributes-type`, the content state's
 keys are what `contentState()` writes.
 
+## The line on an Android lock screen (Live Update)
+
+Android 16 calls it a Live Update: an ongoing notification that asks to be
+promoted, which the system then draws as a chip in the status bar and a card on
+the lock screen. It is the same idea as the iOS Live Activity and a different
+shape, so the module has one set of function names and two implementations.
+
+A promoted notification may not carry custom views, so the pixel rail cannot be
+drawn. What it may carry is `ProgressStyle`, a segmented bar with a tracker,
+which a queue happens to fit exactly: one segment per person in their own
+colour, the door at the right hand end, the tracker standing on you. The
+buttons are the same ones the Live Activity has, phase for phase, and a press
+goes through `/api/queue-action` from a receiver that runs with the app closed.
+
+Two things follow from the platform rather than from choice. There is no
+push-to-start token, because the card is posted by the app; the server instead
+sends the data-only message it already sends on every change, now carrying the
+same content state, and a background task redraws the card from it whether or
+not the app is running. And below Android 16 there is no promotion and no chip:
+the same notification is posted, with the same buttons, in the shade.
+
+It needs `POST_PROMOTED_NOTIFICATIONS` in the manifest, which is not a runtime
+permission, and a notification channel above `IMPORTANCE_MIN`. Manufacturers
+may add their own rules about what gets promoted.
+
 ## Leaving the lot
 
 While somebody is on the floor, the page hands the shell the store's lot as one

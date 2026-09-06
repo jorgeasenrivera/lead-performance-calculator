@@ -1,6 +1,9 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "modules": ["SageLiveModule"]
+  },
+  "android": {
+    "modules": ["com.sageonline.sagelive.SageLiveModule"]
   }
 }

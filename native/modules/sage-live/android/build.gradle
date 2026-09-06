@@ -1,0 +1,15 @@
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'com.sageonline.sagelive'
+version = '0.1.0'
+
+android {
+  namespace 'com.sageonline.sagelive'
+}
+
+dependencies {
+  // Live Updates (the promoted ongoing notification and ProgressStyle) reached
+  // the support library in 1.16. Building against the framework classes instead
+  // would mean an API 36 branch for every call rather than one at the end.
+  implementation 'androidx.core:core-ktx:1.16.0'
+}

@@ -157,12 +157,19 @@ export default async function handler(req, res) {
       } else if (dev.platform === "android" && dev.fcm_token) {
         const body = (item.kind === "up" || item.kind === "nudge") ? item.body
           : item.ahead === 0 ? "You're next." : `${item.ahead} ahead of you.`;
+        /* The same content state the Live Activity is sent, carried as a string
+           because FCM data values are strings. It is what lets an Android phone
+           redraw its Live Update from a push with the app closed, rail and all,
+           rather than showing whatever it last knew. The rail is capped at eight
+           people, so this stays well inside FCM's four kilobytes. */
+        const stateJson = JSON.stringify(state);
         const msg = item.kind === "end" ? fcmEndMessage({ token: dev.fcm_token, tag: collapseId, data: { store, kind } })
           : (item.kind === "up" || item.kind === "nudge")
             ? fcmUpMessage({ token: dev.fcm_token, title: item.title, body: item.body, tag: collapseId,
-                             data: { store, kind, ahead: String(item.ahead ?? 0), nudge: item.kind === "nudge" ? "1" : "0" } })
+                             data: { store, kind, ahead: String(item.ahead ?? 0), nudge: item.kind === "nudge" ? "1" : "0",
+                                     state: stateJson } })
           : fcmStandingMessage({ token: dev.fcm_token, title: "In the line", body,
-                                 tag: collapseId, data: { store, kind, ahead: String(item.ahead ?? 0) } });
+                                 tag: collapseId, data: { store, kind, ahead: String(item.ahead ?? 0), state: stateJson } });
         results.push(await sendFcm({ message: msg }));
       }
     } catch (e) {

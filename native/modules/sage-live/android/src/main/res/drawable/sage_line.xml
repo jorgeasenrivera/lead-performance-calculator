@@ -1,0 +1,12 @@
+<!-- The small icon and the progress tracker: Sage's dot cross, at notification
+     size. White on transparent, because Android silhouettes small icons. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24"
+    android:tint="#FFFFFF">
+  <path android:fillColor="#FFFFFF" android:pathData="M10.5,4h3v3h-3z" />
+  <path android:fillColor="#FFFFFF" android:pathData="M10.5,17h3v3h-3z" />
+  <path android:fillColor="#FFFFFF" android:pathData="M4,10.5h3v3h-3z" />
+  <path android:fillColor="#FFFFFF" android:pathData="M17,10.5h3v3h-3z" />
+  <path android:fillColor="#FFFFFF" android:pathData="M10.5,10.5h3v3h-3z" />
+</vector>
