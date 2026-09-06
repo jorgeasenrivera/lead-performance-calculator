@@ -30,11 +30,50 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import * as Application from "expo-application";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
+import * as TaskManager from "expo-task-manager";
 import Constants from "expo-constants";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as SageLive from "./modules/sage-live";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+
+/* ---- the lot ----
+   The page tells the shell the lot as one circle while somebody is on the
+   floor. iOS watches that region itself, app closed or not, and wakes this
+   task when the phone leaves it. The task asks, on the lock screen, whether
+   they are done for the day; the answer buttons act without opening the app
+   (see the response listener in the shell), and a tap on the note opens the
+   app to the same question. Nothing is decided here: a phone driving past a
+   window is not a person going home, so the question is asked, never assumed. */
+const LOT_TASK = "sage-lot";
+const LOT_CATEGORY = "sage-lot";
+TaskManager.defineTask(LOT_TASK, async ({ data, error }) => {
+  try {
+    if (error || !data || data.eventType !== Location.GeofencingEventType.Exit) return;
+    await Notifications.scheduleNotificationAsync({
+      content: { title: "Looks like you've left the lot", body: "Done for the day? Say so here, or open Sage.",
+        categoryIdentifier: LOT_CATEGORY, data: { lot: true }, sound: false },
+      trigger: null,
+    });
+  } catch (e) { /* a missed question is not worth a crash */ }
+});
+async function watchLot(circle) {
+  try {
+    if (!circle || !circle.on) {
+      if (await Location.hasStartedGeofencingAsync(LOT_TASK)) await Location.stopGeofencingAsync(LOT_TASK);
+      return;
+    }
+    const fg = await Location.requestForegroundPermissionsAsync();
+    if (!fg.granted) return;
+    const bg = await Location.requestBackgroundPermissionsAsync();
+    if (!bg.granted) return;                         // the page's own check still runs in front
+    await Location.startGeofencingAsync(LOT_TASK, [{
+      identifier: "lot", latitude: Number(circle.lat), longitude: Number(circle.lng),
+      radius: Math.max(150, Number(circle.radius) || 0), notifyOnEnter: false, notifyOnExit: true,
+    }]);
+  } catch (e) { /* no location, no watch; the page asks when it is opened */ }
+}
 
 const SITE = (Constants.expoConfig && Constants.expoConfig.extra && Constants.expoConfig.extra.siteUrl) || "https://www.sageonline.io";
 /* The site's own name, with or without www: sageonline.io redirects to
@@ -154,6 +193,10 @@ function Shell() {
     return () => sub.remove();
   }, []);
 
+  /* The page's session, for answering the lot question from the lock screen
+     without opening the app. The same handoff the Live Activity's buttons use. */
+  const sessionRef = useRef(null);
+
   /* ---- buttons pressed on the lock screen ----
      The activity's buttons run as App Intents in this process. With a session
      in hand they act through /api/queue-action themselves; only when that is
@@ -171,6 +214,54 @@ function Shell() {
     SageLive.pendingAction().then((a) => { if (a) relayAct(a); });
     return () => sub.remove();
   }, [relayAct]);
+  /* ---- the lot question, answered ----
+     "Done for the day" leaves the floor through the API with the session in
+     hand, and the page is told too so it agrees the moment it is next opened.
+     "I'm coming back" is nothing to do. A plain tap opens the app on the same
+     question. Both buttons work from the lock screen with the app closed. */
+  const lotSeen = useRef(null);
+  const answerLot = useCallback(async (r) => {
+    try {
+      const req = r && r.notification && r.notification.request;
+      if (!req || !req.content || !req.content.data || !req.content.data.lot) return;
+      if (lotSeen.current === req.identifier) return;
+      lotSeen.current = req.identifier;
+      const which = r.actionIdentifier;
+      if (which === "done") {
+        const s = sessionRef.current;
+        if (s && s.token && s.apiBase && s.store && s.date) {
+          await fetch(String(s.apiBase).replace(/\/$/, "") + "/api/queue-action", {
+            method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + s.token },
+            body: JSON.stringify({ store: s.store, date: s.date, action: "leave" }),
+          }).catch(() => {});
+        }
+        if (Platform.OS === "ios" && SageLive.available) SageLive.end();
+        await watchLot(null);
+        relayAct("leave");
+      } else if (which === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+        if (!ready || !web.current) { pendingLot.current = true; return; }
+        web.current.injectJavaScript(`(function(){ try { window.dispatchEvent(new CustomEvent("lpc:lot")); } catch (e) {} })(); true;`);
+      }
+    } catch (e) { /* the page asks again when it is opened */ }
+  }, [ready, relayAct]);
+  const pendingLot = useRef(false);
+  useEffect(() => {
+    Notifications.setNotificationCategoryAsync(LOT_CATEGORY, [
+      { identifier: "done", buttonTitle: "Done for the day", options: { opensAppToForeground: false } },
+      { identifier: "back", buttonTitle: "I'm coming back", options: { opensAppToForeground: false } },
+    ]).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(answerLot);
+    Notifications.getLastNotificationResponseAsync().then((r) => { if (r) answerLot(r); }).catch(() => {});
+    return () => sub.remove();
+  }, [answerLot]);
+  useEffect(() => {
+    if (!ready || !web.current || !pendingLot.current) return;
+    pendingLot.current = false;
+    web.current.injectJavaScript(`(function(){ try { window.dispatchEvent(new CustomEvent("lpc:lot")); } catch (e) {} })(); true;`);
+  }, [ready]);
+
   useEffect(() => {
     if (!ready || !web.current) return;
     const q = pendingAct.current; pendingAct.current = [];
@@ -236,9 +327,12 @@ function Shell() {
     /* The page's session, kept for the Live Activity's buttons: they act
        through the site's API with it, so a press works with the app closed. */
     if (msg.type === "session" && msg.payload && typeof msg.payload === "object") {
+      sessionRef.current = msg.payload;
       if (Platform.OS === "ios" && SageLive.available) SageLive.setSession(msg.payload);
       return;
     }
+    /* Where the lot is, while they are on the floor; off when they are not. */
+    if (msg.type === "fence") { watchLot(msg.payload || null); return; }
     if (msg.type === "buzz") {
       const p = msg.payload;
       const heavy = Array.isArray(p) ? p.length > 1 : Number(p) >= 20;
@@ -264,9 +358,9 @@ function Shell() {
         SageLive.start({ store: String(q.store || ""), date, kind: /up next|queue/i.test(String(q.queue || "")) ? "queue" : "floor" }, state);
       } else {
         SageLive.end();
-        /* Gone for the day: nothing left to reopen the app for either. The only
-           notes this shell schedules are the "you're still in line" ones. */
-        if (q.status === "gone") Notifications.cancelAllScheduledNotificationsAsync().catch(() => {});
+        /* Gone for the day: nothing left to reopen the app for either, and no
+           lot to watch. The only notes this shell schedules are its own. */
+        if (q.status === "gone") { Notifications.cancelAllScheduledNotificationsAsync().catch(() => {}); watchLot(null); }
       }
     }
   }, []);

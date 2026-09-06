@@ -52,9 +52,19 @@ test("ack clears the desk's nudge once, and is a no-op without one", () => {
   assert.equal(applyQueueAction(r.row, "a", "ack", NOW).changed, false);
 });
 
+test("leave takes the person off the line for the day and logs it as left", () => {
+  const row = { line: [{ id: "a", label: "AB", status: "waiting" }, { id: "b", label: "CD", status: "waiting" }], history: [] };
+  const out = applyQueueAction(row, "a", "leave", "2026-09-06T20:00:00.000Z");
+  assert.equal(out.changed, true);
+  assert.equal(out.status, "gone");
+  assert.deepEqual(out.row.line.map((p) => p.id), ["b"]);
+  assert.equal(out.row.history.at(-1).action, "left");
+  assert.equal(applyQueueAction(out.row, "a", "leave", "2026-09-06T20:01:00.000Z").changed, false);
+});
+
 test("nobody off the line, no unknown words, no crash on an empty row", () => {
   assert.equal(applyQueueAction(row(), "zz", "lunch", NOW).changed, false);
   assert.equal(applyQueueAction(row(), "a", "dance", NOW).changed, false);
   assert.equal(applyQueueAction(null, "a", "lunch", NOW).changed, false);
-  assert.equal(QUEUE_ACTIONS.length, 9);
+  assert.equal(QUEUE_ACTIONS.length, 10);
 });
