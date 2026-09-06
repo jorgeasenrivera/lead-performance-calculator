@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
 import { createPortal } from "react-dom";
-import Papa from "papaparse";
+/* The CSV reader is a manager's tool: it runs when somebody drops a report on
+   the Import page. A salesperson on the floor never touches it, so it is fetched
+   on the first parse rather than carried in everyone's first load. */
+let _papa = null;
+const loadPapa = async () => (_papa || (_papa = import("papaparse").then((m) => m.default || m)));
 import { createClient } from "@supabase/supabase-js";
 /* The mark. One drawing on the same 9x9 grid PixIcon uses, so the identity and
    the app's iconography come off one ruler. Its own file because it is shipped
@@ -3411,7 +3415,7 @@ export default function LeadPerformanceCalculator() {
         continue;
       }
       const text = await file.text();
-      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+      const rows = (await loadPapa()).parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
       const type = detectReportType(rows, file.name);
       if (type === "wrong-channel-report") {
         // A per-channel delivery report was pulled instead of the Delivery Summary.
@@ -19148,7 +19152,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
       }
       // CSV
       const text = await file.text();
-      const rows = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
+      const rows = (await loadPapa()).parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: false }).data;
       setBusy(false);
       parseRows(rows, null);
     } catch (e) {
@@ -23342,7 +23346,7 @@ function BaselineImport({ data, onChange }) {
       } catch { rows = null; }
     } else {
       const text = await file.text();
-      const raw = Papa.parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+      const raw = (await loadPapa()).parse(text.replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
       // Either the normal one-row-per-person export, or the stacked totals export.
       const stacked = mapStackedActivityCsv(raw);
       rows = stacked ? stacked.rows : (detectReportType(raw, file.name) === "activity" ? raw : null);
@@ -28309,7 +28313,7 @@ function CrossCheck({ store, data, config, onClose }) {
         file2 = parseDeliverySummaryRows(ds.rows);
         stated = ds.stated;
       } else {
-        const rows = Papa.parse((await file.text()).replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
+        const rows = (await loadPapa()).parse((await file.text()).replace(/^\uFEFF/, ""), { skipEmptyLines: true }).data;
         /* Two CSV shapes come out of the same report. One row per user, with a
            Units Delivered column, is the list. One row for the store, with no
            Units column at all, is the roll-up -- and that roll-up is the store's
