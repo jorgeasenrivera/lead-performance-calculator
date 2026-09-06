@@ -6574,7 +6574,7 @@ function SfWorthKnowing({ values, days, target }) {
   );
 }
 
-function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, thresholds, list, variant, onClose }) {
+function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, monthStats, thresholds, list, variant, onClose, light = false }) {
   const LIST = (Array.isArray(list) && list.length) ? list : DEFAULT_CHECKLIST;
   /* Three of these tick themselves. If the report says the calls were made, asking
      someone to also tell us they were made is busywork, and worse, it invites a tick
@@ -7066,8 +7066,11 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
 
   return (
     <Overlay>
-      <div className={"q-page sf sf-day-root " + ((variant && variant.sf) || "")}
-        role="dialog" aria-label="My day">{inner}</div>
+      <div className={"q-page sf sf-day-root mc-shell mc-day " + ((variant && variant.sf) || "") + (light ? " mc-light" : "")}
+        role="dialog" aria-label="My day">
+        <div className="mc-aurora" aria-hidden="true"><i /><i /><i /><i /><u /><u /></div>
+        {inner}
+      </div>
     </Overlay>
   );
 }
@@ -12380,7 +12383,10 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
 
   const byTable = new Map(asks.filter((a) => a.table != null).map((a) => [String(a.table), a]));
   const seatByTable = new Map(line.filter((p) => p.status === "customer" && p.table != null).map((p) => [String(p.table), p]));
-  const lotAsks = asks.filter((a) => a.spot === "lot");
+  /* An ask from the lot, or one from someone who never picked a table. Both
+     have no square on the plan to flash, so they are listed instead; before
+     this the second kind showed up only as a count and nobody could claim it. */
+  const lotAsks = asks.filter((a) => a.spot === "lot" || a.table == null);
   const touchAsk = (a) => act((cur) => {
     const x = (cur.assists || []).find((y) => y.id === a.id);
     if (!x || x.doneAt) return cur;
@@ -12495,7 +12501,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
       {lotAsks.map((a) => (
         <button key={a.id} type="button" className={"fbc-lot " + (a.kind === "to" ? "to" : "fly") + (a.claimedBy ? " claimed" : "")}
           onClick={() => touchAsk(a)}>
-          <b>{a.kind === "to" ? "T.O." : "FlyBy"} · out on the lot</b>
+          <b>{a.kind === "to" ? "T.O." : "FlyBy"} · {a.spot === "lot" ? "out on the lot" : "on the floor"}</b>
           <span>{a.byName}{a.note ? ` · ${a.note}` : ""}</span>
           <i>{a.claimedBy ? `${a.claimedBy.split(" ")[0]} on the way` : fmtAssistAge(assistAge(a))}</i>
         </button>
@@ -12537,6 +12543,7 @@ function AssistWatcher({ store, meName }) {
     const t = setInterval(poll, 25000);
     return () => { dead = true; clearInterval(t); };
   }, [store]);
+  useLiveRow(FLOOR_TABLE, floorRowId(store, today()), (row) => setAsks(row ? activeAssists(row) : []));
   const show = asks.filter((a) => !a.claimedBy && !hidden[a.id]);
   useAssistTick(show.length > 0);
   const claim = async (a) => {
@@ -13449,6 +13456,20 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   }, [tag, row ? 1 : 0, meId]); // eslint-disable-line
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
+  /* The phone should be felt, not only read: a change to where you stand or
+     what you are doing buzzes once as it lands, and reaching the door buzzes
+     the long pattern, so nobody has to watch the screen to know. The first
+     reading is silent; that is the page finding out where you already were. */
+  const myPlace = me ? (me.status || "waiting") + "|" + line.indexOf(me) : "";
+  const lastPlace = useRef(myPlace);
+  useEffect(() => {
+    const was = lastPlace.current; lastPlace.current = myPlace;
+    if (!was || !myPlace || was === myPlace) return;
+    const [ws, wi] = was.split("|"); const [ns, ni] = myPlace.split("|");
+    if (ns === "waiting" && ni === "0" && !(ws === "waiting" && wi === "0")) buzz([30, 60, 30]);
+    else if (ws !== ns) buzz([14, 40, 14]);
+    else buzz(8);
+  }, [myPlace]);
   // Filtered out entirely unless the address asked for it, so it cannot be picked
   // by accident by somebody scrolling the name list.
   const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
@@ -14039,11 +14060,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           </div>
         )}
         <div className="sf-actions">
-          {canUndo && <button className="sf-leave" disabled={busy} onClick={undoCheckin} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
+          {canUndo && <button className="sf-leave" disabled={busy} onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           <div className="mcf-chips" role="radiogroup" aria-label="Where you are">
             {["waiting", ...FLOOR_SELF_FLAGS].map((s2) => (
               <button key={s2} type="button" role="radio" aria-checked={s2 === st} disabled={busy}
-                className={"mcf-chip" + (s2 === st ? " on" : "")} onClick={() => setFlag(s2)}>
+                className={"mcf-chip" + (s2 === st ? " on" : "")} onClick={() => { buzz(12); setFlag(s2); }}>
                 <PixIcon glyph={s2 === "waiting" ? "user" : s2} size={19} />
                 <span>{s2 === "waiting" ? "Here" : s2 === "lunch" ? "Lunch" : "Away"}</span>
               </button>
@@ -14056,7 +14077,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
               <SfIcon name="mine" size={14} /><span>My day</span>
             </button>
-            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={startTicket}>
+            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={() => { buzz(10); startTicket(); }}>
               <SfIcon name="door" size={14} /><span>Leave the floor</span>
             </button>
           </div>
@@ -14145,6 +14166,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       })()}
       {eff === "done" && me && ticket && (
         <div className="mc-tkov" onClick={(e) => { if (e.target === e.currentTarget && ticket !== "sending") setTicket(null); }}>
+          <div className="mc-tkwrap">
           <div className="mc-slot" />
           <div className="mc-tkt">
             <div className="mc-tk-h">{(row && row.storeName) || "Live Floor"} &middot; DAY CLOSED {mcClock(new Date().toISOString())}</div>
@@ -14165,7 +14187,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             </div>
             <div className="mc-bcode" />
             <button type="button" className="mc-tk-go" disabled={ticket !== "sent" && ticket !== "failed"}
-              onClick={() => { setTicket(null); leave(); }}>Good night</button>
+              onClick={() => { buzz([20, 40, 20]); setTicket(null); leave(); }}>Good night</button>
+          </div>
           </div>
           <div className={"mc-send" + (ticket === "sent" ? " done" : ticket === "failed" ? " fail" : "")}>
             {ticket === "sent" ? <>ON THE DAILY TRACKER <PixIcon glyph="check" size={10} /></>
@@ -14183,7 +14206,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           <span className="mc-flash-dm"><LedNumber value={mile} color="#E9CE96" cell={9} gap={4} dim="transparent" /></span>
           <div className="mc-flash-t">{mile === myGoal ? "Goal made." : `Unit ${mile}.`}</div>
           <div className="mc-flash-s">{mile === myGoal ? "The month is yours with days to spare." : `${Math.max(0, new Date(parseInt(date.slice(0, 4)), parseInt(date.slice(5, 7)), 0).getDate() - parseInt(date.slice(8, 10)))} days left in the month.`}</div>
-          <button type="button" className="mc-flash-b" onClick={() => setMile(null)}>Back to work</button>
+          <button type="button" className="mc-flash-b" onClick={() => { buzz(8); setMile(null); }}>Back to work</button>
         </div>
       )}
       {appOpen && (
@@ -14237,7 +14260,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std} variant={variant}
           config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
-          list={(row && row.checklist) || null} onClose={() => setMyDay(false)} />
+          list={(row && row.checklist) || null} onClose={() => setMyDay(false)} light={lightMode} />
       )}
     </div>
   );
@@ -38182,6 +38205,28 @@ const SAGE_CSS = `
 .mc-shell.mc-light .mc-card.mc-pts{ background:#15211B; color:#E8EEF2; border-color:#15211B; }
 .mc-shell.mc-light .mc-card.mc-board{ background:rgba(169,196,172,.35); border-color:rgba(86,125,97,.3); } .mc-light .mc-pd{ background:rgba(255,255,255,.55); border-color:rgba(31,42,34,.08); } .mc-light .mc-pd.me{ background:#F6E3C3; border-color:#D0821E; } .mc-light .mc-pd .rk,.mc-light .mc-boardsub{ color:rgba(31,42,34,.5); }
 .mc-shell.mc-light .mc-offc{ background:#FFFDF8; color:#1F2A22; }
+/* ---- My day, in the corner's clothes ----
+   The same page, the same numbers, the same list. It just stopped being the
+   only screen in the app still wearing the teal it was drafted in: the aurora
+   ground, Geist on the titles, sand and mint for the accents, and the light
+   look when the corner is in it. */
+.sf-day-root.mc-day{ --a1:#56795F; --a2:#E4C98D; --led:#8FD8AF; --glow:rgba(143,216,175,.5); --ld-off:rgba(143,216,175,.14); background:#06090F; }
+.sf-day-root.mc-day::before{ display:none; }
+.mc-day .sf-view{ position:relative; z-index:1; }
+.mc-day .sf-display, .mc-day .sf-one-v, .mc-day .sf-task-h, .mc-day .sf-band-txt b, .mc-day .sf-focus-n{ font-family:var(--mc-geist); letter-spacing:-.02em; }
+.mc-day .sf-task, .mc-day .sf-rate, .mc-day .sf-jump, .mc-day .sf-owe-day{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.1); border-radius:18px; box-shadow:0 12px 28px -20px rgba(0,0,0,.8); }
+.mc-day .sf-band{ border-bottom-color:rgba(255,255,255,.08); }
+.mc-day .sf-one{ background:linear-gradient(160deg,#F6E3C3,#EDD6AC); color:#2A2418; }
+.mc-day .sf-focus{ --tone:#8FD8AF; }
+.mc-day .sf-meter i{ background:linear-gradient(90deg,#8FD8AF,#E4C98D); }
+.mc-day .sf-stamp.none{ color:#E4C98D; }
+.mc-day.mc-light{ background:#F1EEE4; --sfink:#1F2A22; --sfink2:#4A5A4E; --sfink3:#7E8A80; --sfcard:#FFFDF8; --sfstroke:rgba(31,42,34,.1); color:#1F2A22; }
+.mc-day.mc-light .sf-task, .mc-day.mc-light .sf-rate, .mc-day.mc-light .sf-jump, .mc-day.mc-light .sf-owe-day{ background:#FFFDF8; border-color:rgba(31,42,34,.1); box-shadow:0 10px 24px -16px rgba(31,42,34,.35); }
+.mc-day.mc-light .sf-band{ border-bottom-color:rgba(31,42,34,.08); }
+.mc-day.mc-light .sf-meter{ background:rgba(31,42,34,.1); }
+.mc-day.mc-light .sf-back, .mc-day.mc-light .sf-kicker{ color:var(--sfink2); }
+.mc-day.mc-light .sf-focus{ background:rgba(143,216,175,.18); border-color:rgba(86,125,97,.3); }
+.mc-day.mc-light .mc-aurora i{ opacity:.35; } .mc-day.mc-light .mc-aurora u{ opacity:.25; background-image:radial-gradient(circle,rgba(31,42,34,.35) 1px,transparent 1.6px); }
 .mc-light .mc-pill{ background:#15211B; border-color:#15211B; }
 .mc-shell.mc-light .mc-sheet{ background:#FFFDF8; color:#1F2A22; border-top-color:#D0821E; } .mc-light .mc-x{ background:rgba(31,42,34,.08); color:#1F2A22; } .mc-light .mc-set-row{ border-bottom-color:rgba(31,42,34,.1); } .mc-light .mc-set-row .hint{ color:rgba(31,42,34,.55); }
 
@@ -38498,6 +38543,11 @@ const SAGE_CSS = `
 .mc-tk-go{ margin-top:12px; width:100%; border:0; background:#2a2418; color:#f7eed9; border-radius:999px; padding:10px;
   font-size:12px; font-weight:700; cursor:pointer; }
 .mc-tk-go:disabled{ opacity:.35; cursor:default; }
+/* The ticket prints out of the slot. Anything still inside the printer is
+   clipped, so the top of the receipt never shows above the slot mid-print, and
+   a receipt taller than the screen scrolls instead of running under the edge. */
+.mc-tkwrap{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; overflow-x:hidden; overflow-y:auto; padding-bottom:12px; }
+.mc-tkwrap .mc-tkt{ flex:0 0 auto; }
 .mc-send{ display:flex; align-items:center; justify-content:center; gap:5px; margin-top:14px; font-family:var(--sfmono);
   font-size:9px; font-weight:700; letter-spacing:.14em; color:#e4c98d; text-align:center; padding:0 20px; }
 .mc-send s{ width:6px; height:6px; border-radius:50%; background:#e4c98d; animation:mcSend 1s infinite; }
@@ -38904,6 +38954,21 @@ const SAGE_CSS = `
 .fba-x{border:1px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.8);border-radius:99px;
   padding:5px 9px;font:600 9.5px var(--font-ui);cursor:pointer;flex:0 0 auto;}
 .fba-sheetwrap{position:fixed;inset:0;z-index:80;background:rgba(16,21,18,.5);display:flex;align-items:flex-end;justify-content:center;}
+/* On a phone the picker is the whole job, so it takes the screen from the top
+   rather than sitting at the bottom under the hero, and the tables are big
+   enough to hit and to read with a customer standing next to you. */
+@media (max-width:700px){
+  .fba-sheetwrap{align-items:flex-start;padding-top:calc(var(--sat, env(safe-area-inset-top, 0px)) + 10px);}
+  .fba-sheet{border-radius:22px;max-height:calc(100dvh - var(--sat, env(safe-area-inset-top, 0px)) - 20px);overflow-y:auto;padding-bottom:calc(22px + var(--sab, env(safe-area-inset-bottom, 0px)));}
+  .fba-cap{font-size:11px;}
+  .fba-sheet .fbp-scroll.mini .fbp{height:min(330px,44dvh);}
+  .fba-sheet .fbp-scroll.mini .fbp-tbl{width:46px;height:36px;border-radius:10px;font-size:15px;}
+  .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:42px;height:42px;}
+  .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:10.5px;}
+  .fba-sheet .fbp-scroll.mini .fbp-sub{font-size:9px;}
+  .fba-lot{font-size:15px;padding:13px;}
+  .fba-notes button{font-size:13.5px;padding:10px 13px;}
+}
 .fba-sheet{width:min(420px,100%);background:#F2F4EF;border-radius:22px 22px 0 0;padding:16px 16px 22px;color:#223126;}
 .fba-cap{font:700 9.5px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:#8B988E;margin:8px 0 6px;}
 .fba-sheet .fbp-scroll.mini{background:#E9EFE7;border:1px solid rgba(34,49,38,.12);}
