@@ -1,6 +1,11 @@
-/* The Live Activity, from JavaScript. Absent on Android, on the simulator's
-   older images, and on any iOS before 16.2, in which case every call here is a
-   quiet no-op and `available` is false. */
+/* The line on the lock screen, from JavaScript. One shape for two platforms:
+   an iOS Live Activity, and on Android a Live Update, which is Android 16's
+   name for the same idea drawn as a promoted ongoing notification. Absent on
+   the simulator's older images and on any iOS before 16.2, in which case every
+   call here is a quiet no-op and `available` is false. On an Android before 16
+   the module is there and posts the same ongoing notification with the same
+   buttons; it simply is not promoted to the status bar chip, which is what
+   `enabled()` reports. */
 import { requireOptionalNativeModule } from "expo-modules-core";
 
 const Native = requireOptionalNativeModule("SageLive");
@@ -28,7 +33,9 @@ export async function end() {
   try { return !!(await Native.end()); } catch (e) { return false; }
 }
 
-/** kind is "pts" (push-to-start, iOS 17.2+) or "activity" (a running one). */
+/** iOS only. kind is "pts" (push-to-start, iOS 17.2+) or "activity" (a running
+    one). Android has no equivalent: the card is posted by the app, and the
+    server reaches an Android phone with the ordinary push it already sends. */
 export function addTokenListener(fn) {
   if (!Native) return { remove() {} };
   return Native.addListener("onToken", fn);
