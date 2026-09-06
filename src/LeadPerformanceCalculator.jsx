@@ -10379,7 +10379,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     setRow(got || null);
   }, [store, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
-  useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), (d) => setRow(d || null));
+  useEffect(() => { refetch(); const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   // Today's activity for this person only. The split day rows made this cheap: it
@@ -11534,7 +11535,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   useEffect(() => { ensureRow(); }, [ensureRow]);
   useEffect(() => { loadIds(); }, [loadIds]);
-  useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  const live = useLiveRow(QUEUE_TABLE, queueRowId(store.id, date, variant.kind), (d) => setRow(d || null));
+  useEffect(() => { const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
 
   const line = (row && row.line) || [];
@@ -11977,6 +11979,34 @@ async function loadRowIfChanged(table, id, tag) {
     rowStamps.set(k, data ? (data.updated_at || "none") : "missing");
     return data ? data.data : null;
   } catch (e) { console.error("poll", table, id, e); return undefined; }
+}
+/* Postgres pushes a changed row down a socket the moment it is written, so a
+   phone in line learns it is up as the desk clicks rather than on the next poll.
+   The poll underneath slows to a safety net once the socket is open and comes
+   back to five seconds if it never opens or drops. Whatever arrives on the socket
+   is stamped too, so the next poll does not fetch the same row over again. The
+   tables have to be in the supabase_realtime publication for any of this to
+   fire; supabase-realtime-setup.sql does that, and without it nothing breaks,
+   the pages simply keep polling. */
+function useLiveRow(table, id, onRow) {
+  const [live, setLive] = useState(false);
+  const cb = useRef(onRow); cb.current = onRow;
+  useEffect(() => {
+    if (!supabase || !id) return undefined;
+    let ch = null;
+    try {
+      ch = supabase.channel(`live:${table}:${id}`)
+        .on("postgres_changes", { event: "*", schema: "public", table, filter: `id=eq.${id}` }, (p) => {
+          const n = p && p.new;
+          if (!n || !("data" in n)) return;
+          rowStamps.set(table + "|" + id, n.updated_at || "none");
+          cb.current(n.data);
+        })
+        .subscribe((status) => setLive(status === "SUBSCRIBED"));
+    } catch (e) { ch = null; }
+    return () => { setLive(false); if (ch) { try { supabase.removeChannel(ch); } catch (e) {} } };
+  }, [table, id]);
+  return live;
 }
 async function loadFloorRow(store, date) {
   if (!supabase) return undefined;
@@ -13377,7 +13407,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date]);
-  useEffect(() => { refetch(); const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), (d) => setRow(d || null));
+  useEffect(() => { refetch(); const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   const isToday = date === today();
@@ -15047,7 +15078,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   useEffect(() => { loadIds(); }, [loadIds]);
   useEffect(() => { ensureRow(); }, [ensureRow]);
-  useEffect(() => { const t = setInterval(refetch, 5000); return () => clearInterval(t); }, [refetch]);
+  const live = useLiveRow(FLOOR_TABLE, floorRowId(store.id, date), (d) => setRow(d || null));
+  useEffect(() => { const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
   useEffect(() => { const t = setInterval(() => force(), 30000); return () => clearInterval(t); }, []);
 
   const line = (row && row.line) || [];
