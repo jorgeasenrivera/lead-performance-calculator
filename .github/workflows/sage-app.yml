@@ -21,8 +21,14 @@
 # Expo will use signing credentials in an unattended build but will not create
 # the first ones, so the certificate and profile are made once in the browser
 # and kept here. See native/README.md.
-#   GOOGLE_SERVICES_JSON     Android only: Firebase's google-services.json, whole file
+#   GOOGLE_SERVICES_JSON     Android only, optional: Firebase's google-services.json,
+#                            whole file. Without it the app builds and the line still
+#                            shows on the lock screen; only push does not work.
 #   GOOGLE_PLAY_SERVICE_JSON Android only: a Play Console service account key, for uploads
+#
+# No Google Play account yet? Untick Upload and pick android. The build then
+# makes an APK rather than a Play bundle, and the run's summary carries a link
+# to install it straight onto a phone. Nothing else is needed.
 name: Sage app
 
 on:
@@ -143,9 +149,18 @@ jobs:
           IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
           IOS_QUEUE_PROFILE_BASE64: ${{ secrets.IOS_QUEUE_PROFILE_BASE64 }}
 
+      # Firebase is what carries push to an Android phone. It is not what draws
+      # the line on the lock screen, which the app posts itself, so a build
+      # without this is worth having and says what it is missing.
       - name: Google services file
         if: inputs.platform == 'android'
-        run: printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+            echo "Firebase config in place."
+          else
+            echo "::warning::No GOOGLE_SERVICES_JSON secret. The app builds and the lock-screen line works; push notifications will not."
+          fi
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
 
@@ -184,9 +199,34 @@ jobs:
       - name: Expo project
         run: eas init --force --non-interactive
 
+      # The production profile makes what a store wants: an .ipa for TestFlight,
+      # an .aab for Play. An .aab cannot be installed on a phone by hand, so
+      # Android with Upload unticked builds the preview profile instead, which
+      # makes an APK, and the link to it goes in the run's summary.
       - name: Build
         if: inputs.rebuild
-        run: eas build --platform ${{ inputs.platform }} --profile production --non-interactive --wait
+        run: |
+          profile=production
+          if [ "${{ inputs.platform }}" = "android" ] && [ "${{ inputs.submit }}" != "true" ]; then
+            profile=preview
+            echo "No upload asked for, so this is an APK you can install by hand."
+          fi
+          eas build --platform ${{ inputs.platform }} --profile "$profile" --non-interactive --wait --json > build.json
+          node -e '
+            try {
+              const fs = require("fs");
+              const b = JSON.parse(fs.readFileSync("build.json", "utf8"));
+              const one = Array.isArray(b) ? b[0] : b;
+              const a = (one && one.artifacts) || {};
+              const url = a.buildUrl || a.applicationArchiveUrl;
+              if (!url) return;
+              console.log("Build: " + url);
+              if (process.env.GITHUB_STEP_SUMMARY) {
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                  "\n### The build\n\n[Download and install it](" + url + ")\n\nOpen that link on the phone itself. Android will ask once for permission to install from the browser.\n");
+              }
+            } catch (e) { console.log("Could not read the build link: " + e.message); }
+          ' || true
 
       # eas submit reads the App Store Connect key from a submit profile in
       # eas.json rather than from flags. Written here for the run and never
@@ -223,4 +263,4 @@ jobs:
 
       - name: Forget the keys
         if: always()
-        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json && git checkout -- eas.json app.json 2>/dev/null || true
+        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json build.json && git checkout -- eas.json app.json 2>/dev/null || true

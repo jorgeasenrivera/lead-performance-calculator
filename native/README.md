@@ -82,6 +82,25 @@ their own copy) and must match the server's payload
 exactly: the struct name is the push's `attributes-type`, the content state's
 keys are what `contentState()` writes.
 
+## Android without a Google Play account
+
+Nothing about building for Android needs a Play developer account. Go to
+Actions → Sage app → Run workflow, pick android, and **untick Upload**. The
+build then makes an APK rather than a Play bundle, and when it finishes the
+run's summary carries a link. Open that link on the phone itself; Android asks
+once for permission to install from the browser, and the app is there.
+
+Two things are worth knowing about that build:
+
+- **Push will not work without Firebase.** The `GOOGLE_SERVICES_JSON` secret is
+  Firebase's `google-services.json`, which is free and has nothing to do with
+  Play. Without it the app builds, the line still shows on the lock screen
+  (the app posts that itself) and the buttons still work; only notifications
+  sent by the server do not arrive. The run says so rather than failing.
+- **Ticking Upload needs the account.** That path submits to Play's internal
+  track and needs `GOOGLE_PLAY_SERVICE_JSON`, a service account key made in the
+  Play Console, which needs the developer account.
+
 ## The line on an Android lock screen (Live Update)
 
 Android 16 calls it a Live Update: an ongoing notification that asks to be
