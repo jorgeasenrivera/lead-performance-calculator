@@ -14126,8 +14126,10 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
             fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <div className="sf-links">
-            <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
-              <SfIcon name="mine" size={14} /><span>My day</span>
+            {/* The corner is the main page and already carries the day, so this
+                goes back there rather than opening a second copy of it. */}
+            <button type="button" className="sf-link" onClick={() => { buzz(10); setTab("corner"); }}>
+              <SfIcon name="mine" size={14} /><span>My corner</span>
             </button>
             <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={() => { buzz(10); startTicket(); }}>
               <SfIcon name="door" size={14} /><span>Leave the floor</span>
