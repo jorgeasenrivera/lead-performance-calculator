@@ -67,3 +67,35 @@ test("Apple's refusal is read out of the body, and 410 retires the token", async
   assert.equal(r.reason, "Unregistered");
   assert.equal(r.gone, true);
 });
+
+test("a wrong-environment refusal is tried once on the other side", async () => {
+  const seen = [];
+  const impl = ({ origin }) => {
+    seen.push(origin);
+    return Promise.resolve(origin.includes("sandbox")
+      ? { status: 200, text: "" }
+      : { status: 403, text: JSON.stringify({ reason: "BadEnvironmentKeyInToken" }) });
+  };
+  const r = await sendApns({ token: "t", payload: {}, postImpl: impl, cfg: cfg(), env: "production" });
+  assert.equal(r.ok, true);
+  assert.equal(r.env, "sandbox");
+  assert.deepEqual(seen, ["https://api.push.apple.com", "https://api.sandbox.push.apple.com"]);
+});
+
+test("both sides refusing reports the first answer and stops", async () => {
+  let calls = 0;
+  const impl = () => { calls++; return Promise.resolve({ status: 403, text: JSON.stringify({ reason: "BadDeviceToken" }) }); };
+  const r = await sendApns({ token: "t", payload: {}, postImpl: impl, cfg: cfg(), env: "production" });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, "BadDeviceToken");
+  assert.equal(r.gone, true);
+  assert.equal(calls, 2, "one retry, and only one");
+});
+
+test("a refusal that is not about the environment is not retried", async () => {
+  let calls = 0;
+  const impl = () => { calls++; return Promise.resolve({ status: 400, text: JSON.stringify({ reason: "TopicDisallowed" }) }); };
+  const r = await sendApns({ token: "t", payload: {}, postImpl: impl, cfg: cfg(), env: "production" });
+  assert.equal(r.reason, "TopicDisallowed");
+  assert.equal(calls, 1);
+});
