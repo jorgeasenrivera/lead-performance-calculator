@@ -199,6 +199,18 @@ jobs:
       - name: Expo project
         run: eas init --force --non-interactive
 
+      # EAS compiles on its own machines and hands back one line: build failed.
+      # The reason stays on a web page behind a login, which turned a Kotlin
+      # typo into a day of asking somebody to go and copy it out. GitHub's
+      # runners already carry the Android SDK, so the same compile runs here
+      # first and fails in three minutes with the error in this log.
+      - name: Check the Android code compiles
+        if: inputs.platform == 'android' && inputs.rebuild
+        run: |
+          npx expo prebuild -p android --no-install --clean
+          cd android
+          ./gradlew :app:compileReleaseKotlin --no-daemon --console=plain
+
       # The production profile makes what a store wants: an .ipa for TestFlight,
       # an .aab for Play. An .aab cannot be installed on a phone by hand, so
       # Android with Upload unticked builds the preview profile instead, which
@@ -211,22 +223,42 @@ jobs:
             profile=preview
             echo "No upload asked for, so this is an APK you can install by hand."
           fi
+          # The shell aborts on a failed command, which is how a failed build
+          # used to end this step before anything could report why.
+          set +e
           eas build --platform ${{ inputs.platform }} --profile "$profile" --non-interactive --wait --json > build.json
+          code=$?
+          set -e
           node -e '
             try {
               const fs = require("fs");
               const b = JSON.parse(fs.readFileSync("build.json", "utf8"));
               const one = Array.isArray(b) ? b[0] : b;
-              const a = (one && one.artifacts) || {};
+              if (!one) return;
+              const a = one.artifacts || {};
               const url = a.buildUrl || a.applicationArchiveUrl;
-              if (!url) return;
-              console.log("Build: " + url);
-              if (process.env.GITHUB_STEP_SUMMARY) {
-                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
-                  "\n### The build\n\n[Download and install it](" + url + ")\n\nOpen that link on the phone itself. Android will ask once for permission to install from the browser.\n");
+              if (url) {
+                console.log("Build: " + url);
+                if (process.env.GITHUB_STEP_SUMMARY) {
+                  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+                    "\n### The build\n\n[Download and install it](" + url + ")\n\nOpen that link on the phone itself. Android will ask once for permission to install from the browser.\n");
+                }
               }
-            } catch (e) { console.log("Could not read the build link: " + e.message); }
+              const err = one.error || {};
+              if (err.message || err.errorCode) {
+                console.log("::error::EAS " + (err.errorCode || "failed") + ": " + (err.message || ""));
+              }
+              if (one.buildLogsUrl || one.logsUrl) console.log("Full log: " + (one.buildLogsUrl || one.logsUrl));
+            } catch (e) { console.log("Could not read build.json: " + e.message); }
           ' || true
+          # Build metadata only: ids, status, urls and the error. No credentials
+          # pass through here, and having it in the log beats going to look.
+          if [ "$code" != "0" ]; then
+            echo "::group::what EAS returned"
+            cat build.json || true
+            echo "::endgroup::"
+          fi
+          exit $code
 
       # eas submit reads the App Store Connect key from a submit profile in
       # eas.json rather than from flags. Written here for the run and never
