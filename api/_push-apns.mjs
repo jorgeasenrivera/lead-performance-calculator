@@ -103,6 +103,24 @@ export function liveEndPayload({ state = {}, dismissAt = null, now = Date.now() 
   return { aps };
 }
 
+/* Node's fetch reports every transport failure as the same two words, "fetch
+   failed", and puts the actual fault underneath in `cause`: the refused
+   connection, the DNS miss, the timeout, the certificate. Reported as those two
+   words it names nothing and cannot be acted on, which is exactly where a real
+   push failure left us. So the chain is walked and the codes kept. Codes and
+   messages only; no token, no key, nothing that identifies a phone. */
+export function errText(e, depth = 3) {
+  const bits = [];
+  let cur = e;
+  for (let i = 0; cur && i <= depth; i++) {
+    const part = [cur.code, cur.message || (typeof cur === "string" ? cur : "")]
+      .filter(Boolean).join(" ").trim();
+    if (part && !bits.includes(part)) bits.push(part);
+    cur = cur.cause;
+  }
+  return bits.join(" <- ") || "unknown";
+}
+
 /* ---- the send ---- */
 export async function sendApns({ token, payload, pushType = "alert", topic, priority = 10,
                                  collapseId = null, env = process.env.APNS_ENV, fetchImpl = fetch, cfg = {} }) {
@@ -116,9 +134,15 @@ export async function sendApns({ token, payload, pushType = "alert", topic, prio
   };
   if (collapseId) headers["apns-collapse-id"] = collapseId.slice(0, 64);
 
-  const res = await fetchImpl(`${HOST(env)}/3/device/${token}`, {
-    method: "POST", headers, body: JSON.stringify(payload),
-  });
+  let res;
+  try {
+    res = await fetchImpl(`${HOST(env)}/3/device/${token}`, {
+      method: "POST", headers, body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    // Apple never answered. Say what actually stopped it rather than "failed".
+    return { ok: false, status: 0, reason: errText(e), gone: false };
+  }
   if (res.status === 200) return { ok: true };
   let reason = "";
   try { reason = (await res.json()).reason || ""; } catch { /* empty body is normal on some errors */ }
