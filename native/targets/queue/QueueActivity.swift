@@ -70,12 +70,18 @@ struct PixGlyph: View {
 
 // MARK: - phases
 
-enum Phase { case waiting, next, up, customer, desk, off, gone }
+enum Phase { case waiting, next, up, customer, asking, claimed, confirm, desk, off, gone }
 
 func phaseOf(_ s: QueueAttributes.ContentState) -> Phase {
   if s.nudge == true { return .desk }
   switch s.status {
-  case "customer": return .customer
+  case "customer":
+    /* Three faces of being with a guest, and the order matters: a claimed ask
+       outranks an open one, and a question about ending the visit outranks
+       both, because it is the thing the person is being asked right now. */
+    if s.confirm == true { return .confirm }
+    if s.ask != nil { return s.askBy != nil ? .claimed : .asking }
+    return .customer
   case "lunch", "away": return .off
   case "gone": return .gone
   default:
@@ -84,37 +90,143 @@ func phaseOf(_ s: QueueAttributes.ContentState) -> Phase {
   }
 }
 
+/* The rail is about a place in a line. It shows while they are standing in one,
+   and while they are away, because away means on the floor and not taking a
+   turn. It does not show at lunch, with a guest, or when the desk is calling. */
+func showsRail(_ s: QueueAttributes.ContentState, _ ph: Phase) -> Bool {
+  switch ph {
+  case .waiting, .next, .up: return true
+  case .off: return s.status == "away"
+  default: return false
+  }
+}
+
+/* Our timestamps carry milliseconds and ISO8601DateFormatter refuses them
+   unless it is told to expect them, which is why the visit clock never
+   appeared. Both shapes are tried. */
+func parseISO(_ v: String?) -> Date? {
+  guard let v = v, !v.isEmpty else { return nil }
+  let f = ISO8601DateFormatter()
+  f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  if let d = f.date(from: v) { return d }
+  f.formatOptions = [.withInternetDateTime]
+  return f.date(from: v)
+}
+
+/* The ring a press leaves for one beat, in the colour of the button pressed:
+   on a card with three targets side by side, the colour is what says which one
+   your thumb actually found. */
+func pressTint(_ p: String?) -> Color {
+  switch p {
+  case "fly": return fly
+  case "to": return red
+  case "lunch", "away": return mist
+  default: return mint
+  }
+}
+
 private func headline(_ s: QueueAttributes.ContentState, _ ph: Phase) -> String {
   switch ph {
   case .up: return "You're up"
   case .next: return "You're next"
-  case .desk: return "The desk is asking for you"
+  case .desk: return s.place != nil ? "Meeting, now" : "The desk wants you"
   case .customer: return "With a customer"
+  case .asking: return "Requesting"          // the kind is coloured, see HeadlineText
+  case .claimed: return (s.askBy.map { "\($0) is on the way" }) ?? "Manager on the way"
+  case .confirm: return "Has your guest left?"
   case .off: return s.status == "lunch" ? "At lunch" : "Out of the line"
   case .gone: return "Off the line"
   case .waiting: return "\(s.ahead) ahead of you"
   }
 }
 
+/* Said once. A headline that already carries the fact does not get a caption
+   repeating it underneath, which is what "In the line" and "Head to the door"
+   were doing. */
 private func caption(_ s: QueueAttributes.ContentState, _ ph: Phase) -> String? {
   switch ph {
-  case .up: return nil
-  case .next: return "Nobody waiting ahead of you"
-  case .desk: return "Head back to the floor."
-  case .customer: return s.table.map { $0.hasPrefix("O") ? "Office \($0.dropFirst())" : "Table \($0)" } ?? "On the floor"
-  case .off: return s.status == "lunch" ? "You'll be passed until you tap back in" : "On the floor, not taking a turn"
+  case .customer, .asking, .confirm:
+    guard let t = s.table, !t.isEmpty else { return nil }
+    return t.hasPrefix("O") ? "Office \(t.dropFirst())" : "Table \(t)"
+  case .desk: return s.place ?? s.askedBy
+  case .off: return s.status == "lunch"
+    ? "You'll be passed until you tap back in"
+    : "On the floor, not taking a turn"
   case .gone: return "Signed out for the day"
-  case .waiting: return "In the line"
+  default: return nil
   }
 }
 
 private func accent(_ ph: Phase) -> Color {
   switch ph {
-  case .up: return mint
+  case .up, .claimed: return mint
   case .desk: return red
-  case .customer: return fly
+  case .customer, .asking, .confirm: return fly
   case .off, .gone: return mist
   default: return sand
+  }
+}
+
+/* "Requesting FlyBy" with the kind in the kind's own colour, which is the only
+   place on the card where two colours share a line. */
+private struct HeadlineText: View {
+  let s: QueueAttributes.ContentState
+  let ph: Phase
+  let size: CGFloat
+  var body: some View {
+    if ph == .asking {
+      (Text("Requesting ").foregroundColor(.white)
+        + Text(s.ask == "to" ? "T.O." : "FlyBy").foregroundColor(s.ask == "to" ? red : fly))
+        .font(.system(size: size, weight: .bold, design: .rounded))
+        .lineLimit(1)
+    } else {
+      Text(headline(s, ph))
+        .font(.system(size: size, weight: .bold, design: .rounded))
+        .foregroundStyle(ph == .up || ph == .desk || ph == .claimed ? accent(ph) : .white)
+        .lineLimit(1)
+    }
+  }
+}
+
+/* The floor tab's clock, on the card: a live count that needs no push to move,
+   with the word for what it is counting under it. */
+private struct Clock: View {
+  let from: Date
+  let label: String
+  var tint: Color = .white
+  var body: some View {
+    VStack(alignment: .trailing, spacing: 3) {
+      Text(from, style: .timer)
+        .font(.system(size: 16, weight: .bold, design: .monospaced))
+        .monospacedDigit()
+        .foregroundStyle(tint)
+        .lineLimit(1)
+      Text(label)
+        .font(.system(size: 7.5, weight: .bold, design: .monospaced))
+        .tracking(1.1)
+        .foregroundStyle(.white.opacity(0.42))
+        .lineLimit(1)
+    }
+    .fixedSize()
+  }
+}
+
+/* Which clock a phase shows, if any. */
+private func clockFor(_ s: QueueAttributes.ContentState, _ ph: Phase) -> (Date, String, Color)? {
+  switch ph {
+  case .customer, .confirm:
+    return parseISO(s.since).map { ($0, "with them", Color.white) }
+  case .asking:
+    return parseISO(s.askAt ?? s.since).map { ($0, "since asked", s.ask == "to" ? red : fly) }
+  case .claimed:
+    return parseISO(s.askAt).map { ($0, "since claimed", mint) }
+  case .desk:
+    return parseISO(s.since).map { ($0, "since asked", red) }
+  case .off:
+    return parseISO(s.since).map { ($0, "since you left", Color.white) }
+  case .waiting, .next:
+    return parseISO(s.since).map { ($0, "waiting", Color.white) }
+  default: return nil
   }
 }
 
@@ -216,11 +328,25 @@ private struct Buttons: View {
         ActionButton(label: "Got them", glyph: "check", action: "take", tint: inkDeep, fill: mint, stroke: mint)
         ActionButton(label: "Pass", glyph: "arrow", action: "pass", tint: Color.white.opacity(0.7)).frame(width: 84)
       case .customer:
-        ActionButton(label: "FlyBy", glyph: "fly", action: "fly", tint: fly, fill: fly.opacity(0.18), stroke: fly)
-        ActionButton(label: "T.O.", glyph: "to", action: "to", tint: red, fill: Color(red: 216/255, green: 72/255, blue: 60/255).opacity(0.18), stroke: red)
-        ActionButton(label: "They left", glyph: "check", action: "done", tint: Color.white.opacity(0.7)).frame(width: 96)
+        ActionButton(label: "FlyBy", glyph: "fly", action: "fly", tint: fly, fill: fly.opacity(0.2), stroke: fly)
+        ActionButton(label: "T.O.", glyph: "to", action: "to", tint: red, fill: Color(red: 216/255, green: 72/255, blue: 60/255).opacity(0.22), stroke: red)
+        /* Ending the visit sits beside the two help buttons, so it asks first
+           rather than acting on a thumb that landed one target over. */
+        ActionButton(label: "They left", glyph: "check", action: "ask-done", tint: Color.white.opacity(0.7)).frame(width: 92)
+      case .asking:
+        ActionButton(label: "Never mind", glyph: "arrow", action: "cancel", tint: Color.white.opacity(0.7))
+        ActionButton(label: "They left", glyph: "check", action: "ask-done", tint: Color.white.opacity(0.7))
+      case .claimed:
+        ActionButton(label: "They left", glyph: "check", action: "ask-done", tint: Color.white.opacity(0.7))
+      case .confirm:
+        ActionButton(label: "Yes, they left", glyph: "check", action: "done", tint: inkDeep, fill: mint, stroke: mint)
+        ActionButton(label: "Not yet", glyph: "arrow", action: "keep", tint: Color.white.opacity(0.7)).frame(width: 84)
       case .desk:
-        ActionButton(label: "On my way", glyph: "arrowup", action: "ack", tint: inkDeep, fill: sand, stroke: sand)
+        ActionButton(label: "On my way", glyph: "arrowup", action: "ack", tint: .white,
+                     fill: Color(red: 216/255, green: 72/255, blue: 60/255), stroke: Color(red: 216/255, green: 72/255, blue: 60/255))
+        /* The honest second answer. The desk would rather send somebody else
+           than stand there wondering. */
+        ActionButton(label: "With a guest", glyph: "user", action: "with-guest", tint: Color.white.opacity(0.7)).frame(width: 104)
       case .off:
         // Away now means on the floor without taking a turn, so the way back is
         // back into the LINE; lunch is the one you come back to the floor from.
@@ -232,6 +358,31 @@ private struct Buttons: View {
   }
 }
 
+/* The pill has room for one fact, so each phase says the one that matters. */
+private func compactWord(_ s: QueueAttributes.ContentState, _ ph: Phase) -> String {
+  switch ph {
+  case .up: return "Up"
+  case .desk: return "Desk"
+  case .asking: return s.ask == "to" ? "T.O." : "FlyBy"
+  case .claimed: return "Coming"
+  case .customer, .confirm: return "Guest"
+  case .next: return "Next"
+  case .off: return s.status == "lunch" ? "Lunch" : "Out"
+  case .gone: return "·"
+  case .waiting: return "\(s.ahead)"
+  }
+}
+private func minimalWord(_ s: QueueAttributes.ContentState, _ ph: Phase) -> String {
+  switch ph {
+  case .up: return "↑"
+  case .desk: return "!"
+  case .asking, .claimed: return "?"
+  case .customer, .confirm: return "●"
+  case .waiting, .next: return "\(s.ahead)"
+  default: return "·"
+  }
+}
+
 // MARK: - the card
 
 private struct LockScreen: View {
@@ -240,25 +391,27 @@ private struct LockScreen: View {
     let s = context.state
     let ph = phaseOf(s)
     let ac = accent(ph)
+    /* The card is as tall as what is on it and no taller. It used to be laid
+       out to fill the system's 160 points, which put a hole between the words
+       and the buttons on every phase that did not need the room. */
     VStack(alignment: .leading, spacing: 10) {
-      HStack(spacing: 12) {
+      HStack(alignment: .center, spacing: 12) {
         BigGlyph(s: s, ph: ph)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(headline(s, ph))
-            .font(.system(size: ph == .up ? 22 : 17, weight: .bold, design: .rounded))
-            .foregroundStyle(ph == .up || ph == .desk ? ac : .white)
+        VStack(alignment: .leading, spacing: 3) {
+          HeadlineText(s: s, ph: ph, size: ph == .up ? 22 : 17)
           if let cap = caption(s, ph) {
-            Text(cap).font(.system(size: 11.5, weight: .medium)).foregroundStyle(mist)
-          }
-          if ph == .customer, let since = s.since, let d = ISO8601DateFormatter().date(from: since) {
-            Text(d, style: .relative)
-              .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-              .foregroundStyle(fly)
+            Text(cap)
+              .font(.system(size: 11.5, weight: ph == .customer || ph == .asking || ph == .confirm || ph == .desk ? .bold : .medium))
+              .foregroundStyle(ph == .customer || ph == .asking || ph == .confirm ? fly : (ph == .desk ? red : mist))
+              .lineLimit(1)
           }
         }
-        Spacer(minLength: 0)
+        Spacer(minLength: 6)
+        if let (from, label, tint) = clockFor(s, ph) {
+          Clock(from: from, label: label, tint: tint)
+        }
       }
-      if ph != .customer && ph != .desk && ph != .gone, let line = s.line, !line.isEmpty {
+      if showsRail(s, ph), let line = s.line, !line.isEmpty {
         Rail(line: line, up: ph == .up)
       }
       if #available(iOS 17.0, *), ph != .gone {
@@ -266,8 +419,26 @@ private struct LockScreen: View {
       }
     }
     .padding(14)
-    .opacity(ph == .off || ph == .gone ? 0.75 : 1)
-    .activityBackgroundTint(ink)
+    .opacity(ph == .gone ? 0.75 : 1)
+    /* The accent bloom, over a ground that is nearly off. On an OLED lock
+       screen those pixels are not lit at all, so the card stops being a grey
+       rectangle laid on the screen and the sand, mint and amber emit. */
+    .background(
+      RadialGradient(gradient: Gradient(colors: [ac.opacity(0.22), .clear]),
+                     center: UnitPoint(x: 0.9, y: -0.12), startRadius: 4, endRadius: 300)
+    )
+    /* One beat of the pressed button's colour, and the give underneath it.
+       Both are driven by the state the intent writes before it calls the
+       server, so they land under the thumb rather than after a round trip. */
+    .overlay(
+      RoundedRectangle(cornerRadius: 22, style: .continuous)
+        .strokeBorder(pressTint(s.pressed), lineWidth: 3)
+        .opacity(s.pressed == nil ? 0 : 1)
+        .allowsHitTesting(false)
+    )
+    .scaleEffect(s.pressed == nil ? 1 : 0.985)
+    .animation(.spring(response: 0.3, dampingFraction: 0.68), value: s.pressed)
+    .activityBackgroundTint(Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x06 / 255))
     .activitySystemActionForegroundColor(sand)
   }
 }
@@ -286,17 +457,15 @@ struct QueueLiveActivity: Widget {
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
-            Text(headline(s, ph))
-              .font(.system(size: 16, weight: .bold, design: .rounded))
-              .foregroundStyle(ph == .up || ph == .desk ? ac : .white)
+            HeadlineText(s: s, ph: ph, size: 16)
             if let cap = caption(s, ph) {
-              Text(cap).font(.system(size: 11, weight: .medium)).foregroundStyle(mist)
+              Text(cap).font(.system(size: 11, weight: .medium)).foregroundStyle(mist).lineLimit(1)
             }
           }
         }
         DynamicIslandExpandedRegion(.bottom) {
           VStack(spacing: 8) {
-            if ph != .customer && ph != .desk && ph != .gone, let line = s.line, !line.isEmpty {
+            if showsRail(s, ph), let line = s.line, !line.isEmpty {
               Rail(line: line, up: ph == .up)
             }
             if #available(iOS 17.0, *), ph != .gone {
@@ -308,16 +477,18 @@ struct QueueLiveActivity: Widget {
         switch ph {
         case .up: PixGlyph(name: "arrowup", size: 12, color: mint)
         case .desk: PixGlyph(name: "warn", size: 12, color: red)
-        case .customer: PixGlyph(name: "user", size: 12, color: fly)
+        case .claimed: PixGlyph(name: "arrowup", size: 12, color: mint)
+        case .asking: PixGlyph(name: "fly", size: 12, color: s.ask == "to" ? red : fly)
+        case .customer, .confirm: PixGlyph(name: "user", size: 12, color: fly)
         default: Text("⋯").foregroundStyle(sand)
         }
       } compactTrailing: {
-        Text(ph == .up ? "UP" : ph == .desk ? "DESK" : ph == .customer ? "CUST" : ph == .next ? "NEXT" : (s.status == "waiting" ? "\(s.ahead)" : "·"))
+        Text(compactWord(s, ph))
           .font(.system(size: 12, weight: .bold, design: .rounded))
           .monospacedDigit()
           .foregroundStyle(ac)
       } minimal: {
-        Text(ph == .up ? "↑" : ph == .desk ? "!" : ph == .customer ? "●" : (s.status == "waiting" ? "\(s.ahead)" : "·"))
+        Text(minimalWord(s, ph))
           .font(.system(size: 12, weight: .bold, design: .rounded))
           .foregroundStyle(ac)
       }

@@ -14,7 +14,7 @@
  *   fly, to       an ask for a manager, from wherever you are
  *   ack           you saw the desk's nudge
  */
-export const QUEUE_ACTIONS = ["lunch", "away", "back", "done", "take", "pass", "fly", "to", "ack", "leave"];
+export const QUEUE_ACTIONS = ["lunch", "away", "back", "done", "take", "pass", "fly", "to", "ack", "leave", "cancel", "with-guest"];
 
 export function applyQueueAction(row, personId, action, now, opts = {}) {
   if (!QUEUE_ACTIONS.includes(action)) return { row, changed: false, why: "unknown action" };
@@ -58,6 +58,28 @@ export function applyQueueAction(row, personId, action, now, opts = {}) {
     next.checkouts = (next.checkouts || []).filter((c) => c && c.id !== personId);
     next.checkouts.push({ id: personId, who, name: opts.name || who, t: now, partial: true });
     return { row: next, changed: true, status: "gone" };
+  } else if (action === "cancel") {
+    /* Never mind: the ask comes down, and the record keeps that it was asked
+       and withdrawn rather than quietly disappearing. */
+    const open = (next.assists || []).find((a) => a && a.byId === personId && !a.doneAt);
+    if (!open) return { row, changed: false, why: "nothing to cancel" };
+    open.doneAt = now; open.cancelled = true;
+    next.history.push({ t: now, action: "assist-cancelled", id: personId, who, by: "self" });
+  } else if (action === "with-guest") {
+    /* The honest second answer to the desk. It is honoured either way: the
+       nudge clears, the desk is told, and nobody is stopped on the floor.
+
+       What the row already knows is whether this person is in fact with a
+       guest, and a claim the record contradicts at the moment it is made is
+       worth keeping. It is kept as a plain fact in the day's history, next to
+       everything else that happened, and nothing is counted or carried past
+       today: a person can be shaking a hand at the door with nothing typed in
+       yet, and being wrong about that quietly is far worse than missing it. */
+    if (!p.nudgedAt) return { row, changed: false, why: "nothing to answer" };
+    p.nudgedAt = null;
+    const reallyWith = p.status === "customer";
+    next.history.push({ t: now, action: "with-guest", id: personId, who, by: "self",
+                        ...(reallyWith ? {} : { unverified: true, wasStatus: p.status || "waiting" }) });
   } else if (action === "ack") {
     if (!p.nudgedAt) return { row, changed: false, why: "nothing to acknowledge" };
     p.nudgedAt = null;

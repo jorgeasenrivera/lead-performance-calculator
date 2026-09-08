@@ -12,7 +12,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { standings, decide, contentState, railOf, hueOf, railInitials } from "../api/_queue-notify.mjs";
+import { standings, askOf, decide, contentState, railOf, hueOf, railInitials } from "../api/_queue-notify.mjs";
 
 const row = (line) => ({ line });
 const P = (id, status = "waiting", extra = {}) => ({ id, label: id.toUpperCase(), status, ...extra });
@@ -183,4 +183,19 @@ test("the rail names everybody in line, coloured like the site, with you marked"
   assert.equal(railOf(long, "p3").length, 8);
   // Nothing to draw is an empty rail, not a crash.
   assert.deepEqual(railOf(null, "x"), []);
+});
+
+test("askOf: the open ask, who claimed it, and nothing when there is none", () => {
+  const row = { assists: [
+    { id: "old", byId: "a", kind: "fly", t: "2026-09-08T19:00:00.000Z", doneAt: "2026-09-08T19:05:00.000Z" },
+    { id: "now", byId: "a", kind: "to", t: "2026-09-08T20:00:00.000Z" },
+  ] };
+  assert.equal(askOf(row, "a").ask, "to", "a finished ask does not count");
+  assert.equal(askOf(row, "a").askBy, null);
+  assert.deepEqual(askOf(row, "b"), {}, "somebody else's ask is not yours");
+  row.assists[1].claimedBy = "Marcus Webb";
+  row.assists[1].claimedAt = "2026-09-08T20:00:40.000Z";
+  assert.equal(askOf(row, "a").askBy, "Marcus", "first name only, the card is narrow");
+  assert.equal(askOf(row, "a").askAt, "2026-09-08T20:00:40.000Z", "claimed restarts the clock");
+  assert.deepEqual(askOf({}, "a"), {});
 });

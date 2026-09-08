@@ -24,7 +24,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl } from "./_env.mjs";
-import { decide, contentState, assistPlan, railOf } from "./_queue-notify.mjs";
+import { decide, contentState, assistPlan, railOf, askOf } from "./_queue-notify.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
 import { sendAlert, worthSending } from "./_report-alert.mjs";
@@ -119,7 +119,10 @@ export default async function handler(req, res) {
     const state = contentState({ ahead: item.ahead ?? 0, up: item.kind === "up",
                                  status: item.status || "waiting", label: item.label },
       { line: railOf(after.data, item.id), nudge: item.kind === "nudge",
-        table: meRow.table != null ? String(meRow.table) : null, since: meRow.statusAt || null });
+        table: meRow.table != null ? String(meRow.table) : null, since: meRow.statusAt || null,
+        /* The open FlyBy or T.O., so the card can show it was asked and who
+           picked it up. Without this the lock screen has no way to know. */
+        ...askOf(after.data, item.id) });
     /* A nudge on a phone that has no Live Activity running should not start one
        claiming a place in a line the person may not be in. The alert carries the
        message; the display only follows for people who are actually queued. */
