@@ -81,10 +81,24 @@ export function decide(before, after, opts = {}) {
       continue;
     }
 
-    /* Off the waiting list — with a customer, at lunch, away. The standing
-       display is about a place in a line they are no longer standing in. */
+    /* Off the waiting list — with a customer, at lunch, away. This used to take
+       the card down, on the reasoning that it is about a place in a line they
+       are no longer standing in.
+
+       That was written before the card grew a face for each of those states,
+       and before the rule that it stays up all day. The FlyBy and T.O. buttons
+       live on the customer face, so taking the card away the moment somebody
+       takes a customer removes it exactly when it is most use to them. It went
+       unnoticed because no push had ever reached a phone: the app kept its own
+       card up and nothing ever contradicted it. The first push that worked
+       ended a Live Activity mid-shift.
+
+       So the standing changes and the card follows it. The only thing that
+       takes it down is being out of the line for good, below. */
     if (s.status !== "waiting") {
-      if (!w || w.status === "waiting") out.push({ id, kind: "end", label: s.label, status: s.status });
+      if (!w || w.status !== s.status) {
+        out.push({ id, kind: "position", label: s.label, ahead: s.ahead, status: s.status });
+      }
       continue;
     }
 

@@ -43,8 +43,25 @@ test("decide: being up is worth interrupting for, once", () => {
   assert.equal(decide(after, after).length, 0);
 });
 
-test("decide: leaving the waiting list takes the standing display down", () => {
+test("decide: going to lunch turns the card over, it does not take it away", () => {
   const plan = decide(row([P("a")]), row([P("a", "lunch")]));
+  assert.deepEqual(plan.map((p) => [p.id, p.kind]), [["a", "position"]]);
+  assert.equal(plan[0].status, "lunch");
+});
+
+test("decide: taking a customer keeps the card, which is where FlyBy lives", () => {
+  const plan = decide(row([P("a")]), row([P("a", "customer")]));
+  assert.deepEqual(plan.map((p) => [p.id, p.kind]), [["a", "position"]]);
+  assert.equal(plan[0].status, "customer");
+});
+
+test("decide: staying at lunch says nothing further", () => {
+  const at = row([P("a", "lunch")]);
+  assert.equal(decide(at, at).length, 0);
+});
+
+test("decide: only leaving the line for good takes the card down", () => {
+  const plan = decide(row([P("a", "customer")]), row([]));
   assert.deepEqual(plan.map((p) => [p.id, p.kind]), [["a", "end"]]);
 });
 
