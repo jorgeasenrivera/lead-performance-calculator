@@ -14052,6 +14052,35 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           if (next) setRow(next);
         }
         else if (act === "leave") { setLotAsk(false); await leave(); }
+        else if (act === "cancel") {
+          // Never mind, from the lock screen: the same withdrawal the page's
+          // own Never mind writes, so the two cannot disagree.
+          const next = await mutateFloorRow(store, date, (cur) => {
+            if (!cur) return null;
+            const open = (cur.assists || []).find((a) => a && a.byId === meId && !a.doneAt);
+            if (!open) return null;
+            open.doneAt = qNowIso(); open.cancelled = true;
+            cur.history = cur.history || [];
+            cur.history.push({ t: qNowIso(), action: "assist-cancelled", id: meId, who: me.label, by: "self" });
+            return cur;
+          });
+          if (next) setRow(next);
+        }
+        else if (act === "with-guest") {
+          /* Answering the desk with a reason. Honoured either way; where the
+             row says they are not with a guest the day's record keeps that,
+             plainly and without counting it. */
+          const next = await mutateFloorRow(store, date, (cur) => {
+            if (!cur) return null;
+            const p = (cur.line || []).find((x) => x.id === meId); if (!p || !p.nudgedAt) return null;
+            p.nudgedAt = null; cur.history = cur.history || [];
+            const reallyWith = p.status === "customer";
+            cur.history.push({ t: qNowIso(), action: "with-guest", id: meId, who: p.label, by: "self",
+              ...(reallyWith ? {} : { unverified: true, wasStatus: p.status || "waiting" }) });
+            return cur;
+          });
+          if (next) setRow(next);
+        }
         else if (act === "ack") {
           const next = await mutateFloorRow(store, date, (cur) => {
             if (!cur) return null;

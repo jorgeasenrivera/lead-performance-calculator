@@ -35,6 +35,20 @@ struct QueueAttributes: ActivityAttributes {
     var table: String?
     /// When the standing last changed, ISO 8601.
     var since: String?
+    /// An open FlyBy or T.O.: which, when it went out, and who picked it up.
+    /// All three optional so a payload from an older server still decodes.
+    var ask: String?          // "fly" | "to"
+    var askAt: String?        // ISO 8601, for the clock on the asking card
+    var askBy: String?        // the manager who claimed it, if one has
+    /// The desk's own ask: who asked, and where to go when it is a meeting
+    /// rather than a call to the desk.
+    var askedBy: String?
+    var place: String?
+    /// The card is asking whether the guest has gone, before it ends the visit.
+    var confirm: Bool?
+    /// The button just pressed, held for one beat so the card can ring in that
+    /// button's colour. Cleared by the update that follows.
+    var pressed: String?      // "fly" | "to" | "done" | "take" | "pass" | ...
   }
 
   /// The store the line belongs to (id on a server start, name on a local one).

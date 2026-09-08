@@ -154,6 +154,21 @@ export function contentState(s, extra = {}) {
   };
 }
 
+/* The open FlyBy or T.O. this person has out, as the card needs it: which kind,
+   when it went, and who picked it up. The lock screen had no way to show any of
+   this, so a press vanished into the floor and the card sat unchanged. */
+export function askOf(row, personId) {
+  const open = (((row && row.assists) || [])
+    .filter((a) => a && a.byId === personId && !a.doneAt)
+    .sort((a, b) => (a.t < b.t ? 1 : -1)))[0];
+  if (!open) return {};
+  return {
+    ask: open.kind === "to" ? "to" : "fly",
+    askAt: open.claimedAt || open.t || null,
+    askBy: open.claimedBy ? String(open.claimedBy).split(" ")[0] : null,
+  };
+}
+
 /* =========================================================================
    FlyBy assists. A salesperson at a table asks the floor for a manager, and
    the ask rides in the same per-day floor row the queue lives in, so the same

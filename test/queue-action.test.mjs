@@ -68,5 +68,42 @@ test("nobody off the line, no unknown words, no crash on an empty row", () => {
   assert.equal(applyQueueAction(row(), "zz", "lunch", NOW).changed, false);
   assert.equal(applyQueueAction(row(), "a", "dance", NOW).changed, false);
   assert.equal(applyQueueAction(null, "a", "lunch", NOW).changed, false);
-  assert.equal(QUEUE_ACTIONS.length, 10);
+  assert.equal(QUEUE_ACTIONS.length, 12);
+});
+
+test("never mind takes the ask down and keeps that it was withdrawn", () => {
+  const row = { line: [{ id: "a", label: "AB", status: "customer" }],
+                assists: [{ id: "x", byId: "a", kind: "fly", t: "2026-09-08T20:00:00.000Z" }], history: [] };
+  const out = applyQueueAction(row, "a", "cancel", "2026-09-08T20:01:00.000Z");
+  assert.equal(out.changed, true);
+  assert.equal(out.row.assists[0].cancelled, true);
+  assert.ok(out.row.assists[0].doneAt);
+  assert.equal(out.row.history.at(-1).action, "assist-cancelled");
+  // and again, with nothing open, changes nothing
+  assert.equal(applyQueueAction(out.row, "a", "cancel", "2026-09-08T20:02:00.000Z").changed, false);
+});
+
+test("with a guest answers the desk, and is not doubted when there is a guest", () => {
+  const row = { line: [{ id: "a", label: "AB", status: "customer", nudgedAt: "2026-09-08T20:00:00.000Z" }], history: [] };
+  const out = applyQueueAction(row, "a", "with-guest", "2026-09-08T20:01:00.000Z");
+  assert.equal(out.changed, true);
+  assert.equal(out.row.line[0].nudgedAt, null);
+  const ev = out.row.history.at(-1);
+  assert.equal(ev.action, "with-guest");
+  assert.equal(ev.unverified, undefined, "a real guest is not flagged");
+});
+
+test("with a guest, when the row says otherwise, is kept as a plain fact", () => {
+  const row = { line: [{ id: "a", label: "AB", status: "waiting", nudgedAt: "2026-09-08T20:00:00.000Z" }], history: [] };
+  const out = applyQueueAction(row, "a", "with-guest", "2026-09-08T20:01:00.000Z");
+  assert.equal(out.changed, true, "the press is honoured either way");
+  assert.equal(out.row.line[0].nudgedAt, null, "the desk still gets its answer");
+  const ev = out.row.history.at(-1);
+  assert.equal(ev.unverified, true);
+  assert.equal(ev.wasStatus, "waiting");
+});
+
+test("with a guest with nothing asked is a no-op", () => {
+  const row = { line: [{ id: "a", label: "AB", status: "waiting" }], history: [] };
+  assert.equal(applyQueueAction(row, "a", "with-guest", "2026-09-08T20:01:00.000Z").changed, false);
 });
