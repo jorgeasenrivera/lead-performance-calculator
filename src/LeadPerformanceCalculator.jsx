@@ -13144,7 +13144,11 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               const left = Math.max(8, 90 - i * 13);
               const lbl = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
               return <i key={p.id || i} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
-                style={{ left: left + "%", background: mine2 ? undefined : `hsl(${hueFromName(lbl)} 62% 46%)` }}>{initialsOf(lbl)}</i>;
+                style={{ left: left + "%",
+                  background: mine2 ? undefined
+                    : (p.status && p.status !== "waiting"
+                        ? `hsl(${hueFromName(lbl)} 20% 33%)`      // off the line: quieter, still solid
+                        : `hsl(${hueFromName(lbl)} 62% 46%)`) }}>{initialsOf(lbl)}</i>;
             })}
           </span>
           <em>DOOR</em>
@@ -13278,7 +13282,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       )}
 
       {sheet && (
-        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
+        <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSheet(null); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head">
               <b>{sheet === "closing" ? "Closing" : sheet === "sched" ? new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long" }) : "The board"}</b>
@@ -13358,7 +13362,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
               </div>
             )}
           </div>
-        </div>
+        </div></Overlay>
       )}
     </div>
   );
@@ -14418,16 +14422,16 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         </div>
       )}
       {appOpen && (
-        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setAppOpen(false); }}>
+        <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setAppOpen(false); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>The Sage app</b>
               <button type="button" className="mc-x" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
             <p className="mc-steps-p">The Sage app is on its way to the App Store and Google Play. It is the way to carry your corner and the line, with a buzz when you are up. Until it lands, this page in your browser is the same screen.</p>
           </div>
-        </div>
+        </div></Overlay>
       )}
       {inShell && helpOpen && (
-        <div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
+        <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>Help</b>
               <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
@@ -14457,7 +14461,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             {me && <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>}
             {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); onSignOut(); }}><span>Sign out<span className="hint">Somebody else's phone, or the wrong name</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
           </div>
-        </div>
+        </div></Overlay>
       )}
       {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`}
         figures={mine ? [{ label: "Calls today", value: mine.calls }, { label: "Videos today", value: mine.video }, { label: "Tasks today", value: mine.tasks }, { label: "Units this month", value: myUnits }] : []}
@@ -38256,12 +38260,26 @@ const SAGE_CSS = `
 .mc-hb .un{ width:30px; text-align:right; font-family:var(--sfmono); font-size:10.5px; font-weight:700; }
 .mc-boardsub{ display:block; margin-top:8px; font-family:var(--sfmono); font-size:9px;
   font-weight:700; letter-spacing:.12em; color:rgba(232,238,242,.55); }
-.mc-ov{ position:fixed; inset:0; z-index:60; display:flex; flex-direction:column;
-  justify-content:flex-end; background:rgba(6,10,8,.66); }
-.mc-sheet{ background:#1a2820; border-top:1px solid rgba(228,201,141,.35);
-  border-radius:20px 20px 0 0; padding:16px 15px 78px; max-height:82vh; overflow-y:auto;
-  color:#e8eef2; animation:mcSheet .26s cubic-bezier(.2,.9,.3,1) both; }
-@keyframes mcSheet{ from{ opacity:.35; transform:translateY(26px); } to{ opacity:1; transform:none; } }
+/* These used to slide up from the bottom edge and sit against it, which is how
+   a web page does a sheet and is exactly what this is not meant to feel like.
+   They are cards now: they land in the middle of the screen, over a ground
+   that is dimmed enough to disappear, with a shadow deep enough to say the
+   card is above the page rather than part of it. */
+.mc-ov{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
+  padding:calc(var(--sat, env(safe-area-inset-top, 0px)) + 16px) 14px calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 16px);
+  background:rgba(3,6,5,.88); animation:mcOvIn .2s ease-out both; }
+@keyframes mcOvIn{ from{ opacity:0; } to{ opacity:1; } }
+.mc-sheet{ width:min(430px,100%); background:#1a2820; border:1px solid rgba(228,201,141,.28);
+  border-radius:24px; padding:18px 17px 20px; max-height:100%; overflow-y:auto;
+  color:#e8eef2; box-shadow:0 32px 70px -20px rgba(0,0,0,.92), 0 0 0 1px rgba(0,0,0,.4);
+  animation:mcSheet .3s cubic-bezier(.2,1.15,.35,1) both; will-change:transform,opacity; }
+/* The pop: up from slightly small, with just enough overshoot to feel physical
+   and not so much that it wobbles. No blur behind it; a blurred backdrop on a
+   phone costs more than it is worth and this is dark enough without one. */
+@keyframes mcSheet{ from{ opacity:0; transform:scale(.93); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){
+  .mc-ov, .mc-sheet{ animation-duration:.01ms; }
+}
 .mc-sheet-head{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
 .mc-sheet-head b{ font-size:16px; font-family:var(--font-display); }
 .mc-x{ border:0; background:rgba(255,255,255,.1); color:#e8eef2; width:26px; height:26px;
@@ -38332,7 +38350,12 @@ const SAGE_CSS = `
 .mc-rail.up{ background:rgba(143,216,175,.1); } .mc-rail.up s{ background:rgba(143,216,175,.9); }
 .mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
 .mc-pip.hd{ width:28px; height:28px; font-size:8px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
-.mc-pip.off{ opacity:.45; }
+/* Somebody off the line used to be drawn at 45% opacity, which on a dark
+   ground reads as a smudge rather than a person and was never in the draft.
+   They are drawn solid now, in a muted version of their own colour, so the
+   rail is a row of people throughout and the ones not in the running are
+   simply quieter. The colour is worked out where the pip is written, because
+   the hue is. */
 .mc-pip.you{ background:#E4C98D; color:#12251b; text-shadow:none; box-shadow:0 0 12px rgba(228,201,141,.95); }
 .mc-pip.you::after{ content:""; position:absolute; inset:-2px; border-radius:50%; box-shadow:0 0 18px 4px rgba(228,201,141,.9); animation:mcGlowOp 2.4s ease-in-out infinite; will-change:opacity; pointer-events:none; }
 .mc-pip.you.g{ background:#8FD8AF; box-shadow:0 0 12px rgba(143,216,175,.95); }
@@ -38655,7 +38678,7 @@ const SAGE_CSS = `
 .mc-hb .nm2{ font-size:14px; width:110px; }
 .mc-boardsub{ font-size:10.5px; margin-top:10px; }
 .mc-boardbtn{ min-height:44px; }
-.mc-sheet{ padding:18px 17px 84px; }
+.mc-sheet{ padding:20px 19px 22px; }
 .mc-sheet-head b{ font-size:19px; }
 .mc-x{ width:36px; height:36px; }
 .mc-cl b{ font-size:16px; } .mc-cl .lb{ font-size:12.5px; } .mc-cl .dl{ font-size:10.5px; }
@@ -38767,8 +38790,8 @@ const SAGE_CSS = `
 .mcf .mcf-left{ margin:14px auto 0; display:flex; align-items:center; justify-content:center; gap:9px; }
 .mcf .mcf-left + .mcf-chips{ margin-top:14px; }
 /* leaving the lot */
-.mc-lotov{ position:fixed; inset:0; z-index:72; display:flex; align-items:flex-end; justify-content:center; background:rgba(6,10,8,.66); padding:0 12px calc(16px + var(--sab, env(safe-area-inset-bottom, 0px))); }
-.mc-lot{ width:min(440px,100%); border-radius:24px; padding:22px 18px 16px; background:#101713; border:1px solid rgba(255,255,255,.12); color:#E8EEF2; text-align:center; box-shadow:0 24px 60px -20px rgba(0,0,0,.9); animation:mcRise .5s cubic-bezier(.2,.8,.3,1) both; }
+.mc-lotov{ position:fixed; inset:0; z-index:72; display:flex; align-items:center; justify-content:center; background:rgba(3,6,5,.88); padding:0 14px; }
+.mc-lot{ width:min(430px,100%); border-radius:24px; padding:24px 20px 18px; background:#101713; border:1px solid rgba(228,201,141,.24); color:#E8EEF2; text-align:center; box-shadow:0 32px 70px -20px rgba(0,0,0,.92); animation:mcSheet .3s cubic-bezier(.2,1.15,.35,1) both; will-change:transform,opacity; }
 .mc-lot .pix{ color:#E4C98D; }
 .mc-lot-h{ margin-top:10px; font-family:var(--mc-geist); font-size:21px; font-weight:600; letter-spacing:-.02em; }
 .mc-lot-p{ margin:8px 0 0; font-size:14px; line-height:1.5; color:rgba(232,238,242,.72); }
