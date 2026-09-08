@@ -1,10 +1,27 @@
-apply plugin: 'expo-module-gradle-plugin'
+/* The shape every shipping Expo module uses, and the reason it matters: the
+   module plugin sets up a Maven publication for the library, and that reads
+   android.defaultConfig.versionName. A project-level `version` is not the same
+   field, so leaving the block out fails configuration with
+
+     A problem occurred configuring project ':sage-live'
+     > 'android.defaultConfig.versionName' is not defined
+
+   which is what the first Android build died on. Compare expo-haptics: same
+   plugins block, same group, same version in both places. */
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
 
 group = 'com.sageonline.sagelive'
 version = '0.1.0'
 
 android {
   namespace 'com.sageonline.sagelive'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
 }
 
 dependencies {
