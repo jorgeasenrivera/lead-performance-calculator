@@ -165,7 +165,8 @@ export function apnsPost({ origin, path, headers, body, timeoutMs = 10000,
 
 /* ---- the send ---- */
 export async function sendApns({ token, payload, pushType = "alert", topic, priority = 10,
-                                 collapseId = null, env = process.env.APNS_ENV, postImpl = apnsPost, cfg = {} }) {
+                                 collapseId = null, env = process.env.APNS_ENV, postImpl = apnsPost,
+                                 cfg = {}, noRetry = false }) {
   const bundle = cfg.bundleId || process.env.APNS_BUNDLE_ID;
   const headers = {
     authorization: `bearer ${apnsJwt(Date.now(), cfg)}`,
@@ -184,9 +185,25 @@ export async function sendApns({ token, payload, pushType = "alert", topic, prio
     // Apple never answered. Say what actually stopped it rather than "failed".
     return { ok: false, status: 0, reason: errText(e), gone: false };
   }
-  if (res.status === 200) return { ok: true };
+  if (res.status === 200) return { ok: true, env: env === "sandbox" ? "sandbox" : "production" };
   let reason = "";
   try { reason = JSON.parse(res.text || "{}").reason || ""; } catch { /* empty body is normal on some errors */ }
+
+  /* A device token belongs to the environment the app was built for, and one
+     server talks to phones running both: a TestFlight build registers against
+     production, a build run from a Mac against sandbox. Nothing on the row says
+     which, and guessing wrong is these two refusals and no others. So the other
+     side is tried once before giving up, and the answer says which worked.
+     Bounded by the flag: a retry never retries. */
+  if (!noRetry && (reason === "BadEnvironmentKeyInToken" || reason === "BadDeviceToken")) {
+    const other = env === "sandbox" ? "production" : "sandbox";
+    const second = await sendApns({ token, payload, pushType, topic, priority, collapseId,
+                                    env: other, postImpl, cfg, noRetry: true });
+    if (second.ok) return second;
+    /* Both refused. The first answer is the one worth reporting, because it is
+       about the environment this server is configured for; the second is only
+       ever the same story from the other side. */
+  }
   /* 410 means the device is gone for good — the caller should forget the token
      rather than retry it every time the line moves for the rest of the year. */
   return { ok: false, status: res.status, reason, gone: res.status === 410 || reason === "BadDeviceToken" };
