@@ -1654,17 +1654,40 @@ function recentDays(n) {
   return out;
 }
 
-// Pull the split activity rows for a store in one request.
+/* Pull the split activity rows for a store.
+
+   Every read of a store pulls these, and a store is re-read whenever its
+   document changes, which on a working day is often. But the rows are one per
+   day and only today's is moving: re-fetching six weeks of them to learn that
+   yesterday is still yesterday is most of what a manager's app costs. So the
+   stamps come first and only the days that moved are fetched; the rest are
+   answered from what this browser already read. */
+const actCache = new Map();     // storeId -> { key: { s: stamp, v: value } }
 async function loadActivityRows(storeId) {
   if (!supabase) return {};
   const prefix = `lpc:store:${storeId}:act:`;
-  const { data, error } = await supabase.from("app_data")
-    .select("key,value").like("key", prefix + "%");
-  if (error) throw error;
+  const { data: stamps, error: e1 } = await supabase.from("app_data")
+    .select("key,updated_at").like("key", prefix + "%");
+  if (e1) throw e1;
+  const seen = actCache.get(storeId) || {};
+  const stampOf = {};
+  for (const r of stamps || []) stampOf[r.key] = r.updated_at || "none";
+  const keys = Object.keys(stampOf);
+  const need = keys.filter((k) => !seen[k] || seen[k].s !== stampOf[k]);
+  if (need.length) {
+    const { data: fresh, error: e2 } = await supabase.from("app_data")
+      .select("key,value").in("key", need);
+    if (e2) throw e2;
+    for (const r of fresh || []) seen[r.key] = { s: stampOf[r.key], v: r.value };
+  }
+  // A day whose row has gone must not be answered from memory.
+  for (const k of Object.keys(seen)) if (!stampOf[k]) delete seen[k];
+  actCache.set(storeId, seen);
   const out = {};
-  for (const row of data || []) {
-    const day = row.key.slice(prefix.length);
-    if (day && row.value) out[day] = row.value;
+  for (const k of keys) {
+    const day = k.slice(prefix.length);
+    const v = (seen[k] || {}).v;
+    if (day && v) out[day] = v;
   }
   return out;
 }
@@ -15320,8 +15343,15 @@ function FloorBoard({ config, store, data, onData, userName }) {
     }
     // timer auto-pass on the leader
     if (cfg.timerOn) {
-      const cur = await loadFloorRow(store.id, date);
-      if (cur) {   // undefined (a failed read) falls through untouched
+      /* This used to read the whole floor row every eight seconds to decide
+         whether anything was due, which is the row's history and roster fetched
+         four hundred times an hour to answer a question about one timestamp.
+         The board already has the row, kept current by the socket and the poll,
+         and the write below re-reads the server's copy before it changes
+         anything, so it is still the authority. A tick or two of staleness
+         cannot matter to a timer measured in minutes. */
+      const cur = row;
+      if (cur) {
         const li = (cur.line || []).findIndex((p) => p.status === "waiting");
         if (li >= 0) {
           const leader = cur.line[li];
