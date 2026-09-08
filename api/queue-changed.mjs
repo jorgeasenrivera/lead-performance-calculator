@@ -196,6 +196,14 @@ export default async function handler(req, res) {
   }
 
   const sent = results.filter((r) => r && r.ok).length;
+  /* Every sender already returns why it failed, and the count threw it away, so
+     a delivery log could say a push failed but never say why. Apple's reasons
+     are diagnostic words (BadDeviceToken, TopicDisallowed, InvalidProviderToken)
+     and each points at a different thing to go and fix; none of them is a
+     secret, and no token or key goes in here. Distinct reasons only, because
+     forty phones failing the same way is one fact, not forty. */
+  const why = [...new Set(results.filter((r) => r && !r.ok)
+    .map((r) => [r.status, r.reason].filter(Boolean).join(" ").trim() || "unknown"))].slice(0, 5);
   return res.status(200).json({ ok: true, planned: plan.length, sent, failed: results.length - sent,
-                                retired: retire.length });
+                                retired: retire.length, ...(why.length ? { why } : {}) });
 }
