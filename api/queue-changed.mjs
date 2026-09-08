@@ -41,9 +41,16 @@ function partsOf(rowId, table) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
-  if (!process.env.QUEUE_HOOK_SECRET || req.headers["x-lpc-secret"] !== process.env.QUEUE_HOOK_SECRET) {
-    return res.status(401).json({ error: "bad secret" });
-  }
+  /* One 401 with one message covered three different mistakes: the variable
+     never set on the server, the header never sent by the webhook, and the two
+     simply not matching. Somebody reading the delivery log could not tell which,
+     and the answer decides where to go and fix it. Which side is wrong is not a
+     secret; the value is, and none of these say it. */
+  const want = process.env.QUEUE_HOOK_SECRET;
+  const got = req.headers["x-lpc-secret"];
+  if (!want) return res.status(401).json({ error: "no QUEUE_HOOK_SECRET set on the server" });
+  if (!got) return res.status(401).json({ error: "no x-lpc-secret header on the request" });
+  if (got !== want) return res.status(401).json({ error: "x-lpc-secret did not match QUEUE_HOOK_SECRET" });
 
   const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
   const after = body.record || null;
