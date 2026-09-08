@@ -13251,9 +13251,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             { l: "Tasks clear", d: needTasks > 0 ? (a.tasks || 0) >= needTasks : (a.tasks || 0) > 0 },
           ].map((it) => (
             <div className={"mc-li" + (it.d ? " done" : "")} key={it.l}>
-              <span className="ck">{it.d && <PixIcon glyph="check" size={13} />}</span><span>{it.l}</span>
+              <span className="ck">{it.d && <PixIcon glyph="check" size={12} />}</span><span>{it.l}</span>
             </div>
           ))}
+          <span className="mc-lifoot">Off today&rsquo;s report. Nothing here is ticked by hand.</span>
         </div>
       </div>
 
@@ -38148,11 +38149,19 @@ const SAGE_CSS = `
 .mc-legend s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.35); border-radius:50%; }
 .mc-legend-sc{ margin-top:12px; font-size:8px; }
 .mc-list{ margin-top:8px; }
+.mc-lifoot{ display:block; margin-top:9px; font-family:var(--sfmono); font-size:9px; letter-spacing:.09em;
+  text-transform:uppercase; color:rgba(232,238,242,.34); }
 .mc-li{ display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px dashed rgba(255,255,255,.1); font-size:12.5px; }
 .mc-li:last-child{ border-bottom:0; }
-.mc-li .ck{ width:21px; height:21px; border-radius:7px; border:1.5px solid rgba(255,255,255,.26); flex:0 0 auto;
+/* These four are a scorecard, not a checklist. Calls and videos come off the
+   day's report, RockEd off the manager's mark, tasks off what was posted; none
+   of them is the salesperson's to tick, and the same rule holds in My day. But
+   they were drawn as empty rounded boxes, which is a checkbox in every app
+   anybody owns, so they invited a tap and did nothing back. A ring, filling to
+   a disc when the mark is made, says the same thing without offering. */
+.mc-li .ck{ width:19px; height:19px; border-radius:50%; border:1.5px solid rgba(255,255,255,.22); flex:0 0 auto;
   display:flex; align-items:center; justify-content:center; }
-.mc-li.done .ck{ background:#3d8a62; border-color:#3d8a62; color:#eaf6ee; }
+.mc-li.done .ck{ background:#3d8a62; border-color:#3d8a62; color:#eaf6ee; box-shadow:0 0 10px rgba(61,138,98,.5); }
 .mc-li.done span:last-child{ opacity:.55; text-decoration:line-through; }
 .mc-sc{ display:grid; grid-template-columns:repeat(7,1fr); gap:8px 0; justify-items:center; margin-top:8px; }
 .mc-sc b{ font-family:var(--sfmono); font-size:8.5px; font-weight:700; color:rgba(237,242,234,.45); }
@@ -38670,7 +38679,7 @@ const SAGE_CSS = `
 .mc-week .wd{ font-size:9.5px; margin-top:5px; }
 .mc-list{ margin-top:10px; }
 .mc-li{ padding:11px 0; font-size:15.5px; gap:12px; }
-.mc-li .ck{ width:28px; height:28px; border-radius:9px; }
+.mc-li .ck{ width:24px; height:24px; }
 .mc-hb{ gap:9px; }
 .mc-hb .rk{ font-size:11px; width:20px; }
 .mc-hb .tk{ height:14px; }
