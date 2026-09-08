@@ -22,6 +22,8 @@
  */
 import crypto from "node:crypto";
 
+import http2 from "node:http2";
+
 const HOST = (env) => (env === "sandbox" ? "https://api.sandbox.push.apple.com" : "https://api.push.apple.com");
 
 let cached = { token: null, at: 0 };
@@ -121,9 +123,49 @@ export function errText(e, depth = 3) {
   return bits.join(" <- ") || "unknown";
 }
 
+/* ---- the wire ----
+   APNs is an HTTP/2 service and Node's fetch speaks HTTP/1.1, so every push
+   this app has ever sent died in the parser with "Response does not match the
+   HTTP/1.1 protocol": Apple answered in frames the client could not read. It
+   looks like a protocol a server would simply refuse, which is why it took a
+   production log to catch — probing the endpoint by hand gets an HTTP/1.1 403
+   from something in front of it and tells you nothing.
+
+   A session per send, closed after. A serverless function takes a burst and
+   then goes away, so a pooled connection is one nobody is left to close. */
+export function apnsPost({ origin, path, headers, body, timeoutMs = 10000,
+                           connect = http2.connect }) {
+  return new Promise((resolve, reject) => {
+    let session;
+    try { session = connect(origin); } catch (e) { reject(e); return; }
+    let settled = false;
+    const finish = (fn, arg) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { session.close(); } catch (e) { /* already gone */ }
+      fn(arg);
+    };
+    const timer = setTimeout(
+      () => finish(reject, Object.assign(new Error("APNs did not answer in time"), { code: "APNS_TIMEOUT" })),
+      timeoutMs);
+    session.on("error", (e) => finish(reject, e));
+    let req;
+    try {
+      req = session.request({ ":method": "POST", ":path": path, ...headers });
+    } catch (e) { finish(reject, e); return; }
+    let status = 0, text = "";
+    req.on("response", (h) => { status = Number(h[":status"]) || 0; });
+    req.on("data", (d) => { text += d; });
+    req.on("error", (e) => finish(reject, e));
+    req.on("end", () => finish(resolve, { status, text }));
+    req.end(body);
+  });
+}
+
 /* ---- the send ---- */
 export async function sendApns({ token, payload, pushType = "alert", topic, priority = 10,
-                                 collapseId = null, env = process.env.APNS_ENV, fetchImpl = fetch, cfg = {} }) {
+                                 collapseId = null, env = process.env.APNS_ENV, postImpl = apnsPost, cfg = {} }) {
   const bundle = cfg.bundleId || process.env.APNS_BUNDLE_ID;
   const headers = {
     authorization: `bearer ${apnsJwt(Date.now(), cfg)}`,
@@ -136,16 +178,15 @@ export async function sendApns({ token, payload, pushType = "alert", topic, prio
 
   let res;
   try {
-    res = await fetchImpl(`${HOST(env)}/3/device/${token}`, {
-      method: "POST", headers, body: JSON.stringify(payload),
-    });
+    res = await postImpl({ origin: HOST(env), path: `/3/device/${token}`,
+                           headers, body: JSON.stringify(payload) });
   } catch (e) {
     // Apple never answered. Say what actually stopped it rather than "failed".
     return { ok: false, status: 0, reason: errText(e), gone: false };
   }
   if (res.status === 200) return { ok: true };
   let reason = "";
-  try { reason = (await res.json()).reason || ""; } catch { /* empty body is normal on some errors */ }
+  try { reason = JSON.parse(res.text || "{}").reason || ""; } catch { /* empty body is normal on some errors */ }
   /* 410 means the device is gone for good — the caller should forget the token
      rather than retry it every time the line moves for the rest of the year. */
   return { ok: false, status: res.status, reason, gone: res.status === 410 || reason === "BadDeviceToken" };
