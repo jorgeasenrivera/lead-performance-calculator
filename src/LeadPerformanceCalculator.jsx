@@ -14832,6 +14832,16 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
         case "away": r = { g: "away", c: "lunch", what: `${nm} away`, who: "" }; break;
         case "back": r = { g: "dot", c: "", what: `${nm} back in line`, who: e.from ? "from " + e.from : "" }; break;
         case "nudged": r = { g: "warn", c: "warn", what: `${nm} nudged`, who: "by the desk" }; break;
+        case "on-my-way": r = { g: "arrowup", c: "up", what: `${nm} said on my way`, who: "answered the desk" }; break;
+        case "assist-cancelled": r = { g: "close", c: "", what: `${nm} took the ask back`, who: "" }; break;
+        /* Answering the desk with a reason, and the one case where the floor's
+           own record disagrees with the reason given. Both go in the day the
+           same way; the second reads differently and carries the colour, which
+           is the whole of the flag. Nothing is counted, here or anywhere. */
+        case "with-guest": r = e.unverified
+          ? { g: "warn", c: "warn", what: `${nm} said they were with a guest`,
+              who: `the floor had them ${e.wasStatus === "waiting" ? "waiting in line" : e.wasStatus === "lunch" ? "at lunch" : e.wasStatus === "away" ? "out of the line" : "elsewhere"}` }
+          : { g: "user", c: "", what: `${nm} is with a guest`, who: "answered the desk" }; break;
         case "timer-pass": r = { g: "clock", c: "", what: `${nm} passed on the timer`, who: "" }; break;
         case "removed": case "left": r = { g: "door", c: "", what: `${nm} off the floor`, who: "" }; break;
         case "cleared": r = { g: "close", c: "warn", what: "Line cleared", who: "" }; break;
