@@ -10818,6 +10818,25 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 /* =========================================================================
    queueCoachingStats — roll a person's line history into coaching numbers
    ========================================================================= */
+/* Times somebody answered the desk with "I'm with a guest" while the floor's
+   own record had them doing something else. Counted in exactly one place, on
+   the manager's card, and nowhere the salesperson can reach: the store's
+   coaching mirror already carries the floor's history, so this reads what is
+   there rather than keeping a tally on anybody. */
+function deskClaimsAgainstRecord(data, personId) {
+  const out = [];
+  for (const [day, d] of Object.entries((data && data.floor) || {})) {
+    for (const e of (d && d.history) || []) {
+      if (e && e.action === "with-guest" && e.unverified && e.id === personId) {
+        out.push({ day, t: e.t || "", was: e.wasStatus || "" });
+      }
+    }
+  }
+  return out.sort((x, y) => (x.t < y.t ? 1 : -1));
+}
+const wasDoing = (w) => w === "waiting" ? "waiting in line"
+  : w === "lunch" ? "at lunch" : w === "away" ? "out of the line" : "not with a guest";
+
 function queueCoachingStats(data, associateId) {
   const q = (data && data.queue) || {};
   const dates = Object.keys(q).sort();
@@ -25731,6 +25750,35 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
 
       <OwnYourOutcome store={store} data={data} a={a} monthStats={stats} onChange={onChange} />
 
+      {/* Manager's eyes. Marked no-print because this card gets handed to the
+           person it is about, and a flag riding out on that sheet is a
+           conversation nobody chose to have. */}
+      {(() => {
+        const flags = deskClaimsAgainstRecord(data, a.id);
+        if (!flags.length) return null;
+        const when = (d) => new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+        return (
+          <div className="ac-queue no-print">
+            <h3 className="ac-h3">Said &ldquo;with a guest&rdquo; to the desk</h3>
+            <div className="ac-results">
+              <div className="ac-stat"><b>{flags.length}</b><span>{flags.length === 1 ? "time" : "times"} the floor said otherwise</span></div>
+              <div className="ac-stat"><b>{when(flags[0].day)}</b><span>Most recent</span></div>
+            </div>
+            <ul className="ac-flags">
+              {flags.slice(0, 6).map((f, i) => (
+                <li key={f.day + i}><b>{when(f.day)}</b> &mdash; the floor had them {wasDoing(f.was)}</li>
+              ))}
+              {flags.length > 6 && <li className="ac-flags-more">and {flags.length - 6} more</li>}
+            </ul>
+            <p className="hint">
+              The desk asked for them, they answered that they were with a guest, and the floor
+              had them somewhere else at that moment. Worth a conversation rather than a
+              conclusion: somebody can be shaking a hand at the door before anything is typed
+              in. Nothing here is scored, and the salesperson does not see it.
+            </p>
+          </div>
+        );
+      })()}
       {(() => {
         const qs = queueCoachingStats(data, a.id);
         if (!qs.hasData) return null;
@@ -41291,6 +41339,11 @@ const SAGE_CSS = `
 .cx-hourly{ padding:0 16px; }
 .cx-hourly .hourly{ margin-top:4px; min-height:170px; }
 .cx-hourly .ac-h3{ display:none; }
+.ac-flags{ list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:5px; }
+.ac-flags li{ font-size:12.5px; color:var(--ink2, #5A6B60); padding-left:13px; position:relative; }
+.ac-flags li::before{ content:""; position:absolute; left:0; top:7px; width:5px; height:5px; border-radius:50%; background:#D8483C; }
+.ac-flags li b{ color:inherit; font-weight:700; }
+.ac-flags .ac-flags-more{ color:#8A9A90; } .ac-flags .ac-flags-more::before{ background:#8A9A90; }
 .cx-hourly .hourly-read{ font:500 13px/1.45 var(--font-ui); color:var(--frink2); } .cx-hourly .hourly-read b{ color:var(--frink); }
 .cx-hourly .hint{ font:500 11px/1.4 var(--font-ui); color:var(--frink3); margin:6px 0 0; }
 .cx-hourly .hr-tick{ font-size:11px; }
