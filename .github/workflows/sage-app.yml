@@ -234,7 +234,7 @@ jobs:
               const fs = require("fs");
               const b = JSON.parse(fs.readFileSync("build.json", "utf8"));
               const one = Array.isArray(b) ? b[0] : b;
-              if (!one) return;
+              if (!one) throw new Error("build.json held no build");
               const a = one.artifacts || {};
               const url = a.buildUrl || a.applicationArchiveUrl;
               if (url) {
