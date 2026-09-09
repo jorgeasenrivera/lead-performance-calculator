@@ -200,7 +200,17 @@ private struct Clock: View {
   var tint: Color = .white
   var body: some View {
     VStack(alignment: .trailing, spacing: 3) {
-      Text(from, style: .timer)
+      /* Text(_, style: .timer) is WidgetKit's ticking clock, and it is the one
+         thing on this card that never rendered on a phone: every phase that
+         showed a clock — with a customer, at lunch, away — came up as a black
+         card with nothing in it, and the one phase without a clock, "you're
+         up", drew fine. ActivityKit has its own timer instead, and it is what
+         Apple's own Live Activity samples use.
+
+         The range is bounded rather than run to distantFuture. A visit is
+         hours at the outside, and an unbounded interval is the other thing in
+         this API that is documented to misbehave. */
+      Text(timerInterval: from...from.addingTimeInterval(24 * 3600), countsDown: false)
         .font(.system(size: 16, weight: .bold, design: .monospaced))
         .monospacedDigit()
         .foregroundStyle(tint)
@@ -211,7 +221,6 @@ private struct Clock: View {
         .foregroundStyle(.white.opacity(0.42))
         .lineLimit(1)
     }
-    .fixedSize()
   }
 }
 
