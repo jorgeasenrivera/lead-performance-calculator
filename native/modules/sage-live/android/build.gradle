@@ -25,8 +25,15 @@ android {
 }
 
 dependencies {
-  // Live Updates (the promoted ongoing notification and ProgressStyle) reached
-  // the support library in 1.16. Building against the framework classes instead
-  // would mean an API 36 branch for every call rather than one at the end.
-  implementation 'androidx.core:core-ktx:1.16.0'
+  /* Live Updates reached the support library in 1.17.0, not 1.16.0: the release
+     note for 1.17.0-alpha01 is the one that says "Added NotificationCompat.
+     ProgressStyle and NotificationCompat.Builder.setRequestPromotedOngoing()".
+     Pinned there and not at the newest, because 1.17 is the release that goes
+     with compileSdk 36, which is what this project builds against, and taking
+     the lowest version that has what you use is how that stays true.
+
+     expo-modules-core brings core-ktx 1.13.1, which has none of it; Gradle
+     resolves the two to the higher, so this line is what puts the API on the
+     compile path. */
+  implementation 'androidx.core:core-ktx:1.17.0'
 }
