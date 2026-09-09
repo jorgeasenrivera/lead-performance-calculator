@@ -429,12 +429,13 @@ private struct LockScreen: View {
        rectangle laid on the screen and the sand, mint and amber emit.
 
        The ground is painted here rather than left to activityBackgroundTint
-       alone. That modifier asks the system to tint the container it puts the
-       card in, and the system does not always agree — it reserves the right to
-       use its own material, and on a phone it went ahead and did. A colour
-       drawn inside the view is our pixels either way. The tint modifier stays
-       below, because where it IS honoured it also paints the container's
-       rounded edge, and without it that edge is a lighter rim around a dark
+       alone. That modifier IS honoured — on a phone the card came up clearly
+       darker than the notification beneath it — but the system composites the
+       tint rather than filling with it, so a near-black asked for as a tint
+       arrives as a dark grey-green and the palette loses the ground it was
+       chosen against. A colour drawn inside the view is composited with
+       nothing. The tint modifier stays, because it also paints the container's
+       rounded edge, and dropping it would leave a lighter rim around a dark
        card. */
     .background(
       ZStack {
