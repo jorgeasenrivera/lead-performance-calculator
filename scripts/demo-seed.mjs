@@ -375,6 +375,65 @@ async function main() {
     return;
   }
 
+  if (args.includes("--sql")) {
+    const fs = await import("node:fs");
+    const at = args.indexOf("--sql");
+    const path = (args[at + 1] && !args[at + 1].startsWith("--")) ? args[at + 1] : "demo-store.sql";
+    /* Dollar-quoting, so none of the JSON needs escaping. The tag carries a
+       nonce because a $$...$$ block ends at the first matching tag, and one
+       stray $j$ inside a note would truncate the statement into something that
+       still parses. */
+    const tag = "$j" + Math.random().toString(36).slice(2, 8) + "$";
+    /* Two literals, and the difference is the whole ballgame. jsonb wants the
+       JSON text; a text or date column wants the bare string. Using the JSON
+       one for both wrote every key as "lpc:store:sage-demo:v2" — quotes and
+       all, a key the app looks for and never finds. That fails exactly like a
+       seed that was never run, which is the failure this file exists to stop
+       somebody chasing. */
+    const json = (v) => tag + JSON.stringify(v) + tag;
+    const lit = (v) => tag + String(v) + tag;
+    const out = [];
+    out.push("-- Sage Demo Motors: the whole demo store, as one script.");
+    out.push("-- Paste into the Supabase SQL editor and run. Safe to run twice.");
+    out.push("-- Everybody in here is invented. No real store is touched.");
+    out.push("begin;");
+    for (const { table, row } of demo.rows) {
+      if (table === "app_data") {
+        out.push(`insert into app_data (key, value, updated_at) values (${lit(row.key)}::text, ${json(row.value)}::jsonb, now())\n  on conflict (key) do update set value = excluded.value, updated_at = now();`);
+      } else {
+        const dateCol = table === "queue_public" ? "qdate" : "fdate";
+        const dateVal = table === "queue_public" ? row.qdate : row.fdate;
+        out.push(`insert into ${table} (id, store, ${dateCol}, data, updated_at) values (${lit(row.id)}::text, ${lit(row.store)}::text, ${lit(dateVal)}::date, ${json(row.data)}::jsonb, now())\n  on conflict (id) do update set data = excluded.data, updated_at = now();`);
+      }
+    }
+    /* The config, read-modified-written in one statement. Merging with || rather
+       than jsonb_set because jsonb_set on a path whose parent is missing returns
+       null, which would blank the settings row rather than fail. */
+    const stdBlock = { sales: { tiers: DEMO_TIERS }, service: { tiers: DEMO_TIERS } };
+    out.push([
+      "update app_data set value =",
+      "  value",
+      `  || jsonb_build_object('stores', (`,
+      `       select coalesce(jsonb_agg(s), '[]'::jsonb) || ${json(demo.storeConfig)}::jsonb`,
+      `       from jsonb_array_elements(coalesce(value->'stores', '[]'::jsonb)) s`,
+      `       where s->>'id' is distinct from ${lit(DEMO_STORE_ID)}::text))`,
+      `  || jsonb_build_object('standards',`,
+      `       coalesce(value->'standards', '{}'::jsonb)`,
+      `       || jsonb_build_object(${lit(DEMO_STORE_ID)}::text, ${json(stdBlock)}::jsonb)),`,
+      "  updated_at = now()",
+      "where key = 'lpc:config:v2';",
+    ].join("\n"));
+    out.push("commit;");
+    out.push("");
+    out.push("-- One step left, on purpose: create the account for " + DEMO_EMAIL);
+    out.push("-- through the app's own Create New Account screen, then grant it");
+    out.push("-- manager access to " + DEMO_STORE_ID + " and nothing else. Minting a");
+    out.push("-- login from SQL is how a demo account ends up seeing a real store.");
+    fs.writeFileSync(path, out.join("\n\n"));
+    console.log(`Wrote ${demo.rows.length} rows plus the config update to ${path}`);
+    return;
+  }
+
   if (args.includes("--push")) {
     const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) {
@@ -438,7 +497,8 @@ async function main() {
 
   console.log(`${demo.rows.length} rows would be written for "${demo.storeName}".`);
   console.log(`Roster: ${demo.roster.length} people. Days of history: ${demo.days.length}.`);
-  console.log(`Pass --out <file> to write them, or --push to send them to Supabase.`);
+  console.log(`Pass --sql <file> for a script to paste into the Supabase SQL editor,`);
+  console.log(`--push to write them over the API, or --out <file> for the raw JSON.`);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
