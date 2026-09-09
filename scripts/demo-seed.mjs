@@ -56,6 +56,15 @@ const CAST = [
    than appearing as a ghost beside eight people who do have one. */
 const DEMO_MANAGER = { name: "Alex Reyner", roleId: "manager" };
 
+/* The same three tiers DEFAULT_TIERS carries in the app. Written out rather
+   than imported because they live inside the one big component file, and a
+   demo script reaching in there would be a worse dependency than a copy. */
+const DEMO_TIERS = [
+  { cap: 60,  requirements: [{ metric: "apptVideoDayPct", min: 50 }, { metric: "deliveredPct", min: 10 }, { metric: "engagedVideoPct", min: 40 }] },
+  { cap: 80,  requirements: [{ metric: "apptVideoDayPct", min: 55 }, { metric: "deliveredPct", min: 12 }, { metric: "engagedVideoPct", min: 45 }] },
+  { cap: 100, requirements: [{ metric: "apptVideoDayPct", min: 60 }, { metric: "deliveredPct", min: 14 }, { metric: "engagedVideoPct", min: 50 }, { metric: "bhVideoPct", min: 40 }] },
+];
+
 const norm = (s) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -389,8 +398,41 @@ async function main() {
       }
       console.log(`${table}: ${list.length} rows`);
     }
+    /* The rows are not enough on their own. A store nothing lists is a store
+       nobody can open: the app draws its switcher from the config, so writing
+       the data and leaving the config alone puts a complete dealership in the
+       database that no screen has a route to. Editing that JSON by hand is
+       exactly the kind of step that gets half done, so the push does it. */
+    const CONFIG_KEY = "lpc:config:v2";
+    const { data: cfgRow, error: cfgErr } = await sb
+      .from("app_data").select("value").eq("key", CONFIG_KEY).maybeSingle();
+    if (cfgErr) { console.error("could not read the config:", cfgErr.message); process.exit(1); }
+    const cfg = (cfgRow && cfgRow.value) || null;
+    if (!cfg) {
+      console.error(`No config at ${CONFIG_KEY}. Refusing to write one — that row is the whole app's settings and this script should not be the thing that invents it.`);
+      process.exit(1);
+    }
+    cfg.stores = Array.isArray(cfg.stores) ? cfg.stores : [];
+    const at = cfg.stores.findIndex((x) => x && x.id === DEMO_STORE_ID);
+    if (at >= 0) cfg.stores[at] = { ...cfg.stores[at], ...demo.storeConfig };
+    else cfg.stores.push(demo.storeConfig);
+    /* Standards, or every page says "no standards set yet" over a full store. */
+    cfg.standards = cfg.standards || {};
+    cfg.standards[DEMO_STORE_ID] = cfg.standards[DEMO_STORE_ID] || {};
+    for (const role of ["sales", "service"]) {
+      cfg.standards[DEMO_STORE_ID][role] = cfg.standards[DEMO_STORE_ID][role] || { tiers: DEMO_TIERS };
+    }
+    const { error: wErr } = await sb.from("app_data")
+      .upsert({ key: CONFIG_KEY, value: cfg, updated_at: new Date().toISOString() }, { onConflict: "key" });
+    if (wErr) { console.error("could not write the config:", wErr.message); process.exit(1); }
+    console.log(`config: ${at >= 0 ? "updated" : "added"} "${DEMO_STORE_ID}" in the store list`);
+
     console.log(`\nDemo store "${demo.storeName}" (${demo.storeId}) is in place.`);
-    console.log(`Add "${demo.storeId}" to the config's stores list and grant ${DEMO_EMAIL} manager access to it.`);
+    console.log(`\nOne step left, and it is deliberately not automated: create the`);
+    console.log(`account for ${DEMO_EMAIL} through the app's own Create New Account`);
+    console.log(`screen, then grant it manager access to ${DEMO_STORE_ID} and nothing`);
+    console.log(`else. Making accounts from a script is how a demo login ends up`);
+    console.log(`able to see a real dealership.`);
     return;
   }
 
