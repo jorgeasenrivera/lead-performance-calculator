@@ -137,9 +137,17 @@ struct QueueActionIntent: LiveActivityIntent {
   func perform() async throws -> some IntentResult {
     let a = action
     buzz()
+    /* The server hears about the press at the same moment the card answers,
+       not after. nudgeNow holds the ring on for a third of a second so a thumb
+       can see which target it found, and awaiting that before opening the
+       connection put that third of a second in front of every round trip —
+       which is exactly what "FlyBy is a bit slow" was. The ring and the
+       request now run together, and the request is still awaited, so a failed
+       one still falls back to the app. */
+    let server: Task<Bool, Never>? = isLocalOnly ? nil : Task { await viaServer() }
     await nudgeNow()
-    if isLocalOnly { return .result() }
-    if await viaServer() { return .result() }
+    guard let server = server else { return .result() }
+    if await server.value { return .result() }
     UserDefaults.standard.set(a, forKey: "sageLive.pendingAction")
     NotificationCenter.default.post(name: Notification.Name("SageLiveAction"), object: nil, userInfo: ["action": a])
     return .result()

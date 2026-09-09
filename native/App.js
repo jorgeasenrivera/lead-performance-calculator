@@ -167,7 +167,14 @@ function Shell() {
      WebView cannot, so this is how edge to edge stays tappable there. */
   const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
-  const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null, ptsToken: null, activityToken: null });
+  /* The build number travels with the rest of the handoff. iOS Settings shows
+     only the marketing version, which is 1.0.0 for every build ever made, so
+     "which build is this?" has cost this project several hours and one whole
+     afternoon of chasing a bug that was simply an old binary. The page stamps
+     it in the corner beside its own version; a screenshot of any screen now
+     answers the question. */
+  const [native, setNative] = useState({ platform: Platform.OS, deviceId: null, pushToken: null, ptsToken: null, activityToken: null,
+    build: Application.nativeBuildVersion || null });
   /* ---- the safe areas belong to the page ----
      The page runs under the clock and the home bar, the way it does in Safari
      with the toolbars hidden, and pads itself with env(safe-area-inset-*):

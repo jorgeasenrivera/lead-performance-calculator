@@ -40,41 +40,69 @@ object LineNotification {
   private const val RED = 0xFFD8483C.toInt()
   private const val FLY = 0xFFE8A93C.toInt()
 
-  /** waiting, next, up, customer, desk, off, gone. The same seven the Live
-      Activity has, worked out the same way, so the two never disagree. */
+  /** The same ten phases the Live Activity has, worked out the same way, so
+      the two never disagree. The three that were missing here — asking,
+      claimed and confirm — are the whole of the FlyBy round trip and the
+      question before a visit ends, so without them an Android phone could
+      start an ask and never see it picked up. */
   private fun phaseOf(s: JSONObject): String {
     val status = s.optString("status", "waiting")
     if (status == "gone") return "gone"
     if (s.optBoolean("nudge", false)) return "desk"
-    if (status == "customer") return "customer"
+    if (status == "customer") {
+      /* Order matters, the same order as iOS: a question about ending the
+         visit outranks a claimed ask, which outranks an open one, because it
+         is the thing the person is being asked right now. */
+      if (s.optBoolean("confirm", false)) return "confirm"
+      val ask = s.optString("ask", "")
+      if (ask.isNotEmpty() && ask != "null") {
+        val by = s.optString("askBy", "")
+        return if (by.isNotEmpty() && by != "null") "claimed" else "asking"
+      }
+      return "customer"
+    }
     if (status == "lunch" || status == "away") return "off"
     if (s.optBoolean("up", false)) return "up"
     return if (s.optInt("ahead", 0) == 0) "next" else "waiting"
   }
 
+  private fun str(s: JSONObject, key: String): String? {
+    val v = s.optString(key, "")
+    return if (v.isEmpty() || v == "null") null else v
+  }
+
   private fun headline(s: JSONObject, ph: String): String = when (ph) {
     "up" -> "You're up"
     "next" -> "You're next"
-    "desk" -> "The desk is asking for you"
+    /* The desk asking for a meeting says where, not who: the location is what
+       you act on, and the manager's name is one more thing to read. */
+    "desk" -> if (str(s, "place") != null) "Meeting, now" else "The desk wants you"
     "customer" -> "With a customer"
+    "asking" -> if (s.optString("ask") == "to") "Requesting T.O." else "Requesting FlyBy"
+    "claimed" -> str(s, "askBy")?.let { "$it is on the way" } ?: "Manager on the way"
+    "confirm" -> "Has your guest left?"
     "off" -> if (s.optString("status") == "lunch") "At lunch" else "Out of the line"
     "gone" -> "Off the line"
     else -> "${s.optInt("ahead", 0)} ahead of you"
   }
 
+  /* Said once. A headline that already carries the fact does not get a caption
+     repeating it underneath, which is what "In the line" and "Head to the
+     door" were doing. Empty means no second line at all. */
   private fun caption(s: JSONObject, ph: String): String = when (ph) {
-    "up" -> "Head to the door."
-    "next" -> "Nobody waiting ahead of you"
-    "desk" -> "Head back to the floor."
-    "customer" -> {
-      val t = s.optString("table", "")
-      if (t.isEmpty() || t == "null") "On the floor"
-      else if (t.startsWith("O")) "Office ${t.drop(1)}" else "Table $t"
+    "customer", "asking", "confirm" -> {
+      val t = str(s, "table")
+      when {
+        t == null -> ""
+        t.startsWith("O") -> "Office ${t.drop(1)}"
+        else -> "Table $t"
+      }
     }
+    "desk" -> str(s, "place") ?: str(s, "askedBy") ?: ""
     "off" -> if (s.optString("status") == "lunch") "You'll be passed until you tap back in"
              else "On the floor, not taking a turn"
     "gone" -> "Signed out for the day"
-    else -> "In the line"
+    else -> ""
   }
 
   /* The status bar chip has room for a couple of words and no more, so this is
@@ -83,6 +111,9 @@ object LineNotification {
     "up" -> "You're up"
     "desk" -> "Desk"
     "customer" -> "With a guest"
+    "asking" -> if (s.optString("ask") == "to") "T.O. out" else "FlyBy out"
+    "claimed" -> "On the way"
+    "confirm" -> "Gone?"
     "next" -> "Next"
     "off" -> if (s.optString("status") == "lunch") "Lunch" else "Out"
     "gone" -> ""
@@ -90,9 +121,9 @@ object LineNotification {
   }
 
   private fun accent(ph: String): Int = when (ph) {
-    "up" -> MINT
+    "up", "claimed" -> MINT
     "desk" -> RED
-    "customer" -> FLY
+    "customer", "asking", "confirm" -> FLY
     "off", "gone" -> MIST
     else -> SAND
   }
@@ -101,8 +132,15 @@ object LineNotification {
   private fun actions(ph: String, s: JSONObject): List<Pair<String, String>> = when (ph) {
     "waiting", "next" -> listOf("lunch" to "Lunch", "away" to "Away")
     "up" -> listOf("take" to "Got them", "pass" to "Pass")
-    "customer" -> listOf("fly" to "FlyBy", "to" to "T.O.", "done" to "They left")
-    "desk" -> listOf("ack" to "On my way")
+    /* "They left" asks before it acts rather than ending the visit on a thumb
+       that landed one target over, which is what ask-done is for. */
+    "customer" -> listOf("fly" to "FlyBy", "to" to "T.O.", "ask-done" to "They left")
+    "asking" -> listOf("cancel" to "Never mind", "ask-done" to "They left")
+    "claimed" -> listOf("ask-done" to "They left")
+    "confirm" -> listOf("done" to "Yes, they left", "keep" to "Not yet")
+    /* The honest second answer. The desk would rather send somebody else than
+       stand there wondering. */
+    "desk" -> listOf("ack" to "On my way", "with-guest" to "With a guest")
     "off" -> listOf("back" to (if (s.optString("status") == "lunch") "Back on the floor" else "Back in line"))
     else -> emptyList()
   }

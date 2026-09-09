@@ -30,6 +30,10 @@ private let fly = Color(red: 0xE8 / 255, green: 0xA9 / 255, blue: 0x3C / 255)
 private let red = Color(red: 0xF0 / 255, green: 0x8A / 255, blue: 0x80 / 255)
 private let mist = Color.white.opacity(0.62)
 private let inkDeep = Color(red: 0x12 / 255, green: 0x25 / 255, blue: 0x1B / 255)
+/* The ground the card sits on. Nearly off rather than merely dark: on an OLED
+   lock screen these pixels draw no light at all, which is what lets the sand
+   and the mint read as emitting rather than as paint. */
+private let ground = Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x06 / 255)
 
 // MARK: - PixIcon: the site's 5x5 glyphs, as dots
 
@@ -196,18 +200,43 @@ private struct Clock: View {
   var tint: Color = .white
   var body: some View {
     VStack(alignment: .trailing, spacing: 3) {
-      Text(from, style: .timer)
+      /* Text(_, style: .timer) is WidgetKit's ticking clock, and it is the one
+         thing on this card that never rendered on a phone: every phase that
+         showed a clock — with a customer, at lunch, away — came up as a black
+         card with nothing in it, and the one phase without a clock, "you're
+         up", drew fine. ActivityKit has its own timer instead, and it is what
+         Apple's own Live Activity samples use.
+
+         The range is bounded rather than run to distantFuture. A visit is
+         hours at the outside, and an unbounded interval is the other thing in
+         this API that is documented to misbehave. */
+      Text(timerInterval: from...from.addingTimeInterval(24 * 3600), countsDown: false)
         .font(.system(size: 16, weight: .bold, design: .monospaced))
         .monospacedDigit()
         .foregroundStyle(tint)
         .lineLimit(1)
+        /* A ticking timer reserves the width of its WIDEST value so the digits
+           do not jitter as they change, and then draws the current value
+           inside that box. At three seconds into a visit that box is sized for
+           hours and "0:03" sat in the middle of it, which is why the clock
+           read as centred on the card rather than sitting at the right edge
+           with everything else. Pushed to the trailing edge of its own box,
+           and allowed to shrink rather than clip once a visit does run past an
+           hour and the hours digit arrives. */
+        .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: .trailing)
       Text(label)
         .font(.system(size: 7.5, weight: .bold, design: .monospaced))
         .tracking(1.1)
         .foregroundStyle(.white.opacity(0.42))
         .lineLimit(1)
+        /* Allowed to give way. It is a label on a number, and the headline
+           beside it is a sentence somebody has to read. */
+        .layoutPriority(-1)
     }
-    .fixedSize()
+    /* Wide enough for a visit's minutes and seconds, which is what this shows
+       for all but the longest of them. */
+    .frame(width: 64, alignment: .trailing)
   }
 }
 
@@ -393,12 +422,23 @@ private struct LockScreen: View {
     let ac = accent(ph)
     /* The card is as tall as what is on it and no taller. It used to be laid
        out to fill the system's 160 points, which put a hole between the words
-       and the buttons on every phase that did not need the room. */
-    VStack(alignment: .leading, spacing: 10) {
+       and the buttons on every phase that did not need the room.
+
+       A rail is 26 of those points, though, so the phases that have one came
+       out comfortably taller than the phases that do not and the short ones
+       read as squeezed. The answer is not to go back to pinning every card to
+       160 — that is the hole again — it is to let the rows that ARE there sit
+       further apart. */
+    VStack(alignment: .leading, spacing: showsRail(s, ph) ? 10 : 13) {
       HStack(alignment: .center, spacing: 12) {
         BigGlyph(s: s, ph: ph)
         VStack(alignment: .leading, spacing: 3) {
+          /* The headline is the sentence; the clock is a number beside it.
+             Without a priority the two negotiated as equals and the sentence
+             lost — the card read "With a custo…" and "Requesting Fl…", which
+             is the one thing on here that has to be readable at a glance. */
           HeadlineText(s: s, ph: ph, size: ph == .up ? 22 : 17)
+            .layoutPriority(2)
           if let cap = caption(s, ph) {
             Text(cap)
               .font(.system(size: 11.5, weight: ph == .customer || ph == .asking || ph == .confirm || ph == .desk ? .bold : .medium))
@@ -418,14 +458,28 @@ private struct LockScreen: View {
         Buttons(ph: ph, s: s)
       }
     }
-    .padding(14)
+    .padding(.horizontal, 14)
+    .padding(.vertical, showsRail(s, ph) ? 14 : 16)
     .opacity(ph == .gone ? 0.75 : 1)
     /* The accent bloom, over a ground that is nearly off. On an OLED lock
        screen those pixels are not lit at all, so the card stops being a grey
-       rectangle laid on the screen and the sand, mint and amber emit. */
+       rectangle laid on the screen and the sand, mint and amber emit.
+
+       The ground is painted here rather than left to activityBackgroundTint
+       alone. That modifier IS honoured — on a phone the card came up clearly
+       darker than the notification beneath it — but the system composites the
+       tint rather than filling with it, so a near-black asked for as a tint
+       arrives as a dark grey-green and the palette loses the ground it was
+       chosen against. A colour drawn inside the view is composited with
+       nothing. The tint modifier stays, because it also paints the container's
+       rounded edge, and dropping it would leave a lighter rim around a dark
+       card. */
     .background(
-      RadialGradient(gradient: Gradient(colors: [ac.opacity(0.22), .clear]),
-                     center: UnitPoint(x: 0.9, y: -0.12), startRadius: 4, endRadius: 300)
+      ZStack {
+        ground
+        RadialGradient(gradient: Gradient(colors: [ac.opacity(0.22), .clear]),
+                       center: UnitPoint(x: 0.9, y: -0.12), startRadius: 4, endRadius: 300)
+      }
     )
     /* One beat of the pressed button's colour, and the give underneath it.
        Both are driven by the state the intent writes before it calls the
@@ -438,7 +492,7 @@ private struct LockScreen: View {
     )
     .scaleEffect(s.pressed == nil ? 1 : 0.985)
     .animation(.spring(response: 0.3, dampingFraction: 0.68), value: s.pressed)
-    .activityBackgroundTint(Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x06 / 255))
+    .activityBackgroundTint(ground)
     .activitySystemActionForegroundColor(sand)
   }
 }
