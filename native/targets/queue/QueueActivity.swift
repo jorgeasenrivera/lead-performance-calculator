@@ -215,6 +215,16 @@ private struct Clock: View {
         .monospacedDigit()
         .foregroundStyle(tint)
         .lineLimit(1)
+        /* A ticking timer reserves the width of its WIDEST value so the digits
+           do not jitter as they change, and then draws the current value
+           inside that box. At three seconds into a visit that box is sized for
+           hours and "0:03" sat in the middle of it, which is why the clock
+           read as centred on the card rather than sitting at the right edge
+           with everything else. Pushed to the trailing edge of its own box,
+           and allowed to shrink rather than clip once a visit does run past an
+           hour and the hours digit arrives. */
+        .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: .trailing)
       Text(label)
         .font(.system(size: 7.5, weight: .bold, design: .monospaced))
         .tracking(1.1)
@@ -224,6 +234,9 @@ private struct Clock: View {
            beside it is a sentence somebody has to read. */
         .layoutPriority(-1)
     }
+    /* Wide enough for a visit's minutes and seconds, which is what this shows
+       for all but the longest of them. */
+    .frame(width: 64, alignment: .trailing)
   }
 }
 
