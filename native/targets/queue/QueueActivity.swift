@@ -30,6 +30,10 @@ private let fly = Color(red: 0xE8 / 255, green: 0xA9 / 255, blue: 0x3C / 255)
 private let red = Color(red: 0xF0 / 255, green: 0x8A / 255, blue: 0x80 / 255)
 private let mist = Color.white.opacity(0.62)
 private let inkDeep = Color(red: 0x12 / 255, green: 0x25 / 255, blue: 0x1B / 255)
+/* The ground the card sits on. Nearly off rather than merely dark: on an OLED
+   lock screen these pixels draw no light at all, which is what lets the sand
+   and the mint read as emitting rather than as paint. */
+private let ground = Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x06 / 255)
 
 // MARK: - PixIcon: the site's 5x5 glyphs, as dots
 
@@ -422,10 +426,22 @@ private struct LockScreen: View {
     .opacity(ph == .gone ? 0.75 : 1)
     /* The accent bloom, over a ground that is nearly off. On an OLED lock
        screen those pixels are not lit at all, so the card stops being a grey
-       rectangle laid on the screen and the sand, mint and amber emit. */
+       rectangle laid on the screen and the sand, mint and amber emit.
+
+       The ground is painted here rather than left to activityBackgroundTint
+       alone. That modifier asks the system to tint the container it puts the
+       card in, and the system does not always agree — it reserves the right to
+       use its own material, and on a phone it went ahead and did. A colour
+       drawn inside the view is our pixels either way. The tint modifier stays
+       below, because where it IS honoured it also paints the container's
+       rounded edge, and without it that edge is a lighter rim around a dark
+       card. */
     .background(
-      RadialGradient(gradient: Gradient(colors: [ac.opacity(0.22), .clear]),
-                     center: UnitPoint(x: 0.9, y: -0.12), startRadius: 4, endRadius: 300)
+      ZStack {
+        ground
+        RadialGradient(gradient: Gradient(colors: [ac.opacity(0.22), .clear]),
+                       center: UnitPoint(x: 0.9, y: -0.12), startRadius: 4, endRadius: 300)
+      }
     )
     /* One beat of the pressed button's colour, and the give underneath it.
        Both are driven by the state the intent writes before it calls the
@@ -438,7 +454,7 @@ private struct LockScreen: View {
     )
     .scaleEffect(s.pressed == nil ? 1 : 0.985)
     .animation(.spring(response: 0.3, dampingFraction: 0.68), value: s.pressed)
-    .activityBackgroundTint(Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x06 / 255))
+    .activityBackgroundTint(ground)
     .activitySystemActionForegroundColor(sand)
   }
 }
