@@ -23,6 +23,11 @@ class QueueActionReceiver : BroadcastReceiver() {
     val action = intent.getStringExtra("action") ?: return
     val pending = goAsync()
     SageLiveStore.optimistic(ctx, action)
+    /* Two of the buttons only change what the card is asking and have nothing
+       to tell the server: "They left" puts the question up, "Not yet" takes it
+       back down. Posting either would file a visit ending that has not
+       happened. The same two are local-only in the iOS intents. */
+    if (action == "ask-done" || action == "keep") { pending.finish(); return }
     // Straight to the page if it is listening; it has its own session and its
     // own copy of the row, and will not act twice on one press.
     val handled = SageLiveModule.emitAction(action)

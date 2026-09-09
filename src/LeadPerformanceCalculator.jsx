@@ -32542,7 +32542,29 @@ function LogoCropper({ src, onCancel, onSave }) {
 }
 
 /* ---------------- Shell + styles ---------------- */
+/* The native build number, when the page is running inside the phone shell.
+   The shell hands it over with the rest of __lpcNative, and it arrives either
+   before this page loaded or on the lpc:native event afterwards, so both are
+   listened for. On the web there is no build number and the stamp is just the
+   site's own version, which is the whole truth there. */
+function useNativeBuild() {
+  const [b, setB] = useState(() => {
+    try { return (window.__lpcNative && window.__lpcNative.build) || null; } catch (e) { return null; }
+  });
+  useEffect(() => {
+    const on = (e) => {
+      const d = (e && e.detail) || (typeof window !== "undefined" && window.__lpcNative) || {};
+      if (d && d.build) setB(String(d.build));
+    };
+    on();
+    window.addEventListener("lpc:native", on);
+    return () => window.removeEventListener("lpc:native", on);
+  }, []);
+  return b;
+}
+
 function Shell({ children, entering, style, ground = true }) {
+  const nativeBuild = useNativeBuild();
   return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       {/* A phone page sits fixed over the whole app, so under it the ground's
           drifting blobs, dot field and streaks would animate and composite for
@@ -32558,7 +32580,7 @@ function Shell({ children, entering, style, ground = true }) {
           through the join rather than being swapped at it. */}
       {ground && <SageGround />}
       {children}
-      <div className="version-stamp" title="Build version">v{APP_VERSION}</div></div>;
+      <div className="version-stamp" title="Build version">v{APP_VERSION}{nativeBuild ? ` \u00b7 build ${nativeBuild}` : ""}</div></div>;
 }
 
 /* One shell for every module.
