@@ -220,6 +220,9 @@ private struct Clock: View {
         .tracking(1.1)
         .foregroundStyle(.white.opacity(0.42))
         .lineLimit(1)
+        /* Allowed to give way. It is a label on a number, and the headline
+           beside it is a sentence somebody has to read. */
+        .layoutPriority(-1)
     }
   }
 }
@@ -406,12 +409,23 @@ private struct LockScreen: View {
     let ac = accent(ph)
     /* The card is as tall as what is on it and no taller. It used to be laid
        out to fill the system's 160 points, which put a hole between the words
-       and the buttons on every phase that did not need the room. */
-    VStack(alignment: .leading, spacing: 10) {
+       and the buttons on every phase that did not need the room.
+
+       A rail is 26 of those points, though, so the phases that have one came
+       out comfortably taller than the phases that do not and the short ones
+       read as squeezed. The answer is not to go back to pinning every card to
+       160 — that is the hole again — it is to let the rows that ARE there sit
+       further apart. */
+    VStack(alignment: .leading, spacing: showsRail(s, ph) ? 10 : 13) {
       HStack(alignment: .center, spacing: 12) {
         BigGlyph(s: s, ph: ph)
         VStack(alignment: .leading, spacing: 3) {
+          /* The headline is the sentence; the clock is a number beside it.
+             Without a priority the two negotiated as equals and the sentence
+             lost — the card read "With a custo…" and "Requesting Fl…", which
+             is the one thing on here that has to be readable at a glance. */
           HeadlineText(s: s, ph: ph, size: ph == .up ? 22 : 17)
+            .layoutPriority(2)
           if let cap = caption(s, ph) {
             Text(cap)
               .font(.system(size: 11.5, weight: ph == .customer || ph == .asking || ph == .confirm || ph == .desk ? .bold : .medium))
@@ -431,7 +445,8 @@ private struct LockScreen: View {
         Buttons(ph: ph, s: s)
       }
     }
-    .padding(14)
+    .padding(.horizontal, 14)
+    .padding(.vertical, showsRail(s, ph) ? 14 : 16)
     .opacity(ph == .gone ? 0.75 : 1)
     /* The accent bloom, over a ground that is nearly off. On an OLED lock
        screen those pixels are not lit at all, so the card stops being a grey
