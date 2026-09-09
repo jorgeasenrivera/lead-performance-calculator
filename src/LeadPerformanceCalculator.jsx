@@ -37531,6 +37531,28 @@ const SAGE_CSS = `
 .mf .q-flag-sel{ background:#fff; border:1px solid var(--mfline); color:var(--mfink); border-radius:10px; font-family:var(--mffont); font-size:12px; padding:6px 8px; }
 .mf .q-rm{ color:var(--c-rose); }
 
+/* ---- the queue row on a tablet ----
+   Between a phone and a desk the row has the desktop's contents and nowhere
+   near its width, so everything that could wrap did: the name onto two lines,
+   the status away from its own wait time, the buttons onto a second row. The
+   row is a single scannable line or it is not doing its job — a manager reads
+   down this list looking for one person.
+
+   Two things give the width back. The "today" and "open" counts step out,
+   because they are context rather than the thing being done, and they are on
+   the person's own card either way. And the name and its status stop wrapping,
+   with the name taking an ellipsis if somebody's is genuinely too long, which
+   is the one place a truncation is better than a fold. */
+@media (min-width:701px) and (max-width:1279px){
+  .mf .q-row{ gap:10px; }
+  .mf .q-who{ min-width:0; }
+  .mf .q-nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .mf .q-meta{ white-space:nowrap; flex-wrap:nowrap; }
+  .mf .q-ups{ display:none; }
+  .mf .q-row-actions{ flex-wrap:nowrap; flex:0 0 auto; }
+  .mf .q-row-actions .btn{ white-space:nowrap; }
+}
+
 /* panels */
 .mf .q-missing, .mf .f-unmatched, .mf .q-add{ background:#fff; border:1px solid var(--mfline); border-radius:16px; box-shadow:0 1px 2px rgba(16,32,52,.04); }
 .mf .q-add{ padding:12px 16px; }
@@ -37549,7 +37571,13 @@ const SAGE_CSS = `
 .mf-lower{ display:grid; grid-template-columns:1fr; gap:16px; }
 .mf-main{ min-width:0; }
 .mf-side{ min-width:0; }
-@media (min-width:1080px){ .mf-lower{ grid-template-columns:minmax(0,1fr) 370px; align-items:start; } }
+/* The sidebar costs the line list 370px plus a gap, and the list is the part
+   with the work in it. At 1080 the split was too eager: an iPad in landscape is
+   1180 and was handing Smart assign a column while squeezing every queue row
+   into ~590px, which is where the names started wrapping onto two lines and the
+   buttons onto two rows. Landscape was worse than portrait for that reason
+   alone. 1280 is the width where both halves actually fit. */
+@media (min-width:1280px){ .mf-lower{ grid-template-columns:minmax(0,1fr) 370px; align-items:start; } }
 
 /* Smart assign panel */
 .sa{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:16px; position:sticky; top:16px; }
