@@ -74,6 +74,30 @@ export function stationModeOf(config, storeId) {
 }
 
 /**
+ * Whether this store actually has a phone room.
+ *
+ * Every store gets a default plan so the desk has something to draw, which
+ * means "does a plan exist" cannot be the question — it is always yes. A store
+ * running the Phone Line as a pure call rotation, with no desks at all, would
+ * otherwise be shown six imaginary chairs on its people's phones.
+ *
+ * So the room is real when the store has said so, one of three ways: it drew
+ * its own plan, it chose the desks-only mode, or somebody has actually taken a
+ * desk today. The last one matters because a store using the default six can
+ * start using them without touching a setting, and the room should appear the
+ * moment the first person sits down rather than the day somebody remembers to
+ * configure it.
+ */
+export function roomInUse(config, storeId, row) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  const drawn = st && st.stationPlan && seatsOf(st.stationPlan).length > 0;
+  if (drawn) return true;
+  if (stationModeOf(config, storeId) === "open") return true;
+  if (Object.keys((row && row.stations) || {}).length > 0) return true;
+  return ((row && row.sits) || []).length > 0;
+}
+
+/**
  * Whose desk this is, when a desk belongs to somebody.
  *
  * A BDC agent sits at the same desk every day, and a board that cannot say so

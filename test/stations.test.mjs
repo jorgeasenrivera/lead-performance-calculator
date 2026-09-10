@@ -634,3 +634,31 @@ test("an owner who has left the roster is not offered", () => {
   assert.equal(ownerAction(board, board[0], named), null);
   assert.equal(ownerAction(board, board[0], null), null);
 });
+
+/* ---- does this store have a phone room at all ---- */
+import { roomInUse } from "../api/_stations.mjs";
+
+test("a store with no desks is not shown six imaginary ones", () => {
+  /* Every store gets a default plan so the desk has something to draw, so
+     "does a plan exist" is always yes and cannot be the question. A store
+     running the Phone Line as a pure call rotation has no room. */
+  assert.equal(roomInUse({ stores: [{ id: "a" }] }, "a", {}), false);
+  assert.equal(roomInUse(null, "a", null), false);
+});
+
+test("a store says it has a room by drawing one, choosing the mode, or using it", () => {
+  const drew = { stores: [{ id: "a", stationPlan: { seats: [{ n: "1", x: 5, y: 5 }] } }] };
+  assert.equal(roomInUse(drew, "a", {}), true, "drew its own plan");
+  assert.equal(roomInUse({ stores: [{ id: "a", stationMode: "open" }] }, "a", {}), true, "chose the desks");
+  /* And a store on the default six starts using them without touching a
+     setting: the room appears when the first person sits down. */
+  const row = claimStation({}, "3", DEV, T1).row;
+  assert.equal(roomInUse({ stores: [{ id: "a" }] }, "a", row), true, "somebody is in a chair");
+  const after = releaseStation(row, "3", T2, "out").row;
+  assert.equal(roomInUse({ stores: [{ id: "a" }] }, "a", after), true, "and it stays for the rest of the day");
+});
+
+test("an empty drawn plan is not a room", () => {
+  /* Somebody started arranging and did not finish. */
+  assert.equal(roomInUse({ stores: [{ id: "a", stationPlan: { seats: [] } }] }, "a", {}), false);
+});

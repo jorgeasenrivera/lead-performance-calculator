@@ -29,7 +29,7 @@ import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
-  stationModeOf, DEFAULT_STATION_PLAN, ownerAction } from "../api/_stations.mjs";
+  stationModeOf, DEFAULT_STATION_PLAN, ownerAction, roomInUse } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
@@ -10684,7 +10684,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   return (
     <>
       {list.length > 1 && (
-        <div className="ar-switch" role="tablist" aria-label="Which room">
+        <div className={"ar-switch" + (room === "floor" ? " ar-up" : "")} role="tablist" aria-label="Which room">
           <span className="ar-ind" style={{ transform: `translateX(${list.indexOf(room) * 100}%)`, width: `${100 / list.length}%` }} />
           {list.map((r) => (
             <button key={r} type="button" role="tab" aria-selected={room === r}
@@ -10702,6 +10702,91 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
         : <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
             account={account} onSignOut={onSignOut} />}
     </>
+  );
+}
+
+/**
+ * The room, on the salesperson's own phone.
+ * -------------------------------------------------------------------------
+ * The line is the thing that matters LAST. A phone room with a free chair does
+ * not need anybody queuing for a call — it needs them to go and sit down — so
+ * this leads with the desks and lets the position in line take over only when
+ * every one of them is taken, which is exactly what the rotation itself does.
+ *
+ * Four things it can say, in the order they matter to the person reading:
+ *
+ *   you are at one       where, and for how long
+ *   one is yours         the rotation has offered them a chair, with the clock
+ *                        on it. The strongest thing this screen ever says
+ *   there are free ones  which numbers. Go and take one
+ *   the room is full     who is in it, and now the line is the answer
+ *
+ * Selecting a desk from here is not built: that is the tag on the desk, and
+ * until it exists the honest thing is to name the free ones and let them walk
+ * over. What is drawn is what is known.
+ */
+function SfRoom({ cfg, store, row, meId }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 15000);
+    return () => clearInterval(t);
+  }, []);
+  const plan = useMemo(() => stationPlanOf(cfg, store), [cfg, store]);
+  const mode = stationModeOf(cfg, store);
+  const board = useMemo(
+    () => stationLine(plan, row, { now: Date.now(), offers: mode === "rotation" }),
+    [plan, row, mode, tick]); // eslint-disable-line
+
+  if (!roomInUse(cfg, store, row)) return null;
+
+  const mine = board.seats.find((s) => s.taken && s.id === meId) || null;
+  const offered = board.seats.find((s) => s.offerTo === meId) || null;
+  const free = board.seats.filter((s) => !s.taken);
+  const first = (n) => String(n || "").split(" ")[0];
+
+  /* The one case worth shouting about: a chair with their name on it and a
+     clock running. Everything else here is information; this is an
+     instruction. */
+  if (offered) return (
+    <div className="sf-room due">
+      <div className="sf-room-h">Station {offered.n} is yours</div>
+      <p className="sf-room-p">
+        Go and sit down. It moves to the next person in {stnLeft(offered.offerLeftMs)}.
+      </p>
+    </div>
+  );
+
+  if (mine) return (
+    <div className="sf-room on">
+      <div className="sf-room-h">You&rsquo;re at station {mine.n}</div>
+      <p className="sf-room-p">
+        {qWaitLabel(qMinsSince(mine.at))} so far
+        {mine.state === "held" ? " · the board has you greyed, tap anything to clear it" : ""}
+      </p>
+    </div>
+  );
+
+  return (
+    <div className="sf-room">
+      <div className="sf-room-h">
+        {free.length === 0
+          ? `All ${board.seats.length} stations are taken`
+          : `${free.length} ${free.length === 1 ? "station is" : "stations are"} free`}
+      </div>
+      <p className="sf-room-p">
+        {free.length === 0
+          ? "The line is how the next chair gets handed out."
+          : `Take ${free.length === 1 ? "it" : "one"}: ${free.map((s) => s.n).join(", ")}.`}
+      </p>
+      <div className="sf-room-map">
+        {board.seats.map((s) => (
+          <span key={s.n} className={"sf-seat" + (s.taken ? " on" : "") + (s.state === "held" ? " held" : "") + (s.offerTo ? " due" : "")}>
+            <b>{s.n}</b>
+            <em>{s.taken ? first(s.label) : s.offerTo ? first(s.offerLabel) : "free"}</em>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -11094,6 +11179,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </button>
           </div>
         </div>
+        {variant.kind === "line" && (
+          <SfRoom cfg={cfg} store={store} row={row} meId={meId} />
+        )}
         <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
@@ -39070,7 +39158,10 @@ const SAGE_CSS = `
 /* The room switch on a salesperson's phone. Floats above whichever shell is
    showing rather than living inside either, so neither had to be reworked to
    gain it, and it is drawn only when the store offers more than one room. */
-/* 101 and not 60, which is where this started and where it was unreachable:
+/* At the foot, where a thumb is, and in the same glass pill the shell already
+   uses for its own tabs.
+
+   101 and not 60, which is where this started and where it was unreachable:
    the shell root itself is z-index 100 and creates a stacking context, so
    anything below that number is painted under the whole screen no matter what
    it sits above inside it. Nothing in the shell is above the switch now, which
@@ -39078,11 +39169,19 @@ const SAGE_CSS = `
    few seconds it is up is the better half of that trade against navigation a
    finger cannot reach. */
 .ar-switch{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
-  top:calc(env(safe-area-inset-top, 0px) + 10px);
+  bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
   display:flex; padding:3px; border-radius:999px; overflow:hidden;
-  background:rgba(14,20,32,.62); border:1px solid rgba(255,255,255,.14);
+  background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.14);
   backdrop-filter:blur(14px) saturate(140%); -webkit-backdrop-filter:blur(14px) saturate(140%);
-  box-shadow:0 10px 26px -12px rgba(0,0,0,.6); }
+  box-shadow:0 10px 26px -12px rgba(0,0,0,.7); }
+/* The floor shell carries its own pill down there. The room switch is the
+   higher-level choice, so it sits above it rather than beside it. The phone
+   line has no pill of its own, so there it keeps the foot to itself. */
+.ar-switch.ar-up{ bottom:calc(env(safe-area-inset-bottom, 0px) + 76px); }
+/* The switch floats, so the shell under it needs somewhere for its last card
+   to end. Only when the switch is actually there: a store with one room should
+   not carry a gap for a control it does not draw. */
+.lpc:has(> .ar-switch) .q-page{ padding-bottom:64px; }
 .ar-ind{ position:absolute; left:3px; top:3px; bottom:3px; border-radius:999px;
   background:rgba(255,255,255,.16); transition:transform .28s cubic-bezier(.2,.8,.2,1); }
 .ar-tab{ position:relative; display:flex; align-items:center; gap:6px; padding:7px 15px;
@@ -42281,6 +42380,37 @@ const SAGE_CSS = `
         color:rgba(190,215,255,.72); letter-spacing:.01em; margin-top:2px; }
       .sf-stnday-note { margin:9px 0 0; font-size:10.5px; line-height:1.5;
         font-family:var(--sfmono); color:rgba(237,242,234,.34); }
+
+      /* The room, on their own phone. Leads with the desks because a room with
+         a free chair does not need anybody queuing for a call. */
+      .sf-room { margin:14px 14px 0; padding:13px 14px; border-radius:14px;
+        background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09); }
+      .sf-room-h { font-family:var(--sffont); font-size:15px; font-weight:600;
+        color:rgba(237,242,234,.95); letter-spacing:-.01em; }
+      .sf-room-p { margin:4px 0 0; font-family:var(--sfmono); font-size:11px; line-height:1.5;
+        color:rgba(237,242,234,.5); }
+      /* A chair with their name on it and a clock running is the strongest
+         thing this screen ever says, so it is the only part that is not
+         quiet. */
+      .sf-room.due { background:rgba(120,160,255,.16); border-color:rgba(150,185,255,.5); }
+      .sf-room.due .sf-room-h { color:#fff; }
+      .sf-room.due .sf-room-p { color:rgba(220,232,255,.82); }
+      .sf-room.on { background:rgba(140,200,160,.12); border-color:rgba(150,210,175,.32); }
+      /* A grid rather than a wrapping row: three across mirrors how the default
+         room is actually laid out, and a wrapped flex row stretches whatever
+         is left over into a last row of double-width chairs. */
+      .sf-room-map { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin-top:11px; }
+      .sf-seat { display:flex; flex-direction:column; align-items:center; gap:1px;
+        padding:7px 4px; border-radius:10px; background:rgba(255,255,255,.05);
+        border:1px dashed rgba(255,255,255,.18); }
+      .sf-seat b { font-family:var(--sfmono); font-size:12px; color:rgba(237,242,234,.8); }
+      .sf-seat em { font-style:normal; font-family:var(--sfmono); font-size:9.5px;
+        color:rgba(237,242,234,.4); max-width:100%; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }
+      .sf-seat.on { background:rgba(255,255,255,.16); border-style:solid; border-color:transparent; }
+      .sf-seat.on em { color:rgba(237,242,234,.75); }
+      .sf-seat.held { opacity:.55; }
+      .sf-seat.due { border-style:solid; border-color:rgba(150,185,255,.6); }
       .sf-stnday-row.on .sf-stnday-why { color:#cfe0ff; }
       /* ---- plates + smart assign, in the new card language ----
          the tables keep their markup; what changes is the shell around them,
