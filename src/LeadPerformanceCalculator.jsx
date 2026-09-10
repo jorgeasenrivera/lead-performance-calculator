@@ -27,7 +27,8 @@ import {
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
-  releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS } from "../api/_stations.mjs";
+  releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
+  stationLine, rollOffers, takeOffer, skipOffer } from "../api/_stations.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -11618,6 +11619,11 @@ const TL_MAP = {
   "timer-pass": ["passed on the timer", "gray"],
   "left": ["left the floor", "gray"],
   "accidental-undo": ["cleared an auto check-in", "gray"],
+  /* A station skip is a desk decision with a name and a reason on it, which is
+     exactly what this list is for. The rest of the station traffic — sitting
+     down, standing up, an offer lapsing — stays out: it is already the sits
+     record, and putting it here would bury the floor in furniture. */
+  "station-skipped": ["was skipped for a station", "gray"],
 };
 function ActivityTimeline({ history, nameOf, horizontal }) {
   const events = (history || []).filter((e) => TL_MAP[e.action]).slice(-16).reverse();
@@ -11791,22 +11797,26 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
    Phase one only: take a seat, leave a seat. No gating on who may sit, no
    greying for somebody who has walked off, no hours counted. Each of those
    reads what this writes. */
-function StationBoard({ config, store, row, roster, onRow, date }) {
+function StationBoard({ config, store, row, roster, onRow, date, userName, nameOf }) {
   const [busy, setBusy] = useState(null);
   const [pick, setPick] = useState(null);        // the seat awaiting a name
+  const [byName, setByName] = useState(false);   // "someone else", over an offer
   const plan = stationPlanOf(config, store.id);
-  /* Re-read on a timer, because held is a function of elapsed time and nothing
-     writes to the row when a seat goes quiet — without this a seat greys only
-     when something else happens to re-render the board. */
+  /* Re-read on a timer, because held and the offer clock are both functions of
+     elapsed time and nothing writes to the row when a seat goes quiet — without
+     this a seat greys, and an offer lapses, only when something else happens to
+     re-render the board. Ten seconds rather than thirty now that a countdown is
+     on screen: a timer that jumps in half-minutes reads as broken. */
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    const t = setInterval(() => setTick((n) => n + 1), 10000);
     return () => clearInterval(t);
   }, []);
-  const seats = useMemo(() => stationPresence(plan, row, { now: Date.now() }),
+
+  const board = useMemo(() => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID] }),
     [plan, row, tick]); // eslint-disable-line
+  const { seats, waiting, queued, next, free, full } = board;
   const taken = new Set(seats.filter((s) => s.taken).map((s) => s.id));
-  const free = seats.filter((s) => !s.taken).length;
   const held = seats.filter((s) => s.state === "held").length;
 
   /* Anybody on the roster who is not already in a seat. Sitting somewhere is
@@ -11817,24 +11827,80 @@ function StationBoard({ config, store, row, roster, onRow, date }) {
   const write = async (fn, label) => {
     setBusy(label);
     try {
-      const next = await mutateQueueRow(store.id, date, (cur) => {
+      const next2 = await mutateQueueRow(store.id, date, (cur) => {
         const res = fn(cur || {});
         return res.changed ? res.row : null;
       });
-      if (next && onRow) onRow(next);
+      if (next2 && onRow) onRow(next2);
     } catch (e) {
       console.error("station write", e);
-    } finally { setBusy(null); setPick(null); }
+    } finally { setBusy(null); setPick(null); setByName(false); }
   };
 
+  /* Moving the offers on is the one write this screen makes without anybody
+     pressing anything, so it has to be quiet. rollOffers is idempotent and
+     reports whether it actually moved; a room that has not changed writes
+     nothing, which is what keeps a board left open all afternoon from
+     rewriting the row every ten seconds on every device looking at it.
+
+     A ref rather than state because a roll that is still in flight must not be
+     started again by the next tick, and re-rendering for that would be a
+     re-render nobody sees. */
+  const rolling = useRef(false);
+  useEffect(() => {
+    let gone = false;
+    (async () => {
+      if (rolling.current || busy) return;
+      rolling.current = true;
+      try {
+        let moved = false;
+        const got = await mutateQueueRow(store.id, date, (cur) => {
+          const r = rollOffers(cur || {}, plan, Date.now(), { skip: [TEST_ID] });
+          moved = r.changed;
+          return r.changed ? r.row : null;
+        });
+        if (moved && got && !gone && onRow) onRow(got);
+      } catch (e) { /* the next tick tries again; nothing is lost by one miss */ }
+      finally { rolling.current = false; }
+    })();
+    return () => { gone = true; };
+  }, [store.id, date, tick]); // eslint-disable-line
+
   const sitLabel = (at) => (at ? qWaitLabel(qMinsSince(at)) : "");
+  /* A countdown reads in minutes and seconds or it does not read as urgent. */
+  const leftLabel = (ms) => {
+    const s = Math.max(0, Math.round(ms / 1000));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  const first = (nm) => String(nm || "").split(" ")[0];
+  /* The board says full names; the chips say first names. The line carries
+     short labels and the roster carries the real one, so the resolver the tab
+     already has is handed down rather than a second copy made here. */
+  const who = (id) => (nameOf ? nameOf(id) : id);
+
+  const picked = pick ? seats.find((s) => s.n === pick) : null;
+  const offered = picked && picked.offerTo ? picked : null;
+
+  const seatOffered = () => write(
+    (cur) => takeOffer(cur, offered.n, { id: offered.offerTo, label: offered.offerLabel }, qNowIso()),
+    offered.n);
+  const skip = () => {
+    const why = window.prompt(
+      `Skipping ${offered.offerLabel} for station ${offered.n}.\nWhy? (it goes in today's history, and station ${offered.n} moves to the next person)`, "");
+    if (why === null) return;
+    const reason = why.trim();
+    if (!reason) { alert("A skip needs a reason. Nothing was changed."); return; }
+    write((cur) => skipOffer(cur, offered.n, qNowIso(), { by: userName || "the desk", why: reason }), offered.n);
+  };
 
   return (
     <div className="stn">
       <div className="stn-head">
         <div><div className="stn-cap">Stations</div><b>The phone room</b></div>
         <span className="stn-count">
-          {free} free of {seats.length}{held > 0 ? ` \u00b7 ${held} away` : ""}
+          {full ? `All ${seats.length} taken` : `${free} free of ${seats.length}`}
+          {held > 0 ? ` \u00b7 ${held} away` : ""}
+          {waiting.length > 0 ? ` \u00b7 ${waiting.length} waiting` : ""}
         </span>
       </div>
 
@@ -11842,22 +11908,73 @@ function StationBoard({ config, store, row, roster, onRow, date }) {
         deco={(t) => {
           const seat = seats.find((s) => s.n === String(t.n));
           if (!seat) return {};
-          return {
-            cls: seat.state === "held" ? "stn-on stn-held" : seat.taken ? "stn-on" : "stn-off",
-            sub: seat.taken ? (seat.label || "").split(" ")[0] : null,
-            flag: seat.taken
-              ? (seat.state === "held" ? `away ${sitLabel(seat.seen)}` : sitLabel(seat.at))
-              : null,
-          };
+          if (seat.taken) {
+            return {
+              cls: seat.state === "held" ? "stn-on stn-held" : "stn-on",
+              sub: first(seat.label),
+              flag: seat.state === "held" ? `away ${sitLabel(seat.seen)}` : sitLabel(seat.at),
+            };
+          }
+          /* A seat with somebody's name on it is not the same as an empty one,
+             and the difference is the whole of this phase: the room is not
+             waiting for a manager, it is waiting for Priya. */
+          return seat.offerTo
+            ? { cls: "stn-off stn-due", sub: first(seat.offerLabel),
+                flag: leftLabel(seat.offerLeftMs) }
+            : { cls: "stn-off", sub: null, flag: null };
         }}
         onTap={(t) => {
           const seat = seats.find((s) => s.n === String(t.n));
           if (!seat || busy) return;
           if (seat.taken) write((cur) => releaseStation(cur, seat.n, qNowIso(), "out"), seat.n);
-          else setPick(pick === seat.n ? null : seat.n);
+          else { setByName(false); setPick(pick === seat.n ? null : seat.n); }
         }} />
 
-      {pick && (
+      {/* Who the next seat to come free belongs to. Anybody whose name is
+          already on a chair up there is left out of this: their offer is on the
+          map, and printing it twice reads as two different facts about one
+          person. When every seat is taken, nobody holds an offer and this
+          becomes the whole waiting list — which is the point of the phase.
+
+          "for a station" rather than "in line" because this order is the
+          rotation's, not the Phone Line's: somebody who has already had a
+          chair today is behind somebody who has not, and they are still
+          exactly where they were for the next call. */}
+      {queued.length > 0 && (
+        <div className="stn-wait">
+          <span className="stn-wait-cap">{full ? "Waiting for a station" : "Next for a station"}</span>
+          <span className="stn-wait-nm">{who(next.id)}</span>
+          {queued.length > 1 && (
+            <span className="stn-wait-rest">
+              then {queued.slice(1, 4).map((p) => first(who(p.id))).join(", ")}
+              {queued.length > 4 ? ` +${queued.length - 4}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+
+      {pick && offered && !byName && (
+        <div className="stn-pick">
+          <div className="stn-pick-head">
+            Station {pick} is {offered.offerLabel}&rsquo;s
+            <span className="stn-left">{leftLabel(offered.offerLeftMs)} left</span>
+          </div>
+          <p className="stn-pick-sub">
+            It goes to the next person on the line when the clock runs out. Skipping needs a reason
+            and costs them nothing but this chair.
+          </p>
+          <div className="stn-pick-names">
+            <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
+              onClick={seatOffered}>Seat {first(offered.offerLabel)}</button>
+            <button type="button" className="btn btn-sm" disabled={!!busy} onClick={skip}>Skip&hellip;</button>
+            <button type="button" className="btn btn-sm" disabled={!!busy}
+              onClick={() => setByName(true)}>Someone else</button>
+          </div>
+          <button type="button" className="btn btn-sm stn-cancel" onClick={() => setPick(null)}>Cancel</button>
+        </div>
+      )}
+
+      {pick && (!offered || byName) && (
         <div className="stn-pick">
           <div className="stn-pick-head">Who is taking station {pick}?</div>
           {canSit.length === 0
@@ -11873,13 +11990,16 @@ function StationBoard({ config, store, row, roster, onRow, date }) {
                 ))}
               </div>
             )}
-          <button type="button" className="btn btn-sm stn-cancel" onClick={() => setPick(null)}>Cancel</button>
+          <button type="button" className="btn btn-sm stn-cancel"
+            onClick={() => { setPick(null); setByName(false); }}>Cancel</button>
         </div>
       )}
 
       <div className="stn-hint">
         {pick ? "Pick a name, or tap the seat again to cancel."
-              : "Tap a free station to seat somebody. Tap an occupied one to free it."}
+          : seats.some((s) => s.offerTo)
+            ? "A station with a name on it is being offered \u2014 tap it to seat them, skip them, or choose somebody else."
+            : "Tap a free station to seat somebody. Tap an occupied one to free it."}
       </div>
     </div>
   );
@@ -12143,7 +12263,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
       {variant.kind === "line" && row && (
         <StationBoard config={config} store={store} row={row} roster={salesRoster}
-          onRow={setRow} date={date} />
+          onRow={setRow} date={date} userName={userName} nameOf={realName} />
       )}
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />
@@ -37931,6 +38051,40 @@ const SAGE_CSS = `
   box-shadow:0 6px 16px -10px rgba(8,20,60,.35); }
 .stn-map .fbp-tbl.stn-on.stn-held .fbp-sub{ color:var(--mfink3); }
 .stn-map .fbp-tbl.stn-on.stn-held .fbp-flag{ background:rgba(16,32,52,.08); color:var(--mfink2); }
+
+/* Offered: free, but with a name on it. Read as a dashed chip that has
+   brightened rather than as a taken one — the seat is still empty, and drawing
+   it like an occupied chair would have a manager walk over to an empty desk.
+   The pulse is what says the clock is running. */
+.stn-map .fbp-tbl.stn-off.stn-due{ background:rgba(255,255,255,.3); color:#fff;
+  border-style:solid; border-color:rgba(255,255,255,.85);
+  animation:stnDue 2.4s ease-in-out infinite; }
+.stn-map .fbp-tbl.stn-off.stn-due .fbp-sub{ color:rgba(255,255,255,.92); }
+.stn-map .fbp-tbl.stn-off.stn-due .fbp-flag{ background:#fff; color:var(--a1); font-weight:600; }
+@keyframes stnDue{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,255,255,.42); }
+  50%{ box-shadow:0 0 0 7px rgba(255,255,255,0); } }
+@media (prefers-reduced-motion: reduce){ .stn-map .fbp-tbl.stn-off.stn-due{ animation:none; } }
+
+/* Who the room is waiting on, under the map. Reads without a tap, because the
+   answer to "why is station 4 empty" is usually "it is Ana's, for ninety more
+   seconds". */
+.stn-wait{ display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-top:11px;
+  padding:9px 12px; border-radius:12px; background:color-mix(in srgb,var(--a1) 6%, #fff);
+  border:1px solid color-mix(in srgb,var(--a1) 18%, transparent); }
+.stn-wait-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--a1); }
+.stn-wait-nm{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); }
+.stn-wait-rest{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); }
+.stn-pick-sub{ margin:0 0 10px; font-size:12.5px; line-height:1.45; color:var(--mfink2); }
+/* On a handset the title and the count fight over one row and the title wraps
+   mid-phrase. They are two different readings anyway, so give them a line each
+   rather than shrinking either. */
+@media (max-width:700px){
+  .stn-head{ flex-direction:column; gap:4px; }
+  .stn-count{ padding-top:0; }
+}
+.stn-left{ float:right; font-family:var(--mfmono); font-size:12px; color:var(--a1);
+  font-weight:500; letter-spacing:.02em; }
 
 .stn-pick{ margin-top:12px; padding:12px 14px; border-radius:14px;
   background:color-mix(in srgb,var(--a1) 6%, #fff); border:1px solid color-mix(in srgb,var(--a1) 22%, transparent); }
