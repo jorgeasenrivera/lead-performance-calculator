@@ -22,9 +22,9 @@ import {
 } from "../api/_report-parsers.mjs";
 import {
   storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
-  BOARD_STAT_FIELDS, slimFloorStats,
+  BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
-import { phoneExtras, withRocked, pointsForDay, stampLineMoves } from "../api/_phone-rows.mjs";
+import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -3643,11 +3643,26 @@ export default function LeadPerformanceCalculator() {
   }
   if (wantsFloor) {
     if (floorLinks === undefined) return wrap(<Shell><LoadingScreen /><Style /></Shell>);
+    /* Keyed by the account, not by the phone. One key for the whole device
+       meant the last store ANY account visited decided where the NEXT account
+       landed: sign in as a manager, look at one store, sign in as a
+       salesperson, and their corner opens at the manager's store. It only
+       shows when somebody is linked at more than one rooftop, which is exactly
+       the person this remembering exists for. */
+    const homeKey = "lpcf:home:" + (session.id || "anon");
     let remembered = null;
-    try { remembered = localStorage.getItem("lpcf:home"); } catch (e) {}
+    try {
+      remembered = localStorage.getItem(homeKey);
+      /* The old device-wide key is dropped rather than migrated. Carrying its
+         value over would hand the first person to sign in after this ships the
+         very store this is meant to stop them landing in. Losing it costs one
+         sign-in at whichever rooftop is listed first, which homeLinkFor
+         already handles. */
+      localStorage.removeItem("lpcf:home");
+    } catch (e) {}
     const home = homeLinkFor(floorLinks, remembered);
     if (home) {
-      try { localStorage.setItem("lpcf:home", home.store); } catch (e) {}
+      try { localStorage.setItem(homeKey, home.store); } catch (e) {}
       /* Their corner, through the account. The daily QR stays the second door
          into the very same screen. No ground: the phone routes draw their own. */
       return wrap(<Shell ground={false}>
@@ -6102,7 +6117,7 @@ async function publishBoard(config, storeId, sdata) {
     const rows = ((sdata && sdata.activity) || {})[t];
     const store = (config?.stores || []).find((s2) => s2.id === storeId);
     const bar = (store?.activityStandards || {}).rockEdStars ?? DEFAULT_ACTIVITY_STANDARDS.rockEdStars;
-    if (rows) { try { await saveShared(floorStatsKey(storeId, t), slimFloorStats(withRocked(sdata, t, rows, bar))); } catch (e) {} }
+    if (rows) { try { await saveShared(floorStatsKey(storeId, t), slimFloorStats(withChannels(withRocked(sdata, t, rows, bar), sdata, t))); } catch (e) {} }
     const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
     if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
     return { ok, err: ok ? null : (lastSaveError || "unknown") };
@@ -8107,6 +8122,26 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
+    /* ---- put the keyboard away BEFORE anything is measured ----
+       On a phone the press that starts all of this happens with the keyboard
+       up, which means the viewport is roughly half the screen. The jump
+       measures the window once, sizes its canvas to that, and centres itself
+       in it — and then the keyboard leaves and the window doubles. The result
+       is the animation sitting high on the screen and stopping in a hard line
+       just past the middle, with the bottom half empty. Measured: --jy 230px
+       against an 844px window, canvas 390x460 over a 390x844 screen.
+
+       The canvas cannot be resized once it is running: it is handed to a
+       worker, which owns it from then on. So the fix is to not measure a
+       viewport that is about to change. Blur first, wait for the layout to
+       settle, then start. The wait is a frame plus a beat — long enough for
+       the keyboard's own animation to have handed the height back, short
+       enough that nobody perceives it as a delay before the press responds. */
+    try {
+      const el = document.activeElement;
+      if (el && typeof el.blur === "function") el.blur();
+    } catch (e) {}
+    await settleViewport();
     /* ---- hold the screen for the length of the jump ----
        The sign-in call is not the only thing that brings the session in: the
        client fires SIGNED_IN the moment it succeeds, the app's own auth listener
@@ -8454,14 +8489,54 @@ function rememberView(v) {
   try { localStorage.setItem(LAST_VIEW_KEY, v); } catch (e) {}
 }
 
+/* Wait for the window to stop changing size, up to a bound. Used before the
+   jump measures anything: a keyboard leaving the screen is a resize, and the
+   arrival is built from one measurement taken once. Resolves on the first
+   quiet frame after a change, or after `cap` regardless, because a viewport
+   that never settles must not hold the sign-in press. */
+function settleViewport({ floor = 200, cap = 520 } = {}) {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve();
+    /* A floor, not just a quiet check. The keyboard does not begin leaving the
+       instant it is told to — iOS animates it out over about a quarter of a
+       second — so polling for "the height stopped changing" answers yes before
+       it has started changing at all. First draft of this resolved at 80ms
+       against a resize that arrived at 120ms and measured the short viewport
+       anyway, which is the bug it was written to fix. */
+    const t0 = Date.now();
+    let done = false;
+    let last = window.innerHeight;
+    let quiet = 0;
+    const finish = () => { if (done) return; done = true; clearInterval(iv); clearTimeout(to); resolve(); };
+    const iv = setInterval(() => {
+      const h = window.innerHeight;
+      if (h !== last) { last = h; quiet = 0; return; }
+      if (Date.now() - t0 < floor) return;
+      /* Two quiet ticks past the floor, so a resize still in flight is not
+         read as settled. */
+      if (++quiet >= 2) finish();
+    }, 40);
+    const to = setTimeout(finish, cap);
+  });
+}
+
 const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
 /* The new arrival's clock. cruiseMin is the shortest stay in the tunnel even on
    an instant load, so the destination sign gets long enough on screen to be
    read. cruiseCap is the honest ceiling: if the store has not answered by then,
    the jump lands anyway — onto whatever screen the app has to show about it
    (the stuck screen, the mismatch panel), because a tunnel that never ends is a
-   spinner with better art. */
-const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 15000, burst: 520 };
+   spinner with better art.
+
+   The cap was 15 seconds, which was that spinner. Measured against a realistic
+   store read: the streaks ran from 640ms to 4.8s while the sign-in screen sat
+   there, and then every remaining beat fired in its designed 1.4s. Nothing
+   after the tunnel was rushed — the tunnel overstayed by three times, and by
+   contrast the rest looked hurried and messy. At 3s the arrival keeps its
+   shape, and a store slower than that lands on the app's own loading state,
+   which is a screen that says what is happening rather than art that does
+   not. */
+const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };
 
 /* ---- what the jump is waiting for, and where it is going ----
    Told by the root, read by the engine each frame of the cruise. Module state
@@ -10344,9 +10419,16 @@ async function writeGoalNote(store, date, note) {
 
 async function loadMyDays(store, endDay, nameKeys) {
   /* Back to the first of the month at least: the corner draws the month as a
-     line, and ten days of a thirty-day month is a stub. */
+     line, and ten days of a thirty-day month is a stub. Thirty at least as
+     well, now that the closing sheet draws a thirty-day channel line — on the
+     2nd of a month the month-so-far is two days, which answers nothing about
+     whether somebody's closing has moved.
+
+     Thirty keys instead of ten costs one stamp read of a few bytes each, in
+     the request that was already going out; the values still come back only
+     for the days whose stamp has moved, which for a past day is never. */
   const dayOfMonth = parseInt(String(endDay || "").slice(8, 10)) || 1;
-  const days = lastDays(Math.max(SF_DAYS, dayOfMonth), endDay);
+  const days = lastDays(Math.max(30, dayOfMonth), endDay);
   if (!supabase) return null;
   const keys = days.map((d) => floorStatsKey(store, d));
   /* A day row holds the whole store's numbers for that day, and this asked for
@@ -12948,11 +13030,61 @@ function McSpine({ rows }) {
   );
 }
 
+/* The line itself. An inline SVG rather than a library: it is one path, two
+   axes worth of nothing, and a phone that should not download a chart engine
+   to draw thirty numbers. */
+function ChannelLine({ series, col, target = null }) {
+  const pts = series.filter((p) => p.rate != null);
+  if (pts.length < 2) {
+    return <div className="mc-cline-none">Not enough of a run yet. This fills in as the days import.</div>;
+  }
+  const W = 280, H = 96, P = 4;
+  const vals = pts.map((p) => p.rate).concat(series.map((p) => p.daily).filter((v) => v != null));
+  const top = Math.max(target || 0, ...vals) * 1.12 || 1;
+  const x = (i) => P + (i / (pts.length - 1)) * (W - P * 2);
+  const y = (v) => H - P - (v / top) * (H - P * 2);
+  const path = pts.map((p, i) => `${i ? "L" : "M"} ${x(i).toFixed(1)} ${y(p.rate).toFixed(1)}`).join(" ");
+  const first = pts[0].rate, last = pts[pts.length - 1].rate;
+  const move = Math.round((last - first) * 10) / 10;
+  return (
+    <div className="mc-cline">
+      <svg viewBox={`0 0 ${W} ${H}`} className="mc-cline-svg" aria-hidden="true">
+        {target != null && (
+          <line x1={P} x2={W - P} y1={y(target)} y2={y(target)} className="mc-cline-thr" />
+        )}
+        <path d={path} className="mc-cline-p" style={{ stroke: col }} />
+        {series.map((p, i) => {
+          if (p.daily == null) return null;
+          /* Where the day itself sits against the running rate. */
+          const idx = pts.findIndex((q) => q.day === p.day);
+          if (idx < 0) return null;
+          return <circle key={p.day} cx={x(idx)} cy={y(p.daily)} r="1.9" className="mc-cline-d" style={{ fill: col }} />;
+        })}
+        <circle cx={x(pts.length - 1)} cy={y(last)} r="3.4" className="mc-cline-now" style={{ fill: col }} />
+      </svg>
+      <div className="mc-cline-foot">
+        <b style={{ color: col }}>{Math.round(last * 10) / 10}%</b>
+        <span>
+          {move === 0 ? "level over " : (move > 0 ? "up " : "down ") + Math.abs(move) + " points over "}
+          {pts.length} day{pts.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="mc-cline-note">
+        The line is your month so far. The dots are single days, which swing on a
+        handful of leads &mdash; the line is the answer, the dots are why.
+      </div>
+    </div>
+  );
+}
+
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
                     line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [] }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   const [pickDay, setPickDay] = useState(null);
+  /* Which channel's thirty days are open, inside the closing sheet. Null is the
+     three bars; a key is one of them, expanded. */
+  const [openCh, setOpenCh] = useState(null);
   const offDim = offToday && offState !== "in";
 
   const a = mine || {};
@@ -13306,13 +13438,19 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <div className="mc-sheet">
             <div className="mc-sheet-head">
               <b>{sheet === "closing" ? "Closing" : sheet === "sched" ? new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long" }) : "The board"}</b>
-              <button type="button" className="mc-x" onClick={() => setSheet(null)} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
+              <button type="button" className="mc-x" onClick={() => { setSheet(null); setOpenCh(null); }} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
             </div>
             {sheet === "closing" && (
               <>
                 <div className="mc-clrow">
                   {closing.map((c) => (
-                    <div className="mc-cl" key={c.k}>
+                    /* A button now. These have always looked tappable and done
+                       nothing, which is worse than looking flat: the thirty-day
+                       line is the thing somebody actually came here to ask for. */
+                    <button type="button" key={c.k}
+                      className={"mc-cl" + (openCh === c.k ? " on" : "")}
+                      aria-expanded={openCh === c.k}
+                      onClick={() => { buzz(8); setOpenCh(openCh === c.k ? null : c.k); }}>
                       <b style={{ color: chColors[c.k] }}>{c.pct != null ? c.pct + "%" : "\u00b7"}</b>
                       <span className="vb"><i style={{ height: Math.round(((c.pct || 0) / maxPct) * 100) + "%", background: chColors[c.k] }} /></span>
                       <span className="lb" style={{ color: chColors[c.k] }}>{c.label}</span>
@@ -13321,9 +13459,20 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
                           <PixIcon glyph={c.pct >= prev[c.k] ? "triup" : "tridown"} size={9} /> {Math.abs(Math.round((c.pct - prev[c.k]) * 10) / 10)}
                         </span>
                       )}
-                    </div>
+                    </button>
                   ))}
                 </div>
+                {openCh && (
+                  <div className="mc-clopen">
+                    <div className="mc-clopen-head">
+                      <b style={{ color: chColors[openCh] }}>
+                        {(closing.find((c) => c.k === openCh) || {}).label} &middot; 30 days
+                      </b>
+                      <button type="button" className="mc-clopen-x" onClick={() => setOpenCh(null)}>Hide</button>
+                    </div>
+                    <ChannelLine series={channelSeries(days, openCh)} col={chColors[openCh]} />
+                  </div>
+                )}
                 <div className="mc-clfoot">
                   {closing.map((c) => c.leads != null ? `${c.label.toLowerCase()} ${c.u || 0} of ${c.leads}` : null).filter(Boolean).join(" \u00b7 ")}
                 </div>
@@ -14132,6 +14281,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
   }, []);
   const lightMode = theme === "light" || (theme === "auto" && sysLight);
+  /* Remembered for the next cold start, so index.html can paint this ground
+     before any of this has run. Without it the first paint is the browser's
+     white and the dark shell arrives over the top of it, which is the flash. */
+  useEffect(() => {
+    try { localStorage.setItem("lpcf:ground", lightMode ? "light" : "dark"); } catch (e) {}
+  }, [lightMode]);
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
@@ -32565,6 +32720,16 @@ function useNativeBuild() {
 
 function Shell({ children, entering, style, ground = true }) {
   const nativeBuild = useNativeBuild();
+  /* The other half of the first-paint ground. This shell is the manager's app
+     and the sign-in screen, both of which are light; the phone routes come
+     through here with ground={false} and record their own, which may be dark.
+     Gated on that flag so the two never fight over the key — the phone's
+     effect runs first, being deeper in the tree, and an ungated write here
+     would land on top of it. */
+  useEffect(() => {
+    if (!ground) return;
+    try { localStorage.setItem("lpcf:ground", "light"); } catch (e) {}
+  }, [ground]);
   return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       {/* A phone page sits fixed over the whole app, so under it the ground's
           drifting blobs, dot field and streaks would animate and composite for
@@ -38441,6 +38606,35 @@ const SAGE_CSS = `
   font-family:var(--sfmono); font-size:9px; font-weight:700; }
 .mc-cl .dl.up{ color:#8fd8af; } .mc-cl .dl.dn{ color:#f08a80; }
 .mc-clfoot{ margin-top:10px; font-size:11px; color:rgba(237,242,234,.5); }
+
+/* ---- the thirty-day channel line ----
+   Lives inside the closing sheet, under whichever bar was pressed. The bar is
+   a button now, so it needs the button reset the rest of this sheet's controls
+   get, and a pressed state that reads as "this one is open" rather than as a
+   tap that has already finished. */
+.mc-cl{ appearance:none; background:transparent; border:0; padding:0; cursor:pointer;
+  border-radius:12px; transition:background .18s ease, transform .18s var(--spring); }
+.mc-cl:active{ transform:scale(.97); }
+.mc-cl.on{ background:rgba(255,255,255,.06); }
+.mc-clopen{ margin-top:12px; padding:12px; border-radius:14px;
+  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.07); }
+.mc-clopen-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.mc-clopen-head b{ font-size:12.5px; font-weight:700; letter-spacing:.01em; }
+.mc-clopen-x{ appearance:none; background:transparent; border:0; cursor:pointer;
+  font-family:var(--sfmono); font-size:10.5px; color:rgba(237,242,234,.5); padding:2px 4px; }
+.mc-cline{ margin-top:8px; }
+.mc-cline-svg{ display:block; width:100%; height:96px; overflow:visible; }
+.mc-cline-p{ fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+/* The single days, under the running line. Faint on purpose: they are the
+   evidence, not the answer. */
+.mc-cline-d{ opacity:.42; }
+.mc-cline-now{ opacity:1; }
+.mc-cline-thr{ stroke:rgba(237,242,234,.22); stroke-width:1; stroke-dasharray:3 4; }
+.mc-cline-foot{ display:flex; align-items:baseline; gap:7px; margin-top:6px; }
+.mc-cline-foot b{ font-family:var(--sfmono); font-size:17px; font-weight:700; }
+.mc-cline-foot span{ font-size:11px; color:rgba(237,242,234,.6); }
+.mc-cline-note{ margin-top:7px; font-size:10.5px; line-height:1.45; color:rgba(237,242,234,.42); }
+.mc-cline-none{ font-size:11.5px; line-height:1.5; color:rgba(237,242,234,.5); padding:10px 0 2px; }
 .mc-hb-full .r{ padding:3px 0; }
 .mc-pill{ position:fixed; left:50%; transform:translateX(-50%); bottom:14px; z-index:50;
   display:flex; background:rgba(6,10,8,.85); border:1px solid rgba(255,255,255,.13);
