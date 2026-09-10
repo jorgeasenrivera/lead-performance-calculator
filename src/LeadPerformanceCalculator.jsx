@@ -29,6 +29,7 @@ import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
   stationLine, rollOffers, takeOffer, skipOffer } from "../api/_stations.mjs";
+import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -11624,6 +11625,7 @@ const TL_MAP = {
      down, standing up, an offer lapsing — stays out: it is already the sits
      record, and putting it here would bury the floor in furniture. */
   "station-skipped": ["was skipped for a station", "gray"],
+  "station-override": ["was seated below standard", "amber"],
 };
 function ActivityTimeline({ history, nameOf, horizontal }) {
   const events = (history || []).filter((e) => TL_MAP[e.action]).slice(-16).reverse();
@@ -11797,10 +11799,11 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
    Phase one only: take a seat, leave a seat. No gating on who may sit, no
    greying for somebody who has walked off, no hours counted. Each of those
    reads what this writes. */
-function StationBoard({ config, store, row, roster, onRow, date, userName, nameOf }) {
+function StationBoard({ config, store, data, row, roster, onRow, date, userName, nameOf }) {
   const [busy, setBusy] = useState(null);
   const [pick, setPick] = useState(null);        // the seat awaiting a name
   const [byName, setByName] = useState(false);   // "someone else", over an offer
+  const [warn, setWarn] = useState(null);        // below standard, awaiting a manager
   const plan = stationPlanOf(config, store.id);
   /* Re-read on a timer, because held and the offer clock are both functions of
      elapsed time and nothing writes to the row when a seat goes quiet — without
@@ -11834,7 +11837,7 @@ function StationBoard({ config, store, row, roster, onRow, date, userName, nameO
       if (next2 && onRow) onRow(next2);
     } catch (e) {
       console.error("station write", e);
-    } finally { setBusy(null); setPick(null); setByName(false); }
+    } finally { setBusy(null); setPick(null); setByName(false); setWarn(null); }
   };
 
   /* Moving the offers on is the one write this screen makes without anybody
@@ -11881,9 +11884,50 @@ function StationBoard({ config, store, row, roster, onRow, date, userName, nameO
   const picked = pick ? seats.find((s) => s.n === pick) : null;
   const offered = picked && picked.offerTo ? picked : null;
 
-  const seatOffered = () => write(
-    (cur) => takeOffer(cur, offered.n, { id: offered.offerTo, label: offered.offerLabel }, qNowIso()),
-    offered.n);
+  /* ---- phase four: whether they should be taking the seat at all ----
+     The store's own phone standard, read the way every other screen reads it,
+     against this month's phone closing. It warns; it never stops anybody. A
+     gate a manager standing in the room cannot overrule is a gate that gets
+     worked around instead of used, and the desk knows things the figures do
+     not — who is being coached, who just moved off the showroom, who is
+     covering a shift nobody else can. */
+  const graceNow = new Date().getDate() <= (store.graceDays ?? 10);
+  const phoneBar = normThresholds(store.thresholds)?.phone?.green;
+  const gateFor = (id) => stationGate({
+    stats: data?.months?.[ym()]?.stats?.[norm(who(id))],
+    standard: phoneBar, inGrace: graceNow });
+
+  /* Both ways of seating somebody run through here, so the warning cannot be
+     reachable down one path and not the other. `forced` is a manager having
+     read it and said yes anyway, and that is the only branch that writes to
+     the audit log. */
+  const seat = (station, person, { viaOffer = false, forced = false } = {}) => {
+    const gate = gateFor(person.id);
+    if (needsOverride(gate) && !forced) { setWarn({ station, person, gate, viaOffer }); return; }
+    setWarn(null);
+    write((cur) => {
+      const res = viaOffer ? takeOffer(cur, station, person, qNowIso())
+                           : claimStation(cur, station, person, qNowIso());
+      if (!res.changed || !forced) return res;
+      res.row.history = res.row.history || [];
+      res.row.history.push({ t: qNowIso(), action: "station-override", id: person.id,
+        who: person.label || "", by: userName || "the desk", station,
+        pct: gate.pct, standard: gate.standard });
+      return res;
+    }, station);
+    if (forced) {
+      /* The audit log rather than only the day's history, because a waved-through
+         seat is the kind of thing somebody asks about a month later, and the
+         day's row is gone by then. */
+      appendAudit({ user: userName || "Manager", store: store.id,
+        action: "Stations: seated below standard",
+        detail: `${who(person.id)} at station ${station} \u00b7 phone closing ${fmtPct(gate.pct)} against ${gate.standard}%` })
+        .catch(() => {});
+    }
+  };
+
+  const seatOffered = () =>
+    seat(offered.n, { id: offered.offerTo, label: offered.offerLabel }, { viaOffer: true });
   const skip = () => {
     const why = window.prompt(
       `Skipping ${offered.offerLabel} for station ${offered.n}.\nWhy? (it goes in today's history, and station ${offered.n} moves to the next person)`, "");
@@ -11953,7 +11997,34 @@ function StationBoard({ config, store, row, roster, onRow, date, userName, nameO
         </div>
       )}
 
-      {pick && offered && !byName && (
+      {/* Below standard on the phone. It says the figure, the bar, and what it
+          is measured over, because "below standard" with no number is the kind
+          of sentence people learn to click past. Both buttons are real: the
+          left one seats them and writes it down, the right one does not. */}
+      {warn && (
+        <div className="stn-pick stn-warn">
+          <div className="stn-pick-head">
+            {who(warn.person.id)} is below standard on the phone
+          </div>
+          <p className="stn-pick-sub">
+            {fmtPct(warn.gate.pct)} closing this month against the store&rsquo;s {warn.gate.standard}%,
+            over {warn.gate.leads} phone {warn.gate.leads === 1 ? "lead" : "leads"}.
+            Seating them is allowed. It goes to the audit log with your name on it.
+          </p>
+          <div className="stn-pick-names">
+            <button type="button" className="btn btn-sm" disabled={!!busy}
+              onClick={() => seat(warn.station, warn.person, { viaOffer: !!warn.viaOffer, forced: true })}>
+              Seat them anyway
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
+              onClick={() => { setWarn(null); setPick(null); setByName(false); }}>
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!warn && pick && offered && !byName && (
         <div className="stn-pick">
           <div className="stn-pick-head">
             Station {pick} is {offered.offerLabel}&rsquo;s
@@ -11974,7 +12045,7 @@ function StationBoard({ config, store, row, roster, onRow, date, userName, nameO
         </div>
       )}
 
-      {pick && (!offered || byName) && (
+      {!warn && pick && (!offered || byName) && (
         <div className="stn-pick">
           <div className="stn-pick-head">Who is taking station {pick}?</div>
           {canSit.length === 0
@@ -11984,7 +12055,7 @@ function StationBoard({ config, store, row, roster, onRow, date, userName, nameO
                 {canSit.map((p) => (
                   <button key={p.id} type="button" className="btn btn-sm"
                     disabled={!!busy}
-                    onClick={() => write((cur) => claimStation(cur, pick, { id: p.id, label: p.label || p.name }, qNowIso()), pick)}>
+                    onClick={() => seat(pick, { id: p.id, label: p.label || p.name })}>
                     {p.label || p.name}
                   </button>
                 ))}
@@ -11996,7 +12067,8 @@ function StationBoard({ config, store, row, roster, onRow, date, userName, nameO
       )}
 
       <div className="stn-hint">
-        {pick ? "Pick a name, or tap the seat again to cancel."
+        {warn ? "Nothing has been written yet."
+          : pick ? "Pick a name, or tap the seat again to cancel."
           : seats.some((s) => s.offerTo)
             ? "A station with a name on it is being offered \u2014 tap it to seat them, skip them, or choose somebody else."
             : "Tap a free station to seat somebody. Tap an occupied one to free it."}
@@ -12262,7 +12334,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       })()}
 
       {variant.kind === "line" && row && (
-        <StationBoard config={config} store={store} row={row} roster={salesRoster}
+        <StationBoard config={config} store={store} data={data} row={row} roster={salesRoster}
           onRow={setRow} date={date} userName={userName} nameOf={realName} />
       )}
 
@@ -38076,6 +38148,15 @@ const SAGE_CSS = `
 .stn-wait-nm{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); }
 .stn-wait-rest{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); }
 .stn-pick-sub{ margin:0 0 10px; font-size:12.5px; line-height:1.45; color:var(--mfink2); }
+/* The one panel that is not the room's blue. A warning that wears the same
+   accent as everything else on the card is a warning nobody reads, and this is
+   the only place on the screen where the answer is meant to cost a moment. */
+/* Both classes, because .stn-pick sets the same properties further down this
+   sheet and a single class would lose to it on source order alone. */
+.stn-pick.stn-warn{ background:color-mix(in srgb,#C77800 9%, #fff);
+  border-color:color-mix(in srgb,#C77800 34%, transparent); }
+.stn-pick.stn-warn .stn-pick-head{ color:#8A5300; }
+.stn-pick.stn-warn .stn-pick-sub{ color:#6B4A17; }
 /* On a handset the title and the count fight over one row and the title wraps
    mid-phrase. They are two different readings anyway, so give them a line each
    rather than shrinking either. */
