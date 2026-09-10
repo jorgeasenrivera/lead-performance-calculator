@@ -33,6 +33,7 @@ import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStat
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
+import { roomListOf, openRoom, roomsOf } from "../api/_rooms.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
    the store is being asked for. Its own file because it is the arithmetic a
@@ -3673,8 +3674,8 @@ export default function LeadPerformanceCalculator() {
       /* Their corner, through the account. The daily QR stays the second door
          into the very same screen. No ground: the phone routes draw their own. */
       return wrap(<Shell ground={false}>
-        <FloorSignIn key={home.store + ":" + doorDay} store={home.store} date={doorDay} token={null}
-          account={home.person_id} onSignOut={signOut} />
+        <AssociateRooms key={home.store + ":" + doorDay} config={config} store={home.store}
+          date={doorDay} account={home.person_id} onSignOut={signOut} />
         <Style />
       </Shell>);
     }
@@ -10643,10 +10644,78 @@ function MyStationDay({ row, meId, store, date, now = Date.now() }) {
   );
 }
 
-function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false }) {
+/**
+ * The rooms a salesperson's phone can be in.
+ * -------------------------------------------------------------------------
+ * A linked salesperson landed straight in the floor's shell and there was no
+ * way out of it. The phone line has had a screen of its own the whole time —
+ * the one behind the daily QR — and their account already identifies them for
+ * it; nothing was joining the two.
+ *
+ * So this owns which room is showing and nothing else. Both shells are
+ * unchanged and each still does its own work; the switch floats above them and
+ * is drawn only when the store actually offers more than one, because a
+ * segmented control with one segment is furniture.
+ *
+ * The choice is remembered per store rather than per phone. Somebody linked at
+ * two rooftops works the phones at one and the floor at the other, and a
+ * device-wide memory would keep sending them to the wrong one — the same
+ * mistake the home-store key already had to be fixed for.
+ */
+function AssociateRooms({ config, store, date, account, onSignOut }) {
+  const list = roomListOf(config, store);
+  const key = `lpcf:room:${store}`;
+  const [want, setWant] = useState(() => { try { return localStorage.getItem(key) || null; } catch (e) { return null; } });
+  const room = openRoom(config, store, want);
+  const pick = (r) => { setWant(r); try { localStorage.setItem(key, r); } catch (e) {} };
+
+  /* Both switched off. A real state — somebody has done it deliberately — and
+     worth saying plainly rather than drawing an empty shell they will tap at. */
+  if (!room) {
+    return (
+      <div className="ar-none">
+        <div className="ar-none-h">Nothing to show yet</div>
+        <p>This store has not turned on the floor or the phone line for its people. A manager can switch either on in the store&rsquo;s settings.</p>
+        {onSignOut && <button type="button" className="btn" onClick={onSignOut}>Sign out</button>}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {list.length > 1 && (
+        <div className="ar-switch" role="tablist" aria-label="Which room">
+          <span className="ar-ind" style={{ transform: `translateX(${list.indexOf(room) * 100}%)`, width: `${100 / list.length}%` }} />
+          {list.map((r) => (
+            <button key={r} type="button" role="tab" aria-selected={room === r}
+              className={"ar-tab" + (room === r ? " on" : "")}
+              onClick={() => { buzz(8); pick(r); }}>
+              <PixIcon glyph={r === "line" ? "phone" : "door"} size={14} />
+              {r === "line" ? "Phone" : "Floor"}
+            </button>
+          ))}
+        </div>
+      )}
+      {room === "line"
+        ? <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
+            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} />
+        : <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
+            account={account} onSignOut={onSignOut} />}
+    </>
+  );
+}
+
+function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false,
+  account = null, onSignOut = null, rooms = null, onRoom = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
-  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
+  /* An account that a manager has joined to a name IS the identity, the same
+     way it already is on the floor: no daily code, no name, no PIN. The QR
+     stays the second door into this very screen for anybody without one. */
+  const [meId, setMeId] = useState(() => {
+    if (account) return account;
+    try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; }
+  });
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
@@ -10759,7 +10828,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   }, [store, date, meFull, meLabel]);
 
   const isToday = date === today();
-  const valid = isToday && row && row.token && row.token === token;
+  /* A code is how somebody with no account gets in. Somebody who arrived
+     through their own account has already been let in, and asking them for
+     today's code would be asking them to find a poster. */
+  const valid = isToday && (account ? !!row : !!(row && row.token && row.token === token));
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
   // Filtered out entirely unless the address asked for it, so it cannot be picked
@@ -17873,6 +17945,10 @@ function PhoneRoomCard({ config, storeId, onChange }) {
   };
   const setMode = (m) => save((s) => { s.stationMode = m; },
     { action: "Changed the phone room", detail: `${store.name}: ${m === "open" ? "no rotation" : "rotation"}` });
+  const rooms = roomsOf(config, storeId);
+  const setRoom = (k, on) => save((s) => { s.rooms = { ...roomsOf(config, storeId), [k]: on }; },
+    { action: on ? "Turned a room on for the floor" : "Turned a room off for the floor",
+      detail: `${store.name}: ${k === "line" ? "Phone Line" : "Live Floor"}` });
   const setOwner = (n, id) => save((s) => {
     const p = s.stationPlan && (s.stationPlan.seats || s.stationPlan.tables)
       ? JSON.parse(JSON.stringify(s.stationPlan))
@@ -17895,6 +17971,28 @@ function PhoneRoomCard({ config, storeId, onChange }) {
         floor, so the same editor arranges it.
       </p>
 
+      {/* Which rooms this store's people see on their own phones. Separate
+          from how the desk runs the room: a store can watch its stations from
+          the desk without putting a tab on anybody's phone. */}
+      <div className="prc-rooms">
+        <div className="prc-cap">On a salesperson&rsquo;s phone</div>
+        {[["floor", "Live Floor", "Their corner, the room, and the up they are waiting for."],
+          ["line", "Phone Line", "The phone room, the line, and their own day at a station."]].map(([k, title, sub]) => (
+          <label key={k} className="prc-toggle">
+            <input type="checkbox" checked={!!rooms[k]}
+              onChange={(e) => setRoom(k, e.target.checked)} />
+            <span className="prc-tt"><b>{title}</b><em>{sub}</em></span>
+          </label>
+        ))}
+        {!rooms.floor && !rooms.line && (
+          <p className="prc-warn">
+            With both off, a salesperson signing in has nothing to open. The app tells them so
+            and offers a way out, but it is worth knowing that is what it does.
+          </p>
+        )}
+      </div>
+
+      <div className="prc-cap prc-cap2">How the desk runs the room</div>
       <div className="prc-modes">
         {[["rotation", "Runs a rotation", "A desk coming free is offered to whoever is next on the Phone Line, and the desk can skip somebody with a reason."],
           ["open", "Just the desks", "No rotation and no offers. People take a desk and the board says who is where. This is also the BDC view."]].map(([m, title, sub]) => (
@@ -38969,9 +39067,53 @@ const SAGE_CSS = `
 .stn-hint{ margin-top:10px; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
 .stn-day-b{ margin-left:auto; align-self:center; }
 
+/* The room switch on a salesperson's phone. Floats above whichever shell is
+   showing rather than living inside either, so neither had to be reworked to
+   gain it, and it is drawn only when the store offers more than one room. */
+/* 101 and not 60, which is where this started and where it was unreachable:
+   the shell root itself is z-index 100 and creates a stacking context, so
+   anything below that number is painted under the whole screen no matter what
+   it sits above inside it. Nothing in the shell is above the switch now, which
+   includes the milestone takeover — a small pill over a celebration for the
+   few seconds it is up is the better half of that trade against navigation a
+   finger cannot reach. */
+.ar-switch{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
+  top:calc(env(safe-area-inset-top, 0px) + 10px);
+  display:flex; padding:3px; border-radius:999px; overflow:hidden;
+  background:rgba(14,20,32,.62); border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(14px) saturate(140%); -webkit-backdrop-filter:blur(14px) saturate(140%);
+  box-shadow:0 10px 26px -12px rgba(0,0,0,.6); }
+.ar-ind{ position:absolute; left:3px; top:3px; bottom:3px; border-radius:999px;
+  background:rgba(255,255,255,.16); transition:transform .28s cubic-bezier(.2,.8,.2,1); }
+.ar-tab{ position:relative; display:flex; align-items:center; gap:6px; padding:7px 15px;
+  border:0; background:none; cursor:pointer; color:rgba(255,255,255,.55);
+  font:700 11px var(--font-mono); letter-spacing:.08em; text-transform:uppercase;
+  transition:color .2s; }
+.ar-tab.on{ color:#fff; }
+@media (prefers-reduced-motion: reduce){ .ar-ind{ transition:none; } }
+
+/* Both rooms switched off. Somebody did that deliberately, so it is said
+   plainly rather than drawn as an empty shell they will tap at. */
+.ar-none{ min-height:100dvh; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:12px; padding:32px 26px; text-align:center;
+  background:#10141F; color:rgba(255,255,255,.8); }
+.ar-none-h{ font-family:var(--mffont); font-size:19px; font-weight:600; color:#fff; }
+.ar-none p{ margin:0; max-width:34ch; font-size:13.5px; line-height:1.55; color:rgba(255,255,255,.6); }
+
 /* The phone room's own settings card. Two questions, and only the first of
    them actually differs between most stores. */
-.prc-modes{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0 4px; }
+.prc-cap{ font-family:var(--mfmono); font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--mfink3); margin:16px 0 8px; }
+.prc-cap2{ margin-top:20px; }
+.prc-rooms{ display:flex; flex-direction:column; gap:8px; }
+.prc-toggle{ display:flex; align-items:flex-start; gap:11px; padding:11px 13px; border-radius:13px;
+  border:1px solid var(--mfline); background:#fff; cursor:pointer; }
+.prc-toggle input{ margin-top:2px; }
+.prc-tt b{ display:block; font-family:var(--mffont); font-size:14px; font-weight:600; color:var(--mfink); }
+.prc-tt em{ display:block; font-style:normal; font-size:12px; line-height:1.45; color:var(--mfink2); margin-top:2px; }
+.prc-warn{ margin:2px 0 0; font-size:12px; line-height:1.5; color:#8A5300;
+  background:color-mix(in srgb,#C77800 9%, #fff); border-radius:11px; padding:9px 12px; }
+.prc-modes{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 4px; }
 .prc-mode{ text-align:left; padding:12px 14px; border-radius:14px; border:1.5px solid var(--mfline);
   background:#fff; font-family:inherit; cursor:pointer; transition:.15s; }
 .prc-mode:hover{ border-color:#B9C3D4; }
