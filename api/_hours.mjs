@@ -37,6 +37,29 @@ export function hourIn(at = new Date()) {
   return h === "24" ? "00" : h;
 }
 
+/**
+ * When a store hour begins, as epoch milliseconds, anchored to an instant on
+ * the day in question.
+ *
+ * The hour labels are the STORE's hours and everything that gets compared
+ * against them is epoch milliseconds, so the two have to be brought into one
+ * basis. setHours would do it in whatever zone the server happens to run in,
+ * which on a Vercel function is UTC, four hours off, so every window would
+ * miss every bucket and quietly attribute nothing.
+ *
+ * Taken from the anchor instead: the distance between the store's hour at that
+ * instant and the same instant's UTC hour is the offset, and every bucket that
+ * day is that same distance away. Holds unless the span crosses a
+ * daylight-saving change, which happens at two in the morning with the phone
+ * room shut.
+ */
+export function hourStart(at, hour) {
+  const base = new Date(at instanceof Date ? at.getTime() : at);
+  const storeHour = Number(hourIn(base));
+  base.setUTCMinutes(0, 0, 0);
+  return base.getTime() + (Number(hour) - storeHour) * 3600000;
+}
+
 /* The four that answer "did sitting there produce anything". Short keys
    because they are written once per person per hour and read as a block. */
 const KEEP = { op: "oppPhone", ca: "calls", ct: "contacted", ap: "apptScheduled" };
@@ -127,22 +150,10 @@ export function betweenHours(hours, personKey, fromIso, toIso) {
   const totals = { op: 0, ca: 0, ct: 0, ap: 0, hours: 0 };
   if (!(from < to)) return totals;
 
-  /* The hour labels are the STORE's hours and the window is epoch
-     milliseconds, so the two have to be brought into one basis before they can
-     be compared. setHours would do it in whatever zone the server happens to
-     run in — which on a Vercel function is UTC, four hours off, so every
-     window would miss every bucket and quietly attribute nothing.
-
-     Taken from the window itself: the distance between the store's hour and
-     the same instant's UTC hour is the offset, and every bucket that day is
-     that same distance away. Holds unless a window spans a daylight-saving
-     change, which happens at two in the morning with the phone room shut. */
-  const storeHour = Number(hourIn(new Date(from)));
-  const base = new Date(from);
-  base.setUTCMinutes(0, 0, 0);
-
+  /* Anchored to the window itself, so the store's hours and these epoch
+     milliseconds are compared on one basis. See hourStart. */
   for (const d of hourDeltas(hours, personKey)) {
-    const hStart = base.getTime() + (Number(d.hour) - storeHour) * 3600000;
+    const hStart = hourStart(from, d.hour);
     const hEnd = hStart + 3600000;
     const covered = Math.min(to, hEnd) - Math.max(from, hStart);
     if (covered >= 1800000) {           // most of the hour

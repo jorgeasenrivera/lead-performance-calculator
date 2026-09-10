@@ -30,6 +30,7 @@ import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStat
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
   stationLine, rollOffers, takeOffer, skipOffer } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
+import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -6127,10 +6128,22 @@ async function publishBoard(config, storeId, sdata) {
         const key = floorStatsKey(storeId, t);
         const slim = slimFloorStats(withChannels(withRocked(sdata, t, rows, bar), sdata, t));
         /* The hours ride on this row and are cumulative, so what is already
-           there has to be read back before it is written over — the whole
-           point is that earlier hours survive an import that only knows about
-           the totals as they stand now. */
-        const prev = await loadShared(key, null);
+           there has to be read back before it is written over: the whole point
+           is that earlier hours survive an import that only knows about the
+           totals as they stand now.
+
+           Read with throwOnError, which is the difference between "there is
+           nothing there" and "we could not find out". loadShared normally
+           swallows a failed read and hands back the fallback, and a null
+           fallback here means stampHours starts from scratch and the day's
+           accumulated buckets are gone — silently, and unrecoverably, since an
+           hour that was never recorded cannot be recovered. A read that failed
+           is not evidence of an empty row.
+
+           The cost of throwing is that this one publish is skipped. The board
+           row is written many times a day and the next one puts it right; the
+           hours would not have come back at all. */
+        const prev = await loadShared(key, null, true);
         slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
         await saveShared(key, slim);
       } catch (e) {}
@@ -10546,10 +10559,41 @@ function useSeatFence({ fence, active, onLeft }) {
    What it deliberately does NOT show is where anybody has been. The fence
    knows one thing — on the lot or not — and that shows up here only as the
    reason a sit ended. There is no trail to draw because none is kept. */
-function MyStationDay({ row, meId, now = Date.now() }) {
-  const sits = sitsFor(row, meId);
+/* The day's hourly buckets, off the published board row.
+   Slow on purpose: the buckets move once an hour at most, because that is how
+   often the Delivery Summary lands, and loadSharedIfChanged makes nearly every
+   poll a stamp check rather than a fetch of the day. */
+function useStationHours(storeId, date, tag) {
+  const [hours, setHours] = useState(null);
+  useEffect(() => {
+    if (!storeId || !date) return undefined;
+    let dead = false;
+    const read = () => loadSharedIfChanged(floorStatsKey(storeId, date), `${tag || "stn"}:${storeId}:${date}`)
+      .then((v) => { if (!dead && v && v !== "same") setHours(v.__hours || null); })
+      .catch(() => {});
+    read();
+    const t = setInterval(read, 300000);
+    return () => { dead = true; clearInterval(t); };
+  }, [storeId, date, tag]);
+  return hours;
+}
+
+function MyStationDay({ row, meId, store, date, now = Date.now() }) {
+  /* Told which store and day rather than reading them off the row. The row
+     carries `store` only when the desk created it and its repair path did not
+     backfill the field, so a row that came up any other way silently read
+     nothing here while the desk, two screens away, attributed the same person
+     fourteen opportunities. The row's own copy is the fallback, not the
+     source. */
+  const hours = useStationHours(store || (row && row.store), date || (row && row.date), "myday");
+  const meKey = useMemo(() => {
+    const r = ((row && row.roster) || []).find((x) => x && x.id === meId);
+    return r && r.name ? norm(r.name) : null;
+  }, [row, meId]);
+  const day = useMemo(() => personDay(row, meId, hours, meKey, now),
+    [row, meId, hours, meKey, now]);
+  const sits = day.sits;
   if (!sits.length) return null;
-  const total = sits.reduce((n, s) => n + sitMinutes(s, now), 0);
   const at = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
   const why = (s) => {
     if (!s.out) return "now";
@@ -10558,20 +10602,42 @@ function MyStationDay({ row, meId, now = Date.now() }) {
     if (s.why === "moved") return "moved seat";
     return "tapped out";
   };
+  /* What arrived while they were in the chair. Only the counters worth a line:
+     an opportunity is the thing the seat exists for and calls are the effort
+     behind it, and four numbers on a phone row is a wall rather than a fact. */
+  const got = (s) => {
+    const bits = [];
+    if (s.op) bits.push(`${s.op} phone ${s.op === 1 ? "opp" : "opps"}`);
+    if (s.ca) bits.push(`${s.ca} ${s.ca === 1 ? "call" : "calls"}`);
+    if (s.ap) bits.push(`${s.ap} ${s.ap === 1 ? "appt" : "appts"}`);
+    return bits.join(" \u00b7 ");
+  };
+  const anyShort = sits.some((s) => !s.hours && s.min > 0);
   return (
     <div className="sf-stnday">
       <div className="sf-stnday-head">
         <span>Your day at the station</span>
-        <b>{total} min</b>
+        <b>{day.min} min</b>
       </div>
       {sits.map((s, i) => (
         <div key={i} className={"sf-stnday-row" + (s.out ? "" : " on")}>
           <span className="sf-stnday-st">{s.st}</span>
           <span className="sf-stnday-time">{at(s.in)} &ndash; {s.out ? at(s.out) : "now"}</span>
-          <span className="sf-stnday-min">{sitMinutes(s, now)}m</span>
+          <span className="sf-stnday-min">{s.min}m</span>
           <span className="sf-stnday-why">{why(s)}</span>
+          {got(s) && <span className="sf-stnday-got">{got(s)}</span>}
         </div>
       ))}
+      {/* Said once, at the bottom, because a stretch with nothing next to it
+          looks like the system lost the work rather than like the report
+          arriving by the hour. It is the honest limit, not a hedge: the
+          Delivery Summary carries counts and no timestamps. */}
+      {anyShort && (
+        <p className="sf-stnday-note">
+          Counted by the hour, from the report that lands hourly. A stretch that
+          did not cover most of an hour does not get one.
+        </p>
+      )}
     </div>
   );
 }
@@ -10955,7 +11021,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </button>
           </div>
         </div>
-        <MyStationDay row={row} meId={meId} />
+        <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
             <div className="sf-shock" />
@@ -11799,11 +11865,118 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
    Phase one only: take a seat, leave a seat. No gating on who may sit, no
    greying for somebody who has walked off, no hours counted. Each of those
    reads what this writes. */
+/**
+ * The day so far: who was in the chairs, and when the room was covered.
+ * -------------------------------------------------------------------------
+ * The same records read two ways. Down the left, per station, is occupancy —
+ * whether the seats were staffed at the hours the phone was ringing, which is
+ * the thing that says whether the process change was worth making. Underneath,
+ * per person, is attribution: whether sitting there produced anything.
+ *
+ * A sheet rather than another card on the tab. It is the screen somebody opens
+ * to ask a question, not one they need in front of them while they run the
+ * floor, and the tab is long enough already.
+ */
+function StationDaySheet({ plan, store, row, hours, nameOf, onClose }) {
+  const now = Date.now();
+  const occ = useMemo(() => occupancy(plan, row, {
+    open: store.hours?.open, close: store.hours?.close, now }), [plan, row, store, now]);
+  const people = useMemo(() => attribution(row, hours, (id) => {
+    const r = ((row && row.roster) || []).find((x) => x && x.id === id);
+    return r && r.name ? norm(r.name) : null;
+  }, now), [row, hours, now]);
+
+  const label = (h) => String(Number(h) % 12 === 0 ? 12 : Number(h) % 12);
+  const anyFigures = people.some((p) => p.counted > 0);
+
+  return (
+    <ToolSheet title="The day so far" wide
+      sub={`${store.name} \u00b7 ${occ.min} minutes at the stations`} onClose={onClose}>
+      {/* The sheet is portalled, so it renders outside the .mf.mf-line wrapper
+          that defines --a1. Inheriting it silently computed every cell's
+          color-mix to transparent and drew an empty grid, so the accent is set
+          here on the one element that needs it rather than borrowed. */}
+      <div className="stnd">
+
+      <div className="stnd-cap">When the room was covered</div>
+      <div className="stnd-grid-scroll">
+        <div className="stnd-grid" style={{ "--cols": occ.hours.length }}>
+          <div className="stnd-corner" />
+          {occ.hours.map((h) => <div key={h} className="stnd-hh">{label(h)}</div>)}
+
+          {/* The room's own line first. Not whether a chair was used, but how
+              much of the room was staffed in each hour. */}
+          <div className="stnd-rl stnd-rl-room">Room</div>
+          {occ.byHour.map((b) => (
+            <div key={b.hour} className="stnd-cell stnd-room"
+              style={{ "--f": b.pct }} title={`${b.staffed} of ${b.of} stations`}>
+              <span>{b.staffed || ""}</span>
+            </div>
+          ))}
+
+          {occ.seats.map((seat) => (
+            <React.Fragment key={seat.n}>
+              <div className="stnd-rl">{seat.n}</div>
+              {seat.cells.map((c) => (
+                <div key={c.hour} className="stnd-cell" style={{ "--f": c.cover }}
+                  title={c.who ? `${c.who} \u00b7 ${Math.round(c.cover * 60)} min` : "empty"} />
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+      {occ.thinnest && occ.thinnest.staffed < occ.thinnest.of && (
+        <p className="ts-note">
+          Thinnest at {label(occ.thinnest.hour)}
+          {Number(occ.thinnest.hour) < 12 ? "am" : "pm"}: {occ.thinnest.staffed} of {occ.thinnest.of} stations.
+        </p>
+      )}
+
+      <div className="stnd-cap stnd-cap2">What came in while they were sitting</div>
+      {people.length === 0
+        ? <p className="muted">Nobody has taken a station today.</p>
+        : (
+          <div className="stnd-people">
+            {people.map((p) => (
+              <div key={p.id} className="stnd-prow">
+                <span className="mf-av" style={{ background: `hsl(${hueFromName(nameOf(p.id))} 52% 42%)` }}>
+                  {initialsOf(nameOf(p.id))}
+                </span>
+                <div className="stnd-pwho">
+                  <b>{nameOf(p.id)}</b>
+                  <span>{p.min} min {"\u00b7"} {p.sits.length} {p.sits.length === 1 ? "sit" : "sits"}</span>
+                </div>
+                <div className="stnd-pnums">
+                  <span><b>{p.op}</b> opps</span>
+                  <span><b>{p.ca}</b> calls</span>
+                  <span><b>{p.ap}</b> appts</span>
+                  {/* Per counted hour, and only when there is an hour to
+                      divide by. A rate off no hours is not a rate. */}
+                  <span className="stnd-per">
+                    {p.perHour == null ? "\u2014" : (Math.round(p.perHour * 10) / 10) + " /hr"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      {people.length > 0 && !anyFigures && (
+        <p className="ts-note">
+          Nothing attributed yet. The figures come from the Delivery Summary,
+          which lands hourly, and a sit only picks up an hour it covered most of.
+        </p>
+      )}
+      </div>
+    </ToolSheet>
+  );
+}
+
 function StationBoard({ config, store, data, row, roster, onRow, date, userName, nameOf }) {
   const [busy, setBusy] = useState(null);
   const [pick, setPick] = useState(null);        // the seat awaiting a name
   const [byName, setByName] = useState(false);   // "someone else", over an offer
   const [warn, setWarn] = useState(null);        // below standard, awaiting a manager
+  const [showDay, setShowDay] = useState(false);
   const plan = stationPlanOf(config, store.id);
   /* Re-read on a timer, because held and the offer clock are both functions of
      elapsed time and nothing writes to the row when a seat goes quiet — without
@@ -11816,6 +11989,9 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
     return () => clearInterval(t);
   }, []);
 
+  /* The same buckets the salesperson's own view reads, on the same slow poll.
+     Held here rather than inside the sheet so opening it is instant. */
+  const dayHoursData = useStationHours(store.id, date, "desk");
   const board = useMemo(() => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID] }),
     [plan, row, tick]); // eslint-disable-line
   const { seats, waiting, queued, next, free, full } = board;
@@ -11941,6 +12117,9 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
     <div className="stn">
       <div className="stn-head">
         <div><div className="stn-cap">Stations</div><b>The phone room</b></div>
+        <button type="button" className="btn btn-sm stn-day-b" onClick={() => setShowDay(true)}>
+          The day so far
+        </button>
         <span className="stn-count">
           {full ? `All ${seats.length} taken` : `${free} free of ${seats.length}`}
           {held > 0 ? ` \u00b7 ${held} away` : ""}
@@ -12066,6 +12245,11 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
         </div>
       )}
 
+      {showDay && (
+        <StationDaySheet plan={plan} store={store} row={row} hours={dayHoursData}
+          nameOf={who} onClose={() => setShowDay(false)} />
+      )}
+
       <div className="stn-hint">
         {warn ? "Nothing has been written yet."
           : pick ? "Pick a name, or tap the seat again to cancel."
@@ -12125,11 +12309,15 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       const same = JSON.stringify(cur.roster || []) === JSON.stringify(snap)
         && cur.storeName === store.name
         && JSON.stringify(cur.checklist || null) === JSON.stringify(list)
-        && !!cur.token && !!cur.date;
+        && !!cur.token && !!cur.date && !!cur.store;
       if (same) return null;
       cur.roster = snap; cur.storeName = store.name; cur.checklist = list;
       if (!cur.token) cur.token = uid();
       if (!cur.date) cur.date = date;
+      /* Backfilled rather than only set at creation. A row that came up any
+         other way carried no store, and anything trusting the field to be
+         there read nothing and said nothing about it. */
+      if (!cur.store) cur.store = store.id;
       return cur;
     }); } catch (e) { return; }                 // could not read: leave the row alone
     if (next) setRow(next);
@@ -14888,7 +15076,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             </button>
           </div>
         </div>
-        <MyStationDay row={row} meId={meId} />
+        <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
             <div className="sf-shock" />
@@ -15945,11 +16133,15 @@ function FloorBoard({ config, store, data, onData, userName }) {
       const same = JSON.stringify(cur.roster || []) === JSON.stringify(snap)
         && cur.storeName === store.name
         && JSON.stringify(cur.checklist || null) === JSON.stringify(list)
-        && !!cur.token && !!cur.date;
+        && !!cur.token && !!cur.date && !!cur.store;
       if (same) return null;
       cur.roster = snap; cur.storeName = store.name; cur.checklist = list;
       if (!cur.token) cur.token = uid();
       if (!cur.date) cur.date = date;
+      /* Backfilled rather than only set at creation. A row that came up any
+         other way carried no store, and anything trusting the field to be
+         there read nothing and said nothing about it. */
+      if (!cur.store) cur.store = store.id;
       return cur;
     }); } catch (e) { return; }
     if (next) setRow(next);
@@ -38173,6 +38365,56 @@ const SAGE_CSS = `
 .stn-pick-names{ display:flex; flex-wrap:wrap; gap:7px; }
 .stn-cancel{ margin-top:10px; }
 .stn-hint{ margin-top:10px; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
+.stn-day-b{ margin-left:auto; align-self:center; }
+
+/* ---- the day so far ----
+   A grid of stations against hours, drawn by how much of each hour the seat
+   was staffed rather than whether it was used at all. Fifteen minutes of cover
+   is not an hour of it and must not read the same, so the fill is a fraction
+   and the cell carries it as a custom property. */
+.stnd{ --stnd-a:#4C6FFF; --stnd-off:#EFF1F6; }
+.stnd-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--mfink3); margin-bottom:9px; }
+.stnd-cap2{ margin-top:22px; }
+.stnd-grid-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
+.stnd-grid{ display:grid; grid-template-columns:46px repeat(var(--cols),minmax(26px,1fr));
+  gap:3px; min-width:min-content; }
+.stnd-corner{ }
+.stnd-hh{ font-family:var(--mfmono); font-size:10px; color:var(--mfink3); text-align:center; padding-bottom:2px; }
+.stnd-rl{ font-family:var(--mfmono); font-size:11px; color:var(--mfink2); display:flex;
+  align-items:center; justify-content:flex-end; padding-right:6px; }
+.stnd-rl-room{ color:var(--stnd-a); font-weight:600; }
+/* The fill is the accent at the cell's own fraction, over the empty ground, so
+   an untouched hour is a faint tick rather than a hole in the grid. */
+.stnd-cell{ height:26px; border-radius:6px; background:var(--stnd-off);
+  background:color-mix(in srgb, var(--stnd-a) calc(var(--f,0) * 82%), var(--stnd-off));
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--mfmono); font-size:10.5px; color:#fff; }
+/* The room row carries the count, so the shade is a second telling of the
+   same thing and does not need to be strong. Held light and the number dark,
+   because white on a third-strength tint is the one cell that was hard to
+   read. */
+.stnd-room{ height:30px; font-weight:600; color:var(--mfink2);
+  background:color-mix(in srgb, var(--stnd-a) calc(var(--f,0) * 34%), var(--stnd-off)); }
+
+.stnd-people{ display:flex; flex-direction:column; gap:8px; }
+.stnd-prow{ display:flex; align-items:center; gap:11px; background:#fff; border:1px solid var(--mfline);
+  border-radius:14px; padding:10px 13px; }
+.stnd-pwho{ display:flex; flex-direction:column; min-width:0; flex:1; }
+.stnd-pwho b{ font-family:var(--mffont); font-size:14px; font-weight:600; color:var(--mfink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.stnd-pwho span{ font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
+.stnd-pnums{ display:flex; gap:14px; flex-wrap:wrap; justify-content:flex-end; }
+.stnd-pnums span{ font-family:var(--mfmono); font-size:10.5px; color:var(--mfink3); text-align:center;
+  display:flex; flex-direction:column; }
+.stnd-pnums b{ font-family:var(--mffont); font-size:15px; font-weight:600; color:var(--mfink); }
+.stnd-per{ color:var(--stnd-a) !important; }
+.stnd-per, .stnd-pnums .stnd-per{ align-self:center; font-size:12px; font-weight:600; }
+@media (max-width:700px){
+  .stnd-prow{ flex-wrap:wrap; }
+  .stnd-pnums{ width:100%; justify-content:space-between; gap:8px; }
+}
+
 .mf.mf-online{ --a1:#8B5CF6; --a2:#C05CF0; --glow:rgba(139,92,246,.32); }
 
 /* soft one-time entrance */
@@ -41147,6 +41389,12 @@ const SAGE_CSS = `
         font-variant-numeric:tabular-nums; }
       .sf-stnday-why { font-family:var(--sfmono); font-size:10.5px; color:rgba(237,242,234,.34); }
       .sf-stnday-row.on .sf-stnday-st { background:rgba(140,170,255,.22); color:#cfe0ff; }
+      /* What arrived while they were in the chair, on its own line under the
+         times so a phone row does not become four numbers wide. */
+      .sf-stnday-got { grid-column:2 / -1; font-family:var(--sfmono); font-size:11px;
+        color:rgba(190,215,255,.72); letter-spacing:.01em; margin-top:2px; }
+      .sf-stnday-note { margin:9px 0 0; font-size:10.5px; line-height:1.5;
+        font-family:var(--sfmono); color:rgba(237,242,234,.34); }
       .sf-stnday-row.on .sf-stnday-why { color:#cfe0ff; }
       /* ---- plates + smart assign, in the new card language ----
          the tables keep their markup; what changes is the shell around them,
