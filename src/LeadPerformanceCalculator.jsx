@@ -37872,7 +37872,13 @@ const SAGE_CSS = `
   --c-amber:#B7791F; --c-amber-bg:#FFF6E6; --c-rose:#E5473C; --c-rose-bg:#FFEEF0;
   font-family:var(--mffont); color:var(--mfink);
 }
-.mf.mf-line{ --a1:#4C6FFF; --a2:#28B7F0; --glow:rgba(76,111,255,.3); }
+.mf.mf-line{ --a1:#4C6FFF; --a2:#28B7F0; --glow:rgba(76,111,255,.3);
+  /* The room has its own pair, deliberately separate from the accent. They do
+     different jobs: --a1/--a2 tint small controls, which need to stay bright
+     enough to read as tappable, while the room is a large filled field that at
+     that brightness glares on a screen somebody sits in front of all day. Same
+     blue family, two stops down. */
+  --stn-a:#2B3A80; --stn-b:#215F80; }
 
 /* ---- the phone stations ----
    Every colour here comes from --a1 / --a2 / --glow, which is why the room
@@ -37892,11 +37898,11 @@ const SAGE_CSS = `
    the highest contrast on the card lands on the one piece of information the
    card exists to carry. Empty seats recede into the room instead of competing
    with it. */
-.stn-map .fbp{ background:linear-gradient(140deg,var(--a1),var(--a2)); border-radius:14px; }
+.stn-map .fbp{ background:linear-gradient(140deg,var(--stn-a,var(--a1)),var(--stn-b,var(--a2))); border-radius:14px; }
 .stn-map .fbp-zone{ border-color:rgba(255,255,255,.22); color:rgba(255,255,255,.5); }
 
-.stn-map .fbp-tbl.stn-off{ background:rgba(255,255,255,.10); color:rgba(255,255,255,.72);
-  border:1.5px dashed rgba(255,255,255,.42); }
+.stn-map .fbp-tbl.stn-off{ background:rgba(255,255,255,.12); color:rgba(255,255,255,.78);
+  border:1.5px dashed rgba(255,255,255,.48); }
 .stn-map .fbp-tbl.stn-off:hover{ background:rgba(255,255,255,.18); border-style:solid;
   border-color:rgba(255,255,255,.7); color:#fff; }
 .stn-map .fbp-tbl.stn-on{ background:#fff; border-color:transparent; color:var(--mfink);
