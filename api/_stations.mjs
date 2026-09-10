@@ -46,6 +46,48 @@ export function stationPlanOf(config, storeId) {
 /** The seats on a plan, whichever key they were drawn under. */
 export const seatsOf = (plan) => (plan && (plan.seats || plan.tables)) || [];
 
+/* ---- what the room is for ----
+   Three things were asked of one screen, and they are the same screen with one
+   piece turned off rather than three products:
+
+     rotation   the Phone Line feeds the seats. A chair coming free is offered
+                to whoever is next, which is everything phases three and four
+                describe.
+     open       no rotation. People take a desk and the board says who is where
+                and for how long. This is the ordinary case — most stores run
+                no phone up system at all — and it is also the BDC view, where
+                the agents simply sit at their desks and the question is
+                whether they are in them.
+
+   Kept as one mode rather than two flags because "is there a rotation" is the
+   only question that actually differs. Presence, the hourly attribution and
+   the occupancy grid are the same in both, and they are most of the value for
+   a store that never rotates anybody. */
+export const STATION_MODES = ["rotation", "open"];
+
+/** How this store runs its phone room. Rotation is the default so that no
+    store already using the Phone Line changes behaviour by being upgraded. */
+export function stationModeOf(config, storeId) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  const m = st && st.stationMode;
+  return STATION_MODES.includes(m) ? m : "rotation";
+}
+
+/**
+ * Whose desk this is, when a desk belongs to somebody.
+ *
+ * A BDC agent sits at the same desk every day, and a board that cannot say so
+ * makes you learn six names by their chair. The owner is a LABEL and never a
+ * claim: the desk still reads as empty until they check in, and nothing is
+ * written to the day's record on their behalf.
+ *
+ * That distinction is the whole of it. Seating somebody automatically because
+ * it is usually their chair would put a sit in the record for a person who is
+ * not in the building, and the hours that sit collects would be attributed to
+ * them. The record is worth more than the convenience.
+ */
+export const ownerOf = (seat) => (seat && seat.owner) || null;
+
 /** Which station this person is holding, or null. */
 export function stationOf(row, personId) {
   const all = (row && row.stations) || {};
@@ -143,6 +185,10 @@ export function stationBoard(plan, row) {
     const who = held[String(seat.n)] || null;
     return { ...seat, n: String(seat.n), taken: !!who,
       id: who ? who.id : null, label: who ? who.label : "", at: who ? who.at : null,
+      /* Whose desk it is, drawn or not. Carried on every seat rather than only
+         the empty ones, because "Marisol is at Marisol's desk" and "Marisol is
+         at somebody else's" are different facts and the board can say which. */
+      owner: ownerOf(seat),
       /* `seen` travels with the seat or presence cannot see it: without this
          the board hands presenceOf a seat whose only clock is when they sat
          down, every touch is invisible, and everybody greys fifteen minutes
@@ -438,10 +484,17 @@ export function skipOffer(row, station, now, { by = "the desk", why = "" } = {})
  *   queued    those without a chair already offered to them
  *   next      whoever the next seat to come free belongs to
  */
-export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = HOLD_MS, skip = [] } = {}) {
+export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = HOLD_MS, skip = [],
+  offers = true } = {}) {
   const spoken = new Set();
   const seats = stationPresence(plan, row, { now, onLot, holdMs }).map((seat) => {
-    const offer = offerOf(row, seat.n);
+    /* A room that does not rotate reports no offers, even when the row still
+       carries some. Turning the rotation off has to take the countdowns off
+       the board with it, or a store that switched keeps a chair promised to
+       somebody by a system it no longer runs — and nothing would ever clear
+       it, because the roll that would have moved it on is the thing that was
+       switched off. */
+    const offer = offers ? offerOf(row, seat.n) : null;
     const live = !seat.taken && offer && offer.id && offerLeftMs(offer, now) > 0;
     if (live) spoken.add(offer.id);
     return { ...seat,

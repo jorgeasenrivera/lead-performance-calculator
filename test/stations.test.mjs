@@ -522,3 +522,66 @@ test("seats drawn under the floor's key survive the stretch", () => {
   assert.equal(seatsOf(t).length, 2);
   assert.ok(seatsOf(t)[1].y > 40);
 });
+
+/* ---- what the room is for: rotation, or just who is at the desks ---- */
+import { STATION_MODES, stationModeOf, ownerOf } from "../api/_stations.mjs";
+
+test("a store runs a rotation unless it says otherwise", () => {
+  /* The default has to be rotation or every store already using the Phone Line
+     changes behaviour the day this ships. */
+  assert.equal(stationModeOf(null, "a"), "rotation");
+  assert.equal(stationModeOf({ stores: [{ id: "a" }] }, "a"), "rotation");
+  assert.equal(stationModeOf({ stores: [{ id: "a", stationMode: "open" }] }, "a"), "open");
+  assert.deepEqual(STATION_MODES, ["rotation", "open"]);
+});
+
+test("a mode nobody recognises is a rotation", () => {
+  /* A typo in a config should not quietly turn a store's phone room off. */
+  for (const m of ["", "bdc", "OPEN", null, 3]) {
+    assert.equal(stationModeOf({ stores: [{ id: "a", stationMode: m }] }, "a"), "rotation", String(m));
+  }
+});
+
+test("a desk can belong to somebody without being claimed by them", () => {
+  /* The whole of the BDC view. Seating somebody because it is usually their
+     chair would put a sit in the record for a person who is not in the
+     building, and the hours that sit collects would be attributed to them. */
+  const plan = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }, { n: "2", x: 40, y: 10 }] };
+  const board = stationBoard(plan, {});
+  const one = board.find((s) => s.n === "1");
+  assert.equal(one.owner, "p-dev");
+  assert.equal(one.taken, false, "a name on a desk is not a person in it");
+  assert.equal(one.id, null);
+  assert.equal(board.find((s) => s.n === "2").owner, null);
+  assert.equal(ownerOf(null), null);
+});
+
+test("who is in a desk and whose desk it is are two different facts", () => {
+  const plan = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }] };
+  const row = claimStation({}, "1", PRI, T1).row;
+  const seat = stationBoard(plan, row).find((s) => s.n === "1");
+  assert.equal(seat.owner, "p-dev");
+  assert.equal(seat.id, "p-pri", "and the board can say somebody is in somebody else's chair");
+});
+
+test("an owned desk still greys and frees like any other", () => {
+  const plan = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }] };
+  const row = claimStation({}, "1", DEV, T1).row;
+  const seat = stationPresence(plan, row, { now: NOW(20) }).find((s) => s.n === "1");
+  assert.equal(seat.state, "held");
+  assert.equal(seat.owner, "p-dev");
+});
+
+test("a room that does not rotate shows no offers, even with some on the row", () => {
+  /* Switching the rotation off has to take the countdowns off the board with
+     it. Nothing else would ever clear them: the roll that moves an offer on is
+     the very thing that was switched off. */
+  const row = roll(inLine(DEV, PRI), TWO, 0).row;
+  const on = stationLine(TWO, row, { now: NOW(1) });
+  assert.equal(on.seats.find((s) => s.n === "1").offerTo, "p-dev");
+  const off = stationLine(TWO, row, { now: NOW(1), offers: false });
+  assert.equal(off.seats.find((s) => s.n === "1").offerTo, null);
+  assert.equal(off.seats.find((s) => s.n === "1").offerLeftMs, 0);
+  assert.deepEqual(off.queued.map((p) => p.id), ["p-dev", "p-pri"],
+    "and nobody is held back as already spoken for");
+});

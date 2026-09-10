@@ -28,7 +28,8 @@ import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } 
 import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
-  stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf } from "../api/_stations.mjs";
+  stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
+  stationModeOf, DEFAULT_STATION_PLAN } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
@@ -11889,6 +11890,7 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
      nothing. The stored plan is never touched — this is a copy for drawing, so
      the editor still holds the room the store drew. */
   const plan = useMemo(() => tightenPlan(stationPlanOf(config, store.id)), [config, store.id]);
+  const mode = stationModeOf(config, store.id);
 
   /* Held and the offer clock are both functions of elapsed time and nothing
      writes to the row when a seat goes quiet, so without a tick a seat greys,
@@ -11900,8 +11902,8 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
   }, []);
 
   const board = useMemo(
-    () => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID] }),
-    [plan, row, tick]); // eslint-disable-line
+    () => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID], offers: mode === "rotation" }),
+    [plan, row, tick, mode]); // eslint-disable-line
   const hours = useStationHours(store.id, date, "room");
   const occ = useMemo(
     () => occupancy(plan, row, { open: store.hours?.open, close: store.hours?.close, now: Date.now() }),
@@ -11926,6 +11928,10 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
      rewriting the row every ten seconds on every device looking at it. */
   const rolling = useRef(false);
   useEffect(() => {
+    /* A store with no rotation has nothing to roll. Guarded here rather than at
+       the screens, so an open room cannot start quietly offering chairs to a
+       line it does not use. */
+    if (mode !== "rotation") return undefined;
     let gone = false;
     (async () => {
       if (rolling.current || busy) return;
@@ -11942,7 +11948,7 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
       finally { rolling.current = false; }
     })();
     return () => { gone = true; };
-  }, [store.id, date, tick]); // eslint-disable-line
+  }, [store.id, date, tick, mode]); // eslint-disable-line
 
   /* The store's own phone standard, read the way every other screen reads it.
      It warns; it never stops anybody. */
@@ -11989,7 +11995,7 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
     write((cur) => skipOffer(cur, n, qNowIso(), { by: userName || "the desk", why: reason }), n);
   };
 
-  return { plan, board, occ, hours, busy, pick, setPick, warn, setWarn,
+  return { plan, mode, board, occ, hours, busy, pick, setPick, warn, setWarn,
     seat, skip, release, write, gateFor };
 }
 
@@ -12027,7 +12033,8 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
   const [pop, setPop] = useState(null);
   const [zoom, setZoom] = useState(1);
   const R = useStationRoom({ config, store, data, row, date, userName, onRow, nameOf: realName });
-  const { plan, board, occ, hours, busy, pick, setPick, warn, setWarn, seat, skip, release } = R;
+  const { plan, mode, board, occ, hours, busy, pick, setPick, warn, setWarn, seat, skip, release } = R;
+  const rotates = mode === "rotation";
   const close = useCallback(() => { setPop(null); setWarn(null); setPick(null); }, [setWarn, setPick]);
   const { vpRef, vpW, natW, natH, fit, z, bump } = usePlanViewport(plan, zoom, setZoom);
 
@@ -12231,11 +12238,13 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
           <span className="fr-cap">Sage</span>
           <span className="fr-title">{variant.label}</span>
         </div>
-        <button type="button" className="qr-assign" disabled={tabBusy || !nextP} onClick={assignNext}>
-          <PixIcon glyph="bolt" size={15} />
-          {nextP ? stnFirst(realName(nextP.id)) : "Nobody"}
-          <em>{variant.kind === "online" ? "lead" : "call"}</em>
-        </button>
+        {rotates && (
+          <button type="button" className="qr-assign" disabled={tabBusy || !nextP} onClick={assignNext}>
+            <PixIcon glyph="bolt" size={15} />
+            {nextP ? stnFirst(realName(nextP.id)) : "Nobody"}
+            <em>{variant.kind === "online" ? "lead" : "call"}</em>
+          </button>
+        )}
       </div>
 
       <div className="fr-hero">
@@ -12246,7 +12255,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
                 <div className="fr-planin" style={{ width: natW || "100%", height: natH, transform: `scale(${z})` }}>
                   {vpW > 0 && (
                     <PlanMap plan={plan} cls="stn-map"
-                      deco={(t) => stnDeco(board, t)}
+                      deco={(t) => stnDeco(board, t, realName)}
                       onTap={(t) => { setPick(null); setWarn(null); setPop({ k: "seat", n: String(t.n) }); }} />
                   )}
                 </div>
@@ -12265,9 +12274,13 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
             )}
           </div>
         )}
-        <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
-          endLabel={variant.kind === "online" ? "LEAD" : "CALL"}
-          onPick={(id) => setPop({ k: "person", id })} onBunch={() => setPop({ k: "line" })} />
+        {/* Only a room that rotates has a line flowing into it. A store
+            running no phone up system gets the room and nothing else. */}
+        {rotates && (
+          <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
+            endLabel={variant.kind === "online" ? "LEAD" : "CALL"}
+            onPick={(id) => setPop({ k: "person", id })} onBunch={() => setPop({ k: "line" })} />
+        )}
       </div>
 
       <div className="fr-card">
@@ -12286,7 +12299,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
         )}
         <div className="fr-tools">
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "line" })}>
-            <PixIcon glyph="users" size={16} />{variant.kind === "online" ? "Queue" : "The line"}<em>{withoutTest(line).length}</em>
+            <PixIcon glyph="users" size={16} />{variant.kind === "online" ? "Queue" : rotates ? "The line" : "Who is in"}<em>{withoutTest(line).length}</em>
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "opps" })}>
             <PixIcon glyph="tap" size={16} />Opportunities<em>{upsToday}</em>
@@ -12308,7 +12321,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
 /* How a seat is drawn, wherever it is drawn. Taken, held, offered, free — the
    four states, in the one place, so the desk and the handset cannot end up
    showing the same chair differently. */
-function stnDeco(board, t) {
+function stnDeco(board, t, nameOf) {
   const s = board.seats.find((x) => x.n === String(t.n));
   if (!s) return {};
   if (s.taken) return {
@@ -12316,9 +12329,13 @@ function stnDeco(board, t) {
     sub: stnFirst(s.label),
     flag: s.state === "held" ? `away ${qWaitLabel(qMinsSince(s.seen))}` : qWaitLabel(qMinsSince(s.at)),
   };
-  return s.offerTo
-    ? { cls: "stn-off stn-due", sub: stnFirst(s.offerLabel), flag: stnLeft(s.offerLeftMs) }
-    : { cls: "stn-off" };
+  if (s.offerTo) return { cls: "stn-off stn-due", sub: stnFirst(s.offerLabel), flag: stnLeft(s.offerLeftMs) };
+  /* An empty desk that belongs to somebody says so. It is the whole of the BDC
+     view — six numbered boxes make you learn people by their chair — and it is
+     drawn in the free style, not the seated one, because a name on a desk is a
+     label and the desk is still empty. */
+  const own = s.owner && nameOf ? nameOf(s.owner) : null;
+  return own ? { cls: "stn-off stn-own", sub: stnFirst(own) } : { cls: "stn-off" };
 }
 
 /* The room's own line: how much of it was staffed each hour. Empty, some, or
@@ -12366,13 +12383,15 @@ function StnHourBars({ occ }) {
 function StationDesk({ config, store, data, row, line, salesRoster, realName, date, userName,
   variant, onRow, busy: tabBusy, assignNext, metrics }) {
   const R = useStationRoom({ config, store, data, row, date, userName, onRow, nameOf: realName });
-  const { plan, board, occ, hours, busy, pick, setPick, warn, setWarn, seat, skip, release } = R;
+  const { plan, mode, board, occ, hours, busy, pick, setPick, warn, setWarn, seat, skip, release } = R;
   const [open, setOpen] = useState(null);        // the seat whose panel is showing
+  const rotates = mode === "rotation";
 
   const waiting = withoutTest(line).filter((p) => p.status === "waiting");
   const nextP = waiting[0] || null;
   const taken = new Set(board.seats.filter((s) => s.taken).map((s) => s.id));
   const canSit = (salesRoster || []).filter((p) => p && p.id && !taken.has(p.id));
+  const held = board.seats.filter((s) => s.state === "held").length;
   const M = metrics || {};
 
   const rosterOf = (id) => ((row && row.roster) || []).find((r) => r.id === id) || {};
@@ -12483,36 +12502,98 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
                 No fitting and no zoom: this is the width the coordinates were
                 authored against. */}
             <PlanMap plan={plan} cls="stn-map"
-              deco={(t) => stnDeco(board, t)}
+              deco={(t) => stnDeco(board, t, realName)}
               onTap={(t) => { setPick(null); setWarn(null); setOpen(open === String(t.n) ? null : String(t.n)); }} />
             {/* The rail is the same one the handset draws, and its pips are
                 buttons. On a desk the console below already holds every action
                 for a person, so rather than leave a dead affordance the pip
                 takes you to their row in it. */}
-            <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
-              endLabel="CALL" onPick={toLine} onBunch={toLine} />
+            {rotates && (
+              <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
+                endLabel="CALL" onPick={toLine} onBunch={toLine} />
+            )}
           </div>
 
           <div className="sd-side">
-            <div className="sd-next">
-              <div className="sd-cap2">Next up</div>
-              {nextP ? (
-                <>
-                  <div className="sd-nextwho">
-                    <span className="mf-av" style={{ background: colorOf(nextP.id) || `hsl(${hueFromName(realName(nextP.id))} 52% 42%)` }}>
-                      {initialsOf(realName(nextP.id))}
-                    </span>
-                    <div><b>{realName(nextP.id)}</b><em>waiting {qWaitLabel(qMinsSince(nextP.joinedAt))}</em></div>
-                  </div>
-                  <button type="button" className="btn btn-primary sd-assign" disabled={tabBusy || !waiting.length}
-                    onClick={assignNext}>Assign the call</button>
-                </>
-              ) : <p className="sd-none">Nobody is waiting for a call.</p>}
-            </div>
-            <div className="sd-chips">
-              <span><b>{board.free}</b>free of {board.seats.length}</span>
-              <span><b>{waiting.length}</b>ready</span>
-              <span><b>{M.withCust ?? 0}</b>with a customer</span>
+            {/* Only a room that rotates has a next. A store running no phone up
+                system — which is most of them — gets the space back for the
+                thing it actually came here to read. */}
+            {rotates && (
+              <div className="sd-next">
+                <div className="sd-cap2">Next up</div>
+                {nextP ? (
+                  <>
+                    <div className="sd-nextwho">
+                      <span className="mf-av" style={{ background: colorOf(nextP.id) || `hsl(${hueFromName(realName(nextP.id))} 52% 42%)` }}>
+                        {initialsOf(realName(nextP.id))}
+                      </span>
+                      <div><b>{realName(nextP.id)}</b><em>waiting {qWaitLabel(qMinsSince(nextP.joinedAt))}</em></div>
+                    </div>
+                    <button type="button" className="btn btn-primary sd-assign" disabled={tabBusy || !waiting.length}
+                      onClick={assignNext}>Assign the call</button>
+                  </>
+                ) : <p className="sd-none">Nobody is waiting for a call.</p>}
+              </div>
+            )}
+
+            {/* The three stacked counts that used to sit here said little and
+                left the column half empty under them. The room's own answer to
+                "who is where" is the thing this panel is for, so it is the
+                thing drawn: every desk, in order, with who is in it, how long,
+                and whose desk it is when a desk belongs to somebody. The counts
+                ride along the top as one line rather than three. */}
+            <div className="sd-who">
+              <div className="sd-whohead">
+                <span className="sd-cap2">In the room</span>
+                <span className="sd-whocount">
+                  <b>{board.seats.length - board.free}</b>/{board.seats.length}
+                  {held > 0 ? ` · ${held} away` : ""}
+                </span>
+              </div>
+              <div className="sd-wholist">
+                {board.seats.map((st2) => {
+                  const who = st2.taken ? realName(st2.id) : null;
+                  const ownName = st2.owner ? realName(st2.owner) : null;
+                  const elsewhere = !!(st2.taken && st2.owner && st2.owner !== st2.id);
+                  return (
+                    <button key={st2.n} type="button"
+                      className={"sd-w" + (st2.taken ? " on" : "") + (st2.state === "held" ? " held" : "")
+                        + (st2.offerTo ? " due" : "")}
+                      onClick={() => { setPick(null); setWarn(null); setOpen(open === st2.n ? null : st2.n); }}>
+                      <span className="sd-wn">{st2.n}</span>
+                      {who ? (
+                        <>
+                          <span className="mf-av sd-wav" style={{ background: colorOf(st2.id) || `hsl(${hueFromName(who)} 52% 42%)` }}>
+                            {initialsOf(who)}
+                          </span>
+                          <span className="sd-wnm">
+                            {stnFirst(who)}
+                            {/* Somebody in somebody else's chair is worth
+                                saying, and worth its own line: on one line it
+                                is the part that gets truncated away. */}
+                            {elsewhere && <em>in {stnFirst(ownName)}&rsquo;s desk</em>}
+                          </span>
+                          <span className="sd-wt">
+                            {st2.state === "held" ? `away ${qWaitLabel(qMinsSince(st2.seen))}` : qWaitLabel(qMinsSince(st2.at))}
+                          </span>
+                        </>
+                      ) : st2.offerTo ? (
+                        <>
+                          <span className="sd-wnm dim">{stnFirst(st2.offerLabel)}</span>
+                          <span className="sd-wt due">{stnLeft(st2.offerLeftMs)}</span>
+                        </>
+                      ) : (
+                        <>
+                          {/* A name on an empty desk is a label, never a claim.
+                              Nothing is written on their behalf and the chair
+                              still reads as free. */}
+                          <span className="sd-wnm dim">{ownName ? `${stnFirst(ownName)}\u2019s desk` : "free"}</span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
@@ -17726,6 +17807,106 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
     </div>
   );
 }
+/**
+ * How this store runs its phone room.
+ * -------------------------------------------------------------------------
+ * Two settings, because two questions were being asked of one screen and only
+ * one of them actually differs between stores.
+ *
+ * The first is whether there is a rotation at all. Most stores run no phone up
+ * system: people take a desk and the question is who is at them. Turning the
+ * rotation off leaves everything that answers that question — presence, the
+ * hours, the occupancy grid — and takes away the offers and the line.
+ *
+ * The second is whose desk is whose, which is the BDC case: agents sit at the
+ * same desk every day and a board that cannot say so makes you learn six names
+ * by their chair. It is a LABEL and never a claim. Nobody is seated because it
+ * is usually their chair; the desk still reads as empty until they check in,
+ * and nothing goes into the day's record on their behalf. Auto-seating would
+ * put a sit in the record for a person who is not in the building, and the
+ * hours that sit collected would be attributed to them.
+ */
+function PhoneRoomCard({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const mode = stationModeOf(config, storeId);
+  const plan = stationPlanOf(config, storeId);
+  const seats = seatsOf(plan);
+  const roster = useMemo(() => {
+    const salesRoles = new Set((config.roles || []).filter((r) => r.tracked !== false).map((r) => r.id));
+    return ((store && store.roster) || []).filter((a) => a && a.roleId && salesRoles.has(a.roleId));
+  }, [store, config.roles]);
+
+  const save = (fn, audit) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    fn(s);
+    onChange(next, { store: storeId, ...audit });
+  };
+  const setMode = (m) => save((s) => { s.stationMode = m; },
+    { action: "Changed the phone room", detail: `${store.name}: ${m === "open" ? "no rotation" : "rotation"}` });
+  const setOwner = (n, id) => save((s) => {
+    const p = s.stationPlan && (s.stationPlan.seats || s.stationPlan.tables)
+      ? JSON.parse(JSON.stringify(s.stationPlan))
+      : JSON.parse(JSON.stringify(DEFAULT_STATION_PLAN));
+    const list = p.seats || p.tables;
+    const seat = list.find((x) => String(x.n) === String(n));
+    if (!seat) return;
+    if (id) seat.owner = id; else delete seat.owner;
+    s.stationPlan = p;
+  }, { action: "Set a desk owner", detail: `${store.name}: station ${n}` });
+
+  const nameOf = (id) => (roster.find((a) => a.id === id) || {}).name || "";
+
+  return (
+    <div className="card">
+      <h3>The phone room</h3>
+      <p className="hint">
+        The stations on the Phone Line tab: who is at which desk, how long they have been there,
+        and how much of the room was staffed each hour. Drawn from the same plan model as the
+        floor, so the same editor arranges it.
+      </p>
+
+      <div className="prc-modes">
+        {[["rotation", "Runs a rotation", "A desk coming free is offered to whoever is next on the Phone Line, and the desk can skip somebody with a reason."],
+          ["open", "Just the desks", "No rotation and no offers. People take a desk and the board says who is where. This is also the BDC view."]].map(([m, title, sub]) => (
+          <button key={m} type="button" className={"prc-mode" + (mode === m ? " on" : "")}
+            onClick={() => setMode(m)} aria-pressed={mode === m}>
+            <b>{title}</b>
+            <span>{sub}</span>
+          </button>
+        ))}
+      </div>
+
+      <details className="tagt prc-owners">
+        <summary>Whose desk is whose</summary>
+        <p className="hint">
+          For a room where the same people sit at the same desks. A name here is a label on the
+          desk and nothing more: the desk still reads as empty until they check in, and nothing is
+          recorded for anybody who is not there.
+        </p>
+        {roster.length === 0
+          ? <p className="hint">No tracked people on this store's roster yet.</p>
+          : (
+            <div className="prc-list">
+              {seats.map((seat) => (
+                <label key={seat.n} className="prc-row">
+                  <span className="prc-n">{seat.n}</span>
+                  <select value={seat.owner || ""} onChange={(e) => setOwner(seat.n, e.target.value)}>
+                    <option value="">Nobody in particular</option>
+                    {roster.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  {seat.owner && !nameOf(seat.owner) && (
+                    <span className="prc-gone">that person is no longer on the roster</span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+      </details>
+    </div>
+  );
+}
+
 function FloorConfigEditor({ config, storeId, onChange }) {
   const store = config.stores.find((s) => s.id === storeId);
   const cfg = floorCfg(store);
@@ -17867,6 +18048,8 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           </React.Suspense>
         )}
       </div>
+
+      <PhoneRoomCard config={config} storeId={storeId} onChange={onChange} />
 
       <div className="card">
         <h3>The floor plan</h3>
@@ -38704,6 +38887,12 @@ const SAGE_CSS = `
    brightened rather than as a taken one — the seat is still empty, and drawing
    it like an occupied chair would have a manager walk over to an empty desk.
    The pulse is what says the clock is running. */
+/* An empty desk with a name on it. Still the free style — dashed, recessed —
+   because it IS free; the name is a label, and drawing it like an occupied
+   chair would have a manager walk over to nobody. */
+.stn-map .fbp-tbl.stn-off.stn-own{ border-style:solid; border-color:rgba(255,255,255,.34); }
+.stn-map .fbp-tbl.stn-off.stn-own .fbp-sub{ color:rgba(255,255,255,.62); font-weight:500; }
+
 .stn-map .fbp-tbl.stn-off.stn-due{ background:rgba(255,255,255,.3); color:#fff;
   border-style:solid; border-color:rgba(255,255,255,.85);
   animation:stnDue 2.4s ease-in-out infinite; }
@@ -38751,6 +38940,26 @@ const SAGE_CSS = `
 .stn-hint{ margin-top:10px; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
 .stn-day-b{ margin-left:auto; align-self:center; }
 
+/* The phone room's own settings card. Two questions, and only the first of
+   them actually differs between most stores. */
+.prc-modes{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0 4px; }
+.prc-mode{ text-align:left; padding:12px 14px; border-radius:14px; border:1.5px solid var(--mfline);
+  background:#fff; font-family:inherit; cursor:pointer; transition:.15s; }
+.prc-mode:hover{ border-color:#B9C3D4; }
+.prc-mode.on{ border-color:transparent; background:color-mix(in srgb,#4C6FFF 8%, #fff);
+  box-shadow:0 0 0 1.5px #4C6FFF, 0 10px 24px -14px rgba(76,111,255,.5); }
+.prc-mode b{ display:block; font-family:var(--mffont); font-size:14.5px; font-weight:600;
+  color:var(--mfink); margin-bottom:4px; }
+.prc-mode.on b{ color:#2B44B8; }
+.prc-mode span{ display:block; font-size:12px; line-height:1.45; color:var(--mfink2); }
+.prc-owners{ margin-top:14px; }
+.prc-list{ display:flex; flex-direction:column; gap:7px; margin-top:8px; }
+.prc-row{ display:flex; align-items:center; gap:10px; }
+.prc-n{ font-family:var(--mfmono); font-size:12px; color:var(--mfink3); min-width:20px; text-align:center; }
+.prc-row select{ flex:1; max-width:280px; }
+.prc-gone{ font-family:var(--mfmono); font-size:10.5px; color:#C2361F; }
+@media (max-width:700px){ .prc-modes{ grid-template-columns:1fr; } }
+
 /* ---- the room, at a desk ----
    The handset's view given the space it was short of. Same objects in the same
    order — the room, the rail beneath it, then the day — so a manager who moves
@@ -38789,10 +38998,37 @@ const SAGE_CSS = `
 .sd-nextwho em{ display:block; font-family:var(--mfmono); font-size:10.5px; font-style:normal; color:rgba(255,255,255,.6); }
 .sd-assign{ width:100%; }
 .sd-none{ margin:0; font-family:var(--mfmono); font-size:11.5px; color:rgba(255,255,255,.6); }
-.sd-chips{ display:flex; flex-direction:column; gap:6px; }
-.sd-chips span{ display:flex; align-items:baseline; gap:7px; padding:9px 13px; border-radius:12px;
-  background:rgba(255,255,255,.08); font-family:var(--mfmono); font-size:11px; color:rgba(255,255,255,.72); }
-.sd-chips b{ font-family:var(--mffont); font-size:17px; font-weight:600; color:#fff; }
+/* Who is where, which is what the panel is for. One row per desk, in the
+   room's own order, so the list and the map are read the same way round. */
+.sd-who{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16);
+  border-radius:16px; padding:12px 12px 10px; }
+.sd-whohead{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.sd-who .sd-cap2{ margin-bottom:0; }
+.sd-whocount{ font-family:var(--mfmono); font-size:10.5px; color:rgba(255,255,255,.55); }
+.sd-whocount b{ font-family:var(--mffont); font-size:13px; font-weight:600; color:#fff; }
+.sd-wholist{ display:flex; flex-direction:column; gap:3px; margin-top:9px; }
+.sd-w{ display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px; border:0;
+  border-radius:10px; background:transparent; text-align:left; color:#fff;
+  font-family:inherit; cursor:pointer; transition:background .15s; }
+.sd-w:hover{ background:rgba(255,255,255,.1); }
+.sd-w.on{ background:rgba(255,255,255,.14); }
+.sd-w.held{ background:rgba(255,255,255,.06); }
+.sd-w.due{ background:rgba(255,255,255,.09); box-shadow:inset 0 0 0 1px rgba(255,255,255,.28); }
+.sd-wn{ font-family:var(--mfmono); font-size:10.5px; color:rgba(255,255,255,.5);
+  min-width:13px; text-align:center; }
+.sd-wav{ width:22px; height:22px; font-size:8.5px; }
+.sd-wnm{ flex:1; min-width:0; display:flex; flex-direction:column;
+  font-family:var(--mffont); font-size:12.5px; font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* An empty desk with a name on it, and an offered one, are both quieter than a
+   person actually sitting there. */
+.sd-wnm.dim{ font-weight:400; color:rgba(255,255,255,.46); }
+.sd-wnm em{ display:block; font-family:var(--mfmono); font-size:9.5px; font-weight:400;
+  font-style:normal; color:rgba(255,255,255,.5); overflow:hidden; text-overflow:ellipsis; }
+.sd-w.held .sd-wnm{ color:rgba(255,255,255,.6); }
+.sd-w.held .sd-wav{ opacity:.55; }
+.sd-wt{ font-family:var(--mfmono); font-size:9.5px; color:rgba(255,255,255,.5); white-space:nowrap; }
+.sd-wt.due{ color:#fff; font-weight:600; }
 
 /* The panel opens inside the hero so the room does not jump down the page
    every time a seat is tapped. */
@@ -38840,8 +39076,9 @@ const SAGE_CSS = `
    and the day's two readings stack rather than each getting half of nothing. */
 @media (max-width:1100px){
   .sd-body{ grid-template-columns:minmax(0,1fr); }
-  .sd-chips{ flex-direction:row; }
-  .sd-chips span{ flex:1; }
+  /* The desk list goes two-across when it is under the room rather than beside
+     it, so six desks do not become six full-width rows. */
+  .sd-wholist{ display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }
   .sd-grid2{ grid-template-columns:minmax(0,1fr); gap:18px; }
 }
 
