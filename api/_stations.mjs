@@ -455,3 +455,45 @@ export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = 
     free: seats.filter((s) => !s.taken).length,
     full: seats.length > 0 && seats.every((s) => s.taken) };
 }
+
+/**
+ * The same room, drawn to fill its box.
+ *
+ * A plan is authored for a desk, where a wide short room and a tall empty band
+ * underneath it cost nothing. On a phone that band is a third of the screen
+ * showing nothing, because the map IS the screen there.
+ *
+ * So the vertical coordinates are stretched until the lowest seat, plus room
+ * for the chip that sits on it, reaches the bottom. Everything scales by the
+ * one factor — seats, zones, doors — so the room keeps its shape and the walls
+ * still fall where the seats say they should. Horizontal is left alone: width
+ * is the axis a phone is short of, and stretching it would put the seats
+ * through the walls.
+ *
+ * Never shrinks. A plan whose seats already reach the floor of the box is
+ * handed back untouched, which is also what happens to a plan with no seats on
+ * it at all.
+ */
+export function tightenPlan(plan, { pad = 14 } = {}) {
+  const seats = seatsOf(plan);
+  if (!plan || !seats.length) return plan;
+  const low = Math.max(...seats.map((s) => Number(s.y) || 0));
+  const bottom = low + pad;
+  if (!(bottom > 0) || bottom >= 100) return plan;
+  const k = 100 / bottom;
+  const up = (v) => Math.min(100, Math.round((Number(v) || 0) * k * 10) / 10);
+  const key = plan.seats ? "seats" : "tables";
+  const out = { ...plan, [key]: seats.map((s) => ({ ...s, y: up(s.y) })) };
+  if (plan.seats && plan.tables) delete out.tables;
+  if (Array.isArray(plan.zones)) {
+    out.zones = plan.zones.map((z) => {
+      const y = up(z.y);
+      return { ...z, y, h: Math.min(100 - y, up(z.h)) };
+    });
+  }
+  for (const k2 of ["doors", "cars"]) {
+    if (Array.isArray(plan[k2])) out[k2] = plan[k2].map((d) => ({ ...d, y: up(d.y) }));
+  }
+  if (plan.door) out.door = { ...plan.door, y: up(plan.door.y) };
+  return out;
+}

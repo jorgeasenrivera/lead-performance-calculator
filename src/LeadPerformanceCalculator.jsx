@@ -28,7 +28,7 @@ import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } 
 import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
-  stationLine, rollOffers, takeOffer, skipOffer } from "../api/_stations.mjs";
+  stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
@@ -12261,6 +12261,435 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
   );
 }
 
+/**
+ * The Phone Line, on a phone.
+ * -------------------------------------------------------------------------
+ * The desk's layout put on a handset was the desk's layout on a handset: a
+ * forty-point store name, chips stacked one per row, and the stations several
+ * screens below the fold. Live Floor has had a view built for the shape of a
+ * phone since FloorRoomPhone; this is the same view for the room next door,
+ * and it is built out of the same pieces on purpose. A manager who moves
+ * between the two should not have to learn a second set of gestures.
+ *
+ * The room first, because on a phone the map IS the screen: who is in which
+ * chair, at a glance, with the line running underneath it as a rail. Then one
+ * card carrying the day — how much of the room was staffed each hour — and the
+ * four things a desk actually reaches for. Everything else opens in a pop, the
+ * way the floor's does.
+ *
+ * The Online queue shares this component and has no room, so the map and the
+ * coverage simply are not drawn for it. A queue with no seats should not be
+ * shown an empty floor plan.
+ */
+function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName, date, userName,
+  variant, identities, busy, onRow, act, nudge, decline, assignSpecific, assignNext, setFlag,
+  removePerson, addPerson, resetPin, regenToken, upsToday, openOpps, closeOpp }) {
+  const seats = variant.kind === "line";
+  /* Tightened only here. The desk has room for a plan authored with a tall
+     empty band under the seats; a phone does not, and the map is the whole
+     screen there. The stored plan is untouched, so the desk still draws the
+     room the store drew. */
+  const plan = useMemo(() => tightenPlan(stationPlanOf(config, store.id)), [config, store.id]);
+  const [pop, setPop] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [tick, setTick] = useState(0);
+  const [warn, setWarn] = useState(null);
+  const [pick, setPick] = useState(null);
+  const close = useCallback(() => { setPop(null); setWarn(null); setPick(null); }, []);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  const { vpRef, vpW, natW, natH, fit, z, bump } = usePlanViewport(plan, zoom, setZoom);
+  const hours = useStationHours(store.id, date, "qrp");
+  const board = useMemo(
+    () => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID] }),
+    [plan, row, tick]); // eslint-disable-line
+  const occ = useMemo(
+    () => (seats ? occupancy(plan, row, { open: store.hours?.open, close: store.hours?.close, now: Date.now() }) : null),
+    [plan, row, store, tick]); // eslint-disable-line
+
+  const waiting = withoutTest(line).filter((p) => p.status === "waiting");
+  const nextP = waiting[0] || null;
+  const taken = new Set(board.seats.filter((s) => s.taken).map((s) => s.id));
+  const canSit = (salesRoster || []).filter((p) => p && p.id && !taken.has(p.id));
+  const first = (nm) => String(nm || "").split(" ")[0];
+  const leftLabel = (ms) => {
+    const n = Math.max(0, Math.round(ms / 1000));
+    return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+  };
+
+  /* The floor's rail colours people by their tags. The same lookup, so a
+     person wears one colour across both rooms. */
+  const rosterOf = (id) => ((row && row.roster) || []).find((r) => r.id === id) || {};
+  const tagsOf = (id) => {
+    const r = rosterOf(id);
+    const custom = ((data && data.repTags) || {})[id] || [];
+    return [...(r.langs || []), ...(r.strengths || []), ...(r.skills || []), ...custom].filter(Boolean);
+  };
+  const colorOf = (id) => { const t = tagsOf(id); return t.length ? frTagColor(t[0]) : null; };
+  const lightOf = (id) => { const t = tagsOf(id); return t.length ? frTagLight(t[0]) : false; };
+
+  /* ---- writing to the room ---- */
+  const write = async (fn) => {
+    try {
+      const next = await mutateQueueRow(store.id, date, (cur) => {
+        const res = fn(cur || {});
+        return res.changed ? res.row : null;
+      });
+      if (next && onRow) onRow(next);
+    } catch (e) { console.error("station write", e); }
+    finally { close(); }
+  };
+  /* The same roll the desk runs, on the same terms: idempotent, and quiet when
+     the room has not moved. Two screens rolling the same offers converge. */
+  const rolling = useRef(false);
+  useEffect(() => {
+    if (!seats) return undefined;
+    let gone = false;
+    (async () => {
+      if (rolling.current) return;
+      rolling.current = true;
+      try {
+        let moved = false;
+        const got = await mutateQueueRow(store.id, date, (cur) => {
+          const r = rollOffers(cur || {}, plan, Date.now(), { skip: [TEST_ID] });
+          moved = r.changed;
+          return r.changed ? r.row : null;
+        });
+        if (moved && got && !gone && onRow) onRow(got);
+      } catch (e) { /* the next tick tries again */ }
+      finally { rolling.current = false; }
+    })();
+    return () => { gone = true; };
+  }, [store.id, date, tick, seats]); // eslint-disable-line
+
+  const graceNow = new Date().getDate() <= (store.graceDays ?? 10);
+  const phoneBar = normThresholds(store.thresholds)?.phone?.green;
+  const gateFor = (id) => stationGate({
+    stats: data?.months?.[ym()]?.stats?.[norm(realName(id))],
+    standard: phoneBar, inGrace: graceNow });
+
+  const seat = (station, person, { viaOffer = false, forced = false } = {}) => {
+    const gate = gateFor(person.id);
+    if (needsOverride(gate) && !forced) { setWarn({ station, person, gate, viaOffer }); return; }
+    write((cur) => {
+      const res = viaOffer ? takeOffer(cur, station, person, qNowIso())
+                           : claimStation(cur, station, person, qNowIso());
+      if (!res.changed || !forced) return res;
+      res.row.history = res.row.history || [];
+      res.row.history.push({ t: qNowIso(), action: "station-override", id: person.id,
+        who: person.label || "", by: userName || "the desk", station,
+        pct: gate.pct, standard: gate.standard });
+      return res;
+    });
+    if (forced) {
+      appendAudit({ user: userName || "Manager", store: store.id,
+        action: "Stations: seated below standard",
+        detail: `${realName(person.id)} at station ${station} · phone closing ${fmtPct(gate.pct)} against ${gate.standard}%` })
+        .catch(() => {});
+    }
+  };
+  const skip = (n, offer) => {
+    const why = window.prompt(`Skipping ${offer.offerLabel} for station ${n}.\nWhy?`, "");
+    if (why === null) return;
+    const reason = why.trim();
+    if (!reason) { alert("A skip needs a reason. Nothing was changed."); return; }
+    write((cur) => skipOffer(cur, n, qNowIso(), { by: userName || "the desk", why: reason }));
+  };
+
+  /* ---- the pops ---- */
+  const seatPop = (n) => {
+    const s = board.seats.find((x) => x.n === String(n));
+    if (!s) return null;
+    if (warn) return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          {realName(warn.person.id)} is at {fmtPct(warn.gate.pct)} on the phone this month against
+          the store&rsquo;s {warn.gate.standard}%, over {warn.gate.leads} leads.
+          Seating them goes to the audit log with your name on it.
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b" onClick={() => seat(warn.station, warn.person, { viaOffer: warn.viaOffer, forced: true })}>Seat them anyway</button>
+          <button type="button" className="fr-b go" onClick={() => setWarn(null)}>Not now</button>
+        </div>
+      </div>
+    );
+    if (s.taken) return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          <b>{realName(s.id)}</b> has been at station {s.n} for {qWaitLabel(qMinsSince(s.at))}
+          {s.state === "held" ? ", and has not been heard from for a while" : ""}.
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b warn" onClick={() => write((cur) => releaseStation(cur, s.n, qNowIso(), "out"))}>Free the station</button>
+        </div>
+      </div>
+    );
+    if (s.offerTo && !pick) return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          Station {s.n} is <b>{s.offerLabel}</b>&rsquo;s for another {leftLabel(s.offerLeftMs)}.
+          It moves to the next person on the line when that runs out.
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b go" onClick={() => seat(s.n, { id: s.offerTo, label: s.offerLabel }, { viaOffer: true })}>Seat {first(s.offerLabel)}</button>
+          <button type="button" className="fr-b" onClick={() => skip(s.n, s)}>Skip&hellip;</button>
+          <button type="button" className="fr-b" onClick={() => setPick(s.n)}>Someone else</button>
+        </div>
+      </div>
+    );
+    return (
+      <div className="qr-pb">
+        <p className="qr-plead">Who is taking station {s.n}?</p>
+        {canSit.length === 0
+          ? <p className="qr-pmuted">Everybody on the roster is already seated.</p>
+          : (
+            <div className="qr-names">
+              {canSit.map((pp) => (
+                <button key={pp.id} type="button" className="fr-b"
+                  onClick={() => seat(s.n, { id: pp.id, label: pp.label || pp.name })}>
+                  {pp.label || pp.name}
+                </button>
+              ))}
+            </div>
+          )}
+      </div>
+    );
+  };
+
+  const personPop = (id) => {
+    const p = line.find((x) => x.id === id);
+    if (!p) return null;
+    const at = stationOf(row, id);
+    return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          <b>{realName(id)}</b> {"·"} {QUEUE_FLAGS[p.status]?.label || "In line"} {"·"} waiting {qWaitLabel(qMinsSince(p.joinedAt))}
+          {at ? ` · at station ${at}` : ""}
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b go" disabled={busy} onClick={() => { assignSpecific(id, "picked from the room"); close(); }}>Assign the call</button>
+          <button type="button" className="fr-b" disabled={busy} onClick={() => { nudge(id); close(); }}>Nudge</button>
+          <button type="button" className="fr-b" disabled={busy} onClick={() => { decline(id); close(); }}>Pass</button>
+          {p.status !== "waiting"
+            ? <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "waiting"); close(); }}>Back in line</button>
+            : <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "lunch"); close(); }}>At lunch</button>}
+          <button type="button" className="fr-b warn" disabled={busy} onClick={() => { removePerson(id); close(); }}>Take out of the line</button>
+        </div>
+      </div>
+    );
+  };
+
+  const linePop = () => (
+    <div className="qr-pb">
+      {withoutTest(line).length === 0 && <p className="qr-pmuted">{variant.empty}</p>}
+      {withoutTest(line).map((p, i) => (
+        <button key={p.id} type="button" className="qr-lrow" onClick={() => setPop({ k: "person", id: p.id })}>
+          <span className="qr-lrank">{i + 1}</span>
+          <span className="fr-av" style={{ background: colorOf(p.id) || `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
+          <span className="qr-lnm">{realName(p.id)}</span>
+          <span className="qr-lst">{QUEUE_FLAGS[p.status]?.label || "In line"}</span>
+        </button>
+      ))}
+      {(salesRoster || []).filter((a) => !line.some((p) => p.id === a.id)).length > 0 && (
+        <>
+          <p className="qr-pcap">Not in the line</p>
+          <div className="qr-names">
+            {(salesRoster || []).filter((a) => !line.some((p) => p.id === a.id)).map((a) => (
+              <button key={a.id} type="button" className="fr-b" disabled={busy}
+                onClick={() => { addPerson(a.id); close(); }}>{a.name}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const dayPop = () => {
+    const people = attribution(row, hours, (id) => {
+      const r = rosterOf(id);
+      return r && r.name ? norm(r.name) : null;
+    }, Date.now());
+    if (!people.length) return <p className="qr-pmuted">Nobody has taken a station today.</p>;
+    return (
+      <div className="qr-pb">
+        {people.map((p) => (
+          <div key={p.id} className="qr-drow">
+            <span className="fr-av" style={{ background: colorOf(p.id) || `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
+            <span className="qr-dnm"><b>{realName(p.id)}</b><em>{p.min} min {"·"} {p.sits.length} {p.sits.length === 1 ? "sit" : "sits"}</em></span>
+            <span className="qr-dn"><b>{p.op}</b>opps</span>
+            <span className="qr-dn"><b>{p.ca}</b>calls</span>
+          </div>
+        ))}
+        {!people.some((p) => p.counted > 0) && (
+          <p className="qr-pmuted">
+            Nothing attributed yet. The figures come from the Delivery Summary, which lands
+            hourly, and a sit only picks up an hour it covered most of.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const codePop = () => (
+    <div className="qr-pb">
+      <div className="q-qr-box"><QueueQR url={queueSignInUrl(store.id, date, row && row.token, variant.param)} /></div>
+      <p className="qr-pmuted">Salespeople scan it, enter their name and PIN, and they are {variant.count}.</p>
+      <div className="qr-pbtns">
+        <button type="button" className="fr-b" onClick={() => printQueueSignIn({ store, url: queueSignInUrl(store.id, date, row && row.token, variant.param), date, by: userName })}>Print</button>
+        <button type="button" className="fr-b" onClick={regenToken}>New code</button>
+      </div>
+    </div>
+  );
+
+  const pinsPop = () => {
+    const people = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!people.length) return <p className="qr-pmuted">No PINs set yet. They are created the first time each person signs in.</p>;
+    return (
+      <div className="qr-pb">
+        {people.map((pp) => (
+          <div key={pp.id} className="qr-lrow static">
+            <span className="qr-lnm">{pp.name}</span>
+            <button type="button" className="fr-b" onClick={() => resetPin(pp.id)}>Reset PIN</button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const popBody = () => {
+    if (!pop) return null;
+    switch (pop.k) {
+      case "seat": return seatPop(pop.n);
+      case "person": return personPop(pop.id);
+      case "line": return linePop();
+      case "day": return dayPop();
+      case "code": return codePop();
+      case "pins": return pinsPop();
+      case "opps": return <OppsTally history={row && row.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />;
+      default: return null;
+    }
+  };
+  const popTitle = pop ? ({ seat: `Station ${pop.n}`, person: "In line", line: variant.label,
+    day: "The day so far", code: "Sign-in code", pins: "PINs", opps: "Opportunities today" })[pop.k] : "";
+
+  const hourNum = (h) => Number(h) % 12 === 0 ? 12 : Number(h) % 12;
+  const hourTag = (h) => (Number(h) < 12 ? "a" : "p");
+
+  return (
+    <div className="fr-page qr">
+      <div className="fr-top">
+        <div className="fr-brand">
+          <span className="fr-cap">Sage</span>
+          <span className="fr-title">{variant.label}</span>
+        </div>
+        <button type="button" className="qr-assign" disabled={busy || !nextP} onClick={assignNext}>
+          <PixIcon glyph="bolt" size={15} />
+          {nextP ? first(realName(nextP.id)) : "Nobody"}
+          <em>{variant.kind === "online" ? "lead" : "call"}</em>
+        </button>
+      </div>
+
+      <div className="fr-hero">
+        {seats && (
+          <div className="fr-planbox">
+            <div className="fr-planvp" ref={vpRef} style={{ height: vpW > 0 ? Math.min(280, Math.round(natH * fit)) : 220 }}>
+              <div className="fr-planwrap" style={{ width: natW * z, height: natH * z }}>
+                <div className="fr-planin" style={{ width: natW || "100%", height: natH, transform: `scale(${z})` }}>
+                  {vpW > 0 && (
+                    <PlanMap plan={plan} cls="stn-map"
+                      deco={(t) => {
+                        const s = board.seats.find((x) => x.n === String(t.n));
+                        if (!s) return {};
+                        if (s.taken) return {
+                          cls: s.state === "held" ? "stn-on stn-held" : "stn-on",
+                          sub: first(s.label),
+                          flag: s.state === "held" ? `away ${qWaitLabel(qMinsSince(s.seen))}` : qWaitLabel(qMinsSince(s.at)),
+                        };
+                        return s.offerTo
+                          ? { cls: "stn-off stn-due", sub: first(s.offerLabel), flag: leftLabel(s.offerLeftMs) }
+                          : { cls: "stn-off" };
+                      }}
+                      onTap={(t) => { setPick(null); setWarn(null); setPop({ k: "seat", n: String(t.n) }); }} />
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Only when there is something to zoom into. Six seats fit a phone
+                at a glance, and the control floats over the bottom-right of the
+                map — which on the floor is the empty lot and in a phone room is
+                a chair. A big room still gets it, and the viewport pans either
+                way. */}
+            {seatsOf(plan).length > 8 && (
+              <div className="fr-zoom">
+                <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
+                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
+              </div>
+            )}
+          </div>
+        )}
+        <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
+          endLabel={variant.kind === "online" ? "LEAD" : "CALL"}
+          onPick={(id) => setPop({ k: "person", id })} onBunch={() => setPop({ k: "line" })} />
+      </div>
+
+      <div className="fr-card">
+        {seats && occ && (
+          <>
+            <button type="button" className="fr-warm" onClick={() => setPop({ k: "day" })}>
+              <PixIcon glyph="clock" size={16} style={{ color: "#4C6FFF" }} />Stations today
+              <span className={"fr-tag " + (board.full ? "ok" : board.free === board.seats.length ? "gap" : "thin")}>
+                {board.full ? "all taken" : `${board.free} free of ${board.seats.length}`}
+              </span>
+            </button>
+            {/* The same bar the floor uses for coverage, reading the room's own
+                occupancy: how many of the stations were staffed in each hour.
+                Full, part-staffed and empty, which is the question the whole
+                process change was made to answer. */}
+            <button type="button" className="fr-cov" onClick={() => setPop({ k: "day" })}>
+              <div className="fr-hours">
+                {/* Empty, some, or half the room and up. Two thirds was the
+                    first guess and it made a six-seat room read amber all day,
+                    since three people on the phones is a normal shift rather
+                    than a shortfall. Half is the bar a manager would actually
+                    use out loud. */}
+                {occ.byHour.map((b) => (
+                  <i key={b.hour} className={b.pct >= 0.5 ? "ok" : b.pct > 0 ? "thin" : "gap"} />
+                ))}
+              </div>
+              {occ.byHour.length > 0 && (
+                <div className="fr-scale">
+                  <span>{hourNum(occ.hours[0])}{hourTag(occ.hours[0])}</span>
+                  <span>{hourNum(occ.hours[occ.hours.length - 1])}{hourTag(occ.hours[occ.hours.length - 1])}</span>
+                </div>
+              )}
+            </button>
+          </>
+        )}
+        <div className="fr-tools">
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "line" })}>
+            <PixIcon glyph="users" size={16} />{variant.kind === "online" ? "Queue" : "The line"}<em>{withoutTest(line).length}</em>
+          </button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "opps" })}>
+            <PixIcon glyph="tap" size={16} />Opportunities<em>{upsToday}</em>
+          </button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}>
+            <PixIcon glyph="door" size={16} />Sign-in code
+          </button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "pins" })}>
+            <PixIcon glyph="clipboard" size={16} />PINs
+          </button>
+        </div>
+      </div>
+
+      {pop && <FrPop title={popTitle} onClose={close} cls={"fr-k-" + pop.k}>{popBody()}</FrPop>}
+    </div>
+  );
+}
+
 function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
@@ -12269,6 +12698,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, force] = useReducer((x) => x + 1, 0);
+  const phone = usePhoneLayout();
 
   const date = today();
 
@@ -12486,6 +12916,24 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   };
 
   if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
+
+  /* A phone gets the room, the same way Live Floor does: the map is the
+     screen, the line runs underneath it as a rail, and every action opens in a
+     pop. The desk's console below is the desk's, and the desk keeps it. */
+  if (phone) {
+    return (
+      <div className={`checkout q-tab mf ${variant.mf}`}>
+        <QueueRoomPhone config={config} store={store} data={data} row={row} line={line}
+          salesRoster={salesRoster} realName={realName} date={date} userName={userName}
+          variant={variant} identities={identities} busy={busy} onRow={setRow} act={act}
+          nudge={nudge} decline={decline} assignSpecific={assignSpecific} assignNext={assignNext}
+          setFlag={setFlag} removePerson={removePerson} addPerson={addPerson}
+          resetPin={resetPin} regenToken={regenToken}
+          upsToday={Object.values(upsToday).reduce((n, v) => n + v, 0)}
+          openOpps={openOpps} closeOpp={closeOpp} />
+      </div>
+    );
+  }
 
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
@@ -15385,12 +15833,47 @@ function FrPop({ title, onClose, children, cls }) {
     </div>, document.body);
 }
 
+/**
+ * A floor plan fitted into a phone's width, with zoom and pan.
+ *
+ * The plan is drawn for a desk: percentage coordinates against a room that is
+ * much wider than it is tall. Squashing that into 350 points makes a room
+ * nobody recognises, so it keeps its proportions and is scaled to fit instead,
+ * with the two buttons and a pannable viewport for anybody who wants a closer
+ * look.
+ *
+ * Shared rather than copied. The floor and the phone room draw different
+ * furniture on the same geometry, and two copies of this arithmetic would
+ * drift the moment one of them was tuned.
+ */
+function usePlanViewport(plan, zoom, setZoom, { natH = 340, capH = 280, minW = 560 } = {}) {
+  const vpRef = useRef(null);
+  const [vpW, setVpW] = useState(0);
+  useEffect(() => {
+    const el = vpRef.current;
+    if (!el) return undefined;
+    const measure = () => setVpW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const stretch = (plan && plan.stretch) || 1;
+  const natW = Math.max(vpW, minW) * stretch;
+  const fit = vpW > 0 ? Math.min(vpW / natW, capH / natH) : 1;
+  const bump = useCallback(
+    (d) => setZoom((v) => Math.min(2.6, Math.max(0.7, +(v * (d > 0 ? 1.25 : 0.8)).toFixed(3)))),
+    [setZoom]);
+  return { vpRef, vpW, natW, natH, capH, fit, z: zoom * fit, bump };
+}
+
 /* The line as the salesperson sees it: a rail from the screen's left edge to
    the door, the head of the line biggest, the flow toward the door, and the
    same spring when somebody joins or takes an up. When the tail of a long line
    runs out of rail it bunches at the start, and a tap on the bunch opens the
    whole line as a list. */
-function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch }) {
+function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = "DOOR" }) {
   const ref = useRef(null);
   const posOf = (i) => { const x = 91 - i * 15; return x >= 24 ? x : 24 - Math.ceil((24 - x) / 15) * 6; };
   useEffect(() => {
@@ -15426,7 +15909,10 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch }) {
           </button>
         );
       })}
-      <span className="fr-raildoor">DOOR</span>
+      {/* Where the line is flowing to. The floor's rail runs at the door; the
+          phone room's runs at the next call, and calling that "door" would be
+          the one word on the screen that is not true. */}
+      <span className="fr-raildoor">{endLabel}</span>
     </div>
   );
 }
@@ -15562,27 +16048,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
   };
 
   /* ---- the plan, zoomed and panned ---- */
-  const vpRef = useRef(null);
-  const [vpW, setVpW] = useState(0);
-  useEffect(() => {
-    const el = vpRef.current;
-    if (!el) return undefined;
-    const measure = () => setVpW(el.clientWidth);
-    measure();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  /* The plan is drawn for a desk. On a phone it keeps those proportions and
-     is fitted to the viewport, so the room does not squash; pinch or the two
-     buttons zoom, and the viewport pans. */
-  const stretch = (plan && plan.stretch) || 1;
-  const natW = Math.max(vpW, 560) * stretch;
-  const natH = 340;
-  const fit = vpW > 0 ? Math.min(vpW / natW, 280 / natH) : 1;
-  const z = zoom * fit;
-  const bump = (d) => setZoom((v) => Math.min(2.6, Math.max(0.7, +(v * (d > 0 ? 1.25 : 0.8)).toFixed(3))));
+  const { vpRef, vpW, natW, natH, fit, z, bump } = usePlanViewport(plan, zoom, setZoom);
 
   /* ---- the day ---- */
   const hours = useMemo(() => coverageByHour({ store, line, history: row.history }), [store, line, row.history]);
@@ -42570,6 +43036,47 @@ const SAGE_CSS = `
 .fr-pip.bunch{ box-shadow:0 0 0 1.5px rgba(232,238,242,.35); }
 .fr-badge{ position:absolute; right:-4px; top:-5px; width:15px; height:15px; border-radius:50%; background:#0B100D; display:grid; place-items:center;
   border:1.5px solid rgba(255,255,255,.5); color:#ffcf7a; font-style:normal; }
+/* ---- the phone room, on a phone ----
+   Built on the floor's own layout so a manager moving between the two rooms
+   does not learn a second set of gestures. Only the colour changes: the hero
+   wears the Phone Line's blue rather than the floor's green, and the accent
+   that marks a caption follows it. */
+.fr-page.qr{ --frsand2:#4C6FFF; --frsand:#8FA6FF; --frp2d:#5A72C0; }
+.fr-page.qr .fr-hero{ background:linear-gradient(150deg,#5E79C8,#3A5296 55%,#1E2A50);
+  box-shadow:0 14px 30px -14px rgba(30,42,80,.55); }
+.fr-page.qr .fr-planin .fbp{ background:none; }
+
+/* The one control the desk reaches for most, in the corner the floor keeps for
+   its asks: who is up, and the tap that hands them the call. */
+.qr-assign{ margin-left:auto; display:flex; align-items:center; gap:7px; min-height:40px;
+  padding:0 13px; border-radius:13px; border:1.5px solid var(--frsand2); background:var(--frsand2);
+  color:#fff; font:700 12.5px var(--font-display); letter-spacing:-.01em; max-width:56%; }
+.qr-assign em{ font:700 8px var(--font-mono); font-style:normal; letter-spacing:.1em;
+  text-transform:uppercase; opacity:.72; }
+.qr-assign:disabled{ background:#fff; color:#A9B0BC; border-color:var(--frline); }
+
+.qr-pb{ display:flex; flex-direction:column; gap:9px; }
+.qr-plead{ margin:0; font:400 13.5px/1.5 var(--font-display); color:var(--frink); }
+.qr-pmuted{ margin:0; font:400 12px/1.5 var(--font-mono); color:var(--frink3); }
+.qr-pcap{ margin:6px 0 0; font:700 9px var(--font-mono); letter-spacing:.14em;
+  text-transform:uppercase; color:var(--frink3); }
+.qr-pbtns,.qr-names{ display:flex; flex-wrap:wrap; gap:7px; }
+.qr-lrow{ display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; border:0;
+  border-radius:12px; background:var(--frpaper); text-align:left; }
+.qr-lrow.static{ background:none; border-bottom:1px solid var(--frline); border-radius:0; }
+.qr-lrank{ font:700 11px var(--font-mono); color:var(--frink3); min-width:14px; }
+.qr-lnm{ flex:1; min-width:0; font:600 13.5px var(--font-display); color:var(--frink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qr-lst{ font:700 8.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--frink3); }
+.qr-drow{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--frline); }
+.qr-dnm{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.qr-dnm b{ font:600 13.5px var(--font-display); color:var(--frink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qr-dnm em{ font:400 10.5px var(--font-mono); font-style:normal; color:var(--frink3); }
+.qr-dn{ display:flex; flex-direction:column; align-items:center; min-width:40px;
+  font:700 8px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; color:var(--frink3); }
+.qr-dn b{ font:700 15px var(--font-display); color:var(--frink); }
+
 .fr-raildoor{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font:700 8.5px var(--font-mono); letter-spacing:.16em; color:rgba(255,255,255,.7); writing-mode:vertical-rl; }
 
 /* the lower card: coverage and the four tools */

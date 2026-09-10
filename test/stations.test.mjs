@@ -482,3 +482,43 @@ test("an open sit does not count as a turn taken", () => {
   row = claimStation(row, "1", DEV, T1).row;
   assert.deepEqual(waitingFor(row).map((p) => p.id), ["p-pri"]);
 });
+
+/* ---- the room, drawn to fill a phone ---- */
+import { tightenPlan } from "../api/_stations.mjs";
+
+test("a plan with a tall empty band underneath it is stretched to fill the box", () => {
+  /* On a desk that band costs nothing. On a phone the map is the screen, and a
+     third of it showing nothing is a third of the screen wasted. */
+  const t = tightenPlan(DEFAULT_STATION_PLAN);
+  const y = (n) => seatsOf(t).find((s) => s.n === n).y;
+  assert.ok(y("1") > 24 && y("4") > 58, "both rows move down");
+  assert.ok(y("4") <= 100 - 1, "and the lowest still leaves room for its chip");
+  assert.ok(y("4") / y("1") - 58 / 24 < 0.01, "the rows keep their spacing");
+});
+
+test("only the vertical is stretched", () => {
+  /* Width is the axis a phone is short of; stretching it would put the seats
+     through the walls. */
+  const t = tightenPlan(DEFAULT_STATION_PLAN);
+  assert.deepEqual(seatsOf(t).map((s) => s.x), seatsOf(DEFAULT_STATION_PLAN).map((s) => s.x));
+});
+
+test("the walls come with the seats, and stay inside the box", () => {
+  const t = tightenPlan(DEFAULT_STATION_PLAN);
+  const z = t.zones[0];
+  assert.ok(z.y + z.h <= 100.01, "no zone hangs out of the room");
+  assert.ok(z.h > 60, "and it still reads as a room rather than a strip");
+});
+
+test("a plan that already fills its box is handed back untouched", () => {
+  const full = { seats: [{ n: "1", x: 10, y: 90 }] };
+  assert.equal(tightenPlan(full), full);
+  assert.equal(tightenPlan({ seats: [] }).seats.length, 0);
+  assert.equal(tightenPlan(null), null);
+});
+
+test("seats drawn under the floor's key survive the stretch", () => {
+  const t = tightenPlan({ tables: [{ n: "1", x: 5, y: 20 }, { n: "2", x: 20, y: 40 }] });
+  assert.equal(seatsOf(t).length, 2);
+  assert.ok(seatsOf(t)[1].y > 40);
+});
