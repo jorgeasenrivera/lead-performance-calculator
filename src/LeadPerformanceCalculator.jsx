@@ -25,6 +25,7 @@ import {
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
+import { stationPlanOf, stationBoard, claimStation, releaseStation } from "../api/_stations.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -11656,6 +11657,95 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
   );
 }
 
+/* ---- the stations, drawn where they are ----
+   A seat you can point at rather than a row in a list, which is the whole
+   reason this is a map: "station 3 has been empty since two" is something you
+   see, and something you would have to read. The drawing is PlanMap, the same
+   one the floor uses, so a store that moves a desk moves it in one editor.
+
+   Phase one only: take a seat, leave a seat. No gating on who may sit, no
+   greying for somebody who has walked off, no hours counted. Each of those
+   reads what this writes. */
+function StationBoard({ config, store, row, roster, onRow, date }) {
+  const [busy, setBusy] = useState(null);
+  const [pick, setPick] = useState(null);        // the seat awaiting a name
+  const plan = stationPlanOf(config, store.id);
+  const seats = stationBoard(plan, row);
+  const taken = new Set(seats.filter((s) => s.taken).map((s) => s.id));
+  const free = seats.filter((s) => !s.taken).length;
+
+  /* Anybody on the roster who is not already in a seat. Sitting somewhere is
+     not the same as being in the line, so this is not filtered by the queue —
+     a person can take a station without having joined anything. */
+  const canSit = (roster || []).filter((p) => p && p.id && !taken.has(p.id));
+
+  const write = async (fn, label) => {
+    setBusy(label);
+    try {
+      const next = await mutateQueueRow(store.id, date, (cur) => {
+        const res = fn(cur || {});
+        return res.changed ? res.row : null;
+      });
+      if (next && onRow) onRow(next);
+    } catch (e) {
+      console.error("station write", e);
+    } finally { setBusy(null); setPick(null); }
+  };
+
+  const sitLabel = (at) => (at ? qWaitLabel(qMinsSince(at)) : "");
+
+  return (
+    <div className="stn">
+      <div className="stn-head">
+        <div><div className="stn-cap">Stations</div><b>The phone room</b></div>
+        <span className="stn-count">{free} free of {seats.length}</span>
+      </div>
+
+      <PlanMap plan={plan} cls="stn-map"
+        deco={(t) => {
+          const seat = seats.find((s) => s.n === String(t.n));
+          if (!seat) return {};
+          return {
+            cls: seat.taken ? "stn-on" : "stn-off",
+            sub: seat.taken ? (seat.label || "").split(" ")[0] : null,
+            flag: seat.taken ? sitLabel(seat.at) : null,
+          };
+        }}
+        onTap={(t) => {
+          const seat = seats.find((s) => s.n === String(t.n));
+          if (!seat || busy) return;
+          if (seat.taken) write((cur) => releaseStation(cur, seat.n, qNowIso(), "out"), seat.n);
+          else setPick(pick === seat.n ? null : seat.n);
+        }} />
+
+      {pick && (
+        <div className="stn-pick">
+          <div className="stn-pick-head">Who is taking station {pick}?</div>
+          {canSit.length === 0
+            ? <p className="muted">Everybody on the roster is already seated.</p>
+            : (
+              <div className="stn-pick-names">
+                {canSit.map((p) => (
+                  <button key={p.id} type="button" className="btn btn-sm"
+                    disabled={!!busy}
+                    onClick={() => write((cur) => claimStation(cur, pick, { id: p.id, label: p.label || p.name }, qNowIso()), pick)}>
+                    {p.label || p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          <button type="button" className="btn btn-sm stn-cancel" onClick={() => setPick(null)}>Cancel</button>
+        </div>
+      )}
+
+      <div className="stn-hint">
+        {pick ? "Pick a name, or tap the seat again to cancel."
+              : "Tap a free station to seat somebody. Tap an occupied one to free it."}
+      </div>
+    </div>
+  );
+}
+
 function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
@@ -11911,6 +12001,11 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
         );
       })()}
+
+      {variant.kind === "line" && row && (
+        <StationBoard config={config} store={store} row={row} roster={salesRoster}
+          onRow={setRow} date={date} />
+      )}
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />
 
@@ -12319,7 +12414,10 @@ function PlanMap({ plan, cls = "", deco, onTap, children }) {
         <span key={"c" + i} className={"fbp-car" + (c.r90 ? " r90" : "")}
           style={{ left: c.x + "%", top: c.y + "%" }} aria-hidden="true"><PixIcon glyph="car" size={22} /></span>
       ))}
-      {(plan.tables || []).map((t) => {
+      {/* Stations call these seats and the floor calls them tables; the drawing
+          is the same either way, and one map means one editor and one set of
+          coordinates rather than a second copy that drifts. */}
+      {(plan.seats || plan.tables || []).map((t) => {
         const d = deco ? deco(t) : {};
         return (
           <button key={t.n} type="button"
@@ -37648,6 +37746,35 @@ const SAGE_CSS = `
   font-family:var(--mffont); color:var(--mfink);
 }
 .mf.mf-line{ --a1:#4C6FFF; --a2:#28B7F0; --glow:rgba(76,111,255,.3); }
+
+/* ---- the phone stations ----
+   Every colour here comes from --a1 / --a2 / --glow, which is why the room
+   arrives blue without a blue variant being written for it: the Phone Line
+   already sets that pair, and Live Floor sets the same two names to green. A
+   literal here would be the one thing that broke that. */
+.stn{ background:#fff; border:1px solid var(--mfline); border-radius:18px; padding:16px;
+  box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); margin-top:14px; }
+.stn-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.stn-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--a1); }
+.stn-head b{ font-family:var(--mffont); font-size:17px; font-weight:600; color:var(--mfink); letter-spacing:-.01em; }
+.stn-count{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); white-space:nowrap; padding-top:3px; }
+
+/* A free seat reads as an outline waiting to be filled; a taken one is solid
+   and carries the first name and how long they have been in it. */
+.stn-map .fbp-tbl.stn-off{ background:#fff; border:1.5px dashed color-mix(in srgb,var(--a1) 45%, transparent); color:var(--mfink3); }
+.stn-map .fbp-tbl.stn-off:hover{ border-style:solid; color:var(--mfink); box-shadow:0 0 0 3px color-mix(in srgb,var(--a1) 14%, transparent); }
+.stn-map .fbp-tbl.stn-on{ border-color:transparent; color:#fff;
+  background:linear-gradient(120deg,var(--a1),var(--a2));
+  box-shadow:0 10px 24px -14px var(--glow); }
+.stn-map .fbp-tbl.stn-on .fbp-sub{ color:rgba(255,255,255,.86); }
+.stn-map .fbp-tbl.stn-on .fbp-flag{ background:rgba(255,255,255,.22); color:#fff; }
+
+.stn-pick{ margin-top:12px; padding:12px 14px; border-radius:14px;
+  background:color-mix(in srgb,var(--a1) 6%, #fff); border:1px solid color-mix(in srgb,var(--a1) 22%, transparent); }
+.stn-pick-head{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); margin-bottom:9px; }
+.stn-pick-names{ display:flex; flex-wrap:wrap; gap:7px; }
+.stn-cancel{ margin-top:10px; }
+.stn-hint{ margin-top:10px; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
 .mf.mf-online{ --a1:#8B5CF6; --a2:#C05CF0; --glow:rgba(139,92,246,.32); }
 
 /* soft one-time entrance */
