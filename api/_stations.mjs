@@ -88,6 +88,32 @@ export function stationModeOf(config, storeId) {
  */
 export const ownerOf = (seat) => (seat && seat.owner) || null;
 
+/**
+ * The desk's owner, and whether the desk can put them in it.
+ *
+ * Somebody who sits at the same desk every day is the person most likely to
+ * forget to check in — it is their chair, they are in it, and tapping a screen
+ * to say so is the part that does not feel necessary. The desk knows whose
+ * chair it is, so a manager can put them in it in one tap rather than finding
+ * them in a list of everybody.
+ *
+ * Three answers, because the honest ones differ:
+ *   "seat"   the desk is empty and its owner is nowhere else
+ *   "move"   its owner is at a different desk, so this is a move — claimStation
+ *            closes that sit and opens this one, which is right: two open sits
+ *            for one person would double every hour they are counted for
+ *   null     no owner, the owner is already in this chair, or the owner is no
+ *            longer somebody the roster can name
+ */
+export function ownerAction(board, seat, nameOf) {
+  if (!seat || !seat.owner || seat.taken) return null;
+  const name = nameOf ? nameOf(seat.owner) : "";
+  if (!name) return null;
+  const elsewhere = (board || []).find((x) => x && x.taken && x.id === seat.owner);
+  return { id: seat.owner, name, kind: elsewhere ? "move" : "seat",
+    from: elsewhere ? elsewhere.n : null };
+}
+
 /** Which station this person is holding, or null. */
 export function stationOf(row, personId) {
   const all = (row && row.stations) || {};

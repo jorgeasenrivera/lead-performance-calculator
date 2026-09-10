@@ -29,7 +29,7 @@ import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
-  stationModeOf, DEFAULT_STATION_PLAN } from "../api/_stations.mjs";
+  stationModeOf, DEFAULT_STATION_PLAN, ownerAction } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
@@ -12095,14 +12095,26 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
         </div>
       </div>
     );
+    const own = ownerAction(board.seats, st, realName);
     return (
       <div className="qr-pb">
         <p className="qr-plead">Who is taking station {st.n}?</p>
+        {/* Its owner first and on their own, because they are the answer far
+            more often than not and hunting for them in a list of everybody is
+            the thing this saves. */}
+        {own && (
+          <div className="qr-names">
+            <button type="button" className="fr-b go"
+              onClick={() => seat(st.n, { id: own.id, label: own.name })}>
+              {own.kind === "move" ? `Move ${stnFirst(own.name)} here from ${own.from}` : `Seat ${own.name}`}
+            </button>
+          </div>
+        )}
         {canSit.length === 0
           ? <p className="qr-pmuted">Everybody on the roster is already seated.</p>
           : (
             <div className="qr-names">
-              {canSit.map((pp) => (
+              {canSit.filter((pp) => !own || pp.id !== own.id).map((pp) => (
                 <button key={pp.id} type="button" className="fr-b"
                   onClick={() => seat(st.n, { id: pp.id, label: pp.label || pp.name })}>
                   {pp.label || pp.name}
@@ -12462,21 +12474,38 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
         </div>
       </div>
     );
+    const own = ownerAction(board.seats, st, realName);
     return (
       <div className="sd-panel">
-        <div className="sd-ptitle">Who is taking station {st.n}?</div>
-        {canSit.length === 0
-          ? <p className="sd-psub">Everybody on the roster is already seated.</p>
-          : (
-            <div className="sd-pbtns">
-              {canSit.map((pp) => (
-                <button key={pp.id} type="button" className="btn btn-sm" disabled={!!busy}
-                  onClick={() => { seat(st.n, { id: pp.id, label: pp.label || pp.name }); setOpen(null); }}>
-                  {pp.label || pp.name}
-                </button>
-              ))}
-            </div>
+        <div className="sd-ptitle">
+          {own ? `Station ${st.n} is ${own.name}\u2019s desk` : `Who is taking station ${st.n}?`}
+        </div>
+        {/* Its owner first and on their own. Somebody who sits at the same desk
+            every day is the person most likely to have forgotten to check in,
+            and hunting for them in a list of everybody is the thing this
+            saves. */}
+        {own && (
+          <p className="sd-psub">
+            {own.kind === "move"
+              ? `They are checked in at station ${own.from}. Moving them here closes that stretch and opens a new one.`
+              : "They have not checked in. Seating them starts the clock from now, not from when they sat down."}
+          </p>
+        )}
+        <div className="sd-pbtns">
+          {own && (
+            <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
+              onClick={() => { seat(st.n, { id: own.id, label: own.name }); setOpen(null); }}>
+              {own.kind === "move" ? `Move ${stnFirst(own.name)} here` : `Seat ${own.name}`}
+            </button>
           )}
+          {canSit.filter((pp) => !own || pp.id !== own.id).map((pp) => (
+            <button key={pp.id} type="button" className="btn btn-sm" disabled={!!busy}
+              onClick={() => { seat(st.n, { id: pp.id, label: pp.label || pp.name }); setOpen(null); }}>
+              {pp.label || pp.name}
+            </button>
+          ))}
+          {canSit.length === 0 && !own && <p className="sd-psub">Everybody on the roster is already seated.</p>}
+        </div>
         <button type="button" className="btn btn-sm sd-pclose" onClick={() => { setOpen(null); setPick(null); }}>Cancel</button>
       </div>
     );

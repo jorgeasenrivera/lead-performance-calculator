@@ -585,3 +585,52 @@ test("a room that does not rotate shows no offers, even with some on the row", (
   assert.deepEqual(off.queued.map((p) => p.id), ["p-dev", "p-pri"],
     "and nobody is held back as already spoken for");
 });
+
+/* ---- putting somebody in the desk they forgot to check into ---- */
+import { ownerAction } from "../api/_stations.mjs";
+
+const OWNED = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }, { n: "2", x: 40, y: 10 }] };
+const named = (id) => ({ "p-dev": "Dev Okonjo", "p-pri": "Priya Ramanan" })[id] || "";
+
+test("an empty desk offers to seat the person whose desk it is", () => {
+  /* The person most likely to have forgotten to check in is the one who sits
+     there every day, and hunting for them in a list of everybody is the thing
+     this saves. */
+  const board = stationBoard(OWNED, {});
+  const a = ownerAction(board, board.find((s) => s.n === "1"), named);
+  assert.equal(a.kind, "seat");
+  assert.equal(a.name, "Dev Okonjo");
+  assert.equal(a.from, null);
+});
+
+test("a desk with no owner offers nobody in particular", () => {
+  const board = stationBoard(OWNED, {});
+  assert.equal(ownerAction(board, board.find((s) => s.n === "2"), named), null);
+});
+
+test("an owner sitting somewhere else is a move, not a second sit", () => {
+  /* claimStation closes the old stretch and opens a new one. Two open sits for
+     one person would double every hour they are counted for. */
+  const row = claimStation({}, "2", DEV, T1).row;
+  const board = stationBoard(OWNED, row);
+  const a = ownerAction(board, board.find((s) => s.n === "1"), named);
+  assert.equal(a.kind, "move");
+  assert.equal(a.from, "2");
+  const after = claimStation(row, "1", { id: a.id, label: a.name }, T2).row;
+  assert.equal(stationOf(after, "p-dev"), "1");
+  assert.equal(after.sits.filter((s) => !s.out).length, 1);
+});
+
+test("a desk its owner is already in offers nothing", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  const board = stationBoard(OWNED, row);
+  assert.equal(ownerAction(board, board.find((s) => s.n === "1"), named), null);
+});
+
+test("an owner who has left the roster is not offered", () => {
+  /* A name the store can no longer resolve is not a person a manager can seat,
+     and "Seat " with nothing after it is worse than no button. */
+  const board = stationBoard({ seats: [{ n: "1", x: 5, y: 5, owner: "p-gone" }] }, {});
+  assert.equal(ownerAction(board, board[0], named), null);
+  assert.equal(ownerAction(board, board[0], null), null);
+});
