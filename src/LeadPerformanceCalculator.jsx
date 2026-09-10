@@ -25,6 +25,7 @@ import {
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
+import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS } from "../api/_stations.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
@@ -6119,7 +6120,19 @@ async function publishBoard(config, storeId, sdata) {
     const rows = ((sdata && sdata.activity) || {})[t];
     const store = (config?.stores || []).find((s2) => s2.id === storeId);
     const bar = (store?.activityStandards || {}).rockEdStars ?? DEFAULT_ACTIVITY_STANDARDS.rockEdStars;
-    if (rows) { try { await saveShared(floorStatsKey(storeId, t), slimFloorStats(withChannels(withRocked(sdata, t, rows, bar), sdata, t))); } catch (e) {} }
+    if (rows) {
+      try {
+        const key = floorStatsKey(storeId, t);
+        const slim = slimFloorStats(withChannels(withRocked(sdata, t, rows, bar), sdata, t));
+        /* The hours ride on this row and are cumulative, so what is already
+           there has to be read back before it is written over — the whole
+           point is that earlier hours survive an import that only knows about
+           the totals as they stand now. */
+        const prev = await loadShared(key, null);
+        slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
+        await saveShared(key, slim);
+      } catch (e) {}
+    }
     const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
     if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
     return { ok, err: ok ? null : (lastSaveError || "unknown") };

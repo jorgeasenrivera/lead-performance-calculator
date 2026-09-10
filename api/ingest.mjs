@@ -23,6 +23,7 @@ import {
   storeKey, actKey, floorStatsKey, boardKey, reportFileKey, withChannels,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "./_store-keys.mjs";
+import { stampHours } from "./_hours.mjs";
 import { phoneExtras, withRocked } from "./_phone-rows.mjs";
 /* A person's standing at a store, shared with the app so an import and a screen
    cannot disagree about who this store's people are. */
@@ -204,7 +205,15 @@ async function sbPutActivityDay(storeId, day, rows) {
    the store rows require a signed-in session and a sign-in page has none. Counts
    only, one day, for the people on the floor. */
 async function sbPutFloorStats(storeId, day, rows, sdata) {
-  await sbPut(floorStatsKey(storeId, day), slimFloorStats(withChannels(withRocked(sdata, day, rows), sdata, day)));
+  const key = floorStatsKey(storeId, day);
+  const slim = slimFloorStats(withChannels(withRocked(sdata, day, rows), sdata, day));
+  /* Cumulative, so the row is read back before it is written over. This is the
+     writer that matters most: the emailed report is the one that actually
+     arrives every hour, and an import that clobbered the earlier buckets would
+     leave a day holding only its final hour. */
+  const prev = await sbGet(key);
+  slim.__hours = stampHours(prev && prev.__hours, rows, new Date());
+  await sbPut(key, slim);
 }
 
 /* ---------- the TV board row ----------
