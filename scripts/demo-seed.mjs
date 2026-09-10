@@ -163,6 +163,9 @@ function liveQueue(r, roster, nowIso) {
   });
   return {
     updatedAt: nowIso,
+    /* The day's sign-in token. The line page refuses a link without one, so a
+       demo store with no token has a queue nobody can open. */
+    token: "demo-token",
     line: [
       at(b, "waiting", 41),
       at(c, "waiting", 17),

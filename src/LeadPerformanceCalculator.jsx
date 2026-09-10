@@ -26,7 +26,7 @@ import {
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
-  releasePerson, touchStation, sitsFor, sitMinutes, HOLD_MS } from "../api/_stations.mjs";
+  releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS } from "../api/_stations.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -10471,6 +10471,96 @@ async function loadMyDays(store, endDay, nameKeys) {
   } catch (e) { return null; }
 }
 
+/* ---- the fence, freeing a seat ----
+   A seat whose person has left the lot is a seat nobody told the system
+   about, and it is the one thing GPS is actually good for: the fence cannot
+   see a desk — 10 to 40 metres of doubt, per the geofence module's own note —
+   but it can see the lot.
+
+   Deliberately narrower than the floor's watcher, which asks whether somebody
+   is done for the DAY and carries a snooze, a ticket and a lock-screen
+   question. This asks nothing. It frees the seat and stops, because a station
+   is not a shift: somebody who drove to lunch has not signed out, and the seat
+   should be available to whoever is here now either way.
+
+   `settle` does the deciding, with the same two confirmations and the same
+   dwell the floor uses, so a single bad reading at the edge of the lot cannot
+   turf somebody out of their chair. */
+function useSeatFence({ fence, active, onLeft }) {
+  const state = useRef(null);
+  const left = useRef(false);
+  useEffect(() => {
+    if (!active) { state.current = null; left.current = false; return undefined; }
+    if (!fence || !Array.isArray(fence.ring) || fence.ring.length < 3) return undefined;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return undefined;
+    let dead = false;
+    const read = () => new Promise((resolve) => {
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      navigator.geolocation.getCurrentPosition(
+        (pos) => finish({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+        () => finish(null),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 });
+      setTimeout(() => finish(null), 9000);
+    });
+    const check = async () => {
+      if (dead || document.hidden || left.current) return;
+      const reading = await read();
+      if (dead || !reading) return;
+      const next = settle(state.current, reading, fence, Date.now(), { confirmations: 2, dwellMs: 60 * 1000 });
+      state.current = next;
+      if (next.crossed === "left") { left.current = true; onLeft(); }
+    };
+    check();
+    const t = setInterval(check, 75 * 1000);
+    const onVis = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [active, fence]); // eslint-disable-line
+}
+
+/* ---- your day at the station ----
+   The same record the desk sees, shown to the person it is about. It holds
+   every sit today: which station, in and out, how long, and why it ended.
+
+   It exists for two reasons and they are both practical. Somebody who can see
+   the whole of what is kept about them does not have to wonder what else is;
+   and a person who can see their own day has a reason to tap out properly,
+   which is the behaviour every number in the later phases depends on.
+
+   What it deliberately does NOT show is where anybody has been. The fence
+   knows one thing — on the lot or not — and that shows up here only as the
+   reason a sit ended. There is no trail to draw because none is kept. */
+function MyStationDay({ row, meId, now = Date.now() }) {
+  const sits = sitsFor(row, meId);
+  if (!sits.length) return null;
+  const total = sits.reduce((n, s) => n + sitMinutes(s, now), 0);
+  const at = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase();
+  const why = (s) => {
+    if (!s.out) return "now";
+    if (s.why === "lunch") return "lunch";
+    if (s.why === "left") return "left the lot";
+    if (s.why === "moved") return "moved seat";
+    return "tapped out";
+  };
+  return (
+    <div className="sf-stnday">
+      <div className="sf-stnday-head">
+        <span>Your day at the station</span>
+        <b>{total} min</b>
+      </div>
+      {sits.map((s, i) => (
+        <div key={i} className={"sf-stnday-row" + (s.out ? "" : " on")}>
+          <span className="sf-stnday-st">{s.st}</span>
+          <span className="sf-stnday-time">{at(s.in)} &ndash; {s.out ? at(s.out) : "now"}</span>
+          <span className="sf-stnday-min">{sitMinutes(s, now)}m</span>
+          <span className="sf-stnday-why">{why(s)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
@@ -10528,6 +10618,26 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
   // Needs to be in scope before the panel is built, not after.
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
+
+  /* A seat this person is holding, and the fence that frees it when their
+     phone leaves the lot. Only watched while they actually hold one — a
+     salesperson who is not at a station has nothing here to give up, and
+     polling their location for no reason is the sort of thing that should
+     never happen by accident. */
+  const mySeat = stationOf(row, meId);
+  const storeFence = ((cfg && cfg.stores) || []).find((x) => x.id === store)?.fence || null;
+  useSeatFence({
+    fence: storeFence,
+    active: !!mySeat && !!meId,
+    onLeft: () => {
+      mutateQueueRow(store, date, (cur) => {
+        const r = releasePerson(cur || {}, meId, qNowIso(), "left");
+        return r.changed ? r.row : null;
+      }, variant.kind === "online" ? "online" : null)
+        .then((next) => { if (next) setRow(next); })
+        .catch(() => {});
+    },
+  });
 
   const refetch = useCallback(async () => {
     const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store, date, variant.kind));
@@ -10830,6 +10940,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </button>
           </div>
         </div>
+        <MyStationDay row={row} meId={meId} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
             <div className="sf-shock" />
@@ -14572,6 +14683,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             </button>
           </div>
         </div>
+        <MyStationDay row={row} meId={meId} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
             <div className="sf-shock" />
@@ -40760,6 +40872,28 @@ const SAGE_CSS = `
         animation:sfNudge 1.6s ease-in-out infinite; }
       @keyframes sfNudge { 0%,100% { transform:none; } 50% { transform:translateY(-2px); } }
       @media (prefers-reduced-motion: reduce) { .sf-nudge { animation:none; } }
+
+      /* Your day at the station. Quiet on purpose: it is a record to check,
+         not a thing to act on, and the screen above it is where the acting
+         happens. The open sit is the one somebody is looking for, so it is
+         the only row that carries the accent. */
+      .sf-stnday { margin:14px 14px 0; padding:12px 13px; border-radius:14px;
+        background:rgba(255,255,255,.045); border:1px solid rgba(255,255,255,.08); }
+      .sf-stnday-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+        font-family:var(--sfmono); font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+        color:rgba(237,242,234,.45); margin-bottom:9px; }
+      .sf-stnday-head b { font-size:13px; letter-spacing:0; text-transform:none; color:rgba(237,242,234,.85); }
+      .sf-stnday-row { display:grid; grid-template-columns:22px 1fr auto auto; gap:9px; align-items:baseline;
+        padding:5px 0; border-top:1px solid rgba(255,255,255,.05); font-size:12.5px; color:rgba(237,242,234,.62); }
+      .sf-stnday-row:first-of-type { border-top:0; }
+      .sf-stnday-st { font-family:var(--sfmono); font-size:11px; color:rgba(237,242,234,.4);
+        text-align:center; border-radius:5px; background:rgba(255,255,255,.06); }
+      .sf-stnday-time { font-variant-numeric:tabular-nums; }
+      .sf-stnday-min { font-family:var(--sfmono); font-size:11.5px; color:rgba(237,242,234,.8);
+        font-variant-numeric:tabular-nums; }
+      .sf-stnday-why { font-family:var(--sfmono); font-size:10.5px; color:rgba(237,242,234,.34); }
+      .sf-stnday-row.on .sf-stnday-st { background:rgba(140,170,255,.22); color:#cfe0ff; }
+      .sf-stnday-row.on .sf-stnday-why { color:#cfe0ff; }
       /* ---- plates + smart assign, in the new card language ----
          the tables keep their markup; what changes is the shell around them,
          the head row, and the row rhythm, so they read like every other list */
