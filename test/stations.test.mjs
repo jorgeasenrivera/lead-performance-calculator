@@ -235,3 +235,250 @@ test("seen falls back to when they sat, so an untouched seat still has a clock",
   const row = claimStation({}, "1", DEV, T1).row;
   assert.equal(seenAt(row.stations["1"]), T1);
 });
+
+/* ---- phase three: the rotation ---- */
+import { OFFER_MS, waitingFor, offerOf, offerLeftMs, rollOffers, takeOffer,
+  skipOffer, stationLine } from "../api/_stations.mjs";
+
+const TEST_ID = "__lpc_test__";
+/* A row with a plan of two seats, so a full room is reachable in a test. */
+const TWO = { seats: [{ n: "1", x: 10, y: 10 }, { n: "2", x: 40, y: 10 }] };
+const ANA = { id: "p-ana", label: "Ana Beltre" };
+const roll = (row, plan, mins, opts) => rollOffers(row, plan, NOW(mins), opts);
+
+/* Somebody in the line, waiting, unless told otherwise. */
+const inLine = (...people) => ({
+  line: people.map((p) => (p.id ? { id: p.id, label: p.label, status: "waiting" } : p)),
+});
+
+test("a free seat is offered to whoever is next in the line", () => {
+  const row = inLine(DEV, PRI);
+  const { row: r, changed } = roll(row, TWO, 0);
+  assert.equal(changed, true);
+  assert.equal(offerOf(r, "1").id, "p-dev", "the first in the line");
+  assert.equal(offerOf(r, "2").id, "p-pri", "and the second gets the other seat");
+});
+
+test("nobody is promised two chairs at once", () => {
+  /* Two seats promised to one body is how a room ends up with an empty chair
+     everybody believes is spoken for. */
+  const r = roll(inLine(DEV), TWO, 0).row;
+  assert.equal(offerOf(r, "1").id, "p-dev");
+  assert.equal(offerOf(r, "2"), null, "and the other seat is not promised to them as well");
+});
+
+test("an occupied seat is not offered", () => {
+  let row = inLine(DEV, PRI);
+  row = claimStation(row, "1", DEV, T1).row;
+  const r = roll(row, TWO, 0).row;
+  assert.equal(offerOf(r, "1"), null);
+  assert.equal(offerOf(r, "2").id, "p-pri", "and the person in a chair is not offered another");
+});
+
+test("a board left open writes nothing", () => {
+  /* The property everything else depends on: every phone looking at the board
+     rolls the offers, so an unchanged room has to come back changed:false or
+     the row is rewritten on every tick by every device. */
+  const r = roll(inLine(DEV, PRI), TWO, 0).row;
+  for (const m of [0, 1, 2]) assert.equal(roll(r, TWO, m).changed, false, `${m} minutes later`);
+});
+
+test("an offer that is not taken rolls on to the next person", () => {
+  const row = inLine(DEV, PRI);
+  const a = roll(row, { seats: [{ n: "1", x: 0, y: 0 }] }, 0).row;
+  assert.equal(offerOf(a, "1").id, "p-dev");
+  assert.equal(roll(a, { seats: [{ n: "1", x: 0, y: 0 }] }, 2).changed, false, "three minutes is not up");
+  const b = roll(a, { seats: [{ n: "1", x: 0, y: 0 }] }, 4).row;
+  assert.equal(offerOf(b, "1").id, "p-pri");
+  assert.deepEqual(offerOf(b, "1").passed, ["p-dev"], "and it remembers who has had their turn");
+  assert.equal(OFFER_MS, 3 * 60 * 1000);
+});
+
+test("a round that runs out of takers leaves the seat open, and stops asking", () => {
+  const ONE = { seats: [{ n: "1", x: 0, y: 0 }] };
+  let r = roll(inLine(DEV), ONE, 0).row;
+  r = roll(r, ONE, 4).row;
+  assert.equal(offerOf(r, "1").id, null, "offered to nobody");
+  assert.deepEqual(offerOf(r, "1").passed, ["p-dev"]);
+  assert.equal(roll(r, ONE, 8).changed, false, "and it does not start over on the next tick");
+});
+
+test("somebody joining the line is offered the seat nobody wanted", () => {
+  const ONE = { seats: [{ n: "1", x: 0, y: 0 }] };
+  let r = roll(inLine(DEV), ONE, 0).row;
+  r = roll(r, ONE, 4).row;                       // Dev's turn lapsed, seat open
+  r.line.push({ id: ANA.id, label: ANA.label, status: "waiting" });
+  assert.equal(roll(r, ONE, 5).row.offers["1"].id, "p-ana");
+});
+
+test("an offer to somebody who steps away ends, and does not cost them a turn", () => {
+  /* A promise to a person who is at lunch holds the chair empty. They are not
+     counted as having passed: when they come back they are eligible again. */
+  const ONE = { seats: [{ n: "1", x: 0, y: 0 }] };
+  const row = inLine(DEV, PRI);
+  let r = roll(row, ONE, 0).row;
+  assert.equal(offerOf(r, "1").id, "p-dev");
+  r.line[0].status = "lunch";
+  r = roll(r, ONE, 1).row;
+  assert.equal(offerOf(r, "1").id, "p-pri", "it moves on without waiting out the clock");
+  assert.deepEqual(offerOf(r, "1").passed, [], "Dev did not pass on it");
+});
+
+test("waiting means waiting", () => {
+  const row = { line: [
+    { id: "p-dev", label: "Dev", status: "waiting" },
+    { id: "p-pri", label: "Priya", status: "lunch" },
+    { id: "p-ana", label: "Ana", status: "customer" },
+    { id: TEST_ID, label: "Test", status: "waiting" },
+  ] };
+  assert.deepEqual(waitingFor(row, { skip: [TEST_ID] }).map((p) => p.id), ["p-dev"]);
+});
+
+test("the person a seat was offered to can take it", () => {
+  const r = roll(inLine(DEV, PRI), TWO, 0).row;
+  const t = takeOffer(r, "1", DEV, T1);
+  assert.equal(t.changed, true);
+  assert.equal(stationOf(t.row, "p-dev"), "1");
+  assert.equal(offerOf(t.row, "1"), null, "the offer is spent");
+  assert.equal(openSit(t.row, "p-dev").via, "line", "and the sit says where the chair came from");
+});
+
+test("somebody else's offer is refused", () => {
+  /* The desk can still seat anybody through claimStation. A claim arriving
+     from a phone or a tag waits its turn. */
+  const r = roll(inLine(DEV, PRI), TWO, 0).row;
+  const t = takeOffer(r, "1", PRI, T1);
+  assert.equal(t.changed, false);
+  assert.equal(t.why, "offered");
+  const late = takeOffer(r, "1", PRI, new Date(NOW(5)).toISOString());
+  assert.equal(late.changed, true, "once it has lapsed the seat is anybody's");
+});
+
+test("the desk seating somebody directly ends the round", () => {
+  /* Otherwise a round keeps running against a chair that is already full. */
+  const r = roll(inLine(DEV, PRI), TWO, 0).row;
+  const seated = claimStation(r, "1", ANA, T1).row;
+  assert.equal(offerOf(seated, "1"), null);
+  assert.equal(roll(seated, TWO, 1).changed, false);
+});
+
+test("the desk can skip somebody, with a reason, and it is written down", () => {
+  const r = roll(inLine(DEV, PRI), TWO, 0).row;
+  const s = skipOffer(r, "1", T1, { by: "Marisol", why: "on a callback" });
+  assert.equal(s.changed, true);
+  assert.equal(offerOf(s.row, "1").id, null);
+  assert.deepEqual(offerOf(s.row, "1").passed, ["p-dev"]);
+  const ev = s.row.history.at(-1);
+  assert.equal(ev.action, "station-skipped");
+  assert.equal(ev.id, "p-dev");
+  assert.equal(ev.by, "Marisol");
+  assert.equal(ev.reason, "on a callback");
+  assert.equal(ev.station, "1");
+  /* And the next roll hands the chair to the next person rather than back. */
+  assert.equal(roll(s.row, TWO, 1).row.offers["1"].id, "p-pri");
+});
+
+test("skipping nothing is not a change", () => {
+  assert.equal(skipOffer({}, "1", T1).changed, false);
+  assert.equal(skipOffer(roll(inLine(), TWO, 0).row, "1", T1).why, "nothing offered");
+});
+
+test("a skip does not move anybody in the line", () => {
+  /* Passing on a chair is not declining a call. If it cost somebody their
+     place then sitting down would be a gamble against their own next up. */
+  const r = roll(inLine(DEV, PRI), TWO, 0).row;
+  const s = skipOffer(r, "1", T1, { by: "Marisol", why: "on a callback" }).row;
+  assert.deepEqual(s.line.map((p) => p.id), ["p-dev", "p-pri"]);
+  assert.equal(s.line[0].status, "waiting");
+});
+
+test("the board reads as seats plus the line behind them", () => {
+  let row = inLine(DEV, PRI, ANA);
+  row = claimStation(row, "1", DEV, T1).row;
+  row = roll(row, TWO, 0, { skip: [TEST_ID] }).row;
+  const b = stationLine(TWO, row, { now: NOW(1), skip: [TEST_ID] });
+  assert.equal(b.free, 1);
+  assert.equal(b.full, false);
+  assert.deepEqual(b.waiting.map((p) => p.id), ["p-pri", "p-ana"]);
+  /* Priya's name is already on station 2. She is waiting, but she is not
+     waiting for the NEXT chair to come free — Ana is. Drawing her in both
+     places reads as two different facts about one person. */
+  assert.deepEqual(b.queued.map((p) => p.id), ["p-ana"]);
+  assert.equal(b.next.id, "p-ana", "whoever the next free seat belongs to");
+  const two = b.seats.find((s) => s.n === "2");
+  assert.equal(two.offerTo, "p-pri");
+  assert.equal(two.offerLabel, "Priya Ramanan");
+  assert.ok(two.offerLeftMs > 0 && two.offerLeftMs <= OFFER_MS);
+  assert.equal(b.seats.find((s) => s.n === "1").offerTo, null, "an occupied seat offers nothing");
+});
+
+test("a full room is a full room, and everybody else is the waiting list", () => {
+  let row = inLine(DEV, PRI, ANA);
+  row = claimStation(row, "1", DEV, T1).row;
+  row = claimStation(row, "2", PRI, T1).row;
+  const b = stationLine(TWO, row, { now: NOW(1) });
+  assert.equal(b.full, true);
+  assert.equal(b.free, 0);
+  assert.deepEqual(b.waiting.map((p) => p.id), ["p-ana"], "the people in the chairs are not waiting for one");
+  /* With no free seat there is no offer to hold, so the queue is the whole
+     waiting list — which is what a full room sends people to. */
+  assert.deepEqual(b.queued.map((p) => p.id), ["p-ana"]);
+});
+
+test("no seats is not a full room", () => {
+  /* A store that has not drawn a plan should not read as "every station taken". */
+  assert.equal(stationLine({ seats: [] }, inLine(DEV)).full, false);
+});
+
+test("an offer has no time left once it is taken or spent", () => {
+  assert.equal(offerLeftMs(null), 0);
+  assert.equal(offerLeftMs({ id: null, passed: [] }), 0);
+  assert.equal(offerLeftMs({ id: "p-dev", until: new Date(NOW(0)).toISOString() }, NOW(1)), 0);
+});
+
+test("an empty room with nobody waiting is left alone entirely", () => {
+  /* A store that never opens this screen should not gain an offers object for
+     seats nobody has ever asked for. */
+  assert.equal(roll({ line: [] }, TWO, 0).changed, false);
+  assert.equal(roll({}, TWO, 0).changed, false);
+});
+
+test("a freed seat is not handed straight back to whoever just left it", () => {
+  /* Watched happen on a real board: the desk frees station 1 and the person
+     who stood up is offered it again a second later, because they are still
+     high in the line and waiting the moment they are released. */
+  const ONE = { seats: [{ n: "1", x: 0, y: 0 }] };
+  let row = inLine(DEV, PRI);
+  row = claimStation(row, "1", DEV, T1).row;
+  row = releaseStation(row, "1", AT(60), "out").row;
+  assert.equal(roll(row, ONE, 61).row.offers["1"].id, "p-pri", "it goes to the person who has not sat");
+});
+
+test("having had a turn costs a place for a chair and nothing in the line", () => {
+  /* The separation the whole phase rests on: the Phone Line orders who gets
+     the next CALL, and it is not touched by any of this. */
+  let row = inLine(DEV, PRI, ANA);
+  row = claimStation(row, "1", DEV, T1).row;
+  row = releaseStation(row, "1", AT(60), "lunch").row;
+  row.line[0].status = "waiting";
+  assert.deepEqual(waitingFor(row).map((p) => p.id), ["p-pri", "p-ana", "p-dev"]);
+  assert.deepEqual(row.line.map((p) => p.id), ["p-dev", "p-pri", "p-ana"], "the line itself is untouched");
+});
+
+test("once everybody has had a turn, longest since they got up goes first", () => {
+  let row = inLine(DEV, PRI);
+  row = claimStation(row, "1", DEV, T1).row;
+  row = releaseStation(row, "1", AT(10), "out").row;      // Dev up at ten past
+  row = claimStation(row, "1", PRI, AT(10)).row;
+  row = releaseStation(row, "1", AT(70), "out").row;      // Priya up an hour later
+  for (const p of row.line) p.status = "waiting";
+  assert.deepEqual(waitingFor(row).map((p) => p.id), ["p-dev", "p-pri"]);
+});
+
+test("an open sit does not count as a turn taken", () => {
+  /* Somebody in a chair is filtered out anyway; what matters is that a sit
+     with no end does not sort a person who is elsewhere to the back. */
+  let row = inLine(DEV, PRI);
+  row = claimStation(row, "1", DEV, T1).row;
+  assert.deepEqual(waitingFor(row).map((p) => p.id), ["p-pri"]);
+});

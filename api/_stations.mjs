@@ -99,6 +99,11 @@ export function claimStation(row, station, person, now) {
   next.stations[n] = { id: person.id, label: person.label || person.name || "", at: now };
   next.sits.push({ st: n, id: person.id, label: person.label || person.name || "",
     in: now, out: null, why: null });
+  /* Whatever the rotation was offering for this chair is over: somebody is in
+     it. Dropped here rather than in the rotation's own code so it holds for
+     the desk seating a person directly, which is the case that would
+     otherwise leave a round running against an occupied seat. */
+  if (next.offers) delete next.offers[n];
   return { row: next, changed: true, station: n, moved: was };
 }
 
@@ -221,4 +226,232 @@ export function sitMinutes(sit, now = Date.now()) {
   if (!sit || !sit.in) return 0;
   const end = sit.out ? new Date(sit.out).getTime() : now;
   return Math.max(0, Math.round((end - new Date(sit.in).getTime()) / 60000));
+}
+
+/* ---- the rotation: where a freed seat goes ----
+   Phases one and two make a seat something a person can be in. This is the
+   part that decides WHO, so the room stops needing somebody to run it.
+
+   The waiting list is not new machinery: it is the Phone Line itself, in its
+   own order, which is the list the store already trusts and already argues
+   about. A seat coming free is offered to whoever is next on it. The offer
+   stands for a few minutes, and if it is not taken it rolls on.
+
+   Two things are deliberately NOT true here, because both were tempting:
+
+   An offer does not move anybody in the line. Passing on a seat is not
+   declining a call, and if it cost somebody their place then sitting down
+   would be a gamble against their own next up. The line orders calls; the
+   offer only says whose turn the chair is.
+
+   An offer does not stop the desk. claimStation is still the desk's word and
+   seats whoever it is told to — taking the offer with it, because the seat is
+   then occupied and there is nothing left to offer. The offer is how the room
+   runs itself when nobody is watching, not a lock on the manager. */
+
+/** How long an offer stands before it rolls to the next person. One number,
+    in one place, because the right value is a floor decision rather than a
+    technical one and it will be argued about. */
+export const OFFER_MS = 3 * 60 * 1000;
+
+/**
+ * Everyone who could take a seat right now, in the order the room should ask.
+ *
+ * Waiting means waiting: somebody at lunch, on a call or already in a chair is
+ * not offered one, and `skip` is how the caller keeps the test identity out of
+ * a real rotation.
+ *
+ * The order is NOT simply the line's, and the reason is worth writing down
+ * because the obvious version was built first and watched misbehave. The Phone
+ * Line orders who gets the next CALL. Used unchanged for chairs it hands a
+ * freed seat straight back to whoever just stood up from it — they are still
+ * high in the line, they are waiting again the moment they are released, and
+ * the desk frees a station only to be offered the same person a second later.
+ *
+ * So the room asks in the rotation's own terms, which is what the Phone Line
+ * has always been: take a turn, go to the back. Anybody who has not had a
+ * station today is asked first, in the line's order. Everybody else follows,
+ * longest since they got up first. Nobody is punished for sitting down — being
+ * behind for a CHAIR costs nothing in the queue for calls, which is the whole
+ * separation this phase depends on.
+ */
+export function waitingFor(row, { skip = [] } = {}) {
+  const out = new Set(skip);
+  const seated = (row && row.stations) || {};
+  for (const s of Object.values(seated)) if (s && s.id) out.add(s.id);
+
+  /* When each person last got up, so a turn just taken sorts to the back. */
+  const lastUp = {};
+  for (const sit of (row && row.sits) || []) {
+    if (!sit || !sit.id || !sit.out) continue;
+    const t = Date.parse(sit.out) || 0;
+    if (t > (lastUp[sit.id] || 0)) lastUp[sit.id] = t;
+  }
+
+  return ((row && row.line) || [])
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p && p.id && !out.has(p.id) && (p.status || "waiting") === "waiting")
+    .sort((a, b) => {
+      const A = lastUp[a.p.id] || 0, B = lastUp[b.p.id] || 0;
+      if (!A !== !B) return A ? 1 : -1;      // nobody who has sat outranks somebody who has not
+      return (A - B) || (a.i - b.i);         // then longest since they got up, then the line
+    })
+    .map(({ p }) => p);
+}
+
+/** The offer standing on a seat, or null. A round that ran out of takers is
+    kept — `id` null — so the seat is not offered to the same people again on
+    the next tick; it is simply open to anybody. */
+export const offerOf = (row, station) => ((row && row.offers) || {})[String(station)] || null;
+
+/** Milliseconds left on an offer, or 0 for one that is spent or empty. */
+export function offerLeftMs(offer, now = Date.now()) {
+  if (!offer || !offer.id || !offer.until) return 0;
+  return Math.max(0, new Date(offer.until).getTime() - now);
+}
+
+/* Whoever is next for this seat, given who has already had their turn in this
+   round and who is holding an offer somewhere else. One offer per person: two
+   chairs promised to one body is how a room ends up with an empty seat that
+   everybody believes is spoken for. */
+function nextFor(row, station, passed, offers) {
+  const spoken = new Set();
+  for (const [n, o] of Object.entries(offers || {})) {
+    if (n !== String(station) && o && o.id) spoken.add(o.id);
+  }
+  return waitingFor(row, { skip: [...passed, ...spoken] })[0] || null;
+}
+
+/**
+ * Bring the offers up to date with the clock.
+ *
+ * Pure and idempotent on purpose: every phone looking at the board calls this,
+ * and it has to return changed:false when nothing has actually moved or the
+ * row would be rewritten on every tick by every device. The test that matters
+ * is the quiet one — a board left open all afternoon writes nothing.
+ *
+ * The comparison is structural rather than clever. At the instant an offer
+ * expires two devices can both roll it and write near-identical rows; they
+ * then read each other's offer, find it live, and settle. A couple of extra
+ * writes at the moment of an expiry is the honest cost of not needing a
+ * server to hold the clock.
+ */
+export function rollOffers(row, plan, now = Date.now(), { skip = [], offerMs = OFFER_MS } = {}) {
+  const nowIso = new Date(now).toISOString();
+  const cur = (row && row.offers) || {};
+  const seats = stationBoard(plan, row);
+  const offers = {};
+
+  for (const seat of seats) {
+    if (seat.taken) continue;                  // an occupied seat has nothing to offer
+    const was = cur[seat.n] || null;
+    const passed = new Set((was && was.passed) || []);
+
+    /* A live offer stands. It also ends early when the person it names is no
+       longer available — gone to lunch, taken a different chair, left the line
+       — because a promise to somebody who is not there holds the seat empty.
+       That is not counted as passing: if they come back they are eligible
+       again, they simply do not hold this offer while they are gone. */
+    if (was && was.id && offerLeftMs(was, now) > 0) {
+      const still = waitingFor(row, { skip }).some((p) => p.id === was.id);
+      if (still) { offers[seat.n] = was; continue; }
+    } else if (was && was.id) {
+      passed.add(was.id);                      // their few minutes ran out
+    }
+
+    const who = nextFor(row, seat.n, [...passed, ...skip], offers);
+    if (who) {
+      offers[seat.n] = { id: who.id, label: who.label || "", at: nowIso,
+        until: new Date(now + offerMs).toISOString(), passed: [...passed] };
+    } else if (was) {
+      /* Nobody left to ask, but this round did have somebody. It is kept
+         rather than cleared so the same people are not offered it again a
+         second later; the seat is open to anyone until somebody sits in it. */
+      offers[seat.n] = { id: null, at: was.at || nowIso, passed: [...passed] };
+    }
+    /* An empty room with an empty line gets no round at all. Writing one would
+       put an offers object on the row of every store that never opens this
+       screen, for a seat nobody has ever asked for. */
+  }
+
+  if (JSON.stringify(cur) === JSON.stringify(offers)) return { row, changed: false };
+  const next = clone(row);
+  next.offers = offers;
+  return { row: next, changed: true };
+}
+
+/**
+ * The person the seat was offered to takes it.
+ *
+ * Refuses a seat offered to somebody else, which is the whole point of an
+ * offer — the desk can still seat anybody through claimStation, but a claim
+ * arriving from a phone or a tag has to wait its turn.
+ */
+export function takeOffer(row, station, person, now) {
+  const n = String(station == null ? "" : station);
+  const offer = offerOf(row, n);
+  if (!person || !person.id) return { row, changed: false, why: "no person" };
+  if (offer && offer.id && offer.id !== person.id && offerLeftMs(offer, Date.parse(now) || Date.now()) > 0) {
+    return { row, changed: false, why: "offered" };
+  }
+  const res = claimStation(row, n, person, now);
+  if (!res.changed) return res;
+  /* How they came by the chair, stamped on the sit while it is known. Phase
+     six asks whether the rotation actually staffed the room, and a sit that
+     does not say where it came from cannot answer. */
+  const sit = (res.row.sits || []).find((s) => s && s.id === person.id && !s.out);
+  if (sit) sit.via = offer && offer.id === person.id ? "line" : "self";
+  return res;
+}
+
+/**
+ * The desk says not this person, with a reason.
+ *
+ * Mirrors the skip the line already has for a call: it needs a name and a
+ * reason, it is written into the day's history where the timeline reads it,
+ * and it costs the person nothing but this round of this chair.
+ */
+export function skipOffer(row, station, now, { by = "the desk", why = "" } = {}) {
+  const n = String(station == null ? "" : station);
+  const offer = offerOf(row, n);
+  if (!offer || !offer.id) return { row, changed: false, why: "nothing offered" };
+
+  const next = clone(row);
+  next.offers = next.offers || {};
+  next.offers[n] = { ...offer, id: null, until: null,
+    passed: [...new Set([...(offer.passed || []), offer.id])] };
+  next.history = next.history || [];
+  next.history.push({ t: now, action: "station-skipped", id: offer.id, who: offer.label || "",
+    by, reason: why || null, station: n });
+  return { row: next, changed: true, id: offer.id };
+}
+
+/**
+ * What the board draws beside the map: the seats, and the line behind them.
+ *
+ * Somebody holding an offer is waiting, but they are not waiting for the NEXT
+ * seat — theirs is on the map with their name on it. Drawing them in both
+ * places at once reads as two different facts about one person, so the two
+ * lists are separated here rather than in the screen:
+ *
+ *   waiting   everybody who could take a seat
+ *   queued    those without a chair already offered to them
+ *   next      whoever the next seat to come free belongs to
+ */
+export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = HOLD_MS, skip = [] } = {}) {
+  const spoken = new Set();
+  const seats = stationPresence(plan, row, { now, onLot, holdMs }).map((seat) => {
+    const offer = offerOf(row, seat.n);
+    const live = !seat.taken && offer && offer.id && offerLeftMs(offer, now) > 0;
+    if (live) spoken.add(offer.id);
+    return { ...seat,
+      offerTo: live ? offer.id : null,
+      offerLabel: live ? (offer.label || "") : "",
+      offerLeftMs: live ? offerLeftMs(offer, now) : 0 };
+  });
+  const waiting = waitingFor(row, { skip });
+  const queued = waiting.filter((p) => !spoken.has(p.id));
+  return { seats, waiting, queued, next: queued[0] || null,
+    free: seats.filter((s) => !s.taken).length,
+    full: seats.length > 0 && seats.every((s) => s.taken) };
 }
