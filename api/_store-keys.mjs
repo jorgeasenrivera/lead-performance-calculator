@@ -44,6 +44,9 @@ export const FLOOR_STAT_FIELDS = ["calls", "video", "contacted", "text", "email"
   /* Whether the person qualified in RockEd that day, folded in at publish time
      from the checkout marks so the phone's points are the desk's points. */
   "rocked",
+  /* The month's closing, per channel, as it stood on this day. See withChannels
+     below for why it is stamped onto a DAY row. */
+  "mtd",
   "uploadedAt"];
 
 /* What the wall keeps. The lead counts are in here so a salesperson can see
@@ -53,6 +56,47 @@ export const BOARD_STAT_FIELDS = ["internetUnits", "internetPct", "phoneUnits", 
   "internetLeads", "phoneLeads", "showroomLeads",
   /* The new and used split, so a phone's pace bar can show both halves. */
   "newUnits", "usedUnits"];
+
+/* ---- the month's closing, stamped on the day ----
+   A salesperson wants to know whether their closing is actually down or whether
+   it only feels down, which is a question about a trend and not about today.
+   Nothing here could answer it: the day rows carry units and visits but no
+   channel split, and the Daily Activity report does not break units down by
+   channel at all, so a per-day channel rate is not derivable from what arrives.
+
+   What DOES arrive, in the Delivery Summary, is the month-to-date figure per
+   channel. Stamped onto each day's row it gives two things for six numbers.
+   Read directly, the days plot how the running rate has moved — which is the
+   better answer anyway, because a daily rate on two leads is noise. Diffed
+   against the day before, they recover that day's own channel units and leads,
+   so a true rolling rate is available from the same six numbers.
+
+   It costs nothing to read. The phone already fetches one of these rows per day
+   for the whole month, stamp-gated and cached, so this rides along in a request
+   that was happening regardless.
+
+   No backfill: the history was never stored, so the series starts at the first
+   import after this ships. And month-to-date resets on the 1st, which a reader
+   spanning a boundary has to expect — a gap on that day, not a cliff. */
+const MTD_MAP = { iu: "internetUnits", il: "internetLeads", pu: "phoneUnits",
+  pl: "phoneLeads", su: "showroomUnits", sl: "showroomLeads" };
+
+export function withChannels(dayRows, sdata, day) {
+  const month = String(day || "").slice(0, 7);
+  const stats = ((sdata && sdata.months && sdata.months[month]) || {}).stats || {};
+  const out = {};
+  for (const [k, r] of Object.entries(dayRows || {})) {
+    if (!r) continue;
+    const m = stats[k];
+    if (!m) { out[k] = { ...r }; continue; }
+    const mtd = {};
+    for (const [short, field] of Object.entries(MTD_MAP)) {
+      if (m[field] != null) mtd[short] = m[field];
+    }
+    out[k] = Object.keys(mtd).length ? { ...r, mtd } : { ...r };
+  }
+  return out;
+}
 
 /* Keeping only the fields that travel, which is the same operation on both
    sides and was written out twice. */

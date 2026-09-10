@@ -29,7 +29,7 @@
  * a script somebody runs deliberately rather than anything the app can do.
  */
 
-import { storeKey, actKey, floorStatsKey, boardKey } from "../api/_store-keys.mjs";
+import { storeKey, actKey, floorStatsKey, boardKey, withChannels } from "../api/_store-keys.mjs";
 
 /* The store. The id is not a real dealership's and the name says demo out loud,
    so nobody looking at a support ticket has to work out whether this is a
@@ -222,11 +222,15 @@ export function buildDemo() {
   const month = monthStr(new Date());
   const today = days[days.length - 1];
 
+  /* label as well as name: the line and the phone read `label`, the board and
+     the coaching pages read `name`, and a roster carrying only one of them
+     leaves whichever screen wanted the other looking at an empty person. */
   const roster = CAST.map((p, i) => ({
-    id: uid(), name: p.name, roleId: p.roleId, order: i,
+    id: uid(), name: p.name, label: p.name, roleId: p.roleId, order: i,
     tenure: p.tenure, updatedAt: nowIso,
   }));
-  roster.push({ id: uid(), name: DEMO_MANAGER.name, roleId: DEMO_MANAGER.roleId, order: roster.length, updatedAt: nowIso });
+  roster.push({ id: uid(), name: DEMO_MANAGER.name, label: DEMO_MANAGER.name,
+    roleId: DEMO_MANAGER.roleId, order: roster.length, updatedAt: nowIso });
 
   /* Per-day activity, for everybody who is tracked. The manager is not. */
   const tracked = roster.filter((p) => p.roleId !== "manager");
@@ -307,20 +311,32 @@ export function buildDemo() {
     __storeId: DEMO_STORE_ID,
   };
 
-  /* The board row, which is what the wall display and the phones read. */
+  /* The board row, which is what the wall display AND the phone read. The
+     phone gets its month figures from here rather than from the store, because
+     the store rows need a signed-in session and this one does not. Shape
+     matters: it looks for b.months[b.ym].stats, and an earlier draft of this
+     file invented a people[] array instead, which drew "No month row yet" over
+     a store with forty-five days of history in it. */
+  const people = roster.filter((a) => a.roleId !== "manager")
+    .map((a) => ({ id: a.id, name: a.name, roleId: a.roleId }));
   const board = {
     updatedAt: nowIso,
-    store: DEMO_STORE_ID,
-    people: tracked.map((p) => {
-      const t = activity[today] && activity[today][norm(p.name)];
-      return {
-        id: p.id, name: p.name,
-        units: t ? t.units : 0,
-        internetPct: Math.round(40 + r() * 45),
-        phonePct: Math.round(30 + r() * 50),
-        showroomPct: Math.round(45 + r() * 40),
-      };
-    }),
+    storeId: DEMO_STORE_ID,
+    storeName: DEMO_STORE_NAME,
+    icon: null,
+    brand: { primary: "#2A5E9B", deep: "#1D4674", accent: "#C1D730" },
+    goals: {}, off: {}, ticker: [], departed: [],
+    roles: [{ id: "sales" }, { id: "service" }],
+    /* Both lists, because they are read by different screens: `roster` is the
+       phone's "which of these is me", `people` is the wall's. buildBoardPayload
+       publishes both and so must this, or whichever screen wanted the other one
+       looks at a store with nobody in it. */
+    roster: people,
+    people,
+    ym: month,
+    months: { [month]: { stats: monthStats, stated } },
+    thresholds: { internet: { green: 12 }, phone: { green: 10 }, showroom: { green: 25 },
+      apptVideoDayPct: { green: 60 }, engagedVideoPct: { green: 50 } },
   };
 
   const rows = [];
@@ -333,7 +349,33 @@ export function buildDemo() {
      so it never pulls the whole store to draw one week. */
   for (const day of days) {
     put("app_data", { key: actKey(DEMO_STORE_ID, day), value: activity[day], updated_at: nowIso });
-    put("app_data", { key: floorStatsKey(DEMO_STORE_ID, day), value: activity[day], updated_at: nowIso });
+    /* The floor row is what the phone reads, and it carries the month's channel
+       figures as they stood that day — which is what the thirty-day closing
+       line is drawn from. Walked forward rather than stamped flat, so the line
+       has somewhere to go: each day gets the month-to-date as of that day. */
+    const upTo = days.filter((d) => d.slice(0, 7) === day.slice(0, 7) && d <= day);
+    const asOf = { months: { [day.slice(0, 7)]: { stats: {} } } };
+    for (const p of tracked) {
+      const key = norm(p.name);
+      let iu = 0, il = 0, pu = 0, pl = 0, su = 0, sl = 0;
+      for (const d of upTo) {
+        const r = activity[d] && activity[d][key];
+        if (!r) continue;
+        /* The day's own opportunities are the leads; a unit lands on the
+           channel that saw them, which for a demo is close enough to the way a
+           real Delivery Summary credits it. */
+        il += r.oppInternet || 0; pl += r.oppPhone || 0; sl += r.oppShowroom || 0;
+        if (r.units) {
+          if ((r.oppShowroom || 0) >= (r.oppInternet || 0)) su += r.units; else iu += r.units;
+        }
+      }
+      asOf.months[day.slice(0, 7)].stats[key] = {
+        internetUnits: iu, internetLeads: il, phoneUnits: pu, phoneLeads: pl,
+        showroomUnits: su, showroomLeads: sl,
+      };
+    }
+    put("app_data", { key: floorStatsKey(DEMO_STORE_ID, day),
+      value: withChannels(activity[day], asOf, day), updated_at: nowIso });
   }
 
   /* Today's live line and floor. */

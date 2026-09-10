@@ -94,3 +94,47 @@ export function stampLineMoves(prev, next, now) {
   }
   return next;
 }
+
+/* ---- thirty days of one channel ----
+   "Is my closing down, or does it just feel down." The day rows carry the
+   month-to-date units and leads per channel (see withChannels), which read two
+   ways, and this returns both because they answer different halves of that
+   question:
+
+     rate    the running month-to-date percentage, which is the number the
+             board and the desk are looking at
+     daily   that day's own closing, recovered by differencing yesterday's
+             month-to-date out of today's
+
+   The daily figure is the honest one and also the noisy one: a day with three
+   leads and one car is 33%, which means very little. So it is drawn as points
+   under the running line rather than as a line of its own — the trend is the
+   answer, the days are the evidence.
+
+   A month boundary resets month-to-date, so a negative difference is a reset
+   and not a collapse. Those days have no daily figure at all. */
+export const CH_MTD = { internet: ["iu", "il"], phone: ["pu", "pl"], showroom: ["su", "sl"] };
+
+export function channelSeries(days, channel) {
+  const pair = CH_MTD[channel];
+  if (!pair || !Array.isArray(days)) return [];
+  const [uk, lk] = pair;
+  const out = [];
+  let prev = null;
+  for (const d of days) {
+    const m = d && d.row && d.row.mtd;
+    if (!m || m[lk] == null || m[uk] == null) { prev = null; continue; }
+    const units = m[uk], leads = m[lk];
+    const rate = leads > 0 ? (units / leads) * 100 : null;
+    let daily = null;
+    if (prev) {
+      const du = units - prev.units, dl = leads - prev.leads;
+      /* Both have to have moved forward. A reset is negative; a day with no
+         new leads is not a 0% day, it is a day with nothing to close. */
+      if (du >= 0 && dl > 0) daily = (du / dl) * 100;
+    }
+    out.push({ day: d.day, rate, daily, units, leads });
+    prev = { units, leads };
+  }
+  return out;
+}

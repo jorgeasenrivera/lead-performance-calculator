@@ -20,7 +20,7 @@ import {
    that drifts writes a row of the right shape in the right place with one column
    missing, and says nothing at all. */
 import {
-  storeKey, actKey, floorStatsKey, boardKey, reportFileKey,
+  storeKey, actKey, floorStatsKey, boardKey, reportFileKey, withChannels,
   BOARD_STAT_FIELDS, slimFloorStats,
 } from "./_store-keys.mjs";
 import { phoneExtras, withRocked } from "./_phone-rows.mjs";
@@ -204,7 +204,7 @@ async function sbPutActivityDay(storeId, day, rows) {
    the store rows require a signed-in session and a sign-in page has none. Counts
    only, one day, for the people on the floor. */
 async function sbPutFloorStats(storeId, day, rows, sdata) {
-  await sbPut(floorStatsKey(storeId, day), slimFloorStats(withRocked(sdata, day, rows)));
+  await sbPut(floorStatsKey(storeId, day), slimFloorStats(withChannels(withRocked(sdata, day, rows), sdata, day)));
 }
 
 /* ---------- the TV board row ----------
