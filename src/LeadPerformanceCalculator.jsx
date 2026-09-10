@@ -8122,6 +8122,26 @@ function Login({ config, onBack, onAuthed, onHandover, onJump }) {
     if (!email.trim() || !password) { setErr("Enter your email and password."); return; }
     setBusy(true);
     signInPressed = true;
+    /* ---- put the keyboard away BEFORE anything is measured ----
+       On a phone the press that starts all of this happens with the keyboard
+       up, which means the viewport is roughly half the screen. The jump
+       measures the window once, sizes its canvas to that, and centres itself
+       in it — and then the keyboard leaves and the window doubles. The result
+       is the animation sitting high on the screen and stopping in a hard line
+       just past the middle, with the bottom half empty. Measured: --jy 230px
+       against an 844px window, canvas 390x460 over a 390x844 screen.
+
+       The canvas cannot be resized once it is running: it is handed to a
+       worker, which owns it from then on. So the fix is to not measure a
+       viewport that is about to change. Blur first, wait for the layout to
+       settle, then start. The wait is a frame plus a beat — long enough for
+       the keyboard's own animation to have handed the height back, short
+       enough that nobody perceives it as a delay before the press responds. */
+    try {
+      const el = document.activeElement;
+      if (el && typeof el.blur === "function") el.blur();
+    } catch (e) {}
+    await settleViewport();
     /* ---- hold the screen for the length of the jump ----
        The sign-in call is not the only thing that brings the session in: the
        client fires SIGNED_IN the moment it succeeds, the app's own auth listener
@@ -8467,6 +8487,37 @@ function lastView() {
 function rememberView(v) {
   if (!v || v === "admin" || v === "combined") return;
   try { localStorage.setItem(LAST_VIEW_KEY, v); } catch (e) {}
+}
+
+/* Wait for the window to stop changing size, up to a bound. Used before the
+   jump measures anything: a keyboard leaving the screen is a resize, and the
+   arrival is built from one measurement taken once. Resolves on the first
+   quiet frame after a change, or after `cap` regardless, because a viewport
+   that never settles must not hold the sign-in press. */
+function settleViewport({ floor = 200, cap = 520 } = {}) {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve();
+    /* A floor, not just a quiet check. The keyboard does not begin leaving the
+       instant it is told to — iOS animates it out over about a quarter of a
+       second — so polling for "the height stopped changing" answers yes before
+       it has started changing at all. First draft of this resolved at 80ms
+       against a resize that arrived at 120ms and measured the short viewport
+       anyway, which is the bug it was written to fix. */
+    const t0 = Date.now();
+    let done = false;
+    let last = window.innerHeight;
+    let quiet = 0;
+    const finish = () => { if (done) return; done = true; clearInterval(iv); clearTimeout(to); resolve(); };
+    const iv = setInterval(() => {
+      const h = window.innerHeight;
+      if (h !== last) { last = h; quiet = 0; return; }
+      if (Date.now() - t0 < floor) return;
+      /* Two quiet ticks past the floor, so a resize still in flight is not
+         read as settled. */
+      if (++quiet >= 2) finish();
+    }, 40);
+    const to = setTimeout(finish, cap);
+  });
 }
 
 const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 1400 };
