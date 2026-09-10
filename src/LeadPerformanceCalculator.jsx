@@ -3643,11 +3643,26 @@ export default function LeadPerformanceCalculator() {
   }
   if (wantsFloor) {
     if (floorLinks === undefined) return wrap(<Shell><LoadingScreen /><Style /></Shell>);
+    /* Keyed by the account, not by the phone. One key for the whole device
+       meant the last store ANY account visited decided where the NEXT account
+       landed: sign in as a manager, look at one store, sign in as a
+       salesperson, and their corner opens at the manager's store. It only
+       shows when somebody is linked at more than one rooftop, which is exactly
+       the person this remembering exists for. */
+    const homeKey = "lpcf:home:" + (session.id || "anon");
     let remembered = null;
-    try { remembered = localStorage.getItem("lpcf:home"); } catch (e) {}
+    try {
+      remembered = localStorage.getItem(homeKey);
+      /* The old device-wide key is dropped rather than migrated. Carrying its
+         value over would hand the first person to sign in after this ships the
+         very store this is meant to stop them landing in. Losing it costs one
+         sign-in at whichever rooftop is listed first, which homeLinkFor
+         already handles. */
+      localStorage.removeItem("lpcf:home");
+    } catch (e) {}
     const home = homeLinkFor(floorLinks, remembered);
     if (home) {
-      try { localStorage.setItem("lpcf:home", home.store); } catch (e) {}
+      try { localStorage.setItem(homeKey, home.store); } catch (e) {}
       /* Their corner, through the account. The daily QR stays the second door
          into the very same screen. No ground: the phone routes draw their own. */
       return wrap(<Shell ground={false}>
@@ -14132,6 +14147,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
   }, []);
   const lightMode = theme === "light" || (theme === "auto" && sysLight);
+  /* Remembered for the next cold start, so index.html can paint this ground
+     before any of this has run. Without it the first paint is the browser's
+     white and the dark shell arrives over the top of it, which is the flash. */
+  useEffect(() => {
+    try { localStorage.setItem("lpcf:ground", lightMode ? "light" : "dark"); } catch (e) {}
+  }, [lightMode]);
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
@@ -32565,6 +32586,16 @@ function useNativeBuild() {
 
 function Shell({ children, entering, style, ground = true }) {
   const nativeBuild = useNativeBuild();
+  /* The other half of the first-paint ground. This shell is the manager's app
+     and the sign-in screen, both of which are light; the phone routes come
+     through here with ground={false} and record their own, which may be dark.
+     Gated on that flag so the two never fight over the key — the phone's
+     effect runs first, being deeper in the tree, and an ungated write here
+     would land on top of it. */
+  useEffect(() => {
+    if (!ground) return;
+    try { localStorage.setItem("lpcf:ground", "light"); } catch (e) {}
+  }, [ground]);
   return <div className={"lpc" + (entering ? " is-entering" : "")} style={style}>
       {/* A phone page sits fixed over the whole app, so under it the ground's
           drifting blobs, dot field and streaks would animate and composite for

@@ -12,6 +12,28 @@
     <link rel="icon" href="/favicon-32.png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Sage</title>
+    <!-- The very first paint. Without this the browser shows its own white page
+         until the app's stylesheet is parsed and React has something on screen,
+         which on a phone opening cold is long enough to read as a flash. Same
+         value as --bg and as the theme-color above, so the ground is already
+         the app's ground before the app arrives. Inline on purpose: a linked
+         stylesheet is another round trip, and the round trip is the gap being
+         covered. -->
+    <style>html, body { margin: 0; background: #F5F5F7; }</style>
+    <!-- Which ground, though, depends on the screen this person lands on, and
+         that is not knowable before the app has run: the manager's app is light
+         and the salesperson's phone shell is dark unless their system says
+         otherwise. A media query alone would swap the flash for the other half
+         of the building. So the app records the ground it last drew for this
+         person, and that is what gets painted first next time. Unknown falls
+         back to light, which is the app's own --bg and what a first visit to
+         the sign-in screen actually shows. -->
+    <script>
+      try {
+        var g = localStorage.getItem("lpcf:ground");
+        if (g === "dark") document.documentElement.style.background = "#0E1512";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
