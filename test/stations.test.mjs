@@ -149,3 +149,89 @@ test("seats drawn under the floor's key still read", () => {
   assert.equal(stationPlanOf({ stores: [{ id: "a", stationPlan: plan }] }, "a"), plan);
   assert.equal(stationBoard(plan, {}).length, 2);
 });
+
+/* ---- phase two: presence ---- */
+import { HOLD_MS, presenceOf, touchStation, stationPresence, sitsFor, sitMinutes, seenAt } from "../api/_stations.mjs";
+
+const AT = (mins) => new Date(Date.parse(T1) + mins * 60000).toISOString();
+const NOW = (mins) => Date.parse(T1) + mins * 60000;
+
+test("a seat just taken is seated", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  const seat = stationBoard(DEFAULT_STATION_PLAN, row).find((s) => s.n === "1");
+  assert.equal(presenceOf(seat, { now: NOW(1) }), "seated");
+});
+
+test("fifteen quiet minutes greys it, and it is still theirs", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  const seat = stationBoard(DEFAULT_STATION_PLAN, row).find((s) => s.n === "1");
+  assert.equal(presenceOf(seat, { now: NOW(14) }), "seated");
+  assert.equal(presenceOf(seat, { now: NOW(15) }), "held");
+  assert.equal(seat.taken, true, "held is cosmetic — the seat has not been released");
+  assert.equal(HOLD_MS, 15 * 60 * 1000);
+});
+
+test("hearing from them starts the clock again", () => {
+  let row = claimStation({}, "1", DEV, T1).row;
+  row = touchStation(row, "p-dev", AT(14)).row;
+  const seat = stationBoard(DEFAULT_STATION_PLAN, row).find((s) => s.n === "1");
+  assert.equal(presenceOf(seat, { now: NOW(20) }), "seated", "six minutes since we heard from them");
+  assert.equal(presenceOf(seat, { now: NOW(29) }), "held");
+});
+
+test("a phone off the lot frees the seat regardless of how recently they tapped", () => {
+  /* The one thing the fence is actually good for. Somebody who tapped a
+     button on their way out of the door is not still at the desk. */
+  const row = claimStation({}, "1", DEV, T1).row;
+  const seat = stationBoard(DEFAULT_STATION_PLAN, row).find((s) => s.n === "1");
+  assert.equal(presenceOf(seat, { now: NOW(1), onLot: false }), "free");
+  assert.equal(presenceOf(seat, { now: NOW(1), onLot: true }), "seated");
+});
+
+test("an unknown reading is treated as on the lot", () => {
+  /* No fence drawn, permission refused, or a reading too vague to act on.
+     Freeing a seat on the strength of a reading the fence itself would not
+     stand behind is worse than leaving it alone. */
+  const row = claimStation({}, "1", DEV, T1).row;
+  const seat = stationBoard(DEFAULT_STATION_PLAN, row).find((s) => s.n === "1");
+  assert.equal(presenceOf(seat, { now: NOW(1), onLot: undefined }), "seated");
+  assert.equal(presenceOf(seat, { now: NOW(1), onLot: null }), "seated");
+});
+
+test("touching a seat you are not in changes nothing", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  assert.equal(touchStation(row, "p-pri", AT(2)).changed, false);
+});
+
+test("the board carries each seat's state, per person", () => {
+  let row = claimStation({}, "1", DEV, T1).row;
+  row = claimStation(row, "2", PRI, T1).row;
+  row = touchStation(row, "p-pri", AT(20)).row;
+  const board = stationPresence(DEFAULT_STATION_PLAN, row, { now: NOW(21), onLot: { "p-dev": true } });
+  assert.equal(board.find((s) => s.n === "1").state, "held", "quiet for twenty-one minutes");
+  assert.equal(board.find((s) => s.n === "2").state, "seated", "heard from a minute ago");
+  assert.equal(board.find((s) => s.n === "3").state, "free");
+});
+
+test("a seat whose person has left the lot reads free on the board", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  const board = stationPresence(DEFAULT_STATION_PLAN, row, { now: NOW(2), onLot: { "p-dev": false } });
+  assert.equal(board.find((s) => s.n === "1").state, "free");
+});
+
+test("your day at the station reads back as intervals with lengths", () => {
+  let row = claimStation({}, "3", DEV, T1).row;
+  row = releaseStation(row, "3", AT(90), "lunch").row;
+  row = claimStation(row, "5", DEV, AT(120)).row;
+  const mine = sitsFor(row, "p-dev");
+  assert.equal(mine.length, 2);
+  assert.equal(sitMinutes(mine[0]), 90);
+  assert.equal(mine[0].why, "lunch");
+  assert.equal(sitMinutes(mine[1], NOW(150)), 30, "the open one runs to now");
+  assert.deepEqual(sitsFor(row, "p-pri"), [], "somebody else's day is not in it");
+});
+
+test("seen falls back to when they sat, so an untouched seat still has a clock", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  assert.equal(seenAt(row.stations["1"]), T1);
+});

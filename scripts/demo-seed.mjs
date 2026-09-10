@@ -163,6 +163,9 @@ function liveQueue(r, roster, nowIso) {
   });
   return {
     updatedAt: nowIso,
+    /* The day's sign-in token. The line page refuses a link without one, so a
+       demo store with no token has a queue nobody can open. */
+    token: "demo-token",
     line: [
       at(b, "waiting", 41),
       at(c, "waiting", 17),
@@ -177,6 +180,18 @@ function liveQueue(r, roster, nowIso) {
         table: 4, spot: "floor", note: null },
     ],
     checkouts: [],
+    /* Two of the phone stations, so the demo shows both presence states: one
+       heard from a moment ago, one quiet long enough to have greyed. A demo
+       where every seat looks the same teaches nothing about the board. */
+    stations: {
+      "2": { id: b.id, label: b.name, at: mins(52), seen: mins(3) },
+      "5": { id: e.id, label: e.name, at: mins(70), seen: mins(38) },
+    },
+    sits: [
+      { st: "2", id: b.id, label: b.name, in: mins(52), out: null, why: null },
+      { st: "5", id: e.id, label: e.name, in: mins(70), out: null, why: null },
+      { st: "1", id: c.id, label: c.name, in: mins(190), out: mins(96), why: "lunch" },
+    ],
     history: [
       { t: mins(64), action: "away", id: d.id, who: d.name, by: "self" },
       { t: mins(23), action: "customer", id: a.id, who: a.name, by: "self" },
