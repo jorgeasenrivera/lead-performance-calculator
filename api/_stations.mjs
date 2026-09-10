@@ -137,6 +137,88 @@ export function stationBoard(plan, row) {
   return seatsOf(plan).map((seat) => {
     const who = held[String(seat.n)] || null;
     return { ...seat, n: String(seat.n), taken: !!who,
-      id: who ? who.id : null, label: who ? who.label : "", at: who ? who.at : null };
+      id: who ? who.id : null, label: who ? who.label : "", at: who ? who.at : null,
+      /* `seen` travels with the seat or presence cannot see it: without this
+         the board hands presenceOf a seat whose only clock is when they sat
+         down, every touch is invisible, and everybody greys fifteen minutes
+         into their shift no matter what they are doing. */
+      seen: who ? (who.seen || who.at || null) : null };
   });
+}
+
+/* ---- presence: seated, held, free ----
+   A seat knows three things about the person in it, and each is driven by
+   something observable rather than inferred from silence.
+
+     seated   theirs, and we have heard from them recently
+     held     theirs, greyed on the board — on the lot, but quiet for a while
+     free     nobody's
+
+   Held is cosmetic. The seat stays theirs until they tap out, go to lunch, or
+   their phone leaves the lot; greying says "we have not heard from them", not
+   "they are gone". That distinction matters because the thing being measured
+   is not attendance — GPS cannot see a desk, only the lot — it is whether the
+   system still has reason to believe somebody is working the seat.
+
+   Which also means the honest trigger is their last ACTION, not whether the
+   app is open. A phone in a pocket with the screen off is not evidence of
+   anything either way, and treating app-open as presence would grey somebody
+   the moment their screen locked. The cost is the other direction: a person
+   quietly working the phones without pressing anything in Sage greys after
+   fifteen minutes. That is the system saying what it actually knows. */
+export const HOLD_MS = 15 * 60 * 1000;
+
+/** When this person was last heard from, falling back to when they sat. */
+export const seenAt = (seat) => (seat && (seat.seen || seat.at)) || null;
+
+/**
+ * The state of one seat.
+ *
+ * `onLot` is what the geofence last said about this person: true inside, false
+ * outside, and undefined when nothing is known — no fence drawn, permission
+ * refused, a reading too vague to act on. Unknown is treated as inside,
+ * because the alternative is freeing a seat on the strength of a reading the
+ * fence itself would not stand behind.
+ */
+export function presenceOf(seat, { now = Date.now(), onLot, holdMs = HOLD_MS } = {}) {
+  if (!seat || !seat.taken) return "free";
+  if (onLot === false) return "free";
+  const seen = seenAt(seat);
+  if (!seen) return "seated";
+  const quiet = now - new Date(seen).getTime();
+  return quiet >= holdMs ? "held" : "seated";
+}
+
+/** Mark that we have heard from whoever is in this seat. */
+export function touchStation(row, personId, now) {
+  const n = stationOf(row, personId);
+  if (n == null) return { row, changed: false, why: "not seated" };
+  const next = clone(row);
+  next.stations[n].seen = now;
+  return { row: next, changed: true, station: n };
+}
+
+/** The board, with each seat's state worked out. */
+export function stationPresence(plan, row, { now = Date.now(), onLot = {}, holdMs = HOLD_MS } = {}) {
+  return stationBoard(plan, row).map((seat) => ({
+    ...seat,
+    seen: seenAt(seat),
+    state: presenceOf(seat, { now, onLot: seat.id ? onLot[seat.id] : undefined, holdMs }),
+  }));
+}
+
+/**
+ * Today's sits for one person, which is what "your day at the station" draws.
+ * Open sits are included with no end, because the one they are in now is the
+ * one they most want to see.
+ */
+export function sitsFor(row, personId) {
+  return ((row && row.sits) || []).filter((s) => s && s.id === personId);
+}
+
+/** How long a sit ran, in minutes. An open one runs to now. */
+export function sitMinutes(sit, now = Date.now()) {
+  if (!sit || !sit.in) return 0;
+  const end = sit.out ? new Date(sit.out).getTime() : now;
+  return Math.max(0, Math.round((end - new Date(sit.in).getTime()) / 60000));
 }

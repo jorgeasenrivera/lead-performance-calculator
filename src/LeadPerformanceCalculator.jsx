@@ -25,7 +25,8 @@ import {
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
-import { stationPlanOf, stationBoard, claimStation, releaseStation } from "../api/_stations.mjs";
+import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
+  releasePerson, touchStation, sitsFor, sitMinutes, HOLD_MS } from "../api/_stations.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
@@ -11670,9 +11671,19 @@ function StationBoard({ config, store, row, roster, onRow, date }) {
   const [busy, setBusy] = useState(null);
   const [pick, setPick] = useState(null);        // the seat awaiting a name
   const plan = stationPlanOf(config, store.id);
-  const seats = stationBoard(plan, row);
+  /* Re-read on a timer, because held is a function of elapsed time and nothing
+     writes to the row when a seat goes quiet — without this a seat greys only
+     when something else happens to re-render the board. */
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const seats = useMemo(() => stationPresence(plan, row, { now: Date.now() }),
+    [plan, row, tick]); // eslint-disable-line
   const taken = new Set(seats.filter((s) => s.taken).map((s) => s.id));
   const free = seats.filter((s) => !s.taken).length;
+  const held = seats.filter((s) => s.state === "held").length;
 
   /* Anybody on the roster who is not already in a seat. Sitting somewhere is
      not the same as being in the line, so this is not filtered by the queue —
@@ -11698,7 +11709,9 @@ function StationBoard({ config, store, row, roster, onRow, date }) {
     <div className="stn">
       <div className="stn-head">
         <div><div className="stn-cap">Stations</div><b>The phone room</b></div>
-        <span className="stn-count">{free} free of {seats.length}</span>
+        <span className="stn-count">
+          {free} free of {seats.length}{held > 0 ? ` \u00b7 ${held} away` : ""}
+        </span>
       </div>
 
       <PlanMap plan={plan} cls="stn-map"
@@ -11706,9 +11719,11 @@ function StationBoard({ config, store, row, roster, onRow, date }) {
           const seat = seats.find((s) => s.n === String(t.n));
           if (!seat) return {};
           return {
-            cls: seat.taken ? "stn-on" : "stn-off",
+            cls: seat.state === "held" ? "stn-on stn-held" : seat.taken ? "stn-on" : "stn-off",
             sub: seat.taken ? (seat.label || "").split(" ")[0] : null,
-            flag: seat.taken ? sitLabel(seat.at) : null,
+            flag: seat.taken
+              ? (seat.state === "held" ? `away ${sitLabel(seat.seen)}` : sitLabel(seat.at))
+              : null,
           };
         }}
         onTap={(t) => {
@@ -37776,6 +37791,15 @@ const SAGE_CSS = `
   box-shadow:0 10px 26px -12px rgba(8,20,60,.45); }
 .stn-map .fbp-tbl.stn-on .fbp-sub{ color:var(--mfink2); }
 .stn-map .fbp-tbl.stn-on .fbp-flag{ background:color-mix(in srgb,var(--a1) 14%, #fff); color:var(--a1); }
+
+/* Held: still theirs, but we have not heard from them. Greyed rather than
+   dimmed, because a dimmed white chip on a blue ground just reads as further
+   away, and this has to read as a different KIND of thing — the seat is taken
+   and the person is not answering for it. */
+.stn-map .fbp-tbl.stn-on.stn-held{ background:rgba(255,255,255,.62); color:var(--mfink2);
+  box-shadow:0 6px 16px -10px rgba(8,20,60,.35); }
+.stn-map .fbp-tbl.stn-on.stn-held .fbp-sub{ color:var(--mfink3); }
+.stn-map .fbp-tbl.stn-on.stn-held .fbp-flag{ background:rgba(16,32,52,.08); color:var(--mfink2); }
 
 .stn-pick{ margin-top:12px; padding:12px 14px; border-radius:14px;
   background:color-mix(in srgb,var(--a1) 6%, #fff); border:1px solid color-mix(in srgb,var(--a1) 22%, transparent); }
