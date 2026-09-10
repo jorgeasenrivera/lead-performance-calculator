@@ -37759,15 +37759,23 @@ const SAGE_CSS = `
 .stn-head b{ font-family:var(--mffont); font-size:17px; font-weight:600; color:var(--mfink); letter-spacing:-.01em; }
 .stn-count{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); white-space:nowrap; padding-top:3px; }
 
-/* A free seat reads as an outline waiting to be filled; a taken one is solid
-   and carries the first name and how long they have been in it. */
-.stn-map .fbp-tbl.stn-off{ background:#fff; border:1.5px dashed color-mix(in srgb,var(--a1) 45%, transparent); color:var(--mfink3); }
-.stn-map .fbp-tbl.stn-off:hover{ border-style:solid; color:var(--mfink); box-shadow:0 0 0 3px color-mix(in srgb,var(--a1) 14%, transparent); }
-.stn-map .fbp-tbl.stn-on{ border-color:transparent; color:#fff;
-  background:linear-gradient(120deg,var(--a1),var(--a2));
-  box-shadow:0 10px 24px -14px var(--glow); }
-.stn-map .fbp-tbl.stn-on .fbp-sub{ color:rgba(255,255,255,.86); }
-.stn-map .fbp-tbl.stn-on .fbp-flag{ background:rgba(255,255,255,.22); color:#fff; }
+/* The room is the blue thing, not the desks. Inverted from the first draft
+   for a reason worth keeping: what a manager scans this for is who is where,
+   and an occupied seat now reads as a solid white chip on a coloured ground —
+   the highest contrast on the card lands on the one piece of information the
+   card exists to carry. Empty seats recede into the room instead of competing
+   with it. */
+.stn-map .fbp{ background:linear-gradient(140deg,var(--a1),var(--a2)); border-radius:14px; }
+.stn-map .fbp-zone{ border-color:rgba(255,255,255,.22); color:rgba(255,255,255,.5); }
+
+.stn-map .fbp-tbl.stn-off{ background:rgba(255,255,255,.10); color:rgba(255,255,255,.72);
+  border:1.5px dashed rgba(255,255,255,.42); }
+.stn-map .fbp-tbl.stn-off:hover{ background:rgba(255,255,255,.18); border-style:solid;
+  border-color:rgba(255,255,255,.7); color:#fff; }
+.stn-map .fbp-tbl.stn-on{ background:#fff; border-color:transparent; color:var(--mfink);
+  box-shadow:0 10px 26px -12px rgba(8,20,60,.45); }
+.stn-map .fbp-tbl.stn-on .fbp-sub{ color:var(--mfink2); }
+.stn-map .fbp-tbl.stn-on .fbp-flag{ background:color-mix(in srgb,var(--a1) 14%, #fff); color:var(--a1); }
 
 .stn-pick{ margin-top:12px; padding:12px 14px; border-radius:14px;
   background:color-mix(in srgb,var(--a1) 6%, #fff); border:1px solid color-mix(in srgb,var(--a1) 22%, transparent); }
