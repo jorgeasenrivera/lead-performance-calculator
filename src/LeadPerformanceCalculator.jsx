@@ -10702,9 +10702,9 @@ const sfPct = (t) => `${(Math.max(0, Math.min(1, t)) * 100).toFixed(2)}%`;
    way along and a frame for one stop. A fading light comes in at the tail
    and goes at the front; a second one can run half a cycle behind. Returns
    the cancel. */
-function lineLight(el, stops, frame, { fade = false, half = false } = {}) {
+function lineLight(el, stops, frame, { fade = false, half = false, run = 14 } = {}) {
   if (!el || !el.animate || !stops.length) return undefined;
-  const RUN = 14, HOLD = 520, TAIL = 700;
+  const RUN = run, HOLD = 520, TAIL = 700;   // run: ms for one percent of the way
   const frames = [{ ...frame(0), offset: 0 }];
   let t = 0, from = 0;
   stops.forEach((st, i) => {
@@ -10738,7 +10738,9 @@ function useTrackLight(ref, key, pipSel) {
       .map((p) => { const q = p.getBoundingClientRect(); return ((q.left + q.width / 2 - r.left) / r.width) * 100; })
       .map((x) => Math.max(0, Math.min(100, x))).sort((a, b) => a - b);
     const frame = (st) => ({ transform: `translateX(${((st / 100) * r.width).toFixed(1)}px)` });
-    const offs = dots.map((d, i) => lineLight(d, stops, frame, { fade: true, half: i % 2 === 1 }));
+    /* The dots take their time: about three and a half seconds edge to edge,
+       against the cord's light at under a second and a half. */
+    const offs = dots.map((d, i) => lineLight(d, stops, frame, { fade: true, half: i % 2 === 1, run: 34 }));
     return () => offs.forEach((off) => off && off());
   }, [key]);   // eslint-disable-line
 }
