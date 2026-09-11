@@ -13357,6 +13357,10 @@ const FLOOR_FLAGS = {
   away:     { label: "Away",          cls: "f-away" },
 };
 const FLOOR_SELF_FLAGS = ["lunch", "away"];
+/* The floor has no "with a customer" segment of its own — being with somebody
+   is something the desk or a check-in puts you in, not a button you press — so
+   this only ever labels the ones it does have. */
+const FLOOR_SEG = { segFlag: "With a guest" };
 
 // The actions an event can trigger. The map is (event string) -> action.
 const FLOOR_ACTIONS = {
@@ -15698,26 +15702,31 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         {nudgeOn && (
           <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you on the floor</div>
         )}
-        {/* The approved floor screen: the count of available people ahead in the
-            dot matrix, the line drawn from the screen's left edge to the door,
-            the two clocks on one level, and the title. When you are standing
-            down the line steps aside for the status and its clock. */}
-        {st === "waiting" ? (
-          <div className="mcf-top">
-            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={10} gap={4} dim="transparent" /></span>
-            <div className="mcf-cap">TO THE DOOR</div>
-            <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
-            <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
-            <div className="mcf-title">{title}</div>
+        {/* The same hero the phone line has: the ring fills as the wait runs, the
+            place in line sits in the middle of it, and the status takes the
+            middle over when somebody is standing down. This screen and the one
+            next door were two designs for one thing, and a salesperson who
+            works both rooms had to learn each of them.
+
+            The two clocks stay. The ring carries one duration and the floor is
+            run on two — how long on the floor, and how long since the last
+            move — so they keep their line underneath rather than being lost to
+            the tidier shape. */}
+        <div className="sf-poswrap">
+          <div className="sf-aura" />
+          <div className="sf-ringwrap">
+            <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
+            <div className="sf-ring"><div className="sf-ringface">
+              {st === "waiting" ? <DmNumber value={myPos} /> : <SfIcon name={st} size={74} />}
+            </div></div>
           </div>
-        ) : (
-          <div className="mcf-top">
-            <span className="mcf-sticon"><SfIcon name={st} size={64} /></span>
-            <McTimers sinceOn={me.joinedAt} sinceMove={me.statusAt || me.joinedAt} />
-            <div className="mcf-title">{title}</div>
-            <div className="mcf-sub">{sub}</div>
+          <div className="sf-meta">
+            <div className="sf-line-1">{title}</div>
+            <div className="sf-line-2">{sub}</div>
           </div>
-        )}
+          <McTimers sinceOn={me.joinedAt}
+            sinceMove={(st === "waiting" ? me.movedAt : null) || me.statusAt || me.joinedAt} />
+        </div>
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           {st === "customer" && (
@@ -15725,15 +15734,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
               <PixIcon glyph="check" size={16} /><span>Customer left, put me back in line</span>
             </button>
           )}
-          <div className="mcf-chips" role="radiogroup" aria-label="Where you are">
-            {["waiting", ...FLOOR_SELF_FLAGS].map((s2) => (
-              <button key={s2} type="button" role="radio" aria-checked={s2 === st} disabled={busy}
-                className={"mcf-chip" + (s2 === st ? " on" : "")} onClick={() => { buzz(12); setFlag(s2); }}>
-                <PixIcon glyph={s2 === "waiting" ? "user" : s2} size={19} />
-                <span>{s2 === "waiting" ? "Here" : s2 === "lunch" ? "Lunch" : "Away"}</span>
-              </button>
-            ))}
-          </div>
+          {/* The segmented control the phone line uses. It was written to serve
+              this screen too — its own comment says the floor's track is three
+              wide rather than four — and was simply never wired in here. */}
+          <SfStatusSelect value={st} variant={FLOOR_SEG} flags={FLOOR_SELF_FLAGS}
+            busy={busy} onPick={setFlag} />
           <SeatBlock store={store} date={date} meId={meId} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
             fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
@@ -40658,7 +40663,6 @@ const SAGE_CSS = `
 .mc-offc{ margin-top:0; }
 .mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center; padding:8px 0 18px; }
-.mcf-count{ display:flex; justify-content:center; }
 .mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
   color:rgba(237,242,234,.55); margin-top:8px; }
 .mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 calc(50% - 50vw);
@@ -40699,14 +40703,6 @@ const SAGE_CSS = `
 .mc-qjoin s.hd{ background:#E9CE96; }
 .mc-steps-p{ font-size:15px; line-height:1.5; color:rgba(237,242,234,.8); margin:6px 0 4px; }
 .mc-qjoin b{ color:#E9CE96; }
-.mcf-sticon{ margin-top:10px; opacity:.9; }
-.mcf-chips{ display:flex; gap:8px; margin-top:6px; }
-.mcf-chip{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;
-  padding:11px 0 9px; border-radius:13px; background:rgba(255,255,255,.04);
-  border:1px solid rgba(255,255,255,.09); color:#e8eef2; font-size:10px; font-weight:600;
-  cursor:pointer; transition:transform .12s ease; }
-.mcf-chip:active{ transform:scale(.94); }
-.mcf-chip.on{ border-color:rgba(228,201,141,.6); color:#e4c98d; background:rgba(228,201,141,.08); }
 /* ---- nothing paints that nobody sees --------------------------------------
    The phone pages sit fixed over the app's ground, so the ground's four
    drifting blobs, its dot field and its streaks were animating and
@@ -40727,7 +40723,7 @@ const SAGE_CSS = `
   --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --glow:rgba(127,169,138,.38); --ld-off:rgba(143,216,175,.14);
   --sfink:#EDF2EA; --sfink2:#A7B3A9; --sfink3:#6E7A70; --sfcard:#1C2B23; --sfstroke:rgba(255,255,255,.09);
   background:radial-gradient(closest-side at 50% 112%, rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%), #15211B; }
-.mc-shell .mc-card, .mc-shell .mcf-chip, .mc-shell .fba-btn, .mc-shell .mc-offc{ background:#1C2B23; }
+.mc-shell .mc-card, .mc-shell .fba-btn, .mc-shell .mc-offc{ background:#1C2B23; }
 .mc-shell .mc-sheet{ background:#1A2820; }
 .mc-shell .mc-hero{ background:linear-gradient(150deg, rgba(127,169,138,.3), rgba(46,74,56,.28) 60%), #203127; }
 .mc-shell .sf-nudge{ background:rgba(228,201,141,.14); color:#E4C98D; }
@@ -40758,8 +40754,7 @@ const SAGE_CSS = `
 .mc-floor .mcf-track{ background:#0D130F; box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
 .mc-floor .mcf-pip{ background:#243229; }
 .mc-floor .mcf-pip.hd{ background:#2E4034; }
-.mc-floor .mcf-chip, .mc-floor .fba-btn{ background:#0B100D; border-color:rgba(255,255,255,.12); }
-.mc-floor .mcf-chip.on{ border-color:rgba(228,201,141,.65); background:#151A12; }
+.mc-floor .fba-btn{ background:#0B100D; border-color:rgba(255,255,255,.12); }
 .mc-floor .fba-btn.fly{ border-color:rgba(232,169,60,.6); }
 .mc-floor .fba-btn.to{ border-color:rgba(216,72,60,.6); }
 .mc-floor .mcf-title{ color:#FFFFFF; }
@@ -40850,8 +40845,6 @@ const SAGE_CSS = `
 .mcf-tmr .l{ font-size:8.5px; margin-top:4px; }
 .mcf-title{ font-size:27px; margin-top:16px; }
 .mcf-sub{ font-size:14px; }
-.mcf-chips{ gap:10px; margin-top:8px; }
-.mcf-chip{ padding:14px 0 12px; font-size:12.5px; gap:8px; border-radius:16px; min-height:64px; }
 .mcf .fba-row{ gap:10px; margin-top:12px; }
 .mcf .fba-btn{ padding:18px 10px 15px; min-height:96px; gap:8px; }
 .mcf .fba-btn b{ font-size:17px; }
@@ -40927,7 +40920,6 @@ const SAGE_CSS = `
 .mc-tkwrap .mc-tkt{ flex:0 0 auto; }
 /* the customer has gone: one button, said plainly */
 .mcf .mcf-left{ margin:14px auto 0; display:flex; align-items:center; justify-content:center; gap:9px; }
-.mcf .mcf-left + .mcf-chips{ margin-top:14px; }
 /* leaving the lot */
 .mc-lotov{ position:fixed; inset:0; z-index:72; display:flex; align-items:center; justify-content:center; background:rgba(3,6,5,.88); padding:0 14px; }
 .mc-lot{ width:min(430px,100%); border-radius:24px; padding:24px 20px 18px; background:#101713; border:1px solid rgba(228,201,141,.24); color:#E8EEF2; text-align:center; box-shadow:0 32px 70px -20px rgba(0,0,0,.92); animation:mcSheet .3s cubic-bezier(.2,1.15,.35,1) both; will-change:transform,opacity; }
