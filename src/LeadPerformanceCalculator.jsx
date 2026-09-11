@@ -14047,13 +14047,20 @@ function SeatBlock({ store, date, meId, plan, row, onRow }) {
       </div>
     );
   }
+  /* The map takes the screen, the way the FlyBy's does: picking a table is
+     the whole job for the moment, and a table you can hit with a customer
+     standing next to you is not a 34px chip under the hero. */
   return (
-    <div className="fba-seatask">
-      <b>Tap your table</b>
-      <PlanMap plan={plan} cls="mini"
-        deco={(t) => ({ cls: String(me.table) === String(t.n) ? "sel" : "" })}
-        onTap={(t) => seat(t.n)} />
-      <button type="button" className="fba-back" style={{ marginTop: 6 }} onClick={() => setOpen(false)}>Not now</button>
+    <div className="fba-sheetwrap" onClick={() => setOpen(false)}>
+      <div className="fba-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="fba-cap">Tap your table</div>
+        <PlanMap plan={plan} cls="mini"
+          deco={(t) => ({ cls: String(me.table) === String(t.n) ? "sel" : "" })}
+          onTap={(t) => seat(t.n)} />
+        <div className="fba-send">
+          <button type="button" className="fba-back" onClick={() => setOpen(false)}>Not now</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -40444,8 +40451,8 @@ const SAGE_CSS = `
 .sf-off .sf-ring{ filter:saturate(.35) brightness(.72); }
 .sf-off .sf-aura{ opacity:.14; animation:none; }
 .sf-meta{ margin-top:clamp(20px,4vh,30px); text-align:center; z-index:1; }
-.sf-line-1{ font-size:clamp(20px,6vw,23px); font-weight:600; letter-spacing:-.02em; }
-.sf-line-2{ font-size:clamp(13px,4vw,15px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
+.sf-line-1{ font-size:clamp(24px,6.5vw,27px); font-weight:600; letter-spacing:-.02em; }
+.sf-line-2{ font-size:clamp(15px,4.4vw,17px); color:var(--sfink2); margin-top:8px; padding:0 10px; }
 /* One face for the whole salesperson view. The mono was meant for figures only and
    had crept onto labels and buttons, which is why the screens read as three
    different apps stitched together. */
@@ -40931,11 +40938,11 @@ const SAGE_CSS = `
 .mc-offc{ margin-top:0; }
 .mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center; padding:8px 0 18px; }
-.mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
+.mcf-cap{ font-family:var(--sfmono); font-size:11px; font-weight:700; letter-spacing:.22em;
   color:rgba(237,242,234,.55); margin-top:8px; }
 .mcf-count{ display:flex; justify-content:center; }
 .mcf-sticon{ margin-top:10px; opacity:.9; }
-.mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 calc(50% - 50vw);
+.mcf-track{ position:relative; align-self:stretch; height:34px; margin:12px 22px 0 calc(50% - 50vw);
   border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
 .mcf-track .fa, .mcf-track .fb{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px;
   border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
@@ -40946,26 +40953,26 @@ const SAGE_CSS = `
   80%{ opacity:.9; } 96%,100%{ transform:translateX(var(--dA,80px)); opacity:0; } }
 @keyframes mcfB{ 0%{ transform:translateX(var(--bX,120px)); opacity:0; } 16%{ opacity:.9; }
   82%{ opacity:.9; } 100%{ transform:translateX(var(--dB,240px)); opacity:0; } }
-.mcf-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:20px; height:20px;
+.mcf-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:24px; height:24px;
   border-radius:50%; background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center;
-  justify-content:center; font-family:var(--sfmono); font-size:6.5px; font-weight:700;
+  justify-content:center; font-family:var(--sfmono); font-size:8px; font-weight:700;
   transition:left .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
-.mcf-pip.hd{ width:26px; height:26px; font-size:7.5px; background:rgba(232,238,242,.34); }
-.mcf-pip.bh{ width:16px; height:16px; font-size:5.5px; background:rgba(232,238,242,.16); }
-.mcf-you{ position:absolute; top:50%; transform:translate(-50%,-50%); width:20px; height:20px;
+.mcf-pip.hd{ width:30px; height:30px; font-size:9px; background:rgba(232,238,242,.34); }
+.mcf-pip.bh{ width:20px; height:20px; font-size:7px; background:rgba(232,238,242,.16); }
+.mcf-you{ position:absolute; top:50%; transform:translate(-50%,-50%); width:26px; height:26px;
   border-radius:50%; background:#8fd8af; color:#12251b; display:flex; align-items:center;
-  justify-content:center; font-family:var(--sfmono); font-size:6.5px; font-weight:700;
+  justify-content:center; font-family:var(--sfmono); font-size:8.5px; font-weight:700;
   box-shadow:0 0 12px rgba(143,216,175,.95);
   transition:left .65s cubic-bezier(.3,1.3,.4,1); }
-.mcf-tmr{ display:flex; gap:22px; margin-top:16px; }
+.mcf-tmr{ display:flex; gap:26px; margin-top:16px; }
 .mcf-tmr > span{ display:flex; flex-direction:column; align-items:center; }
-.mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:14px;
-  font-family:var(--sfmono); font-size:11px; font-weight:700; color:rgba(237,242,234,.85); }
-.mcf-tmr .l{ font-family:var(--sfmono); font-size:6.5px; font-weight:700; letter-spacing:.14em;
-  color:rgba(237,242,234,.4); margin-top:3px; }
-.mcf-title{ font-family:var(--font-display); font-size:22px; font-weight:700; margin-top:14px;
+.mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:16px;
+  font-family:var(--sfmono); font-size:13.5px; font-weight:700; color:rgba(237,242,234,.85); }
+.mcf-tmr .l{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.14em;
+  color:rgba(237,242,234,.45); margin-top:4px; }
+.mcf-title{ font-family:var(--font-display); font-size:26px; font-weight:700; margin-top:14px;
   color:#fff; text-align:center; letter-spacing:-.01em; }
-.mcf-sub{ font-size:12.5px; color:rgba(237,242,234,.6); margin-top:4px; text-align:center; }
+.mcf-sub{ font-size:15px; color:rgba(237,242,234,.62); margin-top:5px; text-align:center; }
 .mcf-home .mcf-top{ justify-content:center; }
 .mcf-home .mcf-title{ margin-top:18px; }
 .mcf-go{ margin-top:22px; width:min(320px, 100%); }
@@ -41251,8 +41258,8 @@ const SAGE_CSS = `
 .sf-seg-btn{
   flex:1 1 0; min-width:0; position:relative; z-index:1;
   display:flex; flex-direction:column; align-items:center; gap:6px;
-  padding:11px 3px 9px; border:0; background:none; cursor:pointer;
-  color:var(--sfink2); font-size:10.5px; font-weight:640; letter-spacing:-.01em;
+  padding:12px 3px 10px; border:0; background:none; cursor:pointer;
+  color:var(--sfink2); font-size:13px; font-weight:640; letter-spacing:-.01em;
   transition:color .25s var(--ease), transform .28s var(--ease-bloop);
 }
 .sf-seg-btn:active:not(:disabled){ transform:scale(.94); }
@@ -41269,8 +41276,8 @@ const SAGE_CSS = `
 .sf-links{ display:flex; gap:6px; margin-top:10px; }
 .sf-link{
   flex:1 1 0; display:inline-flex; align-items:center; justify-content:center; gap:7px;
-  background:none; border:0; cursor:pointer; padding:12px 8px; border-radius:13px;
-  font-family:var(--sffont); font-size:13px; font-weight:620; color:var(--sfink2);
+  background:none; border:0; cursor:pointer; padding:14px 8px; border-radius:13px;
+  font-family:var(--sffont); font-size:15px; font-weight:620; color:var(--sfink2);
   transition:color .2s var(--ease), background .2s var(--ease), transform .28s var(--ease-bloop);
 }
 .sf-link:active:not(:disabled){ transform:scale(.96); }
@@ -41575,13 +41582,13 @@ const SAGE_CSS = `
 
 /* ---- the seat, on the phone ---- */
 .fba-seated{display:flex;align-items:center;gap:8px;margin-top:10px;background:#fff;border:1px solid rgba(34,49,38,.12);
-  border-radius:13px;padding:9px 13px;font:500 12px var(--font-ui);color:#5A6B5E;}
+  border-radius:13px;padding:12px 14px;font:500 14.5px var(--font-ui);color:#5A6B5E;}
 .fba-seated b{color:#223126;}
 .fba-seated button{margin-left:auto;border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;
-  padding:5px 11px;font:600 10.5px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+  padding:9px 14px;font:600 13px var(--font-ui);color:#5A6B5E;cursor:pointer;}
 .fba-seatask{margin-top:10px;background:#fff;border:1px solid rgba(34,49,38,.12);border-radius:15px;padding:12px 13px;}
-.fba-seatask > b{display:block;font:700 13px var(--font-display);color:#223126;}
-.fba-seatask > span{display:block;font:500 11px var(--font-ui);color:#8B988E;margin:2px 0 8px;}
+.fba-seatask > b{display:block;font:700 16px var(--font-display);color:#223126;}
+.fba-seatask > span{display:block;font:500 13.5px var(--font-ui);color:#8B988E;margin:3px 0 10px;}
 .fba-seatask .fbp-scroll.mini{background:#E9EFE7;border:1px solid rgba(34,49,38,.12);margin-top:8px;}
 .fba-seatask .fbp-scroll.mini .fbp{height:190px;}
 .fba-seatask .fbp-scroll.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
@@ -41590,8 +41597,8 @@ const SAGE_CSS = `
 .fba-seatask .fbp-scroll.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
 .fba-seatask .fbp-scroll.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
 .fba-seatrow{display:flex;gap:8px;}
-.fba-seatrow .fba-go{padding:9px 14px;flex:0 1 auto;}
-.fba-seatrow .fba-back{padding:9px 14px;}
+.fba-seatrow .fba-go{padding:13px 18px;flex:0 1 auto;font-size:15px;}
+.fba-seatrow .fba-back{padding:13px 18px;font-size:15px;}
 
 /* ---- the salesperson's side ---- */
 .fba-row{display:flex;gap:8px;margin-top:10px;}
@@ -41601,43 +41608,46 @@ const SAGE_CSS = `
 .fba-btn:active{transform:scale(.96);}
 .fba-btn.fly{color:#e8a93c;border-color:rgba(232,169,60,.5);}
 .fba-btn.to{color:#f08a80;border-color:rgba(216,72,60,.5);}
-.fba-btn b{display:block;font:700 14px var(--font-display);}
-.fba-btn span{font-size:10px;opacity:.7;}
+.fba-btn b{display:block;font:700 17px var(--font-display);}
+.fba-btn span{font-size:12.5px;opacity:.7;}
 .fba-chip{display:flex;align-items:center;gap:10px;margin-top:10px;background:#101512;color:#fff;border-radius:15px;padding:11px 13px;}
 .fba-ring{width:26px;height:26px;border-radius:50%;border:3px solid #10B981;border-top-color:transparent;
   animation:fbaSpin 1.2s linear infinite;flex:0 0 auto;}
 .fba-chip.ok .fba-ring{border-top-color:#10B981;animation:none;}
 @keyframes fbaSpin{to{transform:rotate(360deg);}}
 @media (prefers-reduced-motion: reduce){.fba-ring{animation:none;}}
-.fba-tx b{display:block;font:700 12px var(--font-display);}
-.fba-tx i{font-style:normal;font-size:10px;color:rgba(255,255,255,.65);}
-.fba-age{margin-left:auto;font:700 12.5px var(--font-mono);color:#10B981;}
+.fba-tx b{display:block;font:700 14.5px var(--font-display);}
+.fba-tx i{font-style:normal;font-size:12.5px;color:rgba(255,255,255,.65);}
+.fba-age{margin-left:auto;font:700 14.5px var(--font-mono);color:#10B981;}
 .fba-x{border:1px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.8);border-radius:99px;
-  padding:5px 9px;font:600 9.5px var(--font-ui);cursor:pointer;flex:0 0 auto;}
+  padding:8px 12px;font:600 12.5px var(--font-ui);cursor:pointer;flex:0 0 auto;}
 .fba-sheetwrap{position:fixed;inset:0;z-index:80;background:rgba(16,21,18,.5);display:flex;align-items:flex-end;justify-content:center;}
-/* On a phone the picker is the whole job, so it takes the screen from the top
-   rather than sitting at the bottom under the hero, and the tables are big
-   enough to hit and to read with a customer standing next to you. */
-@media (max-width:700px){
-  .fba-sheetwrap{align-items:flex-start;padding-top:calc(var(--sat, env(safe-area-inset-top, 0px)) + 10px);}
-  .fba-sheet{border-radius:22px;max-height:calc(100dvh - var(--sat, env(safe-area-inset-top, 0px)) - 20px);overflow-y:auto;padding-bottom:calc(22px + var(--sab, env(safe-area-inset-bottom, 0px)));}
-  .fba-cap{font-size:11px;}
-  .fba-sheet .fbp-scroll.mini .fbp{height:min(330px,44dvh);}
-  .fba-sheet .fbp-scroll.mini .fbp-tbl{width:46px;height:36px;border-radius:10px;font-size:15px;}
-  .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:42px;height:42px;}
-  .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:10.5px;}
-  .fba-sheet .fbp-scroll.mini .fbp-sub{font-size:9px;}
-  .fba-lot{font-size:15px;padding:13px;}
-  .fba-notes button{font-size:13.5px;padding:10px 13px;}
-}
 .fba-sheet{width:min(420px,100%);background:#F2F4EF;border-radius:22px 22px 0 0;padding:16px 16px 22px;color:#223126;}
-.fba-cap{font:700 9.5px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:#8B988E;margin:8px 0 6px;}
+.fba-cap{font:700 11px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:#8B988E;margin:8px 0 6px;}
 .fba-sheet .fbp-scroll.mini{background:#E9EFE7;border:1px solid rgba(34,49,38,.12);}
 .fba-sheet .fbp-scroll.mini .fbp{height:200px;}
 .fba-sheet .fbp-scroll.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
 .fba-sheet .fbp-scroll.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
   border-color:rgba(34,49,38,.25);color:#5A6B5E;}
 .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:31px;height:31px;}
+/* On a phone the picker is the whole job, so it takes the screen from the top
+   rather than sitting at the bottom under the hero, and the tables are big
+   enough to hit and to read with a customer standing next to you. */
+@media (max-width:700px){
+  .fba-sheetwrap{align-items:flex-start;padding-top:calc(var(--sat, env(safe-area-inset-top, 0px)) + 10px);}
+  .fba-sheet{border-radius:22px;max-height:calc(100dvh - var(--sat, env(safe-area-inset-top, 0px)) - 20px);overflow-y:auto;padding-bottom:calc(22px + var(--sab, env(safe-area-inset-bottom, 0px)));}
+  .fba-cap{font-size:12px;}
+  /* the room is drawn wider than the phone and scrolls sideways, the way a
+     stretched plan already does, so tables drawn a hand apart on the desk do
+     not land on top of each other once they are big enough to hit */
+  .fba-sheet .fbp-scroll.mini .fbp{height:min(430px,56dvh);min-width:180%;}
+  .fba-sheet .fbp-scroll.mini .fbp-tbl{width:46px;height:36px;border-radius:11px;font-size:16px;font-weight:700;}
+  .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:42px;height:42px;}
+  .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:12px;}
+  .fba-sheet .fbp-scroll.mini .fbp-sub{font-size:10.5px;}
+  .fba-lot{font-size:16px;padding:14px;}
+  .fba-notes button{font-size:15px;padding:12px 15px;}
+}
 .fba-sheet .fbp-scroll.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
 .fba-lot{width:100%;margin-top:8px;border:1.5px dashed rgba(34,49,38,.3);background:#fff;border-radius:12px;
   padding:9px 0;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
@@ -41647,8 +41657,8 @@ const SAGE_CSS = `
   font:600 10.5px var(--font-ui);color:#5A6B5E;cursor:pointer;}
 .fba-notes button.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
 .fba-send{display:flex;gap:8px;margin-top:14px;}
-.fba-go{flex:1;border:0;border-radius:99px;background:#2E4A38;color:#fff;padding:12px 0;font:700 13px var(--font-display);cursor:pointer;}
-.fba-back{border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;padding:0 18px;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
+.fba-go{flex:1;border:0;border-radius:99px;background:#2E4A38;color:#fff;padding:14px 0;font:700 15px var(--font-display);cursor:pointer;}
+.fba-back{border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;padding:12px 20px;font:600 14px var(--font-ui);color:#5A6B5E;cursor:pointer;}
 
 /* ---- the coverage rail ---- */
 .fbc-cover{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;}
@@ -42709,8 +42719,8 @@ const SAGE_CSS = `
       .sfd { display:flex; flex-direction:column; align-items:center; gap:1px; padding:7px 2px 6px;
         border-radius:10px; background:rgba(255,255,255,.09); border:1px solid transparent;
         transition:background .45s, box-shadow .45s, transform .45s cubic-bezier(.3,1.6,.4,1); }
-      .sfd b { font-family:var(--sfmono); font-size:12px; font-weight:600; color:rgba(237,242,234,.62); }
-      .sfd em { font-style:normal; font-family:var(--sfmono); font-size:8.5px; color:rgba(237,242,234,.38);
+      .sfd b { font-family:var(--sfmono); font-size:14px; font-weight:600; color:rgba(237,242,234,.62); }
+      .sfd em { font-style:normal; font-family:var(--sfmono); font-size:10.5px; color:rgba(237,242,234,.42);
         max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .sfd.open, .sfd.free { background:var(--led); box-shadow:0 0 14px var(--led); }
       .sfd.open { animation:sfdBeckon 1.1s ease-in-out infinite; }
@@ -42778,8 +42788,8 @@ const SAGE_CSS = `
         color:#fff; text-align:center; margin-top:10px; }
       .sft-row { display:flex; gap:6px; }
       .sft { flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:5px;
-        padding:11px 0 9px; border:1px solid transparent; border-radius:10px; background:rgba(255,255,255,.09);
-        color:var(--sfink2); font-size:11.5px; font-weight:600; cursor:pointer;
+        padding:12px 0 10px; border:1px solid transparent; border-radius:10px; background:rgba(255,255,255,.09);
+        color:var(--sfink2); font-size:13.5px; font-weight:600; cursor:pointer;
         transition:background .3s, color .3s, box-shadow .3s, transform .28s cubic-bezier(.3,1.3,.4,1); }
       .sft:active:not(:disabled) { transform:scale(.94); }
       .sft:disabled { opacity:.6; }
