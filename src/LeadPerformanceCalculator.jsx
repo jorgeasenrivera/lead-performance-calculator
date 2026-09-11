@@ -4902,7 +4902,6 @@ function LEADERBOARD_HTML(p) {
        the width, which is the one thing this row must never do. */
     .cars, .cars-inner { flex-wrap:wrap; overflow:visible; row-gap:2px; }
     .cars { height:auto; }
-    .crown { font-size:13px; }
   }
 </style></head>
 <body>
@@ -16310,10 +16309,10 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   ))}
                 </span>
               </div>
-              <div className="mc-set-row">
+              <div className="mc-set-row stack">
                 <span className="ic"><PixIcon glyph="star" size={16} /></span>
                 <span>Look<span className="hint">{theme === "auto" ? "Follows the phone" : theme === "dark" ? "Dark, always" : "Light, always"}</span></span>
-                <span className="mc-seg3" role="radiogroup" aria-label="Look">
+                <span className="mc-seg3 wide" role="radiogroup" aria-label="Look">
                   {[["auto", "AUTO"], ["dark", "DARK"], ["light", "LIGHT"]].map(([k, l]) => (
                     <button key={k} type="button" role="radio" aria-checked={theme === k} className={theme === k ? "on" : ""}
                       onClick={() => { try { localStorage.setItem("lpcf:pref:theme", k); } catch (e) {} setTheme(k); buzz(8); }}>{l}</button>
@@ -34857,9 +34856,9 @@ const SAGE_CSS = `
       /* Display face on anything that carries hierarchy or a number worth reading
          across a room. Everything else stays on Inter, which holds up better in
          the dense tables. */
-      .section-title, .ac-name, .login-title, .plate-hist-title, .guide-title, .stop-title, .noaccess-title, .card h3, .role-header, .checklist-title, .bench-num, .assoc-leads, .oyo-chan-rate, .ac-stat b, .stepper-value, .dr-tally b, .goalbox b, .drawer-store, .bl-title, .verdict, .badge {
+      .section-title, .ac-name, .login-title, .plate-hist-title, .guide-title, .stop-title, .noaccess-title, .card h3, .role-header, .assoc-leads, .oyo-chan-rate, .ac-stat b, .stepper-value, .dr-tally b, .goalbox b, .drawer-store, .bl-title, .verdict, .badge  {
         font-family: var(--font-display); }
-      .card h3, .role-header, .checklist-title { letter-spacing:-.015em; }
+      .card h3, .role-header  { letter-spacing:-.015em; }
 
       /* One focus ring for the whole app, only when keyboarding. */
       .lpc :focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:8px; }
@@ -35261,11 +35260,9 @@ const SAGE_CSS = `
 
       /* ---- board launcher ---- */
       .board-launch { max-width:760px; margin:0 auto; }
-      .board-launch-card { text-align:center; padding:34px 28px; }
       .bl-logo { display:flex; justify-content:center; margin-bottom:14px; }
       .bl-logo img { width:64px; height:64px; object-fit:contain; border-radius:14px; }
       .bl-title { font-size:24px; font-weight:700; letter-spacing:-.02em; margin-bottom:6px; }
-      .board-launch-card .btn { margin-top:14px; }
       .bl-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:14px; margin:16px 0; }
       .bl-tile { --sp:#2A5E9B; --sd:#1D4674; display:flex; flex-direction:column; align-items:flex-start; gap:8px;
         padding:18px; border-radius:18px; cursor:pointer; border:none; text-align:left; color:#fff;
@@ -35278,7 +35275,6 @@ const SAGE_CSS = `
       .bl-tile-logo img { width:100%; height:100%; object-fit:contain; }
       .bl-tile-ph { font-weight:700; color:var(--ink-2); font-size:17px; }
       .bl-tile-name { font-weight:700; font-size:16px; letter-spacing:-.01em; }
-      .bl-tile-go { font-size:12px; opacity:.75; font-weight:600; }
 
       /* ---- welcome / backup / merge / channel prompt ---- */
       .welcome { --tint: rgba(193,215,48,.20); }
@@ -35649,20 +35645,8 @@ const SAGE_CSS = `
       }
 
       /* ---- upload history ---- */
-      .up-list { display:flex; flex-direction:column; }
-      .up-row { display:grid; grid-template-columns: 140px 140px 1fr 120px 90px auto; gap:10px; align-items:center;
-        padding:7px 0; border-top:1px solid rgba(0,0,0,.05); font-size:12.5px; }
-      .up-row:first-child { border-top:none; }
-      .up-when { font-weight:700; font-variant-numeric:tabular-nums; }
-      .up-type { color:var(--blue); font-weight:600; }
-      .up-file { color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .up-count, .up-by { color:var(--ink-3); }
 
       /* ---- coaching ---- */
-      .bench-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-top:14px; }
-      .bench-tile { background:rgba(193,215,48,.12); border:1px solid rgba(193,215,48,.35); border-radius:14px; padding:14px 16px; }
-      .bench-num { font-size:24px; font-weight:700; letter-spacing:-.02em; color:#5E7A0C; font-variant-numeric:tabular-nums; }
-      .bench-lbl { font-size:11px; color:var(--ink-2); font-weight:600; margin-top:4px; }
 
       .coach-list { display:flex; flex-direction:column; gap:6px; }
       .coach-row { display:grid; grid-template-columns: 1.4fr 1fr .8fr 1.2fr auto auto; gap:12px; align-items:center;
@@ -35725,7 +35709,6 @@ const SAGE_CSS = `
       .import .check { padding:9px 0; }
       .import .check-group-label { margin:18px 0 6px; }
       .import .check-group-label:first-of-type { margin-top:6px; }
-      .import .checklist-title { margin-bottom:14px; }
       @media (max-width: 820px) { .import-grid { grid-template-columns: 1fr; } }
 
       .help-btn { float:right; margin-top:-2px; border:1px solid var(--line); background:#fff; color:var(--blue);
@@ -36175,17 +36158,7 @@ const SAGE_CSS = `
       .hist-move.up { color:#1E7A3C; } .hist-move.down { color:#C13529; }
       /* The trail. Small on purpose: it is a shape to be read across a row at a
          glance, not eight more numbers to take in. */
-      .hist-trail { display:inline-flex; gap:3px; align-items:center; }
-      .hist-pip { width:9px; height:9px; border-radius:3px; display:inline-block; }
-      .hist-pip.pass { background:#30B155; }
-      .hist-pip.fail { background:#E5473C; }
-      .hist-pip.none { background:rgba(16,32,52,.13); }
-      .hist-pip.here { outline:2px solid rgba(16,32,52,.35); outline-offset:1px; }
       .hist-trail-h { white-space:nowrap; }
-      .hist-key { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-3);
-        margin-left:auto; white-space:nowrap; }
-      .hist-key .hist-pip { margin-left:9px; }
-      .hist-key .hist-pip:first-child { margin-left:0; }
       @media (max-width:1100px) { .hist-trail-h, .hist-table td:last-child { display:none; } }
 
       /* The disclosure that holds the reasoning. Quiet enough to ignore, obvious
@@ -37117,8 +37090,6 @@ const SAGE_CSS = `
          the engine moves them directly. */
       .sage-jump-canvas { position:fixed; inset:0; z-index:300; pointer-events:none; }
       .sage-cv .sg-field, .sage-cv .login-logo svg { visibility:hidden; }
-      .sage-flash { position:fixed; inset:0; background:#fff; opacity:0;
-        pointer-events:none; z-index:9500; }
       /* ---- the white lasts as long as what it is covering ----
          It used to be a fixed 420ms from the flash beat, and the thing it exists
          to hide is not fixed at all: mounting the dashboard took 680ms, so the
@@ -37130,10 +37101,7 @@ const SAGE_CSS = `
          actually there — .sage-assemble is added on the frame it mounts. Both
          rules fill forwards and the out starts from full, so the handover
          between them cannot show a seam however long the mount takes. */
-      .sage-beat-flash .sage-flash, .sage-flash-hold .sage-flash {
-        animation: saFlashUp .34s ease-out both; }
       @keyframes saFlashUp { 0% { opacity:0; } 26%, 100% { opacity:1; } }
-      .sage-assemble .sage-flash { animation: saFlashOut .5s ease-in both; }
       @keyframes saFlashOut { from { opacity:1; } to { opacity:0; } }
 
       /* ---- the ground goes with it: gathered in, blown out, then back to drifting ----
@@ -37351,14 +37319,9 @@ const SAGE_CSS = `
       /* ---- the little light they come out of ----
          Sits at the vanishing point once the streaks have gone, swells, and is
          gone by the time the blocks have cleared it. */
-      .sage-spark { position:fixed; left:var(--jx,50%); top:var(--jy,50%); width:10px; height:10px;
-        margin:-5px 0 0 -5px; border-radius:50%; opacity:0; pointer-events:none; z-index:9400;
-        background: radial-gradient(circle, #fff 0%, rgba(143,189,178,.85) 42%, rgba(143,189,178,0) 72%); }
       /* Keyed to the assemble alone: under a held flash the spark would be
          invisible anyway, and it is the thing the blocks come out of, so it
          belongs on the far side of the white with them. */
-      .sage-assemble .sage-spark {
-        animation: saSpark .72s cubic-bezier(.2,.7,.3,1) both; }
       @keyframes saSpark {
         0%   { opacity:0; transform: scale(.2); }
         18%  { opacity:1; transform: scale(2.6); }
@@ -37380,8 +37343,7 @@ const SAGE_CSS = `
            goes. */
         .login-logo circle, .login-logo svg, .sg-field, .sg-dot,
         .sage-ground .sg-blobs { transition-duration:.18s !important; animation:none !important; }
-        .sage-flash { animation:none !important; }
-        .sage-assemble .sa-radial, .sage-spark { animation-duration:.18s !important; animation-timing-function:linear !important; }
+        .sage-assemble .sa-radial  { animation-duration:.18s !important; animation-timing-function:linear !important; }
 
       }
 
@@ -37562,8 +37524,6 @@ const SAGE_CSS = `
 
       /* ---- board ---- */
       /* overflow stays visible so a dial's hover card can escape the card edge */
-      .role-section { border-left:none; position:relative; overflow:visible; margin-bottom:26px;
-        --tint: color-mix(in srgb, var(--role) 14%, transparent); }
       .role-header { display:flex; align-items:center; gap:8px; margin:0 0 12px; font-size:16px; font-weight:700; letter-spacing:-.01em; }
       .role-empty { padding:16px; border:1.5px dashed var(--line); border-radius:12px; color:var(--ink-3); text-align:center; }
       .assoc-card { border-bottom:1px solid rgba(0,0,0,.05); padding:10px 0 12px; transition: background .2s; border-radius:10px; }
@@ -37704,7 +37664,6 @@ const SAGE_CSS = `
       .recap-row:last-child { border-bottom:none; }
       .recap-name { font-size:11px; }
       .recap-chips { display:flex; gap:5px; flex-wrap:wrap; }
-      .gm-section.watch::before { background:#88C6EA; }
       .grace-setting { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
       .grace-label { display:flex; gap:9px; align-items:center; font-weight:600; }
       .grace-setting input[type=number] { width:64px; }
@@ -37806,7 +37765,6 @@ const SAGE_CSS = `
       }
       .assoc-card.incomplete { opacity:.55; filter:grayscale(.75); }
       .assoc-card.incomplete .verdict { visibility:hidden; }
-      .flag-gray { color:var(--ink-2); background:rgba(118,118,128,.16); }
       .detail-cell.blank { opacity:.45; }
       @media (prefers-reduced-motion: reduce) { .detail { animation:none !important; } }
       .assoc-card.is-restricted { opacity:1; filter:none; }
@@ -37838,7 +37796,6 @@ const SAGE_CSS = `
       .sched-ask-name { display:flex; flex-direction:column; gap:1px; }
       .sched-ask-row select { max-width:340px; }
       .stat-pass { display:inline-flex; align-items:center; gap:5px; }
-      .bl-cast { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:14px 0 4px; }
       .cast-link { font-size:13px; }
       .cast-wrap { display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:center; }
       .cast-err { color:var(--red); font-size:12px; max-width:520px; }
@@ -38231,7 +38188,6 @@ const SAGE_CSS = `
       .thr-dot.g { background:var(--green); } .thr-dot.y { background:#E0A100; }
       .check-group-label { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin:10px 0 4px; }
       .check-group-label:first-of-type { margin-top:0; }
-      .check-note { font-size:11px; color:var(--ink-3); margin-left:8px; font-style:italic; }
       .setup-note { font-size:13px; color:var(--ink-2); margin:8px 0 6px; }
       .login-ok { color:#1E7A3C; font-size:12.5px; margin-top:10px; background:rgba(48,177,85,.12); padding:8px 10px; border-radius:8px; }
       .pending-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; padding:9px 0; border-bottom:1px solid rgba(0,0,0,.05); }
@@ -38325,7 +38281,6 @@ const SAGE_CSS = `
 
       /* ---- import ---- */
       .checklist { max-width:440px; }
-      .checklist-title { font-size:16px; font-weight:700; letter-spacing:-.01em; margin-bottom:12px; }
       .act-day-pick { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
       .act-day-label { font-size:12px; font-weight:700; color:var(--ink-3); text-transform:uppercase; letter-spacing:.04em; }
       .act-day-date { font:inherit; font-size:13px; padding:5px 9px; border:1px solid var(--line); border-radius:9px;
@@ -38343,9 +38298,6 @@ const SAGE_CSS = `
       .check.done { color:#1E7A3C; font-weight:600; }
       .check-box { width:22px; height:22px; border:1.5px solid var(--ink-3); border-radius:50%; display:flex; align-items:center;
         justify-content:center; font-size:12px; transition: all .3s var(--spring); }
-      .check.readonly { opacity:.85; }
-      .check.readonly .check-box { border-style:dashed; }
-      .check.readonly.done .check-box { border-style:solid; }
       .check.done .check-box { background:var(--green); border-color:var(--green); color:#fff; transform: scale(1.05); }
       .dropzone { border:1.5px dashed color-mix(in srgb, var(--p2) 35%, transparent); border-radius:var(--radius); padding:48px 20px; text-align:center; cursor:pointer;
         background:rgba(255,255,255,.45); backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%);
@@ -38456,12 +38408,6 @@ const SAGE_CSS = `
       .hint { font-size:12px; color:var(--ink-2); line-height:1.45; }
 
       /* ---- standards ---- */
-      .std-head { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
-      .std-head h3 { margin:0; font-size:16px; font-weight:700; letter-spacing:-.01em; }
-      .tier-head { display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
-      .tier-label { font-weight:700; font-size:13px; background:var(--ink); color:#fff; padding:5px 13px; border-radius:20px; }
-      .tier-head label { display:flex; gap:8px; align-items:center; font-weight:600; }
-      .req-row { display:flex; gap:9px; align-items:center; padding:5px 0; flex-wrap:wrap; }
 
       /* ---- tables ---- */
       .bulk-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;
@@ -38481,12 +38427,6 @@ const SAGE_CSS = `
       /* ---- GM summary ---- */
       .gm-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
       .gm-card { padding-top:14px; }
-      .gm-section { font-size:16px; font-weight:700; letter-spacing:-.01em; margin:4px 0 10px; display:flex; align-items:center; gap:9px; }
-      .gm-section::before { content:""; width:10px; height:10px; border-radius:50%; }
-      .gm-section.fail::before { background:var(--red); } .gm-section.pass::before { background:var(--green); }
-      .gm-section::before { background:var(--blue); }
-      .gm-section.fail::before { background:var(--red); }
-      .gm-section.pass::before { background:var(--green); }
       @media (max-width: 700px) {
         .tr-controls { flex-direction:column; align-items:stretch; }
         .tr-ranges { overflow-x:auto; }
@@ -38540,8 +38480,7 @@ const SAGE_CSS = `
       .tr-dates { display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--ink-2); }
       .tr-chart { position:relative; margin-top:12px; }
       .tr-chart svg { width:100%; height:auto; display:block; overflow:visible; }
-      .tr-grid { stroke:rgba(16,40,68,.07); stroke-width:1; }
-      .tr-ytick, .tr-xtick { font-size:10px; fill:var(--ink-3); font-weight:600; font-variant-numeric:tabular-nums; }
+      .tr-xtick  { font-size:10px; fill:var(--ink-3); font-weight:600; font-variant-numeric:tabular-nums; }
       .tr-line { stroke-width:2.25; stroke-linejoin:round; stroke-linecap:round;
         transition: stroke-width .25s var(--ease); }
       .tr-floor { stroke-width:3; }
@@ -38592,35 +38531,12 @@ const SAGE_CSS = `
       .gm-table tr:last-child td { border-bottom:none; }
 
       /* ---- admin ---- */
-      .store-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px; margin-bottom:28px; }
-      .store-card { text-align:left; background:rgba(255,255,255,.72); border:1px solid rgba(255,255,255,.7); border-radius:var(--radius);
-        padding:18px; cursor:pointer;
-        box-shadow: inset 0 1px 0 rgba(255,255,255,.85), var(--shadow-1); transition: box-shadow .3s var(--spring), transform .3s var(--spring); }
-      .store-card:hover { box-shadow:var(--shadow-2); transform: translateY(-3px); }
-      .store-card:active { transform: translateY(-1px) scale(.99); }
-      .store-card-top { display:flex; gap:11px; align-items:center; margin-bottom:10px; }
       .store-logo { width:38px; height:38px; flex:0 0 38px; object-fit:contain; border-radius:10px; background:#fff;
         border:1px solid var(--line); display:block; }
       .store-logo.placeholder { display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--ink-3);
         background:#F5F5F7; font-size:16px; }
-      .store-card-name { font-weight:700; font-size:17px; letter-spacing:-.02em; }
-      .store-card-row { margin-bottom:9px; }
       .stat-pass { color:#1E7A3C; font-weight:600; } .stat-fail { color:var(--red); font-weight:600; } .stat-dim { color:var(--ink-3); }
-      .store-card-open { margin-top:12px; font-size:13px; color:var(--blue); font-weight:600; }
       /* traffic-light verdict chips on the store overview cards */
-      .store-verdicts { display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
-      .vchip { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; border-radius:9px; font-size:12px; font-weight:700;
-        line-height:1; border:1px solid transparent; }
-      .vchip-ico { font-size:12px; }
-      .vchip-n { font-variant-numeric:tabular-nums; }
-      .vchip-lbl { font-weight:600; opacity:.85; }
-      .vchip-pass  { background:rgba(48,177,85,.13);  color:#1E7A3C; border-color:rgba(48,177,85,.28); }
-      .vchip-grace { background:rgba(136,198,234,.18); color:#1D4674; border-color:rgba(136,198,234,.4); }
-      .vchip-watch { background:color-mix(in srgb, var(--p2) 12%, transparent);   color:#1D4674; border-color:color-mix(in srgb, var(--p2) 25%, transparent); }
-      .vchip-warn  { background:rgba(255,159,10,.16);  color:#95600A; border-color:rgba(255,159,10,.3); }
-      .vchip-fail  { background:rgba(229,71,60,.13);   color:#C13529; border-color:rgba(229,71,60,.28); }
-      .vchip-off   { background:rgba(0,0,0,.06);       color:var(--ink-2); border-color:rgba(0,0,0,.1); }
-      .vchip-roster { margin-left:auto; }
       .store-checks { display:flex; gap:12px; flex-wrap:wrap; margin:10px 0; }
       .store-checks.tight { gap:8px; }
       .check-inline { display:flex; gap:6px; align-items:center; font-size:12.5px; }
@@ -38698,18 +38614,9 @@ const SAGE_CSS = `
       .flow-scale-note b { color:var(--ink); font-weight:700; }
       /* ---- Drawing the lot ---- */
       .fence { margin-top:12px; }
-      .fence-head h3 { margin:0 0 4px; }
       /* Tall enough to see a whole dealership at the zoom a manager traces at.
          Leaflet measures its container on creation, so this has to be a real
          height rather than something that resolves later. */
-      .fence-map { height:min(58vh, 460px); border-radius:14px; overflow:hidden;
-        border:1px solid var(--line); margin:12px 0; background:#E8EDF2; }
-      .fence-bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-      .fence-count { font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
-      .fence-warn { margin-top:10px; font-size:12.5px; line-height:1.5; color:#7C4A03;
-        background:rgba(245,158,11,.09); border:1px solid rgba(217,119,6,.32);
-        border-radius:12px; padding:10px 12px; }
-      .fence-acts { display:flex; align-items:center; gap:10px; margin-top:14px; }
       /* Leaflet draws its own controls and credit; keep them in this app's type. */
       .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
       /* Once the card is wider than the chart wants to be, the chart moves beside
@@ -38918,7 +38825,7 @@ const SAGE_CSS = `
            The desk's cards are translucent over the backdrop, which reads as
            depth on a wide screen and as washed-out on a phone in daylight. */
         .card { background:rgba(255,255,255,.97); }
-        .assoc-card, .co-card, .pp-row { background:#fff; }
+        .assoc-card, .pp-row  { background:#fff; }
         /* --- Live Floor's tools, in a grid rather than a wrap ---
            Six controls of three different shapes wrapped into three ragged
            lines. Two columns of equal buttons, and the two copy links join
@@ -38949,10 +38856,6 @@ const SAGE_CSS = `
         .coach-empty { display:none; }                 /* nothing to sit beside on a phone */
         /* The benchmark tiles are a grid that would stack five deep. One row that
            scrolls keeps "what the strongest do" readable in a glance. */
-        .bench-grid { display:flex; gap:10px; overflow-x:auto; scrollbar-width:none;
-          margin:14px -14px 0; padding:0 14px 4px; scroll-snap-type:x proximity; }
-        .bench-grid::-webkit-scrollbar { display:none; }
-        .bench-tile { flex:0 0 46%; min-width:0; scroll-snap-align:start; }
 
         /* --- the sections, as a chip strip --- */
         /* These used to be the bottom bar. They sit under the header now, above
@@ -39193,15 +39096,6 @@ const SAGE_CSS = `
 
         /* --- upload history stacks; its six fixed columns need 643px and so
                dragged the whole page sideways on a phone --- */
-        .up-row { grid-template-columns: minmax(0,1fr) auto; gap:2px 10px;
-          padding:11px 0; align-items:start; }
-        .up-when { grid-column:1; grid-row:1; }
-        .up-type { grid-column:1; grid-row:2; }
-        .up-file { grid-column:1; grid-row:3; }
-        .up-count { grid-column:1; grid-row:4; }
-        .up-by   { grid-column:1; grid-row:5; }
-        .up-row > button, .up-row > .hint { grid-column:2; grid-row:1 / span 5;
-          align-self:center; white-space:nowrap; }
 
         /* --- tables scroll rather than crush --- */
         .gm-table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch;
@@ -39356,7 +39250,6 @@ const SAGE_CSS = `
 @keyframes qpop{from{opacity:0;transform:translateY(14px) scale(.98);}to{opacity:1;transform:none;}}
 
 /* live "you're in line" */
-.spin-logo{width:36px;height:36px;border-radius:50%;border:3px solid rgba(255,255,255,.15);border-top-color:#4c8bf5;animation:qspin .8s linear infinite;}
 @keyframes qspin{to{transform:rotate(360deg);}}
 
 /* ================= Phone line — manager board ================= */
@@ -39529,10 +39422,6 @@ const SAGE_CSS = `
    literal here would be the one thing that broke that. */
 .stn{ background:#fff; border:1px solid var(--mfline); border-radius:18px; padding:16px;
   box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); margin-top:14px; }
-.stn-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:12px; }
-.stn-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--a1); }
-.stn-head b{ font-family:var(--mffont); font-size:17px; font-weight:600; color:var(--mfink); letter-spacing:-.01em; }
-.stn-count{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); white-space:nowrap; padding-top:3px; }
 
 /* The room is the blue thing, not the desks. Inverted from the first draft
    for a reason worth keeping: what a manager scans this for is who is where,
@@ -39583,40 +39472,19 @@ const SAGE_CSS = `
 /* Who the room is waiting on, under the map. Reads without a tap, because the
    answer to "why is station 4 empty" is usually "it is Ana's, for ninety more
    seconds". */
-.stn-wait{ display:flex; align-items:baseline; flex-wrap:wrap; gap:8px; margin-top:11px;
-  padding:9px 12px; border-radius:12px; background:color-mix(in srgb,var(--a1) 6%, #fff);
-  border:1px solid color-mix(in srgb,var(--a1) 18%, transparent); }
-.stn-wait-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.09em;
-  text-transform:uppercase; color:var(--a1); }
-.stn-wait-nm{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); }
-.stn-wait-rest{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); }
-.stn-pick-sub{ margin:0 0 10px; font-size:12.5px; line-height:1.45; color:var(--mfink2); }
 /* The one panel that is not the room's blue. A warning that wears the same
    accent as everything else on the card is a warning nobody reads, and this is
    the only place on the screen where the answer is meant to cost a moment. */
 /* Both classes, because .stn-pick sets the same properties further down this
    sheet and a single class would lose to it on source order alone. */
-.stn-pick.stn-warn{ background:color-mix(in srgb,#C77800 9%, #fff);
-  border-color:color-mix(in srgb,#C77800 34%, transparent); }
-.stn-pick.stn-warn .stn-pick-head{ color:#8A5300; }
-.stn-pick.stn-warn .stn-pick-sub{ color:#6B4A17; }
 /* On a handset the title and the count fight over one row and the title wraps
    mid-phrase. They are two different readings anyway, so give them a line each
    rather than shrinking either. */
 @media (max-width:700px){
-  .stn-head{ flex-direction:column; gap:4px; }
-  .stn-count{ padding-top:0; }
 }
-.stn-left{ float:right; font-family:var(--mfmono); font-size:12px; color:var(--a1);
-  font-weight:500; letter-spacing:.02em; }
 
 .stn-pick{ margin-top:12px; padding:12px 14px; border-radius:14px;
   background:color-mix(in srgb,var(--a1) 6%, #fff); border:1px solid color-mix(in srgb,var(--a1) 22%, transparent); }
-.stn-pick-head{ font-family:var(--mffont); font-weight:600; font-size:14px; color:var(--mfink); margin-bottom:9px; }
-.stn-pick-names{ display:flex; flex-wrap:wrap; gap:7px; }
-.stn-cancel{ margin-top:10px; }
-.stn-hint{ margin-top:10px; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
-.stn-day-b{ margin-left:auto; align-self:center; }
 
 /* The room switch on a salesperson's phone. Floats above whichever shell is
    showing rather than living inside either, so neither had to be reworked to
@@ -39824,9 +39692,6 @@ const SAGE_CSS = `
    is not an hour of it and must not read the same, so the fill is a fraction
    and the cell carries it as a custom property. */
 .stnd{ --stnd-a:#4C6FFF; --stnd-off:#EFF1F6; }
-.stnd-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
-  color:var(--mfink3); margin-bottom:9px; }
-.stnd-cap2{ margin-top:22px; }
 .stnd-grid-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
 .stnd-grid{ display:grid; grid-template-columns:46px repeat(var(--cols),minmax(26px,1fr));
   gap:3px; min-width:min-content; }
@@ -39848,22 +39713,7 @@ const SAGE_CSS = `
 .stnd-room{ height:30px; font-weight:600; color:var(--mfink2);
   background:color-mix(in srgb, var(--stnd-a) calc(var(--f,0) * 34%), var(--stnd-off)); }
 
-.stnd-people{ display:flex; flex-direction:column; gap:8px; }
-.stnd-prow{ display:flex; align-items:center; gap:11px; background:#fff; border:1px solid var(--mfline);
-  border-radius:14px; padding:10px 13px; }
-.stnd-pwho{ display:flex; flex-direction:column; min-width:0; flex:1; }
-.stnd-pwho b{ font-family:var(--mffont); font-size:14px; font-weight:600; color:var(--mfink);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.stnd-pwho span{ font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
-.stnd-pnums{ display:flex; gap:14px; flex-wrap:wrap; justify-content:flex-end; }
-.stnd-pnums span{ font-family:var(--mfmono); font-size:10.5px; color:var(--mfink3); text-align:center;
-  display:flex; flex-direction:column; }
-.stnd-pnums b{ font-family:var(--mffont); font-size:15px; font-weight:600; color:var(--mfink); }
-.stnd-per{ color:var(--stnd-a) !important; }
-.stnd-per, .stnd-pnums .stnd-per{ align-self:center; font-size:12px; font-weight:600; }
 @media (max-width:700px){
-  .stnd-prow{ flex-wrap:wrap; }
-  .stnd-pnums{ width:100%; justify-content:space-between; gap:8px; }
 }
 
 .mf.mf-online{ --a1:#8B5CF6; --a2:#C05CF0; --glow:rgba(139,92,246,.32); }
@@ -40657,8 +40507,6 @@ const SAGE_CSS = `
 .mc-pace .tr i{ position:absolute; top:0; bottom:0; left:0; }
 .mc-pace .tr i.nw{ background:#e4c98d; border-radius:999px 0 0 999px; }
 .mc-pace .tr i.us{ background:#a9c4ac; border-radius:0 999px 999px 0; }
-.mc-pace .tr .togo{ position:absolute; top:50%; transform:translateY(-50%); font-family:var(--sfmono);
-  font-size:7.5px; font-weight:700; letter-spacing:.07em; color:rgba(237,242,234,.72); white-space:nowrap; }
 .mc-pacew .pm{ position:absolute; top:-3px; height:18px; width:3px; border-radius:2px; margin-left:-1px;
   background:#b8d2bb; box-shadow:0 0 6px rgba(169,196,172,.9); }
 .mc-legend{ display:flex; gap:12px; margin-top:6px; position:relative; z-index:1;
@@ -40706,8 +40554,6 @@ const SAGE_CSS = `
 .mc-qmini s.hd{ width:17px; height:17px; border-radius:5px; background:rgba(232,238,242,.28);
   display:flex; align-items:center; justify-content:center; font-family:var(--sfmono);
   font-size:6.5px; font-weight:700; color:#e8eef2; }
-.mc-qmini s.me2{ background:#8fd8af; box-shadow:0 0 5px rgba(143,216,175,.7);
-  outline:1.5px solid rgba(143,216,175,.5); outline-offset:1.5px; }
 .mc-qmini b{ font-family:var(--sfmono); font-size:8px; font-weight:700; letter-spacing:.12em;
   color:rgba(232,238,242,.55); margin-left:3px; }
 .mc-asof{ display:inline-flex; align-items:center; gap:6px; font-family:var(--sfmono);
@@ -41202,7 +41048,6 @@ const SAGE_CSS = `
 .mc-pace{ margin-top:14px; gap:10px; }
 .mc-pace .nm{ font-size:12.5px; width:38px; }
 .mc-pace .tr{ height:16px; }
-.mc-pace .tr .togo{ font-size:11px; }
 .mc-pacew .pm{ height:22px; top:-3px; width:3.5px; }
 .mc-pace .num{ font-size:13.5px; }
 .mc-legend{ font-size:11px; gap:14px; margin-top:8px; }
@@ -41239,10 +41084,6 @@ const SAGE_CSS = `
 .mc-clfoot{ font-size:12.5px; }
 .mc-sc{ gap:10px 0; margin-top:10px; } .mc-sc b{ font-size:11.5px; } .mc-sc s{ width:20px; height:20px; }
 .mc-scr{ font-size:13px; padding:6px 0; } .mc-scd-hint{ font-size:12.5px; }
-.mc-set-row{ padding:14px 2px; font-size:15px; min-height:44px; }
-.mc-set-row .hint{ font-size:12px; }
-.mc-set-row .on{ font-size:12px; }
-.mc-set-av{ width:40px; height:40px; font-size:12.5px; }
 .mc-offc b{ font-size:17px; } .mc-offc .hint{ font-size:13px; }
 .mc-offb button{ padding:11px 20px; font-size:13px; min-height:44px; }
 .mc-spine{ width:26px; right:9px; }
@@ -41293,15 +41134,15 @@ const SAGE_CSS = `
 .mc-offb{ display:flex; gap:8px; margin-top:11px; }
 .mc-offb button{ border:0; border-radius:999px; padding:8px 16px; font-size:11px; font-weight:700; cursor:pointer; }
 .mc-offb .yes{ background:#e4c98d; color:#2a2418; } .mc-offb .no{ background:rgba(255,255,255,.1); color:#edf2ea; }
-.mc-set-row{ display:flex; align-items:center; gap:10px; padding:11px 2px; border-bottom:1px solid rgba(255,255,255,.07);
-  font-size:12.5px; font-weight:600; width:100%; text-align:left; background:none; border-left:0; border-right:0; border-top:0;
+.mc-set-row{ display:flex; align-items:center; gap:10px; padding:14px 2px; min-height:44px; border-bottom:1px solid rgba(255,255,255,.07);
+  font-size:15px; font-weight:600; width:100%; text-align:left; background:none; border-left:0; border-right:0; border-top:0;
   color:#e8eef2; cursor:pointer; }
 .mc-set-row:last-child{ border-bottom:0; }
-.mc-set-row .hint{ display:block; font-size:10.5px; font-weight:500; color:rgba(237,242,234,.5); margin-top:1px; }
-.mc-set-row .on{ margin-left:auto; font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.12em; color:#e4c98d;
+.mc-set-row .hint{ display:block; font-size:12px; font-weight:500; color:rgba(237,242,234,.5); margin-top:1px; }
+.mc-set-row .on{ margin-left:auto; font-family:var(--sfmono); font-size:12px; font-weight:700; letter-spacing:.12em; color:#e4c98d;
   display:inline-flex; align-items:center; }
-.mc-set-av{ width:34px; height:34px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center;
-  font-family:var(--sfmono); font-size:11px; font-weight:700; flex:0 0 auto; }
+.mc-set-av{ width:40px; height:40px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center;
+  font-family:var(--sfmono); font-size:12.5px; font-weight:700; flex:0 0 auto; }
 .mc-set-out{ color:#f08a80; }
 /* ---- the person's sheet, in the corner's clothes ----
    The hero card for the person, then cards for this phone, reach, the day,
@@ -41540,7 +41381,7 @@ const SAGE_CSS = `
 }
 
 /* ===== SmartFloor / Live Floor — greens where the phone line runs blue ===== */
-.f-page .q-curtain,.f-curtain,.q-curtain.sage-curtain{background:linear-gradient(150deg,#7FA98A 0%,#55795F 55%,#26382C 100%);}
+.f-page .q-curtain, .q-curtain.sage-curtain {background:linear-gradient(150deg,#7FA98A 0%,#55795F 55%,#26382C 100%);}
 .q-curtain.q-hold{transform:none;animation:none;}
 .q-curtain.sage-curtain{z-index:9000;}
 .q-curtain.q-hold .q-curtain-mark{opacity:1;transform:none;animation:sageCurtainPulse 1.8s ease-in-out infinite;}
@@ -41916,8 +41757,6 @@ const SAGE_CSS = `
 .fbp-tbl.sz-s.round{width:36px;height:36px;}
 .fbp-tbl.sz-l{width:76px;height:56px;}
 .fbp-tbl.sz-l.round{width:66px;height:66px;}
-.fence-mode{display:inline-flex;gap:0;border-radius:10px;overflow:hidden;}
-.fence-mode .btn.on,.fence-mode .btn.secondary.on{background:#2E4A38;color:#fff;border-color:#2E4A38;}
 
 /* ---- the corner prompt, anywhere in Sage ---- */
 .aswatch{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;z-index:75;}
@@ -41969,7 +41808,6 @@ const SAGE_CSS = `
       .tier-miss svg, svg.tier-miss { filter:drop-shadow(0 0 5px rgba(194,54,31,.45)); }
       /* a pill that lives in a column takes its width from the column, never its text */
       .wfix { width:64px; flex:0 0 auto; justify-content:center; text-align:center; }
-      .ghost { visibility:hidden; }
       /* ---- bloops: popups that grow out of their anchor and shrink back into it.
          Hover drives them on a mouse; on touch a tap manager toggles .open, so the
          hover rules are gated off where hover would stick. ---- */
@@ -43080,10 +42918,6 @@ const SAGE_CSS = `
       .imp-card .warmhead { border-radius:13px 13px 0 0; }
       .imp-body { padding:12px 16px 14px; }
       .imp-body .check-group-label:first-child { margin-top:0; }
-      .up-card .up-hint { padding:12px 16px 0; margin:0; }
-      .up-card .up-list { padding:8px 16px 14px; }
-      .up-card .up-row { border-bottom:1px solid var(--line); padding:8px 0; }
-      .up-card .up-row:last-child { border-bottom:0; }
       /* The checklist is a list of short lines and the landing pad wants room to
          be landed on, but 300px was tight enough that "Delivery Summary" broke
          over two lines while the pad had space to spare. */
@@ -43767,7 +43601,6 @@ const SAGE_CSS = `
 .co-mo .co-days i{ background:rgba(21,33,27,.28); } .co-mo .co-days i.co-t{ background:var(--frsand2); } .co-mo .co-days i.co-low{ background:var(--frgap); }
 .co-mo .co-days em{ border-top-color:rgba(21,33,27,.45); }
 .co-mo .co-days.co-pts i{ border-radius:3px; background:var(--frok); }
-.co-mo .co-days.co-pts i.co-m1{ background:var(--frthin); } .co-mo .co-days.co-pts i.co-m2,.co-mo .co-days.co-pts i.co-m3{ background:var(--frgap); }
 .co-mo .co-days.co-pts i.co-off{ background:var(--frline); } .co-mo .co-days.co-pts i.co-nd{ background:var(--frpaper); }
 .co-mo .co-dl2{ color:var(--frink3); font-size:9px; }
 .co-nl .co-nr{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; height:44px; padding:0 16px; border-bottom:1px solid var(--frline); font:600 14px var(--font-ui); color:var(--frink); }
@@ -43779,7 +43612,6 @@ const SAGE_CSS = `
 .co-dn{ font:600 14px var(--font-ui); color:var(--frink); } .co-dm{ font:700 10px var(--font-mono); color:var(--frink3); }
 .co-lb .co-lr{ display:grid !important; grid-template-columns:24px minmax(0,1fr) auto; gap:10px; width:100%; min-height:54px; padding:6px 16px !important; align-items:center; border-bottom:1px solid var(--frline); }
 .co-lb em{ width:22px; height:22px; border-radius:50%; background:var(--frpaper); color:var(--frink2); font:700 10px var(--font-mono); font-style:normal; display:grid; place-items:center; }
-.co-lb em.co-m1{ background:#F08A80; color:var(--frink); } .co-lb em.co-m2{ background:#F6C6C0; color:var(--frink); } .co-lb em.co-m3{ background:#FBE5E0; color:var(--frink); }
 .co-lt{ min-width:0; display:flex; flex-direction:column; }
 .co-ln{ font:600 14px var(--font-ui); color:var(--frink); } .co-lm{ font:500 10px var(--font-mono); color:var(--frink3); margin-top:2px; }
 .co-lb .co-pt{ margin-left:0; }
@@ -44024,7 +43856,7 @@ const SAGE_CSS = `
 .sm-p.ok{ border-color:#CFE7D6; } .sm-p.ok em{ color:var(--frok); }
 /* the desk's day-by-day chart, wearing the phone's clothes */
 .sm-trend{ padding:6px 12px 12px; }
-.sm-trend .tr-panel,.sm-trend .card{ background:none; border:0; box-shadow:none; padding:0; margin:0; }
+.sm-trend .card { background:none; border:0; box-shadow:none; padding:0; margin:0; }
 .sm-trend .tr-range{ border-radius:99px; font:700 11px var(--font-ui); }
 .sm-trend .tr-ranges{ background:none; padding:0; gap:6px; flex-wrap:wrap; }
 .sm-trend .tr-range{ border:1.5px solid var(--frline); background:#fff; color:var(--frink2); padding:6px 11px; }
