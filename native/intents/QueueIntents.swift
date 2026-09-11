@@ -77,6 +77,21 @@ struct QueueActionIntent: LiveActivityIntent {
     case "pass":
       s.ahead = max(s.ahead, (s.line?.count ?? 1) - 1)
       s.status = "waiting"; s.up = false; s.since = now
+    /* The phone lane. The lane moves to the face the press implies; the
+       leading lane is worked out again by the server's update that follows,
+       so `hot` is only cleared where the press ends the thing that led. */
+    case "take-desk":
+      if var ph = s.phone { ph.state = "desk"; ph.until = nil; ph.since = now; ph.status = "waiting"; s.phone = ph }
+      if s.hot == "phone" { s.hot = nil; s.up = false; s.ahead = 0 }
+    case "pass-desk", "leave-desk":
+      if var ph = s.phone { ph.state = "cord"; ph.desk = nil; ph.until = nil; ph.since = now; ph.status = "waiting"; s.phone = ph }
+      if s.hot == "phone" { s.hot = nil; s.up = false }
+    case "lunch-desk", "lunch-line", "away-line":
+      if var ph = s.phone { ph.state = "off"; ph.desk = nil; ph.until = nil; ph.since = now
+        ph.status = action == "away-line" ? "away" : "lunch"; s.phone = ph }
+      if s.hot == "phone" { s.hot = nil; s.up = false }
+    case "back-line":
+      if var ph = s.phone { ph.state = "cord"; ph.since = now; ph.status = "waiting"; s.phone = ph }
     default:
       if let st = impliedStatus() { s.status = st; s.up = false; s.since = now }
     }

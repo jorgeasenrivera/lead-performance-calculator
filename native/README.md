@@ -45,6 +45,13 @@ npx expo run:android
 
 ## The line on the lock screen (Live Activity)
 
+The page sends one message per person (contract v2, `api/_live-standing.mjs`):
+the floor lane, the phone lane, or both, and which leads. The card draws the
+lane that leads big and the other small, both small when neither is urgent, and
+the phone lane wears the room's cord. A shell from before v2 reads only the
+top-level fields, which are the leading lane's, and draws the card it always
+did. Android's Live Update reads those same fields and is not yet lane-aware.
+
 `targets/queue` is a widget extension that draws the person's place in the line
 on the lock screen and in the Dynamic Island; `modules/sage-live` is the small
 native module that hands the page the activity tokens and starts the activity
@@ -66,7 +73,11 @@ project by `@bacons/apple-targets` at build time. What it needs, once:
 
 The card has buttons (iOS 17 and up): Lunch and Away while waiting, Got them and
 Pass when up, FlyBy, T.O. and Done with a customer, On my way when the desk asks,
-Back on the floor from lunch or away. Each is an App Intent (`QueueIntents.swift`,
+Back on the floor from lunch or away. The phone lane has its own: Lunch and Away
+on the cord, Take it when a desk is offered, Lunch and Leave the desk at a desk,
+Back in line from lunch or away (`take-desk`, `leave-desk`, `lunch-desk`,
+`lunch-line`, `away-line`, `back-line`; `pass-desk` exists on the server but is
+not on the card, because a pass wants a reason). Each is an App Intent (`QueueIntents.swift`,
 also compiled into both targets) that runs in the app's process. It changes the
 card at once, then acts through `/api/queue-action` with the session the page
 handed the shell (`session` message), so a press works with the app in the

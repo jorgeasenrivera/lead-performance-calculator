@@ -122,21 +122,21 @@ public class SageLiveModule: Module {
     }
   }
 
+  /* The page's state, decoded whole: every key contentState() and the v2
+     envelope write, optional fields included, rather than a hand-kept list
+     that silently dropped the ask, the nudge and then both lanes. */
   @available(iOS 16.2, *)
   private func contentState(_ s: [String: Any]) -> QueueAttributes.ContentState {
-    let pips: [QueueAttributes.Pip]? = (s["line"] as? [[String: Any]])?.map { p in
-      QueueAttributes.Pip(i: (p["i"] as? String) ?? "·", h: (p["h"] as? Int) ?? 0,
-                          s: (p["s"] as? String) ?? "w", me: (p["me"] as? Bool) ?? false)
+    if let data = try? JSONSerialization.data(withJSONObject: s),
+       let st = try? JSONDecoder().decode(QueueAttributes.ContentState.self, from: data) {
+      return st
     }
     return QueueAttributes.ContentState(
       ahead: (s["ahead"] as? Int) ?? 0,
       up: (s["up"] as? Bool) ?? false,
       status: (s["status"] as? String) ?? "waiting",
       label: (s["label"] as? String) ?? "",
-      line: pips,
-      nudge: s["nudge"] as? Bool,
-      table: s["table"] as? String,
-      since: s["since"] as? String
+      line: nil, nudge: nil, table: nil, since: nil
     )
   }
 

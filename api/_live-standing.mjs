@@ -90,7 +90,11 @@ export function phoneLane(config, store, row, meId, now = Date.now()) {
     lane.ahead = myIdx >= 0 ? myIdx : board.waiting.length;
     lane.line = railFrom(board.waiting, roster, meId);
   }
-  if (state === "offer") { lane.desk = String(offered.n); lane.until = new Date(now + offered.offerLeftMs).toISOString(); }
+  if (state === "offer") {
+    lane.desk = String(offered.n); lane.until = new Date(now + offered.offerLeftMs).toISOString();
+    /* the cord, with you at the front: the card draws it lit to the handset */
+    lane.line = railFrom([me, ...board.waiting.filter((p) => p.id !== meId)], roster, meId);
+  }
   if (state === "desk") { lane.desk = String(mine.n); lane.since = mine.at || me.statusAt || null; }
   if (state === "free") lane.free = freeSeats.map((s) => String(s.n));
   return lane;
