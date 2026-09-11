@@ -15702,31 +15702,31 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         {nudgeOn && (
           <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you on the floor</div>
         )}
-        {/* The same hero the phone line has: the ring fills as the wait runs, the
-            place in line sits in the middle of it, and the status takes the
-            middle over when somebody is standing down. This screen and the one
-            next door were two designs for one thing, and a salesperson who
-            works both rooms had to learn each of them.
+        {/* The floor's own picture of the line: the count of available people
+            ahead in the dot matrix, the track drawn from the screen's edge to
+            the door, and the two clocks the floor is actually run on. Standing
+            down, the track steps aside for the status and its clock.
 
-            The two clocks stay. The ring carries one duration and the floor is
-            run on two — how long on the floor, and how long since the last
-            move — so they keep their line underneath rather than being lost to
-            the tidier shape. */}
-        <div className="sf-poswrap">
-          <div className="sf-aura" />
-          <div className="sf-ringwrap">
-            <RingTimer mins={qMinsSince(me.statusAt || me.joinedAt)} />
-            <div className="sf-ring"><div className="sf-ringface">
-              {st === "waiting" ? <DmNumber value={myPos} /> : <SfIcon name={st} size={74} />}
-            </div></div>
+            A round dial was tried here and taken out again. It carried one
+            duration and a position, and the floor is not run on either of
+            those: it is run on who is between you and the door. The controls
+            below it are the new ones and they stayed. */}
+        {st === "waiting" ? (
+          <div className="mcf-top">
+            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={10} gap={4} dim="transparent" /></span>
+            <div className="mcf-cap">TO THE DOOR</div>
+            <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
+            <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
+            <div className="mcf-title">{title}</div>
           </div>
-          <div className="sf-meta">
-            <div className="sf-line-1">{title}</div>
-            <div className="sf-line-2">{sub}</div>
+        ) : (
+          <div className="mcf-top">
+            <span className="mcf-sticon"><SfIcon name={st} size={64} /></span>
+            <McTimers sinceOn={me.joinedAt} sinceMove={me.statusAt || me.joinedAt} />
+            <div className="mcf-title">{title}</div>
+            <div className="mcf-sub">{sub}</div>
           </div>
-          <McTimers sinceOn={me.joinedAt}
-            sinceMove={(st === "waiting" ? me.movedAt : null) || me.statusAt || me.joinedAt} />
-        </div>
+        )}
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" disabled={busy} onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           {st === "customer" && (
@@ -40665,6 +40665,8 @@ const SAGE_CSS = `
   align-items:center; justify-content:center; padding:8px 0 18px; }
 .mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
   color:rgba(237,242,234,.55); margin-top:8px; }
+.mcf-count{ display:flex; justify-content:center; }
+.mcf-sticon{ margin-top:10px; opacity:.9; }
 .mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 calc(50% - 50vw);
   border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
 .mcf-track .fa, .mcf-track .fb{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px;
