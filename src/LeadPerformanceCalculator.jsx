@@ -10699,28 +10699,44 @@ const sfPct = (t) => `${(Math.max(0, Math.min(1, t)) * 100).toFixed(2)}%`;
 /* The light along a line: from the tail, a stop at every person, as far as
    the front of the line, then again. The cord runs it as a dash offset, the
    tracks as a dot that travels; both hand in their stops as percent of the
-   way along and a frame for one stop. A fading light comes in at the tail
-   and goes at the front; a second one can run half a cycle behind. Returns
-   the cancel. */
-function lineLight(el, stops, frame, { fade = false, half = false, run = 14 } = {}) {
-  if (!el || !el.animate || !stops.length) return undefined;
-  const RUN = run, HOLD = 520, TAIL = 700;   // run: ms for one percent of the way
-  const frames = [{ ...frame(0), offset: 0 }];
+   way along and a setter for one point along the way (and, for a light that
+   fades in at the tail and out at the front, its opacity). A second light
+   can run half a cycle behind.
+
+   Driven by a frame loop rather than a Web Animation: WebKit would not
+   repaint the cord's stroke while an animation moved it, so the light sat
+   still on a phone. Returns the cancel. */
+function lineLight(el, stops, apply, { fade = false, half = false, run = 14 } = {}) {
+  if (!el || !stops.length) return undefined;
+  const HOLD = 520, TAIL = 700;   // run: ms for one percent of the way
+  const segs = [];
   let t = 0, from = 0;
   stops.forEach((st, i) => {
-    t += (st - from) * RUN; frames.push({ ...frame(st), t });
-    t += i === stops.length - 1 ? TAIL : HOLD; frames.push({ ...frame(st), t });
+    segs.push({ t0: t, t1: t + (st - from) * run, a: from, b: st }); t = segs[segs.length - 1].t1;
+    segs.push({ t0: t, t1: t + (i === stops.length - 1 ? TAIL : HOLD), a: st, b: st }); t = segs[segs.length - 1].t1;
     from = st;
   });
   const total = t || 1;
-  frames.slice(1).forEach((f) => { f.offset = f.t / total; delete f.t; });
-  if (fade) {
-    frames.forEach((f) => { f.opacity = 1; });
-    frames[0].opacity = 0;
-    frames[frames.length - 1].opacity = 0;
-  }
-  const a = el.animate(frames, { duration: total, iterations: Infinity, iterationStart: half ? 0.5 : 0, easing: "linear" });
-  return () => a.cancel();
+  let reduce = false;
+  try { reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  if (reduce) { apply(stops[stops.length - 1], 1); return undefined; }
+  const start = performance.now() - (half ? total / 2 : 0);
+  const first = segs[0], last = segs[segs.length - 1];
+  let raf;
+  const tick = (now) => {
+    const u = (now - start) % total;
+    const sg = segs.find((g) => u < g.t1) || last;
+    const k = sg.t1 > sg.t0 ? (u - sg.t0) / (sg.t1 - sg.t0) : 1;
+    let op = 1;
+    if (fade) {
+      if (u < first.t1) op = first.t1 > 0 ? u / first.t1 : 1;
+      else if (u >= last.t0) op = 1 - (u - last.t0) / (last.t1 - last.t0);
+    }
+    apply(sg.a + (sg.b - sg.a) * k, op);
+    raf = requestAnimationFrame(tick);
+  };
+  raf = requestAnimationFrame(tick);
+  return () => cancelAnimationFrame(raf);
 }
 
 /* The same light on a track: two dots that come in from the track's left
@@ -10737,10 +10753,12 @@ function useTrackLight(ref, key, pipSel) {
     const stops = [...el.querySelectorAll(pipSel)]
       .map((p) => { const q = p.getBoundingClientRect(); return ((q.left + q.width / 2 - r.left) / r.width) * 100; })
       .map((x) => Math.max(0, Math.min(100, x))).sort((a, b) => a - b);
-    const frame = (st) => ({ transform: `translateX(${((st / 100) * r.width).toFixed(1)}px)` });
     /* The dots take their time: about three and a half seconds edge to edge,
        against the cord's light at under a second and a half. */
-    const offs = dots.map((d, i) => lineLight(d, stops, frame, { fade: true, half: i % 2 === 1, run: 34 }));
+    const offs = dots.map((d, i) => lineLight(d, stops, (st, op) => {
+      d.style.transform = `translateX(${((st / 100) * r.width).toFixed(1)}px)`;
+      d.style.opacity = op.toFixed(2);
+    }, { fade: true, half: i % 2 === 1, run: 34 }));
     return () => offs.forEach((off) => off && off());
   }, [key]);   // eslint-disable-line
 }
@@ -10803,8 +10821,12 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
      the line, then again. Rebuilt whenever anybody moves. Solid once landed. */
   const stops = Object.values(tOf).concat([youT]).map((t) => Math.max(0, Math.min(1, t)) * 100).sort((a, b) => a - b);
   const stopsKey = stops.map((s) => s.toFixed(1)).join(",");
-  useEffect(() => (landed ? undefined : lineLight(litRef.current, stops, (st) => ({ strokeDashoffset: 100 - st }))),
-    [stopsKey, landed]);   // eslint-disable-line
+  const gloRef = useRef(null);
+  useEffect(() => (landed ? undefined : lineLight(litRef.current, stops, (st) => {
+    const off = String(100 - st);
+    litRef.current.style.strokeDashoffset = off;
+    if (gloRef.current) gloRef.current.style.strokeDashoffset = off;
+  })), [stopsKey, landed]);   // eslint-disable-line
 
   const oth = (p, extra) => (
     <span key={p.id} ref={(el) => { pips.current[p.id] = el; }} className={"sfc-oth" + (extra || "")}
@@ -10814,6 +10836,7 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
     <div className={"sfc" + (landed ? " landed" : "")}>
       <svg viewBox="0 0 350 232" aria-hidden="true">
         <path className="sfc-cord" d={SF_CORD} />
+        <path ref={gloRef} className="sfc-glo" d={SF_CORD} pathLength="100" />
         <path ref={litRef} className="sfc-lit" d={SF_CORD} pathLength="100" />
       </svg>
       <div className="sfc-pips">
@@ -41781,9 +41804,12 @@ const SAGE_CSS = `
       @media (max-width:400px) { .sfc { transform:scale(.9); } }
       .sfc > svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
       .sfc-cord { fill:none; stroke:rgba(157,195,255,.24); stroke-width:3; stroke-linecap:round; }
-      .sfc-lit { fill:none; stroke:var(--led); stroke-width:3; stroke-linecap:round;
-        stroke-dasharray:100 100; stroke-dashoffset:100; filter:drop-shadow(0 0 4px var(--led)); }
-      .sfc.landed .sfc-lit { stroke-dasharray:none; stroke-dashoffset:0; }
+      /* the glow is a wider, fainter stroke underneath rather than a filter:
+         WebKit does not repaint a filtered stroke while it moves */
+      .sfc-lit, .sfc-glo { fill:none; stroke:var(--led); stroke-width:3; stroke-linecap:round;
+        stroke-dasharray:100 100; stroke-dashoffset:100; }
+      .sfc-glo { stroke-width:9; opacity:.28; }
+      .sfc.landed .sfc-lit, .sfc.landed .sfc-glo { stroke-dasharray:none; stroke-dashoffset:0; }
       .sfc-you, .sfc-oth { position:absolute; left:0; top:0;
         offset-path:path("M 26 150 C 96 232, 190 40, 292 112"); offset-rotate:0deg; }
       .sfc-you { width:46px; height:46px; border-radius:50%; display:grid; place-items:center;
