@@ -9684,6 +9684,13 @@ const QUEUE_FLAGS = {
   away:     { label: "Away",          cls: "q-away" },
 };
 const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
+/* The phone room's people do not press "On a call". Being on a call is what a
+   desk is for, so it is something the desk puts you in, not a state you step
+   into from a button — the same reasoning the floor already uses for "with a
+   guest". The status itself is untouched: assigning a call still sets it. The
+   Online queue keeps its segment, because "on a lead" is a thing a person does
+   step into and is being rethought separately. */
+const LINE_SELF_FLAGS = ["lunch", "away"];
 /* What counts as "an opportunity taken" on a row. The floor counts the two
    automatic ones too, because catching an up on the floor IS the opportunity. */
 const UPS_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
@@ -11190,7 +11197,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
           </div>
         </div>
         <div className="sf-actions">
-          <SfStatusSelect value={st} variant={variant} flags={QUEUE_SELF_FLAGS} busy={busy} onPick={setFlag} />
+          <SfStatusSelect value={st} variant={variant} flags={variant.kind === "line" ? LINE_SELF_FLAGS : QUEUE_SELF_FLAGS}
+            busy={busy} onPick={setFlag} />
           <div className="sf-links">
             <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
               <SfIcon name="mine" size={14} /><span>My day</span>
