@@ -25,6 +25,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl } from "./_env.mjs";
 import { decide, contentState, assistPlan, railOf, askOf } from "./_queue-notify.mjs";
+import { liveEnvelope, decidePhone } from "./_live-standing.mjs";
 import { alertPayload, liveUpdatePayload, liveEndPayload, liveStartPayload, sendApns } from "./_push-apns.mjs";
 import { fcmUpMessage, fcmStandingMessage, fcmEndMessage, sendFcm } from "./_push-fcm.mjs";
 import { sendAlert, worthSending } from "./_report-alert.mjs";
@@ -88,10 +89,44 @@ export default async function handler(req, res) {
      managers the board stamped onto the row, a claim goes back to the person
      waiting on it, an unclaimed T.O. re-pings after two minutes. */
   if (kind === "floor") plan.push(...assistPlan(before && before.data, after.data));
-  if (!plan.length) return res.status(200).json({ ok: true, sent: 0 });
 
   const db = createClient(supabaseUrl(), process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } });
+
+  /* The store's setup, for the phone room: which desks, and whether they
+     rotate. One read; the same document the app reads. */
+  let config = null;
+  try {
+    const { data } = await db.from("app_data").select("value").eq("key", "lpc:config:v2").maybeSingle();
+    config = (data && data.value) || null;
+  } catch { /* no room to speak of without it; the line still gets its pushes */ }
+
+  /* The phone room's own moments: a desk offered (buzz), taken or freed
+     (quiet). They outrank the line's quiet "position" for the same person in
+     the same write, which would only say less. */
+  if (kind === "line" && config) {
+    const phone = decidePhone(config, store, before && before.data, after.data);
+    for (const item of phone) {
+      const at = plan.findIndex((x) => x.id === item.id && x.kind === "position");
+      if (at >= 0) plan.splice(at, 1);
+      if (!plan.some((x) => x.id === item.id && (x.kind === "up" || x.kind === "nudge" || x.kind === "end"))) plan.push(item);
+    }
+  }
+  if (!plan.length) return res.status(200).json({ ok: true, sent: 0 });
+
+  /* The other room's row, so the card carries both lanes: a person on the
+     floor AND the phone line gets one card, not the last room to write. */
+  let floorRow = kind === "floor" ? after.data : null;
+  let queueRow = kind === "line" ? after.data : null;
+  try {
+    if (kind === "floor") {
+      const { data } = await db.from("queue_public").select("data").eq("id", `${store}:${date}`).maybeSingle();
+      queueRow = (data && data.data) || null;
+    } else if (kind === "line") {
+      const { data } = await db.from("floor_public").select("data").eq("id", `${store}:${date}`).maybeSingle();
+      floorRow = (data && data.data) || null;
+    }
+  } catch { /* one lane is still a card */ }
 
   /* Devices belonging to the people this change touches. One query, not one per
      person: a busy floor changes the line every few seconds and this endpoint is
@@ -116,13 +151,22 @@ export default async function handler(req, res) {
        is the desk asking, and where they are sitting when with a customer, so
        the card can draw the whole phase without the app open. */
     const meRow = ((after.data && after.data.line) || []).find((x) => x && x.id === item.id) || {};
+    /* The v2 envelope rides in the same state: `floor`, `phone` and `hot`
+       for the shell that reads them, the v1 fields for the one that does not.
+       The v1 fields come from THIS row's lane when it is the one that moved,
+       so a build-17 card keeps following the line it always followed. */
+    const env = (config && liveEnvelope({ config, store, date, meId: item.id, floorRow, queueRow,
+      lastRoom: kind === "line" ? "line" : "floor" })) || {};
     const state = contentState({ ahead: item.ahead ?? 0, up: item.kind === "up",
                                  status: item.status || "waiting", label: item.label },
       { line: railOf(after.data, item.id), nudge: item.kind === "nudge",
         table: meRow.table != null ? String(meRow.table) : null, since: meRow.statusAt || null,
         /* The open FlyBy or T.O., so the card can show it was asked and who
            picked it up. Without this the lock screen has no way to know. */
-        ...askOf(after.data, item.id) });
+        ...askOf(after.data, item.id),
+        ...(env.v === 2 && env.status !== "gone" ? { v: 2, hot: env.hot, floor: env.floor || null, phone: env.phone || null } : {}) });
+    /* A desk offered is the phone room's "you're up": the old card says so. */
+    if (item.kind === "offer") { state.up = true; state.ahead = 0; }
     /* A nudge on a phone that has no Live Activity running should not start one
        claiming a place in a line the person may not be in. The alert carries the
        message; the display only follows for people who are actually queued. */
@@ -137,13 +181,14 @@ export default async function handler(req, res) {
             results.push(await sendApns({ token: dev.activity_token, pushType: "liveactivity",
               payload: liveEndPayload({ state }), priority: 5, collapseId }));
           }
-        } else if (item.kind === "up" || item.kind === "nudge") {
+        } else if (item.kind === "up" || item.kind === "nudge" || item.kind === "offer") {
           // The buzz goes to the device; the display moves on its own token.
           if (dev.apns_token) {
             results.push(await sendApns({ token: dev.apns_token, pushType: "alert", collapseId,
               payload: alertPayload({ title: item.title, body: item.body,
                                       data: { store, kind, date, ahead: item.ahead ?? 0,
-                                              up: item.kind === "up", nudge: item.kind === "nudge" } }) }));
+                                              up: item.kind === "up" || item.kind === "offer", nudge: item.kind === "nudge",
+                                              ...(item.kind === "offer" ? { desk: item.desk, until: item.until } : {}) } }) }));
           }
           if (dev.activity_token) {
             results.push(await sendApns({ token: dev.activity_token, pushType: "liveactivity", collapseId,
@@ -165,7 +210,7 @@ export default async function handler(req, res) {
           }
         }
       } else if (dev.platform === "android" && dev.fcm_token) {
-        const body = (item.kind === "up" || item.kind === "nudge") ? item.body
+        const body = (item.kind === "up" || item.kind === "nudge" || item.kind === "offer") ? item.body
           : item.ahead === 0 ? "You're next." : `${item.ahead} ahead of you.`;
         /* The same content state the Live Activity is sent, carried as a string
            because FCM data values are strings. It is what lets an Android phone
@@ -174,7 +219,7 @@ export default async function handler(req, res) {
            people, so this stays well inside FCM's four kilobytes. */
         const stateJson = JSON.stringify(state);
         const msg = item.kind === "end" ? fcmEndMessage({ token: dev.fcm_token, tag: collapseId, data: { store, kind } })
-          : (item.kind === "up" || item.kind === "nudge")
+          : (item.kind === "up" || item.kind === "nudge" || item.kind === "offer")
             ? fcmUpMessage({ token: dev.fcm_token, title: item.title, body: item.body, tag: collapseId,
                              data: { store, kind, ahead: String(item.ahead ?? 0), nudge: item.kind === "nudge" ? "1" : "0",
                                      state: stateJson } })
