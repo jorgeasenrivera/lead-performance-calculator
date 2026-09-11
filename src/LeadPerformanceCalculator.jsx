@@ -7172,7 +7172,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
    One button, everywhere, for everyone. A manager who cannot save and a salesperson
    whose name is missing from the line both end up in the same place, and neither has
    to know who to ask. */
-function HelpButton({ config, who, store, context, figures, floating = true }) {
+function HelpButton({ config, who, store, context, figures, floating = true, dark = false }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -7181,7 +7181,7 @@ function HelpButton({ config, who, store, context, figures, floating = true }) {
         <PixIcon glyph="question" size={floating ? 20 : 15} />
         {!floating && <span>Help</span>}
       </button>
-      {open && <HelpPanel config={config} who={who} store={store} context={context} figures={figures}
+      {open && <HelpPanel config={config} who={who} store={store} context={context} figures={figures} dark={dark}
         onClose={() => setOpen(false)} />}
     </>
   );
@@ -7201,7 +7201,7 @@ function HelpButton({ config, who, store, context, figures, floating = true }) {
    unactionable and it is what you get if you ask an open question. So the form
    asks the three things that make it fixable — which figure, what it should say,
    and how they know — and takes the rest off the screen itself. */
-function HelpPanel({ config, who, store, context, figures, onClose }) {
+function HelpPanel({ config, who, store, context, figures, onClose, dark = false }) {
   const s = (config && config.support) || {};
   const [tab, setTab] = useState("contact");
   const [what, setWhat] = useState("");
@@ -7263,7 +7263,7 @@ function HelpPanel({ config, who, store, context, figures, onClose }) {
   return (
     <Overlay>
     <div className="help-back" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="help-sheet" role="dialog" aria-label="Help">
+      <div className={"help-sheet" + (dark ? " mc-tone" : "")} role="dialog" aria-label="Help">
         <div className="help-head">
           {/* The heading follows the tab. "Need a hand?" over a wrong-number form
               tells somebody they are asking for help, which is the framing that
@@ -10008,6 +10008,8 @@ async function printQueueSignIn({ store, url, date, by }) {
 /* Inside the phone app the WebView swallows vibrate, so the buzz is also sent
    to the shell, which turns it into a real haptic. */
 function buzz(pattern) {
+  /* a person can turn the buzz off on their own phone; the tap still does its work */
+  try { if (localStorage.getItem("lpcf:pref:buzz") === "0") return; } catch (e) {}
   try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
   nativePost("buzz", pattern);
 }
@@ -11535,7 +11537,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <SageCurtain wiping={wiping} hold={held} />
       {/* Everyone gets a way out of a problem, including the people with no account. */}
-      <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} />
+      <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} dark />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std} variant={variant}
           config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
@@ -14638,6 +14640,18 @@ function ChannelLine({ series, col, target = null }) {
   );
 }
 
+/* Text size, the person's own. Three steps, kept on the phone, applied as a
+   zoom on the salesperson's screens: every size in them is in pixels, so a
+   zoom is the one lever that moves the type and the buttons together. The
+   manager's screens do not carry the class and are untouched. */
+const TEXT_SIZES = [["1", "Normal"], ["1.15", "Large"], ["1.3", "Largest"]];
+const textSizeOf = () => {
+  try { const v = localStorage.getItem("lpcf:pref:text"); return TEXT_SIZES.some(([k]) => k === v) ? v : "1"; }
+  catch (e) { return "1"; }
+};
+const applyTextSize = (v) => { try { document.documentElement.style.setProperty("--sftxt", v); } catch (e) {} };
+if (typeof document !== "undefined") applyTextSize(textSizeOf());
+
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
                     line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [] }) {
@@ -15841,6 +15855,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   /* ---- dark or light ----
      Follows the phone unless the person says otherwise in the help sheet. */
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem("lpcf:pref:theme") || "auto"; } catch (e) { return "auto"; } });
+  const [textSize, setTextSize] = useState(textSizeOf);
+  useEffect(() => { applyTextSize(textSize); }, [textSize]);
+  const [, prefTick] = useState(0);
+  const prefOn = (k) => { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
+  const flipPref = (k) => { try { localStorage.setItem(k, prefOn(k) ? "0" : "1"); } catch (e) {} buzz(8); prefTick((n) => n + 1); };
   const [sysLight, setSysLight] = useState(() => { try { return window.matchMedia("(prefers-color-scheme: light)").matches; } catch (e) { return false; } });
   useEffect(() => {
     let mq; try { mq = window.matchMedia("(prefers-color-scheme: light)"); } catch (e) { return; }
@@ -16212,45 +16231,90 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           </div>
         </div></Overlay>
       )}
+      {/* The person's own sheet, in the corner's clothes: their card as the
+          hero, then this phone, then reach, then the day. It was a list of
+          hairlines that read as a different app from the cards above it. */}
       {inShell && helpOpen && (
         <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
-          <div className="mc-sheet">
-            <div className="mc-sheet-head"><b>Help</b>
+          <div className="mc-sheet mc-you">
+            <div className="mc-sheet-head"><b>You</b>
               <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
-            <div className="mc-set-row mc-set-who">
+            <div className="mc-you-hero">
               <span className="mc-set-av" style={{ background: `hsl(${(String(meFull || meLabel).split("").reduce((h2, c2) => (h2 * 31 + c2.charCodeAt(0)) % 360, 0))} 62% 46%)` }}>{String(meLabel || meFull).trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</span>
-              <span>{meFull || meLabel}<span className="hint">{(row && row.storeName) || ""}</span></span>
+              <span className="mc-you-who"><b>{meFull || meLabel}</b><span className="hint">{(row && row.storeName) || ""}{myGoal != null ? ` \u00b7 goal ${myGoal}` : ""}</span></span>
+              <span className="mc-you-live">{account ? "LINKED" : "QR"}</span>
             </div>
-            <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
-              <span>Something looks wrong<span className="hint">Send a number or a ticket back with a note</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
-            <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
-              <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
-            <div className="mc-set-row"><span>My month goal<span className="hint">Set with your manager</span></span><span className="on">{myGoal != null ? myGoal : "\u00b7"}</span></div>
-            <button type="button" className="mc-set-row" onClick={() => { const nextT = theme === "auto" ? "dark" : theme === "dark" ? "light" : "auto"; try { localStorage.setItem("lpcf:pref:theme", nextT); } catch (e) {} setTheme(nextT); }}>
-              <span>Look<span className="hint">{theme === "auto" ? "Follows the phone" : theme === "dark" ? "Dark, always" : "Light, always"}</span></span><span className="on">{theme === "auto" ? "AUTO" : theme.toUpperCase()}</span></button>
-            {[["lpcf:pref:streak", "Streak warnings"], ["lpcf:pref:mile", "Milestone moments"], ["lpcf:pref:notif", "Notifications \u00b7 Live Activity"]].map(([k, l]) => {
-              let on = true; try { on = localStorage.getItem(k) !== "0"; } catch (e) {}
-              return (
-                <button type="button" className="mc-set-row" key={k} onClick={() => { try { localStorage.setItem(k, on ? "0" : "1"); } catch (e) {} setHelpOpen(false); setTimeout(() => setHelpOpen(true), 0); }}>
-                  <span>{l}</span><span className="on">{on ? "ON" : "OFF"}</span></button>
-              );
-            })}
-            {!inNative && (
-              <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); if (appLink) window.open(appLink, "_blank", "noopener"); else setAppOpen(true); }}>
-                <span>Get the Sage app<span className="hint">{appLink ? (isIOS ? "On the App Store" : "On Google Play") : "Coming to your phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
-            )}
-            <div className="mc-set-row"><span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
-            {me && <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}><span>Leave the floor</span><span className="on"><PixIcon glyph="door" size={11} /></span></button>}
-            {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); onSignOut(); }}><span>Sign out<span className="hint">Somebody else's phone, or the wrong name</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
+
+            <div className="mc-cap">THIS PHONE</div>
+            <div className="mc-card mc-you-card">
+              <div className="mc-set-row">
+                <span className="ic"><PixIcon glyph="search" size={16} /></span>
+                <span>Text size<span className="hint">Every screen here, and the buttons with it</span></span>
+                <span className="mc-seg3 txt" role="radiogroup" aria-label="Text size">
+                  {TEXT_SIZES.map(([k, l]) => (
+                    <button key={k} type="button" role="radio" aria-checked={textSize === k} aria-label={l} className={textSize === k ? "on" : ""}
+                      onClick={() => { try { localStorage.setItem("lpcf:pref:text", k); } catch (e) {} setTextSize(k); buzz(8); }}>A</button>
+                  ))}
+                </span>
+              </div>
+              <div className="mc-set-row">
+                <span className="ic"><PixIcon glyph="star" size={16} /></span>
+                <span>Look<span className="hint">{theme === "auto" ? "Follows the phone" : theme === "dark" ? "Dark, always" : "Light, always"}</span></span>
+                <span className="mc-seg3" role="radiogroup" aria-label="Look">
+                  {[["auto", "AUTO"], ["dark", "DARK"], ["light", "LIGHT"]].map(([k, l]) => (
+                    <button key={k} type="button" role="radio" aria-checked={theme === k} className={theme === k ? "on" : ""}
+                      onClick={() => { try { localStorage.setItem("lpcf:pref:theme", k); } catch (e) {} setTheme(k); buzz(8); }}>{l}</button>
+                  ))}
+                </span>
+              </div>
+              {[["lpcf:pref:buzz", "tap", "Haptics", "A buzz on every tap"],
+                ["lpcf:pref:notif", "bolt", "Notifications", "Your turn, and the Live Activity"],
+                ["lpcf:pref:streak", "flame", "Streak warnings", "When a day is about to break the run"],
+                ["lpcf:pref:mile", "trophy", "Milestone moments", "The little celebrations"]].map(([k, g, l, h]) => (
+                <button type="button" className="mc-set-row" key={k} role="switch" aria-checked={prefOn(k)} onClick={() => flipPref(k)}>
+                  <span className="ic"><PixIcon glyph={g} size={16} /></span>
+                  <span>{l}<span className="hint">{h}</span></span>
+                  <span className={"mc-sw" + (prefOn(k) ? " on" : "")} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+
+            <div className="mc-cap">REACH</div>
+            <div className="mc-card mc-you-card">
+              <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
+                <span className="ic"><PixIcon glyph="doc" size={16} /></span>
+                <span>Something looks wrong<span className="hint">Send a number or a ticket back with a note</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+              <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); setHelpPanel(true); }}>
+                <span className="ic"><PixIcon glyph="user" size={16} /></span>
+                <span>Message {((cfg && cfg.support && cfg.support.name) || "the top").split(" ")[0]}<span className="hint">Straight to the top, not the desk</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+              {!inNative && (
+                <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); if (appLink) window.open(appLink, "_blank", "noopener"); else setAppOpen(true); }}>
+                  <span className="ic"><PixIcon glyph="phone" size={16} /></span>
+                  <span>Get the Sage app<span className="hint">{appLink ? (isIOS ? "On the App Store" : "On Google Play") : "Coming to your phone"}</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>
+              )}
+              <div className="mc-set-row">
+                <span className="ic"><PixIcon glyph="home" size={16} /></span>
+                <span>{account ? "Your account" : "The second door"}<span className="hint">{account ? "Linked to your name on this floor. The daily QR still works too." : "The daily QR still signs you in"}</span></span><span className="on">LIVE</span></div>
+            </div>
+
+            <div className="mc-cap">THE DAY</div>
+            <div className="mc-card mc-you-card">
+              {me && <button type="button" className="mc-set-row mc-set-out" onClick={() => { setHelpOpen(false); startTicket(); }}>
+                <span className="ic"><PixIcon glyph="door" size={16} /></span>
+                <span>Leave the floor<span className="hint">Done for the day</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
+              {onSignOut && <button type="button" className="mc-set-row" onClick={() => { setHelpOpen(false); onSignOut(); }}>
+                <span className="ic"><PixIcon glyph="swap" size={16} /></span>
+                <span>Sign out<span className="hint">Somebody else's phone, or the wrong name</span></span><span className="on"><PixIcon glyph="arrow" size={11} /></span></button>}
+            </div>
           </div>
         </div></Overlay>
       )}
-      {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`}
+      {helpPanel && <HelpPanel config={cfg} who={meLabel || meFull} store={store} context={`My Corner, ${store}, ${date}`} dark
         figures={mine ? [{ label: "Calls today", value: mine.calls }, { label: "Videos today", value: mine.video }, { label: "Tasks today", value: mine.tasks }, { label: "Units this month", value: myUnits }] : []}
         onClose={() => setHelpPanel(false)} />}
       <SageCurtain wiping={wiping} hold={held} />
       {/* Everyone gets a way out of a problem, including the people with no account. */}
-      <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} />
+      <HelpButton config={cfg} who={meLabel} store={store} context={`Live Floor sign-in, ${store}, ${date}`} dark />
       {myDay && (
         <MyDay store={store} date={date} meId={meId} meName={meFull || meLabel} stats={mine} std={std} variant={variant}
           config={cfg} updatedAt={mineAt} monthStats={monthStats} thresholds={boardThr}
@@ -40532,9 +40596,9 @@ const SAGE_CSS = `
 .mc-legend s.nw{ background:#e4c98d; } .mc-legend s.us{ background:#a9c4ac; }
 .mc-legend s.best{ background:#e4c98d; border-radius:50%; } .mc-legend s.big{ background:#a9c4ac; border-radius:50%; }
 .mc-legend s.hol{ background:transparent; box-shadow:inset 0 0 0 1.5px rgba(232,238,242,.35); border-radius:50%; }
-.mc-legend-sc{ margin-top:12px; font-size:8px; }
+.mc-legend-sc{ margin-top:12px; font-size:10px; }
 .mc-list{ margin-top:8px; }
-.mc-lifoot{ display:block; margin-top:9px; font-family:var(--sfmono); font-size:9px; letter-spacing:.09em;
+.mc-lifoot{ display:block; margin-top:9px; font-family:var(--sfmono); font-size:11px; letter-spacing:.09em;
   text-transform:uppercase; color:rgba(232,238,242,.34); }
 .mc-li{ display:flex; align-items:center; gap:9px; padding:7px 0; border-bottom:1px dashed rgba(255,255,255,.1); font-size:12.5px; }
 .mc-li:last-child{ border-bottom:0; }
@@ -40716,7 +40780,7 @@ const SAGE_CSS = `
 .mc-cline-foot{ display:flex; align-items:baseline; gap:7px; margin-top:6px; }
 .mc-cline-foot b{ font-family:var(--sfmono); font-size:17px; font-weight:700; }
 .mc-cline-foot span{ font-size:11px; color:rgba(237,242,234,.6); }
-.mc-cline-note{ margin-top:7px; font-size:10.5px; line-height:1.45; color:rgba(237,242,234,.42); }
+.mc-cline-note{ margin-top:7px; font-size:12px; line-height:1.45; color:rgba(237,242,234,.42); }
 .mc-cline-none{ font-size:11.5px; line-height:1.5; color:rgba(237,242,234,.5); padding:10px 0 2px; }
 .mc-hb-full .r{ padding:3px 0; }
 .mc-pill{ position:fixed; left:50%; transform:translateX(-50%); bottom:14px; z-index:50;
@@ -40762,8 +40826,8 @@ const SAGE_CSS = `
 .mc-corner{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto; }
 .mc-corner .mc-help{ position:static; }
 .mc-corner .mc-asof{ white-space:nowrap; }
-.mc-aheadlbl{ border:0; background:none; padding:0; text-align:left; cursor:pointer; font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.14em; color:rgba(232,238,242,.6); }
-.mc-chip2{ display:inline-flex; align-items:center; gap:6px; align-self:flex-start; padding:5px 9px; border-radius:9px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); font-family:var(--sfmono); font-size:8.5px; font-weight:700; letter-spacing:.12em; color:rgba(232,238,242,.75); }
+.mc-aheadlbl{ border:0; background:none; padding:0; text-align:left; cursor:pointer; font-family:var(--sfmono); font-size:11.5px; font-weight:700; letter-spacing:.14em; color:rgba(232,238,242,.6); }
+.mc-chip2{ display:inline-flex; align-items:center; gap:6px; align-self:flex-start; padding:5px 9px; border-radius:9px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); font-family:var(--sfmono); font-size:10.5px; font-weight:700; letter-spacing:.12em; color:rgba(232,238,242,.75); }
 .mc-chip2 .pix{ color:#E4C98D; }
 /* the rail */
 .mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -18px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
@@ -40772,7 +40836,7 @@ const SAGE_CSS = `
 .mc-rail .fa{ left:4px; --dA:180px; animation:mcfA 2.4s linear infinite; } .mc-rail .fb{ left:0; --bX:120px; --dB:300px; animation:mcfB 2.4s linear infinite; } .mc-rail .d2{ animation-delay:1.2s; }
 .mc-rail.up{ background:rgba(143,216,175,.1); } .mc-rail.up s{ background:rgba(143,216,175,.9); }
 .mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
-.mc-pip.hd{ width:28px; height:28px; font-size:8px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
+.mc-pip.hd{ width:30px; height:30px; font-size:9.5px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
 /* Somebody off the line used to be drawn at 45% opacity, which on a dark
    ground reads as a smudge rather than a person and was never in the draft.
    They are drawn solid now, in a muted version of their own colour, so the
@@ -40783,7 +40847,7 @@ const SAGE_CSS = `
 .mc-pip.you::after{ content:""; position:absolute; inset:-2px; border-radius:50%; box-shadow:0 0 18px 4px rgba(228,201,141,.9); animation:mcGlowOp 2.4s ease-in-out infinite; will-change:opacity; pointer-events:none; }
 .mc-pip.you.g{ background:#8FD8AF; box-shadow:0 0 12px rgba(143,216,175,.95); }
 .mc-pip.you.g::after{ box-shadow:0 0 20px 4px rgba(143,216,175,.9); animation-duration:1.6s; }
-.mc-railw > em{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.16em; color:rgba(255,255,255,.55); writing-mode:vertical-rl; font-style:normal; }
+.mc-railw > em{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.16em; color:rgba(255,255,255,.55); writing-mode:vertical-rl; font-style:normal; }
 /* hero: pace glow, CRT roll, the trail */
 .mc-hero{ transition:box-shadow .6s, border-color .6s; }
 .mc-hero::before{ content:""; position:absolute; left:0; right:0; top:-30%; height:26%; background:linear-gradient(180deg,transparent,rgba(255,255,255,.035) 35%,rgba(255,255,255,.11) 50%,rgba(0,0,0,.10) 62%,transparent); animation:mcCrt 7s linear infinite; z-index:1; pointer-events:none; will-change:transform; }
@@ -40802,7 +40866,7 @@ const SAGE_CSS = `
 @keyframes mcGlowOp{ 0%,100%{ opacity:.75; } 50%{ opacity:1; } }
 .mc-statecol{ position:absolute; right:12px; top:12px; z-index:2; display:flex; flex-direction:column; align-items:center; gap:12px; }
 .mc-statecol .mc-icobtn{ margin:0; }
-.mc-state{ font-family:var(--sfmono); font-size:8.5px; font-weight:700; letter-spacing:.14em; padding:3px 8px; border-radius:7px; white-space:nowrap; }
+.mc-state{ font-family:var(--sfmono); font-size:10.5px; font-weight:700; letter-spacing:.14em; padding:4px 9px; border-radius:7px; white-space:nowrap; }
 .mc-behind .mc-state{ background:rgba(216,72,60,.35); color:#FFD7D3; } .mc-on .mc-state{ background:rgba(228,201,141,.25); color:#E4C98D; } .mc-ahead .mc-state{ background:rgba(30,138,76,.4); color:#8FD8AF; }
 .mc-trail{ position:relative; z-index:1; margin-top:10px; height:92px; }
 .mc-trail svg{ width:100%; height:92px; overflow:visible; display:block; }
@@ -40814,7 +40878,7 @@ const SAGE_CSS = `
 .mc-trail .todaydot{ fill:#fff; transform-box:fill-box; transform-origin:center; animation:mcDot 2.4s ease-in-out infinite; } @keyframes mcDot{ 50%{ transform:scale(1.33); } }
 .mc-trail .goalring{ fill:none; stroke:#E4C98D; stroke-width:2; }
 @keyframes mcGrow{ from{ transform:scaleX(0); } }
-.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between; font-family:var(--sfmono); font-size:7.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); }
+.mc-tl{ position:absolute; left:0; right:0; bottom:-14px; display:flex; justify-content:space-between; font-family:var(--sfmono); font-size:9.5px; font-weight:700; letter-spacing:.1em; color:rgba(237,242,234,.5); }
 .mc-tl .mid{ color:#E4C98D; } .mc-behind .mc-tl .mid{ color:#F08A80; } .mc-ahead .mc-tl .mid{ color:#8FD8AF; }
 .mc-hero .mc-legend{ margin-top:20px; }
 .mc-legend s.pc{ background:transparent; border-top:1.5px dashed rgba(255,255,255,.6); height:0; border-radius:0; vertical-align:2px; }
@@ -40841,10 +40905,10 @@ const SAGE_CSS = `
 .mc-pod{ display:flex; gap:7px; }
 .mc-pd{ flex:1; min-width:0; text-align:center; border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:8px 4px; background:rgba(0,0,0,.18); }
 .mc-pd.me{ border-color:#E4C98D; background:rgba(228,201,141,.16); animation:mcLift 4s ease-in-out infinite; } @keyframes mcLift{ 50%{ transform:translateY(-2px); } }
-.mc-pd .av{ margin:0 auto 4px; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:9px; font-weight:700; }
-.mc-pd b{ display:block; font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mc-pd .av{ margin:0 auto 4px; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:11px; font-weight:700; }
+.mc-pd b{ display:block; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .mc-pd .un{ display:block; font-family:var(--sfmono); font-size:13px; font-weight:700; }
-.mc-pd .rk{ display:block; font-family:var(--sfmono); font-size:8px; font-weight:700; color:rgba(237,242,234,.45); }
+.mc-pd .rk{ display:block; font-family:var(--sfmono); font-size:10px; font-weight:700; color:rgba(237,242,234,.45); }
 @media (prefers-reduced-motion:reduce){ .mc *,.mc *::before,.mc *::after{ animation:none !important; } }
 /* ---- light mode: the same page on paper ----
    The site's own ground rather than a map: soft sage and sand on paper. The
@@ -41044,7 +41108,10 @@ const SAGE_CSS = `
 .mc-floor .mc-pill{ background:rgba(3,5,4,.9); }
 /* ---- reach ----------------------------------------------------------------
    Read at arm's length, tapped with a thumb: nothing smaller than 44px to
-   hit, nothing smaller than 11px to read, and the numerals scale with it. */
+   hit, nothing smaller than 11px to read, and the numerals scale with it.
+   The person's own text size rides on top as a zoom of the whole screen,
+   the bar and the sheets included, so nothing they can tap stays small. */
+.q-page.sf, .ar-bar, .fba-sheetwrap, .mc-ov{ zoom:var(--sftxt, 1); }
 .mc{ gap:14px; padding-left:18px; padding-right:48px; }
 .mc-calhead{ font-size:11.5px; }
 .mc-cal{ grid-template-columns:repeat(7, 12px); gap:6px 8px; margin-top:9px; }
@@ -41052,9 +41119,9 @@ const SAGE_CSS = `
 .mc-date{ font-size:13px; }
 .mc-qmini{ gap:7px; min-height:24px; }
 .mc-qmini s{ width:14px; height:14px; }
-.mc-qmini s.hd{ width:22px; height:22px; border-radius:6px; font-size:8px; }
-.mc-qmini b{ font-size:10px; }
-.mc-asof{ font-size:10.5px; }
+.mc-qmini s.hd{ width:22px; height:22px; border-radius:6px; font-size:10px; }
+.mc-qmini b{ font-size:11.5px; }
+.mc-asof{ font-size:12px; }
 .mc-asof s{ width:8px; height:8px; }
 .mc-help{ width:40px; height:40px; }
 .mc-hero{ padding:16px 15px 14px; }
@@ -41064,51 +41131,51 @@ const SAGE_CSS = `
 .mc-pace{ margin-top:14px; gap:10px; }
 .mc-pace .nm{ font-size:12.5px; width:38px; }
 .mc-pace .tr{ height:16px; }
-.mc-pace .tr .togo{ font-size:9.5px; }
+.mc-pace .tr .togo{ font-size:11px; }
 .mc-pacew .pm{ height:22px; top:-3px; width:3.5px; }
 .mc-pace .num{ font-size:13.5px; }
-.mc-legend{ font-size:9.5px; gap:14px; margin-top:8px; }
+.mc-legend{ font-size:11px; gap:14px; margin-top:8px; }
 .mc-legend s{ width:9px; height:9px; }
-.mc-cap{ font-size:11px; }
+.mc-cap{ font-size:12px; }
 .mc-card{ padding:14px 16px; border-radius:18px; }
 .mc-row{ gap:14px; padding:11px 0; }
 .mc-num{ min-width:58px; }
 .mc-tx b{ font-size:17px; }
-.mc-tx .st{ font-size:11px; margin-top:3px; }
+.mc-tx .st{ font-size:12px; margin-top:3px; }
 .mc-tx .bar{ height:6px; margin-top:8px; }
 .mc-made{ height:28px; font-size:11.5px; gap:9px; margin-top:7px; border-radius:9px; }
 .mc-ptslbl b{ font-size:16.5px; }
-.mc-streak{ font-size:10.5px; }
+.mc-streak{ font-size:12px; }
 .mc-week{ gap:0; margin-top:12px; justify-content:space-between; padding:0 2px; }
 .mc-week i{ width:auto; flex:0 0 auto; }
 .mc-week .c{ width:32px; height:32px; font-size:12.5px; }
-.mc-week .wd{ font-size:9.5px; margin-top:5px; }
+.mc-week .wd{ font-size:11px; margin-top:5px; }
 .mc-list{ margin-top:10px; }
 .mc-li{ padding:11px 0; font-size:15.5px; gap:12px; }
 .mc-li .ck{ width:24px; height:24px; }
 .mc-hb{ gap:9px; }
-.mc-hb .rk{ font-size:11px; width:20px; }
+.mc-hb .rk{ font-size:12px; width:22px; }
 .mc-hb .tk{ height:14px; }
 .mc-hb .un{ font-size:12.5px; width:36px; }
 .mc-hb .nm2{ font-size:14px; width:110px; }
-.mc-boardsub{ font-size:10.5px; margin-top:10px; }
+.mc-boardsub{ font-size:12px; margin-top:10px; }
 .mc-boardbtn{ min-height:44px; }
 .mc-sheet{ padding:20px 19px 22px; }
 .mc-sheet-head b{ font-size:19px; }
 .mc-x{ width:36px; height:36px; }
-.mc-cl b{ font-size:16px; } .mc-cl .lb{ font-size:12.5px; } .mc-cl .dl{ font-size:10.5px; }
+.mc-cl b{ font-size:16px; } .mc-cl .lb{ font-size:13px; } .mc-cl .dl{ font-size:12px; }
 .mc-cl .vb{ height:130px; width:30px; }
 .mc-clfoot{ font-size:12.5px; }
-.mc-sc{ gap:10px 0; margin-top:10px; } .mc-sc b{ font-size:10px; } .mc-sc s{ width:20px; height:20px; }
+.mc-sc{ gap:10px 0; margin-top:10px; } .mc-sc b{ font-size:11.5px; } .mc-sc s{ width:20px; height:20px; }
 .mc-scr{ font-size:13px; padding:6px 0; } .mc-scd-hint{ font-size:12.5px; }
 .mc-set-row{ padding:14px 2px; font-size:15px; min-height:44px; }
 .mc-set-row .hint{ font-size:12px; }
-.mc-set-row .on{ font-size:10.5px; }
+.mc-set-row .on{ font-size:12px; }
 .mc-set-av{ width:40px; height:40px; font-size:12.5px; }
 .mc-offc b{ font-size:17px; } .mc-offc .hint{ font-size:13px; }
 .mc-offb button{ padding:11px 20px; font-size:13px; min-height:44px; }
 .mc-spine{ width:26px; right:9px; }
-.mc-spine .rt{ font-size:9.5px; }
+.mc-spine .rt{ font-size:11px; }
 .mc-spine .sp{ width:5px; }
 .mc-spine .sp b{ width:13px; height:13px; }
 .mc-pill{ padding:5px; }
@@ -41118,12 +41185,12 @@ const SAGE_CSS = `
 .mcf-track{ height:40px; margin-top:14px; }
 .mcf-pip{ width:26px; height:26px; font-size:9px; }
 .mcf-pip.hd{ width:34px; height:34px; font-size:10.5px; }
-.mcf-pip.bh{ width:20px; height:20px; font-size:7.5px; }
+.mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
 .mcf-track .fa, .mcf-track .fb{ width:8px; height:8px; margin-top:-4px; }
 .mcf-tmr{ gap:28px; margin-top:18px; }
 .mcf-tmr .v{ font-size:14px; height:18px; gap:7px; }
-.mcf-tmr .l{ font-size:8.5px; margin-top:4px; }
+.mcf-tmr .l{ font-size:10px; margin-top:4px; }
 .mcf-title{ font-size:27px; margin-top:16px; }
 .mcf-sub{ font-size:14px; }
 .mcf .fba-row{ gap:10px; margin-top:12px; }
@@ -41132,9 +41199,9 @@ const SAGE_CSS = `
 .mcf .fba-btn span{ font-size:12px; }
 .mcf .sf-links{ margin-top:14px; gap:18px; }
 .mcf .sf-link{ font-size:14.5px; min-height:44px; white-space:nowrap; }
-.mc-tk-h{ font-size:10px; } .mc-tk-n{ font-size:17px; } .mc-tk-row{ font-size:13.5px; padding:6px 0; }
+.mc-tk-h{ font-size:11.5px; } .mc-tk-n{ font-size:17px; } .mc-tk-row{ font-size:14px; padding:6px 0; }
 .mc-tk-go{ padding:13px; font-size:14px; min-height:48px; }
-.mc-send{ font-size:10.5px; }
+.mc-send{ font-size:12px; }
 .mc-flash-t{ font-size:30px; } .mc-flash-s{ font-size:15px; }
 .mc-flash-b{ padding:12px 26px; font-size:14px; min-height:48px; }
 /* ---- the moments -------------------------------------------------------- */
@@ -41165,6 +41232,49 @@ const SAGE_CSS = `
 .mc-set-av{ width:34px; height:34px; border-radius:50%; color:#fff; display:flex; align-items:center; justify-content:center;
   font-family:var(--sfmono); font-size:11px; font-weight:700; flex:0 0 auto; }
 .mc-set-out{ color:#f08a80; }
+/* ---- the person's sheet, in the corner's clothes ----
+   The hero card for the person, then cards for this phone, reach, the day,
+   each row with a PixIcon tile. Switches are sand when on; the three-step
+   choices are one small segment rather than a value that cycles on tap. */
+.mc-you-hero{ display:flex; align-items:center; gap:12px; padding:14px; border-radius:16px; color:#EDF2EA;
+  background:linear-gradient(150deg,#7FA98A,#55795F 55%,#26382C); box-shadow:0 14px 30px -18px rgba(38,56,44,.8); }
+.mc-you-hero .mc-set-av{ width:44px; height:44px; font-size:13px; box-shadow:0 0 0 3px rgba(255,255,255,.22); }
+.mc-you-who{ flex:1; min-width:0; }
+.mc-you-who b{ display:block; font-family:var(--font-display); font-size:17px; letter-spacing:-.01em; }
+.mc-you-who .hint{ display:block; font-size:12px; color:rgba(237,242,234,.72); margin-top:2px; }
+.mc-you-live{ font-family:var(--sfmono); font-size:10px; font-weight:700; letter-spacing:.14em; padding:5px 9px; border-radius:8px;
+  background:rgba(255,255,255,.16); flex:0 0 auto; }
+.mc-you .mc-cap{ margin:16px 2px 8px; }
+.mc-you .mc-you-card{ padding:2px 12px; }
+.mc-you .mc-set-row{ gap:12px; padding:12px 0; min-height:52px; }
+.mc-you .mc-set-row .ic{ width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.07); color:#e4c98d;
+  display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+.mc-you .mc-set-row .ic .pix{ color:inherit; }
+.mc-you .mc-set-row > span:not(.ic):not(.on):not(.mc-sw):not(.mc-seg3){ flex:1; min-width:0; }
+.mc-you .mc-set-out .ic{ color:#f08a80; background:rgba(240,138,128,.12); }
+.mc-seg3{ margin-left:auto; display:inline-flex; gap:2px; padding:3px; border-radius:10px; background:rgba(255,255,255,.07); flex:0 0 auto; }
+.mc-seg3 button{ border:0; background:none; color:rgba(237,242,234,.6); font-family:var(--sfmono); font-size:10.5px; font-weight:700;
+  letter-spacing:.06em; padding:0 9px; min-width:36px; height:30px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
+.mc-seg3 button.on{ background:#e4c98d; color:#1a2820; }
+.mc-seg3.txt button{ font-family:var(--font-display); letter-spacing:0; min-width:32px; }
+.mc-seg3.txt button:nth-child(1){ font-size:11px; } .mc-seg3.txt button:nth-child(2){ font-size:14px; } .mc-seg3.txt button:nth-child(3){ font-size:18px; }
+.mc-sw{ margin-left:auto; width:46px; height:28px; border-radius:14px; background:rgba(255,255,255,.14); position:relative; flex:0 0 auto;
+  transition:background .25s; }
+.mc-sw::after{ content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%; background:#EDF2EA;
+  transition:transform .25s cubic-bezier(.3,1.3,.4,1), background .25s; }
+.mc-sw.on{ background:#e4c98d; } .mc-sw.on::after{ transform:translateX(18px); background:#1a2820; }
+/* the help panel, when it opens from these screens, in the same dark */
+.help-sheet.mc-tone{ background:#1a2820; border:1px solid rgba(228,201,141,.28); box-shadow:0 32px 70px -20px rgba(0,0,0,.92); }
+.help-sheet.mc-tone, .help-sheet.mc-tone *{ color:#e8eef2; }
+.help-sheet.mc-tone .hint, .help-sheet.mc-tone .help-role, .help-sheet.mc-tone .help-intro, .help-sheet.mc-tone .help-lbl{ color:rgba(237,242,234,.55); }
+.help-sheet.mc-tone .help-tabs{ background:rgba(255,255,255,.07); }
+.help-sheet.mc-tone .help-tab{ color:rgba(237,242,234,.62); }
+.help-sheet.mc-tone .help-tab.on{ background:#e4c98d; color:#1a2820; box-shadow:none; }
+.help-sheet.mc-tone .help-tab-wrong.on{ color:#1a2820; }
+.help-sheet.mc-tone .help-in, .help-sheet.mc-tone .help-area, .help-sheet.mc-tone select.help-in{ background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14); color:#e8eef2; }
+.help-sheet.mc-tone .help-link{ color:#e4c98d; }
+.help-sheet.mc-tone .md-x{ background:rgba(255,255,255,.1); color:#e8eef2; }
+.help-sheet.mc-tone .btn{ background:#e4c98d; color:#1a2820; border-color:#e4c98d; }
 /* The slot the ticket prints from sits under the phone's status bar, not
    behind it: the safe area is padding on the overlay so the paper comes out
    below the clock, on every phone. */
@@ -41181,14 +41291,14 @@ const SAGE_CSS = `
 .mc-tk-big{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
 .mc-tk-dm .ld{ box-shadow:inset 0 1.5px 2.5px rgba(0,0,0,.7), inset 0 -1px 1px rgba(255,255,255,.25) !important; }
 .mc-tk-dm .ld.on{ background:rgba(16,22,17,.82) !important; }
-.mc-tk-r{ text-align:right; font-family:var(--sfmono); font-size:10px; font-weight:600; }
+.mc-tk-r{ text-align:right; font-family:var(--sfmono); font-size:12px; font-weight:600; }
 .mc-tk-row{ display:flex; align-items:baseline; gap:7px; font-family:var(--sfmono); font-size:12px; font-weight:600; padding:4.5px 0; }
 .mc-tk-row i{ flex:1; border-bottom:2px dotted rgba(42,36,24,.35); }
 .mc-tk-row .ok{ color:#1e7a46; }
 .mc-tk-foot{ display:flex; justify-content:space-between; align-items:center; gap:14px; margin:12px 0 6px; }
 .mc-stamp{ display:inline-block; border:3px solid #1e7a46; color:#1e7a46; transform:rotate(-4deg); padding:2px 10px;
   font-size:11px; font-weight:700; border-radius:7px; letter-spacing:.04em; }
-.mc-tk-note{ font-family:var(--sfmono); font-size:8px; font-weight:600; letter-spacing:.1em; color:rgba(42,36,24,.55); text-align:right; }
+.mc-tk-note{ font-family:var(--sfmono); font-size:10px; font-weight:600; letter-spacing:.1em; color:rgba(42,36,24,.55); text-align:right; }
 .mc-bcode{ height:24px; margin-top:8px;
   background:repeating-linear-gradient(90deg,#2a2418 0 2px,transparent 2px 5px,#2a2418 5px 6px,transparent 6px 10px); }
 .mc-tk-go{ margin-top:12px; width:100%; border:0; background:#2a2418; color:#f7eed9; border-radius:999px; padding:10px;
