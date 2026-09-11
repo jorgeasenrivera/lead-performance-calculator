@@ -10674,8 +10674,15 @@ function MyStationDay({ row, meId, store, date, now = Date.now() }) {
 function AssociateRooms({ config, store, date, account, onSignOut }) {
   const list = roomListOf(config, store);
   const key = `lpcf:room:${store}`;
-  const [want, setWant] = useState(() => { try { return localStorage.getItem(key) || null; } catch (e) { return null; } });
-  const [tab, setTab] = useState("corner");
+  /* "Opens to" wins over the memory of the last room when it is set; the
+     memory still runs underneath, for the day they set it back to Last. */
+  const openTo = openToOf(store);
+  const [want, setWant] = useState(() => {
+    if (openTo === "line") return "line";
+    if (openTo === "home" || openTo === "floor") return "floor";
+    try { return localStorage.getItem(key) || null; } catch (e) { return null; }
+  });
+  const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
   const room = openRoom(config, store, want);
   const pick = (r) => { setWant(r); try { localStorage.setItem(key, r); } catch (e) {} };
 
@@ -14652,6 +14659,16 @@ const textSizeOf = () => {
 const applyTextSize = (v) => { try { document.documentElement.style.setProperty("--sftxt", v); } catch (e) {} };
 if (typeof document !== "undefined") applyTextSize(textSizeOf());
 
+/* Where the app opens, the person's own, per store: the room they were in
+   last (the default, and what it always did), or always Home, the floor or
+   the phone line. Per store because the same person works the phones at one
+   rooftop and the floor at another. */
+const OPEN_TO = [["last", "LAST"], ["home", "HOME"], ["floor", "FLOOR"], ["line", "LINE"]];
+const openToOf = (store) => {
+  try { const v = localStorage.getItem(`lpcf:pref:open:${store}`); return OPEN_TO.some(([k]) => k === v) ? v : "last"; }
+  catch (e) { return "last"; }
+};
+
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
                     monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
                     line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [] }) {
@@ -16267,6 +16284,24 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   ))}
                 </span>
               </div>
+              {(() => {
+                const rooms = roomListOf(cfg, store);
+                const choices = OPEN_TO.filter(([k]) => k === "last" || (k === "line" ? rooms.includes("line") : rooms.includes("floor")));
+                if (choices.length < 3) return null;
+                const cur = openToOf(store);
+                return (
+                  <div className="mc-set-row stack">
+                    <span className="ic"><PixIcon glyph="door" size={16} /></span>
+                    <span>Opens to<span className="hint">{cur === "last" ? "The room you were in last" : cur === "home" ? "Home, every time" : cur === "floor" ? "The Live Floor, every time" : "The Phone Line, every time"}</span></span>
+                    <span className="mc-seg3 wide" role="radiogroup" aria-label="Opens to">
+                      {choices.map(([k, l]) => (
+                        <button key={k} type="button" role="radio" aria-checked={cur === k} className={cur === k ? "on" : ""}
+                          onClick={() => { try { localStorage.setItem(`lpcf:pref:open:${store}`, k); } catch (e) {} buzz(8); prefTick((n) => n + 1); }}>{l}</button>
+                      ))}
+                    </span>
+                  </div>
+                );
+              })()}
               {[["lpcf:pref:buzz", "tap", "Haptics", "A buzz on every tap"],
                 ["lpcf:pref:notif", "bolt", "Notifications", "Your turn, and the Live Activity"],
                 ["lpcf:pref:streak", "flame", "Streak warnings", "When a day is about to break the run"],
@@ -41257,6 +41292,9 @@ const SAGE_CSS = `
   letter-spacing:.06em; padding:0 9px; min-width:36px; height:30px; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; }
 .mc-seg3 button.on{ background:#e4c98d; color:#1a2820; }
 .mc-seg3.txt button{ font-family:var(--font-display); letter-spacing:0; min-width:32px; }
+.mc-you .mc-set-row.stack{ flex-wrap:wrap; }
+.mc-you .mc-set-row.stack .mc-seg3.wide{ flex:1 0 100%; margin-left:0; margin-top:4px; }
+.mc-you .mc-set-row.stack .mc-seg3.wide button{ flex:1; }
 .mc-seg3.txt button:nth-child(1){ font-size:11px; } .mc-seg3.txt button:nth-child(2){ font-size:14px; } .mc-seg3.txt button:nth-child(3){ font-size:18px; }
 .mc-sw{ margin-left:auto; width:46px; height:28px; border-radius:14px; background:rgba(255,255,255,.14); position:relative; flex:0 0 auto;
   transition:background .25s; }
