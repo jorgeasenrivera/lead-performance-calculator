@@ -10778,8 +10778,11 @@ function SfDeskRow({ seats, meId }) {
         const mine = s.taken && s.id === meId;
         const open = !s.taken && (!s.offerTo || s.offerTo === meId);
         const who = mine ? "you" : s.taken ? stnFirst(s.label) : open ? "free" : stnFirst(s.offerLabel);
+        /* only the desk offered to you beckons; a free desk nobody is being
+           sent to is lit and still, so an open room is not six things bouncing */
+        const cls = mine ? " you" : open && s.offerTo === meId ? " open" : open ? " free" : "";
         return (
-          <span key={s.n} role="listitem" className={"sfd" + (mine ? " you" : open ? " open" : "")}>
+          <span key={s.n} role="listitem" className={"sfd" + cls}>
             <b>{s.n}</b><em>{who}</em>
           </span>
         );
@@ -11034,7 +11037,6 @@ function SfLineLive({ cfg, store, row, meId, me, busy, onFlag, onRelease }) {
           )}
         </div>
         <SfLineTimers onLine={onLine} atDesk={atDesk} today={today} />
-        {offered && !mine && st === "waiting" && <span className="sfl-chip">{stnLeft(offered.offerLeftMs)}</span>}
         <div className="sfl-title">{title}</div>
       </div>
       <SfTiles value={mine ? null : st} options={options} busy={busy} onPick={pick} />
@@ -11434,7 +11436,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     const roomOn = variant.kind === "line" && roomInUse(cfg, store, row);
     content = roomOn ? (
       <div className={"sf-live sfl" + (st !== "waiting" ? " sf-off" : "")}>
-        {mark}
+        {/* No mark up here: the floor's screen has none, and the bar at the
+            foot already says which room this is. */}
         {nudge}
         <SfLineLive cfg={cfg} store={store} row={row} meId={meId} me={me}
           busy={busy} onFlag={setFlag} onRelease={releaseSeat} />
@@ -42698,17 +42701,18 @@ const SAGE_CSS = `
       .sfl-top { width:min(430px,100%); margin:0 auto; display:flex; flex-direction:column;
         align-items:center; padding:0 0 18px; }
       .sfd-row { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px;
-        align-self:stretch; margin-top:22px; }
+        align-self:stretch; margin-top:4px; }
       .sfd { display:flex; flex-direction:column; align-items:center; gap:1px; padding:7px 2px 6px;
         border-radius:10px; background:rgba(255,255,255,.09); border:1px solid transparent;
         transition:background .45s, box-shadow .45s, transform .45s cubic-bezier(.3,1.6,.4,1); }
       .sfd b { font-family:var(--sfmono); font-size:12px; font-weight:600; color:rgba(237,242,234,.62); }
       .sfd em { font-style:normal; font-family:var(--sfmono); font-size:8.5px; color:rgba(237,242,234,.38);
         max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .sfd.open { background:var(--led); box-shadow:0 0 14px var(--led); animation:sfdBeckon 1.1s ease-in-out infinite; }
+      .sfd.open, .sfd.free { background:var(--led); box-shadow:0 0 14px var(--led); }
+      .sfd.open { animation:sfdBeckon 1.1s ease-in-out infinite; }
       .sfd.you { background:#fff; box-shadow:0 0 14px rgba(255,255,255,.6); }
-      .sfd.open b, .sfd.you b, .sfd.open em, .sfd.you em { color:#0B1430; }
-      .sfd.open em, .sfd.you em { opacity:.7; }
+      .sfd.open b, .sfd.free b, .sfd.you b, .sfd.open em, .sfd.free em, .sfd.you em { color:#0B1430; }
+      .sfd.open em, .sfd.free em, .sfd.you em { opacity:.7; }
       @keyframes sfdBeckon { 50% { transform:translateY(-3px); box-shadow:0 0 22px var(--led); } }
       .sfl-hero { position:relative; align-self:stretch; height:232px; margin-top:6px; }
       .sfl-stage { position:absolute; inset:0;
@@ -42766,9 +42770,6 @@ const SAGE_CSS = `
       .sfl-big .ld:nth-child(n+13) { animation-delay:.28s; }
       @keyframes sflSettle { from { opacity:0; transform:translateY(-70px) scale(.3); } to { opacity:1; transform:none; } }
       .sfl-tmr { margin-top:6px; }
-      .sfl-chip { display:inline-block; margin-top:12px; font-family:var(--sfmono); font-size:12px; font-weight:600;
-        padding:5px 13px; border-radius:999px; background:rgba(255,255,255,.08); color:#fff;
-        font-variant-numeric:tabular-nums; }
       .sfl-title { font-family:var(--font-display); font-size:27px; font-weight:700; letter-spacing:-.02em;
         color:#fff; text-align:center; margin-top:10px; }
       .sft-row { display:flex; gap:6px; }
