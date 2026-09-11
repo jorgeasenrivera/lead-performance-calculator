@@ -41,8 +41,10 @@ export function addTokenListener(fn) {
   return Native.addListener("onToken", fn);
 }
 
-/** A button pressed on the Live Activity: { action } with one of
-    lunch, away, back, take, pass, fly, to, done, ack. */
+/** A button pressed on the Live Activity: { action } with one of the floor's
+    words (lunch, away, back, take, pass, fly, to, done, ack, ...) or the phone
+    lane's (take-desk, pass-desk, leave-desk, lunch-desk, lunch-line, away-line,
+    back-line). */
 export function addActionListener(fn) {
   if (!Native) return { remove() {} };
   return Native.addListener("onAction", fn);

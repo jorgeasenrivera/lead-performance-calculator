@@ -34,6 +34,11 @@ private let inkDeep = Color(red: 0x12 / 255, green: 0x25 / 255, blue: 0x1B / 255
    lock screen these pixels draw no light at all, which is what lets the sand
    and the mint read as emitting rather than as paint. */
 private let ground = Color(red: 0x05 / 255, green: 0x08 / 255, blue: 0x06 / 255)
+/* The phone line's blue: the LED the room lights, and the two ends of the
+   gradient you wear on the cord. */
+private let led = Color(red: 0x9D / 255, green: 0xC3 / 255, blue: 0xFF / 255)
+private let blue1 = Color(red: 0x55 / 255, green: 0x66 / 255, blue: 0xF0 / 255)
+private let blue2 = Color(red: 0x37 / 255, green: 0xB6 / 255, blue: 0xF0 / 255)
 
 // MARK: - PixIcon: the site's 5x5 glyphs, as dots
 
@@ -48,6 +53,7 @@ private let PIX: [String: [String]] = [
   "away":    ["00000","01110","10001","01110","00000"],
   "fly":     ["00100","01110","11111","01110","00100"],
   "to":      ["00100","01110","00100","01110","00100"],
+  "phone":   ["01110","01010","01010","01010","01110"],
 ]
 
 struct PixGlyph: View {
@@ -124,7 +130,8 @@ func pressTint(_ p: String?) -> Color {
   switch p {
   case "fly": return fly
   case "to": return red
-  case "lunch", "away": return mist
+  case "lunch", "away", "lunch-line", "away-line", "lunch-desk", "leave-desk": return mist
+  case "take-desk", "pass-desk", "back-line": return blue2
   default: return mint
   }
 }
@@ -432,6 +439,19 @@ private struct LockScreen: View {
   let context: ActivityViewContext<QueueAttributes>
   var body: some View {
     let s = context.state
+    if s.v == 2 {
+      V2Card(s: s)
+        .activityBackgroundTint(ground)
+        .activitySystemActionForegroundColor(sand)
+    } else {
+      V1Card(s: s)
+    }
+  }
+}
+
+private struct V1Card: View {
+  let s: QueueAttributes.ContentState
+  var body: some View {
     let ph = phaseOf(s)
     let ac = accent(ph)
     /* The card is as tall as what is on it and no taller. It used to be laid
@@ -517,51 +537,439 @@ struct QueueLiveActivity: Widget {
       LockScreen(context: context)
     } dynamicIsland: { context in
       let s = context.state
-      let ph = phaseOf(s)
-      let ac = accent(ph)
+      /* v2: the island shows the lane that leads. The phone lane when it is
+         hot, or when it is the only lane; the floor otherwise, drawn from the
+         floor lane's own numbers as the v1 island always was. */
+      let v2phone = s.v == 2 && s.phone != nil && (s.hot == "phone" || s.floor == nil)
+      let fs = (s.v == 2 && s.floor != nil) ? floorState(s.floor!, from: s) : s
+      let ph = phaseOf(fs)
+      let ac = v2phone ? led : accent(ph)
       return DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
-          BigGlyph(s: s, ph: ph).padding(.leading, 6)
+          if v2phone { PixGlyph(name: "phone", size: 22, color: led).padding(.leading, 6) }
+          else if s.v == 2 { PixGlyph(name: "door", size: 22, color: accent(ph)).padding(.leading, 6) }
+          else { BigGlyph(s: fs, ph: ph).padding(.leading, 6) }
         }
         DynamicIslandExpandedRegion(.center) {
           VStack(alignment: .leading, spacing: 2) {
-            HeadlineText(s: s, ph: ph, size: 16)
-            if let cap = caption(s, ph) {
-              Text(cap).font(.system(size: 11, weight: .medium)).foregroundStyle(mist).lineLimit(1)
+            if v2phone, let p = s.phone {
+              Text(phoneHeadline(p)).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundStyle(p.state == "offer" ? led : .white).lineLimit(1)
+              if let cap = phoneCaption(p) { Text(cap).font(.system(size: 11, weight: .medium)).foregroundStyle(mist).lineLimit(1) }
+            } else {
+              HeadlineText(s: fs, ph: ph, size: 16)
+              if let cap = caption(fs, ph) {
+                Text(cap).font(.system(size: 11, weight: .medium)).foregroundStyle(mist).lineLimit(1)
+              }
             }
           }
         }
         DynamicIslandExpandedRegion(.bottom) {
           VStack(spacing: 8) {
-            if showsRail(s, ph), let line = s.line, !line.isEmpty {
-              Rail(line: line, up: ph == .up)
-            }
-            if #available(iOS 17.0, *), ph != .gone {
-              Buttons(ph: ph, s: s)
+            if v2phone, let p = s.phone {
+              if let line = p.line, !line.isEmpty, p.state == "cord" || p.state == "free" { Cord(line: line, lit: false, mini: false) }
+              if #available(iOS 17.0, *) { PhoneButtons(p: p) }
+            } else {
+              if showsRail(fs, ph), let line = fs.line, !line.isEmpty {
+                Rail(line: line, up: ph == .up)
+              }
+              if #available(iOS 17.0, *), ph != .gone {
+                Buttons(ph: ph, s: fs)
+              }
             }
           }
         }
       } compactLeading: {
-        switch ph {
-        case .up: PixGlyph(name: "arrowup", size: 12, color: mint)
-        case .desk: PixGlyph(name: "warn", size: 12, color: red)
-        case .claimed: PixGlyph(name: "arrowup", size: 12, color: mint)
-        case .asking: PixGlyph(name: "fly", size: 12, color: s.ask == "to" ? red : fly)
-        case .customer, .confirm: PixGlyph(name: "user", size: 12, color: fly)
-        default: Text("⋯").foregroundStyle(sand)
+        if v2phone {
+          PixGlyph(name: "phone", size: 12, color: led)
+        } else {
+          switch ph {
+          case .up: PixGlyph(name: "arrowup", size: 12, color: mint)
+          case .desk: PixGlyph(name: "warn", size: 12, color: red)
+          case .claimed: PixGlyph(name: "arrowup", size: 12, color: mint)
+          case .asking: PixGlyph(name: "fly", size: 12, color: fs.ask == "to" ? red : fly)
+          case .customer, .confirm: PixGlyph(name: "user", size: 12, color: fly)
+          default: Text("⋯").foregroundStyle(sand)
+          }
         }
       } compactTrailing: {
-        Text(compactWord(s, ph))
-          .font(.system(size: 12, weight: .bold, design: .rounded))
-          .monospacedDigit()
-          .foregroundStyle(ac)
+        if v2phone, let p = s.phone {
+          if p.state == "offer", let until = parseISO(p.until) {
+            Text(timerInterval: Date()...max(Date(), until), countsDown: true)
+              .font(.system(size: 12, weight: .bold, design: .monospaced)).monospacedDigit().foregroundStyle(led).frame(width: 40)
+          } else {
+            Text(phoneCompact(p)).font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(led)
+          }
+        } else {
+          Text(compactWord(fs, ph))
+            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(ac)
+        }
       } minimal: {
-        Text(minimalWord(s, ph))
+        Text(v2phone ? phoneMinimal(s.phone!) : minimalWord(fs, ph))
           .font(.system(size: 12, weight: .bold, design: .rounded))
           .foregroundStyle(ac)
       }
       .keylineTint(ac)
     }
+  }
+}
+
+// MARK: - contract v2: the two lanes on one card
+
+/* The floor lane as the v1 pieces read it: the same phases, headline, caption,
+   clock and buttons, fed from the lane rather than the top level. The
+   question before a visit ends and the pressed ring are card-local, so they
+   come from the top level still. */
+func floorState(_ f: QueueAttributes.FloorLane, from s: QueueAttributes.ContentState) -> QueueAttributes.ContentState {
+  QueueAttributes.ContentState(
+    ahead: f.ahead, up: f.status == "up", status: f.status == "up" ? "waiting" : f.status, label: s.label,
+    line: f.line, nudge: f.nudge, table: f.table, since: f.since,
+    ask: f.ask, askAt: f.askAt, askBy: f.askBy, askedBy: s.askedBy, place: s.place,
+    confirm: s.confirm, pressed: s.pressed, v: nil, hot: nil, floor: nil, phone: nil)
+}
+
+/* What the phone lane says, in the words the room screen uses. */
+func phoneHeadline(_ p: QueueAttributes.PhoneLane) -> String {
+  switch p.state {
+  case "offer": return "Desk \(p.desk ?? "") is yours"
+  case "desk": return "At desk \(p.desk ?? "")"
+  case "free":
+    let f = p.free ?? []
+    return f.isEmpty ? "A desk is free" : "Desk \(f[0]) is free"
+  case "off": return p.status == "lunch" ? "At lunch" : "Out of the line"
+  default:
+    let n = p.ahead ?? 0
+    return n == 0 ? "You're next for a desk" : "\(n) ahead for a desk"
+  }
+}
+func phoneCaption(_ p: QueueAttributes.PhoneLane) -> String? {
+  switch p.state {
+  case "free":
+    let f = p.free ?? []
+    return f.count > 1 ? "\(f.joined(separator: " and ")) are open" : nil
+  case "off": return "Back in line when you're ready"
+  case "cord": return (p.ahead ?? 0) == 0 ? "The first desk to free is yours" : nil
+  default: return nil
+  }
+}
+func phoneCompact(_ p: QueueAttributes.PhoneLane) -> String {
+  switch p.state {
+  case "desk": return "desk \(p.desk ?? "")"
+  case "free": return "\((p.free ?? []).count) free"
+  case "off": return p.status == "lunch" ? "Lunch" : "Out"
+  default: return (p.ahead ?? 0) == 0 ? "next" : "\(p.ahead ?? 0)"
+  }
+}
+func phoneMinimal(_ p: QueueAttributes.PhoneLane) -> String {
+  switch p.state {
+  case "offer": return "!"
+  case "desk": return p.desk ?? "●"
+  case "free": return "○"
+  case "off": return "·"
+  default: return "\(p.ahead ?? 0)"
+  }
+}
+
+/* The phone lane's clock: the offer counts down to `until`; the rest count
+   up from when the standing changed. */
+private struct PhoneClock: View {
+  let p: QueueAttributes.PhoneLane
+  var small: Bool = false
+  var body: some View {
+    if p.state == "offer", let until = parseISO(p.until) {
+      VStack(alignment: .trailing, spacing: 3) {
+        Text(timerInterval: Date()...max(Date(), until), countsDown: true)
+          .font(.system(size: small ? 14 : 16, weight: .bold, design: .monospaced)).monospacedDigit()
+          .foregroundStyle(led).lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity, alignment: .trailing)
+        Text("to take it").font(.system(size: 7.5, weight: .bold, design: .monospaced)).tracking(1.1)
+          .foregroundStyle(.white.opacity(0.42)).lineLimit(1).layoutPriority(-1)
+      }.frame(width: 64, alignment: .trailing)
+    } else if let from = parseISO(p.since) {
+      let label = p.state == "desk" ? "at the desk" : p.state == "off" ? "since you left" : "waiting"
+      Clock(from: from, label: label, tint: .white)
+    }
+  }
+}
+
+/* A rail shape that begins off the card's left edge: flat on the left, the
+   floor tab's rounded cap on the right. */
+private struct HalfCapsule: Shape {
+  func path(in r: CGRect) -> Path {
+    let rad = r.height / 2
+    var p = Path()
+    p.move(to: CGPoint(x: r.minX, y: r.minY))
+    p.addLine(to: CGPoint(x: r.maxX - rad, y: r.minY))
+    p.addArc(center: CGPoint(x: r.maxX - rad, y: r.midY), radius: rad, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false)
+    p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+    p.closeSubpath()
+    return p
+  }
+}
+
+/* The floor's track, v2: in from the left edge, the head at the rounded end,
+   you the big lit one, the light resting as dots from the edge as far as you.
+   `mini` is the small lane's size. */
+private struct Track: View {
+  let line: [QueueAttributes.Pip]
+  let up: Bool
+  var mini: Bool = false
+  var body: some View {
+    GeometryReader { geo in
+      let w = geo.size.width
+      let stride: Double = mini ? 18 : 25
+      ZStack(alignment: .leading) {
+        HalfCapsule().fill(Color.white.opacity(up ? 0.1 : 0.07))
+        if let mine = line.firstIndex(where: { $0.me }) {
+          let reach = max(14, w - Double(mine) * stride - 17) - 20
+          ForEach(Array(Swift.stride(from: 6.0, to: reach, by: mini ? 9.0 : 11.0)), id: \.self) { x in
+            Circle().fill((up ? mint : sand).opacity(0.55))
+              .frame(width: mini ? 3 : 4, height: mini ? 3 : 4)
+              .position(x: x, y: geo.size.height / 2)
+          }
+        }
+        ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
+          let you = p.me
+          let size: CGFloat = mini ? (you ? 21 : (i == 0 ? 17 : 14)) : (you ? 30 : (i == 0 ? 24 : 20))
+          let x = max(14, w - Double(size) / 2 - 2 - Double(i) * stride)
+          ZStack {
+            Circle().fill(you ? (up ? mint : sand) : Color(hue: Double(p.h) / 360, saturation: 0.62, brightness: 0.62))
+            if i == 0 { Circle().stroke(Color.white.opacity(0.35), lineWidth: 2) }
+            Text(p.i)
+              .font(.system(size: mini ? (you ? 7 : 6) : (you ? 10 : (i == 0 ? 8 : 7)), weight: .bold, design: .monospaced))
+              .foregroundStyle(you ? inkDeep : .white)
+          }
+          .frame(width: size, height: size)
+          .opacity(p.s == "w" || you ? 1 : 0.45)
+          .shadow(color: you ? (up ? mint : sand).opacity(0.9) : .clear, radius: you ? 6 : 0)
+          .position(x: x, y: geo.size.height / 2)
+        }
+      }
+    }
+    .frame(height: mini ? 24 : 34)
+  }
+}
+
+/* The room's cord, on the card: the same curve, in from the left edge and
+   running to the handset on the right. Everybody on it in sand, you in the
+   line's blue with the position in dots, the light from the tail as far as
+   you, and all of it to a lit handset once the desk is yours. */
+private struct Cord: View {
+  let line: [QueueAttributes.Pip]
+  let lit: Bool
+  var mini: Bool = false
+  /* the draft's curve, in a 348 by 52 box; scaled to the lane */
+  private let p0 = CGPoint(x: -6, y: 40), p1 = CGPoint(x: 96, y: 66), p2 = CGPoint(x: 196, y: -14), p3 = CGPoint(x: 314, y: 26)
+  private let flat0 = CGPoint(x: -6, y: 30), flat1 = CGPoint(x: 96, y: 48), flat2 = CGPoint(x: 196, y: -6), flat3 = CGPoint(x: 314, y: 19)
+  private func pt(_ t: Double, _ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint, sx: Double, sy: Double) -> CGPoint {
+    let u = 1 - t
+    let x = u*u*u*a.x + 3*u*u*t*b.x + 3*u*t*t*c.x + t*t*t*d.x
+    let y = u*u*u*a.y + 3*u*u*t*b.y + 3*u*t*t*c.y + t*t*t*d.y
+    return CGPoint(x: x * sx, y: y * sy)
+  }
+  var body: some View {
+    let boxH: Double = mini ? 38 : 52
+    GeometryReader { geo in
+      let sx = geo.size.width / 348, sy = geo.size.height / boxH
+      let a = mini ? flat0 : p0, b = mini ? flat1 : p1, c = mini ? flat2 : p2, d = mini ? flat3 : p3
+      let curve = Path { path in
+        path.move(to: CGPoint(x: a.x * sx, y: a.y * sy))
+        path.addCurve(to: CGPoint(x: d.x * sx, y: d.y * sy), control1: CGPoint(x: b.x * sx, y: b.y * sy), control2: CGPoint(x: c.x * sx, y: c.y * sy))
+      }
+      let me = line.firstIndex(where: { $0.me })
+      let tOf: (Int) -> Double = { i in max(0.04, 0.93 - Double(i) * 0.2) }
+      let litTo: Double = lit ? 1 : (me.map { tOf($0) } ?? 0)
+      ZStack(alignment: .topLeading) {
+        curve.stroke(Color(red: 157/255, green: 195/255, blue: 1).opacity(0.24), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        curve.trimmedPath(from: 0, to: litTo).stroke(led.opacity(0.28), style: StrokeStyle(lineWidth: 9, lineCap: .round))
+        curve.trimmedPath(from: 0, to: litTo).stroke(led, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
+          let you = p.me
+          let size: CGFloat = mini ? (you ? 24 : 18) : (you ? 30 : 22)
+          let at = pt(tOf(i), a, b, c, d, sx: sx, sy: sy)
+          ZStack {
+            if you {
+              Circle().fill(LinearGradient(colors: [blue1, blue2], startPoint: .topLeading, endPoint: .bottomTrailing))
+            } else {
+              Circle().fill(sand)
+            }
+            Text(p.i)
+              .font(.system(size: mini ? (you ? 8 : 6.5) : (you ? 9.5 : 7.5), weight: .bold, design: .monospaced))
+              .foregroundStyle(you ? .white : Color(red: 0x1F/255, green: 0x2A/255, blue: 0x22/255))
+          }
+          .frame(width: size, height: size)
+          .shadow(color: you ? blue1.opacity(0.6) : sand.opacity(0.35), radius: you ? 9 : 6)
+          .position(at)
+        }
+        /* the handset, at the end of the cord */
+        PixGlyph(name: "phone", size: mini ? 26 : 34, color: lit ? led : Color(red: 157/255, green: 195/255, blue: 1).opacity(0.28))
+          .shadow(color: lit ? led.opacity(0.8) : .clear, radius: lit ? 8 : 0)
+          .position(x: geo.size.width - (mini ? 13 : 17), y: geo.size.height / 2)
+      }
+    }
+    .frame(height: boxH)
+  }
+}
+
+/* The desks, in one row: who is at each, which is free, which is yours. */
+private struct DeskRow: View {
+  let desks: [QueueAttributes.Desk]
+  var body: some View {
+    HStack(spacing: 4) {
+      ForEach(Array(desks.enumerated()), id: \.offset) { (_, d) in
+        Text(d.n)
+          .font(.system(size: 9, weight: .semibold, design: .monospaced))
+          .foregroundStyle(d.mine ? Color(red: 0x0B/255, green: 0x14/255, blue: 0x30/255) : d.open ? Color(red: 0x0B/255, green: 0x14/255, blue: 0x30/255) : .white.opacity(0.42))
+          .frame(maxWidth: .infinity, minHeight: 20)
+          .background(RoundedRectangle(cornerRadius: 6).fill(d.mine ? Color.white : d.open ? led : Color.white.opacity(0.07)))
+      }
+    }
+  }
+}
+
+/* The phone lane's buttons, one row per life. Only Take it from an offer:
+   passing wants a reason, and a lock screen cannot ask why. */
+private struct PhoneButtons: View {
+  let p: QueueAttributes.PhoneLane
+  var body: some View {
+    HStack(spacing: 8) {
+      switch p.state {
+      case "offer":
+        ActionButton(label: "Take it", glyph: "check", action: "take-desk", tint: .white, fill: blue1, stroke: blue2)
+      case "desk":
+        ActionButton(label: "Lunch", glyph: "lunch", action: "lunch-desk")
+        ActionButton(label: "Leave the desk", glyph: "door", action: "leave-desk")
+      case "off":
+        ActionButton(label: "Back in line", glyph: "phone", action: "back-line", tint: inkDeep, fill: mint, stroke: mint)
+      default:
+        ActionButton(label: "Lunch", glyph: "lunch", action: "lunch-line")
+        ActionButton(label: "Away", glyph: "away", action: "away-line")
+      }
+    }
+  }
+}
+
+/* The accent bloom, in the lane's own corner: green on the floor, the line's
+   blue on the phone. */
+private func bloom(_ c: Color, top: Bool) -> some View {
+  RadialGradient(gradient: Gradient(colors: [c.opacity(top ? 0.22 : 0.2), .clear]),
+                 center: UnitPoint(x: 0.9, y: top ? -0.12 : 0), startRadius: 4, endRadius: top ? 300 : 260)
+}
+
+private struct PhoneLaneView: View {
+  let p: QueueAttributes.PhoneLane
+  let big: Bool
+  let top: Bool
+  var body: some View {
+    let hot = p.state == "offer"
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .center, spacing: 12) {
+        VStack(alignment: .leading, spacing: 3) {
+          Text(phoneHeadline(p))
+            .font(.system(size: big ? (hot ? 22 : 17) : 15, weight: .bold, design: .rounded))
+            .foregroundStyle(hot ? led : .white).lineLimit(1).layoutPriority(2)
+          if let cap = phoneCaption(p) {
+            Text(cap).font(.system(size: big ? 11.5 : 11, weight: .medium)).foregroundStyle(mist).lineLimit(1)
+          }
+        }
+        Spacer(minLength: 6)
+        PhoneClock(p: p, small: !big)
+      }
+      if let line = p.line, !line.isEmpty, p.state == "cord" || p.state == "free" || p.state == "offer" {
+        Cord(line: line, lit: hot, mini: !big).padding(.leading, -14)
+      }
+      if let desks = p.desks, !desks.isEmpty, p.state == "desk" || p.state == "offer" || p.state == "free" {
+        DeskRow(desks: desks)
+      }
+      if #available(iOS 17.0, *), big {
+        PhoneButtons(p: p)
+      }
+    }
+    .padding(.horizontal, 14)
+    .padding(.top, top ? 14 : 10)
+    .padding(.bottom, 14)
+    .background(bloom(led, top: top))
+  }
+}
+
+private struct FloorLaneView: View {
+  let s: QueueAttributes.ContentState      // the floor lane, as floorState() reads it
+  let big: Bool
+  let top: Bool
+  var body: some View {
+    let ph = phaseOf(s)
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .center, spacing: 12) {
+        VStack(alignment: .leading, spacing: 3) {
+          HeadlineText(s: s, ph: ph, size: big ? (ph == .up ? 22 : 17) : 15).layoutPriority(2)
+          if let cap = caption(s, ph) {
+            Text(cap)
+              .font(.system(size: big ? 11.5 : 11, weight: ph == .customer || ph == .asking || ph == .confirm || ph == .desk ? .bold : .medium))
+              .foregroundStyle(ph == .customer || ph == .asking || ph == .confirm ? fly : (ph == .desk ? red : mist))
+              .lineLimit(1)
+          }
+        }
+        Spacer(minLength: 6)
+        if let (from, label, tint) = clockFor(s, ph) {
+          Clock(from: from, label: label, tint: tint)
+        }
+      }
+      if showsRail(s, ph), let line = s.line, !line.isEmpty {
+        Track(line: line, up: ph == .up, mini: !big).padding(.leading, -14)
+      }
+      if #available(iOS 17.0, *), big, ph != .gone {
+        Buttons(ph: ph, s: s)
+      }
+    }
+    .padding(.horizontal, 14)
+    .padding(.top, top ? 14 : 10)
+    .padding(.bottom, 14)
+    .background(bloom(ph == .up ? mint : (ph == .desk ? red : (ph == .customer || ph == .asking || ph == .confirm ? fly : mint)), top: top))
+  }
+}
+
+/* The card, v2: the lane that leads big, the other small beneath it; both
+   small when neither is urgent; one lane on its own when they are only on
+   one line. */
+private struct V2Card: View {
+  let s: QueueAttributes.ContentState
+  var body: some View {
+    let f = s.floor.map { floorState($0, from: s) }
+    let p = s.phone
+    let both = f != nil && p != nil
+    let hot = s.hot
+    VStack(spacing: 0) {
+      if both, let f = f, let p = p {
+        if hot == "phone" {
+          PhoneLaneView(p: p, big: true, top: true)
+          Divider().overlay(Color.white.opacity(0.07))
+          FloorLaneView(s: f, big: false, top: false)
+        } else if hot == "floor" {
+          FloorLaneView(s: f, big: true, top: true)
+          Divider().overlay(Color.white.opacity(0.07))
+          PhoneLaneView(p: p, big: false, top: false)
+        } else {
+          FloorLaneView(s: f, big: false, top: true)
+          Divider().overlay(Color.white.opacity(0.07))
+          PhoneLaneView(p: p, big: false, top: false)
+        }
+      } else if let p = p {
+        PhoneLaneView(p: p, big: true, top: true)
+      } else if let f = f {
+        FloorLaneView(s: f, big: true, top: true)
+      } else {
+        Text("Off the line").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(mist).padding(16)
+      }
+    }
+    .background(ground)
+    .overlay(
+      RoundedRectangle(cornerRadius: 22, style: .continuous)
+        .strokeBorder(pressTint(s.pressed), lineWidth: 3)
+        .opacity(s.pressed == nil ? 0 : 1)
+        .allowsHitTesting(false)
+    )
+    .scaleEffect(s.pressed == nil ? 1 : 0.985)
+    .animation(.spring(response: 0.3, dampingFraction: 0.68), value: s.pressed)
   }
 }
 

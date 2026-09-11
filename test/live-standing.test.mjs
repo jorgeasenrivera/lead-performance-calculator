@@ -51,6 +51,7 @@ test("phone lane: an offer carries the desk and when it runs out", () => {
   assert.equal(p.desk, "1");
   assert.equal(p.until, iso(NOW + 150000));
   assert.equal(p.desks[0].open, true, "the desk offered to you is open to you");
+  assert.equal(p.line[0].me, true, "on an offer you stand at the front of the cord");
   const other = phoneLane(config, STORE, row, "ma", NOW);
   assert.equal(other.state, "cord", "an offer standing for somebody else is not a free desk");
   assert.equal(other.desks[0].open, false);

@@ -10598,6 +10598,29 @@ function useLiveStanding({ config, store, date, account, room }) {
     return liveEnvelope({ config, store, date, meId: account, floorRow: floorRow || null, queueRow: queueRow || null,
       lastRoom: room === "line" ? "line" : "floor" });
   }, [config, store, date, account, room, floorRow, queueRow, tick]);   // eslint-disable-line
+  /* ---- a phone lane press the shell could not make itself ----
+     The card's own intents act through /api/queue-action with the session the
+     page handed the shell; when that is not possible the word comes back here.
+     The page has the same session, and the same endpoint keeps the phone
+     standard's gate in one place, so it goes the same way rather than being
+     applied here without it. The floor's words are the floor screen's. */
+  useEffect(() => {
+    if (!account) return undefined;
+    const on = async (e) => {
+      const act = e && e.detail && e.detail.action;
+      if (!/-(desk|line)$/.test(String(act || ""))) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+        await fetch("/api/queue-action", { method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer " + session.access_token },
+          body: JSON.stringify({ store, date, action: act }) });
+        pullLine();
+      } catch (err) { /* the row poll tells the truth either way */ }
+    };
+    window.addEventListener("lpc:action", on);
+    return () => window.removeEventListener("lpc:action", on);
+  }, [account, store, date, pullLine]);
   const last = useRef(null);
   useEffect(() => {
     if (!env) return;

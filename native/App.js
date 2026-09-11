@@ -393,10 +393,21 @@ function Shell() {
          and T.O. buttons live. Lunch and away stay too, with the way back. */
       const waiting = ["waiting", "up", "customer", "lunch", "away"].includes(String(q.status || ""));
       const state = { ahead: Number(q.ahead) || 0, up: q.status === "up", status: q.status === "up" ? "waiting" : String(q.status || "waiting"), label: String(q.rep || ""),
-        line: Array.isArray(q.line) ? q.line : [], nudge: !!q.nudge, table: q.table == null ? null : String(q.table), since: q.since || null };
+        line: Array.isArray(q.line) ? q.line : [], nudge: !!q.nudge, table: q.table == null ? null : String(q.table), since: q.since || null,
+        ask: q.ask || null, askAt: q.askAt || null, askBy: q.askBy || null };
+      /* Contract v2 (api/_live-standing.mjs): the two lanes and which leads,
+         carried whole. The card draws the phone line and the blended card
+         from these; the fields above are the leading lane's for the rest. */
+      if (Number(q.v) === 2) {
+        state.v = 2; state.hot = q.hot || null;
+        if (q.floor && typeof q.floor === "object") state.floor = q.floor;
+        if (q.phone && typeof q.phone === "object") state.phone = q.phone;
+      }
       if (waiting) {
         const d = new Date(), date = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-        SageLive.start({ store: String(q.store || ""), date, kind: /up next|queue/i.test(String(q.queue || "")) ? "queue" : "floor" }, state);
+        const kind = Number(q.v) === 2 ? (q.hot === "phone" || (!q.floor && q.phone) ? "queue" : "floor")
+          : /up next|queue/i.test(String(q.queue || "")) ? "queue" : "floor";
+        SageLive.start({ store: String(q.store || ""), date, kind }, state);
       } else {
         SageLive.end();
         /* Gone for the day: nothing left to reopen the app for either, and no
