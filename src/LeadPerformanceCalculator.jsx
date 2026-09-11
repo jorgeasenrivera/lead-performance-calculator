@@ -11107,8 +11107,13 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   // which screen should be visible right now (drives the curtain wipe)
   let screen;
   if (row === undefined || identities === null) screen = "loading";
-  else if (!isToday || !valid) screen = "invalid";
+  /* A stale code is a stale code; an account is never stale, so a line the
+     desk has not opened is a plain word on home rather than a refusal. */
+  else if (!isToday || (!valid && !account)) screen = "invalid";
   else if (step === "done" && me) screen = "done";
+  /* Through the account door and not on the line: one button, no typing,
+     the same screen the floor gives them. */
+  else if (account && !me) screen = "home";
   else if (step === "pin" && switchTo) screen = "switch";
   else if (step === "pin" && selected) screen = "pin";
   else if (step === "pick") screen = "pick";
@@ -11267,7 +11272,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const storeName = (row && row.storeName) || "Phone Line";
 
   // content is chosen by `shown`, which lags `screen` and swaps behind the curtain
-  const eff = (shown === "done" && !me) ? "name" : shown;
+  const eff = (shown === "done" && !me) ? (account ? "home" : "name") : shown;
 
   /* One spine for every screen on the way in: the queue as it stands right now,
      which is the thing the person is actually here to find out. */
@@ -11295,6 +11300,35 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         <SfDisplay small a="This code" b="isn't for today" />
         <p className="sf-sub">Ask a manager to show today&rsquo;s code, and scan it again.</p>
       </SfScreen>
+    );
+  } else if (eff === "home") {
+    /* Through the account door, not on the line yet: the floor's own home
+       screen, in the line's clothes. The room's desks stand in for the
+       floor's track, since who is at a desk is what they are joining. */
+    const who = String(meFull || meLabel || "").split(/\s+/)[0];
+    const open = !!row;
+    const onCount = line.filter((p) => p.status === "waiting").length;
+    const roomOn = open && roomInUse(cfg, store, row);
+    const seats = roomOn ? stationLine(stationPlanOf(cfg, store), row, { now: Date.now(), offers: stationModeOf(cfg, store) === "rotation" }).seats : [];
+    content = (
+      <div className="sf-live mcf sf-off mcf-home">
+        <div className="mcf-top">
+          <div className="mcf-cap">{open ? (onCount ? `${onCount} ON THE LINE` : "NOBODY ON YET") : "LINE NOT OPEN"}</div>
+          {roomOn ? <SfDeskRow seats={seats} meId={meId} /> : open ? <McTrack line={line} meId={null} roster={(row && row.roster) || []} /> : null}
+          <div className="mcf-title">{open ? (who ? `Morning, ${who}` : "Morning") : "The line isn't open yet"}</div>
+          <div className="mcf-sub">{open
+            ? (onCount ? "Get on and take your place in the line." : "You would be first.")
+            : "The desk opens the Phone Line to start the day. Your corner is ready meanwhile."}</div>
+          {open && meEntry && (
+            <button className="sf-go mcf-go" disabled={busy} onClick={() => { buzz(10); joinAs({ id: meEntry.id, label: meEntry.label || meEntry.name || "" }); }}>
+              {busy ? "Checking\u2026" : "Get me on"}
+            </button>
+          )}
+          {open && !meEntry && (
+            <div className="mcf-sub">Your name is not on today's roster. Ask the desk.</div>
+          )}
+        </div>
+      </div>
     );
   } else if (eff === "done" && me) {
     const myPos = line.findIndex((p) => p.id === meId) + 1;
@@ -39909,6 +39943,8 @@ const SAGE_CSS = `
 .mcf-home .mcf-top{ justify-content:center; }
 .mcf-home .mcf-title{ margin-top:18px; }
 .mcf-go{ margin-top:22px; width:min(320px, 100%); }
+/* the line's own button wears the line's blue, as its join button always has */
+.sf-line .mcf-go{ background:linear-gradient(135deg,var(--a1),var(--a2)); box-shadow:0 14px 30px -14px var(--glow); }
 .mcf-home .sf-door{ margin-top:14px; }
 .mc-qjoin s.hd{ background:#E9CE96; }
 .mc-steps-p{ font-size:15px; line-height:1.5; color:rgba(237,242,234,.8); margin:6px 0 4px; }
