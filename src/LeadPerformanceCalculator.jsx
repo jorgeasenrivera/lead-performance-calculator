@@ -28,10 +28,12 @@ import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } 
 import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
-  stationLine, rollOffers, takeOffer, skipOffer } from "../api/_stations.mjs";
+  stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
+  stationModeOf, DEFAULT_STATION_PLAN, ownerAction, roomInUse } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
+import { roomListOf, openRoom, roomsOf } from "../api/_rooms.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
    the store is being asked for. Its own file because it is the arithmetic a
@@ -3672,8 +3674,8 @@ export default function LeadPerformanceCalculator() {
       /* Their corner, through the account. The daily QR stays the second door
          into the very same screen. No ground: the phone routes draw their own. */
       return wrap(<Shell ground={false}>
-        <FloorSignIn key={home.store + ":" + doorDay} store={home.store} date={doorDay} token={null}
-          account={home.person_id} onSignOut={signOut} />
+        <AssociateRooms key={home.store + ":" + doorDay} config={config} store={home.store}
+          date={doorDay} account={home.person_id} onSignOut={signOut} />
         <Style />
       </Shell>);
     }
@@ -10642,10 +10644,184 @@ function MyStationDay({ row, meId, store, date, now = Date.now() }) {
   );
 }
 
-function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false }) {
+/**
+ * The rooms a salesperson's phone can be in.
+ * -------------------------------------------------------------------------
+ * A linked salesperson landed straight in the floor's shell and there was no
+ * way out of it. The phone line has had a screen of its own the whole time —
+ * the one behind the daily QR — and their account already identifies them for
+ * it; nothing was joining the two.
+ *
+ * So this owns which room is showing and nothing else. Both shells are
+ * unchanged and each still does its own work; the switch floats above them and
+ * is drawn only when the store actually offers more than one, because a
+ * segmented control with one segment is furniture.
+ *
+ * The choice is remembered per store rather than per phone. Somebody linked at
+ * two rooftops works the phones at one and the floor at the other, and a
+ * device-wide memory would keep sending them to the wrong one — the same
+ * mistake the home-store key already had to be fixed for.
+ */
+function AssociateRooms({ config, store, date, account, onSignOut }) {
+  const list = roomListOf(config, store);
+  const key = `lpcf:room:${store}`;
+  const [want, setWant] = useState(() => { try { return localStorage.getItem(key) || null; } catch (e) { return null; } });
+  const [tab, setTab] = useState("corner");
+  const room = openRoom(config, store, want);
+  const pick = (r) => { setWant(r); try { localStorage.setItem(key, r); } catch (e) {} };
+
+  /* Both switched off. A real state — somebody has done it deliberately — and
+     worth saying plainly rather than drawing an empty shell they will tap at. */
+  if (!room) {
+    return (
+      <div className="ar-none">
+        <div className="ar-none-h">Nothing to show yet</div>
+        <p>This store has not turned on the floor or the phone line for its people. A manager can switch either on in the store&rsquo;s settings.</p>
+        {onSignOut && <button type="button" className="btn" onClick={onSignOut}>Sign out</button>}
+      </div>
+    );
+  }
+
+  /* One bar at the foot for everywhere this phone can be. Home is the person's
+     own corner, which lives inside the floor's shell, so a store with no floor
+     has no corner either and the bar is just its one room — which is a bar
+     with one button on it, so it is not drawn at all.
+
+     The floor's own pill is suppressed while this is showing. Two pills at the
+     foot, one of them a subset of the other, is how somebody ends up tapping
+     the wrong one. */
+  const tabs = [];
+  if (list.includes("floor")) tabs.push("home", "floor");
+  if (list.includes("line")) tabs.push("line");
+  const active = room === "line" ? "line" : tab === "corner" ? "home" : "floor";
+  const go = (t) => {
+    buzz(8);
+    if (t === "line") { pick("line"); return; }
+    pick("floor");
+    setTab(t === "home" ? "corner" : "floor");
+  };
+  const GLYPH = { home: "home", floor: "door", line: "phone" };
+  const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
+
+  return (
+    <>
+      {room === "line"
+        ? <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
+            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} />
+        : <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} />}
+      {tabs.length > 1 && (
+        <div className="ar-bar" role="tablist" aria-label="Where to go">
+          <span className="ar-ind" style={{ transform: `translateX(${tabs.indexOf(active) * 100}%)`,
+            width: `calc((100% - 8px) / ${tabs.length})` }} />
+          {tabs.map((t) => (
+            <button key={t} type="button" role="tab" aria-selected={active === t} aria-label={LABEL[t]}
+              className={"ar-tab" + (active === t ? " on" : "")} onClick={() => go(t)}>
+              <PixIcon glyph={GLYPH[t]} size={20} />
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * The room, on the salesperson's own phone.
+ * -------------------------------------------------------------------------
+ * The line is the thing that matters LAST. A phone room with a free chair does
+ * not need anybody queuing for a call — it needs them to go and sit down — so
+ * this leads with the desks and lets the position in line take over only when
+ * every one of them is taken, which is exactly what the rotation itself does.
+ *
+ * Four things it can say, in the order they matter to the person reading:
+ *
+ *   you are at one       where, and for how long
+ *   one is yours         the rotation has offered them a chair, with the clock
+ *                        on it. The strongest thing this screen ever says
+ *   there are free ones  which numbers. Go and take one
+ *   the room is full     who is in it, and now the line is the answer
+ *
+ * Selecting a desk from here is not built: that is the tag on the desk, and
+ * until it exists the honest thing is to name the free ones and let them walk
+ * over. What is drawn is what is known.
+ */
+function SfRoom({ cfg, store, row, meId }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 15000);
+    return () => clearInterval(t);
+  }, []);
+  const plan = useMemo(() => stationPlanOf(cfg, store), [cfg, store]);
+  const mode = stationModeOf(cfg, store);
+  const board = useMemo(
+    () => stationLine(plan, row, { now: Date.now(), offers: mode === "rotation" }),
+    [plan, row, mode, tick]); // eslint-disable-line
+
+  if (!roomInUse(cfg, store, row)) return null;
+
+  const mine = board.seats.find((s) => s.taken && s.id === meId) || null;
+  const offered = board.seats.find((s) => s.offerTo === meId) || null;
+  const free = board.seats.filter((s) => !s.taken);
+  const first = (n) => String(n || "").split(" ")[0];
+
+  /* The one case worth shouting about: a chair with their name on it and a
+     clock running. Everything else here is information; this is an
+     instruction. */
+  if (offered) return (
+    <div className="sf-room due">
+      <div className="sf-room-h">Station {offered.n} is yours</div>
+      <p className="sf-room-p">
+        Go and sit down. It moves to the next person in {stnLeft(offered.offerLeftMs)}.
+      </p>
+    </div>
+  );
+
+  if (mine) return (
+    <div className="sf-room on">
+      <div className="sf-room-h">You&rsquo;re at station {mine.n}</div>
+      <p className="sf-room-p">
+        {qWaitLabel(qMinsSince(mine.at))} so far
+        {mine.state === "held" ? " · the board has you greyed, tap anything to clear it" : ""}
+      </p>
+    </div>
+  );
+
+  return (
+    <div className="sf-room">
+      <div className="sf-room-h">
+        {free.length === 0
+          ? `All ${board.seats.length} stations are taken`
+          : `${free.length} ${free.length === 1 ? "station is" : "stations are"} free`}
+      </div>
+      <p className="sf-room-p">
+        {free.length === 0
+          ? "The line is how the next chair gets handed out."
+          : `Take ${free.length === 1 ? "it" : "one"}: ${free.map((s) => s.n).join(", ")}.`}
+      </p>
+      <div className="sf-room-map">
+        {board.seats.map((s) => (
+          <span key={s.n} className={"sf-seat" + (s.taken ? " on" : "") + (s.state === "held" ? " held" : "") + (s.offerTo ? " due" : "")}>
+            <b>{s.n}</b>
+            <em>{s.taken ? first(s.label) : s.offerTo ? first(s.offerLabel) : "free"}</em>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false,
+  account = null, onSignOut = null, rooms = null, onRoom = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
-  const [meId, setMeId] = useState(() => { try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; } });
+  /* An account that a manager has joined to a name IS the identity, the same
+     way it already is on the floor: no daily code, no name, no PIN. The QR
+     stays the second door into this very screen for anybody without one. */
+  const [meId, setMeId] = useState(() => {
+    if (account) return account;
+    try { return localStorage.getItem(`lpcq:${store}:${date}`) || null; } catch { return null; }
+  });
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
@@ -10758,7 +10934,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   }, [store, date, meFull, meLabel]);
 
   const isToday = date === today();
-  const valid = isToday && row && row.token && row.token === token;
+  /* A code is how somebody with no account gets in. Somebody who arrived
+     through their own account has already been let in, and asking them for
+     today's code would be asking them to find a poster. */
+  const valid = isToday && (account ? !!row : !!(row && row.token && row.token === token));
   const line = (row && row.line) || [];
   const me = line.find((p) => p.id === meId) || null;
   // Filtered out entirely unless the address asked for it, so it cannot be picked
@@ -11021,11 +11200,22 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </button>
           </div>
         </div>
+        {variant.kind === "line" && (
+          <SfRoom cfg={cfg} store={store} row={row} meId={meId} />
+        )}
         <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
-            <div className="sf-shock" />
-            <DmNumber value={1} up />
+            {/* The ring is wrapped around the number rather than dropped into
+                the column: an absolutely positioned child of a centred flex
+                column takes its static position from the column, which put the
+                splash behind the words instead of coming off the figure it is
+                supposed to be coming off. */}
+            <div className="sf-upnum">
+              <span className="sf-shock" />
+              <span className="sf-shock d2" />
+              <DmNumber value={1} up />
+            </div>
             <h2>You're up</h2>
             <p>{variant.upSub}</p>
             <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>Got it</button>
@@ -11865,168 +12055,72 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
    Phase one only: take a seat, leave a seat. No gating on who may sit, no
    greying for somebody who has walked off, no hours counted. Each of those
    reads what this writes. */
+
 /**
- * The day so far: who was in the chairs, and when the room was covered.
+ * Everything a screen needs to run the phone room, minus the drawing.
  * -------------------------------------------------------------------------
- * The same records read two ways. Down the left, per station, is occupancy —
- * whether the seats were staffed at the hours the phone was ringing, which is
- * the thing that says whether the process change was worth making. Underneath,
- * per person, is attribution: whether sitting there produced anything.
+ * There are two rooms now — the desk's and the handset's — and they do exactly
+ * the same things to the row: seat somebody, free a chair, take an offer, skip
+ * one, and warn when the person asking is below standard. Written twice they
+ * would agree today and drift by the first tuning, and the drift would be
+ * invisible until the two screens disagreed about who is in a chair.
  *
- * A sheet rather than another card on the tab. It is the screen somebody opens
- * to ask a question, not one they need in front of them while they run the
- * floor, and the tab is long enough already.
+ * So the behaviour lives here once and the two views differ only in what they
+ * draw, which is the whole of what should differ between a phone and a desk.
  */
-function StationDaySheet({ plan, store, row, hours, nameOf, onClose }) {
-  const now = Date.now();
-  const occ = useMemo(() => occupancy(plan, row, {
-    open: store.hours?.open, close: store.hours?.close, now }), [plan, row, store, now]);
-  const people = useMemo(() => attribution(row, hours, (id) => {
-    const r = ((row && row.roster) || []).find((x) => x && x.id === id);
-    return r && r.name ? norm(r.name) : null;
-  }, now), [row, hours, now]);
-
-  const label = (h) => String(Number(h) % 12 === 0 ? 12 : Number(h) % 12);
-  const anyFigures = people.some((p) => p.counted > 0);
-
-  return (
-    <ToolSheet title="The day so far" wide
-      sub={`${store.name} \u00b7 ${occ.min} minutes at the stations`} onClose={onClose}>
-      {/* The sheet is portalled, so it renders outside the .mf.mf-line wrapper
-          that defines --a1. Inheriting it silently computed every cell's
-          color-mix to transparent and drew an empty grid, so the accent is set
-          here on the one element that needs it rather than borrowed. */}
-      <div className="stnd">
-
-      <div className="stnd-cap">When the room was covered</div>
-      <div className="stnd-grid-scroll">
-        <div className="stnd-grid" style={{ "--cols": occ.hours.length }}>
-          <div className="stnd-corner" />
-          {occ.hours.map((h) => <div key={h} className="stnd-hh">{label(h)}</div>)}
-
-          {/* The room's own line first. Not whether a chair was used, but how
-              much of the room was staffed in each hour. */}
-          <div className="stnd-rl stnd-rl-room">Room</div>
-          {occ.byHour.map((b) => (
-            <div key={b.hour} className="stnd-cell stnd-room"
-              style={{ "--f": b.pct }} title={`${b.staffed} of ${b.of} stations`}>
-              <span>{b.staffed || ""}</span>
-            </div>
-          ))}
-
-          {occ.seats.map((seat) => (
-            <React.Fragment key={seat.n}>
-              <div className="stnd-rl">{seat.n}</div>
-              {seat.cells.map((c) => (
-                <div key={c.hour} className="stnd-cell" style={{ "--f": c.cover }}
-                  title={c.who ? `${c.who} \u00b7 ${Math.round(c.cover * 60)} min` : "empty"} />
-              ))}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-      {occ.thinnest && occ.thinnest.staffed < occ.thinnest.of && (
-        <p className="ts-note">
-          Thinnest at {label(occ.thinnest.hour)}
-          {Number(occ.thinnest.hour) < 12 ? "am" : "pm"}: {occ.thinnest.staffed} of {occ.thinnest.of} stations.
-        </p>
-      )}
-
-      <div className="stnd-cap stnd-cap2">What came in while they were sitting</div>
-      {people.length === 0
-        ? <p className="muted">Nobody has taken a station today.</p>
-        : (
-          <div className="stnd-people">
-            {people.map((p) => (
-              <div key={p.id} className="stnd-prow">
-                <span className="mf-av" style={{ background: `hsl(${hueFromName(nameOf(p.id))} 52% 42%)` }}>
-                  {initialsOf(nameOf(p.id))}
-                </span>
-                <div className="stnd-pwho">
-                  <b>{nameOf(p.id)}</b>
-                  <span>{p.min} min {"\u00b7"} {p.sits.length} {p.sits.length === 1 ? "sit" : "sits"}</span>
-                </div>
-                <div className="stnd-pnums">
-                  <span><b>{p.op}</b> opps</span>
-                  <span><b>{p.ca}</b> calls</span>
-                  <span><b>{p.ap}</b> appts</span>
-                  {/* Per counted hour, and only when there is an hour to
-                      divide by. A rate off no hours is not a rate. */}
-                  <span className="stnd-per">
-                    {p.perHour == null ? "\u2014" : (Math.round(p.perHour * 10) / 10) + " /hr"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      {people.length > 0 && !anyFigures && (
-        <p className="ts-note">
-          Nothing attributed yet. The figures come from the Delivery Summary,
-          which lands hourly, and a sit only picks up an hour it covered most of.
-        </p>
-      )}
-      </div>
-    </ToolSheet>
-  );
-}
-
-function StationBoard({ config, store, data, row, roster, onRow, date, userName, nameOf }) {
+function useStationRoom({ config, store, data, row, date, userName, onRow, nameOf }) {
   const [busy, setBusy] = useState(null);
   const [pick, setPick] = useState(null);        // the seat awaiting a name
-  const [byName, setByName] = useState(false);   // "someone else", over an offer
   const [warn, setWarn] = useState(null);        // below standard, awaiting a manager
-  const [showDay, setShowDay] = useState(false);
-  const plan = stationPlanOf(config, store.id);
-  /* Re-read on a timer, because held and the offer clock are both functions of
-     elapsed time and nothing writes to the row when a seat goes quiet — without
-     this a seat greys, and an offer lapses, only when something else happens to
-     re-render the board. Ten seconds rather than thirty now that a countdown is
-     on screen: a timer that jumps in half-minutes reads as broken. */
   const [tick, setTick] = useState(0);
+  /* Drawn to fill its box at both sizes. A plan authored for a desk can carry a
+     tall empty band under the seats, and once the room became the hero rather
+     than a card below one that band was the largest thing on the screen saying
+     nothing. The stored plan is never touched — this is a copy for drawing, so
+     the editor still holds the room the store drew. */
+  const plan = useMemo(() => tightenPlan(stationPlanOf(config, store.id)), [config, store.id]);
+  const mode = stationModeOf(config, store.id);
+
+  /* Held and the offer clock are both functions of elapsed time and nothing
+     writes to the row when a seat goes quiet, so without a tick a seat greys,
+     and an offer lapses, only when something else happens to re-render. Ten
+     seconds because a countdown that jumps in half-minutes reads as broken. */
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 10000);
     return () => clearInterval(t);
   }, []);
 
-  /* The same buckets the salesperson's own view reads, on the same slow poll.
-     Held here rather than inside the sheet so opening it is instant. */
-  const dayHoursData = useStationHours(store.id, date, "desk");
-  const board = useMemo(() => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID] }),
-    [plan, row, tick]); // eslint-disable-line
-  const { seats, waiting, queued, next, free, full } = board;
-  const taken = new Set(seats.filter((s) => s.taken).map((s) => s.id));
-  const held = seats.filter((s) => s.state === "held").length;
-
-  /* Anybody on the roster who is not already in a seat. Sitting somewhere is
-     not the same as being in the line, so this is not filtered by the queue —
-     a person can take a station without having joined anything. */
-  const canSit = (roster || []).filter((p) => p && p.id && !taken.has(p.id));
+  const board = useMemo(
+    () => stationLine(plan, row, { now: Date.now(), skip: [TEST_ID], offers: mode === "rotation" }),
+    [plan, row, tick, mode]); // eslint-disable-line
+  const hours = useStationHours(store.id, date, "room");
+  const occ = useMemo(
+    () => occupancy(plan, row, { open: store.hours?.open, close: store.hours?.close, now: Date.now() }),
+    [plan, row, store, tick]); // eslint-disable-line
 
   const write = async (fn, label) => {
-    setBusy(label);
+    setBusy(label ?? true);
     try {
-      const next2 = await mutateQueueRow(store.id, date, (cur) => {
+      const next = await mutateQueueRow(store.id, date, (cur) => {
         const res = fn(cur || {});
         return res.changed ? res.row : null;
       });
-      if (next2 && onRow) onRow(next2);
-    } catch (e) {
-      console.error("station write", e);
-    } finally { setBusy(null); setPick(null); setByName(false); setWarn(null); }
+      if (next && onRow) onRow(next);
+    } catch (e) { console.error("station write", e); }
+    finally { setBusy(null); setPick(null); setWarn(null); }
   };
 
-  /* Moving the offers on is the one write this screen makes without anybody
+  /* Moving the offers on is the one write these screens make without anybody
      pressing anything, so it has to be quiet. rollOffers is idempotent and
      reports whether it actually moved; a room that has not changed writes
      nothing, which is what keeps a board left open all afternoon from
-     rewriting the row every ten seconds on every device looking at it.
-
-     A ref rather than state because a roll that is still in flight must not be
-     started again by the next tick, and re-rendering for that would be a
-     re-render nobody sees. */
+     rewriting the row every ten seconds on every device looking at it. */
   const rolling = useRef(false);
   useEffect(() => {
+    /* A store with no rotation has nothing to roll. Guarded here rather than at
+       the screens, so an open room cannot start quietly offering chairs to a
+       line it does not use. */
+    if (mode !== "rotation") return undefined;
     let gone = false;
     (async () => {
       if (rolling.current || busy) return;
@@ -12043,34 +12137,14 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
       finally { rolling.current = false; }
     })();
     return () => { gone = true; };
-  }, [store.id, date, tick]); // eslint-disable-line
+  }, [store.id, date, tick, mode]); // eslint-disable-line
 
-  const sitLabel = (at) => (at ? qWaitLabel(qMinsSince(at)) : "");
-  /* A countdown reads in minutes and seconds or it does not read as urgent. */
-  const leftLabel = (ms) => {
-    const s = Math.max(0, Math.round(ms / 1000));
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  };
-  const first = (nm) => String(nm || "").split(" ")[0];
-  /* The board says full names; the chips say first names. The line carries
-     short labels and the roster carries the real one, so the resolver the tab
-     already has is handed down rather than a second copy made here. */
-  const who = (id) => (nameOf ? nameOf(id) : id);
-
-  const picked = pick ? seats.find((s) => s.n === pick) : null;
-  const offered = picked && picked.offerTo ? picked : null;
-
-  /* ---- phase four: whether they should be taking the seat at all ----
-     The store's own phone standard, read the way every other screen reads it,
-     against this month's phone closing. It warns; it never stops anybody. A
-     gate a manager standing in the room cannot overrule is a gate that gets
-     worked around instead of used, and the desk knows things the figures do
-     not — who is being coached, who just moved off the showroom, who is
-     covering a shift nobody else can. */
+  /* The store's own phone standard, read the way every other screen reads it.
+     It warns; it never stops anybody. */
   const graceNow = new Date().getDate() <= (store.graceDays ?? 10);
   const phoneBar = normThresholds(store.thresholds)?.phone?.green;
   const gateFor = (id) => stationGate({
-    stats: data?.months?.[ym()]?.stats?.[norm(who(id))],
+    stats: data?.months?.[ym()]?.stats?.[norm(nameOf ? nameOf(id) : "")],
     standard: phoneBar, inGrace: graceNow });
 
   /* Both ways of seating somebody run through here, so the warning cannot be
@@ -12080,7 +12154,6 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
   const seat = (station, person, { viaOffer = false, forced = false } = {}) => {
     const gate = gateFor(person.id);
     if (needsOverride(gate) && !forced) { setWarn({ station, person, gate, viaOffer }); return; }
-    setWarn(null);
     write((cur) => {
       const res = viaOffer ? takeOffer(cur, station, person, qNowIso())
                            : claimStation(cur, station, person, qNowIso());
@@ -12092,170 +12165,737 @@ function StationBoard({ config, store, data, row, roster, onRow, date, userName,
       return res;
     }, station);
     if (forced) {
-      /* The audit log rather than only the day's history, because a waved-through
-         seat is the kind of thing somebody asks about a month later, and the
-         day's row is gone by then. */
+      /* The audit log rather than only the day's history, because a
+         waved-through seat is the kind of thing somebody asks about a month
+         later, and the day's row is gone by then. */
       appendAudit({ user: userName || "Manager", store: store.id,
         action: "Stations: seated below standard",
-        detail: `${who(person.id)} at station ${station} \u00b7 phone closing ${fmtPct(gate.pct)} against ${gate.standard}%` })
+        detail: `${nameOf ? nameOf(person.id) : person.label} at station ${station} · phone closing ${fmtPct(gate.pct)} against ${gate.standard}%` })
         .catch(() => {});
     }
   };
-
-  const seatOffered = () =>
-    seat(offered.n, { id: offered.offerTo, label: offered.offerLabel }, { viaOffer: true });
-  const skip = () => {
+  const release = (n) => write((cur) => releaseStation(cur, n, qNowIso(), "out"), n);
+  const skip = (n, offer) => {
     const why = window.prompt(
-      `Skipping ${offered.offerLabel} for station ${offered.n}.\nWhy? (it goes in today's history, and station ${offered.n} moves to the next person)`, "");
+      `Skipping ${offer.offerLabel} for station ${n}.\nWhy? (it goes in today's history, and station ${n} moves to the next person)`, "");
     if (why === null) return;
     const reason = why.trim();
     if (!reason) { alert("A skip needs a reason. Nothing was changed."); return; }
-    write((cur) => skipOffer(cur, offered.n, qNowIso(), { by: userName || "the desk", why: reason }), offered.n);
+    write((cur) => skipOffer(cur, n, qNowIso(), { by: userName || "the desk", why: reason }), n);
+  };
+
+  return { plan, mode, board, occ, hours, busy, pick, setPick, warn, setWarn,
+    seat, skip, release, write, gateFor };
+}
+
+/* How long an offer has left, as a countdown a person can read. */
+const stnLeft = (ms) => {
+  const n = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+};
+const stnFirst = (nm) => String(nm || "").split(" ")[0];
+
+/**
+ * The Phone Line, on a phone.
+ * -------------------------------------------------------------------------
+ * The desk's layout put on a handset was the desk's layout on a handset: a
+ * forty-point store name, chips stacked one per row, and the stations several
+ * screens below the fold. Live Floor has had a view built for the shape of a
+ * phone since FloorRoomPhone; this is the same view for the room next door,
+ * and it is built out of the same pieces on purpose. A manager who moves
+ * between the two should not have to learn a second set of gestures.
+ *
+ * The room first, because on a phone the map IS the screen: who is in which
+ * chair, at a glance, with the line running underneath it as a rail. Then one
+ * card carrying the day — how much of the room was staffed each hour — and the
+ * four things a desk actually reaches for. Everything else opens in a pop, the
+ * way the floor's does.
+ *
+ * The Online queue shares this component and has no room, so the map and the
+ * coverage simply are not drawn for it. A queue with no seats should not be
+ * shown an empty floor plan.
+ */
+function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName, date, userName,
+  variant, identities, busy: tabBusy, onRow, nudge, decline, assignSpecific, assignNext, setFlag,
+  removePerson, addPerson, resetPin, regenToken, upsToday, closeOpp }) {
+  const seats = variant.kind === "line";
+  const [pop, setPop] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const R = useStationRoom({ config, store, data, row, date, userName, onRow, nameOf: realName });
+  const { plan, mode, board, occ, hours, busy, pick, setPick, warn, setWarn, seat, skip, release } = R;
+  const rotates = mode === "rotation";
+  const close = useCallback(() => { setPop(null); setWarn(null); setPick(null); }, [setWarn, setPick]);
+  const { vpRef, vpW, natW, natH, fit, z, bump } = usePlanViewport(plan, zoom, setZoom);
+
+  const waiting = withoutTest(line).filter((p) => p.status === "waiting");
+  const nextP = waiting[0] || null;
+  const taken = new Set(board.seats.filter((s) => s.taken).map((s) => s.id));
+  const canSit = (salesRoster || []).filter((p) => p && p.id && !taken.has(p.id));
+
+  /* The floor's rail colours people by their tags. The same lookup, so a
+     person wears one colour across both rooms. */
+  const rosterOf = (id) => ((row && row.roster) || []).find((r) => r.id === id) || {};
+  const tagsOf = (id) => {
+    const r = rosterOf(id);
+    const custom = ((data && data.repTags) || {})[id] || [];
+    return [...(r.langs || []), ...(r.strengths || []), ...(r.skills || []), ...custom].filter(Boolean);
+  };
+  const colorOf = (id) => { const t = tagsOf(id); return t.length ? frTagColor(t[0]) : null; };
+  const lightOf = (id) => { const t = tagsOf(id); return t.length ? frTagLight(t[0]) : false; };
+
+  /* ---- the pops ---- */
+  const seatPop = (n) => {
+    const st = board.seats.find((x) => x.n === String(n));
+    if (!st) return null;
+    if (warn) return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          {realName(warn.person.id)} is at {fmtPct(warn.gate.pct)} on the phone this month against
+          the store&rsquo;s {warn.gate.standard}%, over {warn.gate.leads} leads.
+          Seating them goes to the audit log with your name on it.
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b" onClick={() => seat(warn.station, warn.person, { viaOffer: warn.viaOffer, forced: true })}>Seat them anyway</button>
+          <button type="button" className="fr-b go" onClick={() => setWarn(null)}>Not now</button>
+        </div>
+      </div>
+    );
+    if (st.taken) return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          <b>{realName(st.id)}</b> has been at station {st.n} for {qWaitLabel(qMinsSince(st.at))}
+          {st.state === "held" ? ", and has not been heard from for a while" : ""}.
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b warn" onClick={() => release(st.n)}>Free the station</button>
+        </div>
+      </div>
+    );
+    if (st.offerTo && !pick) return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          Station {st.n} is <b>{st.offerLabel}</b>&rsquo;s for another {stnLeft(st.offerLeftMs)}.
+          It moves to the next person on the line when that runs out.
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b go" onClick={() => seat(st.n, { id: st.offerTo, label: st.offerLabel }, { viaOffer: true })}>Seat {stnFirst(st.offerLabel)}</button>
+          <button type="button" className="fr-b" onClick={() => skip(st.n, st)}>Skip&hellip;</button>
+          <button type="button" className="fr-b" onClick={() => setPick(st.n)}>Someone else</button>
+        </div>
+      </div>
+    );
+    const own = ownerAction(board.seats, st, realName);
+    return (
+      <div className="qr-pb">
+        <p className="qr-plead">Who is taking station {st.n}?</p>
+        {/* Its owner first and on their own, because they are the answer far
+            more often than not and hunting for them in a list of everybody is
+            the thing this saves. */}
+        {own && (
+          <div className="qr-names">
+            <button type="button" className="fr-b go"
+              onClick={() => seat(st.n, { id: own.id, label: own.name })}>
+              {own.kind === "move" ? `Move ${stnFirst(own.name)} here from ${own.from}` : `Seat ${own.name}`}
+            </button>
+          </div>
+        )}
+        {canSit.length === 0
+          ? <p className="qr-pmuted">Everybody on the roster is already seated.</p>
+          : (
+            <div className="qr-names">
+              {canSit.filter((pp) => !own || pp.id !== own.id).map((pp) => (
+                <button key={pp.id} type="button" className="fr-b"
+                  onClick={() => seat(st.n, { id: pp.id, label: pp.label || pp.name })}>
+                  {pp.label || pp.name}
+                </button>
+              ))}
+            </div>
+          )}
+      </div>
+    );
+  };
+
+  const personPop = (id) => {
+    const p = line.find((x) => x.id === id);
+    if (!p) return null;
+    const at = stationOf(row, id);
+    return (
+      <div className="qr-pb">
+        <p className="qr-plead">
+          <b>{realName(id)}</b> {"\u00b7"} {QUEUE_FLAGS[p.status]?.label || "In line"} {"\u00b7"} waiting {qWaitLabel(qMinsSince(p.joinedAt))}
+          {at ? ` \u00b7 at station ${at}` : ""}
+        </p>
+        <div className="qr-pbtns">
+          <button type="button" className="fr-b go" disabled={tabBusy} onClick={() => { assignSpecific(id, "picked from the room"); close(); }}>Assign the call</button>
+          <button type="button" className="fr-b" disabled={tabBusy} onClick={() => { nudge(id); close(); }}>Nudge</button>
+          <button type="button" className="fr-b" disabled={tabBusy} onClick={() => { decline(id); close(); }}>Pass</button>
+          {p.status !== "waiting"
+            ? <button type="button" className="fr-b" disabled={tabBusy} onClick={() => { setFlag(id, "waiting"); close(); }}>Back in line</button>
+            : <button type="button" className="fr-b" disabled={tabBusy} onClick={() => { setFlag(id, "lunch"); close(); }}>At lunch</button>}
+          <button type="button" className="fr-b warn" disabled={tabBusy} onClick={() => { removePerson(id); close(); }}>Take out of the line</button>
+        </div>
+      </div>
+    );
+  };
+
+  const linePop = () => (
+    <div className="qr-pb">
+      {withoutTest(line).length === 0 && <p className="qr-pmuted">{variant.empty}</p>}
+      {withoutTest(line).map((p, i) => (
+        <button key={p.id} type="button" className="qr-lrow" onClick={() => setPop({ k: "person", id: p.id })}>
+          <span className="qr-lrank">{i + 1}</span>
+          <span className="fr-av" style={{ background: colorOf(p.id) || `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
+          <span className="qr-lnm">{realName(p.id)}</span>
+          <span className="qr-lst">{QUEUE_FLAGS[p.status]?.label || "In line"}</span>
+        </button>
+      ))}
+      {(salesRoster || []).filter((a) => !line.some((p) => p.id === a.id)).length > 0 && (
+        <>
+          <p className="qr-pcap">Not in the line</p>
+          <div className="qr-names">
+            {(salesRoster || []).filter((a) => !line.some((p) => p.id === a.id)).map((a) => (
+              <button key={a.id} type="button" className="fr-b" disabled={tabBusy}
+                onClick={() => { addPerson(a.id); close(); }}>{a.name}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+
+  const dayPop = () => {
+    const people = attribution(row, hours, (id) => {
+      const r = rosterOf(id);
+      return r && r.name ? norm(r.name) : null;
+    }, Date.now());
+    if (!people.length) return <p className="qr-pmuted">Nobody has taken a station today.</p>;
+    return (
+      <div className="qr-pb">
+        {people.map((p) => (
+          <div key={p.id} className="qr-drow">
+            <span className="fr-av" style={{ background: colorOf(p.id) || `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
+            <span className="qr-dnm"><b>{realName(p.id)}</b><em>{p.min} min {"\u00b7"} {p.sits.length} {p.sits.length === 1 ? "sit" : "sits"}</em></span>
+            <span className="qr-dn"><b>{p.op}</b>opps</span>
+            <span className="qr-dn"><b>{p.ca}</b>calls</span>
+          </div>
+        ))}
+        {!people.some((p) => p.counted > 0) && (
+          <p className="qr-pmuted">
+            Nothing attributed yet. The figures come from the Delivery Summary, which lands
+            hourly, and a sit only picks up an hour it covered most of.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const codePop = () => (
+    <div className="qr-pb">
+      <div className="q-qr-box"><QueueQR url={queueSignInUrl(store.id, date, row && row.token, variant.param)} /></div>
+      <p className="qr-pmuted">Salespeople scan it, enter their name and PIN, and they are {variant.count}.</p>
+      <div className="qr-pbtns">
+        <button type="button" className="fr-b" onClick={() => printQueueSignIn({ store, url: queueSignInUrl(store.id, date, row && row.token, variant.param), date, by: userName })}>Print</button>
+        <button type="button" className="fr-b" onClick={regenToken}>New code</button>
+      </div>
+    </div>
+  );
+
+  const pinsPop = () => {
+    const people = Object.keys(identities || {}).map((id) => ({ id, name: realName(id) }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    if (!people.length) return <p className="qr-pmuted">No PINs set yet. They are created the first time each person signs in.</p>;
+    return (
+      <div className="qr-pb">
+        {people.map((pp) => (
+          <div key={pp.id} className="qr-lrow static">
+            <span className="qr-lnm">{pp.name}</span>
+            <button type="button" className="fr-b" onClick={() => resetPin(pp.id)}>Reset PIN</button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const popBody = () => {
+    if (!pop) return null;
+    switch (pop.k) {
+      case "seat": return seatPop(pop.n);
+      case "person": return personPop(pop.id);
+      case "line": return linePop();
+      case "day": return dayPop();
+      case "code": return codePop();
+      case "pins": return pinsPop();
+      case "opps": return <OppsTally history={row && row.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />;
+      default: return null;
+    }
+  };
+  const popTitle = pop ? ({ seat: `Station ${pop.n}`, person: "In line", line: variant.label,
+    day: "The day so far", code: "Sign-in code", pins: "PINs", opps: "Opportunities today" })[pop.k] : "";
+
+  return (
+    <div className="fr-page qr">
+      <div className="fr-top">
+        <div className="fr-brand">
+          <span className="fr-cap">Sage</span>
+          <span className="fr-title">{variant.label}</span>
+        </div>
+        {rotates && (
+          <button type="button" className="qr-assign" disabled={tabBusy || !nextP} onClick={assignNext}>
+            <PixIcon glyph="bolt" size={15} />
+            {nextP ? stnFirst(realName(nextP.id)) : "Nobody"}
+            <em>{variant.kind === "online" ? "lead" : "call"}</em>
+          </button>
+        )}
+      </div>
+
+      <div className="fr-hero">
+        {seats && (
+          <div className="fr-planbox">
+            <div className="fr-planvp" ref={vpRef} style={{ height: vpW > 0 ? Math.min(280, Math.round(natH * fit)) : 220 }}>
+              <div className="fr-planwrap" style={{ width: natW * z, height: natH * z }}>
+                <div className="fr-planin" style={{ width: natW || "100%", height: natH, transform: `scale(${z})` }}>
+                  {vpW > 0 && (
+                    <PlanMap plan={plan} cls="stn-map"
+                      deco={(t) => stnDeco(board, t, realName)}
+                      onTap={(t) => { setPick(null); setWarn(null); setPop({ k: "seat", n: String(t.n) }); }} />
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Only when there is something to zoom into. Six seats fit a phone
+                at a glance, and the control floats over the bottom-right of the
+                map — which on the floor is the empty lot and in a phone room is
+                a chair. A big room still gets it, and the viewport pans either
+                way. */}
+            {seatsOf(plan).length > 8 && (
+              <div className="fr-zoom">
+                <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
+                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
+              </div>
+            )}
+          </div>
+        )}
+        {/* Only a room that rotates has a line flowing into it. A store
+            running no phone up system gets the room and nothing else. */}
+        {rotates && (
+          <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
+            endLabel={variant.kind === "online" ? "LEAD" : "CALL"}
+            onPick={(id) => setPop({ k: "person", id })} onBunch={() => setPop({ k: "line" })} />
+        )}
+      </div>
+
+      <div className="fr-card">
+        {seats && occ && (
+          <>
+            <button type="button" className="fr-warm" onClick={() => setPop({ k: "day" })}>
+              <PixIcon glyph="clock" size={16} style={{ color: "#4C6FFF" }} />Stations today
+              <span className={"fr-tag " + (board.full ? "ok" : board.free === board.seats.length ? "gap" : "thin")}>
+                {board.full ? "all taken" : `${board.free} free of ${board.seats.length}`}
+              </span>
+            </button>
+            <button type="button" className="fr-cov" onClick={() => setPop({ k: "day" })}>
+              <StnHourBars occ={occ} />
+            </button>
+          </>
+        )}
+        <div className="fr-tools">
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "line" })}>
+            <PixIcon glyph="users" size={16} />{variant.kind === "online" ? "Queue" : rotates ? "The line" : "Who is in"}<em>{withoutTest(line).length}</em>
+          </button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "opps" })}>
+            <PixIcon glyph="tap" size={16} />Opportunities<em>{upsToday}</em>
+          </button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}>
+            <PixIcon glyph="door" size={16} />Sign-in code
+          </button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "pins" })}>
+            <PixIcon glyph="clipboard" size={16} />PINs
+          </button>
+        </div>
+      </div>
+
+      {pop && <FrPop title={popTitle} onClose={close} cls={"fr-k-" + pop.k}>{popBody()}</FrPop>}
+    </div>
+  );
+}
+
+/* How a seat is drawn, wherever it is drawn. Taken, held, offered, free — the
+   four states, in the one place, so the desk and the handset cannot end up
+   showing the same chair differently. */
+function stnDeco(board, t, nameOf) {
+  const s = board.seats.find((x) => x.n === String(t.n));
+  if (!s) return {};
+  if (s.taken) return {
+    cls: s.state === "held" ? "stn-on stn-held" : "stn-on",
+    sub: stnFirst(s.label),
+    flag: s.state === "held" ? `away ${qWaitLabel(qMinsSince(s.seen))}` : qWaitLabel(qMinsSince(s.at)),
+  };
+  if (s.offerTo) return { cls: "stn-off stn-due", sub: stnFirst(s.offerLabel), flag: stnLeft(s.offerLeftMs) };
+  /* An empty desk that belongs to somebody says so. It is the whole of the BDC
+     view — six numbered boxes make you learn people by their chair — and it is
+     drawn in the free style, not the seated one, because a name on a desk is a
+     label and the desk is still empty. */
+  const own = s.owner && nameOf ? nameOf(s.owner) : null;
+  return own ? { cls: "stn-off stn-own", sub: stnFirst(own) } : { cls: "stn-off" };
+}
+
+/* The room's own line: how much of it was staffed each hour. Empty, some, or
+   half and up. Two thirds was the first threshold and it made a six-seat room
+   read amber all day, since three people on the phones is a normal shift
+   rather than a shortfall. Half is the bar a manager would use out loud. */
+function StnHourBars({ occ }) {
+  const num = (h) => (Number(h) % 12 === 0 ? 12 : Number(h) % 12);
+  const tag = (h) => (Number(h) < 12 ? "a" : "p");
+  return (
+    <>
+      <div className="fr-hours">
+        {occ.byHour.map((b) => (
+          <i key={b.hour} className={b.pct >= 0.5 ? "ok" : b.pct > 0 ? "thin" : "gap"} />
+        ))}
+      </div>
+      {occ.hours.length > 0 && (
+        <div className="fr-scale">
+          <span>{num(occ.hours[0])}{tag(occ.hours[0])}</span>
+          <span>{num(occ.hours[occ.hours.length - 1])}{tag(occ.hours[occ.hours.length - 1])}</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * The room, at a desk.
+ * -------------------------------------------------------------------------
+ * The same view as the handset's, given the space it was always short of. The
+ * room is the hero rather than a card underneath one, the line runs beneath it
+ * as the same rail, and the day is drawn out in full instead of hiding behind
+ * a button — on a phone a popover is the only honest place for it, and on a
+ * desk hiding it is just making somebody click.
+ *
+ * What the desk adds is what a desk is for: who is up and the assign beside
+ * the map rather than above it, the stat row, and the occupancy grid and the
+ * attribution side by side, which is the pair of readings the whole exercise
+ * was for. The line in order, with its arrows, stays below in the console —
+ * reordering is a desk job and a rail cannot do it.
+ *
+ * Only the Phone Line uses this. The Online queue has no room and is being
+ * rethought, so it keeps the hero it has.
+ */
+function StationDesk({ config, store, data, row, line, salesRoster, realName, date, userName,
+  variant, onRow, busy: tabBusy, assignNext, metrics }) {
+  const R = useStationRoom({ config, store, data, row, date, userName, onRow, nameOf: realName });
+  const { plan, mode, board, occ, hours, busy, pick, setPick, warn, setWarn, seat, skip, release } = R;
+  const [open, setOpen] = useState(null);        // the seat whose panel is showing
+  const rotates = mode === "rotation";
+
+  const waiting = withoutTest(line).filter((p) => p.status === "waiting");
+  const nextP = waiting[0] || null;
+  const taken = new Set(board.seats.filter((s) => s.taken).map((s) => s.id));
+  const canSit = (salesRoster || []).filter((p) => p && p.id && !taken.has(p.id));
+  const held = board.seats.filter((s) => s.state === "held").length;
+  const M = metrics || {};
+
+  const rosterOf = (id) => ((row && row.roster) || []).find((r) => r.id === id) || {};
+  const tagsOf = (id) => {
+    const r = rosterOf(id);
+    const custom = ((data && data.repTags) || {})[id] || [];
+    return [...(r.langs || []), ...(r.strengths || []), ...(r.skills || []), ...custom].filter(Boolean);
+  };
+  const colorOf = (id) => { const t = tagsOf(id); return t.length ? frTagColor(t[0]) : null; };
+  const lightOf = (id) => { const t = tagsOf(id); return t.length ? frTagLight(t[0]) : false; };
+
+  const people = useMemo(() => attribution(row, hours, (id) => {
+    const r = rosterOf(id);
+    return r && r.name ? norm(r.name) : null;
+  }, Date.now()), [row, hours]); // eslint-disable-line
+
+  const st = open ? board.seats.find((x) => x.n === open) : null;
+  const label = (h) => String(Number(h) % 12 === 0 ? 12 : Number(h) % 12);
+  const toLine = () => {
+    try { document.querySelector(".q-line")?.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    catch (e) { /* an older browser simply does not move, which is not a failure */ }
+  };
+
+  const panel = () => {
+    if (!st) return null;
+    if (warn) return (
+      <div className="sd-panel warn">
+        <div className="sd-ptitle">{realName(warn.person.id)} is below standard on the phone</div>
+        <p className="sd-psub">
+          {fmtPct(warn.gate.pct)} closing this month against the store&rsquo;s {warn.gate.standard}%,
+          over {warn.gate.leads} phone {warn.gate.leads === 1 ? "lead" : "leads"}.
+          Seating them is allowed. It goes to the audit log with your name on it.
+        </p>
+        <div className="sd-pbtns">
+          <button type="button" className="btn btn-sm" disabled={!!busy}
+            onClick={() => seat(warn.station, warn.person, { viaOffer: warn.viaOffer, forced: true })}>Seat them anyway</button>
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => { setWarn(null); setOpen(null); }}>Not now</button>
+        </div>
+      </div>
+    );
+    if (st.taken) return (
+      <div className="sd-panel">
+        <div className="sd-ptitle">
+          {realName(st.id)} at station {st.n}
+          <span className="sd-pmeta">{qWaitLabel(qMinsSince(st.at))}{st.state === "held" ? " · not heard from" : ""}</span>
+        </div>
+        <div className="sd-pbtns">
+          <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => { release(st.n); setOpen(null); }}>Free the station</button>
+          <button type="button" className="btn btn-sm" onClick={() => setOpen(null)}>Close</button>
+        </div>
+      </div>
+    );
+    if (st.offerTo && pick !== st.n) return (
+      <div className="sd-panel">
+        <div className="sd-ptitle">
+          Station {st.n} is {st.offerLabel}&rsquo;s
+          <span className="sd-pmeta">{stnLeft(st.offerLeftMs)} left</span>
+        </div>
+        <p className="sd-psub">
+          It goes to the next person on the line when the clock runs out. Skipping needs a reason
+          and costs them nothing but this chair.
+        </p>
+        <div className="sd-pbtns">
+          <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
+            onClick={() => seat(st.n, { id: st.offerTo, label: st.offerLabel }, { viaOffer: true })}>Seat {stnFirst(st.offerLabel)}</button>
+          <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => skip(st.n, st)}>Skip&hellip;</button>
+          <button type="button" className="btn btn-sm" onClick={() => setPick(st.n)}>Someone else</button>
+        </div>
+      </div>
+    );
+    const own = ownerAction(board.seats, st, realName);
+    return (
+      <div className="sd-panel">
+        <div className="sd-ptitle">
+          {own ? `Station ${st.n} is ${own.name}\u2019s desk` : `Who is taking station ${st.n}?`}
+        </div>
+        {/* Its owner first and on their own. Somebody who sits at the same desk
+            every day is the person most likely to have forgotten to check in,
+            and hunting for them in a list of everybody is the thing this
+            saves. */}
+        {own && (
+          <p className="sd-psub">
+            {own.kind === "move"
+              ? `They are checked in at station ${own.from}. Moving them here closes that stretch and opens a new one.`
+              : "They have not checked in. Seating them starts the clock from now, not from when they sat down."}
+          </p>
+        )}
+        <div className="sd-pbtns">
+          {own && (
+            <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
+              onClick={() => { seat(st.n, { id: own.id, label: own.name }); setOpen(null); }}>
+              {own.kind === "move" ? `Move ${stnFirst(own.name)} here` : `Seat ${own.name}`}
+            </button>
+          )}
+          {canSit.filter((pp) => !own || pp.id !== own.id).map((pp) => (
+            <button key={pp.id} type="button" className="btn btn-sm" disabled={!!busy}
+              onClick={() => { seat(st.n, { id: pp.id, label: pp.label || pp.name }); setOpen(null); }}>
+              {pp.label || pp.name}
+            </button>
+          ))}
+          {canSit.length === 0 && !own && <p className="sd-psub">Everybody on the roster is already seated.</p>}
+        </div>
+        <button type="button" className="btn btn-sm sd-pclose" onClick={() => { setOpen(null); setPick(null); }}>Cancel</button>
+      </div>
+    );
   };
 
   return (
-    <div className="stn">
-      <div className="stn-head">
-        <div><div className="stn-cap">Stations</div><b>The phone room</b></div>
-        <button type="button" className="btn btn-sm stn-day-b" onClick={() => setShowDay(true)}>
-          The day so far
-        </button>
-        <span className="stn-count">
-          {full ? `All ${seats.length} taken` : `${free} free of ${seats.length}`}
-          {held > 0 ? ` \u00b7 ${held} away` : ""}
-          {waiting.length > 0 ? ` \u00b7 ${waiting.length} waiting` : ""}
-        </span>
-      </div>
-
-      <PlanMap plan={plan} cls="stn-map"
-        deco={(t) => {
-          const seat = seats.find((s) => s.n === String(t.n));
-          if (!seat) return {};
-          if (seat.taken) {
-            return {
-              cls: seat.state === "held" ? "stn-on stn-held" : "stn-on",
-              sub: first(seat.label),
-              flag: seat.state === "held" ? `away ${sitLabel(seat.seen)}` : sitLabel(seat.at),
-            };
-          }
-          /* A seat with somebody's name on it is not the same as an empty one,
-             and the difference is the whole of this phase: the room is not
-             waiting for a manager, it is waiting for Priya. */
-          return seat.offerTo
-            ? { cls: "stn-off stn-due", sub: first(seat.offerLabel),
-                flag: leftLabel(seat.offerLeftMs) }
-            : { cls: "stn-off", sub: null, flag: null };
-        }}
-        onTap={(t) => {
-          const seat = seats.find((s) => s.n === String(t.n));
-          if (!seat || busy) return;
-          if (seat.taken) write((cur) => releaseStation(cur, seat.n, qNowIso(), "out"), seat.n);
-          else { setByName(false); setPick(pick === seat.n ? null : seat.n); }
-        }} />
-
-      {/* Who the next seat to come free belongs to. Anybody whose name is
-          already on a chair up there is left out of this: their offer is on the
-          map, and printing it twice reads as two different facts about one
-          person. When every seat is taken, nobody holds an offer and this
-          becomes the whole waiting list — which is the point of the phase.
-
-          "for a station" rather than "in line" because this order is the
-          rotation's, not the Phone Line's: somebody who has already had a
-          chair today is behind somebody who has not, and they are still
-          exactly where they were for the next call. */}
-      {queued.length > 0 && (
-        <div className="stn-wait">
-          <span className="stn-wait-cap">{full ? "Waiting for a station" : "Next for a station"}</span>
-          <span className="stn-wait-nm">{who(next.id)}</span>
-          {queued.length > 1 && (
-            <span className="stn-wait-rest">
-              then {queued.slice(1, 4).map((p) => first(who(p.id))).join(", ")}
-              {queued.length > 4 ? ` +${queued.length - 4}` : ""}
-            </span>
-          )}
+    <div className="sd">
+      <div className="sd-hero">
+        <div className="sd-head">
+          <div>
+            <div className="sd-cap">Sage {"·"} {variant.label}</div>
+            <b>{store.name}</b>
+          </div>
+          <span className="sd-when">
+            {new Date(date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+            {" · "}{withoutTest(line).length} {variant.count}
+          </span>
         </div>
-      )}
 
-      {/* Below standard on the phone. It says the figure, the bar, and what it
-          is measured over, because "below standard" with no number is the kind
-          of sentence people learn to click past. Both buttons are real: the
-          left one seats them and writes it down, the right one does not. */}
-      {warn && (
-        <div className="stn-pick stn-warn">
-          <div className="stn-pick-head">
-            {who(warn.person.id)} is below standard on the phone
+        <div className="sd-body">
+          <div className="sd-room">
+            {/* The plan as the store drew it, at the size a desk can give it.
+                No fitting and no zoom: this is the width the coordinates were
+                authored against. */}
+            <PlanMap plan={plan} cls="stn-map"
+              deco={(t) => stnDeco(board, t, realName)}
+              onTap={(t) => { setPick(null); setWarn(null); setOpen(open === String(t.n) ? null : String(t.n)); }} />
+            {/* The rail is the same one the handset draws, and its pips are
+                buttons. On a desk the console below already holds every action
+                for a person, so rather than leave a dead affordance the pip
+                takes you to their row in it. */}
+            {rotates && (
+              <FrRail people={waiting} nameOf={realName} colorOf={colorOf} lightOf={lightOf}
+                endLabel="CALL" onPick={toLine} onBunch={toLine} />
+            )}
           </div>
-          <p className="stn-pick-sub">
-            {fmtPct(warn.gate.pct)} closing this month against the store&rsquo;s {warn.gate.standard}%,
-            over {warn.gate.leads} phone {warn.gate.leads === 1 ? "lead" : "leads"}.
-            Seating them is allowed. It goes to the audit log with your name on it.
-          </p>
-          <div className="stn-pick-names">
-            <button type="button" className="btn btn-sm" disabled={!!busy}
-              onClick={() => seat(warn.station, warn.person, { viaOffer: !!warn.viaOffer, forced: true })}>
-              Seat them anyway
-            </button>
-            <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
-              onClick={() => { setWarn(null); setPick(null); setByName(false); }}>
-              Not now
-            </button>
-          </div>
-        </div>
-      )}
 
-      {!warn && pick && offered && !byName && (
-        <div className="stn-pick">
-          <div className="stn-pick-head">
-            Station {pick} is {offered.offerLabel}&rsquo;s
-            <span className="stn-left">{leftLabel(offered.offerLeftMs)} left</span>
-          </div>
-          <p className="stn-pick-sub">
-            It goes to the next person on the line when the clock runs out. Skipping needs a reason
-            and costs them nothing but this chair.
-          </p>
-          <div className="stn-pick-names">
-            <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
-              onClick={seatOffered}>Seat {first(offered.offerLabel)}</button>
-            <button type="button" className="btn btn-sm" disabled={!!busy} onClick={skip}>Skip&hellip;</button>
-            <button type="button" className="btn btn-sm" disabled={!!busy}
-              onClick={() => setByName(true)}>Someone else</button>
-          </div>
-          <button type="button" className="btn btn-sm stn-cancel" onClick={() => setPick(null)}>Cancel</button>
-        </div>
-      )}
-
-      {!warn && pick && (!offered || byName) && (
-        <div className="stn-pick">
-          <div className="stn-pick-head">Who is taking station {pick}?</div>
-          {canSit.length === 0
-            ? <p className="muted">Everybody on the roster is already seated.</p>
-            : (
-              <div className="stn-pick-names">
-                {canSit.map((p) => (
-                  <button key={p.id} type="button" className="btn btn-sm"
-                    disabled={!!busy}
-                    onClick={() => seat(pick, { id: p.id, label: p.label || p.name })}>
-                    {p.label || p.name}
-                  </button>
-                ))}
+          <div className="sd-side">
+            {/* Only a room that rotates has a next. A store running no phone up
+                system — which is most of them — gets the space back for the
+                thing it actually came here to read. */}
+            {rotates && (
+              <div className="sd-next">
+                <div className="sd-cap2">Next up</div>
+                {nextP ? (
+                  <>
+                    <div className="sd-nextwho">
+                      <span className="mf-av" style={{ background: colorOf(nextP.id) || `hsl(${hueFromName(realName(nextP.id))} 52% 42%)` }}>
+                        {initialsOf(realName(nextP.id))}
+                      </span>
+                      <div><b>{realName(nextP.id)}</b><em>waiting {qWaitLabel(qMinsSince(nextP.joinedAt))}</em></div>
+                    </div>
+                    <button type="button" className="btn btn-primary sd-assign" disabled={tabBusy || !waiting.length}
+                      onClick={assignNext}>Assign the call</button>
+                  </>
+                ) : <p className="sd-none">Nobody is waiting for a call.</p>}
               </div>
             )}
-          <button type="button" className="btn btn-sm stn-cancel"
-            onClick={() => { setPick(null); setByName(false); }}>Cancel</button>
+
+            {/* The three stacked counts that used to sit here said little and
+                left the column half empty under them. The room's own answer to
+                "who is where" is the thing this panel is for, so it is the
+                thing drawn: every desk, in order, with who is in it, how long,
+                and whose desk it is when a desk belongs to somebody. The counts
+                ride along the top as one line rather than three. */}
+            <div className="sd-who">
+              <div className="sd-whohead">
+                <span className="sd-cap2">In the room</span>
+                <span className="sd-whocount">
+                  <b>{board.seats.length - board.free}</b>/{board.seats.length}
+                  {held > 0 ? ` · ${held} away` : ""}
+                </span>
+              </div>
+              <div className="sd-wholist">
+                {board.seats.map((st2) => {
+                  const who = st2.taken ? realName(st2.id) : null;
+                  const ownName = st2.owner ? realName(st2.owner) : null;
+                  const elsewhere = !!(st2.taken && st2.owner && st2.owner !== st2.id);
+                  return (
+                    <button key={st2.n} type="button"
+                      className={"sd-w" + (st2.taken ? " on" : "") + (st2.state === "held" ? " held" : "")
+                        + (st2.offerTo ? " due" : "")}
+                      onClick={() => { setPick(null); setWarn(null); setOpen(open === st2.n ? null : st2.n); }}>
+                      <span className="sd-wn">{st2.n}</span>
+                      {who ? (
+                        <>
+                          <span className="mf-av sd-wav" style={{ background: colorOf(st2.id) || `hsl(${hueFromName(who)} 52% 42%)` }}>
+                            {initialsOf(who)}
+                          </span>
+                          <span className="sd-wnm">
+                            {stnFirst(who)}
+                            {/* Somebody in somebody else's chair is worth
+                                saying, and worth its own line: on one line it
+                                is the part that gets truncated away. */}
+                            {elsewhere && <em>in {stnFirst(ownName)}&rsquo;s desk</em>}
+                          </span>
+                          <span className="sd-wt">
+                            {st2.state === "held" ? `away ${qWaitLabel(qMinsSince(st2.seen))}` : qWaitLabel(qMinsSince(st2.at))}
+                          </span>
+                        </>
+                      ) : st2.offerTo ? (
+                        <>
+                          <span className="sd-wnm dim">{stnFirst(st2.offerLabel)}</span>
+                          <span className="sd-wt due">{stnLeft(st2.offerLeftMs)}</span>
+                        </>
+                      ) : (
+                        <>
+                          {/* A name on an empty desk is a label, never a claim.
+                              Nothing is written on their behalf and the chair
+                              still reads as free. */}
+                          <span className="sd-wnm dim">{ownName ? `${stnFirst(ownName)}\u2019s desk` : "free"}</span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </div>
-      )}
 
-      {showDay && (
-        <StationDaySheet plan={plan} store={store} row={row} hours={dayHoursData}
-          nameOf={who} onClose={() => setShowDay(false)} />
-      )}
+        {/* The panel lives in the hero rather than under it, so the room does
+            not jump down the page every time a seat is tapped. */}
+        {open && panel()}
+      </div>
 
-      <div className="stn-hint">
-        {warn ? "Nothing has been written yet."
-          : pick ? "Pick a name, or tap the seat again to cancel."
-          : seats.some((s) => s.offerTo)
-            ? "A station with a name on it is being offered \u2014 tap it to seat them, skip them, or choose somebody else."
-            : "Tap a free station to seat somebody. Tap an occupied one to free it."}
+      <div className="sd-day">
+        <div className="sd-dhead">
+          <div className="sd-cap">Stations today</div>
+          <span className="sd-dtag">
+            {board.full ? `All ${board.seats.length} taken` : `${board.free} free of ${board.seats.length}`}
+            {waiting.length > 0 ? ` · ${waiting.length} waiting` : ""}
+          </span>
+        </div>
+        <div className="sd-cov"><StnHourBars occ={occ} /></div>
+
+        <div className="sd-grid2">
+          <div>
+            <div className="sd-cap2">When the room was covered</div>
+            <div className="stnd">
+              <div className="stnd-grid-scroll">
+                <div className="stnd-grid" style={{ "--cols": occ.hours.length }}>
+                  <div className="stnd-corner" />
+                  {occ.hours.map((h) => <div key={h} className="stnd-hh">{label(h)}</div>)}
+                  <div className="stnd-rl stnd-rl-room">Room</div>
+                  {occ.byHour.map((b) => (
+                    <div key={b.hour} className="stnd-cell stnd-room" style={{ "--f": b.pct }}
+                      title={`${b.staffed} of ${b.of} stations`}><span>{b.staffed || ""}</span></div>
+                  ))}
+                  {occ.seats.map((seatRow) => (
+                    <React.Fragment key={seatRow.n}>
+                      <div className="stnd-rl">{seatRow.n}</div>
+                      {seatRow.cells.map((c) => (
+                        <div key={c.hour} className="stnd-cell" style={{ "--f": c.cover }}
+                          title={c.who ? `${c.who} · ${Math.round(c.cover * 60)} min` : "empty"} />
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {occ.thinnest && occ.thinnest.staffed < occ.thinnest.of && (
+              <p className="sd-note">
+                Thinnest at {label(occ.thinnest.hour)}{Number(occ.thinnest.hour) < 12 ? "am" : "pm"}:{" "}
+                {occ.thinnest.staffed} of {occ.thinnest.of} stations.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <div className="sd-cap2">What came in while they were sitting</div>
+            {people.length === 0
+              ? <p className="sd-note">Nobody has taken a station today.</p>
+              : (
+                <div className="sd-people">
+                  {people.map((p) => (
+                    <div key={p.id} className="sd-prow">
+                      <span className="mf-av" style={{ background: colorOf(p.id) || `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>
+                        {initialsOf(realName(p.id))}
+                      </span>
+                      <div className="sd-pwho">
+                        <b>{realName(p.id)}</b>
+                        <em>{p.min} min {"·"} {p.sits.length} {p.sits.length === 1 ? "sit" : "sits"}</em>
+                      </div>
+                      <div className="sd-pnums">
+                        <span><b>{p.op}</b>opps</span>
+                        <span><b>{p.ca}</b>calls</span>
+                        <span className="sd-per">{p.perHour == null ? "—" : (Math.round(p.perHour * 10) / 10) + " /hr"}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            {people.length > 0 && !people.some((p) => p.counted > 0) && (
+              <p className="sd-note">
+                Nothing attributed yet. The figures come from the Delivery Summary, which lands
+                hourly, and a sit only picks up an hour it covered most of.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -12269,6 +12909,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
   const [pendingAssign, setPendingAssign] = useState(null);
   const [busy, setBusy] = useState(false);
   const [, force] = useReducer((x) => x + 1, 0);
+  const phone = usePhoneLayout();
 
   const date = today();
 
@@ -12487,6 +13128,24 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
 
   if (row === undefined) return <div className="checkout"><p className="muted">Loading the line…</p></div>;
 
+  /* A phone gets the room, the same way Live Floor does: the map is the
+     screen, the line runs underneath it as a rail, and every action opens in a
+     pop. The desk's console below is the desk's, and the desk keeps it. */
+  if (phone) {
+    return (
+      <div className={`checkout q-tab mf ${variant.mf}`}>
+        <QueueRoomPhone config={config} store={store} data={data} row={row} line={line}
+          salesRoster={salesRoster} realName={realName} date={date} userName={userName}
+          variant={variant} identities={identities} busy={busy} onRow={setRow} act={act}
+          nudge={nudge} decline={decline} assignSpecific={assignSpecific} assignNext={assignNext}
+          setFlag={setFlag} removePerson={removePerson} addPerson={addPerson}
+          resetPin={resetPin} regenToken={regenToken}
+          upsToday={Object.values(upsToday).reduce((n, v) => n + v, 0)}
+          openOpps={openOpps} closeOpp={closeOpp} />
+      </div>
+    );
+  }
+
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? queueSignInUrl(store.id, date, row.token, variant.param) : "";
   // Counts the floor is judged on leave the test identity out.
@@ -12508,6 +13167,17 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         const M = computeFloorMetrics({ line, roster: salesRoster, data, date, history: row?.history, oppActions: ["assigned"] });
         const nextP = line.find((x) => x.status === "waiting" && !isTestId(x.id));
         const nextNm = nextP ? realName(nextP.id) : "";
+        /* The Phone Line's desk is the handset's view given the room it was
+           short of: the room as the hero, the same rail under it, and the day
+           drawn out rather than hidden behind a button. The Online queue has
+           no room and is being rethought, so it keeps the hero it has. */
+        if (variant.kind === "line" && row) {
+          return (
+            <StationDesk config={config} store={store} data={data} row={row} line={line}
+              salesRoster={salesRoster} realName={realName} date={date} userName={userName}
+              variant={variant} onRow={setRow} busy={busy} assignNext={assignNext} metrics={M} />
+          );
+        }
         return (
           <QueueHero store={store} title={variant.label}
             sub={`${new Date(date + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${withoutTest(line).length} ${variant.count}`}
@@ -12520,11 +13190,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
         );
       })()}
-
-      {variant.kind === "line" && row && (
-        <StationBoard config={config} store={store} data={data} row={row} roster={salesRoster}
-          onRow={setRow} date={date} userName={userName} nameOf={realName} />
-      )}
 
       <OppsTally history={row?.history} nameOf={realName} accent={variant.accent} onCloseOpp={closeOpp} />
 
@@ -14159,14 +14824,21 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    identity and the day is always today, so there is no token to check, no name
    to type and no PIN; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
-function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null }) {
+function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null,
+  tab: tabFrom = null, onTab = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one
      tap on the pill, and being up next drags the view there on its own because
      that overlay is the one thing that must never be missed. */
-  const [tab, setTab] = useState("corner");
+  /* Its own tab, unless somebody outside is holding it. When a salesperson's
+     phone offers more than one room there is one bar at the foot for all of
+     them, and it cannot be owned by one of the rooms it switches between. The
+     QR door still reaches this screen on its own, and then the tab is its. */
+  const [tabOwn, setTabOwn] = useState("corner");
+  const tab = onTab ? tabFrom : tabOwn;
+  const setTab = onTab || setTabOwn;
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
@@ -15079,8 +15751,16 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
-            <div className="sf-shock" />
-            <DmNumber value={1} up />
+            {/* The ring is wrapped around the number rather than dropped into
+                the column: an absolutely positioned child of a centred flex
+                column takes its static position from the column, which put the
+                splash behind the words instead of coming off the figure it is
+                supposed to be coming off. */}
+            <div className="sf-upnum">
+              <span className="sf-shock" />
+              <span className="sf-shock d2" />
+              <DmNumber value={1} up />
+            </div>
             <h2>You're up</h2>
             <p>Head to the door. The next one is yours.</p>
             <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
@@ -15146,7 +15826,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   return (
     <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (inShell && tab === "corner" && lightMode ? " mc-light" : "")} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
-      {inShell && (() => {
+      {inShell && !onTab && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
         const upRoot = !!me && me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
         return (
@@ -15385,12 +16065,47 @@ function FrPop({ title, onClose, children, cls }) {
     </div>, document.body);
 }
 
+/**
+ * A floor plan fitted into a phone's width, with zoom and pan.
+ *
+ * The plan is drawn for a desk: percentage coordinates against a room that is
+ * much wider than it is tall. Squashing that into 350 points makes a room
+ * nobody recognises, so it keeps its proportions and is scaled to fit instead,
+ * with the two buttons and a pannable viewport for anybody who wants a closer
+ * look.
+ *
+ * Shared rather than copied. The floor and the phone room draw different
+ * furniture on the same geometry, and two copies of this arithmetic would
+ * drift the moment one of them was tuned.
+ */
+function usePlanViewport(plan, zoom, setZoom, { natH = 340, capH = 280, minW = 560 } = {}) {
+  const vpRef = useRef(null);
+  const [vpW, setVpW] = useState(0);
+  useEffect(() => {
+    const el = vpRef.current;
+    if (!el) return undefined;
+    const measure = () => setVpW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const stretch = (plan && plan.stretch) || 1;
+  const natW = Math.max(vpW, minW) * stretch;
+  const fit = vpW > 0 ? Math.min(vpW / natW, capH / natH) : 1;
+  const bump = useCallback(
+    (d) => setZoom((v) => Math.min(2.6, Math.max(0.7, +(v * (d > 0 ? 1.25 : 0.8)).toFixed(3)))),
+    [setZoom]);
+  return { vpRef, vpW, natW, natH, capH, fit, z: zoom * fit, bump };
+}
+
 /* The line as the salesperson sees it: a rail from the screen's left edge to
    the door, the head of the line biggest, the flow toward the door, and the
    same spring when somebody joins or takes an up. When the tail of a long line
    runs out of rail it bunches at the start, and a tap on the bunch opens the
    whole line as a list. */
-function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch }) {
+function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = "DOOR" }) {
   const ref = useRef(null);
   const posOf = (i) => { const x = 91 - i * 15; return x >= 24 ? x : 24 - Math.ceil((24 - x) / 15) * 6; };
   useEffect(() => {
@@ -15426,7 +16141,10 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch }) {
           </button>
         );
       })}
-      <span className="fr-raildoor">DOOR</span>
+      {/* Where the line is flowing to. The floor's rail runs at the door; the
+          phone room's runs at the next call, and calling that "door" would be
+          the one word on the screen that is not true. */}
+      <span className="fr-raildoor">{endLabel}</span>
     </div>
   );
 }
@@ -15562,27 +16280,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
   };
 
   /* ---- the plan, zoomed and panned ---- */
-  const vpRef = useRef(null);
-  const [vpW, setVpW] = useState(0);
-  useEffect(() => {
-    const el = vpRef.current;
-    if (!el) return undefined;
-    const measure = () => setVpW(el.clientWidth);
-    measure();
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  /* The plan is drawn for a desk. On a phone it keeps those proportions and
-     is fitted to the viewport, so the room does not squash; pinch or the two
-     buttons zoom, and the viewport pans. */
-  const stretch = (plan && plan.stretch) || 1;
-  const natW = Math.max(vpW, 560) * stretch;
-  const natH = 340;
-  const fit = vpW > 0 ? Math.min(vpW / natW, 280 / natH) : 1;
-  const z = zoom * fit;
-  const bump = (d) => setZoom((v) => Math.min(2.6, Math.max(0.7, +(v * (d > 0 ? 1.25 : 0.8)).toFixed(3))));
+  const { vpRef, vpW, natW, natH, fit, z, bump } = usePlanViewport(plan, zoom, setZoom);
 
   /* ---- the day ---- */
   const hours = useMemo(() => coverageByHour({ store, line, history: row.history }), [store, line, row.history]);
@@ -17342,6 +18040,132 @@ function FloorPlanEditor({ config, storeId, onChange, onClose }) {
     </div>
   );
 }
+/**
+ * How this store runs its phone room.
+ * -------------------------------------------------------------------------
+ * Two settings, because two questions were being asked of one screen and only
+ * one of them actually differs between stores.
+ *
+ * The first is whether there is a rotation at all. Most stores run no phone up
+ * system: people take a desk and the question is who is at them. Turning the
+ * rotation off leaves everything that answers that question — presence, the
+ * hours, the occupancy grid — and takes away the offers and the line.
+ *
+ * The second is whose desk is whose, which is the BDC case: agents sit at the
+ * same desk every day and a board that cannot say so makes you learn six names
+ * by their chair. It is a LABEL and never a claim. Nobody is seated because it
+ * is usually their chair; the desk still reads as empty until they check in,
+ * and nothing goes into the day's record on their behalf. Auto-seating would
+ * put a sit in the record for a person who is not in the building, and the
+ * hours that sit collected would be attributed to them.
+ */
+function PhoneRoomCard({ config, storeId, onChange }) {
+  const store = config.stores.find((s) => s.id === storeId);
+  const mode = stationModeOf(config, storeId);
+  const plan = stationPlanOf(config, storeId);
+  const seats = seatsOf(plan);
+  const roster = useMemo(() => {
+    const salesRoles = new Set((config.roles || []).filter((r) => r.tracked !== false).map((r) => r.id));
+    return ((store && store.roster) || []).filter((a) => a && a.roleId && salesRoles.has(a.roleId));
+  }, [store, config.roles]);
+
+  const save = (fn, audit) => {
+    const next = JSON.parse(JSON.stringify(config));
+    const s = next.stores.find((x) => x.id === storeId);
+    fn(s);
+    onChange(next, { store: storeId, ...audit });
+  };
+  const setMode = (m) => save((s) => { s.stationMode = m; },
+    { action: "Changed the phone room", detail: `${store.name}: ${m === "open" ? "no rotation" : "rotation"}` });
+  const rooms = roomsOf(config, storeId);
+  const setRoom = (k, on) => save((s) => { s.rooms = { ...roomsOf(config, storeId), [k]: on }; },
+    { action: on ? "Turned a room on for the floor" : "Turned a room off for the floor",
+      detail: `${store.name}: ${k === "line" ? "Phone Line" : "Live Floor"}` });
+  const setOwner = (n, id) => save((s) => {
+    const p = s.stationPlan && (s.stationPlan.seats || s.stationPlan.tables)
+      ? JSON.parse(JSON.stringify(s.stationPlan))
+      : JSON.parse(JSON.stringify(DEFAULT_STATION_PLAN));
+    const list = p.seats || p.tables;
+    const seat = list.find((x) => String(x.n) === String(n));
+    if (!seat) return;
+    if (id) seat.owner = id; else delete seat.owner;
+    s.stationPlan = p;
+  }, { action: "Set a desk owner", detail: `${store.name}: station ${n}` });
+
+  const nameOf = (id) => (roster.find((a) => a.id === id) || {}).name || "";
+
+  return (
+    <div className="card">
+      <h3>The phone room</h3>
+      <p className="hint">
+        The stations on the Phone Line tab: who is at which desk, how long they have been there,
+        and how much of the room was staffed each hour. Drawn from the same plan model as the
+        floor, so the same editor arranges it.
+      </p>
+
+      {/* Which rooms this store's people see on their own phones. Separate
+          from how the desk runs the room: a store can watch its stations from
+          the desk without putting a tab on anybody's phone. */}
+      <div className="prc-rooms">
+        <div className="prc-cap">On a salesperson&rsquo;s phone</div>
+        {[["floor", "Live Floor", "Their corner, the room, and the up they are waiting for."],
+          ["line", "Phone Line", "The phone room, the line, and their own day at a station."]].map(([k, title, sub]) => (
+          <label key={k} className="prc-toggle">
+            <input type="checkbox" checked={!!rooms[k]}
+              onChange={(e) => setRoom(k, e.target.checked)} />
+            <span className="prc-tt"><b>{title}</b><em>{sub}</em></span>
+          </label>
+        ))}
+        {!rooms.floor && !rooms.line && (
+          <p className="prc-warn">
+            With both off, a salesperson signing in has nothing to open. The app tells them so
+            and offers a way out, but it is worth knowing that is what it does.
+          </p>
+        )}
+      </div>
+
+      <div className="prc-cap prc-cap2">How the desk runs the room</div>
+      <div className="prc-modes">
+        {[["rotation", "Runs a rotation", "A desk coming free is offered to whoever is next on the Phone Line, and the desk can skip somebody with a reason."],
+          ["open", "Just the desks", "No rotation and no offers. People take a desk and the board says who is where. This is also the BDC view."]].map(([m, title, sub]) => (
+          <button key={m} type="button" className={"prc-mode" + (mode === m ? " on" : "")}
+            onClick={() => setMode(m)} aria-pressed={mode === m}>
+            <b>{title}</b>
+            <span>{sub}</span>
+          </button>
+        ))}
+      </div>
+
+      <details className="tagt prc-owners">
+        <summary>Whose desk is whose</summary>
+        <p className="hint">
+          For a room where the same people sit at the same desks. A name here is a label on the
+          desk and nothing more: the desk still reads as empty until they check in, and nothing is
+          recorded for anybody who is not there.
+        </p>
+        {roster.length === 0
+          ? <p className="hint">No tracked people on this store's roster yet.</p>
+          : (
+            <div className="prc-list">
+              {seats.map((seat) => (
+                <label key={seat.n} className="prc-row">
+                  <span className="prc-n">{seat.n}</span>
+                  <select value={seat.owner || ""} onChange={(e) => setOwner(seat.n, e.target.value)}>
+                    <option value="">Nobody in particular</option>
+                    {roster.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  {seat.owner && !nameOf(seat.owner) && (
+                    <span className="prc-gone">that person is no longer on the roster</span>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+      </details>
+    </div>
+  );
+}
+
 function FloorConfigEditor({ config, storeId, onChange }) {
   const store = config.stores.find((s) => s.id === storeId);
   const cfg = floorCfg(store);
@@ -17483,6 +18307,8 @@ function FloorConfigEditor({ config, storeId, onChange }) {
           </React.Suspense>
         )}
       </div>
+
+      <PhoneRoomCard config={config} storeId={storeId} onChange={onChange} />
 
       <div className="card">
         <h3>The floor plan</h3>
@@ -38320,6 +39146,12 @@ const SAGE_CSS = `
    brightened rather than as a taken one — the seat is still empty, and drawing
    it like an occupied chair would have a manager walk over to an empty desk.
    The pulse is what says the clock is running. */
+/* An empty desk with a name on it. Still the free style — dashed, recessed —
+   because it IS free; the name is a label, and drawing it like an occupied
+   chair would have a manager walk over to nobody. */
+.stn-map .fbp-tbl.stn-off.stn-own{ border-style:solid; border-color:rgba(255,255,255,.34); }
+.stn-map .fbp-tbl.stn-off.stn-own .fbp-sub{ color:rgba(255,255,255,.62); font-weight:500; }
+
 .stn-map .fbp-tbl.stn-off.stn-due{ background:rgba(255,255,255,.3); color:#fff;
   border-style:solid; border-color:rgba(255,255,255,.85);
   animation:stnDue 2.4s ease-in-out infinite; }
@@ -38366,6 +39198,206 @@ const SAGE_CSS = `
 .stn-cancel{ margin-top:10px; }
 .stn-hint{ margin-top:10px; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); }
 .stn-day-b{ margin-left:auto; align-self:center; }
+
+/* The room switch on a salesperson's phone. Floats above whichever shell is
+   showing rather than living inside either, so neither had to be reworked to
+   gain it, and it is drawn only when the store offers more than one room. */
+/* One bar at the foot for everywhere this phone can be: their corner, the
+   floor, the phone room. Built to look like the pill the floor shell already
+   had down there, because for a store with only the floor it is that pill —
+   the same two buttons in the same place — and gains a third only when the
+   store turns the phone line on.
+
+   101 and not 60, which is where this started and where it was unreachable:
+   the shell root itself is z-index 100 and creates a stacking context, so
+   anything below that number is painted under the whole screen no matter what
+   it sits above inside it. */
+.ar-bar{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display:flex; padding:4px; border-radius:999px;
+  background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.13);
+  backdrop-filter:blur(10px) saturate(140%); -webkit-backdrop-filter:blur(10px) saturate(140%);
+  box-shadow:0 10px 24px -10px rgba(0,0,0,.7); }
+.ar-ind{ position:absolute; left:4px; top:4px; bottom:4px; border-radius:999px;
+  background:rgba(255,255,255,.15);
+  transition:transform .38s cubic-bezier(.3,1.6,.4,1); will-change:transform; }
+.ar-tab{ position:relative; display:grid; place-items:center; width:64px; height:44px;
+  border:0; background:none; cursor:pointer; color:rgba(255,255,255,.42);
+  transition:color .2s; }
+.ar-tab.on{ color:#fff; }
+@media (prefers-reduced-motion: reduce){ .ar-ind{ transition:none; } }
+/* The bar floats, so the last card in the shell has to end above it. Padding on
+   the scroll container was the first try and it does nothing: when the content
+   is shorter than the screen there is nothing to scroll, and space added below
+   the content does not move the content up. The clearance has to be on the
+   column the cards are actually in.
+
+   Only when the bar is drawn: a store with one room carries no gap for a
+   control it does not have. */
+.lpc:has(> .ar-bar) .q-page{ padding-bottom:72px; }
+.lpc:has(> .ar-bar) .sf-live{ padding-bottom:74px; }
+.lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
+
+/* Both rooms switched off. Somebody did that deliberately, so it is said
+   plainly rather than drawn as an empty shell they will tap at. */
+.ar-none{ min-height:100dvh; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; gap:12px; padding:32px 26px; text-align:center;
+  background:#10141F; color:rgba(255,255,255,.8); }
+.ar-none-h{ font-family:var(--mffont); font-size:19px; font-weight:600; color:#fff; }
+.ar-none p{ margin:0; max-width:34ch; font-size:13.5px; line-height:1.55; color:rgba(255,255,255,.6); }
+
+/* The phone room's own settings card. Two questions, and only the first of
+   them actually differs between most stores. */
+.prc-cap{ font-family:var(--mfmono); font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--mfink3); margin:16px 0 8px; }
+.prc-cap2{ margin-top:20px; }
+.prc-rooms{ display:flex; flex-direction:column; gap:8px; }
+.prc-toggle{ display:flex; align-items:flex-start; gap:11px; padding:11px 13px; border-radius:13px;
+  border:1px solid var(--mfline); background:#fff; cursor:pointer; }
+.prc-toggle input{ margin-top:2px; }
+.prc-tt b{ display:block; font-family:var(--mffont); font-size:14px; font-weight:600; color:var(--mfink); }
+.prc-tt em{ display:block; font-style:normal; font-size:12px; line-height:1.45; color:var(--mfink2); margin-top:2px; }
+.prc-warn{ margin:2px 0 0; font-size:12px; line-height:1.5; color:#8A5300;
+  background:color-mix(in srgb,#C77800 9%, #fff); border-radius:11px; padding:9px 12px; }
+.prc-modes{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 4px; }
+.prc-mode{ text-align:left; padding:12px 14px; border-radius:14px; border:1.5px solid var(--mfline);
+  background:#fff; font-family:inherit; cursor:pointer; transition:.15s; }
+.prc-mode:hover{ border-color:#B9C3D4; }
+.prc-mode.on{ border-color:transparent; background:color-mix(in srgb,#4C6FFF 8%, #fff);
+  box-shadow:0 0 0 1.5px #4C6FFF, 0 10px 24px -14px rgba(76,111,255,.5); }
+.prc-mode b{ display:block; font-family:var(--mffont); font-size:14.5px; font-weight:600;
+  color:var(--mfink); margin-bottom:4px; }
+.prc-mode.on b{ color:#2B44B8; }
+.prc-mode span{ display:block; font-size:12px; line-height:1.45; color:var(--mfink2); }
+.prc-owners{ margin-top:14px; }
+.prc-list{ display:flex; flex-direction:column; gap:7px; margin-top:8px; }
+.prc-row{ display:flex; align-items:center; gap:10px; }
+.prc-n{ font-family:var(--mfmono); font-size:12px; color:var(--mfink3); min-width:20px; text-align:center; }
+.prc-row select{ flex:1; max-width:280px; }
+.prc-gone{ font-family:var(--mfmono); font-size:10.5px; color:#C2361F; }
+@media (max-width:700px){ .prc-modes{ grid-template-columns:1fr; } }
+
+/* ---- the room, at a desk ----
+   The handset's view given the space it was short of. Same objects in the same
+   order — the room, the rail beneath it, then the day — so a manager who moves
+   between the two is looking at one design at two sizes. What the desk adds is
+   the side panel, the stat chips, and the day drawn out rather than hidden
+   behind a button. */
+.sd{ display:flex; flex-direction:column; gap:14px; }
+.sd-hero{ border-radius:24px; padding:16px 18px 14px; color:#fff; position:relative; overflow:hidden;
+  background:linear-gradient(150deg,#5E79C8,#3A5296 55%,#1E2A50);
+  box-shadow:0 18px 38px -18px rgba(30,42,80,.55); }
+.sd-hero::after{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.05) 0 1px,transparent 1px 3px); }
+.sd-hero > *{ position:relative; z-index:1; }
+.sd-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:12px; }
+.sd-cap{ font-family:var(--mfmono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:rgba(255,255,255,.62); margin-bottom:4px; }
+.sd-head b{ font-family:var(--mffont); font-size:23px; font-weight:600; letter-spacing:-.015em; }
+.sd-when{ font-family:var(--mfmono); font-size:11.5px; color:rgba(255,255,255,.6); white-space:nowrap; padding-top:4px; }
+
+/* The room takes the width it was drawn for and the side panel takes what is
+   left, rather than the two splitting evenly: the map is the thing being read
+   and the panel is a caption on it. */
+.sd-body{ display:grid; grid-template-columns:minmax(0,1fr) 268px; gap:16px; align-items:start; }
+.sd-room{ position:relative; }
+.sd-room .fbp-scroll{ border-radius:16px; }
+.sd-room .fbp{ background:rgba(0,0,0,.16); border-radius:16px; }
+.sd-room .fr-rail{ margin-top:10px; }
+
+.sd-side{ display:flex; flex-direction:column; gap:10px; }
+.sd-next{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16);
+  border-radius:16px; padding:13px 14px; }
+.sd-cap2{ font-family:var(--mfmono); font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+  color:rgba(255,255,255,.6); margin-bottom:9px; }
+.sd-nextwho{ display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.sd-nextwho b{ display:block; font-family:var(--mffont); font-size:16px; font-weight:600; letter-spacing:-.01em; }
+.sd-nextwho em{ display:block; font-family:var(--mfmono); font-size:10.5px; font-style:normal; color:rgba(255,255,255,.6); }
+.sd-assign{ width:100%; }
+.sd-none{ margin:0; font-family:var(--mfmono); font-size:11.5px; color:rgba(255,255,255,.6); }
+/* Who is where, which is what the panel is for. One row per desk, in the
+   room's own order, so the list and the map are read the same way round. */
+.sd-who{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16);
+  border-radius:16px; padding:12px 12px 10px; }
+.sd-whohead{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.sd-who .sd-cap2{ margin-bottom:0; }
+.sd-whocount{ font-family:var(--mfmono); font-size:10.5px; color:rgba(255,255,255,.55); }
+.sd-whocount b{ font-family:var(--mffont); font-size:13px; font-weight:600; color:#fff; }
+.sd-wholist{ display:flex; flex-direction:column; gap:3px; margin-top:9px; }
+.sd-w{ display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px; border:0;
+  border-radius:10px; background:transparent; text-align:left; color:#fff;
+  font-family:inherit; cursor:pointer; transition:background .15s; }
+.sd-w:hover{ background:rgba(255,255,255,.1); }
+.sd-w.on{ background:rgba(255,255,255,.14); }
+.sd-w.held{ background:rgba(255,255,255,.06); }
+.sd-w.due{ background:rgba(255,255,255,.09); box-shadow:inset 0 0 0 1px rgba(255,255,255,.28); }
+.sd-wn{ font-family:var(--mfmono); font-size:10.5px; color:rgba(255,255,255,.5);
+  min-width:13px; text-align:center; }
+.sd-wav{ width:22px; height:22px; font-size:8.5px; }
+.sd-wnm{ flex:1; min-width:0; display:flex; flex-direction:column;
+  font-family:var(--mffont); font-size:12.5px; font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* An empty desk with a name on it, and an offered one, are both quieter than a
+   person actually sitting there. */
+.sd-wnm.dim{ font-weight:400; color:rgba(255,255,255,.46); }
+.sd-wnm em{ display:block; font-family:var(--mfmono); font-size:9.5px; font-weight:400;
+  font-style:normal; color:rgba(255,255,255,.5); overflow:hidden; text-overflow:ellipsis; }
+.sd-w.held .sd-wnm{ color:rgba(255,255,255,.6); }
+.sd-w.held .sd-wav{ opacity:.55; }
+.sd-wt{ font-family:var(--mfmono); font-size:9.5px; color:rgba(255,255,255,.5); white-space:nowrap; }
+.sd-wt.due{ color:#fff; font-weight:600; }
+
+/* The panel opens inside the hero so the room does not jump down the page
+   every time a seat is tapped. */
+.sd-panel{ margin-top:13px; padding:13px 15px; border-radius:16px;
+  background:rgba(255,255,255,.94); color:var(--mfink);
+  box-shadow:0 10px 26px -14px rgba(8,20,60,.5); }
+.sd-panel.warn{ background:color-mix(in srgb,#C77800 10%, #fff); }
+.sd-panel.warn .sd-ptitle{ color:#8A5300; }
+.sd-ptitle{ font-family:var(--mffont); font-weight:600; font-size:15px; color:var(--mfink); margin-bottom:6px; }
+.sd-pmeta{ float:right; font-family:var(--mfmono); font-size:11.5px; font-weight:500; color:#3A5296; }
+.sd-psub{ margin:0 0 10px; font-size:12.5px; line-height:1.45; color:var(--mfink2); }
+.sd-pbtns{ display:flex; flex-wrap:wrap; gap:7px; }
+.sd-pclose{ margin-top:10px; }
+
+.sd-day{ background:#fff; border:1px solid var(--mfline); border-radius:20px; padding:16px 18px;
+  box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); }
+.sd-dhead{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+.sd-day .sd-cap{ color:var(--a1); margin-bottom:0; }
+.sd-dtag{ font-family:var(--mfmono); font-size:11.5px; color:var(--mfink3); }
+.sd-cov{ margin:11px 0 4px; }
+.sd-cov .fr-hours{ display:flex; gap:3px; }
+.sd-cov .fr-hours i{ flex:1; height:20px; border-radius:5px; background:rgba(16,32,52,.08); }
+.sd-cov .fr-hours i.ok{ background:#1E8A4C; } .sd-cov .fr-hours i.thin{ background:#C98A00; }
+.sd-cov .fr-hours i.gap{ background:#C2361F; }
+.sd-cov .fr-scale{ display:flex; justify-content:space-between; margin-top:4px;
+  font-family:var(--mfmono); font-size:9.5px; color:var(--mfink3); }
+.sd-grid2{ display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:22px; margin-top:16px; }
+.sd-day .sd-cap2{ color:var(--mfink3); margin-bottom:9px; }
+.sd-note{ margin:9px 0 0; font-family:var(--mfmono); font-size:11px; color:var(--mfink3); line-height:1.5; }
+.sd-people{ display:flex; flex-direction:column; gap:7px; }
+.sd-prow{ display:flex; align-items:center; gap:10px; padding:8px 11px; border-radius:13px;
+  border:1px solid var(--mfline); background:#fff; }
+.sd-pwho{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.sd-pwho b{ font-family:var(--mffont); font-size:13.5px; font-weight:600; color:var(--mfink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sd-pwho em{ font-family:var(--mfmono); font-size:10.5px; font-style:normal; color:var(--mfink3); }
+.sd-pnums{ display:flex; align-items:center; gap:13px; }
+.sd-pnums span{ display:flex; flex-direction:column; align-items:center; min-width:34px;
+  font-family:var(--mfmono); font-size:8px; letter-spacing:.06em; text-transform:uppercase; color:var(--mfink3); }
+.sd-pnums b{ font-family:var(--mffont); font-size:15px; font-weight:600; color:var(--mfink); }
+.sd-per{ font-family:var(--mfmono) !important; font-size:12px !important; font-weight:600;
+  color:var(--a1) !important; text-transform:none !important; letter-spacing:0 !important; }
+
+/* A narrow desk, and the iPad in portrait: the side panel drops under the room
+   and the day's two readings stack rather than each getting half of nothing. */
+@media (max-width:1100px){
+  .sd-body{ grid-template-columns:minmax(0,1fr); }
+  /* The desk list goes two-across when it is under the room rather than beside
+     it, so six desks do not become six full-width rows. */
+  .sd-wholist{ display:grid; grid-template-columns:1fr 1fr; gap:3px 10px; }
+  .sd-grid2{ grid-template-columns:minmax(0,1fr); gap:18px; }
+}
 
 /* ---- the day so far ----
    A grid of stations against hours, drawn by how much of each hour the seat
@@ -39993,9 +41025,19 @@ const SAGE_CSS = `
 .sf-uptake{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
   padding:40px; background:linear-gradient(160deg,var(--a1),var(--a2)); animation:sfUpIn .5s cubic-bezier(.2,.85,.25,1) both; }
 @keyframes sfUpIn{ from{ opacity:0; transform:scale(1.04); } to{ opacity:1; transform:none; } }
-.sf-shock{ position:absolute; width:min(52vw,200px); height:min(52vw,200px); border-radius:50%; border:2px solid rgba(255,255,255,.5); animation:sfShock 2s ease-out infinite; }
-@keyframes sfShock{ 0%{ transform:scale(.5); opacity:.7; } 100%{ transform:scale(2.4); opacity:0; } }
-.sf-uptake .dm{ --cell:clamp(12px,4.4vw,17px); --led:#fff; --ld-off:rgba(255,255,255,.3); position:relative; z-index:1; margin-bottom:24px; animation:sfThrob 1.3s ease-in-out infinite; }
+/* Centred on the number, because that is what it is coming off. Two rings half
+   a cycle apart so it reads as something leaving the figure rather than one
+   circle breathing. */
+.sf-upnum{ position:relative; display:grid; place-items:center; margin-bottom:24px; }
+.sf-shock{ position:absolute; left:50%; top:50%; width:min(52vw,200px); height:min(52vw,200px);
+  transform:translate(-50%,-50%); border-radius:50%; border:2px solid rgba(255,255,255,.5);
+  animation:sfShock 2s ease-out infinite; pointer-events:none; }
+.sf-shock.d2{ animation-delay:1s; border-color:rgba(255,255,255,.34); }
+@keyframes sfShock{
+  0%{ transform:translate(-50%,-50%) scale(.42); opacity:.75; }
+  100%{ transform:translate(-50%,-50%) scale(2.4); opacity:0; } }
+@media (prefers-reduced-motion: reduce){ .sf-shock{ animation:none; opacity:.3; } }
+.sf-uptake .dm{ --cell:clamp(12px,4.4vw,17px); --led:#fff; --ld-off:rgba(255,255,255,.3); position:relative; z-index:1; animation:sfThrob 1.3s ease-in-out infinite; }
 .sf-uptake .dm .ld.on{ box-shadow:0 0 10px rgba(255,255,255,.6); }
 @keyframes sfThrob{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
 .sf-uptake h2{ font-size:clamp(40px,13vw,54px); font-weight:700; letter-spacing:-.04em; color:#04140f; line-height:.95; }
@@ -41395,6 +42437,37 @@ const SAGE_CSS = `
         color:rgba(190,215,255,.72); letter-spacing:.01em; margin-top:2px; }
       .sf-stnday-note { margin:9px 0 0; font-size:10.5px; line-height:1.5;
         font-family:var(--sfmono); color:rgba(237,242,234,.34); }
+
+      /* The room, on their own phone. Leads with the desks because a room with
+         a free chair does not need anybody queuing for a call. */
+      .sf-room { margin:14px 14px 0; padding:13px 14px; border-radius:14px;
+        background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09); }
+      .sf-room-h { font-family:var(--sffont); font-size:15px; font-weight:600;
+        color:rgba(237,242,234,.95); letter-spacing:-.01em; }
+      .sf-room-p { margin:4px 0 0; font-family:var(--sfmono); font-size:11px; line-height:1.5;
+        color:rgba(237,242,234,.5); }
+      /* A chair with their name on it and a clock running is the strongest
+         thing this screen ever says, so it is the only part that is not
+         quiet. */
+      .sf-room.due { background:rgba(120,160,255,.16); border-color:rgba(150,185,255,.5); }
+      .sf-room.due .sf-room-h { color:#fff; }
+      .sf-room.due .sf-room-p { color:rgba(220,232,255,.82); }
+      .sf-room.on { background:rgba(140,200,160,.12); border-color:rgba(150,210,175,.32); }
+      /* A grid rather than a wrapping row: three across mirrors how the default
+         room is actually laid out, and a wrapped flex row stretches whatever
+         is left over into a last row of double-width chairs. */
+      .sf-room-map { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin-top:11px; }
+      .sf-seat { display:flex; flex-direction:column; align-items:center; gap:1px;
+        padding:7px 4px; border-radius:10px; background:rgba(255,255,255,.05);
+        border:1px dashed rgba(255,255,255,.18); }
+      .sf-seat b { font-family:var(--sfmono); font-size:12px; color:rgba(237,242,234,.8); }
+      .sf-seat em { font-style:normal; font-family:var(--sfmono); font-size:9.5px;
+        color:rgba(237,242,234,.4); max-width:100%; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }
+      .sf-seat.on { background:rgba(255,255,255,.16); border-style:solid; border-color:transparent; }
+      .sf-seat.on em { color:rgba(237,242,234,.75); }
+      .sf-seat.held { opacity:.55; }
+      .sf-seat.due { border-style:solid; border-color:rgba(150,185,255,.6); }
       .sf-stnday-row.on .sf-stnday-why { color:#cfe0ff; }
       /* ---- plates + smart assign, in the new card language ----
          the tables keep their markup; what changes is the shell around them,
@@ -42570,6 +43643,47 @@ const SAGE_CSS = `
 .fr-pip.bunch{ box-shadow:0 0 0 1.5px rgba(232,238,242,.35); }
 .fr-badge{ position:absolute; right:-4px; top:-5px; width:15px; height:15px; border-radius:50%; background:#0B100D; display:grid; place-items:center;
   border:1.5px solid rgba(255,255,255,.5); color:#ffcf7a; font-style:normal; }
+/* ---- the phone room, on a phone ----
+   Built on the floor's own layout so a manager moving between the two rooms
+   does not learn a second set of gestures. Only the colour changes: the hero
+   wears the Phone Line's blue rather than the floor's green, and the accent
+   that marks a caption follows it. */
+.fr-page.qr{ --frsand2:#4C6FFF; --frsand:#8FA6FF; --frp2d:#5A72C0; }
+.fr-page.qr .fr-hero{ background:linear-gradient(150deg,#5E79C8,#3A5296 55%,#1E2A50);
+  box-shadow:0 14px 30px -14px rgba(30,42,80,.55); }
+.fr-page.qr .fr-planin .fbp{ background:none; }
+
+/* The one control the desk reaches for most, in the corner the floor keeps for
+   its asks: who is up, and the tap that hands them the call. */
+.qr-assign{ margin-left:auto; display:flex; align-items:center; gap:7px; min-height:40px;
+  padding:0 13px; border-radius:13px; border:1.5px solid var(--frsand2); background:var(--frsand2);
+  color:#fff; font:700 12.5px var(--font-display); letter-spacing:-.01em; max-width:56%; }
+.qr-assign em{ font:700 8px var(--font-mono); font-style:normal; letter-spacing:.1em;
+  text-transform:uppercase; opacity:.72; }
+.qr-assign:disabled{ background:#fff; color:#A9B0BC; border-color:var(--frline); }
+
+.qr-pb{ display:flex; flex-direction:column; gap:9px; }
+.qr-plead{ margin:0; font:400 13.5px/1.5 var(--font-display); color:var(--frink); }
+.qr-pmuted{ margin:0; font:400 12px/1.5 var(--font-mono); color:var(--frink3); }
+.qr-pcap{ margin:6px 0 0; font:700 9px var(--font-mono); letter-spacing:.14em;
+  text-transform:uppercase; color:var(--frink3); }
+.qr-pbtns,.qr-names{ display:flex; flex-wrap:wrap; gap:7px; }
+.qr-lrow{ display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; border:0;
+  border-radius:12px; background:var(--frpaper); text-align:left; }
+.qr-lrow.static{ background:none; border-bottom:1px solid var(--frline); border-radius:0; }
+.qr-lrank{ font:700 11px var(--font-mono); color:var(--frink3); min-width:14px; }
+.qr-lnm{ flex:1; min-width:0; font:600 13.5px var(--font-display); color:var(--frink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qr-lst{ font:700 8.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--frink3); }
+.qr-drow{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--frline); }
+.qr-dnm{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.qr-dnm b{ font:600 13.5px var(--font-display); color:var(--frink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qr-dnm em{ font:400 10.5px var(--font-mono); font-style:normal; color:var(--frink3); }
+.qr-dn{ display:flex; flex-direction:column; align-items:center; min-width:40px;
+  font:700 8px var(--font-mono); letter-spacing:.06em; text-transform:uppercase; color:var(--frink3); }
+.qr-dn b{ font:700 15px var(--font-display); color:var(--frink); }
+
 .fr-raildoor{ position:absolute; right:-24px; top:50%; transform:translateY(-50%); font:700 8.5px var(--font-mono); letter-spacing:.16em; color:rgba(255,255,255,.7); writing-mode:vertical-rl; }
 
 /* the lower card: coverage and the four tools */

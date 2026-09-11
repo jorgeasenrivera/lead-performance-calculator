@@ -46,6 +46,98 @@ export function stationPlanOf(config, storeId) {
 /** The seats on a plan, whichever key they were drawn under. */
 export const seatsOf = (plan) => (plan && (plan.seats || plan.tables)) || [];
 
+/* ---- what the room is for ----
+   Three things were asked of one screen, and they are the same screen with one
+   piece turned off rather than three products:
+
+     rotation   the Phone Line feeds the seats. A chair coming free is offered
+                to whoever is next, which is everything phases three and four
+                describe.
+     open       no rotation. People take a desk and the board says who is where
+                and for how long. This is the ordinary case — most stores run
+                no phone up system at all — and it is also the BDC view, where
+                the agents simply sit at their desks and the question is
+                whether they are in them.
+
+   Kept as one mode rather than two flags because "is there a rotation" is the
+   only question that actually differs. Presence, the hourly attribution and
+   the occupancy grid are the same in both, and they are most of the value for
+   a store that never rotates anybody. */
+export const STATION_MODES = ["rotation", "open"];
+
+/** How this store runs its phone room. Rotation is the default so that no
+    store already using the Phone Line changes behaviour by being upgraded. */
+export function stationModeOf(config, storeId) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  const m = st && st.stationMode;
+  return STATION_MODES.includes(m) ? m : "rotation";
+}
+
+/**
+ * Whether this store actually has a phone room.
+ *
+ * Every store gets a default plan so the desk has something to draw, which
+ * means "does a plan exist" cannot be the question — it is always yes. A store
+ * running the Phone Line as a pure call rotation, with no desks at all, would
+ * otherwise be shown six imaginary chairs on its people's phones.
+ *
+ * So the room is real when the store has said so, one of three ways: it drew
+ * its own plan, it chose the desks-only mode, or somebody has actually taken a
+ * desk today. The last one matters because a store using the default six can
+ * start using them without touching a setting, and the room should appear the
+ * moment the first person sits down rather than the day somebody remembers to
+ * configure it.
+ */
+export function roomInUse(config, storeId, row) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  const drawn = st && st.stationPlan && seatsOf(st.stationPlan).length > 0;
+  if (drawn) return true;
+  if (stationModeOf(config, storeId) === "open") return true;
+  if (Object.keys((row && row.stations) || {}).length > 0) return true;
+  return ((row && row.sits) || []).length > 0;
+}
+
+/**
+ * Whose desk this is, when a desk belongs to somebody.
+ *
+ * A BDC agent sits at the same desk every day, and a board that cannot say so
+ * makes you learn six names by their chair. The owner is a LABEL and never a
+ * claim: the desk still reads as empty until they check in, and nothing is
+ * written to the day's record on their behalf.
+ *
+ * That distinction is the whole of it. Seating somebody automatically because
+ * it is usually their chair would put a sit in the record for a person who is
+ * not in the building, and the hours that sit collects would be attributed to
+ * them. The record is worth more than the convenience.
+ */
+export const ownerOf = (seat) => (seat && seat.owner) || null;
+
+/**
+ * The desk's owner, and whether the desk can put them in it.
+ *
+ * Somebody who sits at the same desk every day is the person most likely to
+ * forget to check in — it is their chair, they are in it, and tapping a screen
+ * to say so is the part that does not feel necessary. The desk knows whose
+ * chair it is, so a manager can put them in it in one tap rather than finding
+ * them in a list of everybody.
+ *
+ * Three answers, because the honest ones differ:
+ *   "seat"   the desk is empty and its owner is nowhere else
+ *   "move"   its owner is at a different desk, so this is a move — claimStation
+ *            closes that sit and opens this one, which is right: two open sits
+ *            for one person would double every hour they are counted for
+ *   null     no owner, the owner is already in this chair, or the owner is no
+ *            longer somebody the roster can name
+ */
+export function ownerAction(board, seat, nameOf) {
+  if (!seat || !seat.owner || seat.taken) return null;
+  const name = nameOf ? nameOf(seat.owner) : "";
+  if (!name) return null;
+  const elsewhere = (board || []).find((x) => x && x.taken && x.id === seat.owner);
+  return { id: seat.owner, name, kind: elsewhere ? "move" : "seat",
+    from: elsewhere ? elsewhere.n : null };
+}
+
 /** Which station this person is holding, or null. */
 export function stationOf(row, personId) {
   const all = (row && row.stations) || {};
@@ -143,6 +235,10 @@ export function stationBoard(plan, row) {
     const who = held[String(seat.n)] || null;
     return { ...seat, n: String(seat.n), taken: !!who,
       id: who ? who.id : null, label: who ? who.label : "", at: who ? who.at : null,
+      /* Whose desk it is, drawn or not. Carried on every seat rather than only
+         the empty ones, because "Marisol is at Marisol's desk" and "Marisol is
+         at somebody else's" are different facts and the board can say which. */
+      owner: ownerOf(seat),
       /* `seen` travels with the seat or presence cannot see it: without this
          the board hands presenceOf a seat whose only clock is when they sat
          down, every touch is invisible, and everybody greys fifteen minutes
@@ -438,10 +534,17 @@ export function skipOffer(row, station, now, { by = "the desk", why = "" } = {})
  *   queued    those without a chair already offered to them
  *   next      whoever the next seat to come free belongs to
  */
-export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = HOLD_MS, skip = [] } = {}) {
+export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = HOLD_MS, skip = [],
+  offers = true } = {}) {
   const spoken = new Set();
   const seats = stationPresence(plan, row, { now, onLot, holdMs }).map((seat) => {
-    const offer = offerOf(row, seat.n);
+    /* A room that does not rotate reports no offers, even when the row still
+       carries some. Turning the rotation off has to take the countdowns off
+       the board with it, or a store that switched keeps a chair promised to
+       somebody by a system it no longer runs — and nothing would ever clear
+       it, because the roll that would have moved it on is the thing that was
+       switched off. */
+    const offer = offers ? offerOf(row, seat.n) : null;
     const live = !seat.taken && offer && offer.id && offerLeftMs(offer, now) > 0;
     if (live) spoken.add(offer.id);
     return { ...seat,
@@ -454,4 +557,46 @@ export function stationLine(plan, row, { now = Date.now(), onLot = {}, holdMs = 
   return { seats, waiting, queued, next: queued[0] || null,
     free: seats.filter((s) => !s.taken).length,
     full: seats.length > 0 && seats.every((s) => s.taken) };
+}
+
+/**
+ * The same room, drawn to fill its box.
+ *
+ * A plan is authored for a desk, where a wide short room and a tall empty band
+ * underneath it cost nothing. On a phone that band is a third of the screen
+ * showing nothing, because the map IS the screen there.
+ *
+ * So the vertical coordinates are stretched until the lowest seat, plus room
+ * for the chip that sits on it, reaches the bottom. Everything scales by the
+ * one factor — seats, zones, doors — so the room keeps its shape and the walls
+ * still fall where the seats say they should. Horizontal is left alone: width
+ * is the axis a phone is short of, and stretching it would put the seats
+ * through the walls.
+ *
+ * Never shrinks. A plan whose seats already reach the floor of the box is
+ * handed back untouched, which is also what happens to a plan with no seats on
+ * it at all.
+ */
+export function tightenPlan(plan, { pad = 14 } = {}) {
+  const seats = seatsOf(plan);
+  if (!plan || !seats.length) return plan;
+  const low = Math.max(...seats.map((s) => Number(s.y) || 0));
+  const bottom = low + pad;
+  if (!(bottom > 0) || bottom >= 100) return plan;
+  const k = 100 / bottom;
+  const up = (v) => Math.min(100, Math.round((Number(v) || 0) * k * 10) / 10);
+  const key = plan.seats ? "seats" : "tables";
+  const out = { ...plan, [key]: seats.map((s) => ({ ...s, y: up(s.y) })) };
+  if (plan.seats && plan.tables) delete out.tables;
+  if (Array.isArray(plan.zones)) {
+    out.zones = plan.zones.map((z) => {
+      const y = up(z.y);
+      return { ...z, y, h: Math.min(100 - y, up(z.h)) };
+    });
+  }
+  for (const k2 of ["doors", "cars"]) {
+    if (Array.isArray(plan[k2])) out[k2] = plan[k2].map((d) => ({ ...d, y: up(d.y) }));
+  }
+  if (plan.door) out.door = { ...plan.door, y: up(plan.door.y) };
+  return out;
 }

@@ -482,3 +482,183 @@ test("an open sit does not count as a turn taken", () => {
   row = claimStation(row, "1", DEV, T1).row;
   assert.deepEqual(waitingFor(row).map((p) => p.id), ["p-pri"]);
 });
+
+/* ---- the room, drawn to fill a phone ---- */
+import { tightenPlan } from "../api/_stations.mjs";
+
+test("a plan with a tall empty band underneath it is stretched to fill the box", () => {
+  /* On a desk that band costs nothing. On a phone the map is the screen, and a
+     third of it showing nothing is a third of the screen wasted. */
+  const t = tightenPlan(DEFAULT_STATION_PLAN);
+  const y = (n) => seatsOf(t).find((s) => s.n === n).y;
+  assert.ok(y("1") > 24 && y("4") > 58, "both rows move down");
+  assert.ok(y("4") <= 100 - 1, "and the lowest still leaves room for its chip");
+  assert.ok(y("4") / y("1") - 58 / 24 < 0.01, "the rows keep their spacing");
+});
+
+test("only the vertical is stretched", () => {
+  /* Width is the axis a phone is short of; stretching it would put the seats
+     through the walls. */
+  const t = tightenPlan(DEFAULT_STATION_PLAN);
+  assert.deepEqual(seatsOf(t).map((s) => s.x), seatsOf(DEFAULT_STATION_PLAN).map((s) => s.x));
+});
+
+test("the walls come with the seats, and stay inside the box", () => {
+  const t = tightenPlan(DEFAULT_STATION_PLAN);
+  const z = t.zones[0];
+  assert.ok(z.y + z.h <= 100.01, "no zone hangs out of the room");
+  assert.ok(z.h > 60, "and it still reads as a room rather than a strip");
+});
+
+test("a plan that already fills its box is handed back untouched", () => {
+  const full = { seats: [{ n: "1", x: 10, y: 90 }] };
+  assert.equal(tightenPlan(full), full);
+  assert.equal(tightenPlan({ seats: [] }).seats.length, 0);
+  assert.equal(tightenPlan(null), null);
+});
+
+test("seats drawn under the floor's key survive the stretch", () => {
+  const t = tightenPlan({ tables: [{ n: "1", x: 5, y: 20 }, { n: "2", x: 20, y: 40 }] });
+  assert.equal(seatsOf(t).length, 2);
+  assert.ok(seatsOf(t)[1].y > 40);
+});
+
+/* ---- what the room is for: rotation, or just who is at the desks ---- */
+import { STATION_MODES, stationModeOf, ownerOf } from "../api/_stations.mjs";
+
+test("a store runs a rotation unless it says otherwise", () => {
+  /* The default has to be rotation or every store already using the Phone Line
+     changes behaviour the day this ships. */
+  assert.equal(stationModeOf(null, "a"), "rotation");
+  assert.equal(stationModeOf({ stores: [{ id: "a" }] }, "a"), "rotation");
+  assert.equal(stationModeOf({ stores: [{ id: "a", stationMode: "open" }] }, "a"), "open");
+  assert.deepEqual(STATION_MODES, ["rotation", "open"]);
+});
+
+test("a mode nobody recognises is a rotation", () => {
+  /* A typo in a config should not quietly turn a store's phone room off. */
+  for (const m of ["", "bdc", "OPEN", null, 3]) {
+    assert.equal(stationModeOf({ stores: [{ id: "a", stationMode: m }] }, "a"), "rotation", String(m));
+  }
+});
+
+test("a desk can belong to somebody without being claimed by them", () => {
+  /* The whole of the BDC view. Seating somebody because it is usually their
+     chair would put a sit in the record for a person who is not in the
+     building, and the hours that sit collects would be attributed to them. */
+  const plan = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }, { n: "2", x: 40, y: 10 }] };
+  const board = stationBoard(plan, {});
+  const one = board.find((s) => s.n === "1");
+  assert.equal(one.owner, "p-dev");
+  assert.equal(one.taken, false, "a name on a desk is not a person in it");
+  assert.equal(one.id, null);
+  assert.equal(board.find((s) => s.n === "2").owner, null);
+  assert.equal(ownerOf(null), null);
+});
+
+test("who is in a desk and whose desk it is are two different facts", () => {
+  const plan = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }] };
+  const row = claimStation({}, "1", PRI, T1).row;
+  const seat = stationBoard(plan, row).find((s) => s.n === "1");
+  assert.equal(seat.owner, "p-dev");
+  assert.equal(seat.id, "p-pri", "and the board can say somebody is in somebody else's chair");
+});
+
+test("an owned desk still greys and frees like any other", () => {
+  const plan = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }] };
+  const row = claimStation({}, "1", DEV, T1).row;
+  const seat = stationPresence(plan, row, { now: NOW(20) }).find((s) => s.n === "1");
+  assert.equal(seat.state, "held");
+  assert.equal(seat.owner, "p-dev");
+});
+
+test("a room that does not rotate shows no offers, even with some on the row", () => {
+  /* Switching the rotation off has to take the countdowns off the board with
+     it. Nothing else would ever clear them: the roll that moves an offer on is
+     the very thing that was switched off. */
+  const row = roll(inLine(DEV, PRI), TWO, 0).row;
+  const on = stationLine(TWO, row, { now: NOW(1) });
+  assert.equal(on.seats.find((s) => s.n === "1").offerTo, "p-dev");
+  const off = stationLine(TWO, row, { now: NOW(1), offers: false });
+  assert.equal(off.seats.find((s) => s.n === "1").offerTo, null);
+  assert.equal(off.seats.find((s) => s.n === "1").offerLeftMs, 0);
+  assert.deepEqual(off.queued.map((p) => p.id), ["p-dev", "p-pri"],
+    "and nobody is held back as already spoken for");
+});
+
+/* ---- putting somebody in the desk they forgot to check into ---- */
+import { ownerAction } from "../api/_stations.mjs";
+
+const OWNED = { seats: [{ n: "1", x: 10, y: 10, owner: "p-dev" }, { n: "2", x: 40, y: 10 }] };
+const named = (id) => ({ "p-dev": "Dev Okonjo", "p-pri": "Priya Ramanan" })[id] || "";
+
+test("an empty desk offers to seat the person whose desk it is", () => {
+  /* The person most likely to have forgotten to check in is the one who sits
+     there every day, and hunting for them in a list of everybody is the thing
+     this saves. */
+  const board = stationBoard(OWNED, {});
+  const a = ownerAction(board, board.find((s) => s.n === "1"), named);
+  assert.equal(a.kind, "seat");
+  assert.equal(a.name, "Dev Okonjo");
+  assert.equal(a.from, null);
+});
+
+test("a desk with no owner offers nobody in particular", () => {
+  const board = stationBoard(OWNED, {});
+  assert.equal(ownerAction(board, board.find((s) => s.n === "2"), named), null);
+});
+
+test("an owner sitting somewhere else is a move, not a second sit", () => {
+  /* claimStation closes the old stretch and opens a new one. Two open sits for
+     one person would double every hour they are counted for. */
+  const row = claimStation({}, "2", DEV, T1).row;
+  const board = stationBoard(OWNED, row);
+  const a = ownerAction(board, board.find((s) => s.n === "1"), named);
+  assert.equal(a.kind, "move");
+  assert.equal(a.from, "2");
+  const after = claimStation(row, "1", { id: a.id, label: a.name }, T2).row;
+  assert.equal(stationOf(after, "p-dev"), "1");
+  assert.equal(after.sits.filter((s) => !s.out).length, 1);
+});
+
+test("a desk its owner is already in offers nothing", () => {
+  const row = claimStation({}, "1", DEV, T1).row;
+  const board = stationBoard(OWNED, row);
+  assert.equal(ownerAction(board, board.find((s) => s.n === "1"), named), null);
+});
+
+test("an owner who has left the roster is not offered", () => {
+  /* A name the store can no longer resolve is not a person a manager can seat,
+     and "Seat " with nothing after it is worse than no button. */
+  const board = stationBoard({ seats: [{ n: "1", x: 5, y: 5, owner: "p-gone" }] }, {});
+  assert.equal(ownerAction(board, board[0], named), null);
+  assert.equal(ownerAction(board, board[0], null), null);
+});
+
+/* ---- does this store have a phone room at all ---- */
+import { roomInUse } from "../api/_stations.mjs";
+
+test("a store with no desks is not shown six imaginary ones", () => {
+  /* Every store gets a default plan so the desk has something to draw, so
+     "does a plan exist" is always yes and cannot be the question. A store
+     running the Phone Line as a pure call rotation has no room. */
+  assert.equal(roomInUse({ stores: [{ id: "a" }] }, "a", {}), false);
+  assert.equal(roomInUse(null, "a", null), false);
+});
+
+test("a store says it has a room by drawing one, choosing the mode, or using it", () => {
+  const drew = { stores: [{ id: "a", stationPlan: { seats: [{ n: "1", x: 5, y: 5 }] } }] };
+  assert.equal(roomInUse(drew, "a", {}), true, "drew its own plan");
+  assert.equal(roomInUse({ stores: [{ id: "a", stationMode: "open" }] }, "a", {}), true, "chose the desks");
+  /* And a store on the default six starts using them without touching a
+     setting: the room appears when the first person sits down. */
+  const row = claimStation({}, "3", DEV, T1).row;
+  assert.equal(roomInUse({ stores: [{ id: "a" }] }, "a", row), true, "somebody is in a chair");
+  const after = releaseStation(row, "3", T2, "out").row;
+  assert.equal(roomInUse({ stores: [{ id: "a" }] }, "a", after), true, "and it stays for the rest of the day");
+});
+
+test("an empty drawn plan is not a room", () => {
+  /* Somebody started arranging and did not finish. */
+  assert.equal(roomInUse({ stores: [{ id: "a", stationPlan: { seats: [] } }] }, "a", {}), false);
+});
