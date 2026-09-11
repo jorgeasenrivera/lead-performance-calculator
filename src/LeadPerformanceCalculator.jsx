@@ -4930,6 +4930,7 @@ function LEADERBOARD_HTML(p) {
     <span>Text size <b id="v-t">100%</b></span>
     <input id="s-t" type="range" min="60" max="160" step="5" value="100">
   </label>
+  <p class="tuner-hint">For the store on the wall right now. A screen that rotates keeps a size for each store.</p>
 
   <label class="tuner-row">
     <span>Horizontal squeeze <b id="v-s">100%</b></span>
@@ -5589,12 +5590,26 @@ function LEADERBOARD_HTML(p) {
         if (d[k] != null) return d[k];
         return dflt;
       };
-      DISP.tscale  = pick('tscale', 1);
       DISP.style   = pick('style', DISP.style);
       DISP.bg      = pick('bg', DISP.bg);
       DISP.squeeze = pick('squeeze', 1);
       DISP.pad     = pick('pad', 0);
       DISP.rotate  = pick('rotate', []) || [];
+      /* A screen tuned before text size became per store keeps its size for
+         the store it was opened for. */
+      if (mine.tscale != null && !tsizeMine(HOME.id)) tsizeKeep(HOME.id, mine.tscale);
+    }
+    /* Text size is the one setting that belongs to the team, not the
+       television: a fifteen-person store and a three-person store on the same
+       rota need different sizes, and one number stamped over both left the
+       small store's rows the wrong size. So it is picked again at every
+       hand-over: this screen's own setting for the store on the wall, else what
+       the store published, else one. */
+    if (!LAST || switched) {
+      var own = tsizeMine(CFG.storeId);
+      var pub = (s && !s.__err && s.boardDisplay && s.boardDisplay.tscale != null) ? s.boardDisplay.tscale : null;
+      DISP.tscale = own != null ? own : (pub != null ? pub : 1);
+      applyDisp();
     }
     /* Its own row is the authority on who a store is: the sibling list only
        carries a name, and brand, icon and thresholds all differ per store. */
@@ -5729,6 +5744,9 @@ function LEADERBOARD_HTML(p) {
   // Read whatever was saved for this store, and let the person at the TV change it.
   var DISP = { tscale: 1, squeeze: 1, pad: 0, style: 'classic', bg: 'navy', rotate: [] };
   var DKEY = 'lpc:disp:' + (CFG.storeId || 'board');
+  /* the text size this screen was given for one store, kept by that store */
+  function tsizeMine(id){ try { var v = localStorage.getItem('lpc:disp:t:' + id); return v == null ? null : Number(v); } catch (e) { return null; } }
+  function tsizeKeep(id, v){ try { localStorage.setItem('lpc:disp:t:' + id, String(v)); } catch (e) {} }
 
   function applyDisp(){
     var b = CFG.brand || {};
@@ -5829,14 +5847,24 @@ function LEADERBOARD_HTML(p) {
         // Always keep it on the screen itself first, so a reboot, a nightly
         // reload or a new build cannot undo what someone set by hand.
         var kept = false;
-        try { localStorage.setItem(DKEY, JSON.stringify(DISP)); kept = true; } catch (e) {}
+        try { localStorage.setItem(DKEY, JSON.stringify(DISP)); tsizeKeep(CFG.storeId, DISP.tscale); kept = true; } catch (e) {}
         var op = window.opener || (window.parent !== window ? window.parent : null);
         if (op && op.__lpcSaveBoardDisplay) {
-          /* HOME.id, not CFG.storeId: the tuner can be opened while the screen is
-             part-way round its rota, and CFG.storeId is whichever store is on the
-             wall at that moment. These settings belong to the board this screen
-             was opened for. */
-          var ok = await op.__lpcSaveBoardDisplay(HOME.id, DISP);
+          /* The look of the board belongs to the board this screen was opened
+             for, HOME, however far round its rota it is. The text size belongs
+             to the store on the wall right now, so it is published to that
+             store, merged into what it already had. */
+          var ok = true;
+          if (CFG.storeId === HOME.id) {
+            ok = await op.__lpcSaveBoardDisplay(HOME.id, DISP);
+          } else {
+            var cur = (LAST && !LAST.__err && LAST.boardDisplay) ? LAST.boardDisplay : {};
+            var curNext = {}; for (var ck in cur) curNext[ck] = cur[ck]; curNext.tscale = DISP.tscale;
+            var home = await getStoreByKey(HOME.key);
+            var homeNext = {}; for (var dk in DISP) homeNext[dk] = DISP[dk];
+            homeNext.tscale = (home && !home.__err && home.boardDisplay && home.boardDisplay.tscale != null) ? home.boardDisplay.tscale : 1;
+            ok = (await op.__lpcSaveBoardDisplay(CFG.storeId, curNext)) && (await op.__lpcSaveBoardDisplay(HOME.id, homeNext));
+          }
           msg.textContent = ok ? 'Saved for this store, on every screen.' : (kept ? 'Saved on this screen only.' : 'Could not save.');
         } else {
           msg.textContent = kept ? 'Saved on this screen. Save from the tool to set it everywhere.' : 'Could not save.';
