@@ -10,7 +10,7 @@ import { createClient } from "@supabase/supabase-js";
    the app's iconography come off one ruler. Its own file because it is shipped
    artwork rather than a screen: every size, plate and print form is generated
    from the single pattern inside it. */
-import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED, SAGE_PRINT } from "./SageMark.jsx";
+import SageMark, { sageDots, SAGE_PLATE, SAGE_BASE_REVERSED, SAGE_CAP_REVERSED } from "./SageMark.jsx";
 /* The reader for the scheduled reports, shared verbatim with the pipeline that
    reads the emailed ones. It used to be a second copy of the same code with a
    comment promising they matched; they did not, and every way they differed was
@@ -25,9 +25,9 @@ import {
   BOARD_STAT_FIELDS, slimFloorStats, withChannels,
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
-import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
-import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
-  releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
+import { stampHours } from "../api/_hours.mjs";
+import { stationPlanOf, claimStation, releaseStation,
+  releasePerson, stationOf, sitsFor,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
   stationModeOf, DEFAULT_STATION_PLAN, ownerAction, roomInUse, OFFER_MS } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
@@ -46,8 +46,8 @@ import { assistWhere } from "../api/_queue-notify.mjs";
    quietly broken in the same way. */
 import { setStatus as setPersonStatus, statusOf, everyone as everyPerson, unclaimed,
   admitsEveryone, holdPerson, pendingList, claimPending, dropPending,
-  packUp, transferIn, transferOut, priorFor, likelyMatches, sameAs, servedOn,
-  manglings, mergeManglings, foldAliases, folds, unfold } from "../api/_people-status.mjs";
+  packUp, transferOut, likelyMatches, sameAs, servedOn,
+  manglings, mergeManglings, folds, unfold } from "../api/_people-status.mjs";
 /* Two copies of a store, folded into one. Out here rather than in this file so
    that it can be imported and checked; see the note at the top of it. */
 import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
@@ -55,7 +55,7 @@ import { mergeAgainstServer, normTag } from "../api/_store-merge.mjs";
    rule and what counts as a bad day are in one file so the manager's screen and
    the salesperson's phone can never come to two different answers about the same
    week; see the note at the top of it. */
-import { goalStanding, dayBelow, didWork, notesFor, owesNote, makeNote, addNote,
+import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 /* The rules for what a claim of "I'm with a customer" has to be backed by live
    next to the code that will one day raise them from a phone, not here, so that
@@ -250,20 +250,6 @@ function seedExampleFigures(data, name) {
   }
   return next;
 }
-/* ---- Tags ----
-   A tag says what somebody can be handed. Two kinds, deliberately:
-
-   A SKILL is a fact. Speaks Spanish, knows trucks, handles finance. Either true or
-   not, and a manager sets it.
-
-   A STRENGTH is earned. It is not typed in by anybody: the tool works out who is
-   genuinely ahead on that thing over the last 90 days and marks them. That is the
-   difference between "can take a truck up" and "is the person you want on a truck".
-
-   Tags never skip anybody and never reorder a queue. They are there to be seen, so
-   that when a manager does go out of order they are choosing with the facts in front
-   of them, and that choice still has to carry a reason. */
-const TAG_KINDS = { skill: "Skill", strength: "Strength" };
 const DEFAULT_TAGS = [
   { id: "trucks", label: "Trucks", kind: "skill" },
   { id: "finance", label: "Finance", kind: "skill" },
@@ -624,24 +610,6 @@ const showsOutreach = (store) => store
       : OUTREACH_COLUMN_STORES.includes(store.id))
   : false;
 
-/* ---- when the day's numbers are called final ----
-   A store sets the hour it expects the last activity report to have landed, plus a
-   grace window, because the report is emailed, forwarded by a worker and parsed by a
-   serverless function, so a 7pm cutoff genuinely lands at 7:11 some evenings.
-   Treating that as a miss would cry wolf most weeks.
-
-   THERE IS NO ROLLING "QUIET FOR AN HOUR" CHECK, AND THERE SHOULD NOT BE ONE.
-   The first version had one, and Cloudflare's own logs killed it on day one: the
-   DriveCentric reports are SCHEDULED, and the schedule is right there in the subject
-   lines ("Daily Activity 1:30 - CH", "Daily Summary 2:30 - HH"). They all land in an
-   early-afternoon burst and then there is nothing more until tomorrow, because there
-   is nothing more due. A gap-since-last-import rule turns every ordinary evening
-   amber from about half past two onward, and a warning that is always on is a
-   warning nobody reads.
-
-   What actually matters is whether the day's numbers arrived at all, so that is the
-   only thing asked. Silence after the last scheduled report is not a fault. */
-const DEFAULT_REPORT_CUTOFF = { at: "19:00", graceMin: 30 };
 const cutoffFor = (store) => ({ ...DEFAULT_REPORT_CUTOFF, ...((store && store.reportCutoff) || {}) });
 
 const fmtClock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -668,13 +636,6 @@ function reportFreshness(store, rows, now = new Date()) {
 const DEFAULT_ACTIVITY_STANDARDS = { minCalls: 16, minVideos: 2, minStars: 0, rockEdStars: 40,
   repeatDays: 3, repeatWindow: 5, taskBar: 80 };
 
-// ---- Days off + the Check Out point system ----
-// Off-days live in data.daysOff, keyed by association id, as a set of YYYY-MM-DD.
-// A day off is excluded entirely: no points, and it does not count toward days worked.
-function offDaysFor(data, aId) {
-  const set = data.daysOff?.[aId];
-  return set ? new Set(set) : new Set();
-}
 // Someone can only be counted absent while there is no sign of them. A person who
 // was scheduled off but is making calls, sending videos or standing in the line was
 // clearly here, and the schedule is simply out of date. Evidence wins over the plan,
@@ -1761,8 +1722,6 @@ async function saveActivityDays(storeId, next, prev) {
    store policy, gated by has_store(split_part(key,':',3)) — the same rule the
    split activity rows already ride on, so it needs no SQL change at all. */
 const digestKey = (storeId, day) => `lpc:store:${storeId}:digest:${day}`;
-const DIGEST_KEEP = 30;
-
 /* The round-up and both delivery charts all want the same rows. One promise per
    store, so opening a board does not fetch them three times. */
 const digestCache = new Map();
@@ -2262,20 +2221,6 @@ function markDeparted(data, assoc, by) {
   next.roster = (next.roster || []).filter((x) => x.id !== assoc.id);
   next.departed = [...(next.departed || []).filter((x) => norm(x.name) !== norm(assoc.name)),
     { id: assoc.id, name: assoc.name, roleId: assoc.roleId || null, at: new Date().toISOString(), by: by || "-" }];
-  return next;
-}
-
-// Put someone back, exactly as they were.
-function undoDeparted(data, name) {
-  const next = JSON.parse(JSON.stringify(data));
-  const rec = (next.departed || []).find((x) => norm(x.name) === norm(name));
-  next.departed = (next.departed || []).filter((x) => norm(x.name) !== norm(name));
-  // Recorded, for the same reason a removal from the ignore list is: every other
-  // browser still has them on the departed list.
-  next.returned = { ...(next.returned || {}), [norm(name)]: new Date().toISOString() };
-  if (rec && !(next.roster || []).some((x) => norm(x.name) === norm(name))) {
-    next.roster = [...(next.roster || []), { id: rec.id || uid(), name: rec.name, roleId: rec.roleId || null, order: (next.roster || []).length }];
-  }
   return next;
 }
 
@@ -5885,84 +5830,6 @@ function LEADERBOARD_HTML(p) {
 </script></body></html>`;
 }
 
-/* ---------------- Cinematic loading sequence ----------------
-   Plays on the first sign-in of each calendar day. The Lead Performance logo whooshes
-   in, fills the back, and morphs into a decorative version of The Board (no real data),
-   then hands off into the Performance page. ~10 seconds, then onComplete fires. A Skip
-   affordance appears only after someone has seen it a few times. */
-/* ---------------- Sign-in handover, part two ----------------
-   The mark left the login card growing. This picks it up at exactly that size,
-   blooms it into the page, and assembles the shape of the manager's own dashboard
-   underneath it, so the last frame of the animation IS the first frame of the app.
-   No stand-in table of invented names, no full-screen blue: the aurora and the card
-   shapes are the ones already on the page. */
-/* Each manufacturer has a house typeface. These are the closest widely available
-   matches, loaded on demand rather than shipped with the page, so a store's name
-   is set in something that looks like its own brand rather than ours. */
-const BRAND_FONTS = [
-  [/honda/i,               "Roboto",         "wght@700"],
-  [/acura/i,               "Roboto",         "wght@700"],
-  [/mazda/i,               "Jost",           "wght@600"],
-  [/audi/i,                "Barlow",         "wght@700"],
-  [/hyundai|genesis/i,     "Titillium+Web",  "wght@700"],
-  [/ford|lincoln/i,        "Archivo",        "wght@700"],
-  [/mitsubishi/i,          "Inter",          "wght@700"],
-  [/vinfast/i,             "Poppins",        "wght@600"],
-  [/kia/i,                 "Rubik",          "wght@700"],
-  [/toyota|lexus/i,        "Nunito+Sans",    "wght@700"],
-  [/chevrolet|gmc|buick/i, "Overpass",       "wght@700"],
-];
-function inkOn(bg) {
-  const hex = String(bg || "").trim().replace("#", "");
-  const full = hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex;
-  if (full.length !== 6) return "#FFFFFF";
-  const lin = (v) => { const s = parseInt(v, 16) / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
-  const L = 0.2126 * lin(full.slice(0, 2)) + 0.7152 * lin(full.slice(2, 4)) + 0.0722 * lin(full.slice(4, 6));
-  // 0.45 sits between the contrast ratios for black and white against mid tones
-  return L > 0.45 ? "#101820" : "#FFFFFF";
-}
-
-/* A translucent plate on the store's own colour, and the ink that reads on it.
-
-   The chip belongs to the hero, and everything else on the hero is white, so
-   white is what it should be too — a lone black label on a wall of white text
-   reads as a mistake even when it is legible.
-
-   The first version was white on a 22%-WHITE plate, which lightens the plate
-   toward the text and measured 2.36:1 on the Driver's Mart teal. The second
-   picked whichever direction scored highest, which took that store to black.
-   Both were wrong in the same way: the plate is the thing to move, not the ink.
-   Darkening it 36% carries white on every brand in play — Driver's Mart 6.3,
-   Honda 10.7, Chevrolet 12.9, Mazda 13.4 — and only a genuinely pale brand
-   (2.9) or a yellow one (3.9) fails, which is where the ink does flip. */
-function chipOn(bg) {
-  const raw = String(bg || "").trim().replace("#", "");
-  // #0A9 and #00AA99 are the same colour; only one of them survives a /../ split
-  const full = /^[0-9a-f]{3}$/i.test(raw) ? raw.split("").map((c) => c + c).join("") : raw;
-  const parts = /^[0-9a-f]{6}$/i.test(full) ? full.match(/../g) : null;
-  if (!parts) return { ink: "#FFFFFF", plate: "rgba(255,255,255,.22)" };
-  const rgb = parts.slice(0, 3).map((v) => parseInt(v, 16));
-  const hx = (a) => "#" + a.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0")).join("");
-  const over = (t, a) => hx(rgb.map((v, i) => v + (t[i] - v) * a));
-  const lum = (h) => {
-    const c = h.replace("#", "").match(/../g).map((v) => parseInt(v, 16) / 255);
-    const g = (s) => (s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4));
-    return 0.2126 * g(c[0]) + 0.7152 * g(c[1]) + 0.0722 * g(c[2]);
-  };
-  const ratio = (a, b) => {
-    const x = lum(a), y = lum(b);
-    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
-  };
-  const dark = over([0, 0, 0], 0.36);
-  if (ratio("#FFFFFF", dark) >= 4.5) return { ink: "#FFFFFF", plate: dark };
-  return { ink: "#101820", plate: over([255, 255, 255], 0.62) };
-}
-
-function brandFontFor(name) {
-  const hit = BRAND_FONTS.find(([re]) => re.test(String(name || "")));
-  return hit ? { family: hit[1].replace(/\+/g, " "), spec: hit[1], axis: hit[2] } : null;
-}
-
 /* The cinematic that used to live here is gone: SageArrival replaced it. It
    drew a stand-in dashboard of invented shapes for three and a half seconds,
    which the new one does not need because it hands over to the real one. */
@@ -6629,10 +6496,6 @@ function Overlay({ children }) {
   if (typeof document === "undefined") return children;
   return createPortal(children, document.body);
 }
-
-/* Keyed on the report field an item ticks from, not the item id, because a store can
-   rename "Calls" but it still reads the calls column. */
-const AUTO_TONE = { calls: "a", video: "b", tasks: "c" };
 
 /* ---- Floorside helpers ------------------------------------------------- */
 /* Which field on the activity row each of the day's five numbers reads. Named
@@ -9769,18 +9632,6 @@ const FLOOR_VARIANT = {
   empty: "Nobody's on the floor yet. Post the code, or add someone below.",
 };
 
-/* ---- hand-drawn line icons (currentColor, no emoji) ---- */
-function QPhoneIcon({ className }) {
-  return <PixIcon glyph="phone" size={16} className={className} />;
-}
-function QClockIcon({ className }) {
-  return <PixIcon glyph="clock" size={22} className={className} />;
-}
-function QFlagIcon({ status, className }) {
-  const g = status === "lunch" ? "lunch" : status === "away" ? "away" : status === "customer" ? "user" : null;
-  return g ? <PixIcon glyph={g} size={18} className={className} /> : null;
-}
-
 const shortLabel = (name) => {
   const p = String(name || "").trim().split(/\s+/).filter(Boolean);
   return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || "");
@@ -11696,9 +11547,6 @@ function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3, dim = "rgba(25
     </div>
   );
 }
-function LivingAura({ color = "#4c8bf5", active = false, className = "" }) {
-  return <div className={"living-aura " + (active ? "aura-hot " : "") + className} style={{ "--aura": color }} aria-hidden="true" />;
-}
 // deterministic soft color from a name, for initials avatars
 function hueFromName(s) {
   let h = 0; const str = String(s || "");
@@ -11709,19 +11557,6 @@ function initialsOf(name) {
   const p = String(name || "").trim().split(/\s+/).filter(Boolean);
   return ((p[0] || "")[0] || "").toUpperCase() + ((p[1] || "")[0] || "").toUpperCase();
 }
-function AvatarStack({ names, max = 5, accent = "#4c8bf5" }) {
-  const shown = names.slice(0, max);
-  const extra = names.length - shown.length;
-  return (
-    <div className="av-stack">
-      {shown.map((nm, i) => (
-        <span key={i} className="av-chip" style={{ background: `hsl(${hueFromName(nm)} 62% 46%)`, zIndex: max - i }} title={nm}>{initialsOf(nm)}</span>
-      ))}
-      {extra > 0 && <span className="av-chip av-more" style={{ zIndex: 0 }}>+{extra}</span>}
-    </div>
-  );
-}
-
 /* A panel that opens over the page instead of pushing it down. The floor tools
    used to unfold PINs and the sign-in code inline, which shoved the queue - the
    thing being looked at - off the bottom of the screen. Same frosted backdrop
@@ -12068,22 +11903,6 @@ function computeFloorMetrics({ line, roster, data, date, history, oppActions }) 
   const health = Math.round(100 * (0.40 * coverage + 0.25 * fairnessScore + 0.20 * flow + 0.15 * readiness));
   return { scheduled, onFloor, ready, withCust, coverage, utilization, avgWaitMin, fairness: totalOpps > 0 ? fairnessRaw : null, health, notSignedIn: Math.max(0, scheduled - onFloor) };
 }
-const mfPct = (x) => Math.round((x || 0) * 100) + "%";
-function healthTone(h) { return h >= 85 ? { label: "Healthy", key: "green" } : h >= 65 ? { label: "Fair", key: "amber" } : { label: "Low", key: "red" }; }
-
-function Gauge({ pct, size = 76, width = 9, tone = "green", label, sub }) {
-  const r = (size - width) / 2, c = 2 * Math.PI * r, dash = Math.max(0, Math.min(1, pct || 0)) * c;
-  return (
-    <div className="icg" style={{ width: size, height: size }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--mf-track)" strokeWidth={width} />
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className={"icg-fg icg-" + tone} strokeWidth={width} strokeLinecap="round"
-          strokeDasharray={`${dash} ${c - dash}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-      </svg>
-      <div className="icg-val">{label}{sub && <span className="icg-sub">{sub}</span>}</div>
-    </div>
-  );
-}
 /* Tasks are not pass or fail like calls and videos: nobody clears every task every
    day, and a store that demanded it would be teaching people to close tasks rather
    than work them. Eighty per cent is the line, marked on the dial, so the shape says
@@ -12123,49 +11942,6 @@ function TaskDial({ done, posted, target = 0.8, size = 38 }) {
         </text>
       </svg>
     </span>
-  );
-}
-
-function GaugeCard({ label, value, pct, tone }) {
-  return (
-    <div className="ic-card">
-      <Gauge pct={pct} size={62} width={7} tone={tone} label={<span className="ic-card-n">{String(value).replace(/\s*min$/, "")}</span>} />
-      <div className="ic-card-meta"><div className="ic-card-l">{label}</div><div className="ic-card-v">{value}</div></div>
-    </div>
-  );
-}
-function InstrumentCluster({ metrics, kind, actions }) {
-  const m = metrics, tone = healthTone(m.health);
-  const covTone = m.coverage >= 0.85 ? "green" : m.coverage >= 0.6 ? "amber" : "red";
-  const utilTone = m.utilization >= 0.35 ? "green" : "amber";
-  const waitTone = m.avgWaitMin <= 20 ? "green" : m.avgWaitMin <= 40 ? "amber" : "red";
-  const sup = [
-    ["Coverage", mfPct(m.coverage), covTone],
-    ["Utilization", mfPct(m.utilization), utilTone],
-    ["Fairness", m.fairness == null ? "n/a" : mfPct(m.fairness), m.fairness == null ? "amber" : m.fairness >= 0.8 ? "green" : "amber"],
-    ["Avg wait", m.avgWaitMin + " min", waitTone],
-  ];
-  return (
-    <div className="ic">
-      <div className="ic-health">
-        <div className="ic-health-head">Floor Health <span className={"ic-pill ic-" + tone.key}>{tone.label}</span></div>
-        <div className="ic-health-body">
-          <Gauge pct={m.health / 100} size={132} width={14} tone={tone.key} label={<span className="ic-health-n">{m.health}</span>} sub="FLOOR HEALTH" />
-          <div className="ic-sup">
-            {sup.map(([l, v, t]) => (
-              <div key={l} className="ic-sup-row"><span className={"ic-dot ic-" + t} /><span className="ic-sup-l">{l}</span><span className="ic-sup-v">{v}</span></div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="ic-gauges">
-        <GaugeCard label="Coverage" value={mfPct(m.coverage)} pct={m.coverage} tone={covTone} />
-        <GaugeCard label="Utilization" value={mfPct(m.utilization)} pct={m.utilization} tone={utilTone} />
-        <GaugeCard label="Avg wait" value={m.avgWaitMin + " min"} pct={Math.min(1, m.avgWaitMin / 30)} tone={waitTone} />
-        <GaugeCard label="Hand raises" value={String(m.ready)} pct={m.onFloor > 0 ? m.ready / m.onFloor : 0} tone={m.ready > 0 ? "green" : "amber"} />
-      </div>
-      {actions && <div className="ic-actions">{actions}</div>}
-    </div>
   );
 }
 
@@ -13691,18 +13467,6 @@ const FLOOR_DEFAULT_EVENT_MAP = {
   "Prospect Sold - Pending": "sold",
 };
 
-const FLOOR_DEFAULT_CONFIG = {
-  enabled: true,
-  dealershipNorms: [],     // e.g. ["driver s mart winter park"]
-  eventMap: {},            // per-store overrides merged over the default map
-  timerOn: false,
-  timerMins: 45,
-  soldAscent: 3,           // spots to jump on a sale — never into the top 3
-  apptAscent: 2,           // spots to jump when an appointment shows (favored)
-  accidentalWindowMins: 5, // self-reverse window after an auto check-in
-  overrideCalls: 2,        // ">2 calls AND >2 videos" marks a rep present today
-  overrideVideos: 2,
-};
 function floorCfg(store) {
   const c = (store && store.floorConfig) || {};
   return { ...FLOOR_DEFAULT_CONFIG, ...c };
@@ -13711,13 +13475,6 @@ function floorEventMap(store) {
   return { ...FLOOR_DEFAULT_EVENT_MAP, ...((store && store.floorConfig && store.floorConfig.eventMap) || {}) };
 }
 
-/* ---- hand-drawn line icons (currentColor, no emoji) ---- */
-function FDoorIcon({ className }) {
-  return <PixIcon glyph="door" size={16} className={className} />;
-}
-function FHandshakeIcon({ className }) {
-  return <PixIcon glyph="handshake" size={20} className={className} />;
-}
 function FApptIcon({ className }) {
   return <PixIcon glyph="calendar" size={16} className={className} />;
 }
@@ -20225,19 +19982,6 @@ let _xlsxPromise = null;
 /* Load pdf.js from a CDN the first time a PDF schedule is opened. Like the xlsx loader,
    this keeps the Vite build free of the dependency. */
 let _pdfjsPromise = null;
-/* ---------------- PDF calendar schedule parser ----------------
-   A digitally-exported schedule PDF lays out a month as a calendar: 7 day columns
-   (Sun–Sat), each day cell holding a date number and a list of "Name shift" / "Name OFF"
-   / "Name VAC" lines. We take pdf.js text items (each with an x/y position), cluster them
-   into columns and rows to reconstruct the cells, find each cell's date, and read the
-   off/VAC lines. Names are matched to the store roster (first name is enough here). */
-function parsePdfItems(items, pageWidth) {
-  // items: [{ str, x, y }] with y increasing downward
-  // 1) find the 7 day-column x-centers from the weekday header band (top of page)
-  const cleaned = items.map((it) => ({ str: (it.str || "").trim(), x: it.x, y: it.y })).filter((it) => it.str);
-  return cleaned;
-}
-
 // Turn positioned text items into per-person off-days for the target month.
 function parsePdfSchedule(items, pageWidth, roster, targetYear, targetMonth) {
   const cleaned = items.map((it) => ({ str: (it.str || "").trim(), x: it.x, y: it.y })).filter((it) => it.str);
@@ -22718,21 +22462,6 @@ function ThresholdGrid({ value, onChange }) {
   );
 }
 
-/* ---------------- Activity Standards Editor ---------------- */
-function StoreStepper({ label, value, onChange, hint }) {
-  return (
-    <div className="stepper-block">
-      <div className="stepper-label">{label}</div>
-      <div className="stepper">
-        <button className="stepper-btn" onClick={() => onChange(value - 1)} disabled={value <= 1}>&minus;</button>
-        <div className="stepper-value">{value}</div>
-        <button className="stepper-btn" onClick={() => onChange(value + 1)}>+</button>
-      </div>
-      <div className="stepper-hint">{hint}</div>
-    </div>
-  );
-}
-
 /* What the floor is asked to do, in the store's own words. The three that tick
    themselves are fixed and shown greyed, because they are tied to fields in the
    reports; a manager cannot invent one of those. The rest are theirs. */
@@ -23172,26 +22901,6 @@ function buildRoundUp({ config, store, data, M, digests }) {
 
   return { improved, worsened, work, aware, trendable: daysOnFile.enough, days: daysOnFile.n, rated: !!was,
     any: improved.length + worsened.length + work.length + aware.length > 0 };
-}
-
-const RU_SECTIONS = [
-  { key: "improved", label: "What improved", tone: "up", glyph: "triup" },
-  { key: "worsened", label: "What worsened", tone: "down", glyph: "tridown" },
-  { key: "work", label: "Work on this", tone: "watch", glyph: "bolt" },
-  { key: "aware", label: "Be aware", tone: "watch", glyph: "warn" },
-];
-
-function RuFinding({ item, tone, delay }) {
-  return (
-    <div className="ru-find" style={{ animationDelay: delay + "ms" }}>
-      <span className={"ru-find-ico ru-" + tone}><PixIcon glyph={tone === "up" ? "triup" : tone === "down" ? "tridown" : "warn"} size={15} /></span>
-      <span className="ru-find-body">
-        <span className="ru-find-t">{item.t}</span>
-        <span className="ru-find-d">{item.d}</span>
-      </span>
-      {item.v && <span className={"ru-chip ru-" + tone}>{item.v}</span>}
-    </div>
-  );
 }
 
 /* The strip is what survives daily use. The fuller sequence runs once, on the
@@ -24452,116 +24161,6 @@ const DETAIL_CHANNELS = [
   { id: "phone", pct: "phonePct", units: "phoneUnits", label: "Phone" },
   { id: "showroom", pct: "showroomPct", units: "showroomUnits", label: "Showroom" },
 ];
-
-/* 14% stored as 0.14 and multiplied back out is 14.000000000000002, and a
-   target rendered to sixteen decimals reads as a bug in the standard rather
-   than a bug in binary floating point. Three decimals is finer than any
-   standard is ever set, and trailing zeros go. */
-const trim = (n) => String(Math.round(n * 1000) / 1000);
-
-function DetailBar({ label, value, target, kind }) {
-  const has = value != null && target > 0;
-  const of = has ? (value / target) * 100 : 0;
-  const state = !has ? "dim" : of >= 100 ? "ok" : of >= 75 ? "near" : "stop";
-  const shown = Math.min(100, (of / 125) * 100);        // 125% of target is the full width
-  const tick = (100 / 125) * 100;                        // where the target sits
-  return (
-    <div className={"dbar dbar-" + state}>
-      <div className="dbar-head">
-        <span className="dbar-lbl">{label}</span>
-        <b className="dbar-val">{value == null ? "—" : kind === "pct" ? fmtPct(value) : fmtNum(value)}</b>
-      </div>
-      <div className="dbar-track">
-        <i className="dbar-fill" style={{ width: shown + "%" }} />
-        <span className="dbar-tick" style={{ left: tick + "%" }} />
-      </div>
-      <div className="dbar-foot">{target > 0 ? `target ${trim(kind === "pct" ? target * 100 : target)}${kind === "pct" ? "%" : ""}` : "no target set"}</div>
-    </div>
-  );
-}
-
-function AssociateDetail({ stats, ev, thresholds, data, associate }) {
-  const reqs = new Map((ev?.tier?.requirements || []).map((r) => [r.metric, r.min]));
-  const thr = normThresholds(thresholds);
-
-  // metrics judged against this person's tier
-  const graded = [...reqs.keys()].filter((k) => METRICS[k]);
-
-  /* Units, campaign units and the three channel counts are all the same thing —
-     where this person's deliveries came from — so they are one bar rather than
-     five chips. Campaign has no closing rate of its own (no lead count behind
-     it), which is exactly why it belongs here and nowhere else. */
-  const parts = [
-    ...DETAIL_CHANNELS.map((c) => ({ id: c.id, label: c.label, hue: CHANNEL_HUE[c.id], n: stats[c.units] ?? 0 })),
-    { id: "campaign", label: "Campaign", hue: "#8E9AA8", n: stats.campaignUnits ?? 0 },
-  ];
-  const partTotal = parts.reduce((n, c) => n + c.n, 0);
-  const total = stats.unitsDelivered ?? partTotal;
-
-  /* Sold % is dropped rather than shown: it is not a standard anywhere, it has
-     no target to be drawn against, and it duplicates delivery closely enough
-     that two numbers invited comparing them. */
-  const shownKeys = new Set([...graded, "soldPct", "unitsDelivered", "campaignUnits",
-    ...DETAIL_CHANNELS.map((c) => c.pct), ...DETAIL_CHANNELS.map((c) => c.units)]);
-  const rest = Object.entries(METRICS).filter(([k]) => !shownKeys.has(k));
-
-  return (
-    <div className="detail">
-      {graded.length > 0 && (
-        <div className="detail-block">
-          <div className="detail-cap">Against standard</div>
-          <div className="dbars">
-            {graded.map((k) => (
-              <DetailBar key={k} label={METRICS[k].short} value={stats[k]}
-                target={METRICS[k].kind === "pct" ? reqs.get(k) / 100 : reqs.get(k)}
-                kind={METRICS[k].kind} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* The same view the floor gets, for one person: every channel plotted
-          against its own target so the dashed rule holds still for all three.
-          It is the same component, given a roster of one. */}
-      {data && associate && (
-        <div className="detail-block">
-          <div className="detail-cap">Closing rate by channel</div>
-          <DeliveryAll data={data} roster={[associate]} thr={thr} />
-        </div>
-      )}
-
-      {rest.length > 0 && (
-        <div className="detail-cells">
-          {rest.map(([k, def]) => (
-            <div key={k} className={"detail-cell" + (stats[k] == null ? " blank" : "")}>
-              <span>{def.short}</span>
-              <b>{def.kind === "pct" ? fmtPct(stats[k]) : fmtNum(stats[k])}</b>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {partTotal > 0 && (
-        <div className="detail-block">
-          <div className="detail-cap">Where the units came from</div>
-          <div className="dsplit">
-            {parts.filter((c) => c.n > 0).map((c) => (
-              <i key={c.id} style={{ width: (c.n / partTotal) * 100 + "%", background: c.hue }} />
-            ))}
-          </div>
-          <div className="dsplit-keys">
-            {parts.map((c) => (
-              <span key={c.id} className={c.n > 0 ? "" : "dim"}>
-                <i style={{ background: c.hue }} />{c.label} <b>{fmtNum(c.n)}</b>
-              </span>
-            ))}
-          </div>
-          <div className="dsplit-total"><b>{fmtNum(total)}</b> units delivered this month</div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ---------------- Combined oversight board (read-only) ---------------- */
 function CombinedBoard({ config, stores, adminData, onOpenStore }) {
@@ -28216,32 +27815,6 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
   );
 }
 
-/* Dot-matrix glyphs, so the bar speaks the same language as the rest of the
-   app rather than borrowing Unicode furniture. Each one is picked for what the
-   button actually opens, and no glyph is used twice inside one bar:
-     Board      standing against the standards        chart
-     Home       the whole group, every store          globe
-     Import     reports going up into the app         arrowup   (Backup pulls down)
-     Summary    a report you read                     doc
-     History    what happened, and when               clock
-     Rules      the targets that pass or fail         check
-     Roster     everyone                              users
-     Coaching   one person at a time                  user
-     Check Out  a deal being closed                   handshake
-     Line       who takes the next call               phone
-     Access     who gets through the door             door
-     Plates     dealer plates on cars                 car
-     Audit      the log                               clipboard
-     Tickets    a raised issue                        warn
-     Stores     configuration                         gear                     */
-const NAV_ICON = {
-  board: "chart", dashboard: "chart", import: "arrowup", gm: "doc", history: "clock",
-  floor: "users",   // Live Floor's own board: who is on the floor right now
-  standards: "chart", actstd: "check", roster: "users", checkout: "handshake",
-  queue: "phone", coaching: "user", plates: "car", overview: "globe",
-  access: "door", audit: "clipboard", tickets: "warn", settings: "gear",
-  backup: "arrowdown",
-};
 /* These only ever SHORTEN the name a destination already carries elsewhere.
    They must never rename one: a tab that reads differently from the drawer
    entry it opens is a different place as far as anyone using it is concerned.
@@ -28525,33 +28098,6 @@ function CountUp({ value, decimals = 0, ms = 900, delay = 120 }) {
   return <>{fmtNum(useCountUp(value || 0, ms, delay, decimals))}</>;
 }
 
-/* A slow drift on the hero as the page scrolls: the band stays put while its
-   contents lag and fade. Fine pointers only. Touch scrolling on this app has a
-   history of jitter whenever anything is driven off the scroll position, and a
-   flourish is not worth reintroducing that. */
-function useParallax(ref) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !window.matchMedia) return;
-    const fine = window.matchMedia("(hover:hover) and (pointer:fine)").matches;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!fine || reduce) return;
-    let raf = 0;
-    const apply = () => {
-      raf = 0;
-      const y = window.scrollY || 0;
-      // Capped so the drift stays within the band's own padding. Nothing clips it
-      // any more, because the health card has to be able to escape the band.
-      el.style.setProperty("--px", Math.min(22, y * 0.17).toFixed(1) + "px");
-      el.style.setProperty("--pf", String(Math.max(0.35, 1 - y / 420)));
-    };
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(apply); };
-    apply();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => { window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
-  }, [ref]);
-}
-
 /* ---------------- Store hero (manager landing) ---------------- */
 /* ---------------- Delivery, flowing ----------------
 
@@ -28569,81 +28115,6 @@ function useParallax(ref) {
    app already has. A daily series would need a per-day channel roll-up that
    nothing writes today. */
 const FLOW_W = 292, FLOW_H = 104, FLOW_PL = 4, FLOW_PR = 10, FLOW_PT = 14, FLOW_PB = 17;
-const FLOW_TOP = 125;                       // 100 = the store's standard for that channel
-/* The scale the all-channel view is read against. 100 is every channel's own
-   target, so the gridlines are shares of it rather than raw percentages. */
-const FLOW_GRID = [
-  { v: 125, label: "125% of target" },
-  { v: 100, label: "TARGET" },
-  { v: 50, label: "half" },
-];
-const flowY = (p) => FLOW_PT + (1 - Math.max(0, Math.min(FLOW_TOP, p)) / FLOW_TOP) * (FLOW_H - FLOW_PT - FLOW_PB);
-const flowX = (i, n, W = FLOW_W) => FLOW_PL + (n <= 1 ? (W - FLOW_PL - FLOW_PR) : i * (W - FLOW_PL - FLOW_PR) / (n - 1));
-
-/* ---- How wide the chart is DRAWN ----
-   Everything inside this plot is measured in the viewBox's own units — strokes,
-   dashes, dot radii, label type — so its on-screen size is the user unit times
-   (rendered width / viewBox width), and nothing else. Which means the plot cannot
-   simply be made wider on a desktop: at a fixed 292-unit box, a wider render
-   inflates the type and the linework by exactly the same factor, which is where
-   "oversized and laggy" came from the first time.
-
-   So a desktop draws a WIDER BOX at the same density instead: more chart, same
-   sized labels. A phone keeps the box it was designed at, which is the size it
-   already reads perfectly at. */
-const FLOW_W_WIDE = 430;
-function useFlowWidth() {
-  const [wide, setWide] = useState(() =>
-    typeof window !== "undefined" && window.matchMedia
-      ? window.matchMedia("(min-width: 780px)").matches : false);
-  useEffect(() => {
-    if (!window.matchMedia) return;
-    const mq = window.matchMedia("(min-width: 780px)");
-    const on = (e) => setWide(e.matches);
-    setWide(mq.matches);
-    // addListener is the old spelling; still the only one on older iOS Safari.
-    if (mq.addEventListener) { mq.addEventListener("change", on); return () => mq.removeEventListener("change", on); }
-    mq.addListener(on); return () => mq.removeListener(on);
-  }, []);
-  return wide ? FLOW_W_WIDE : FLOW_W;
-}
-/* A null is a month with no numbers for this channel, not a month of zero. The
-   x positions still come from the month's index, so a gap keeps its place and the
-   three channels in the all-view stay aligned month for month — the line simply
-   connects across it instead of diving to the floor and inventing a collapse. */
-const flowPath = (ps, W = FLOW_W) => {
-  let d = "", started = false;
-  ps.forEach((p, i) => {
-    if (p == null) return;
-    d += (started ? " L" : "M") + flowX(i, ps.length, W).toFixed(1) + " " + flowY(p).toFixed(1);
-    started = true;
-  });
-  return d;
-};
-const flowFirst = (ps) => ps.findIndex((p) => p != null);
-const flowLast = (ps) => { for (let i = ps.length - 1; i >= 0; i--) if (ps[i] != null) return i; return -1; };
-
-/* The months that actually carry delivery numbers, oldest first, at most six.
-   A month with no imports is not a month the floor delivered nothing in — it is
-   a month nobody uploaded, and plotting it as zero would invent a collapse. */
-function deliverySeries(data, roster, thr) {
-  const months = Object.keys(data.months || {}).sort();
-  const rows = [];
-  for (const key of months) {
-    const rates = channelRates(data.months[key], monthRoster(data, data.months[key], roster));
-    if (!rates.some((r) => r.seen && r.pct != null)) continue;
-    rows.push({ key, rates });
-  }
-  const tail = rows.slice(-6);
-  return CHANNEL_LIST.map((c) => {
-    const target = thr[c.id].green;
-    const pts = tail.map((r) => {
-      const hit = r.rates.find((x) => x.id === c.id);
-      return { key: r.key, pct: hit && hit.pct != null ? hit.pct * 100 : null };
-    });
-    return { id: c.id, label: c.label, target, hue: CHANNEL_HUE[c.id], pts };
-  });
-}
 /* The axis wants "Aug"; the app's monthLabel is the long "August 2026" used in
    headings. Different job, so a different name rather than a second opinion. */
 const flowMonth = (key) => new Date(key + "-02T12:00").toLocaleDateString("en-US", { month: "short" });
@@ -28805,308 +28276,6 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   </>);
 }
 
-function DeliveryFlow({ data, roster, thr, digests, onOpen }) {
-  /* Daily when there is enough of it, month over month until then. */
-  const series = useMemo(() => dailySeries(digests, thr) || deliverySeries(data, roster, thr),
-    [data, roster, thr, digests]);
-  const daily = !!(series && series[0] && series[0].days);
-  const [idx, setIdx] = useState(0);
-  const [morph, setMorph] = useState(null);   // 0..1 while crossing between channels
-  const raf = useRef(0), timer = useRef(0);
-
-  const usable = series.filter((s) => s.pts.some((p) => p.pct != null));
-  const live = usable.length > 0 ? usable : series;
-  const cur = live[idx % live.length];
-  const nxt = live[(idx + 1) % live.length];
-
-  useEffect(() => {
-    if (live.length < 2) return;
-    if (typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const step = () => {
-      const t0 = performance.now(), dur = 780;
-      const tick = (now) => {
-        const p = Math.min(1, (now - t0) / dur);
-        const e = p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
-        setMorph(e);
-        if (p < 1) raf.current = requestAnimationFrame(tick);
-        else { setMorph(null); setIdx((i) => (i + 1) % live.length); timer.current = setTimeout(step, 2600); }
-      };
-      raf.current = requestAnimationFrame(tick);
-    };
-    timer.current = setTimeout(step, 2600);
-    return () => { clearTimeout(timer.current); cancelAnimationFrame(raf.current); };
-  }, [live.length, idx]);
-
-  // Called before the early return below, so the hook order never changes.
-  const W = useFlowWidth();
-
-  if (!cur || cur.pts.length === 0) return null;
-
-  /* The colour and the readout have to change on the SAME frame. Swapping the
-     line at the halfway point while the text waited for the end left the card
-     reading "Phone 19.0%" over a green Showroom line for a third of a second. */
-  const past = morph != null && morph >= .5;
-  const shown = past ? nxt : cur;
-  const at = (s) => s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
-  const av = at(cur), bv = at(nxt);
-  // Where one channel has a month the other doesn't, there is nothing to cross
-  // between, so the side that has a number holds it rather than sliding to zero.
-  const pts = morph == null ? av
-    : av.map((v, i) => (v == null ? bv[i] : bv[i] == null ? v : v + (bv[i] - v) * morph));
-
-  const lastI = flowLast(shown.pts.map((p) => (p.pct == null ? null : p.pct)));
-  const lastPct = lastI < 0 ? null : shown.pts[lastI].pct;
-  const above = lastPct != null && lastPct / shown.target * 100 > 100;
-  const d = flowPath(pts, W);
-  const y100 = flowY(100).toFixed(1);
-  const base = flowY(0).toFixed(1);
-  const eI = flowLast(pts), sI = flowFirst(pts);
-  const endX = eI < 0 ? FLOW_PL : flowX(eI, pts.length, W);
-  const endY = eI < 0 ? +base : flowY(pts[eI]);
-  const area = eI < 0 ? "" :
-    `${d} L ${endX.toFixed(1)} ${base} L ${flowX(sI, pts.length, W).toFixed(1)} ${base} Z`;
-
-  return (
-    <button className="flowcard" onClick={onOpen}>
-      <TapMark />
-      <div className="flow-head">
-        <h5>Delivery against target</h5>
-        <span className="flow-pips">
-          {live.map((s) => <i key={s.id} className={s.id === shown.id ? "on" : ""} />)}
-        </span>
-      </div>
-      <div className="flow-read">
-        <div>
-          <div className="flow-name" style={{ color: shown.hue }}>
-            <span className="flow-dot" style={{ background: shown.hue }} />{shown.label}
-          </div>
-          <div className="flow-val" style={{ color: shown.hue }}>
-            {lastPct == null ? "—" : lastPct.toFixed(1) + "%"}
-          </div>
-          <div className="flow-tar">
-            {lastPct == null ? `target ${shown.target}%`
-              : above ? `${(lastPct - shown.target).toFixed(1)} over target ${shown.target}%`
-              : `${(shown.target - lastPct).toFixed(1)} to target ${shown.target}%`}
-          </div>
-        </div>
-        {above && (
-          <span className="flow-above"><PixIcon glyph="check" size={11} />Above target</span>
-        )}
-      </div>
-      <svg className="flow-plot" viewBox={`0 0 ${W} ${FLOW_H}`} role="img"
-        aria-label={`${shown.label} delivery against its ${shown.target}% target, by month`}>
-        <defs>
-          {/* only the part of the fill that sits over the rule gets the green */}
-          <clipPath id="flow-above"><rect x="0" y="0" width={W} height={y100} /></clipPath>
-        </defs>
-        <line className="flow-zero" x1={FLOW_PL} x2={W - FLOW_PR} y1={base} y2={base} />
-        <line className="flow-rule" x1={FLOW_PL} x2={W - FLOW_PR} y1={y100} y2={y100} />
-        <text className="flow-rulelbl" x={W - FLOW_PR} y={+y100 - 4} textAnchor="end">
-          TARGET {shown.target}%
-        </text>
-        {area && <path d={area} fill={shown.hue} opacity=".10" />}
-        {area && <path d={area} fill="#1E8F45" opacity=".20" clipPath="url(#flow-above)" />}
-        {/* Solid only when every day between the ends was actually measured. Two
-            monthly readings joined by a confident line assert a path the floor
-            never took — the rate moves every day. Dashed, with a dot on each
-            reading, says "these two are measured, the bit between is not". */}
-        <path d={d} fill="none" stroke={shown.hue} strokeWidth="2.4"
-          strokeLinecap="round" strokeLinejoin="round"
-          strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8} />
-        {!daily && pts.map((v, i) => v == null ? null : (
-          <circle key={"p" + i} cx={flowX(i, pts.length, W).toFixed(1)} cy={flowY(v).toFixed(1)}
-            r="3" fill={shown.hue} stroke="#FFF" strokeWidth="1.5" />
-        ))}
-        {eI >= 0 && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="4.5" fill={shown.hue} stroke="#FFF" strokeWidth="2.5" />}
-        {eI >= 0 && above && <circle cx={endX.toFixed(1)} cy={endY.toFixed(1)} r="9" fill="none" stroke="#1E8F45" strokeWidth="2" opacity=".9" />}
-        {daily && flowMarks(shown.days).map((m) => (
-          <line key={"m" + m.i} className={m.kind === "month" ? "flow-month" : "flow-week"}
-            x1={flowX(m.i, shown.days.length, W)} x2={flowX(m.i, shown.days.length, W)}
-            y1={FLOW_PT - 4} y2={base} />
-        ))}
-        {daily ? <>
-          <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowDay(shown.days[0])}</text>
-          {flowMarks(shown.days).filter((m) => m.kind === "month").map((m) => (
-            <text key={"ml" + m.i} className="flow-axis flow-monthlbl"
-              x={flowX(m.i, shown.days.length, W) + 3} y={FLOW_PT + 4}>{m.label}</text>
-          ))}
-          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
-            {flowDay(shown.days[shown.days.length - 1])}
-          </text>
-        </> : shown.pts.length > 1 && <>
-          <text className="flow-axis" x={FLOW_PL} y={FLOW_H - 4}>{flowMonth(shown.pts[0].key)}</text>
-          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H - 4} textAnchor="end">
-            {flowMonth(shown.pts[shown.pts.length - 1].key)}
-          </text>
-        </>}
-        <text className="flow-axis" x={FLOW_PL} y={+base - 3}>0</text>
-      </svg>
-      <div className="flow-note">
-        {daily ? "Day by day, last 30 days. Ticks are Mondays; the taller line is the 1st."
-          : shown.pts.length < 2 ? "One month on file so far."
-          : "Two monthly readings, dashed because the days between them were never measured. The daily line starts once two days of figures are on file."}
-      </div>
-    </button>
-  );
-}
-
-/* All three at once, for the sheet the card opens. The flow stops and every line
-   draws in together, each direct-labelled. */
-function DeliveryAll({ data, roster, thr, digests }) {
-  const W = useFlowWidth();
-  const series = useMemo(() => dailySeries(digests, thr) || deliverySeries(data, roster, thr),
-    [data, roster, thr, digests]);
-  const daily = !!(series && series[0] && series[0].days);
-  const y100 = flowY(100).toFixed(1);
-  const base = flowY(0).toFixed(1);
-  const any = series.find((s) => s.pts.length > 0);
-  if (!any) return null;
-  /* Two channels running the same share of their targets put their end labels in
-     exactly the same place, and "Showroom 15.5%" printed over "Phone 9.3%" is
-     worse than no label at all. Lay them out top down and push each one clear of
-     the last; a leader line keeps it attached to the point it belongs to. */
-  const LBL_GAP = 11;
-  const ends = [];
-  for (const s of series) {
-    const ps = s.pts.map((p) => (p.pct == null ? null : p.pct / s.target * 100));
-    const li = flowLast(ps);
-    if (li < 0) continue;
-    ends.push({ id: s.id, label: s.label, hue: s.hue, ps,
-      lx: flowX(li, ps.length, W), ly: +flowY(ps[li]), pct: s.pts[li].pct });
-  }
-  ends.sort((a2, b2) => a2.ly - b2.ly);
-  let floorY = -Infinity;
-  for (const e of ends) {
-    e.labelY = Math.max(e.ly - 8, floorY + LBL_GAP);
-    floorY = e.labelY;
-  }
-
-  return (
-    <>
-      <div className="flow-legend">
-        {series.map((s) => (
-          <b key={s.id}><i style={{ background: s.hue }} />{s.label} · target {s.target}%</b>
-        ))}
-      </div>
-      {daily && (
-        <svg className="flow-plot" viewBox={`0 0 ${W} 1`} aria-hidden="true" style={{ height: 0 }} />
-      )}
-      <svg className="flow-plot" viewBox={`0 0 ${W} ${FLOW_H + 8}`} role="img"
-        aria-label="All three channels against their own targets, by month">
-        {/* ---- something to read the lines against ----
-            Three channels with three different targets can only share a plot if
-            each is drawn against ITS OWN target, which is what this does: the rule
-            is 100 for all of them, and internet at 20% sits exactly where showroom
-            at 30% does when both are on their number. That is the honest way to
-            put them together, but the chart never said so — one dashed line in an
-            empty field reads as a single shared standard. The scale is now drawn
-            and labelled, so the empty space has meaning. */}
-        {FLOW_GRID.map((g) => (
-          <line key={g.v} className={g.v === 100 ? "flow-rule" : "flow-grid"}
-            x1={FLOW_PL} x2={W - FLOW_PR} y1={flowY(g.v)} y2={flowY(g.v)} />
-        ))}
-        <line className="flow-zero" x1={FLOW_PL} x2={W - FLOW_PR} y1={base} y2={base} />
-        {ends.map((e, k) => (
-          <g key={e.id}>
-            <path className="flow-draw" d={flowPath(e.ps, W)} fill="none" stroke={e.hue} strokeWidth="2.2"
-              strokeLinecap="round" strokeLinejoin="round"
-              strokeDasharray={daily ? undefined : "3 4"} opacity={daily ? 1 : .8}
-              style={{ animationDelay: k * 180 + "ms" }} />
-            {!daily && e.ps.map((v, i) => v == null ? null : (
-              <circle key={"p" + i} cx={flowX(i, e.ps.length, W).toFixed(1)} cy={flowY(v).toFixed(1)}
-                r="2.6" fill={e.hue} stroke="#FFF" strokeWidth="1.4" />
-            ))}
-            <circle cx={e.lx.toFixed(1)} cy={e.ly.toFixed(1)} r="3.6" fill={e.hue} stroke="#FFF" strokeWidth="2" />
-            {/* A leader from the point to its label, because two channels running
-                the same share of their targets sit on top of each other and the
-                labels have had to be pushed apart to stay readable. */}
-            {Math.abs(e.labelY - e.ly) > 1.5 && (
-              <line className="flow-leader" x1={e.lx - 2} y1={e.ly} x2={e.lx - 5} y2={e.labelY - 2.5} stroke={e.hue} />
-            )}
-          </g>
-        ))}
-        {/* Every label paints last, over the lines rather than under them. A halo
-            alone cannot save a label that a line is drawn on top of. */}
-        {FLOW_GRID.map((g) => (
-          <text key={g.v} className="flow-gridlbl" x={FLOW_PL + 1} y={+flowY(g.v) - 2.5}>{g.label}</text>
-        ))}
-        {/* The channel AND the rate it is actually running. Without the real number
-            the line's height is the only thing on offer, and its height is a ratio
-            — "95% of target" is not an answer to "what is internet doing". */}
-        {ends.map((e) => (
-          <text key={e.id} className="flow-endlbl" x={(e.lx - 6).toFixed(1)} y={e.labelY.toFixed(1)}
-            textAnchor="end" fill={e.hue}>
-            {e.label} {e.pct.toFixed(1)}%
-          </text>
-        ))}
-        {daily ? <>
-          <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowDay(any.days[0])}</text>
-          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
-            {flowDay(any.days[any.days.length - 1])}
-          </text>
-        </> : any.pts.length > 1 && <>
-          <text className="flow-axis" x={FLOW_PL} y={FLOW_H + 4}>{flowMonth(any.pts[0].key)}</text>
-          <text className="flow-axis" x={W - FLOW_PR} y={FLOW_H + 4} textAnchor="end">
-            {flowMonth(any.pts[any.pts.length - 1].key)}
-          </text>
-        </>}
-      </svg>
-      <p className="flow-scale-note">
-        Height is each channel against <b>its own</b> target, so all three can share one chart:
-        the line marked TARGET is 20% for internet and 30% for showroom alike. The figure on the end
-        of each line is the rate it is actually running.
-      </p>
-    </>
-  );
-}
-
-/* The card and the sheet it opens. Pressing a card that bloops up a modal is the
-   whole interaction — there is no "Dive" button, because a button that says
-   "there is more here" is a worse version of the card just being pressable. */
-function DeliveryCard({ config, store, data }) {
-  const [open, setOpen] = useState(false);
-  const boardRoleIds = new Set(config.roles.filter((r) => r.onBoard !== false).map((r) => r.id));
-  const roster = (data.roster || []).filter((a) => a.roleId && boardRoleIds.has(a.roleId));
-  const thr = normThresholds(store.thresholds);
-  const digests = useDigests(store.id);
-
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
-  }, [open]);
-
-  return (
-    <>
-      <DeliveryFlow data={data} roster={roster} thr={thr} digests={digests} onOpen={() => setOpen(true)} />
-      {open && (
-        <Overlay>
-          <div className="bsheet-root" role="dialog" aria-label="Delivery, all channels">
-            <div className="bsheet-scrim" onClick={() => setOpen(false)} />
-            <div className="bsheet">
-              <div className="bsheet-head">
-                <div>
-                  <h4>Delivery, all channels</h4>
-                  <div className="bsheet-sub">Each plotted against its own target, by month</div>
-                </div>
-                <button className="bsheet-x" onClick={() => setOpen(false)} aria-label="Close">
-                  <PixIcon glyph="close" size={13} />
-                </button>
-              </div>
-              <div className="bsheet-body">
-                <DeliveryAll data={data} roster={roster} thr={thr} digests={digests} />
-              </div>
-            </div>
-          </div>
-        </Overlay>
-      )}
-    </>
-  );
-}
-
 /* Marks a card that opens something. Only rendered on touch — a pointer gets
    the same answer from hover, and the mark would be noise. */
 /* ---- out from under the lens ----
@@ -29220,24 +28389,6 @@ function AvaSeat({ children }) {
   );
 }
 
-function TapMark() {
-  return <span className="tapmark" aria-hidden="true"><PixIcon glyph="tap" size={13} /></span>;
-}
-
-/* =========================================================================
-   The Board on a phone.
-
-   The Performance dashboard on a phone is one screen: the store's month as
-   the site's own hero, then the people as one row each with the limit bar,
-   the five standards as dots, and units. Everything on it dives: a tap on
-   the digits, the pace strip, the new and used bar, the calendar, the on and
-   off pill, a tube, a dial, or a person opens a pop in the centre with the
-   numbers behind it, and the person pop is the website's own card.
-
-   The desk keeps the desktop hero, the focus grid and the role cards. This
-   is only rendered when the viewport is a phone's.
-   ========================================================================= */
-const BP_TAG_ORDER = ["closer", "phone", "internet", "video"];
 function bpDotState(v, green, yellow) {
   if (v == null || green == null) return "na";
   const pct = v * 100;
@@ -31947,21 +31098,6 @@ function moveOn(now, before) {
   if (d > HIST_DEADBAND) return { dir: "up", txt: "+" + d.toFixed(1) };
   if (d < -HIST_DEADBAND) return { dir: "down", txt: d.toFixed(1) };
   return { dir: "flat", txt: "" };
-}
-
-/** One figure and how it moved. */
-function HistCell({ now, before }) {
-  const mv = moveOn(now, before);
-  return (
-    <span className="hist-cell">
-      <b>{fmtPct(now)}</b>
-      {mv && mv.dir !== "flat" && (
-        <i className={"hist-move " + mv.dir}>
-          <PixIcon glyph={mv.dir === "up" ? "triup" : "tridown"} size={8} />{mv.txt}
-        </i>
-      )}
-    </span>
-  );
 }
 
 /* The five figures the store is actually run on, in the order they get talked
@@ -35471,15 +34607,7 @@ const SAGE_CSS = `
         font-variant-numeric:tabular-nums; padding:3px 9px; border-radius:999px; line-height:1.45; }
       .ru-chip.ru-up { background:rgba(48,177,85,.12); }
       .ru-chip.ru-down { background:rgba(229,71,60,.11); }
-      .ru-chip.ru-watch { background:rgba(199,120,0,.13); }
 
-      .ru-find { display:flex; gap:10px; align-items:flex-start; padding:11px 0;
-        border-top:1px solid rgba(0,0,0,.05); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
-      .ru-find:first-of-type { border-top:none; }
-      .ru-find-ico { flex:0 0 auto; display:flex; margin-top:2px; }
-      .ru-find-body { flex:1; min-width:0; display:flex; flex-direction:column; }
-      .ru-find-t { font-size:14px; font-weight:650; line-height:1.35; }
-      .ru-find-d { font-size:12.5px; color:var(--ink-2); margin-top:2px; line-height:1.45; }
 
       /* --- the way back in, once the sheet has been read --- */
       .ru-reopen { display:flex; align-items:center; gap:14px; width:100%; text-align:left;
@@ -35489,11 +34617,6 @@ const SAGE_CSS = `
         opacity:0; animation:ruBloop .5s var(--ease-bloop) .1s both; }
       .ru-reopen:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:color-mix(in srgb, var(--p2) 40%, transparent); }
       .ru-reopen:active { transform:scale(.99); }
-      .ru-reopen-t { font-family:var(--font-display); font-size:14.5px; letter-spacing:-.01em; }
-      .ru-reopen-tally { display:flex; gap:9px; flex-wrap:wrap; margin-left:auto; }
-      .ru-tally { display:inline-flex; align-items:center; gap:4px; font-family:var(--font-display);
-        font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; }
-      .ru-reopen-go { font-size:13px; font-weight:700; color:var(--blue); flex:0 0 auto; }
 
       /* --- the once-a-day sheet --- */
       /* Overlay portals this to document.body, which is OUTSIDE .lpc — and .lpc is
@@ -35624,22 +34747,10 @@ const SAGE_CSS = `
         margin-top:3px; color:#fff; opacity:0; animation:ruBloop .6s var(--ease-bloop) .18s both; }
       .ru-sheet-date { font-size:13px; color:rgba(255,255,255,.78); margin-top:2px;
         opacity:0; animation:ruBloop .6s var(--ease-bloop) .24s both; }
-      .ru-sec { padding:14px 24px 4px; }
-      .ru-sec-h { display:flex; align-items:center; justify-content:space-between; gap:10px;
-        opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
-      .ru-sec-h h4 { font-size:12.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-3); margin:0; }
-      .ru-count { font-family:var(--font-display); font-size:12px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
-      .ru-sheet-foot { padding:14px 24px calc(18px + var(--sab)); background:var(--card);
-        border-top:1px solid var(--line); opacity:0; animation:ruBloop .6s var(--ease-bloop) both; }
-      .ru-btn { width:100%; font:inherit; font-size:15px; font-weight:700; padding:13px; border-radius:13px;
-        cursor:pointer; border:1px solid var(--blue); background:var(--blue); color:#fff;
-        transition:transform .25s var(--ease-bloop), filter .2s var(--ease); }
-      .ru-btn:hover { filter:brightness(1.08); }
-      .ru-btn:active { transform:scale(.97); }
 
       @media (prefers-reduced-motion: reduce) {
-        .ru-find, .ru-reopen, .ru-eyebrow, .ru-sheet-store, .ru-sheet-date,
-        .ru-sec-h, .ru-sheet-foot, .ru-sheet, .ru-scrim {
+        .ru-reopen, .ru-eyebrow, .ru-sheet-store, .ru-sheet-date,
+        .ru-sheet, .ru-scrim  {
           animation:none !important; opacity:1 !important; transform:none !important; }
         .ru-reopen:hover, .ru-reopen:active { transform:none; }
       }
@@ -36151,8 +35262,6 @@ const SAGE_CSS = `
       .tab-page { padding:28px 32px 0; max-width:1440px; margin:0 auto; }
       @media (max-width:900px) { .tab-page { padding:16px 16px 0; } }
       /* ---- history: the figure and its move ---- */
-      .hist-cell { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
-      .hist-cell b { font-weight:600; font-variant-numeric:tabular-nums; }
       .hist-move { display:inline-flex; align-items:center; gap:2px; font-style:normal;
         font-family:var(--font-mono); font-size:10.5px; font-weight:600; }
       .hist-move.up { color:#1E7A3C; } .hist-move.down { color:#C13529; }
@@ -37765,7 +36874,6 @@ const SAGE_CSS = `
       }
       .assoc-card.incomplete { opacity:.55; filter:grayscale(.75); }
       .assoc-card.incomplete .verdict { visibility:hidden; }
-      .detail-cell.blank { opacity:.45; }
       @media (prefers-reduced-motion: reduce) { .detail { animation:none !important; } }
       .assoc-card.is-restricted { opacity:1; filter:none; }
       .verdict-off { background:rgba(118,118,128,.2); color:var(--ink); }
@@ -38230,48 +37338,15 @@ const SAGE_CSS = `
       .detail { display:flex; flex-direction:column; gap:16px; margin:14px 0 0 23px;
         animation: detailIn .42s var(--ease-bloop) both; }
       @keyframes detailIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
-      .detail-block { display:flex; flex-direction:column; gap:9px; }
-      .detail-cap { font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase;
-        color:var(--ink-3); }
-      .detail-cells { display:flex; flex-wrap:wrap; gap:8px; }
-      .detail-cell { background:rgba(255,255,255,.55); border:1px solid rgba(255,255,255,.6); border-radius:12px; padding:6px 12px; font-size:12px; display:flex; gap:8px; }
-      .detail-cell span { color:var(--ink-2); }
 
       /* one bar per metric, 0 to target, the same language as the floor's
          delivery card so the two read as the same idea at two scales */
       /* 132, not 148: at 390 the roster card leaves ~309px inside its padding, and
          two 148s plus the gap wanted 310 — one pixel short, so every bar dropped
          to its own row and four metrics became four rows of scrolling. */
-      .dbars { display:grid; grid-template-columns:repeat(auto-fit, minmax(132px, 1fr)); gap:11px 14px; }
-      .dbar-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
-      .dbar-lbl { font-size:11.5px; color:var(--ink-2); font-weight:600; overflow:hidden;
-        text-overflow:ellipsis; white-space:nowrap; }
-      .dbar-val { font-family:var(--font-display); font-size:14px; font-variant-numeric:tabular-nums; }
-      .dbar-track { position:relative; height:7px; border-radius:999px; background:rgba(16,40,68,.10);
-        margin-top:5px; overflow:hidden; }
-      .dbar-fill { display:block; height:100%; border-radius:999px; width:0;
-        transition:width .85s var(--ease); transition-delay:.1s; }
       /* the target, drawn ON the track so clearing it is visible rather than arithmetic */
-      .dbar-tick { position:absolute; top:-2px; bottom:-2px; width:2px; border-radius:2px;
-        background:rgba(16,40,68,.45); }
-      .dbar-foot { font-size:10px; color:var(--ink-3); margin-top:4px; }
-      .dbar-ok .dbar-fill { background:linear-gradient(90deg, #34C264, #1E8F45); }
-      .dbar-near .dbar-fill { background:linear-gradient(90deg, #E8A33C, #C77800); }
-      .dbar-stop .dbar-fill { background:linear-gradient(90deg, #F0705F, #D8382C); }
-      .dbar-dim .dbar-fill { background:var(--ink-3); }
 
       /* the unit split: a proportion, so a bar rather than three numbers */
-      .dsplit { display:flex; height:11px; border-radius:999px; overflow:hidden; gap:2px;
-        background:rgba(16,40,68,.08); }
-      .dsplit i { display:block; transition:width .85s var(--ease); }
-      .dsplit-keys { display:flex; flex-wrap:wrap; gap:6px 14px; font-size:11px; color:var(--ink-2); }
-      .dsplit-keys span { display:inline-flex; align-items:center; gap:5px; }
-      .dsplit-keys span.dim { opacity:.45; }
-      .dsplit-keys i { width:9px; height:9px; border-radius:3px; display:inline-block; }
-      .dsplit-keys b { font-family:var(--font-display); color:var(--ink); }
-      .dsplit-total { font-size:12px; color:var(--ink-2); padding-top:8px;
-        border-top:1px solid rgba(16,40,68,.08); }
-      .dsplit-total b { font-family:var(--font-display); font-size:16px; color:var(--ink); }
 
       /* ---- badges ---- */
       .badge { font-size:11px; padding:3px 9px; border-radius:20px; font-weight:700; }
@@ -38559,30 +37634,6 @@ const SAGE_CSS = `
       .roll-more { display:none; }
 
       /* ---------------- Delivery, flowing ---------------- */
-      .flowcard { position:relative; display:block; width:100%; text-align:left; font:inherit; cursor:pointer;
-        background:var(--card); border:1px solid var(--line); border-radius:16px;
-        padding:14px 15px; margin:14px 0 0; box-shadow:var(--shadow-1);
-        transition:transform .3s var(--ease-bloop), box-shadow .3s var(--ease), border-color .2s var(--ease); }
-      .flowcard:hover { transform:translateY(-2px); box-shadow:var(--shadow-2); border-color:rgba(16,32,52,.2); }
-      .flowcard:active { transform:scale(.985); }
-      .flowcard:focus-visible { outline:2px solid var(--sp, var(--blue)); outline-offset:2px; }
-      .flow-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-      .flow-head h5 { margin:0; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
-        color:var(--ink-2); font-weight:800; }
-      .flow-pips { display:flex; gap:4px; }
-      .flow-pips i { width:5px; height:5px; border-radius:50%; background:var(--line);
-        transition:background .35s var(--ease), width .35s var(--ease); }
-      .flow-pips i.on { width:15px; border-radius:999px; background:var(--ink-3); }
-      .flow-read { display:flex; align-items:flex-end; justify-content:space-between; gap:10px; margin-top:8px; }
-      .flow-name { display:flex; align-items:center; gap:7px; font-family:var(--font-display);
-        font-size:15px; font-weight:700; transition:color .28s var(--ease); }
-      .flow-dot { width:10px; height:10px; border-radius:3px; flex:0 0 auto; transition:background .28s var(--ease); }
-      .flow-val { font-family:var(--font-display); font-size:29px; font-weight:700; line-height:1;
-        font-variant-numeric:tabular-nums; transition:color .28s var(--ease); }
-      .flow-tar { font-size:11px; color:var(--ink-2); margin-top:2px; }
-      .flow-above { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:800;
-        padding:3px 8px; border-radius:999px; background:rgba(48,177,85,.16); color:#1E8F45;
-        animation:flowPop .55s var(--ease-bloop) both; }
       @keyframes flowPop { from { opacity:0; transform:scale(.4) rotate(-8deg); } to { opacity:1; transform:none; } }
       /* The plot is drawn in a 292-unit-wide viewBox, so its own width sets the
          scale for everything inside it — strokes, dashes, dot radii and label
@@ -38590,84 +37641,34 @@ const SAGE_CSS = `
          5.8x blow-up: a 570px-tall chart with 47px axis labels and 14px dashes,
          which is exactly where "oversized and laggy" came from. Capped at the
          width it was drawn for, so a desktop reads like a phone. */
-      .flow-plot { width:100%; max-width:440px; display:block; overflow:visible; margin-top:6px; }
-      .flow-axis { font-size:8.5px; fill:var(--ink-2); }
-      .flow-rule { stroke:var(--ink-2); stroke-width:1; stroke-dasharray:4 4; opacity:.55; }
-      .flow-rulelbl { font-size:8px; fill:var(--ink-2); font-weight:700; }
-      .flow-zero { stroke:rgba(16,32,52,.16); stroke-width:1; }
       /* Mondays, and the taller line for the 1st. Behind the data, quiet enough
          to give the strip a rhythm without competing with it. */
-      .flow-week { stroke:rgba(16,32,52,.09); stroke-width:1; }
-      .flow-month { stroke:rgba(16,32,52,.22); stroke-width:1; stroke-dasharray:2 2; }
-      .flow-monthlbl { font-size:7.5px; font-weight:700; fill:var(--ink-3); }
       /* The all-channel view's scale. Quiet enough to sit behind three lines, present
          enough that the space between them means something. */
-      .flow-grid { stroke:rgba(16,32,52,.10); stroke-width:1; stroke-dasharray:2 3; }
       /* The halo is what lets a scale label sit at the left edge, where the lines
          also start, without either one becoming unreadable. */
-      .flow-gridlbl { font-size:6.5px; font-weight:700; fill:var(--ink-3); letter-spacing:.04em;
-        stroke:var(--card, #fff); stroke-width:2.4; paint-order:stroke fill; }
-      .flow-endlbl { font-size:8.5px; font-weight:700;
-        stroke:var(--card, #fff); stroke-width:2.6; paint-order:stroke fill; }
-      .flow-leader { stroke-width:1; opacity:.55; }
-      .flow-scale-note { font-size:11px; line-height:1.5; color:var(--ink-2); margin-top:8px; }
-      .flow-scale-note b { color:var(--ink); font-weight:700; }
       /* ---- Drawing the lot ---- */
       .fence { margin-top:12px; }
       /* Tall enough to see a whole dealership at the zoom a manager traces at.
          Leaflet measures its container on creation, so this has to be a real
          height rather than something that resolves later. */
       /* Leaflet draws its own controls and credit; keep them in this app's type. */
-      .flow-note { font-size:11px; color:var(--ink-2); margin-top:6px; }
       /* Once the card is wider than the chart wants to be, the chart moves beside
          the read-out rather than under it — otherwise capping its width leaves a
          card that is mostly empty on the right. */
       @media (min-width: 780px) {
-        .flowcard {
-          display:grid; column-gap:28px; align-items:start;
-          grid-template-columns:minmax(0,1fr) minmax(0,590px);
-          grid-template-areas:"head plot" "read plot" "note note";
-        }
-        .flow-head { grid-area:head; }
-        .flow-read { grid-area:read; }
         /* 430 units rendered at up to 590px is the same density the phone reads at
            (292 units at ~330px), so this is a bigger chart rather than a magnified
            one — the labels and linework stay the size they already were. */
-        .flow-plot { grid-area:plot; max-width:590px; margin:0 0 0 auto; align-self:center; }
-        .flow-note { grid-area:note; }
       }
-      .flow-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:10.5px; color:var(--ink-2); }
-      .flow-legend b { display:inline-flex; align-items:center; gap:5px; font-weight:650; color:var(--ink); }
-      .flow-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
-      .flow-draw { stroke-dasharray:600; stroke-dashoffset:600; animation:flowDraw 1.15s var(--ease) both; }
       @keyframes flowDraw { to { stroke-dashoffset:0; } }
 
       /* the sheet a card bloops up */
       /* Portaled to document.body, which is OUTSIDE .lpc — so it inherits the
          browser default serif instead of the app's face. Everything the shell
          normally provides has to be restated here. */
-      .bsheet-root { position:fixed; inset:0; z-index:365; display:flex; align-items:center; justify-content:center;
-        font-family:var(--font-ui); color:var(--ink); font-size:16px; line-height:1.55;
-        -webkit-font-smoothing:antialiased; }
-      .bsheet-root h4 { font-family:var(--font-display); }
-      .bsheet-root text { font-family:var(--font-ui); }
-      .bsheet-scrim { position:absolute; inset:0; background:rgba(16,32,52,.45); animation:bsFade .3s var(--ease) both; }
-      .bsheet { position:relative; width:min(460px, calc(100vw - 28px)); max-height:82vh;
-        display:flex; flex-direction:column; overflow:hidden;
-        background:var(--card); border-radius:20px; box-shadow:0 24px 60px -18px rgba(16,32,52,.55);
-        animation:bsPop .42s var(--ease-bloop) both; }
       @keyframes bsFade { from { opacity:0; } to { opacity:1; } }
       @keyframes bsPop { from { opacity:0; transform:scale(.86); } to { opacity:1; transform:none; } }
-      .bsheet-head { padding:15px 16px 10px; border-bottom:1px solid var(--line);
-        display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-      .bsheet-head h4 { margin:0; font-size:15.5px; font-weight:700; letter-spacing:-.01em; }
-      .bsheet-sub { font-size:11.5px; color:var(--ink-2); margin-top:2px; }
-      .bsheet-x { border:none; background:var(--line); width:28px; height:28px; border-radius:50%;
-        cursor:pointer; color:var(--ink); display:flex; align-items:center; justify-content:center;
-        flex:0 0 auto; transition:transform .25s var(--ease-bloop), background .2s var(--ease); }
-      .bsheet-x:active { transform:scale(.88); }
-      .bsheet-body { overflow-y:auto; overscroll-behavior:contain; padding:14px 16px 18px;
-        display:flex; flex-direction:column; gap:11px; }
 
       /* The mark that says a card opens something. Touch has no hover, so
          without it nothing distinguishes a card you can press from one you
@@ -38682,20 +37683,12 @@ const SAGE_CSS = `
          dragged the whole box 12px outside the card, which put the glyph hard
          into the corner and half off it. No margin: the box sits inside, and the
          glyph lands 14px in from the right and 12px up from the bottom. */
-      .tapmark { display:none; position:absolute; bottom:0; right:2px; z-index:2;
-        opacity:.55; color:inherit; cursor:pointer;
-        padding:12px; align-items:center; justify-content:center; }
-      .is-touch .tapmark { display:flex; }
       /* The hero's health block is a bare flex column, not a card with padding,
          so its mark hangs off the corner it is meant to sit inside. */
-      .hero-health .tapmark { bottom:-4px; right:-6px; }
       /* Once it is open the mark has done its job, and the block has grown to
          hold the panel — so it would otherwise drift down to sit beside it. */
-      .is-touch .popped .tapmark { display:none; }
       /* The flow card's bottom-right corner is where its month labels sit, so it
          gets the room rather than the mark landing on top of them. */
-      .is-touch .flowcard { padding-bottom:28px; }
-      .is-touch .tapmark:active { opacity:1; transform:scale(.86); }
 
       /* ---- a tapped popup opens in flow, under what was tapped ----
          Not floated: see the comment on the touch handler. Nothing here
@@ -38749,8 +37742,6 @@ const SAGE_CSS = `
         .sage-loading i, .wiz, .wiz-overlay, .bl-tile, .loadscreen-inner { animation: none !important; }
         /* the flow already refuses to cycle under reduce-motion; this is the
            draw-in and the pop that are pure decoration */
-        .flow-draw { animation:none !important; stroke-dashoffset:0 !important; }
-        .flow-above, .bsheet, .bsheet-scrim { animation:none !important; transform:none !important; }
       }
 
       @media print {
@@ -39025,8 +38016,7 @@ const SAGE_CSS = `
            Each of these carried its own desktop margin, and stacked on a phone
            they ended up shoulder to shoulder. One spacing rule for the lot. */
         .board > .hero { margin-bottom:18px; }
-        .board > .flowcard { margin-top:0; }
-        .board > .ru-reopen, .board > .podium, .board > .flowcard, .board > .recap { margin-top:18px; }
+        .board > .ru-reopen, .board > .podium, .board > .recap  { margin-top:18px; }
         .board > .podium { margin-bottom:0; }
 
         /* --- hero reflows to one column --- */
@@ -39085,14 +38075,10 @@ const SAGE_CSS = `
         /* --- the sheet takes the bottom of the screen rather than floating --- */
         .ru-reopen { padding:10px 13px; gap:10px; }
         .ru-reopen:hover { transform:none; box-shadow:var(--shadow-1); }
-        .ru-reopen-t { font-size:13.5px; }
-        .ru-reopen-go { display:none; }        /* the whole bar is the target on a phone */
         .ru-scrim { padding:0; align-items:flex-end; }
         .ru-sheet { width:100%; max-height:92vh; border-radius:22px 22px 0 0; }
         .ru-sheet-head { padding:20px 18px 4px; }
         .ru-sheet-store { font-size:22px; }
-        .ru-sec { padding:12px 18px 4px; }
-        .ru-sheet-foot { padding:12px 18px calc(14px + var(--sab)); }
 
         /* --- upload history stacks; its six fixed columns need 643px and so
                dragged the whole page sideways on a phone --- */
@@ -39341,11 +38327,6 @@ const SAGE_CSS = `
 .qsel-pill.on{ box-shadow:0 3px 12px -2px rgba(16,32,52,.5), 0 0 0 3px rgba(255,255,255,.75); }
 
 /* breathing radial aura */
-.living-aura{position:absolute;inset:-18%;border-radius:50%;pointer-events:none;
-  background:radial-gradient(circle at 50% 46%, var(--aura) 0%, transparent 58%);
-  background:radial-gradient(circle at 50% 46%, var(--aura) 0%, color-mix(in srgb, var(--aura) 55%, transparent) 26%, transparent 60%);
-  filter:blur(10px);opacity:.5;animation:auraBreathe 4.6s ease-in-out infinite;}
-.aura-hot{opacity:.82;animation-duration:2.4s;}
 @keyframes auraBreathe{0%,100%{transform:scale(.9);opacity:.42;}50%{transform:scale(1.08);opacity:.72;}}
 
 /* dot-matrix LED numerals */
@@ -39380,13 +38361,6 @@ const SAGE_CSS = `
 .lb-refs{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 9px 34px;}
 .lb-ref{font-size:11px;font-weight:600;letter-spacing:.01em;padding:2px 8px;border-radius:999px;
   background:rgba(16,32,52,.07);color:var(--ink-2);white-space:nowrap;max-width:190px;overflow:hidden;text-overflow:ellipsis;}
-.av-stack{display:flex;}
-.av-chip{width:38px;height:38px;border-radius:50%;margin-left:-10px;border:2px solid var(--card,#121a2b);
-  display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;box-shadow:0 3px 10px rgba(0,0,0,.3);
-  transition:transform .25s cubic-bezier(.2,.8,.2,1);}
-.av-chip:first-child{margin-left:0;}
-.av-stack:hover .av-chip{transform:translateY(-2px);}
-.av-more{background:rgba(255,255,255,.16)!important;}
 
 /* fluid line rows — smooth settle on reorder */
 .q-row{transition:transform .32s cubic-bezier(.2,.8,.2,1),box-shadow .3s ease,border-color .3s ease,background .3s ease;}
@@ -39750,7 +38724,6 @@ const SAGE_CSS = `
 .mf .lb-lead{ border-color:transparent; background:linear-gradient(120deg, color-mix(in srgb,var(--a1) 12%, #fff), #fff 70%); box-shadow:0 0 0 1.5px color-mix(in srgb,var(--a1) 55%, transparent), 0 14px 30px -16px var(--glow); }
 
 /* next-up hero */
-.mf .av-chip{ border-color:#fff; }
 
 /* line rows -> white cards; next highlighted; off muted */
 .mf .q-line{ display:flex; flex-direction:column; gap:9px; }
@@ -39874,36 +38847,11 @@ const SAGE_CSS = `
 /* instrument cluster (Floor Health + gauges) */
 .mf{ --mf-track:#EBEEF3; }
 .ic{ display:grid; grid-template-columns:minmax(300px,360px) 1fr; gap:14px; align-items:stretch; margin-bottom:16px; }
-.ic-actions{ grid-column:1/-1; display:flex; gap:8px; flex-wrap:wrap; }
 @media (max-width:900px){ .ic{ grid-template-columns:1fr; } }
-.ic-health{ background:#fff; border:1px solid var(--mfline); border-radius:20px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 12px 30px -20px rgba(16,32,52,.22); padding:18px 20px; }
-.ic-health-head{ font-family:var(--mffont); font-weight:700; font-size:16px; display:flex; align-items:center; gap:10px; }
-.ic-health-body{ display:flex; align-items:center; gap:18px; margin-top:12px; }
 .q-topline{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
 .q-topline-actions{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.icg{ position:relative; display:inline-grid; place-items:center; flex:0 0 auto; background:transparent; }
-.icg svg{ display:block; }
-.icg-fg{ transition:stroke-dasharray .6s cubic-bezier(.2,.8,.2,1); }
-.icg-green{ stroke:#10B981; } .icg-amber{ stroke:#E0A100; } .icg-red{ stroke:#E5473C; } .icg-blue{ stroke:#3B6FD4; }
-.icg-val{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; font-family:var(--mffont); font-weight:700; color:var(--mfink); line-height:1; }
-.icg-sub{ display:block; font-family:var(--mfmono); font-size:8px; font-weight:600; letter-spacing:.08em; color:var(--mfink2); margin-top:3px; }
-.ic-health-n{ font-size:42px; font-weight:700; letter-spacing:-.03em; }
-.ic-sup{ flex:1; display:flex; flex-direction:column; gap:9px; min-width:0; }
-.ic-sup-row{ display:flex; align-items:center; gap:8px; font-size:13px; }
-.ic-sup-l{ color:var(--mfink2); }
-.ic-sup-v{ margin-left:auto; font-weight:700; color:var(--mfink); font-family:var(--mffont); }
-.ic-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
-.ic-dot.ic-green{ background:#10B981; } .ic-dot.ic-amber{ background:#E0A100; } .ic-dot.ic-red{ background:#E5473C; }
-.ic-pill{ font-family:var(--mfmono); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; padding:3px 9px; border-radius:999px; }
-.ic-pill.ic-green{ background:#E9F8F1; color:#0A7F5A; } .ic-pill.ic-amber{ background:#FDF3DD; color:#8A6410; } .ic-pill.ic-red{ background:#FDECEA; color:#B3372E; }
 .ic-gauges{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
 @media (min-width:1300px){ .ic-gauges{ grid-template-columns:repeat(4,1fr); } }
-.ic-card{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04); padding:14px 16px; display:flex; align-items:center; gap:12px; transition:transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s; }
-.ic-card:hover{ transform:translateY(-2px); box-shadow:0 10px 26px -16px rgba(16,32,52,.28); }
-.ic-card-n{ font-size:15px; font-weight:700; }
-.ic-card-meta{ min-width:0; }
-.ic-card-l{ font-family:var(--mfmono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--mfink2); }
-.ic-card-v{ font-family:var(--mffont); font-weight:700; font-size:19px; color:var(--mfink); margin-top:2px; }
 
 /* activity timeline */
 .tl{ background:#fff; border:1px solid var(--mfline); border-radius:18px; box-shadow:0 1px 2px rgba(16,32,52,.04),0 10px 26px -20px rgba(16,32,52,.2); padding:16px; margin-top:14px; }
