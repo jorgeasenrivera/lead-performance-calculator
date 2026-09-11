@@ -29,7 +29,7 @@ import { stampHours, hourDeltas, betweenHours } from "../api/_hours.mjs";
 import { stationPlanOf, stationBoard, stationPresence, claimStation, releaseStation,
   releasePerson, touchStation, stationOf, sitsFor, sitMinutes, HOLD_MS,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
-  stationModeOf, DEFAULT_STATION_PLAN, ownerAction, roomInUse } from "../api/_stations.mjs";
+  stationModeOf, DEFAULT_STATION_PLAN, ownerAction, roomInUse, OFFER_MS } from "../api/_stations.mjs";
 import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
@@ -9684,6 +9684,13 @@ const QUEUE_FLAGS = {
   away:     { label: "Away",          cls: "q-away" },
 };
 const QUEUE_SELF_FLAGS = ["lunch", "customer", "away"];
+/* The phone room's people do not press "On a call". Being on a call is what a
+   desk is for, so it is something the desk puts you in, not a state you step
+   into from a button — the same reasoning the floor already uses for "with a
+   guest". The status itself is untouched: assigning a call still sets it. The
+   Online queue keeps its segment, because "on a lead" is a thing a person does
+   step into and is being rethought separately. */
+const LINE_SELF_FLAGS = ["lunch", "away"];
 /* What counts as "an opportunity taken" on a row. The floor counts the two
    automatic ones too, because catching an up on the floor IS the opportunity. */
 const UPS_ACTIONS = new Set(["assigned", "auto-checkin", "auto-appt-show"]);
@@ -10746,68 +10753,294 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
  * until it exists the honest thing is to name the free ones and let them walk
  * over. What is drawn is what is known.
  */
-function SfRoom({ cfg, store, row, meId }) {
-  const [tick, setTick] = useState(0);
+/* =========================================================================
+   The phone room, on their own phone
+   -------------------------------------------------------------------------
+   One screen with four lives: waiting on the cord, a desk coming free, the
+   walk over, and the desk itself. The desks are a row at the top because
+   they ARE the room; the panel that used to say the same thing in sentences
+   at the foot of the screen is gone. Everything below the row is the same
+   pieces the floor already uses: the dot-matrix digit, the PixIcons, the
+   floor's two-line timers, and the flat tiles.
+   ========================================================================= */
+/* Two letters for a person on the cord: the same shorthand the floor's track
+   uses for the people ahead of you. */
+const sfInitials = (nm) =>
+  String(nm || "").trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2) || "·";
+
+/* The desks, in one row above the hero: who is at each one, which is free,
+   which is yours. A desk offered to somebody else carries their name, dim, so
+   a chair that looks empty does not read as one you can take. */
+function SfDeskRow({ seats, meId }) {
+  return (
+    <div className="sfd-row" role="list" aria-label="The desks">
+      {seats.map((s) => {
+        const mine = s.taken && s.id === meId;
+        const open = !s.taken && (!s.offerTo || s.offerTo === meId);
+        const who = mine ? "you" : s.taken ? stnFirst(s.label) : open ? "free" : stnFirst(s.offerLabel);
+        /* only the desk offered to you beckons; a free desk nobody is being
+           sent to is lit and still, so an open room is not six things bouncing */
+        const cls = mine ? " you" : open && s.offerTo === meId ? " open" : open ? " free" : "";
+        return (
+          <span key={s.n} role="listitem" className={"sfd" + cls}>
+            <b>{s.n}</b><em>{who}</em>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+/* The cord. Everybody waiting rides it as a motion path, so a change of place
+   is a slide along the curve rather than a redraw; you are the blue chip with
+   your position in dots, the others wear the floor's sand. A newcomer runs in
+   from the left end, bumps whoever they land behind, and settles. One pulse of
+   light runs the cord from the tail, pausing at each person, out to the front
+   of the line. The handset at the end stays dark until a desk is yours. */
+const SF_CORD = "M 26 150 C 96 232, 190 40, 292 112";
+const SF_CORD_STEP = 0.22;
+const sfPct = (t) => `${(Math.max(0, Math.min(1, t)) * 100).toFixed(2)}%`;
+function SfCord({ ahead, behind, pos, landed, lit }) {
+  const youT = landed ? 0.975 : 0.8 - ahead.length * SF_CORD_STEP;
+  const tOf = {};
+  ahead.forEach((p, i) => { tOf[p.id] = youT + SF_CORD_STEP * (ahead.length - i); });
+  behind.forEach((p, j) => { tOf[p.id] = youT - SF_CORD_STEP * (j + 1); });
+  const litRef = useRef(null);
+  const youRef = useRef(null);
+  const pips = useRef({});
+  const seen = useRef(null);
+  const [ghosts, setGhosts] = useState([]);
+
+  /* Who came and who went since the last render. Layout effect, so a newcomer
+     is already moving before the first frame that would show them in place. */
+  useLayoutEffect(() => {
+    const all = [...ahead, ...behind];
+    const prev = seen.current;
+    if (prev) {
+      const here = new Set(all.map((p) => p.id));
+      const gone = [...prev.keys()].filter((id) => !here.has(id));
+      if (gone.length) {
+        setGhosts((g) => [...g, ...gone.map((id) => ({ id, ...prev.get(id) }))]);
+        setTimeout(() => setGhosts((g) => g.filter((x) => !gone.includes(x.id))), 420);
+      }
+      const order = all.map((p) => p.id).sort((a, b) => tOf[a] - tOf[b]);
+      all.filter((p) => !prev.has(p.id)).forEach((p) => {
+        const el = pips.current[p.id];
+        if (!el || !el.animate) return;
+        const t = tOf[p.id];
+        const k = order.indexOf(p.id);
+        const nextId = order[k + 1];
+        const nextEl = nextId ? pips.current[nextId] : null;
+        const neighbour = nextEl || (nextId == null ? null : youRef.current);
+        /* far enough to touch: two small chips, or a small one and you */
+        const hitT = t + SF_CORD_STEP * (nextEl ? 0.64 : 0.56);
+        const from = k === 0 ? 0 : t - SF_CORD_STEP * 0.6;
+        const HIT = 560;                     // ms until contact; the run in does not slow before it hits
+        el.animate([
+          { offsetDistance: sfPct(from), opacity: 0, easing: "cubic-bezier(.35,.1,.7,.8)" },
+          { offsetDistance: sfPct(hitT), opacity: 1, offset: HIT / 1400, easing: "cubic-bezier(.2,.8,.3,1)" },
+          { offsetDistance: sfPct(t), opacity: 1 }], { duration: 1400 });
+        const bumped = neighbour || (tOf[p.id] < youT ? youRef.current : null);
+        if (bumped) {
+          const lt = parseFloat(bumped.style.offsetDistance);
+          if (!isNaN(lt)) bumped.animate([
+            { offsetDistance: `${lt}%` },
+            { offsetDistance: `${lt + 3.2}%`, offset: .2, easing: "cubic-bezier(.4,.6,.5,1)" },
+            { offsetDistance: `${lt}%` }], { duration: 1000, delay: HIT - 30, easing: "cubic-bezier(.2,.8,.3,1)" });
+        }
+      });
+    }
+    const m = new Map();
+    all.forEach((p) => m.set(p.id, { t: tOf[p.id], label: p.label }));
+    seen.current = m;
+  });
+
+  /* The light: from the tail, a stop at every person, as far as the front of
+     the line, then again. Rebuilt whenever anybody moves. Solid once landed. */
+  const stops = Object.values(tOf).concat([youT]).map((t) => Math.max(0, Math.min(1, t)) * 100).sort((a, b) => a - b);
+  const stopsKey = stops.map((s) => s.toFixed(1)).join(",");
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 15000);
+    const el = litRef.current;
+    if (!el || !el.animate || landed) return undefined;
+    const RUN = 14, HOLD = 520, TAIL = 700;
+    const frames = [{ strokeDashoffset: 100, offset: 0 }];
+    let t = 0, from = 0;
+    stops.forEach((st, i) => {
+      t += (st - from) * RUN; frames.push({ strokeDashoffset: 100 - st, t });
+      t += i === stops.length - 1 ? TAIL : HOLD; frames.push({ strokeDashoffset: 100 - st, t });
+      from = st;
+    });
+    const total = t || 1;
+    frames.slice(1).forEach((f) => { f.offset = f.t / total; delete f.t; });
+    const a = el.animate(frames, { duration: total, iterations: Infinity, easing: "linear" });
+    return () => a.cancel();
+  }, [stopsKey, landed]);   // eslint-disable-line
+
+  const oth = (p, extra) => (
+    <span key={p.id} ref={(el) => { pips.current[p.id] = el; }} className={"sfc-oth" + (extra || "")}
+      style={{ offsetDistance: sfPct(tOf[p.id]) }}>{sfInitials(p.label)}</span>
+  );
+  return (
+    <div className={"sfc" + (landed ? " landed" : "")}>
+      <svg viewBox="0 0 350 232" aria-hidden="true">
+        <path className="sfc-cord" d={SF_CORD} />
+        <path ref={litRef} className="sfc-lit" d={SF_CORD} pathLength="100" />
+      </svg>
+      <div className="sfc-pips">
+        {ahead.map((p) => oth(p))}
+        <span ref={youRef} className="sfc-you" style={{ offsetDistance: sfPct(youT) }}>
+          <DmNumber value={landed ? 1 : pos} />
+        </span>
+        {behind.map((p) => oth(p))}
+        {ghosts.map((g) => (
+          <span key={"g" + g.id} className="sfc-oth gone" style={{ offsetDistance: sfPct(g.t) }}>{sfInitials(g.label)}</span>
+        ))}
+      </div>
+      <div className={"sfc-desk" + (lit ? " lit" : "")}>
+        <span className="sfc-shock" /><span className="sfc-shock d2" />
+        <span className="sfc-ant" />
+        <span className="sfc-face"><PixIcon glyph="phone" size={44} /></span>
+      </div>
+    </div>
+  );
+}
+
+/* The floor's two-line timers, three wide. Every state has all three: the
+   wait runs on the cord and freezes when a desk is offered, the desk clock
+   starts when you sit, the day accumulates. */
+function SfLineTimers({ onLine, atDesk, today }) {
+  const fmt = (ms) => {
+    const t = Math.max(0, Math.floor(ms / 1000));
+    return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0");
+  };
+  return (
+    <div className="mcf-tmr sfl-tmr">
+      <span><span className="v"><PixIcon glyph="arrowup" size={14} /> <b>{fmt(onLine)}</b></span><span className="l">ON THE LINE</span></span>
+      <span><span className="v"><PixIcon glyph="clock" size={14} /> <b>{fmt(atDesk)}</b></span><span className="l">AT THE DESK</span></span>
+      <span><span className="v"><PixIcon glyph="phone" size={14} /> <b>{fmt(today)}</b></span><span className="l">ON DESKS TODAY</span></span>
+    </div>
+  );
+}
+
+/* Flat tiles in the desk row's treatment: dim, the chosen one white. No track
+   and no sliding pill. The options change shape with the state on purpose:
+   at a desk, "here" and "away" mean nothing, so the tiles there are Lunch
+   and Leave the desk. */
+function SfTiles({ value, options, busy, onPick }) {
+  return (
+    <div className="sft-row" role="radiogroup" aria-label="Where you are">
+      {options.map((o) => (
+        <button key={o.key} type="button" role="radio" aria-checked={o.key === value}
+          className={"sft" + (o.key === value ? " on" : "")} disabled={busy}
+          onClick={() => { if (o.key !== value) { buzz(12); onPick(o.key); } }}>
+          <SfIcon name={o.glyph || o.key} size={22} />
+          <span>{o.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SfLineLive({ cfg, store, row, meId, me, busy, onFlag, onRelease }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
   const plan = useMemo(() => stationPlanOf(cfg, store), [cfg, store]);
   const mode = stationModeOf(cfg, store);
   const board = useMemo(
-    () => stationLine(plan, row, { now: Date.now(), offers: mode === "rotation" }),
-    [plan, row, mode, tick]); // eslint-disable-line
-
-  if (!roomInUse(cfg, store, row)) return null;
-
+    () => stationLine(plan, row, { now, offers: mode === "rotation" }),
+    [plan, row, mode, now]);
+  const st = me.status;
   const mine = board.seats.find((s) => s.taken && s.id === meId) || null;
   const offered = board.seats.find((s) => s.offerTo === meId) || null;
-  const free = board.seats.filter((s) => !s.taken);
-  const first = (n) => String(n || "").split(" ")[0];
+  const freeSeat = board.seats.find((s) => !s.taken && !s.offerTo) || null;
+  const roster = (row && row.roster) || [];
+  const labelOf = (p) => { const r = roster.find((x) => x && x.id === p.id); return (r && (r.label || r.name)) || p.label || ""; };
+  /* The cord runs in desk order, not line order: the rotation is who the next
+     desk goes to, and that is the thing a person on the cord is reading. */
+  const waiting = board.waiting;
+  const myIdx = waiting.findIndex((p) => p.id === meId);
+  const ahead = (myIdx >= 0 ? waiting.slice(0, myIdx) : waiting).map((p) => ({ id: p.id, label: labelOf(p) }));
+  const behind = (myIdx >= 0 ? waiting.slice(myIdx + 1) : []).map((p) => ({ id: p.id, label: labelOf(p) }));
 
-  /* The one case worth shouting about: a chair with their name on it and a
-     clock running. Everything else here is information; this is an
-     instruction. */
-  if (offered) return (
-    <div className="sf-room due">
-      <div className="sf-room-h">Station {offered.n} is yours</div>
-      <p className="sf-room-p">
-        Go and sit down. It moves to the next person in {stnLeft(offered.offerLeftMs)}.
-      </p>
-    </div>
-  );
+  const kind = st !== "waiting" ? "off" : mine ? "seat" : offered ? "offer" : freeSeat ? "free" : "cord";
+  /* The landing, when a desk is offered while the cord is up: you slide to
+     the end, the handset lights, the cord drops away and the number falls out
+     of the desk row. Opening the screen to an offer already standing skips
+     straight to the number. */
+  const [land, setLand] = useState(null);
+  const prevKind = useRef(kind);
+  useEffect(() => {
+    const was = prevKind.current;
+    prevKind.current = kind;
+    if (kind === "offer" && was === "cord") {
+      setLand("slide");
+      const a = setTimeout(() => setLand("lit"), 800);
+      const b = setTimeout(() => setLand("done"), 1350);
+      return () => { clearTimeout(a); clearTimeout(b); };
+    }
+    if (kind !== "offer") setLand(null);
+    return undefined;
+  }, [kind]);
+  const landing = kind === "offer" && !!land && land !== "done";
+  const cordUp = kind === "cord" || (kind === "offer" && !!land);
 
-  if (mine) return (
-    <div className="sf-room on">
-      <div className="sf-room-h">You&rsquo;re at station {mine.n}</div>
-      <p className="sf-room-p">
-        {qWaitLabel(qMinsSince(mine.at))} so far
-        {mine.state === "held" ? " · the board has you greyed, tap anything to clear it" : ""}
-      </p>
-    </div>
-  );
+  const n = mine ? mine.n : offered ? offered.n : freeSeat ? freeSeat.n : null;
+  const cap = mine ? "DESK" : offered ? "GO TO DESK" : "FREE DESK";
+  const title = st === "lunch" ? "At lunch" : st === "away" ? "Away"
+    : mine ? `You're at desk ${n}` : offered ? `Desk ${n} is yours` : freeSeat ? `Desk ${n} is free`
+    : ahead.length === 0 ? "You're next for a desk" : "Waiting for a desk";
+
+  const joined = me.joinedAt ? Date.parse(me.joinedAt) : now;
+  const offerAt = offered ? now - (OFFER_MS - offered.offerLeftMs) : null;
+  const seatAt = mine && mine.at ? Date.parse(mine.at) : null;
+  const onLine = Math.max(0, (seatAt || offerAt || now) - joined);
+  const atDesk = seatAt ? Math.max(0, now - seatAt) : 0;
+  const today = sitsFor(row, meId).reduce((a, s) =>
+    a + (s.in ? Math.max(0, (s.out ? Date.parse(s.out) : now) - Date.parse(s.in)) : 0), 0);
+
+  const options = mine
+    ? [{ key: "lunch", label: "Lunch" }, { key: "leave", glyph: "door", label: "Leave the desk" }]
+    : [{ key: "waiting", label: "Here" }, ...LINE_SELF_FLAGS.map((k) => ({ key: k, label: k === "lunch" ? "Lunch" : "Away" }))];
+  const pick = (k) => {
+    if (k === "leave") onRelease("out");
+    else if (mine && k === "lunch") onRelease("lunch", () => onFlag("lunch"));
+    else onFlag(k);
+  };
 
   return (
-    <div className="sf-room">
-      <div className="sf-room-h">
-        {free.length === 0
-          ? `All ${board.seats.length} stations are taken`
-          : `${free.length} ${free.length === 1 ? "station is" : "stations are"} free`}
+    <>
+      <div className="sfl-top">
+        <SfDeskRow seats={board.seats} meId={meId} />
+        <div className="sfl-hero">
+          {st !== "waiting" ? (
+            <div className="sfl-stage"><div className="sfl-num"><span className="mcf-sticon"><SfIcon name={st} size={64} /></span></div></div>
+          ) : (
+            <>
+              <div className={"sfl-stage" + (cordUp ? (land === "done" ? " drop" : "") : " off")}>
+                {cordUp && (
+                  <SfCord ahead={ahead} behind={behind} pos={ahead.length + 1}
+                    landed={kind === "offer"} lit={land === "lit" || land === "done"} />
+                )}
+              </div>
+              <div className={"sfl-stage" + (n == null || landing ? " off" : "")}>
+                {n != null && !landing && (
+                  <div className="sfl-num">
+                    <div className="sfl-cap">{cap}</div>
+                    <div className="sfl-big"><DmNumber value={n} /></div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        <SfLineTimers onLine={onLine} atDesk={atDesk} today={today} />
+        <div className="sfl-title">{title}</div>
       </div>
-      <p className="sf-room-p">
-        {free.length === 0
-          ? "The line is how the next chair gets handed out."
-          : `Take ${free.length === 1 ? "it" : "one"}: ${free.map((s) => s.n).join(", ")}.`}
-      </p>
-      <div className="sf-room-map">
-        {board.seats.map((s) => (
-          <span key={s.n} className={"sf-seat" + (s.taken ? " on" : "") + (s.state === "held" ? " held" : "") + (s.offerTo ? " due" : "")}>
-            <b>{s.n}</b>
-            <em>{s.taken ? first(s.label) : s.offerTo ? first(s.offerLabel) : "free"}</em>
-          </span>
-        ))}
-      </div>
-    </div>
+      <SfTiles value={mine ? null : st} options={options} busy={busy} onPick={pick} />
+    </>
   );
 }
 
@@ -11108,6 +11341,19 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     if (next) setRow(next);
     setBusy(false);
   }
+  /* Getting up from a desk, from the desk. The same release the lot fence
+     runs; `why` is what the day's record says about it, and `then` is the
+     state they get up into. */
+  async function releaseSeat(why = "out", then = null) {
+    if (busy || !meId) return; setBusy(true);
+    const next = await mutateRow((cur) => {
+      const r = releasePerson(cur || {}, meId, qNowIso(), why);
+      return r.changed ? r.row : null;
+    });
+    if (next) setRow(next);
+    setBusy(false);
+    if (then) then();
+  }
   async function leave() {
     if (busy || !meId) return; setBusy(true);
     const next = await mutateRow((cur) => {
@@ -11166,15 +11412,42 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       : isNext ? variant.upSub : `${availableAhead} ${variant.aheadSub}`;
     // the desk asked for them by name: loud while it is fresh, then just history
     const nudgeOn = me.nudgedAt && qMinsSince(me.nudgedAt) < 10;
-    content = (
+    const mark = (
+      <div className="sf-top">
+        <span className="q-mark q-mark-live"><span className="sf-live-dot" />
+          <PixIcon glyph={variant.bannerGlyph} size={18} /><span>{variant.label}</span></span>
+      </div>
+    );
+    const nudge = nudgeOn && (
+      <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you</div>
+    );
+    const links = (
+      <div className="sf-links">
+        <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
+          <SfIcon name="mine" size={14} /><span>My day</span>
+        </button>
+        <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={leave}>
+          <SfIcon name="door" size={14} /><span>{variant.leave}</span>
+        </button>
+      </div>
+    );
+    /* A phone line with a room behind it is the room's screen: the desks, the
+       cord, the desk that is yours. Without one it is the queue it always was. */
+    const roomOn = variant.kind === "line" && roomInUse(cfg, store, row);
+    content = roomOn ? (
+      <div className={"sf-live sfl" + (st !== "waiting" ? " sf-off" : "")}>
+        {/* No mark up here: the floor's screen has none, and the bar at the
+            foot already says which room this is. */}
+        {nudge}
+        <SfLineLive cfg={cfg} store={store} row={row} meId={meId} me={me}
+          busy={busy} onFlag={setFlag} onRelease={releaseSeat} />
+        <div className="sf-actions">{links}</div>
+        <MyStationDay row={row} meId={meId} store={store} date={date} />
+      </div>
+    ) : (
       <div className={"sf-live" + (st !== "waiting" ? " sf-off" : "")}>
-        <div className="sf-top">
-          <span className="q-mark q-mark-live"><span className="sf-live-dot" />
-            <PixIcon glyph={variant.bannerGlyph} size={18} /><span>{variant.label}</span></span>
-        </div>
-        {nudgeOn && (
-          <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you</div>
-        )}
+        {mark}
+        {nudge}
         <div className="sf-poswrap">
           <div className="sf-aura" />
           {/* The arc fills as the time passes, so a long wait has a shape before it has
@@ -11190,19 +11463,10 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
           </div>
         </div>
         <div className="sf-actions">
-          <SfStatusSelect value={st} variant={variant} flags={QUEUE_SELF_FLAGS} busy={busy} onPick={setFlag} />
-          <div className="sf-links">
-            <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
-              <SfIcon name="mine" size={14} /><span>My day</span>
-            </button>
-            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={leave}>
-              <SfIcon name="door" size={14} /><span>{variant.leave}</span>
-            </button>
-          </div>
+          <SfStatusSelect value={st} variant={variant} flags={variant.kind === "line" ? LINE_SELF_FLAGS : QUEUE_SELF_FLAGS}
+            busy={busy} onPick={setFlag} />
+          {links}
         </div>
-        {variant.kind === "line" && (
-          <SfRoom cfg={cfg} store={store} row={row} meId={meId} />
-        )}
         <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
@@ -13357,6 +13621,10 @@ const FLOOR_FLAGS = {
   away:     { label: "Away",          cls: "f-away" },
 };
 const FLOOR_SELF_FLAGS = ["lunch", "away"];
+/* The floor has no "with a customer" segment of its own — being with somebody
+   is something the desk or a check-in puts you in, not a button you press — so
+   this only ever labels the ones it does have. */
+const FLOOR_SEG = { segFlag: "With a guest" };
 
 // The actions an event can trigger. The map is (event string) -> action.
 const FLOOR_ACTIONS = {
@@ -15698,10 +15966,15 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         {nudgeOn && (
           <div className="sf-nudge"><PixIcon glyph="bolt" size={13} /> The desk is asking for you on the floor</div>
         )}
-        {/* The approved floor screen: the count of available people ahead in the
-            dot matrix, the line drawn from the screen's left edge to the door,
-            the two clocks on one level, and the title. When you are standing
-            down the line steps aside for the status and its clock. */}
+        {/* The floor's own picture of the line: the count of available people
+            ahead in the dot matrix, the track drawn from the screen's edge to
+            the door, and the two clocks the floor is actually run on. Standing
+            down, the track steps aside for the status and its clock.
+
+            A round dial was tried here and taken out again. It carried one
+            duration and a position, and the floor is not run on either of
+            those: it is run on who is between you and the door. The controls
+            below it are the new ones and they stayed. */}
         {st === "waiting" ? (
           <div className="mcf-top">
             <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={10} gap={4} dim="transparent" /></span>
@@ -15725,15 +15998,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
               <PixIcon glyph="check" size={16} /><span>Customer left, put me back in line</span>
             </button>
           )}
-          <div className="mcf-chips" role="radiogroup" aria-label="Where you are">
-            {["waiting", ...FLOOR_SELF_FLAGS].map((s2) => (
-              <button key={s2} type="button" role="radio" aria-checked={s2 === st} disabled={busy}
-                className={"mcf-chip" + (s2 === st ? " on" : "")} onClick={() => { buzz(12); setFlag(s2); }}>
-                <PixIcon glyph={s2 === "waiting" ? "user" : s2} size={19} />
-                <span>{s2 === "waiting" ? "Here" : s2 === "lunch" ? "Lunch" : "Away"}</span>
-              </button>
-            ))}
-          </div>
+          {/* The segmented control the phone line uses. It was written to serve
+              this screen too — its own comment says the floor's track is three
+              wide rather than four — and was simply never wired in here. */}
+          <SfStatusSelect value={st} variant={FLOOR_SEG} flags={FLOOR_SELF_FLAGS}
+            busy={busy} onPick={setFlag} />
           <SeatBlock store={store} date={date} meId={meId} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
           <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
             fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
@@ -40658,9 +40927,10 @@ const SAGE_CSS = `
 .mc-offc{ margin-top:0; }
 .mcf-top{ width:min(430px,100%); margin:0 auto; flex:1; display:flex; flex-direction:column;
   align-items:center; justify-content:center; padding:8px 0 18px; }
-.mcf-count{ display:flex; justify-content:center; }
 .mcf-cap{ font-family:var(--sfmono); font-size:9px; font-weight:700; letter-spacing:.22em;
   color:rgba(237,242,234,.55); margin-top:8px; }
+.mcf-count{ display:flex; justify-content:center; }
+.mcf-sticon{ margin-top:10px; opacity:.9; }
 .mcf-track{ position:relative; align-self:stretch; height:30px; margin:12px 22px 0 calc(50% - 50vw);
   border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
 .mcf-track .fa, .mcf-track .fb{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px;
@@ -40699,14 +40969,6 @@ const SAGE_CSS = `
 .mc-qjoin s.hd{ background:#E9CE96; }
 .mc-steps-p{ font-size:15px; line-height:1.5; color:rgba(237,242,234,.8); margin:6px 0 4px; }
 .mc-qjoin b{ color:#E9CE96; }
-.mcf-sticon{ margin-top:10px; opacity:.9; }
-.mcf-chips{ display:flex; gap:8px; margin-top:6px; }
-.mcf-chip{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px;
-  padding:11px 0 9px; border-radius:13px; background:rgba(255,255,255,.04);
-  border:1px solid rgba(255,255,255,.09); color:#e8eef2; font-size:10px; font-weight:600;
-  cursor:pointer; transition:transform .12s ease; }
-.mcf-chip:active{ transform:scale(.94); }
-.mcf-chip.on{ border-color:rgba(228,201,141,.6); color:#e4c98d; background:rgba(228,201,141,.08); }
 /* ---- nothing paints that nobody sees --------------------------------------
    The phone pages sit fixed over the app's ground, so the ground's four
    drifting blobs, its dot field and its streaks were animating and
@@ -40727,7 +40989,7 @@ const SAGE_CSS = `
   --a1:#6E9678; --a2:#A9C4AC; --led:#8FD8AF; --glow:rgba(127,169,138,.38); --ld-off:rgba(143,216,175,.14);
   --sfink:#EDF2EA; --sfink2:#A7B3A9; --sfink3:#6E7A70; --sfcard:#1C2B23; --sfstroke:rgba(255,255,255,.09);
   background:radial-gradient(closest-side at 50% 112%, rgba(127,169,138,.42), rgba(127,169,138,.12) 55%, transparent 76%), #15211B; }
-.mc-shell .mc-card, .mc-shell .mcf-chip, .mc-shell .fba-btn, .mc-shell .mc-offc{ background:#1C2B23; }
+.mc-shell .mc-card, .mc-shell .fba-btn, .mc-shell .mc-offc{ background:#1C2B23; }
 .mc-shell .mc-sheet{ background:#1A2820; }
 .mc-shell .mc-hero{ background:linear-gradient(150deg, rgba(127,169,138,.3), rgba(46,74,56,.28) 60%), #203127; }
 .mc-shell .sf-nudge{ background:rgba(228,201,141,.14); color:#E4C98D; }
@@ -40758,8 +41020,7 @@ const SAGE_CSS = `
 .mc-floor .mcf-track{ background:#0D130F; box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
 .mc-floor .mcf-pip{ background:#243229; }
 .mc-floor .mcf-pip.hd{ background:#2E4034; }
-.mc-floor .mcf-chip, .mc-floor .fba-btn{ background:#0B100D; border-color:rgba(255,255,255,.12); }
-.mc-floor .mcf-chip.on{ border-color:rgba(228,201,141,.65); background:#151A12; }
+.mc-floor .fba-btn{ background:#0B100D; border-color:rgba(255,255,255,.12); }
 .mc-floor .fba-btn.fly{ border-color:rgba(232,169,60,.6); }
 .mc-floor .fba-btn.to{ border-color:rgba(216,72,60,.6); }
 .mc-floor .mcf-title{ color:#FFFFFF; }
@@ -40850,8 +41111,6 @@ const SAGE_CSS = `
 .mcf-tmr .l{ font-size:8.5px; margin-top:4px; }
 .mcf-title{ font-size:27px; margin-top:16px; }
 .mcf-sub{ font-size:14px; }
-.mcf-chips{ gap:10px; margin-top:8px; }
-.mcf-chip{ padding:14px 0 12px; font-size:12.5px; gap:8px; border-radius:16px; min-height:64px; }
 .mcf .fba-row{ gap:10px; margin-top:12px; }
 .mcf .fba-btn{ padding:18px 10px 15px; min-height:96px; gap:8px; }
 .mcf .fba-btn b{ font-size:17px; }
@@ -40927,7 +41186,6 @@ const SAGE_CSS = `
 .mc-tkwrap .mc-tkt{ flex:0 0 auto; }
 /* the customer has gone: one button, said plainly */
 .mcf .mcf-left{ margin:14px auto 0; display:flex; align-items:center; justify-content:center; gap:9px; }
-.mcf .mcf-left + .mcf-chips{ margin-top:14px; }
 /* leaving the lot */
 .mc-lotov{ position:fixed; inset:0; z-index:72; display:flex; align-items:center; justify-content:center; background:rgba(3,6,5,.88); padding:0 14px; }
 .mc-lot{ width:min(430px,100%); border-radius:24px; padding:24px 20px 18px; background:#101713; border:1px solid rgba(228,201,141,.24); color:#E8EEF2; text-align:center; box-shadow:0 32px 70px -20px rgba(0,0,0,.92); animation:mcSheet .3s cubic-bezier(.2,1.15,.35,1) both; will-change:transform,opacity; }
@@ -42438,36 +42696,93 @@ const SAGE_CSS = `
       .sf-stnday-note { margin:9px 0 0; font-size:10.5px; line-height:1.5;
         font-family:var(--sfmono); color:rgba(237,242,234,.34); }
 
-      /* The room, on their own phone. Leads with the desks because a room with
-         a free chair does not need anybody queuing for a call. */
-      .sf-room { margin:14px 14px 0; padding:13px 14px; border-radius:14px;
-        background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.09); }
-      .sf-room-h { font-family:var(--sffont); font-size:15px; font-weight:600;
-        color:rgba(237,242,234,.95); letter-spacing:-.01em; }
-      .sf-room-p { margin:4px 0 0; font-family:var(--sfmono); font-size:11px; line-height:1.5;
-        color:rgba(237,242,234,.5); }
-      /* A chair with their name on it and a clock running is the strongest
-         thing this screen ever says, so it is the only part that is not
-         quiet. */
-      .sf-room.due { background:rgba(120,160,255,.16); border-color:rgba(150,185,255,.5); }
-      .sf-room.due .sf-room-h { color:#fff; }
-      .sf-room.due .sf-room-p { color:rgba(220,232,255,.82); }
-      .sf-room.on { background:rgba(140,200,160,.12); border-color:rgba(150,210,175,.32); }
-      /* A grid rather than a wrapping row: three across mirrors how the default
-         room is actually laid out, and a wrapped flex row stretches whatever
-         is left over into a last row of double-width chairs. */
-      .sf-room-map { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px; margin-top:11px; }
-      .sf-seat { display:flex; flex-direction:column; align-items:center; gap:1px;
-        padding:7px 4px; border-radius:10px; background:rgba(255,255,255,.05);
-        border:1px dashed rgba(255,255,255,.18); }
-      .sf-seat b { font-family:var(--sfmono); font-size:12px; color:rgba(237,242,234,.8); }
-      .sf-seat em { font-style:normal; font-family:var(--sfmono); font-size:9.5px;
-        color:rgba(237,242,234,.4); max-width:100%; overflow:hidden; text-overflow:ellipsis;
-        white-space:nowrap; }
-      .sf-seat.on { background:rgba(255,255,255,.16); border-style:solid; border-color:transparent; }
-      .sf-seat.on em { color:rgba(237,242,234,.75); }
-      .sf-seat.held { opacity:.55; }
-      .sf-seat.due { border-style:solid; border-color:rgba(150,185,255,.6); }
+      /* The phone room, on their own phone: the desks as a row, the cord, the
+         desk number, the floor's timers and the flat tiles. */
+      .sfl-top { width:min(430px,100%); margin:0 auto; display:flex; flex-direction:column;
+        align-items:center; padding:0 0 18px; }
+      .sfd-row { display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); gap:6px;
+        align-self:stretch; margin-top:4px; }
+      .sfd { display:flex; flex-direction:column; align-items:center; gap:1px; padding:7px 2px 6px;
+        border-radius:10px; background:rgba(255,255,255,.09); border:1px solid transparent;
+        transition:background .45s, box-shadow .45s, transform .45s cubic-bezier(.3,1.6,.4,1); }
+      .sfd b { font-family:var(--sfmono); font-size:12px; font-weight:600; color:rgba(237,242,234,.62); }
+      .sfd em { font-style:normal; font-family:var(--sfmono); font-size:8.5px; color:rgba(237,242,234,.38);
+        max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .sfd.open, .sfd.free { background:var(--led); box-shadow:0 0 14px var(--led); }
+      .sfd.open { animation:sfdBeckon 1.1s ease-in-out infinite; }
+      .sfd.you { background:#fff; box-shadow:0 0 14px rgba(255,255,255,.6); }
+      .sfd.open b, .sfd.free b, .sfd.you b, .sfd.open em, .sfd.free em, .sfd.you em { color:#0B1430; }
+      .sfd.open em, .sfd.free em, .sfd.you em { opacity:.7; }
+      @keyframes sfdBeckon { 50% { transform:translateY(-3px); box-shadow:0 0 22px var(--led); } }
+      .sfl-hero { position:relative; align-self:stretch; height:232px; margin-top:6px; }
+      .sfl-stage { position:absolute; inset:0;
+        transition:opacity .45s cubic-bezier(.2,.8,.2,1), transform .45s cubic-bezier(.2,.8,.2,1); }
+      .sfl-stage.off { opacity:0; transform:scale(.96); pointer-events:none; }
+      .sfl-stage.drop { opacity:0; transform:translateY(26px) scale(.94); transition-duration:.32s; pointer-events:none; }
+      /* the cord is drawn at one size and scaled on a narrow phone, so the
+         motion path and the picture never disagree */
+      .sfc { position:absolute; left:50%; top:0; width:350px; height:232px; margin-left:-175px; transform-origin:50% 0; }
+      @media (max-width:400px) { .sfc { transform:scale(.9); } }
+      .sfc > svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
+      .sfc-cord { fill:none; stroke:rgba(157,195,255,.24); stroke-width:3; stroke-linecap:round; }
+      .sfc-lit { fill:none; stroke:var(--led); stroke-width:3; stroke-linecap:round;
+        stroke-dasharray:100 100; stroke-dashoffset:100; filter:drop-shadow(0 0 4px var(--led)); }
+      .sfc.landed .sfc-lit { stroke-dasharray:none; stroke-dashoffset:0; }
+      .sfc-you, .sfc-oth { position:absolute; left:0; top:0;
+        offset-path:path("M 26 150 C 96 232, 190 40, 292 112"); offset-rotate:0deg; }
+      .sfc-you { width:46px; height:46px; border-radius:50%; display:grid; place-items:center;
+        background:linear-gradient(160deg, var(--a1), var(--a2)); box-shadow:0 0 22px var(--glow); z-index:3;
+        transition:offset-distance .9s cubic-bezier(.2,.8,.2,1); }
+      .sfc-you .dm { --cell:5px; --led:#fff; perspective:none; }
+      .sfc-oth { width:30px; height:30px; border-radius:50%; background:#E4C98D; color:#1F2A22;
+        display:grid; place-items:center; font-family:var(--sfmono); font-size:9.5px; font-weight:700; z-index:2;
+        box-shadow:0 0 12px rgba(228,201,141,.35);
+        transition:offset-distance .9s cubic-bezier(.2,.8,.2,1), opacity .4s, transform .4s; }
+      .sfc-oth.gone { opacity:0; transform:scale(.5); }
+      /* the handset at the end of the cord, its antenna standing on the top
+         right dot, dark until the desk is yours */
+      .sfc-desk { position:absolute; right:0; top:50%; transform:translateY(-50%);
+        display:flex; flex-direction:column; align-items:center; z-index:2; }
+      .sfc-ant { width:2px; height:26px; border-radius:2px 2px 0 0; background:rgba(157,195,255,.12);
+        transform:translateX(8.8px); margin-bottom:-1px; transition:background .4s, box-shadow .4s; }
+      .sfc-face { position:relative; width:44px; height:44px; display:grid; place-items:center;
+        color:rgba(157,195,255,.28); transition:color .45s, filter .45s; }
+      .sfc-desk.lit .sfc-face { color:var(--led); filter:drop-shadow(0 0 8px var(--led)); }
+      .sfc-desk.lit .sfc-ant { background:var(--led); box-shadow:0 0 10px var(--led); }
+      .sfc-shock { position:absolute; left:50%; top:52%; width:120px; height:120px;
+        transform:translate(-50%,-50%) scale(.3); border-radius:50%; border:2px solid rgba(255,255,255,.55);
+        opacity:0; pointer-events:none; }
+      .sfc-desk.lit .sfc-shock { animation:sfcShock 1.6s ease-out 2; }
+      .sfc-desk.lit .sfc-shock.d2 { animation-delay:.5s; border-color:rgba(255,255,255,.35); }
+      @keyframes sfcShock { 0% { transform:translate(-50%,-50%) scale(.35); opacity:.8; }
+        100% { transform:translate(-50%,-50%) scale(2.2); opacity:0; } }
+      /* the desk number, fallen out of the row above */
+      .sfl-num { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+        justify-content:center; gap:10px; }
+      .sfl-cap { font-family:var(--sfmono); font-size:10px; font-weight:600; letter-spacing:.24em; color:var(--led); }
+      .sfl-big .dm { --cell:22px; perspective:none; }
+      .sfl-big .dm-digit { animation:none; gap:8px; }
+      .sfl-big .ld.on { box-shadow:0 0 16px var(--led), 0 0 40px var(--glow);
+        animation:sflSettle .7s cubic-bezier(.2,.8,.2,1) both; }
+      .sfl-big .ld:nth-child(n+4) { animation-delay:.07s; }
+      .sfl-big .ld:nth-child(n+7) { animation-delay:.14s; }
+      .sfl-big .ld:nth-child(n+10) { animation-delay:.21s; }
+      .sfl-big .ld:nth-child(n+13) { animation-delay:.28s; }
+      @keyframes sflSettle { from { opacity:0; transform:translateY(-70px) scale(.3); } to { opacity:1; transform:none; } }
+      .sfl-tmr { margin-top:6px; }
+      .sfl-title { font-family:var(--font-display); font-size:27px; font-weight:700; letter-spacing:-.02em;
+        color:#fff; text-align:center; margin-top:10px; }
+      .sft-row { display:flex; gap:6px; }
+      .sft { flex:1 1 0; min-width:0; display:flex; flex-direction:column; align-items:center; gap:5px;
+        padding:11px 0 9px; border:1px solid transparent; border-radius:10px; background:rgba(255,255,255,.09);
+        color:var(--sfink2); font-size:11.5px; font-weight:600; cursor:pointer;
+        transition:background .3s, color .3s, box-shadow .3s, transform .28s cubic-bezier(.3,1.3,.4,1); }
+      .sft:active:not(:disabled) { transform:scale(.94); }
+      .sft:disabled { opacity:.6; }
+      .sft.on { background:#fff; color:#0B1430; box-shadow:0 0 14px rgba(255,255,255,.35); }
+      .sft .sf-ico { color:currentColor; filter:none; }
+      @media (prefers-reduced-motion: reduce) {
+        .sfc-lit, .sfc-you, .sfc-oth, .sfl-stage, .sfc-ant, .sfc-face, .sfc-shock, .sfl-big .ld, .sfd { animation:none !important; transition:none !important; } }
       .sf-stnday-row.on .sf-stnday-why { color:#cfe0ff; }
       /* ---- plates + smart assign, in the new card language ----
          the tables keep their markup; what changes is the shell around them,
