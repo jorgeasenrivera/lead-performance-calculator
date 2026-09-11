@@ -10698,9 +10698,11 @@ const sfPct = (t) => `${(Math.max(0, Math.min(1, t)) * 100).toFixed(2)}%`;
 
 /* The light along a line: from the tail, a stop at every person, as far as
    the front of the line, then again. The cord runs it as a dash offset, the
-   tracks as a width; both hand in their stops as percent of the way along
-   and a frame for one stop. Returns the cancel. */
-function lineLight(el, stops, frame) {
+   tracks as a dot that travels; both hand in their stops as percent of the
+   way along and a frame for one stop. A fading light comes in at the tail
+   and goes at the front; a second one can run half a cycle behind. Returns
+   the cancel. */
+function lineLight(el, stops, frame, { fade = false, half = false } = {}) {
   if (!el || !el.animate || !stops.length) return undefined;
   const RUN = 14, HOLD = 520, TAIL = 700;
   const frames = [{ ...frame(0), offset: 0 }];
@@ -10712,23 +10714,32 @@ function lineLight(el, stops, frame) {
   });
   const total = t || 1;
   frames.slice(1).forEach((f) => { f.offset = f.t / total; delete f.t; });
-  const a = el.animate(frames, { duration: total, iterations: Infinity, easing: "linear" });
+  if (fade) {
+    frames.forEach((f) => { f.opacity = 1; });
+    frames[0].opacity = 0;
+    frames[frames.length - 1].opacity = 0;
+  }
+  const a = el.animate(frames, { duration: total, iterations: Infinity, iterationStart: half ? 0.5 : 0, easing: "linear" });
   return () => a.cancel();
 }
 
-/* The same light on a track: the stops are where the pips stand, measured
-   after layout, and the light is a bar from the track's left edge. */
+/* The same light on a track: two dots that come in from the track's left
+   edge and travel to the head of the line, a stop at every person on the
+   way, the second half a cycle behind the first. The stops are where the
+   pips stand, measured after layout. */
 function useTrackLight(ref, key, pipSel) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const lt = el.querySelector(".lt");
+    const dots = [...el.querySelectorAll(".lt")];
     const r = el.getBoundingClientRect();
-    if (!lt || !r.width) return undefined;
+    if (!dots.length || !r.width) return undefined;
     const stops = [...el.querySelectorAll(pipSel)]
       .map((p) => { const q = p.getBoundingClientRect(); return ((q.left + q.width / 2 - r.left) / r.width) * 100; })
       .map((x) => Math.max(0, Math.min(100, x))).sort((a, b) => a - b);
-    return lineLight(lt, stops, (st) => ({ width: `${st}%` }));
+    const frame = (st) => ({ transform: `translateX(${((st / 100) * r.width).toFixed(1)}px)` });
+    const offs = dots.map((d, i) => lineLight(d, stops, frame, { fade: true, half: i % 2 === 1 }));
+    return () => offs.forEach((off) => off && off());
   }, [key]);   // eslint-disable-line
 }
 function SfCord({ ahead, behind, pos, landed, lit }) {
@@ -14380,7 +14391,7 @@ function McTrack({ line, meId, roster }) {
   useTrackLight(ref, waiting.map((p2) => p2.id).join(","), ".mcf-pip, .mcf-you");
   return (
     <div className="mcf-track" ref={ref}>
-      <s className="lt" />
+      <s className="lt" /><s className="lt" />
       {ahead.map((p2, i) => (
         <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ left: headL(i) }}>{labelOf(p2.id)}</span>
       ))}
@@ -14721,7 +14732,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
       {me && (line || []).length > 0 && (
         <button type="button" className="mc-railw" onClick={() => { buzz(8); toFloor(); }} aria-label="The line">
           <span className={"mc-rail" + (iAmUp ? " up" : "")} ref={railRef}>
-            <s className="lt" />
+            <s className="lt" /><s className="lt" /><s className="lt" />
             {(line || []).slice(0, 8).map((p, i) => {
               const mine2 = p.id === meId;
               const left = `calc(100% - 19px - ${Math.min(82, i * 13)}%)`;   // the head at the rail's end, the rest 13% a step back
@@ -16335,7 +16346,7 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = 
   useTrackLight(ref, people.map((p) => p.id).join(","), ".fr-pip");
   return (
     <div className="fr-rail" ref={ref}>
-      <s className="lt" />
+      <s className="lt" /><s className="lt" />
       {people.map((p, i) => {
         const bunched = (91 - i * 15) < 24;
         const c = colorOf(p.id);
@@ -39737,10 +39748,10 @@ const SAGE_CSS = `
 /* the rail */
 .mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -18px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
 .mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); overflow:hidden; }
-/* the light along the line: from the left edge, a stop at every person, as
-   far as the head, then again; the same light the phone room's cord runs */
-.mc-rail .lt, .mcf-track .lt, .fr-rail .lt{ position:absolute; left:0; top:50%; height:3px; margin-top:-1.5px; width:0; border-radius:0 2px 2px 0;
-  background:rgba(143,216,175,.85); box-shadow:0 0 6px rgba(143,216,175,.8); pointer-events:none; }
+/* the light along the line: dots in from the left edge, a stop at every
+   person, as far as the head, then again; the phone room's cord's logic */
+.mc-rail .lt, .mcf-track .lt, .fr-rail .lt{ position:absolute; left:-3px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%;
+  background:rgba(143,216,175,.7); box-shadow:0 0 6px rgba(143,216,175,.7); opacity:0; pointer-events:none; }
 .mc-rail.up{ background:rgba(143,216,175,.1); } .mc-rail.up .lt{ background:#8FD8AF; box-shadow:0 0 10px rgba(143,216,175,1); }
 .mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
 .mc-pip.hd{ width:30px; height:30px; font-size:9.5px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
@@ -40083,6 +40094,7 @@ const SAGE_CSS = `
 .mcf-track{ --edge:21px; }
 .mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
+.mcf-track .lt{ width:8px; height:8px; margin-top:-4px; left:-4px; }
 .mcf-tmr{ gap:28px; margin-top:18px; }
 .mcf-tmr .v{ font-size:14px; height:18px; gap:7px; }
 .mcf-tmr .l{ font-size:10px; margin-top:4px; }
