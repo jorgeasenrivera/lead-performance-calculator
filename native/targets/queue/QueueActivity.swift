@@ -293,6 +293,17 @@ private struct Rail: View {
       let w = geo.size.width
       ZStack(alignment: .leading) {
         RoundedRectangle(cornerRadius: 15).fill(Color.white.opacity(up ? 0.1 : 0.07))
+        /* The light along the line, as the app runs it: from the left edge as
+           far as you. A Live Activity cannot loop it, so it rests where the
+           app's light stops longest. */
+        if let mine = line.firstIndex(where: { $0.me }) {
+          let reach = max(14, w - Double(mine) * 25 - 17)
+          RoundedRectangle(cornerRadius: 1.5)
+            .fill((up ? mint : sand).opacity(0.85))
+            .frame(width: reach, height: 3)
+            .shadow(color: (up ? mint : sand).opacity(0.8), radius: 4)
+            .position(x: reach / 2, y: geo.size.height / 2)
+        }
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
           // The door is the right-hand end of the rail and the front of the line
           // sits on it; everyone behind steps left in fixed strides. You are the

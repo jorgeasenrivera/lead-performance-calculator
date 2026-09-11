@@ -10695,6 +10695,42 @@ function SfDeskRow({ seats, meId }) {
 const SF_CORD = "M 26 150 C 96 232, 190 40, 292 112";
 const SF_CORD_STEP = 0.22;
 const sfPct = (t) => `${(Math.max(0, Math.min(1, t)) * 100).toFixed(2)}%`;
+
+/* The light along a line: from the tail, a stop at every person, as far as
+   the front of the line, then again. The cord runs it as a dash offset, the
+   tracks as a width; both hand in their stops as percent of the way along
+   and a frame for one stop. Returns the cancel. */
+function lineLight(el, stops, frame) {
+  if (!el || !el.animate || !stops.length) return undefined;
+  const RUN = 14, HOLD = 520, TAIL = 700;
+  const frames = [{ ...frame(0), offset: 0 }];
+  let t = 0, from = 0;
+  stops.forEach((st, i) => {
+    t += (st - from) * RUN; frames.push({ ...frame(st), t });
+    t += i === stops.length - 1 ? TAIL : HOLD; frames.push({ ...frame(st), t });
+    from = st;
+  });
+  const total = t || 1;
+  frames.slice(1).forEach((f) => { f.offset = f.t / total; delete f.t; });
+  const a = el.animate(frames, { duration: total, iterations: Infinity, easing: "linear" });
+  return () => a.cancel();
+}
+
+/* The same light on a track: the stops are where the pips stand, measured
+   after layout, and the light is a bar from the track's left edge. */
+function useTrackLight(ref, key, pipSel) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const lt = el.querySelector(".lt");
+    const r = el.getBoundingClientRect();
+    if (!lt || !r.width) return undefined;
+    const stops = [...el.querySelectorAll(pipSel)]
+      .map((p) => { const q = p.getBoundingClientRect(); return ((q.left + q.width / 2 - r.left) / r.width) * 100; })
+      .map((x) => Math.max(0, Math.min(100, x))).sort((a, b) => a - b);
+    return lineLight(lt, stops, (st) => ({ width: `${st}%` }));
+  }, [key]);   // eslint-disable-line
+}
 function SfCord({ ahead, behind, pos, landed, lit }) {
   const youT = landed ? 0.975 : 0.8 - ahead.length * SF_CORD_STEP;
   const tOf = {};
@@ -10754,22 +10790,8 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
      the line, then again. Rebuilt whenever anybody moves. Solid once landed. */
   const stops = Object.values(tOf).concat([youT]).map((t) => Math.max(0, Math.min(1, t)) * 100).sort((a, b) => a - b);
   const stopsKey = stops.map((s) => s.toFixed(1)).join(",");
-  useEffect(() => {
-    const el = litRef.current;
-    if (!el || !el.animate || landed) return undefined;
-    const RUN = 14, HOLD = 520, TAIL = 700;
-    const frames = [{ strokeDashoffset: 100, offset: 0 }];
-    let t = 0, from = 0;
-    stops.forEach((st, i) => {
-      t += (st - from) * RUN; frames.push({ strokeDashoffset: 100 - st, t });
-      t += i === stops.length - 1 ? TAIL : HOLD; frames.push({ strokeDashoffset: 100 - st, t });
-      from = st;
-    });
-    const total = t || 1;
-    frames.slice(1).forEach((f) => { f.offset = f.t / total; delete f.t; });
-    const a = el.animate(frames, { duration: total, iterations: Infinity, easing: "linear" });
-    return () => a.cancel();
-  }, [stopsKey, landed]);   // eslint-disable-line
+  useEffect(() => (landed ? undefined : lineLight(litRef.current, stops, (st) => ({ strokeDashoffset: 100 - st }))),
+    [stopsKey, landed]);   // eslint-disable-line
 
   const oth = (p, extra) => (
     <span key={p.id} ref={(el) => { pips.current[p.id] = el; }} className={"sfc-oth" + (extra || "")}
@@ -14355,26 +14377,10 @@ function McTrack({ line, meId, roster }) {
   const headL = (i) => back(i * 15);
   const youL = back(ahead.length * 15);
   const behindL = (k) => back(ahead.length * 15 + (k + 1) * 13);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const place = () => {
-      const w = el.offsetWidth;
-      const edge = parseFloat(getComputedStyle(el).getPropertyValue("--edge")) || 19;
-      const px = (pct) => w - edge - (w * pct) / 100;
-      const tail = px(behind.length ? ahead.length * 15 + behind.length * 13 : ahead.length * 15);
-      el.style.setProperty("--dA", Math.max(8, tail - 18) + "px");
-      el.style.setProperty("--bX", (px(ahead.length * 15) + 12) + "px");
-      el.style.setProperty("--dB", (w - 16) + "px");
-    };
-    place();
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
-  }, [ahead.length, behind.length]);   // eslint-disable-line
+  useTrackLight(ref, waiting.map((p2) => p2.id).join(","), ".mcf-pip, .mcf-you");
   return (
     <div className="mcf-track" ref={ref}>
-      <s className="fa" /><s className="fa d2" />
-      <s className="fb" /><s className="fb d2" />
+      <s className="lt" />
       {ahead.map((p2, i) => (
         <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ left: headL(i) }}>{labelOf(p2.id)}</span>
       ))}
@@ -14591,6 +14597,8 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
   const ahead = (line || []).slice(0, Math.max(0, myPos - 1));
   const headP = ahead[0] || null;
   const iAmUp = !!me && me.status === "waiting" && availableAhead === 0;
+  const railRef = useRef(null);
+  useTrackLight(railRef, me ? (line || []).slice(0, 8).map((p) => p.id).join(",") : "", ".mc-pip");
 
   /* ---- where the month stands against its pace ----
      The goal is set at the start of the month, and the pace to it follows the
@@ -14712,8 +14720,8 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           everybody in their own colour and you lit. Tapping it goes to the floor. */}
       {me && (line || []).length > 0 && (
         <button type="button" className="mc-railw" onClick={() => { buzz(8); toFloor(); }} aria-label="The line">
-          <span className={"mc-rail" + (iAmUp ? " up" : "")}>
-            <s className="fa" /><s className="fb" /><s className="fa d2" />
+          <span className={"mc-rail" + (iAmUp ? " up" : "")} ref={railRef}>
+            <s className="lt" />
             {(line || []).slice(0, 8).map((p, i) => {
               const mine2 = p.id === meId;
               const left = `calc(100% - 19px - ${Math.min(82, i * 13)}%)`;   // the head at the rail's end, the rest 13% a step back
@@ -16324,24 +16332,10 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = 
   const EDGE = 25;
   const posOf = (i) => { const x = 91 - i * 15; return x >= 24 ? x : 24 - Math.ceil((24 - x) / 15) * 6; };
   const leftOf = (i) => `calc(100% - ${EDGE}px - ${91 - posOf(i)}%)`;
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return undefined;
-    const place = () => {
-      const w = el.offsetWidth;
-      const px = (i) => w - EDGE - (w * (91 - posOf(i))) / 100;
-      const tail = people.length ? px(people.length - 1) : w - EDGE;
-      el.style.setProperty("--dA", Math.max(8, tail - 26) + "px");
-      el.style.setProperty("--bX", (w - EDGE + 12) + "px");
-      el.style.setProperty("--dB", (w - 16) + "px");
-    };
-    place();
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
-  }, [people.length]);   // eslint-disable-line
+  useTrackLight(ref, people.map((p) => p.id).join(","), ".fr-pip");
   return (
     <div className="fr-rail" ref={ref}>
-      <s className="fa" /><s className="fa d2" /><s className="fb" /><s className="fb d2" />
+      <s className="lt" />
       {people.map((p, i) => {
         const bunched = (91 - i * 15) < 24;
         const c = colorOf(p.id);
@@ -39743,9 +39737,11 @@ const SAGE_CSS = `
 /* the rail */
 .mc-railw{ position:relative; display:block; width:auto; margin:-2px 30px 0 -18px; border:0; background:none; padding:0; text-align:left; cursor:pointer; }
 .mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); overflow:hidden; }
-.mc-rail s{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
-.mc-rail .fa{ left:4px; --dA:180px; animation:mcfA 2.4s linear infinite; } .mc-rail .fb{ left:0; --bX:120px; --dB:300px; animation:mcfB 2.4s linear infinite; } .mc-rail .d2{ animation-delay:1.2s; }
-.mc-rail.up{ background:rgba(143,216,175,.1); } .mc-rail.up s{ background:rgba(143,216,175,.9); }
+/* the light along the line: from the left edge, a stop at every person, as
+   far as the head, then again; the same light the phone room's cord runs */
+.mc-rail .lt, .mcf-track .lt, .fr-rail .lt{ position:absolute; left:0; top:50%; height:3px; margin-top:-1.5px; width:0; border-radius:0 2px 2px 0;
+  background:rgba(143,216,175,.85); box-shadow:0 0 6px rgba(143,216,175,.8); pointer-events:none; }
+.mc-rail.up{ background:rgba(143,216,175,.1); } .mc-rail.up .lt{ background:#8FD8AF; box-shadow:0 0 10px rgba(143,216,175,1); }
 .mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
 .mc-pip.hd{ width:30px; height:30px; font-size:9.5px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
 /* Somebody off the line used to be drawn at 45% opacity, which on a dark
@@ -39923,15 +39919,6 @@ const SAGE_CSS = `
 .mcf-sticon{ margin-top:10px; opacity:.9; }
 .mcf-track{ position:relative; align-self:stretch; height:34px; margin:12px 22px 0 calc(50% - 50vw);
   border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
-.mcf-track .fa, .mcf-track .fb{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px;
-  border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
-.mcf-track .fa{ left:4px; animation:mcfA 2.4s linear infinite; }
-.mcf-track .fb{ left:0; animation:mcfB 2.4s linear infinite; }
-.mcf-track .d2{ animation-delay:1.2s; }
-@keyframes mcfA{ 0%{ transform:translateX(0); opacity:0; } 14%{ opacity:.9; }
-  80%{ opacity:.9; } 96%,100%{ transform:translateX(var(--dA,80px)); opacity:0; } }
-@keyframes mcfB{ 0%{ transform:translateX(var(--bX,120px)); opacity:0; } 16%{ opacity:.9; }
-  82%{ opacity:.9; } 100%{ transform:translateX(var(--dB,240px)); opacity:0; } }
 .mcf-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:24px; height:24px;
   border-radius:50%; background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center;
   justify-content:center; font-family:var(--sfmono); font-size:8px; font-weight:700;
@@ -40096,7 +40083,6 @@ const SAGE_CSS = `
 .mcf-track{ --edge:21px; }
 .mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
-.mcf-track .fa, .mcf-track .fb{ width:8px; height:8px; margin-top:-4px; }
 .mcf-tmr{ gap:28px; margin-top:18px; }
 .mcf-tmr .v{ font-size:14px; height:18px; gap:7px; }
 .mcf-tmr .l{ font-size:10px; margin-top:4px; }
@@ -40260,7 +40246,7 @@ const SAGE_CSS = `
   padding:9px 20px; font-size:12px; font-weight:600; cursor:pointer; animation:mcRise .5s .6s both; }
 @keyframes mcRise{ from{ transform:translateY(16px); opacity:0; } to{ transform:none; opacity:1; } }
 @media (prefers-reduced-motion: reduce){
-  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind, .mcf-track .fa, .mcf-track .fb, .mc-tab.alert svg, .mc-offc,
+  .mc-asof s, .mc-made::after, .mc-sheet, .mc-ind, .mc-tab.alert svg, .mc-offc,
   .mc-tkt, .mc-send s, .mc-flash .bloom, .mc-flash .burst, .mc-flash .drv, .mc-flash-dm, .mc-flash-t, .mc-flash-s, .mc-flash-b{ animation:none; transition:none; }
 }
 
@@ -42995,10 +42981,6 @@ const SAGE_CSS = `
 
 /* the line: McTrack from the salesperson's screen, sized for a thumb */
 .fr-rail{ position:relative; height:50px; margin:12px 26px 4px -14px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
-.fr-rail s{ position:absolute; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%; background:rgba(143,216,175,.55); opacity:0; pointer-events:none; }
-.fr-rail .fa{ left:4px; animation:mcfA 2.4s linear infinite; }
-.fr-rail .fb{ left:0; animation:mcfB 2.4s linear infinite; }
-.fr-rail .d2{ animation-delay:1.2s; }
 .fr-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%; border:0; padding:0;
   background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center; justify-content:center; font:700 11px var(--font-mono);
   transition:left .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
