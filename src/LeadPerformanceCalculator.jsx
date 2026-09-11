@@ -34702,7 +34702,11 @@ const SAGE_CSS = `
          the text-size slider in the phone's own settings, which is the half of it
          worth keeping. Setting it to none would take that away too, and somebody who has
          turned their text up has a reason. */
-      html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+      /* No pinch or double-tap zoom anywhere: a screen that has been zoomed by
+         accident is a screen somebody cannot find their way back from. Panning
+         is untouched; anything that runs its own gestures (the floor plan)
+         says touch-action:none on itself and keeps them. */
+      html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-x pan-y; }
 
       /* Display face on anything that carries hierarchy or a number worth reading
          across a room. Everything else stays on Inter, which holds up better in
