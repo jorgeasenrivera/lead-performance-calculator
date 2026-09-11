@@ -3601,7 +3601,11 @@ export default function LeadPerformanceCalculator() {
      so the sign-in screen carries on and the jump running inside it is never
      interrupted. Returning it as a branch of its own is exactly what would tear
      it down at the moment the session lands. */
-  const signInLayer = config && (!session || jumpHold) ? (
+  /* And not before the stored session has been read: config lands first, and
+     for the beat between the two a returning person saw the sign-in screen
+     flash up and vanish under their own arrival. The ground is what shows
+     while the answer is on its way; a real sign-out still gets the screen. */
+  const signInLayer = config && authReady && (!session || jumpHold) ? (
     <div className="signin-over" key="signin">
       <Login config={config}
         onJump={(v) => { setJumpHold(v); setHoldMount(v); }}
@@ -4776,7 +4780,8 @@ function LEADERBOARD_HTML(p) {
   .tuner.on { display:block; }
   .tuner-head { display:flex; justify-content:space-between; align-items:center;
     font-weight:800; font-size:1.9vh; margin-bottom:1.2vh; }
-  .tuner-x { background:none; border:none; color:#9FC2E4; font-size:2.4vh; cursor:pointer; line-height:1; }
+  .tuner-x { background:none; border:none; color:#9FC2E4; cursor:pointer; line-height:1; width:3vh; height:3vh; display:grid; place-items:center; }
+  .tuner-x svg, .gear svg { width:60%; height:60%; fill:currentColor; display:block; }
   .tuner-row { display:block; margin-bottom:1vh; }
   .tuner-row span { display:flex; justify-content:space-between; color:#BFD9F0; margin-bottom:.5vh; }
   .tuner-row b { color:#fff; }
@@ -4905,9 +4910,9 @@ function LEADERBOARD_HTML(p) {
 <div class="wrap" id="root"><div class="empty">Loading leaderboard…</div></div>
 
 <!-- Tuning happens standing at the TV, so the controls live here rather than back in the app. -->
-<button class="gear" id="gear" title="Display settings">&#9881;</button>
+<button class="gear" id="gear" title="Display settings"></button>
 <div class="tuner" id="tuner">
-  <div class="tuner-head">Display <button class="tuner-x" id="tclose">&times;</button></div>
+  <div class="tuner-head">Display <button class="tuner-x" id="tclose" aria-label="Close"></button></div>
 
   <label class="tuner-row"><span>Board style</span></label>
   <div class="tuner-seg">
@@ -4972,6 +4977,9 @@ function LEADERBOARD_HTML(p) {
       + ' shape-rendering="geometricPrecision">' + out + '</svg>';
   }
   function norm(s){return (s||'').trim().toLowerCase().replace(/\\s+/g,' ');}
+  // the gear and the close are the same dots as everything else on the screen
+  document.getElementById('gear').innerHTML = pix('gear');
+  document.getElementById('tclose').innerHTML = pix('close');
   // No external library and no CDN. A TV on a dealership network may not be able to
   // reach an external CDN at all, and an import that never resolves left it stuck on
   // "Loading" forever. Plain fetch against the REST API, with the token refreshed by
@@ -5963,13 +5971,13 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
           <p className="bl-onesub">The Board opens in its own window, sized for a TV or a big screen. It
             refreshes on its own every 30 seconds and shows the five: {FIVE.map((f) => f.label.toLowerCase()).join(", ")}.</p>
           <div className="bl-tile-acts">
-            <button className="bl-go" onClick={() => launch(s.id)}>Open the board ↗</button>
+            <button className="bl-go" onClick={() => launch(s.id)}>Open the board <PixIcon glyph="arrow" size={11} /></button>
             <CastLink storeId={s.id} config={config} compact />
           </div>
           {blocked && <p className="bl-blocked">Your browser stopped that window from opening. Allow pop-ups
             for this site and press again, or copy the TV link and open it yourself.</p>}
         </div>
-        <button className="btn-link" onClick={onBack}>← Back to start</button>
+        <button className="btn-link" onClick={onBack}><PixIcon glyph="arrowleft" size={11} /> Back to start</button>
       </div>
     );
   }
@@ -6014,7 +6022,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
               <span className="bl-tile-logo">{s.icon ? <img src={s.icon} alt="" /> : <span className="bl-tile-ph">{s.name[0]}</span>}</span>
               <span className="bl-tile-name">{s.name}</span>
               <span className="bl-tile-acts">
-                <button className="bl-go" onClick={() => launch(s.id)}>Open the board ↗</button>
+                <button className="bl-go" onClick={() => launch(s.id)}>Open the board <PixIcon glyph="arrow" size={11} /></button>
                 <CastLink storeId={s.id} config={config} compact />
               </span>
             </div>
@@ -6023,7 +6031,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
       </div>
       {blocked && <p className="bl-blocked">Your browser stopped that window from opening. Allow pop-ups for
         this site and press again, or copy the TV link and open it yourself.</p>}
-      <button className="btn-link" onClick={onBack}>← Back to start</button>
+      <button className="btn-link" onClick={onBack}><PixIcon glyph="arrowleft" size={11} /> Back to start</button>
     </div>
   );
 }
@@ -11703,7 +11711,7 @@ function ToolSheet({ title, sub, onClose, wide, children }) {
     <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
       <div className={"acard toolsheet" + (wide ? " wide" : "") + (closing ? " closing" : "")}
         role="dialog" aria-label={title}>
-        <button className="ac-x" onClick={shut} aria-label="Close">×</button>
+        <button className="ac-x" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         <div className="ac-name">{title}</div>
         {sub && <div className="ac-sub">{sub}</div>}
         <div className="ts-body">{children}</div>
@@ -11970,7 +11978,7 @@ function OppsTally({ history, nameOf, accent = "#4c8bf5", actions = ["assigned"]
                 <div className="lb-body">
                   <span className="lb-rank">{i + 1}</span>
                   <span className="lb-nm">{nameOf(r.id)}</span>
-                  {i === 0 && <span className="lb-crown" aria-hidden="true">▲</span>}
+                  {i === 0 && <span className="lb-crown" aria-hidden="true"><PixIcon glyph="triup" size={8} /></span>}
                   <span className="lb-n">{r.n}</span>
                 </div>
                 {r.refs.length > 0 && (
@@ -13508,8 +13516,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
           return (
             <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""}`}>
               <div className="q-ord">
-                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up">▲</button>
-                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down">▼</button>
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="triup" size={9} /></button>
+                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down"><PixIcon glyph="tridown" size={9} /></button>
               </div>
               <div className="q-rank">{i + 1}</div>
               <span className="mf-av" style={{ background: `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
@@ -14316,7 +14324,7 @@ function AssistWatcher({ store, meName }) {
           <span className="aswatch-age">{fmtAssistAge(assistAge(a))}</span>
           <button type="button" className="aswatch-go" onClick={() => claim(a)}>On my way</button>
           <button type="button" className="aswatch-x" aria-label="Dismiss on this screen"
-            onClick={() => setHidden((h) => ({ ...h, [a.id]: true }))}>&times;</button>
+            onClick={() => setHidden((h) => ({ ...h, [a.id]: true }))}><PixIcon glyph="close" size={12} /></button>
         </div>
       ))}
     </div>
@@ -17575,8 +17583,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
           return (
             <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""} ${p.status === "customer" ? "f-row-cust" : ""}`}>
               <div className="q-ord">
-                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up">▲</button>
-                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down">▼</button>
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="triup" size={9} /></button>
+                <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down"><PixIcon glyph="tridown" size={9} /></button>
               </div>
               <div className="q-rank">{i + 1}</div>
               <span className="mf-av" style={{ background: `hsl(${hueFromName(realName(p.id))} 52% 42%)` }}>{initialsOf(realName(p.id))}</span>
@@ -19669,7 +19677,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
       {showLosers && (
         <div className="da-scrim" onClick={(e) => { if (e.target === e.currentTarget) setShowLosers(false); }}>
           <div className="da-modal" role="dialog" aria-label="Biggest Loser leaderboard">
-            <button className="da-x" onClick={() => setShowLosers(false)} aria-label="Close">×</button>
+            <button className="da-x" onClick={() => setShowLosers(false)} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
             <div className="da-mtitle">Biggest Loser · {monthName}</div>
             <div className="da-msub">one point per missed standard per day · low score wins</div>
             {offenders.map((r, i) => (
@@ -24121,7 +24129,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
   return createPortal(
     <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
       <div ref={boxRef} className={"acard" + (closing ? " closing" : "")} role="dialog" aria-label={a.name}>
-        <button className="ac-x" onClick={shut} aria-label="Close">×</button>
+        <button className="ac-x" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         <div className="ac-head">
           <span className="ac-ava">{ini}</span>
           <div>
@@ -37777,7 +37785,7 @@ const SAGE_CSS = `
       .verdict-off { background:rgba(118,118,128,.2); color:var(--ink); }
 
       /* ---- auth extras ---- */
-      .btn-link { background:none; border:none; color:var(--p2d); font-weight:600; font-size:13px; cursor:pointer; margin-top:12px; }
+      .btn-link { background:none; border:none; color:var(--p2d); font-weight:600; font-size:13px; cursor:pointer; margin-top:12px; display:inline-flex; align-items:center; gap:6px; }
 
       /* ---- splash ---- */
       .splash { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:40px 20px;
@@ -39367,7 +39375,7 @@ const SAGE_CSS = `
 
 /* manager reorder arrows */
 .q-ord{display:flex;flex-direction:column;gap:2px;margin-right:2px;}
-.q-ord-b{width:24px;height:20px;line-height:1;border-radius:6px;border:1px solid rgba(255,255,255,.12);
+.q-ord-b{width:26px;height:22px;line-height:1;border-radius:6px;border:1px solid rgba(255,255,255,.12);display:inline-grid;place-items:center;
   background:rgba(255,255,255,.05);color:inherit;font-size:10px;cursor:pointer;padding:0;}
 .q-ord-b:disabled{opacity:.3;cursor:default;}
 .q-ord-b:hover:not(:disabled){border-color:#4c8bf5;}
@@ -39438,7 +39446,7 @@ const SAGE_CSS = `
 .lb-body{position:relative;z-index:1;display:flex;align-items:center;gap:10px;width:100%;padding:0 14px;}
 .lb-rank{font-weight:900;font-size:12px;opacity:.7;min-width:16px;}
 .lb-nm{font-weight:800;font-size:15px;letter-spacing:-.01em;text-shadow:0 1px 6px rgba(0,0,0,.35);}
-.lb-crown{margin-left:2px;font-size:10px;opacity:.9;}
+.lb-crown{margin-left:3px;opacity:.9;display:inline-flex;vertical-align:middle;}
 .lb-n{margin-left:auto;font-weight:900;font-size:22px;letter-spacing:-.02em;text-shadow:0 1px 8px rgba(0,0,0,.4);}
 .lb-lead{box-shadow:0 6px 22px rgba(0,0,0,.28);}
 .lb-lead .lb-nm,.lb-lead .lb-n{color:#fff;}
@@ -41898,7 +41906,7 @@ const SAGE_CSS = `
 .aswatch-age{margin-left:auto;font:700 12px var(--font-mono);color:#5A6B5E;flex:0 0 auto;}
 .aswatch-go{border:0;background:#2E4A38;color:#fff;border-radius:99px;padding:7px 12px;
   font:600 11px var(--font-ui);cursor:pointer;flex:0 0 auto;}
-.aswatch-x{border:0;background:transparent;color:#8B988E;font-size:15px;cursor:pointer;flex:0 0 auto;padding:2px 4px;}
+.aswatch-x{border:0;background:transparent;color:#8B988E;cursor:pointer;flex:0 0 auto;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;}
 @keyframes ftoast{from{opacity:0;transform:translate(-50%,8px);}to{opacity:1;transform:translate(-50%,0);}}
 /* settings */
 .f-settings .f-toggle{display:flex;align-items:center;gap:10px;font-weight:600;margin-top:8px;cursor:pointer;}
@@ -42454,8 +42462,9 @@ const SAGE_CSS = `
         background:rgba(245,245,247,.45); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); padding:20px; }
       .da-modal { position:relative; background:#fff; border-radius:16px; padding:16px 18px; width:min(380px, 100%);
         max-height:80vh; overflow:auto; box-shadow:0 30px 80px -20px rgba(10,20,14,.45); }
-      .da-x { position:absolute; top:10px; right:12px; border:0; background:none; font-size:20px; line-height:1;
-        color:var(--ink-3); cursor:pointer; }
+      .da-x { position:absolute; top:8px; right:8px; width:36px; height:36px; border:0; background:none; border-radius:50%;
+        display:grid; place-items:center; color:var(--ink-3); cursor:pointer; }
+      .da-x:hover { background:rgba(16,32,52,.06); color:var(--ink); }
       .da-mtitle { font:700 15px var(--font-display); }
       .da-msub { font-size:10.5px; color:var(--ink-2); margin:2px 0 10px; }
       .da-lbrow { display:flex; align-items:center; gap:11px; padding:7px 0; border-bottom:1px dashed var(--line);
@@ -42690,8 +42699,9 @@ const SAGE_CSS = `
       @keyframes acpop { from { transform:scale(.35); opacity:0; } }
       .acard.closing { animation:acout .24s cubic-bezier(.5,0,.75,.4) both; }
       @keyframes acout { to { transform:scale(.35); opacity:0; } }
-      .ac-x { position:absolute; top:8px; right:12px; border:0; background:none;
-        font:700 19px var(--font-display); line-height:1; color:var(--ink-3); cursor:pointer; }
+      .ac-x { position:absolute; top:6px; right:8px; width:36px; height:36px; border:0; background:none; border-radius:50%;
+        display:grid; place-items:center; color:var(--ink-3); cursor:pointer; }
+      .ac-x:hover { background:rgba(16,32,52,.06); color:var(--ink); }
       .ac-head { display:flex; align-items:center; gap:11px; margin-bottom:4px; text-align:left; }
       .ac-head > div { flex:1; min-width:0; }
       .ac-ava { width:40px; height:40px; border-radius:50%; flex:0 0 auto; display:flex;
@@ -43323,7 +43333,7 @@ const SAGE_CSS = `
       .bl-tile:hover { transform:none; box-shadow:0 20px 40px -18px color-mix(in srgb, var(--sp) 80%, #000); }
       .bl-tile-logo { color:var(--sd); }
       .bl-tile-acts { display:flex; gap:7px; flex-wrap:wrap; margin-top:auto; align-items:center; }
-      .bl-go { border:0; border-radius:9px; padding:6px 11px; cursor:pointer;
+      .bl-go { border:0; border-radius:9px; padding:6px 11px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
         font:700 10.5px var(--font-display); background:#fff; color:var(--sd); }
       .bl-tvb { border:1px solid rgba(255,255,255,.38); background:rgba(255,255,255,.14); color:#fff;
         border-radius:9px; padding:6px 10px; font:600 10px var(--font-display); cursor:pointer; }
