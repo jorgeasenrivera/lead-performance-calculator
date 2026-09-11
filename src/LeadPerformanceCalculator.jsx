@@ -13975,6 +13975,7 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
         </button>
       </div>
       {open && (
+        <Overlay>
         <div className="fba-sheetwrap" onClick={() => setOpen(null)}>
           <div className="fba-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="fba-cap">{open === "to" ? "T.O. · where are you?" : "FlyBy · where are you?"}</div>
@@ -13997,6 +13998,7 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
             </div>
           </div>
         </div>
+        </Overlay>
       )}
     </>
   );
@@ -14051,6 +14053,7 @@ function SeatBlock({ store, date, meId, plan, row, onRow }) {
      the whole job for the moment, and a table you can hit with a customer
      standing next to you is not a 34px chip under the hero. */
   return (
+    <Overlay>
     <div className="fba-sheetwrap" onClick={() => setOpen(false)}>
       <div className="fba-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="fba-cap">Tap your table</div>
@@ -14062,6 +14065,7 @@ function SeatBlock({ store, date, meId, plan, row, onRow }) {
         </div>
       </div>
     </div>
+    </Overlay>
   );
 }
 
@@ -41621,44 +41625,58 @@ const SAGE_CSS = `
 .fba-age{margin-left:auto;font:700 14.5px var(--font-mono);color:#10B981;}
 .fba-x{border:1px solid rgba(255,255,255,.3);background:transparent;color:rgba(255,255,255,.8);border-radius:99px;
   padding:8px 12px;font:600 12.5px var(--font-ui);cursor:pointer;flex:0 0 auto;}
-.fba-sheetwrap{position:fixed;inset:0;z-index:80;background:rgba(16,21,18,.5);display:flex;align-items:flex-end;justify-content:center;}
-.fba-sheet{width:min(420px,100%);background:#F2F4EF;border-radius:22px 22px 0 0;padding:16px 16px 22px;color:#223126;}
-.fba-cap{font:700 11px var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:#8B988E;margin:8px 0 6px;}
-.fba-sheet .fbp-scroll.mini{background:#E9EFE7;border:1px solid rgba(34,49,38,.12);}
+/* ---- the pickers: where are you, and which table ----
+   One sheet for both, in the floor's own dark: the screen it opens over is
+   ink and sage, and a paper card dropped on it read as a different app. On a
+   phone it is the whole screen, because picking a table is the whole job
+   for the moment, and the tables are drawn to be hit with a customer
+   standing next to you. */
+.fba-sheetwrap{position:fixed;inset:0;z-index:120;background:rgba(7,10,8,.72);backdrop-filter:blur(10px);
+  display:flex;align-items:flex-end;justify-content:center;}
+.fba-sheet{width:min(420px,100%);background:#0D130F;border:1px solid rgba(255,255,255,.08);border-radius:22px 22px 0 0;
+  padding:16px 16px 22px;color:#EDF2EA;}
+.fba-cap{font:700 11px var(--font-mono);letter-spacing:.14em;text-transform:uppercase;color:rgba(237,242,234,.5);margin:8px 0 8px;}
+.fba-sheet .fbp-scroll.mini{background:#070A08;border:1px solid rgba(255,255,255,.08);}
 .fba-sheet .fbp-scroll.mini .fbp{height:200px;}
-.fba-sheet .fbp-scroll.mini .fbp-zone{border-color:rgba(86,125,97,.35);color:#8B988E;}
-.fba-sheet .fbp-scroll.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:#fff;
-  border-color:rgba(34,49,38,.25);color:#5A6B5E;}
+.fba-sheet .fbp-scroll.mini .fbp-zone{border-color:rgba(143,216,175,.28);color:rgba(237,242,234,.45);}
+.fba-sheet .fbp-scroll.mini .fbp-tbl{width:34px;height:27px;border-radius:8px;font-size:11px;background:rgba(255,255,255,.09);
+  border-color:rgba(255,255,255,.16);color:#EDF2EA;}
 .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:31px;height:31px;}
-/* On a phone the picker is the whole job, so it takes the screen from the top
-   rather than sitting at the bottom under the hero, and the tables are big
-   enough to hit and to read with a customer standing next to you. */
+.fba-sheet .fbp-scroll.mini .fbp-tbl.sel{background:#8fd8af;border-color:#8fd8af;color:#12251b;box-shadow:0 0 18px rgba(143,216,175,.55);}
+.fba-lot{width:100%;margin-top:8px;border:1.5px dashed rgba(255,255,255,.22);background:rgba(255,255,255,.04);border-radius:12px;
+  padding:9px 0;font:600 12px var(--font-ui);color:rgba(237,242,234,.75);cursor:pointer;}
+.fba-lot.sel{background:#8fd8af;border-color:#8fd8af;color:#12251b;}
+.fba-notes{display:flex;flex-wrap:wrap;gap:6px;}
+.fba-notes button{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);border-radius:99px;padding:6px 11px;
+  font:600 10.5px var(--font-ui);color:rgba(237,242,234,.8);cursor:pointer;}
+.fba-notes button.sel{background:#8fd8af;border-color:#8fd8af;color:#12251b;}
+.fba-send{display:flex;gap:8px;margin-top:14px;}
+/* above the room bar: nothing else is tappable while picking, and a lone
+   button spans the foot rather than sitting at one edge of it */
+.fba-send > .fba-back:only-child{flex:1;}
+.fba-go{flex:1;border:0;border-radius:99px;background:#8fd8af;color:#12251b;padding:14px 0;font:700 15px var(--font-display);cursor:pointer;}
+.fba-back{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.05);border-radius:99px;padding:12px 20px;
+  font:600 14px var(--font-ui);color:rgba(237,242,234,.8);cursor:pointer;}
 @media (max-width:700px){
-  .fba-sheetwrap{align-items:flex-start;padding-top:calc(var(--sat, env(safe-area-inset-top, 0px)) + 10px);}
-  .fba-sheet{border-radius:22px;max-height:calc(100dvh - var(--sat, env(safe-area-inset-top, 0px)) - 20px);overflow-y:auto;padding-bottom:calc(22px + var(--sab, env(safe-area-inset-bottom, 0px)));}
-  .fba-cap{font-size:12px;}
+  .fba-sheetwrap{align-items:stretch;}
+  .fba-sheet{width:100%;border-radius:0;border:0;display:flex;flex-direction:column;
+    padding:calc(var(--sat, env(safe-area-inset-top, 0px)) + 18px) 16px calc(18px + var(--sab, env(safe-area-inset-bottom, 0px)));overflow-y:auto;}
+  .fba-cap{font-size:12.5px;}
   /* the room is drawn wider than the phone and scrolls sideways, the way a
      stretched plan already does, so tables drawn a hand apart on the desk do
      not land on top of each other once they are big enough to hit */
-  .fba-sheet .fbp-scroll.mini .fbp{height:min(430px,56dvh);min-width:180%;}
-  .fba-sheet .fbp-scroll.mini .fbp-tbl{width:46px;height:36px;border-radius:11px;font-size:16px;font-weight:700;}
-  .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:42px;height:42px;}
-  .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:12px;}
-  .fba-sheet .fbp-scroll.mini .fbp-sub{font-size:10.5px;}
-  .fba-lot{font-size:16px;padding:14px;}
+  .fba-sheet .fbp-scroll.mini{flex:0 0 auto;}
+  .fba-sheet .fbp-scroll.mini .fbp{height:min(520px,60dvh);min-width:190%;}
+  .fba-sheet .fbp-scroll.mini .fbp-tbl{width:54px;height:42px;border-radius:12px;font-size:18px;font-weight:700;}
+  .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:48px;height:48px;}
+  .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:12.5px;}
+  .fba-sheet .fbp-scroll.mini .fbp-sub{font-size:11px;}
+  .fba-lot{font-size:16px;padding:15px;}
   .fba-notes button{font-size:15px;padding:12px 15px;}
+  .fba-send{margin-top:auto;padding-top:16px;}
+  .fba-go{padding:17px 0;font-size:17px;}
+  .fba-back{padding:15px 24px;font-size:16px;}
 }
-.fba-sheet .fbp-scroll.mini .fbp-tbl.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
-.fba-lot{width:100%;margin-top:8px;border:1.5px dashed rgba(34,49,38,.3);background:#fff;border-radius:12px;
-  padding:9px 0;font:600 12px var(--font-ui);color:#5A6B5E;cursor:pointer;}
-.fba-lot.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
-.fba-notes{display:flex;flex-wrap:wrap;gap:6px;}
-.fba-notes button{border:1px solid rgba(34,49,38,.15);background:#fff;border-radius:99px;padding:6px 11px;
-  font:600 10.5px var(--font-ui);color:#5A6B5E;cursor:pointer;}
-.fba-notes button.sel{background:#2E4A38;border-color:#2E4A38;color:#fff;}
-.fba-send{display:flex;gap:8px;margin-top:14px;}
-.fba-go{flex:1;border:0;border-radius:99px;background:#2E4A38;color:#fff;padding:14px 0;font:700 15px var(--font-display);cursor:pointer;}
-.fba-back{border:1px solid rgba(34,49,38,.2);background:#fff;border-radius:99px;padding:12px 20px;font:600 14px var(--font-ui);color:#5A6B5E;cursor:pointer;}
 
 /* ---- the coverage rail ---- */
 .fbc-cover{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto;}
