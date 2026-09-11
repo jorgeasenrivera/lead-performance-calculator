@@ -297,9 +297,11 @@ private struct Rail: View {
           // The door is the right-hand end of the rail and the front of the line
           // sits on it; everyone behind steps left in fixed strides. You are the
           // big one, wherever you stand, so the glance finds you first.
-          let x = max(14, w - 17 - Double(i) * 25)
           let you = p.me
           let size: CGFloat = you ? 30 : (i == 0 ? 24 : 20)
+          // The head of the line sits at the end of the rail: its edge two points
+          // short of the rounded cap, whatever size it is drawn at.
+          let x = max(14, w - Double(size) / 2 - 2 - Double(i) * 25)
           ZStack {
             Circle().fill(you ? (up ? mint : sand) : Color(hue: Double(p.h) / 360, saturation: 0.62, brightness: 0.62))
             if i == 0 { Circle().stroke(Color.white.opacity(0.35), lineWidth: 2) }
