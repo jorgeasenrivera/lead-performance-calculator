@@ -10663,7 +10663,7 @@ function MyStationDay({ row, meId, store, date, now = Date.now() }) {
   return (
     <div className="sf-stnday">
       <div className="sf-stnday-head">
-        <span>Your day at the station</span>
+        <span>Your day at the desks</span>
         <b>{day.min} min</b>
       </div>
       {sits.map((s, i) => (
@@ -12189,7 +12189,7 @@ const TL_MAP = {
      exactly what this list is for. The rest of the station traffic — sitting
      down, standing up, an offer lapsing — stays out: it is already the sits
      record, and putting it here would bury the floor in furniture. */
-  "station-skipped": ["was skipped for a station", "gray"],
+  "station-skipped": ["was skipped for a desk", "gray"],
   "station-override": ["was seated below standard", "amber"],
 };
 function ActivityTimeline({ history, nameOf, horizontal }) {
@@ -12478,15 +12478,15 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
          waved-through seat is the kind of thing somebody asks about a month
          later, and the day's row is gone by then. */
       appendAudit({ user: userName || "Manager", store: store.id,
-        action: "Stations: seated below standard",
-        detail: `${nameOf ? nameOf(person.id) : person.label} at station ${station} · phone closing ${fmtPct(gate.pct)} against ${gate.standard}%` })
+        action: "Desks: seated below standard",
+        detail: `${nameOf ? nameOf(person.id) : person.label} at desk ${station} · phone closing ${fmtPct(gate.pct)} against ${gate.standard}%` })
         .catch(() => {});
     }
   };
   const release = (n) => write((cur) => releaseStation(cur, n, qNowIso(), "out"), n);
   const skip = (n, offer) => {
     const why = window.prompt(
-      `Skipping ${offer.offerLabel} for station ${n}.\nWhy? (it goes in today's history, and station ${n} moves to the next person)`, "");
+      `Skipping ${offer.offerLabel} for desk ${n}.\nWhy? (it goes in today's history, and desk ${n} moves to the next person)`, "");
     if (why === null) return;
     const reason = why.trim();
     if (!reason) { alert("A skip needs a reason. Nothing was changed."); return; }
@@ -12572,18 +12572,18 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
     if (st.taken) return (
       <div className="qr-pb">
         <p className="qr-plead">
-          <b>{realName(st.id)}</b> has been at station {st.n} for {qWaitLabel(qMinsSince(st.at))}
+          <b>{realName(st.id)}</b> has been at desk {st.n} for {qWaitLabel(qMinsSince(st.at))}
           {st.state === "held" ? ", and has not been heard from for a while" : ""}.
         </p>
         <div className="qr-pbtns">
-          <button type="button" className="fr-b warn" onClick={() => release(st.n)}>Free the station</button>
+          <button type="button" className="fr-b warn" onClick={() => release(st.n)}>Free the desk</button>
         </div>
       </div>
     );
     if (st.offerTo && !pick) return (
       <div className="qr-pb">
         <p className="qr-plead">
-          Station {st.n} is <b>{st.offerLabel}</b>&rsquo;s for another {stnLeft(st.offerLeftMs)}.
+          Desk {st.n} is <b>{st.offerLabel}</b>&rsquo;s for another {stnLeft(st.offerLeftMs)}.
           It moves to the next person on the line when that runs out.
         </p>
         <div className="qr-pbtns">
@@ -12596,7 +12596,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
     const own = ownerAction(board.seats, st, realName);
     return (
       <div className="qr-pb">
-        <p className="qr-plead">Who is taking station {st.n}?</p>
+        <p className="qr-plead">Who is taking desk {st.n}?</p>
         {/* Its owner first and on their own, because they are the answer far
             more often than not and hunting for them in a list of everybody is
             the thing this saves. */}
@@ -12632,7 +12632,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
       <div className="qr-pb">
         <p className="qr-plead">
           <b>{realName(id)}</b> {"\u00b7"} {QUEUE_FLAGS[p.status]?.label || "In line"} {"\u00b7"} waiting {qWaitLabel(qMinsSince(p.joinedAt))}
-          {at ? ` \u00b7 at station ${at}` : ""}
+          {at ? ` \u00b7 at desk ${at}` : ""}
         </p>
         <div className="qr-pbtns">
           <button type="button" className="fr-b go" disabled={tabBusy} onClick={() => { assignSpecific(id, "picked from the room"); close(); }}>Assign the call</button>
@@ -12677,7 +12677,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
       const r = rosterOf(id);
       return r && r.name ? norm(r.name) : null;
     }, Date.now());
-    if (!people.length) return <p className="qr-pmuted">Nobody has taken a station today.</p>;
+    if (!people.length) return <p className="qr-pmuted">Nobody has taken a desk today.</p>;
     return (
       <div className="qr-pb">
         {people.map((p) => (
@@ -12738,7 +12738,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
       default: return null;
     }
   };
-  const popTitle = pop ? ({ seat: `Station ${pop.n}`, person: "In line", line: variant.label,
+  const popTitle = pop ? ({ seat: `Desk ${pop.n}`, person: "In line", line: variant.label,
     day: "The day so far", code: "Sign-in code", pins: "PINs", opps: "Opportunities today" })[pop.k] : "";
 
   return (
@@ -12797,7 +12797,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
         {seats && occ && (
           <>
             <button type="button" className="fr-warm" onClick={() => setPop({ k: "day" })}>
-              <PixIcon glyph="clock" size={16} style={{ color: "#4C6FFF" }} />Stations today
+              <PixIcon glyph="clock" size={16} style={{ color: "#4C6FFF" }} />Desks today
               <span className={"fr-tag " + (board.full ? "ok" : board.free === board.seats.length ? "gap" : "thin")}>
                 {board.full ? "all taken" : `${board.free} free of ${board.seats.length}`}
               </span>
@@ -12949,7 +12949,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
           <span className="sd-pmeta">{qWaitLabel(qMinsSince(st.at))}{st.state === "held" ? " · not heard from" : ""}</span>
         </div>
         <div className="sd-pbtns">
-          <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => { release(st.n); setOpen(null); }}>Free the station</button>
+          <button type="button" className="btn btn-sm" disabled={!!busy} onClick={() => { release(st.n); setOpen(null); }}>Free the desk</button>
           <button type="button" className="btn btn-sm" onClick={() => setOpen(null)}>Close</button>
         </div>
       </div>
@@ -13132,7 +13132,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
 
       <div className="sd-day">
         <div className="sd-dhead">
-          <div className="sd-cap">Stations today</div>
+          <div className="sd-cap">Desks today</div>
           <span className="sd-dtag">
             {board.full ? `All ${board.seats.length} taken` : `${board.free} free of ${board.seats.length}`}
             {waiting.length > 0 ? ` · ${waiting.length} waiting` : ""}
@@ -13151,7 +13151,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
                   <div className="stnd-rl stnd-rl-room">Room</div>
                   {occ.byHour.map((b) => (
                     <div key={b.hour} className="stnd-cell stnd-room" style={{ "--f": b.pct }}
-                      title={`${b.staffed} of ${b.of} stations`}><span>{b.staffed || ""}</span></div>
+                      title={`${b.staffed} of ${b.of} desks`}><span>{b.staffed || ""}</span></div>
                   ))}
                   {occ.seats.map((seatRow) => (
                     <React.Fragment key={seatRow.n}>
@@ -13176,7 +13176,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
           <div>
             <div className="sd-cap2">What came in while they were sitting</div>
             {people.length === 0
-              ? <p className="sd-note">Nobody has taken a station today.</p>
+              ? <p className="sd-note">Nobody has taken a desk today.</p>
               : (
                 <div className="sd-people">
                   {people.map((p) => (
@@ -18505,7 +18505,7 @@ function PhoneRoomCard({ config, storeId, onChange }) {
     if (!seat) return;
     if (id) seat.owner = id; else delete seat.owner;
     s.stationPlan = p;
-  }, { action: "Set a desk owner", detail: `${store.name}: station ${n}` });
+  }, { action: "Set a desk owner", detail: `${store.name}: desk ${n}` });
 
   const nameOf = (id) => (roster.find((a) => a.id === id) || {}).name || "";
 
@@ -18524,7 +18524,7 @@ function PhoneRoomCard({ config, storeId, onChange }) {
       <div className="prc-rooms">
         <div className="prc-cap">On a salesperson&rsquo;s phone</div>
         {[["floor", "Live Floor", "Their corner, the room, and the up they are waiting for."],
-          ["line", "Phone Line", "The phone room, the line, and their own day at a station."]].map(([k, title, sub]) => (
+          ["line", "Phone Line", "The phone room, the line, and their own day at a desk."]].map(([k, title, sub]) => (
           <label key={k} className="prc-toggle">
             <input type="checkbox" checked={!!rooms[k]}
               onChange={(e) => setRoom(k, e.target.checked)} />
