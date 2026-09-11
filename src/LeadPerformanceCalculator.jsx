@@ -11206,8 +11206,16 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
-            <div className="sf-shock" />
-            <DmNumber value={1} up />
+            {/* The ring is wrapped around the number rather than dropped into
+                the column: an absolutely positioned child of a centred flex
+                column takes its static position from the column, which put the
+                splash behind the words instead of coming off the figure it is
+                supposed to be coming off. */}
+            <div className="sf-upnum">
+              <span className="sf-shock" />
+              <span className="sf-shock d2" />
+              <DmNumber value={1} up />
+            </div>
             <h2>You're up</h2>
             <p>{variant.upSub}</p>
             <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>Got it</button>
@@ -15743,8 +15751,16 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <MyStationDay row={row} meId={meId} store={store} date={date} />
         {isNext && !tookIt && (
           <div className="sf-uptake">
-            <div className="sf-shock" />
-            <DmNumber value={1} up />
+            {/* The ring is wrapped around the number rather than dropped into
+                the column: an absolutely positioned child of a centred flex
+                column takes its static position from the column, which put the
+                splash behind the words instead of coming off the figure it is
+                supposed to be coming off. */}
+            <div className="sf-upnum">
+              <span className="sf-shock" />
+              <span className="sf-shock d2" />
+              <DmNumber value={1} up />
+            </div>
             <h2>You're up</h2>
             <p>Head to the door. The next one is yours.</p>
             <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
@@ -41009,9 +41025,19 @@ const SAGE_CSS = `
 .sf-uptake{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
   padding:40px; background:linear-gradient(160deg,var(--a1),var(--a2)); animation:sfUpIn .5s cubic-bezier(.2,.85,.25,1) both; }
 @keyframes sfUpIn{ from{ opacity:0; transform:scale(1.04); } to{ opacity:1; transform:none; } }
-.sf-shock{ position:absolute; width:min(52vw,200px); height:min(52vw,200px); border-radius:50%; border:2px solid rgba(255,255,255,.5); animation:sfShock 2s ease-out infinite; }
-@keyframes sfShock{ 0%{ transform:scale(.5); opacity:.7; } 100%{ transform:scale(2.4); opacity:0; } }
-.sf-uptake .dm{ --cell:clamp(12px,4.4vw,17px); --led:#fff; --ld-off:rgba(255,255,255,.3); position:relative; z-index:1; margin-bottom:24px; animation:sfThrob 1.3s ease-in-out infinite; }
+/* Centred on the number, because that is what it is coming off. Two rings half
+   a cycle apart so it reads as something leaving the figure rather than one
+   circle breathing. */
+.sf-upnum{ position:relative; display:grid; place-items:center; margin-bottom:24px; }
+.sf-shock{ position:absolute; left:50%; top:50%; width:min(52vw,200px); height:min(52vw,200px);
+  transform:translate(-50%,-50%); border-radius:50%; border:2px solid rgba(255,255,255,.5);
+  animation:sfShock 2s ease-out infinite; pointer-events:none; }
+.sf-shock.d2{ animation-delay:1s; border-color:rgba(255,255,255,.34); }
+@keyframes sfShock{
+  0%{ transform:translate(-50%,-50%) scale(.42); opacity:.75; }
+  100%{ transform:translate(-50%,-50%) scale(2.4); opacity:0; } }
+@media (prefers-reduced-motion: reduce){ .sf-shock{ animation:none; opacity:.3; } }
+.sf-uptake .dm{ --cell:clamp(12px,4.4vw,17px); --led:#fff; --ld-off:rgba(255,255,255,.3); position:relative; z-index:1; animation:sfThrob 1.3s ease-in-out infinite; }
 .sf-uptake .dm .ld.on{ box-shadow:0 0 10px rgba(255,255,255,.6); }
 @keyframes sfThrob{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
 .sf-uptake h2{ font-size:clamp(40px,13vw,54px); font-weight:700; letter-spacing:-.04em; color:#04140f; line-height:.95; }
