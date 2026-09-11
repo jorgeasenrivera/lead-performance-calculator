@@ -13977,7 +13977,7 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
       {open && (
         <Overlay>
         <div className="fba-sheetwrap" onClick={() => setOpen(null)}>
-          <div className="fba-sheet" onClick={(e) => e.stopPropagation()}>
+          <div className="fba-sheet ask" onClick={(e) => e.stopPropagation()}>
             <div className="fba-cap">{open === "to" ? "T.O. · where are you?" : "FlyBy · where are you?"}</div>
             <PlanMap plan={plan} cls="mini"
               deco={(t) => ({ cls: where === t.n ? "sel" : "" })}
@@ -41667,6 +41667,9 @@ const SAGE_CSS = `
      not land on top of each other once they are big enough to hit */
   .fba-sheet .fbp-scroll.mini{flex:0 0 auto;}
   .fba-sheet .fbp-scroll.mini .fbp{height:min(520px,60dvh);min-width:190%;}
+  /* the ask carries the lot and the reasons under the room, so its room is
+     shorter: the send button has to be on the screen without a scroll */
+  .fba-sheet.ask .fbp-scroll.mini .fbp{height:min(400px,42dvh);}
   .fba-sheet .fbp-scroll.mini .fbp-tbl{width:54px;height:42px;border-radius:12px;font-size:18px;font-weight:700;}
   .fba-sheet .fbp-scroll.mini .fbp-tbl.round{width:48px;height:48px;}
   .fba-sheet .fbp-scroll.mini .fbp-zone{font-size:12.5px;}
