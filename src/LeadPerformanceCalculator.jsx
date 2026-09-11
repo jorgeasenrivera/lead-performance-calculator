@@ -34,6 +34,7 @@ import { stationGate, needsOverride } from "../api/_station-gate.mjs";
 import { occupancy, attribution, personDay } from "../api/_station-day.mjs";
 import { homeLinkFor } from "../api/_people-link.mjs";
 import { roomListOf, openRoom, roomsOf } from "../api/_rooms.mjs";
+import { liveEnvelope } from "../api/_live-standing.mjs";
 import { registrationBody } from "../api/_device.mjs";
 /* The store's month: every day the doors are open, minus the holidays, and what
    the store is being asked for. Its own file because it is the arithmetic a
@@ -10557,6 +10558,59 @@ function MyStationDay({ row, meId, store, date, now = Date.now() }) {
  * device-wide memory would keep sending them to the wrong one — the same
  * mistake the home-store key already had to be fixed for.
  */
+/* The lock screen's one message. Reads both day rows whether or not that
+   screen is showing, builds the v2 envelope (api/_live-standing.mjs), and
+   posts it to the shell once per change. The two room screens used to post
+   their own, whichever was on top; a person on both lines got two cards
+   fighting, and the one underneath went stale. */
+function useLiveStanding({ config, store, date, account, room }) {
+  const list = roomListOf(config, store);
+  const wantFloor = list.includes("floor"), wantLine = list.includes("line");
+  const [floorRow, setFloorRow] = useState(undefined);
+  const [queueRow, setQueueRow] = useState(undefined);
+  /* Its own stamp tag, so this reader and the screen reading the same row
+     never hand each other a "same". */
+  const pullFloor = useCallback(async () => {
+    if (!wantFloor) return;
+    const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, date), "live|floor|" + store + "|" + date);
+    if (got === undefined || got === "same") return;
+    setFloorRow(got || null);
+  }, [store, date, wantFloor]);
+  const pullLine = useCallback(async () => {
+    if (!wantLine) return;
+    const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store, date, "line"), "live|line|" + store + "|" + date);
+    if (got === undefined || got === "same") return;
+    setQueueRow(got || null);
+  }, [store, date, wantLine]);
+  const liveF = useLiveRow(FLOOR_TABLE, wantFloor ? floorRowId(store, date) : null, pullFloor);
+  const liveL = useLiveRow(QUEUE_TABLE, wantLine ? queueRowId(store, date, "line") : null, pullLine);
+  useEffect(() => {
+    pullFloor(); pullLine();
+    const t = setInterval(() => { pullFloor(); pullLine(); }, (liveF || !wantFloor) && (liveL || !wantLine) ? 30000 : 5000);
+    return () => clearInterval(t);
+  }, [pullFloor, pullLine, liveF, liveL, wantFloor, wantLine]);
+  /* An offer runs out on its own clock, and a nudge ages out; neither writes
+     the row, so the standing is looked at again every so often. */
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setTick((k) => k + 1), 10000); return () => clearInterval(t); }, []);
+  const env = useMemo(() => {
+    if (!account || floorRow === undefined && wantFloor || queueRow === undefined && wantLine) return null;
+    return liveEnvelope({ config, store, date, meId: account, floorRow: floorRow || null, queueRow: queueRow || null,
+      lastRoom: room === "line" ? "line" : "floor" });
+  }, [config, store, date, account, room, floorRow, queueRow, tick]);   // eslint-disable-line
+  const last = useRef(null);
+  useEffect(() => {
+    if (!env) return;
+    const key = JSON.stringify({ ...env, updatedAt: null });
+    if (key === last.current) return;
+    /* Gone is said once, and only after something was on: a phone that opens
+       to an empty day has no card to take down. */
+    if (env.status === "gone" && last.current === null) { last.current = key; return; }
+    last.current = key;
+    postToNativeShell(env);
+  }, [env]);
+}
+
 function AssociateRooms({ config, store, date, account, onSignOut }) {
   const list = roomListOf(config, store);
   const key = `lpcf:room:${store}`;
@@ -10571,6 +10625,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
   const room = openRoom(config, store, want);
   const pick = (r) => { setWant(r); try { localStorage.setItem(key, r); } catch (e) {} };
+  useLiveStanding({ config, store, date, account, room });
 
   /* Both switched off. A real state — somebody has done it deliberately — and
      worth saying plainly rather than drawing an empty shell they will tap at. */
@@ -11135,6 +11190,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
   const wasOn = useRef(false);
   useEffect(() => {
+    /* An account holder's standing is posted by the rooms shell, both lanes
+       in one message; this screen posts only for somebody in through the QR. */
+    if (account) return;
     if (!me || myIdx < 0) {
       /* Off the line for the day: said once, so the shell takes the card down
          and stops asking anybody to reopen the app. */
@@ -15336,6 +15394,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
   const wasOn = useRef(false);
   useEffect(() => {
+    /* An account holder's standing is posted by the rooms shell, both lanes
+       in one message; this screen posts only for somebody in through the QR. */
+    if (account) return;
     if (!me || myIdx < 0) {
       /* Off the line for the day: said once, so the shell takes the card down
          and stops asking anybody to reopen the app. */
