@@ -14348,17 +14348,23 @@ function McTrack({ line, meId, roster }) {
     const nm = (r && (r.label || r.name)) || "";
     return nm.trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2) || "\u00b7";
   };
-  const headL = (i) => (91 - i * 15) + "%";
-  const youL = (91 - ahead.length * 15) + "%";
-  const behindL = (k) => (91 - ahead.length * 15 - (k + 1) * 13) + "%";
+  /* The head of the line sits at the end of the rail: its edge a few points
+     short of the rounded end, whatever size it is drawn at, and everyone
+     behind steps back from there. --edge is the head's radius plus that gap. */
+  const back = (pct) => `calc(100% - var(--edge, 19px) - ${pct}%)`;
+  const headL = (i) => back(i * 15);
+  const youL = back(ahead.length * 15);
+  const behindL = (k) => back(ahead.length * 15 + (k + 1) * 13);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const place = () => {
       const w = el.offsetWidth;
-      const tail = behind.length ? parseFloat(behindL(behind.length - 1)) : parseFloat(youL);
-      el.style.setProperty("--dA", Math.max(8, (w * tail) / 100 - 18) + "px");
-      el.style.setProperty("--bX", ((w * parseFloat(youL)) / 100 + 12) + "px");
+      const edge = parseFloat(getComputedStyle(el).getPropertyValue("--edge")) || 19;
+      const px = (pct) => w - edge - (w * pct) / 100;
+      const tail = px(behind.length ? ahead.length * 15 + behind.length * 13 : ahead.length * 15);
+      el.style.setProperty("--dA", Math.max(8, tail - 18) + "px");
+      el.style.setProperty("--bX", (px(ahead.length * 15) + 12) + "px");
       el.style.setProperty("--dB", (w - 16) + "px");
     };
     place();
@@ -14710,10 +14716,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             <s className="fa" /><s className="fb" /><s className="fa d2" />
             {(line || []).slice(0, 8).map((p, i) => {
               const mine2 = p.id === meId;
-              const left = Math.max(8, 90 - i * 13);
+              const left = `calc(100% - 19px - ${Math.min(82, i * 13)}%)`;   // the head at the rail's end, the rest 13% a step back
               const lbl = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
               return <i key={p.id || i} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
-                style={{ left: left + "%",
+                style={{ left,
                   background: mine2 ? undefined
                     : (p.status && p.status !== "waiting"
                         ? `hsl(${hueFromName(lbl)} 20% 33%)`      // off the line: quieter, still solid
@@ -16312,15 +16318,21 @@ function usePlanViewport(plan, zoom, setZoom, { natH = 340, capH = 280, minW = 5
    whole line as a list. */
 function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = "DOOR" }) {
   const ref = useRef(null);
+  /* Steps back from the head, in percent of the rail. The head itself sits at
+     the rail's end: its edge 4px short of the rounded cap, so 25px in from it
+     at 42px across. */
+  const EDGE = 25;
   const posOf = (i) => { const x = 91 - i * 15; return x >= 24 ? x : 24 - Math.ceil((24 - x) / 15) * 6; };
+  const leftOf = (i) => `calc(100% - ${EDGE}px - ${91 - posOf(i)}%)`;
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
     const place = () => {
       const w = el.offsetWidth;
-      const tail = people.length ? posOf(people.length - 1) : 91;
-      el.style.setProperty("--dA", Math.max(8, (w * tail) / 100 - 26) + "px");
-      el.style.setProperty("--bX", ((w * 91) / 100 + 12) + "px");
+      const px = (i) => w - EDGE - (w * (91 - posOf(i))) / 100;
+      const tail = people.length ? px(people.length - 1) : w - EDGE;
+      el.style.setProperty("--dA", Math.max(8, tail - 26) + "px");
+      el.style.setProperty("--bX", (w - EDGE + 12) + "px");
       el.style.setProperty("--dB", (w - 16) + "px");
     };
     place();
@@ -16338,7 +16350,7 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = 
         return (
           <button key={p.id} type="button"
             className={"fr-pip" + (i === 0 ? " hd" : "") + (bunched ? " bunch" : "") + (c ? " tg" : "") + (c && lightOf(p.id) ? " lt" : "")}
-            style={{ left: posOf(i) + "%", zIndex: 40 - i, background: c || undefined }}
+            style={{ left: leftOf(i), zIndex: 40 - i, background: c || undefined }}
             onClick={() => (bunched ? onBunch() : onPick(p.id))}
             aria-label={nm + (bunched ? ", and the rest of the line" : "")}>
             {initialsOf(nm)}
@@ -40081,6 +40093,7 @@ const SAGE_CSS = `
 .mcf-track{ height:40px; margin-top:14px; }
 .mcf-pip{ width:26px; height:26px; font-size:9px; }
 .mcf-pip.hd{ width:34px; height:34px; font-size:10.5px; }
+.mcf-track{ --edge:21px; }
 .mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
 .mcf-track .fa, .mcf-track .fb{ width:8px; height:8px; margin-top:-4px; }
