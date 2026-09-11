@@ -10666,6 +10666,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const list = roomListOf(config, store);
   const key = `lpcf:room:${store}`;
   const [want, setWant] = useState(() => { try { return localStorage.getItem(key) || null; } catch (e) { return null; } });
+  const [tab, setTab] = useState("corner");
   const room = openRoom(config, store, want);
   const pick = (r) => { setWant(r); try { localStorage.setItem(key, r); } catch (e) {} };
 
@@ -10681,26 +10682,46 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     );
   }
 
+  /* One bar at the foot for everywhere this phone can be. Home is the person's
+     own corner, which lives inside the floor's shell, so a store with no floor
+     has no corner either and the bar is just its one room — which is a bar
+     with one button on it, so it is not drawn at all.
+
+     The floor's own pill is suppressed while this is showing. Two pills at the
+     foot, one of them a subset of the other, is how somebody ends up tapping
+     the wrong one. */
+  const tabs = [];
+  if (list.includes("floor")) tabs.push("home", "floor");
+  if (list.includes("line")) tabs.push("line");
+  const active = room === "line" ? "line" : tab === "corner" ? "home" : "floor";
+  const go = (t) => {
+    buzz(8);
+    if (t === "line") { pick("line"); return; }
+    pick("floor");
+    setTab(t === "home" ? "corner" : "floor");
+  };
+  const GLYPH = { home: "home", floor: "door", line: "phone" };
+  const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
+
   return (
     <>
-      {list.length > 1 && (
-        <div className={"ar-switch" + (room === "floor" ? " ar-up" : "")} role="tablist" aria-label="Which room">
-          <span className="ar-ind" style={{ transform: `translateX(${list.indexOf(room) * 100}%)`, width: `${100 / list.length}%` }} />
-          {list.map((r) => (
-            <button key={r} type="button" role="tab" aria-selected={room === r}
-              className={"ar-tab" + (room === r ? " on" : "")}
-              onClick={() => { buzz(8); pick(r); }}>
-              <PixIcon glyph={r === "line" ? "phone" : "door"} size={14} />
-              {r === "line" ? "Phone" : "Floor"}
-            </button>
-          ))}
-        </div>
-      )}
       {room === "line"
         ? <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
             variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} />
         : <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
-            account={account} onSignOut={onSignOut} />}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} />}
+      {tabs.length > 1 && (
+        <div className="ar-bar" role="tablist" aria-label="Where to go">
+          <span className="ar-ind" style={{ transform: `translateX(${tabs.indexOf(active) * 100}%)`,
+            width: `calc((100% - 8px) / ${tabs.length})` }} />
+          {tabs.map((t) => (
+            <button key={t} type="button" role="tab" aria-selected={active === t} aria-label={LABEL[t]}
+              className={"ar-tab" + (active === t ? " on" : "")} onClick={() => go(t)}>
+              <PixIcon glyph={GLYPH[t]} size={20} />
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -14795,14 +14816,21 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    identity and the day is always today, so there is no token to check, no name
    to type and no PIN; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
-function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null }) {
+function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null,
+  tab: tabFrom = null, onTab = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one
      tap on the pill, and being up next drags the view there on its own because
      that overlay is the one thing that must never be missed. */
-  const [tab, setTab] = useState("corner");
+  /* Its own tab, unless somebody outside is holding it. When a salesperson's
+     phone offers more than one room there is one bar at the foot for all of
+     them, and it cannot be owned by one of the rooms it switches between. The
+     QR door still reaches this screen on its own, and then the tab is its. */
+  const [tabOwn, setTabOwn] = useState("corner");
+  const tab = onTab ? tabFrom : tabOwn;
+  const setTab = onTab || setTabOwn;
   const [step, setStep] = useState("name");
   const [shown, setShown] = useState("loading");
   const [shownKey, setShownKey] = useState("loading");
@@ -15782,7 +15810,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   return (
     <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (inShell && tab === "corner" && lightMode ? " mc-light" : "")} ref={pageRef}>
       <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
-      {inShell && (() => {
+      {inShell && !onTab && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
         const upRoot = !!me && me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
         return (
@@ -39158,38 +39186,41 @@ const SAGE_CSS = `
 /* The room switch on a salesperson's phone. Floats above whichever shell is
    showing rather than living inside either, so neither had to be reworked to
    gain it, and it is drawn only when the store offers more than one room. */
-/* At the foot, where a thumb is, and in the same glass pill the shell already
-   uses for its own tabs.
+/* One bar at the foot for everywhere this phone can be: their corner, the
+   floor, the phone room. Built to look like the pill the floor shell already
+   had down there, because for a store with only the floor it is that pill —
+   the same two buttons in the same place — and gains a third only when the
+   store turns the phone line on.
 
    101 and not 60, which is where this started and where it was unreachable:
    the shell root itself is z-index 100 and creates a stacking context, so
    anything below that number is painted under the whole screen no matter what
-   it sits above inside it. Nothing in the shell is above the switch now, which
-   includes the milestone takeover — a small pill over a celebration for the
-   few seconds it is up is the better half of that trade against navigation a
-   finger cannot reach. */
-.ar-switch{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
+   it sits above inside it. */
+.ar-bar{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
   bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
-  display:flex; padding:3px; border-radius:999px; overflow:hidden;
-  background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.14);
-  backdrop-filter:blur(14px) saturate(140%); -webkit-backdrop-filter:blur(14px) saturate(140%);
-  box-shadow:0 10px 26px -12px rgba(0,0,0,.7); }
-/* The floor shell carries its own pill down there. The room switch is the
-   higher-level choice, so it sits above it rather than beside it. The phone
-   line has no pill of its own, so there it keeps the foot to itself. */
-.ar-switch.ar-up{ bottom:calc(env(safe-area-inset-bottom, 0px) + 76px); }
-/* The switch floats, so the shell under it needs somewhere for its last card
-   to end. Only when the switch is actually there: a store with one room should
-   not carry a gap for a control it does not draw. */
-.lpc:has(> .ar-switch) .q-page{ padding-bottom:64px; }
-.ar-ind{ position:absolute; left:3px; top:3px; bottom:3px; border-radius:999px;
-  background:rgba(255,255,255,.16); transition:transform .28s cubic-bezier(.2,.8,.2,1); }
-.ar-tab{ position:relative; display:flex; align-items:center; gap:6px; padding:7px 15px;
-  border:0; background:none; cursor:pointer; color:rgba(255,255,255,.55);
-  font:700 11px var(--font-mono); letter-spacing:.08em; text-transform:uppercase;
+  display:flex; padding:4px; border-radius:999px;
+  background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.13);
+  backdrop-filter:blur(10px) saturate(140%); -webkit-backdrop-filter:blur(10px) saturate(140%);
+  box-shadow:0 10px 24px -10px rgba(0,0,0,.7); }
+.ar-ind{ position:absolute; left:4px; top:4px; bottom:4px; border-radius:999px;
+  background:rgba(255,255,255,.15);
+  transition:transform .38s cubic-bezier(.3,1.6,.4,1); will-change:transform; }
+.ar-tab{ position:relative; display:grid; place-items:center; width:64px; height:44px;
+  border:0; background:none; cursor:pointer; color:rgba(255,255,255,.42);
   transition:color .2s; }
 .ar-tab.on{ color:#fff; }
 @media (prefers-reduced-motion: reduce){ .ar-ind{ transition:none; } }
+/* The bar floats, so the last card in the shell has to end above it. Padding on
+   the scroll container was the first try and it does nothing: when the content
+   is shorter than the screen there is nothing to scroll, and space added below
+   the content does not move the content up. The clearance has to be on the
+   column the cards are actually in.
+
+   Only when the bar is drawn: a store with one room carries no gap for a
+   control it does not have. */
+.lpc:has(> .ar-bar) .q-page{ padding-bottom:72px; }
+.lpc:has(> .ar-bar) .sf-live{ padding-bottom:74px; }
+.lpc:has(> .ar-bar) .mc{ padding-bottom:104px; }
 
 /* Both rooms switched off. Somebody did that deliberately, so it is said
    plainly rather than drawn as an empty shell they will tap at. */
