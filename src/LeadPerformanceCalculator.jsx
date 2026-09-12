@@ -808,18 +808,8 @@ function useFavicon() {
       document.title = "Sage";
       // Type system, loaded as a stylesheet link rather than an @import so it never
       // blocks first paint. Space Grotesk is the same face The Board uses on the TV.
-      if (!document.getElementById("lpc-fonts")) {
-        const pre = document.createElement("link");
-        pre.rel = "preconnect"; pre.href = "https://fonts.gstatic.com"; pre.crossOrigin = "anonymous";
-        document.head.appendChild(pre);
-        const f = document.createElement("link");
-        f.id = "lpc-fonts"; f.rel = "stylesheet";
-        // Geist Mono rides along: the phone's caps, clocks and counts are set in
-        // it, and a face that never loads falls back to a different mono on
-        // every phone, which is the mismatch a salesperson notices first.
-        f.href = "https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap";
-        document.head.appendChild(f);
-      }
+      /* The faces are in index.html now, served from public/fonts and kept on
+         the phone by the worker. Nothing is fetched from Google at runtime. */
     } catch {}
   }, []);
 }
@@ -6685,6 +6675,11 @@ function QueueQR({ url, cell = 6 }) {
    to the shell, which turns it into a real haptic. */
 /* When the press last ticked (see pressDown), so the click behind it stays quiet. */
 let buzzTickAt = 0;
+/* Motion, as numbers with names: the script's copy of the --t-* tokens in
+   the stylesheet. The curtain's timers and the press read these, so the
+   screen and the clock that paces it cannot drift apart. */
+const MOTION = { press: 70, release: 240, exit: 140, swap: 180, settle: 320, wipe: 380 };
+
 function buzz(pattern, tick) {
   /* a person can turn the buzz off on their own phone; the tap still does its work */
   try { if (localStorage.getItem("lpcf:pref:buzz") === "0") return; } catch (e) {}
@@ -8142,7 +8137,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       if (screen === "loading") return undefined;
       setShown(screen); setShownKey(liveKey);
       clearTimeout(holdT.current);
-      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 140);
+      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, MOTION.exit);
       return undefined;
     }
     // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
@@ -8154,8 +8149,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
        the first change after a load ever wiped. */
     clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end);
     setWiping(true);
-    wipeT.current.swap = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 180);
-    wipeT.current.end = setTimeout(() => setWiping(false), 380);
+    wipeT.current.swap = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, MOTION.swap);
+    wipeT.current.end = setTimeout(() => setWiping(false), MOTION.wipe);
     return undefined;
   }, [liveKey, shownKey, screen]);
   useEffect(() => () => { clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end); }, []);
@@ -10056,7 +10051,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       if (screen === "loading") return undefined;
       setShown(screen); setShownKey(liveKey);
       clearTimeout(holdT.current);
-      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 140);
+      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, MOTION.exit);
       return undefined;
     }
     // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
@@ -10068,8 +10063,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
        the first change after a load ever wiped. */
     clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end);
     setWiping(true);
-    wipeT.current.swap = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 180);
-    wipeT.current.end = setTimeout(() => setWiping(false), 380);
+    wipeT.current.swap = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, MOTION.swap);
+    wipeT.current.end = setTimeout(() => setWiping(false), MOTION.wipe);
     return undefined;
   }, [liveKey, shownKey, screen]);
   useEffect(() => () => { clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end); }, []);
@@ -10937,7 +10932,7 @@ function pressDown(e) {
   const w = el.offsetWidth || 0;
   const s = w < 60 ? "0.9" : w < 200 ? "0.96" : "0.975";
   let anim = null;
-  if (!reduce) { try { anim = el.animate([{ scale: "1" }, { scale: s }], { duration: 70, easing: "ease-out", fill: "forwards" }); } catch (x) {} }
+  if (!reduce) { try { anim = el.animate([{ scale: "1" }, { scale: s }], { duration: MOTION.press, easing: "ease-out", fill: "forwards" }); } catch (x) {} }
   const tick = e.pointerType === "touch" ? setTimeout(() => { if (pressed && pressed.el === el) buzz(6, true); }, 50) : null;
   pressed = { el, anim, s, tick, x: e.clientX, y: e.clientY };
 }
@@ -10951,7 +10946,7 @@ function pressUp() {
   if (tick) clearTimeout(tick);
   if (!anim) return;
   try { anim.cancel(); } catch (x) {}
-  try { el.animate([{ scale: s }, { scale: "1.015", offset: 0.55 }, { scale: "1" }], { duration: 240, easing: "ease-out" }); } catch (x) {}
+  try { el.animate([{ scale: s }, { scale: "1.015", offset: 0.55 }, { scale: "1" }], { duration: MOTION.release, easing: "ease-out" }); } catch (x) {}
 }
 if (typeof window !== "undefined") {
   window.addEventListener("pointerdown", pressDown, { capture: true, passive: true });
@@ -11365,6 +11360,10 @@ const SAGE_CSS = `
            comes from the same hand. --spring stays for the snappier UI bits. */
         --ease: cubic-bezier(.22,1,.36,1);
         --ease-bloop: cubic-bezier(.34,1.56,.64,1);
+        /* Motion, as numbers with names. The same values sit in MOTION in the
+           script for the timers that pace the curtain and the press, and the
+           tests hold the two together. A new surface uses these, not a number. */
+        --t-press: 70ms; --t-release: 240ms; --t-exit: 140ms; --t-swap: 180ms; --t-settle: 320ms; --t-wipe: 380ms;
         --font-ui: 'Geist', 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif;
         --font-display: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
         --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -14124,10 +14123,10 @@ input[type=number] { width:84px; }
 .q-stage{position:relative;z-index:1;width:100%;display:flex;justify-content:center;}
 .q-curtain{position:fixed;inset:0;z-index:60;background:linear-gradient(120deg,#3b72e0 0%,#5a97ff 55%,#6ea0ff 100%);
   transform:translateX(-100%);pointer-events:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 60px rgba(0,0,0,.25);}
-.q-curtain.q-wipe{animation:qcurtain .38s cubic-bezier(.76,0,.24,1) both;}
+.q-curtain.q-wipe{animation:qcurtain var(--t-wipe) cubic-bezier(.76,0,.24,1) both;}
 @keyframes qcurtain{0%{transform:translateX(-100%);}46%{transform:translateX(0);}54%{transform:translateX(0);}100%{transform:translateX(101%);}}
 .q-curtain-mark{width:60px;height:60px;color:rgba(255,255,255,.92);opacity:0;}
-.q-curtain.q-wipe .q-curtain-mark{animation:qmark .38s ease both;}
+.q-curtain.q-wipe .q-curtain-mark{animation:qmark var(--t-wipe) ease both;}
 @keyframes qmark{0%,100%{opacity:0;transform:scale(.7);}42%,58%{opacity:1;transform:scale(1);}}
 /* v5: center the status icon inside the position ring */
 /* ===================== FLUID KIT (SmartFloor) ===================== */
@@ -15896,9 +15895,9 @@ input[type=number] { width:84px; }
 .q-curtain.sage-curtain{z-index:9000;}
 .q-curtain.q-hold .q-curtain-mark{opacity:1;transform:none;animation:sageCurtainPulse 1.8s ease-in-out infinite;}
 @keyframes sageCurtainPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
-.q-curtain.q-out{animation:qcurtainOut .32s cubic-bezier(.76,0,.24,1) both;}
+.q-curtain.q-out{animation:qcurtainOut var(--t-settle) cubic-bezier(.76,0,.24,1) both;}
 @keyframes qcurtainOut{0%{transform:translateX(0);}100%{transform:translateX(101%);}}
-.q-curtain.q-out .q-curtain-mark{animation:qmarkOut .32s ease both;}
+.q-curtain.q-out .q-curtain-mark{animation:qmarkOut var(--t-settle) ease both;}
 @keyframes qmarkOut{0%{opacity:1;transform:scale(1);}100%{opacity:0;transform:scale(.7);}}
 .sage-curtain-mark{width:auto;height:auto;display:grid;place-items:center;}
 .sage-curtain-mark svg{display:block;filter:drop-shadow(0 12px 30px rgba(0,0,0,.35));}
