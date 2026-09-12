@@ -7931,7 +7931,7 @@ function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
 
   const n = mine ? mine.n : offered ? offered.n : freeSeat ? freeSeat.n : null;
   const cap = mine ? "DESK" : offered ? "GO TO DESK" : "FREE DESK";
-  const title = st === "lunch" ? "At lunch" : st === "away" ? "Away"
+  const title = st === "lunch" ? "At lunch" : st === "away" ? "Away" : st === "customer" ? "On a call"
     : mine ? `You're at desk ${n}` : offered ? `Desk ${n} is yours` : freeSeat ? `Desk ${n} is free`
     : ahead.length === 0 ? "You're next for a desk" : "Waiting for a desk";
 

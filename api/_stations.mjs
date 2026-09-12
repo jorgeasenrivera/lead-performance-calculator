@@ -90,6 +90,12 @@ export function stationModeOf(config, storeId) {
  */
 export function roomInUse(config, storeId, row) {
   const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  /* A store that switched the Phone Line on as a room for its people's
+     phones has said so as plainly as drawing one. Before this, a store on
+     the default six saw the room only after the first person sat down, and
+     until then its people had the older queue screen, the ring and the pill,
+     which is not the Phone Line that was drawn for them. */
+  if (st && st.rooms && st.rooms.line === true) return true;
   const drawn = st && st.stationPlan && seatsOf(st.stationPlan).length > 0;
   if (drawn) return true;
   if (stationModeOf(config, storeId) === "open") return true;
