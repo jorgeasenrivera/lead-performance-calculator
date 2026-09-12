@@ -7826,9 +7826,9 @@ function SfLineTimers({ onLine, atDesk, today }) {
   };
   return (
     <div className="mcf-tmr sfl-tmr">
-      <span><span className="v"><PixIcon glyph="arrowup" size={14} /> <b>{fmt(onLine)}</b></span><span className="l">ON THE LINE</span></span>
-      <span><span className="v"><PixIcon glyph="clock" size={14} /> <b>{fmt(atDesk)}</b></span><span className="l">AT THE DESK</span></span>
-      <span><span className="v"><PixIcon glyph="phone" size={14} /> <b>{fmt(today)}</b></span><span className="l">ON DESKS TODAY</span></span>
+      <span><span className="v"><PixIcon glyph="arrowup" size={14} /> <b><Roll text={fmt(onLine)} /></b></span><span className="l">ON THE LINE</span></span>
+      <span><span className="v"><PixIcon glyph="clock" size={14} /> <b><Roll text={fmt(atDesk)} /></b></span><span className="l">AT THE DESK</span></span>
+      <span><span className="v"><PixIcon glyph="phone" size={14} /> <b><Roll text={fmt(today)} /></b></span><span className="l">ON DESKS TODAY</span></span>
     </div>
   );
 }
@@ -9086,6 +9086,39 @@ function McTrack({ line, meId, roster }) {
   );
 }
 
+/* A clock that rolls. Every minute a digit changes, and it used to flicker to
+   the new value. Now only the digit that changed moves: the old one slides
+   up and out, the new one in from below, like a split-flap board, on the
+   settle token and the spring. The rest sit still in tabular figures. Digits
+   only; a colon or a letter is a plain span. Screen readers get the plain
+   text; the columns are decoration.
+
+   No state and no timers: the previous text is remembered in a ref and the
+   pair of spans is drawn only for the frame in which they differ, keyed so a
+   change remounts the column and restarts its animation. A parent that
+   re-renders with the same text draws nothing extra. */
+function Roll({ text }) {
+  const cur = String(text == null ? "" : text);
+  const prevRef = useRef(cur);
+  const was = prevRef.current;
+  useEffect(() => { prevRef.current = cur; });
+  const aligned = was.length === cur.length ? was : null;
+  return (
+    <span className="roll" aria-label={cur}>
+      {[...cur].map((ch, i) => {
+        const old = aligned ? aligned[i] : null;
+        if (!/\d/.test(ch) || old == null || old === ch) return <span key={i} className={/\d/.test(ch) ? "roll-c" : "roll-s"}>{ch}</span>;
+        return (
+          <span key={i + ":" + old + ">" + ch} className="roll-c">
+            <span className="roll-out" aria-hidden="true">{old}</span>
+            <span className="roll-in">{ch}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 /* Two clocks on one level: how long you have been on the floor, and how long
    since your place last changed. They tick themselves so the figures move
    between polls; only the text nodes change. */
@@ -9099,8 +9132,8 @@ function McTimers({ sinceOn, sinceMove }) {
   };
   return (
     <div className="mcf-tmr">
-      <span><span className="v"><PixIcon glyph="clock" size={14} /> <b>{fmt(sinceOn)}</b></span><span className="l">ON THE FLOOR</span></span>
-      <span><span className="v"><PixIcon glyph="arrowup" size={14} /> <b>{fmt(sinceMove)}</b></span><span className="l">LAST MOVE</span></span>
+      <span><span className="v"><PixIcon glyph="clock" size={14} /> <b><Roll text={fmt(sinceOn)} /></b></span><span className="l">ON THE FLOOR</span></span>
+      <span><span className="v"><PixIcon glyph="arrowup" size={14} /> <b><Roll text={fmt(sinceMove)} /></b></span><span className="l">LAST MOVE</span></span>
     </div>
   );
 }
@@ -15485,6 +15518,18 @@ input[type=number] { width:84px; }
   .mc-pip, .mcf-you { transition:transform .65s cubic-bezier(.3,1.3,.4,1); }
   .mcf-pip { transition:transform .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
 }
+/* ---- a clock that rolls (Roll) ----
+   Each digit is a column one glyph tall; a change slides the old digit up and
+   out and the new one in from below, on the settle token and the spring. */
+.roll{ display:inline-flex; vertical-align:bottom; font-variant-numeric:tabular-nums; }
+.roll-c{ position:relative; display:inline-block; width:.64em; height:1.2em; line-height:1.2em; overflow:hidden; text-align:center; }
+.roll-s{ display:inline-block; line-height:1.2em; }
+.roll-c > span{ position:absolute; left:0; right:0; top:0; }
+.roll-in{ animation:rollIn var(--t-settle) var(--spring) both; }
+.roll-out{ animation:rollOut var(--t-settle) var(--spring) both; }
+@keyframes rollIn{ from{ transform:translateY(100%); } to{ transform:none; } }
+@keyframes rollOut{ from{ transform:none; } to{ transform:translateY(-100%); } }
+@media (prefers-reduced-motion: reduce){ .roll-in, .roll-out{ animation:none; } .roll-out{ display:none; } }
 .mcf-tmr{ display:flex; gap:26px; margin-top:16px; }
 .mcf-tmr > span{ display:flex; flex-direction:column; align-items:center; }
 .mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:16px;
