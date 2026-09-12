@@ -650,6 +650,8 @@ test("a store says it has a room by drawing one, choosing the mode, or using it"
   const drew = { stores: [{ id: "a", stationPlan: { seats: [{ n: "1", x: 5, y: 5 }] } }] };
   assert.equal(roomInUse(drew, "a", {}), true, "drew its own plan");
   assert.equal(roomInUse({ stores: [{ id: "a", stationMode: "open" }] }, "a", {}), true, "chose the desks");
+  assert.equal(roomInUse({ stores: [{ id: "a", rooms: { line: true, floor: true } }] }, "a", {}), true, "switched the Phone Line on as a room for its phones");
+  assert.equal(roomInUse({ stores: [{ id: "a", rooms: { line: false, floor: true } }] }, "a", {}), false, "but not with the line switched off");
   /* And a store on the default six starts using them without touching a
      setting: the room appears when the first person sits down. */
   const row = claimStation({}, "3", DEV, T1).row;
