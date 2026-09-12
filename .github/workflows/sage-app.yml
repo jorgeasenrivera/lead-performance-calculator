@@ -29,9 +29,17 @@
 # No Google Play account yet? Untick Upload and pick android. The build then
 # makes an APK rather than a Play bundle, and the run's summary carries a link
 # to install it straight onto a phone. Nothing else is needed.
+#
+# It also runs itself: a merge to main that touches native/ builds iOS and
+# uploads it to TestFlight, then says so on the pull request that was merged,
+# with the build number. Web changes need no build (the app is a shell around
+# the site), so only native/ counts.
 name: Sage app
 
 on:
+  push:
+    branches: [main]
+    paths: ['native/**']
   workflow_dispatch:
     inputs:
       platform:
@@ -49,18 +57,25 @@ on:
         default: true
 
 concurrency:
-  group: sage-app-${{ inputs.platform }}
+  group: sage-app-${{ github.event_name == 'push' && 'ios' || inputs.platform }}
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build ${{ inputs.platform }}
+    name: Build ${{ github.event_name == 'push' && 'ios' || inputs.platform }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: write
     defaults:
       run:
         working-directory: native
     env:
+      # A run started by a merge has no inputs: it is iOS, built and uploaded.
+      PLATFORM: ${{ github.event_name == 'push' && 'ios' || inputs.platform }}
+      SUBMIT: ${{ (github.event_name == 'push' || inputs.submit) && 'true' || 'false' }}
+      REBUILD: ${{ (github.event_name == 'push' || inputs.rebuild) && 'true' || 'false' }}
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EAS_BUILD_NO_EXPO_GO_WARNING: "true"
       EXPO_ASC_API_KEY_PATH: ${{ github.workspace }}/native/asc-key.p8
@@ -91,7 +106,7 @@ jobs:
           fi
 
       - name: Apple key and signing files
-        if: inputs.platform == 'ios'
+        if: env.PLATFORM == 'ios'
         run: |
           printf '%s' "$ASC_API_KEY_P8" > asc-key.p8
           # A secret made with Windows' certutil arrives wrapped in BEGIN/END
@@ -153,7 +168,7 @@ jobs:
       # the line on the lock screen, which the app posts itself, so a build
       # without this is worth having and says what it is missing.
       - name: Google services file
-        if: inputs.platform == 'android'
+        if: env.PLATFORM == 'android'
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
@@ -169,7 +184,7 @@ jobs:
       # A 401 here means the key id, the issuer id and the .p8 do not belong
       # together, which no later step can say this plainly.
       - name: Check the App Store Connect key with Apple
-        if: inputs.platform == 'ios'
+        if: env.PLATFORM == 'ios'
         run: |
           node -e '
             const crypto = require("crypto"), fs = require("fs");
@@ -205,7 +220,7 @@ jobs:
       # runners already carry the Android SDK, so the same compile runs here
       # first and fails in three minutes with the error in this log.
       - name: Check the Android code compiles
-        if: inputs.platform == 'android' && inputs.rebuild
+        if: env.PLATFORM == 'android' && env.REBUILD == 'true'
         run: |
           npx expo prebuild -p android --no-install --clean
           cd android
@@ -216,17 +231,18 @@ jobs:
       # Android with Upload unticked builds the preview profile instead, which
       # makes an APK, and the link to it goes in the run's summary.
       - name: Build
-        if: inputs.rebuild
+        id: build
+        if: env.REBUILD == 'true'
         run: |
           profile=production
-          if [ "${{ inputs.platform }}" = "android" ] && [ "${{ inputs.submit }}" != "true" ]; then
+          if [ "$PLATFORM" = "android" ] && [ "$SUBMIT" != "true" ]; then
             profile=preview
             echo "No upload asked for, so this is an APK you can install by hand."
           fi
           # The shell aborts on a failed command, which is how a failed build
           # used to end this step before anything could report why.
           set +e
-          eas build --platform ${{ inputs.platform }} --profile "$profile" --non-interactive --wait --json > build.json
+          eas build --platform "$PLATFORM" --profile "$profile" --non-interactive --wait --json > build.json
           code=$?
           set -e
           node -e '
@@ -237,6 +253,11 @@ jobs:
               if (!one) throw new Error("build.json held no build");
               const a = one.artifacts || {};
               const url = a.buildUrl || a.applicationArchiveUrl;
+              // For the note on the pull request: the build number and where it is.
+              if (process.env.GITHUB_OUTPUT) {
+                fs.appendFileSync(process.env.GITHUB_OUTPUT,
+                  "build_version=" + (one.appBuildVersion || "") + "\nbuild_id=" + (one.id || "") + "\nbuild_url=" + (url || "") + "\n");
+              }
               if (url) {
                 console.log("Build: " + url);
                 if (process.env.GITHUB_STEP_SUMMARY) {
@@ -266,7 +287,7 @@ jobs:
       # in App Store Connect → App Information) is optional; without it Expo
       # looks the app up by bundle id.
       - name: Submit profile
-        if: inputs.submit && inputs.platform == 'ios'
+        if: env.SUBMIT == 'true' && env.PLATFORM == 'ios'
         run: |
           node -e '
             const fs = require("fs");
@@ -282,16 +303,41 @@ jobs:
           ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
 
       - name: Upload to TestFlight
-        if: inputs.submit && inputs.platform == 'ios'
+        id: submit
+        if: env.SUBMIT == 'true' && env.PLATFORM == 'ios'
         run: eas submit --platform ios --latest --profile production --non-interactive
 
       - name: Upload to Google Play
-        if: inputs.submit && inputs.platform == 'android'
+        if: env.SUBMIT == 'true' && env.PLATFORM == 'android'
         run: |
           printf '%s' "$GOOGLE_PLAY_SERVICE_JSON" > play-key.json
           eas submit --platform android --latest --non-interactive --key play-key.json --track internal
         env:
           GOOGLE_PLAY_SERVICE_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_JSON }}
+
+      # The pull request that was merged hears how it went, so nobody has to
+      # open the Actions tab to learn the build number or that it failed.
+      - name: Tell the pull request
+        if: github.event_name == 'push' && always()
+        uses: actions/github-script@v7
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          SUBMIT_OUTCOME: ${{ steps.submit.outcome }}
+          BUILD_VERSION: ${{ steps.build.outputs.build_version }}
+          BUILD_URL: ${{ steps.build.outputs.build_url }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: context.sha });
+            const pr = prs.find((p) => p.merged_at) || prs[0];
+            if (!pr) { core.info("no pull request for " + context.sha); return; }
+            const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const v = process.env.BUILD_VERSION, url = process.env.BUILD_URL;
+            let body;
+            if (process.env.BUILD_OUTCOME !== "success") body = `The app build for this merge failed. [The run](${run}) says why.`;
+            else if (process.env.SUBMIT_OUTCOME === "success") body = `App build ${v || ""} is on its way to TestFlight${url ? " ([the build](" + url + "))" : ""}. It shows in TestFlight once Apple has processed it, usually within the hour.`;
+            else body = `App build ${v || ""} finished${url ? " ([the build](" + url + "))" : ""}, but the upload to TestFlight failed. [The run](${run}) says why.`;
+            await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
 
       - name: Forget the keys
         if: always()
