@@ -2964,7 +2964,7 @@ export default function LeadPerformanceCalculator() {
             setJumpHold(false);
             setHoldMount(false);   // belt and braces: the gate must never outlive the jump
             setIntroDone(true);
-          }, ARRIVAL.assemble);
+          }, jumpShort ? 360 : ARRIVAL.assemble);
         }}
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
@@ -5359,6 +5359,18 @@ const ARRIVAL = { hold: 420, gather: 520, stretch: 880, flash: 420, assemble: 14
    not. */
 const JUMP_T = { ratchet: 620, reform: 840, streaks: 800, cruiseMin: 1400, cruiseCap: 3000, burst: 520 };
 
+/* The jump is for the first sign-in of the day on this phone. Signing in again
+   the same day (a switch, a sign-out and back) lands the short way, the quick
+   fade reduced motion gets: the tunnel is an arrival, not a toll on every
+   return. Decided once, at the press, and read by every beat after it. */
+const JUMP_DAY_KEY = "lpc:jump:day";
+let jumpShort = false;
+function arrivalShort() {
+  try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return true; } catch (e) {}
+  try { return localStorage.getItem(JUMP_DAY_KEY) === today(); } catch (e) { return false; }
+}
+function arrivalTaken() { try { localStorage.setItem(JUMP_DAY_KEY, today()); } catch (e) {} }
+
 /* ---- what the jump is waiting for, and where it is going ----
    Told by the root, read by the engine each frame of the cruise. Module state
    for the same reason lastJumpOrigin is: the engine lives outside React so the
@@ -5634,15 +5646,13 @@ function runJump({ onFlash, onDone, lead = 0 }) {
      and the flash handover. */
   const root = typeof document === "undefined" ? null : document.documentElement;
   if (!root) { onFlash(); onDone(); return () => {}; }
-  let reduce = false;
-  try {
-    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch (e) {}
-  if (reduce) {
+  jumpShort = arrivalShort();
+  if (jumpShort) {
     tellPhase("cruise");
     const t = setTimeout(() => { onFlash(); onDone(); }, 180);
     return () => clearTimeout(t);
   }
+  arrivalTaken();
   jumpOwnsEntrance = true;
   jumpLanded = false;
 
@@ -5924,10 +5934,7 @@ function SageArrival({ onComplete }) {
        the opposite of coming out of lightspeed. */
     root.classList.add("sage-assemble", "sage-beat-assemble");
     root.classList.remove("sage-beat-flash");
-    let reduce = false;
-    try {
-      reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    } catch (e) {}
+    const reduce = jumpShort;
     let undo = () => {};
     if (!reduce) undo = radialAssemble();
     const t = setTimeout(() => done.current(), reduce ? 320 : ARRIVAL.assemble);
@@ -6025,11 +6032,7 @@ function landDashboard() {
      landing rules come on together. */
   root.classList.remove("jump-under", "sage-beat-flash");
   root.classList.add("sage-assemble", "sage-beat-assemble", "signin-gone");
-  let reduce = false;
-  try {
-    reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch (e) {}
-  const undo = reduce ? () => {} : radialAssemble();
+  const undo = jumpShort ? () => {} : radialAssemble();
   return () => {
     undo();
     root.classList.remove("sage-assemble", "sage-beat-assemble", "signin-gone");
@@ -7918,12 +7921,13 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const [wiping, setWiping] = useState(false);
   const [held, setHeld] = useState(true);
   const holdT = useRef(null);
+  const wipeT = useRef({ swap: null, end: null });
   /* The curtain's exit clears itself here, on its own effect, because the
      screen-change effect below re-runs the moment the first page is swapped
      in, and its cleanup would cancel the timer before it fired. */
   useEffect(() => {
     if (wiping !== "out") return undefined;
-    const t = setTimeout(() => setWiping(false), 480);
+    const t = setTimeout(() => setWiping(false), 340);
     return () => clearTimeout(t);
   }, [wiping]);
   // Set the instant "Got it" is tapped, cleared when the data agrees. Without it the
@@ -8091,7 +8095,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   else if (step === "confirm") screen = "confirm";
   else screen = "name";
 
-  // curtain: on ANY screen change, sweep the panel across and swap content mid-sweep
+  // curtain: on ANY screen change, sweep the panel across and swap content mid-sweep.
+  // The sweep is 380ms and the swap sits under its middle: long enough to read as
+  // a page turning, short enough that a tap never seems to be waiting on it.
   // A wipe should fire between EVERY page they touch — including flag changes on the
   // live screen (which don't change `screen`). Key it on screen + live status.
   const liveKey = (screen === "done" && me) ? `done:${me.status}${me.appt ? ":a" : ""}` : screen;
@@ -8106,16 +8112,23 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       if (screen === "loading") return undefined;
       setShown(screen); setShownKey(liveKey);
       clearTimeout(holdT.current);
-      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 320);
+      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 140);
       return undefined;
     }
     // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
     if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
+    /* The timers live outside the effect on purpose. The swap changes
+       shownKey, which re-runs this effect, and a cleanup that cleared both
+       timers took the end of the wipe with it: the curtain's class stayed on,
+       parked off screen, and no later change could start it again. So only
+       the first change after a load ever wiped. */
+    clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end);
     setWiping(true);
-    const t1 = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 300);
-    const t2 = setTimeout(() => setWiping(false), 620);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    wipeT.current.swap = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 180);
+    wipeT.current.end = setTimeout(() => setWiping(false), 380);
+    return undefined;
   }, [liveKey, shownKey, screen]);
+  useEffect(() => () => { clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end); }, []);
 
   /* Getting on is the screen changing under the finger, not a wait for the
      row: you are on the line at once and the write lands behind that. */
@@ -9622,12 +9635,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [wiping, setWiping] = useState(false);
   const [held, setHeld] = useState(true);
   const holdT = useRef(null);
+  const wipeT = useRef({ swap: null, end: null });
   /* The curtain's exit clears itself here, on its own effect, because the
      screen-change effect below re-runs the moment the first page is swapped
      in, and its cleanup would cancel the timer before it fired. */
   useEffect(() => {
     if (wiping !== "out") return undefined;
-    const t = setTimeout(() => setWiping(false), 480);
+    const t = setTimeout(() => setWiping(false), 340);
     return () => clearTimeout(t);
   }, [wiping]);
   // Set the instant "Got it" is tapped, cleared when the data agrees. Without it the
@@ -10012,16 +10026,23 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       if (screen === "loading") return undefined;
       setShown(screen); setShownKey(liveKey);
       clearTimeout(holdT.current);
-      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 320);
+      holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, 140);
       return undefined;
     }
     // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
     if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
+    /* The timers live outside the effect on purpose. The swap changes
+       shownKey, which re-runs this effect, and a cleanup that cleared both
+       timers took the end of the wipe with it: the curtain's class stayed on,
+       parked off screen, and no later change could start it again. So only
+       the first change after a load ever wiped. */
+    clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end);
     setWiping(true);
-    const t1 = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 300);
-    const t2 = setTimeout(() => setWiping(false), 620);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    wipeT.current.swap = setTimeout(() => { setShown(screen); setShownKey(liveKey); }, 180);
+    wipeT.current.end = setTimeout(() => setWiping(false), 380);
+    return undefined;
   }, [liveKey, shownKey, screen]);
+  useEffect(() => () => { clearTimeout(wipeT.current.swap); clearTimeout(wipeT.current.end); }, []);
 
   /* ---- the door ----
      The morning scan is the moment worth checking that somebody is actually
@@ -11101,7 +11122,7 @@ function workingDaysInMonth(monthKey) {
    move down and let it settle rather than dropping a loading panel over it. So
    this is the last resort, for a wait long enough that showing nothing at all
    would look broken, and every ordinary wait finishes underneath it unseen. */
-function useHeld(active, { delay = 900, hold = 600 } = {}) {
+function useHeld(active, { delay = 500, hold = 280 } = {}) {
   const [on, setOn] = useState(false);
   const shownAt = useRef(0);
   useEffect(() => {
@@ -14069,10 +14090,10 @@ input[type=number] { width:84px; }
 .q-stage{position:relative;z-index:1;width:100%;display:flex;justify-content:center;}
 .q-curtain{position:fixed;inset:0;z-index:60;background:linear-gradient(120deg,#3b72e0 0%,#5a97ff 55%,#6ea0ff 100%);
   transform:translateX(-100%);pointer-events:none;display:flex;align-items:center;justify-content:center;box-shadow:0 0 60px rgba(0,0,0,.25);}
-.q-curtain.q-wipe{animation:qcurtain .62s cubic-bezier(.76,0,.24,1) both;}
+.q-curtain.q-wipe{animation:qcurtain .38s cubic-bezier(.76,0,.24,1) both;}
 @keyframes qcurtain{0%{transform:translateX(-100%);}46%{transform:translateX(0);}54%{transform:translateX(0);}100%{transform:translateX(101%);}}
 .q-curtain-mark{width:60px;height:60px;color:rgba(255,255,255,.92);opacity:0;}
-.q-curtain.q-wipe .q-curtain-mark{animation:qmark .62s ease both;}
+.q-curtain.q-wipe .q-curtain-mark{animation:qmark .38s ease both;}
 @keyframes qmark{0%,100%{opacity:0;transform:scale(.7);}42%,58%{opacity:1;transform:scale(1);}}
 /* v5: center the status icon inside the position ring */
 /* ===================== FLUID KIT (SmartFloor) ===================== */
@@ -15826,9 +15847,9 @@ input[type=number] { width:84px; }
 .q-curtain.sage-curtain{z-index:9000;}
 .q-curtain.q-hold .q-curtain-mark{opacity:1;transform:none;animation:sageCurtainPulse 1.8s ease-in-out infinite;}
 @keyframes sageCurtainPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
-.q-curtain.q-out{animation:qcurtainOut .46s cubic-bezier(.76,0,.24,1) both;}
+.q-curtain.q-out{animation:qcurtainOut .32s cubic-bezier(.76,0,.24,1) both;}
 @keyframes qcurtainOut{0%{transform:translateX(0);}100%{transform:translateX(101%);}}
-.q-curtain.q-out .q-curtain-mark{animation:qmarkOut .46s ease both;}
+.q-curtain.q-out .q-curtain-mark{animation:qmarkOut .32s ease both;}
 @keyframes qmarkOut{0%{opacity:1;transform:scale(1);}100%{opacity:0;transform:scale(.7);}}
 .sage-curtain-mark{width:auto;height:auto;display:grid;place-items:center;}
 .sage-curtain-mark svg{display:block;filter:drop-shadow(0 12px 30px rgba(0,0,0,.35));}
