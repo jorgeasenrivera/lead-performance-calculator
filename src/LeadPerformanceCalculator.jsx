@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useReducer } from "react";
 import { createPortal } from "react-dom";
+import { report, setReportContext } from "./report.js";
 /* The CSV reader is a manager's tool: it runs when somebody drops a report on
    the Import page. A salesperson on the floor never touches it, so it is fetched
    on the first parse rather than carried in everyone's first load. */
@@ -1388,6 +1389,7 @@ async function apiCall(path, { method = "GET", body = null } = {}) {
     try { json = text ? JSON.parse(text) : {}; } catch (e) { json = {}; }
     if (!r.ok) {
       if (!json.error && !json.message) console.error("apiCall", path, r.status, text);
+      if (r.status >= 500) report("api", new Error(path + " answered " + r.status), { status: r.status, body: String(text || "").slice(0, 200) });
       const raw = String(text || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
       return { error: json.error || json.message
         || (raw ? `That failed (${r.status}). ${raw}` : `That failed (${r.status}).`) };
@@ -1750,6 +1752,7 @@ export default function LeadPerformanceCalculator() {
      from "admin" here and correcting it a moment later would show the overview
      for a frame on every load. */
   const [view, setViewRaw] = useState(() => lastView() || "admin");
+  useEffect(() => { setReportContext({ store: typeof view === "string" ? view : null, screen: appModule }); }, [view, appModule]);
   const setView = useCallback((v) => {
     setViewRaw(v);
     rememberView(typeof v === "string" ? v : null);
@@ -2969,7 +2972,7 @@ export default function LeadPerformanceCalculator() {
         onAuthed={async () => { await refreshProfile(); }} />
     </div>
   ) : null;
-  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}>{node}{signInLayer}</React.Suspense>;
+  const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}</RoomBoundary>{signInLayer}</React.Suspense>;
 
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>);
 
@@ -7426,6 +7429,29 @@ function useLiveStanding({ config, store, date, account, room }) {
   }, [env]);
 }
 
+/* A screen that throws while drawing becomes a small card with a way back,
+   and a row in the error feed with the screen's name on it, instead of a
+   white page and a phone that has to be force-closed. One around each room
+   and one around the manager's app, so the bar and the other room stay up. */
+class RoomBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    const frame = String((info && info.componentStack) || "").split("\n").map((l) => l.trim()).find(Boolean) || null;
+    report("render", err, { screen: this.props.name, component: frame });
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="snag" role="alert">
+        <b>This screen hit a snag.</b>
+        <span>It has been noted. Try again, or open another tab and come back.</span>
+        <button type="button" onClick={() => this.setState({ err: null })}>Try again</button>
+      </div>
+    );
+  }
+}
+
 function AssociateRooms({ config, store, date, account, onSignOut }) {
   const list = roomListOf(config, store);
   const key = `lpcf:room:${store}`;
@@ -7439,6 +7465,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   });
   const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
   const room = openRoom(config, store, want);
+  useEffect(() => { setReportContext({ store, person: account || null, screen: room }); }, [store, account, room]);
   /* Which rooms have been opened this visit: a room is built the first time
      it is looked at and kept from then on. Each remembers where it was
      scrolled to, so coming back lands where they left. */
@@ -7510,14 +7537,14 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
       <div className="ar-room" hidden={room !== "line"} inert={room !== "line" ? "" : undefined}>
-        {seen.current.line && (
+        {seen.current.line && (<RoomBoundary name="line">
           <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
-            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} />)}
+            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} /></RoomBoundary>)}
       </div>
       <div className="ar-room" hidden={room === "line"} inert={room === "line" ? "" : undefined}>
-        {seen.current.floor && (
+        {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
-            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} />)}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} /></RoomBoundary>)}
       </div>
       {tabs.length > 1 && (
         <div className="ar-bar" role="tablist" aria-label="Where to go">
@@ -8694,7 +8721,7 @@ function useCommit(setRow, mutate, refetch, writes) {
     writes.current++;
     return mutate(fn).then(
       (next) => { writes.current--; if (next && writes.current === 0) setRow(next); return next; },
-      (e) => { writes.current--; console.error("write", e); buzz([40, 60, 40]); refetch(true); return null; });
+      (e) => { writes.current--; console.error("write", e); report("write", e); buzz([40, 60, 40]); refetch(true); return null; });
   }, [setRow, mutate, refetch, writes]);
 }
 
@@ -11374,6 +11401,10 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust
 .section-title, .ac-name, .login-title, .plate-hist-title, .guide-title, .stop-title, .noaccess-title, .card h3, .role-header, .assoc-leads, .oyo-chan-rate, .ac-stat b, .stepper-value, .dr-tally b, .goalbox b, .drawer-store, .bl-title, .verdict, .badge  {
         font-family: var(--font-display); }
 .card h3, .role-header  { letter-spacing:-.015em; }
+/* The card a screen becomes when it throws while drawing (RoomBoundary). */
+.snag{ margin:24px 16px; padding:16px 18px; border-radius:14px; background:rgba(127,127,127,.12); display:grid; gap:8px; font-size:14px; }
+.snag b{ font-size:15px; }
+.snag button{ justify-self:start; margin-top:4px; border:0; border-radius:999px; padding:10px 16px; background:var(--blue, #3b72e0); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
 /* One focus ring for the whole app, only when keyboarding. */
 .lpc :focus-visible { outline:2px solid var(--blue); outline-offset:2px; border-radius:8px; }
 .lpc :focus:not(:focus-visible) { outline:none; }
