@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test",
-    "check": "npm test && npm run build"
+    "check": "npm test && npm run build",
+    "feel": "node scripts/feel.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
