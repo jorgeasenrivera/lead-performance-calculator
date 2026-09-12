@@ -24969,7 +24969,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           color:var(--sp, var(--blue)); cursor:pointer; background:var(--card);
           border:1px dashed var(--line); border-radius:13px; padding:11px; margin-top:8px;
           transition:border-color .2s var(--ease), transform .25s var(--ease-bloop); }
-        .roll-more:active { transform:scale(.98); }
         .coach-detail-open { position:fixed; inset:auto 0 0 0; top:56px; z-index:360;
           background:var(--card); border-radius:18px 18px 0 0; overflow-y:auto;
           overscroll-behavior:contain; padding:16px 14px calc(94px + var(--sab));
@@ -24986,7 +24985,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           font-size:12.5px; font-weight:650; color:var(--ink-2); cursor:pointer;
           white-space:nowrap; transition:color .22s var(--ease), background .22s var(--ease),
           border-color .22s var(--ease), transform .25s var(--ease-bloop); }
-        .sect-chip:active { transform:scale(.94); }
         .sect-chip .badge { margin-left:6px; font-size:9px; font-weight:800; padding:0.5px 4px;
           line-height:1.6; border-radius:999px; vertical-align:1px; }
         .botnav { position:fixed; left:10px; right:10px; z-index:340; display:flex;
@@ -25007,7 +25005,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           flex-direction:column; align-items:center; gap:5px;
           border:none; background:none; font:inherit; cursor:pointer; padding:5px 1px; border-radius:12px;
           color:var(--ink-3); transition:color .22s var(--ease), transform .2s var(--ease-bloop); }
-        .botnav-btn:active { transform:scale(.9); }
         .botnav-ico { display:flex; align-items:center; justify-content:center;
           width:17px; height:17px; line-height:0; }
         .botnav-lbl { font-size:9.5px; font-weight:700; letter-spacing:-.01em;
@@ -25024,7 +25021,6 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
           box-shadow:0 10px 24px -8px rgba(16,40,68,.5);
           transition:transform .4s var(--ease-bloop); }
-        .botnav-fab:active { transform:translateX(-50%) scale(.9); }
         .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:4px; text-align:center;
           font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
           pointer-events:none; }

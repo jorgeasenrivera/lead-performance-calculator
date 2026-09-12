@@ -6677,9 +6677,16 @@ function QueueQR({ url, cell = 6 }) {
 // light haptic feedback where supported (no-op elsewhere)
 /* Inside the phone app the WebView swallows vibrate, so the buzz is also sent
    to the shell, which turns it into a real haptic. */
-function buzz(pattern) {
+/* When the press last ticked (see pressDown), so the click behind it stays quiet. */
+let buzzTickAt = 0;
+function buzz(pattern, tick) {
   /* a person can turn the buzz off on their own phone; the tap still does its work */
   try { if (localStorage.getItem("lpcf:pref:buzz") === "0") return; } catch (e) {}
+  /* A short buzz on the click that follows a touch-down tick would say the
+     same thing twice; the press already gave it. Patterns still play: they
+     mean something (taken, sent, failed) beyond "that was a tap". */
+  if (tick) buzzTickAt = Date.now();
+  else if (typeof pattern === "number" && pattern <= 14 && Date.now() - buzzTickAt < 400) return;
   try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
   nativePost("buzz", pattern);
 }
@@ -10854,6 +10861,54 @@ if (typeof window !== "undefined") {
   window.addEventListener("pointerdown", (e) => { frLastTap.x = e.clientX; frLastTap.y = e.clientY; frLastTap.at = Date.now(); }, { capture: true, passive: true });
 }
 
+/* The press. Every control gives under the finger the moment it is touched
+   and springs back when it is let go: down in one frame, up on a short
+   spring. Done here once, for every button, rather than in each control's
+   CSS: a control's own transition list would otherwise have to name it, and
+   animating the `scale` property composes with whatever transform placed
+   the control. Small round things give more than wide bars, the way they do
+   on the phone itself. A fingertip also gets its tick here, at touch-down,
+   where the press is felt; the click-time buzzes that said the same thing
+   stand down when a tick has just gone (see buzz). The tick waits a few
+   frames and a finger that has moved by then is scrolling, not pressing, so
+   it gets no tick and the press lets go. Reduced motion keeps the tick and
+   skips the scale. */
+const PRESS_SEL = 'button, [role="button"], a.btn';
+let pressed = null;
+function pressDown(e) {
+  if (e.button != null && e.button !== 0) return;
+  const el = e.target && e.target.closest ? e.target.closest(PRESS_SEL) : null;
+  if (!el || el.disabled || el.getAttribute("aria-disabled") === "true" || !el.animate) return;
+  if (el.closest('[draggable="true"], [data-nopress]')) return;
+  if (pressed) pressUp();
+  let reduce = false;
+  try { reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (x) {}
+  const w = el.offsetWidth || 0;
+  const s = w < 60 ? "0.9" : w < 200 ? "0.96" : "0.975";
+  let anim = null;
+  if (!reduce) { try { anim = el.animate([{ scale: "1" }, { scale: s }], { duration: 70, easing: "ease-out", fill: "forwards" }); } catch (x) {} }
+  const tick = e.pointerType === "touch" ? setTimeout(() => { if (pressed && pressed.el === el) buzz(6, true); }, 50) : null;
+  pressed = { el, anim, s, tick, x: e.clientX, y: e.clientY };
+}
+function pressMove(e) {
+  if (!pressed || pressed.x == null) return;
+  if (Math.abs(e.clientX - pressed.x) > 8 || Math.abs(e.clientY - pressed.y) > 8) pressUp();
+}
+function pressUp() {
+  if (!pressed) return;
+  const { el, anim, s, tick } = pressed; pressed = null;
+  if (tick) clearTimeout(tick);
+  if (!anim) return;
+  try { anim.cancel(); } catch (x) {}
+  try { el.animate([{ scale: s }, { scale: "1.015", offset: 0.55 }, { scale: "1" }], { duration: 240, easing: "ease-out" }); } catch (x) {}
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pointerdown", pressDown, { capture: true, passive: true });
+  window.addEventListener("pointermove", pressMove, { capture: true, passive: true });
+  window.addEventListener("pointerup", pressUp, { capture: true, passive: true });
+  window.addEventListener("pointercancel", pressUp, { capture: true, passive: true });
+}
+
 
 
 
@@ -11287,7 +11342,8 @@ const SAGE_CSS = `
          accident is a screen somebody cannot find their way back from. Panning
          is untouched; anything that runs its own gestures (the floor plan)
          says touch-action:none on itself and keeps them. */
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-x pan-y; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-x pan-y;
+  -webkit-tap-highlight-color: transparent; }
 /* Display face on anything that carries hierarchy or a number worth reading
          across a room. Everything else stays on Inter, which holds up better in
          the dense tables. */
@@ -13148,7 +13204,7 @@ html.signin-gone .signin-over { display:none; }
 @keyframes lfModeIn { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
 /* The press is physical: the pill gives under the finger, and the ratchet
          through the mark reads as what the press set in motion. */
-.lf-go:active:not(:disabled) { transform:scale(.985); box-shadow:0 4px 12px rgba(46,58,50,.16); }
+.lf-go:active:not(:disabled) { box-shadow:0 4px 12px rgba(46,58,50,.16); }
 .lf-alt { display:block; width:100%; margin-top:26px; background:none; border:0; cursor:pointer;
         font:inherit; font-size:13px; color:#6E6E76; }
 .lf-alt:hover { color:#2E3A32; }
@@ -13474,7 +13530,7 @@ input[type=number] { width:84px; }
         transition: transform .28s var(--ease-bloop), box-shadow .28s var(--ease), background .2s; }
 .btn:hover { background:var(--p2d); transform: translateY(-1.5px);
         box-shadow:0 10px 22px -8px color-mix(in srgb, var(--p2) 70%, transparent); }
-.btn:active { transform: translateY(0) scale(.975); transition-duration:.09s; }
+.btn:active { transform: translateY(0); transition-duration:.09s; }
 .btn:disabled { filter:grayscale(.35); opacity:.5; box-shadow:none; transform:none; cursor:default; }
 .btn.wide { width:100%; margin-top:18px; padding:12px; border-radius:12px; font-size:14px; }
 .btn.secondary { background:var(--card); color:var(--ink-2); border:1px solid var(--line);
@@ -14481,7 +14537,6 @@ input[type=number] { width:84px; }
   border:0; border-radius:16px; padding:16px; cursor:pointer; width:100%;
   transition:transform .3s var(--ease-bloop), opacity .2s var(--ease);
 }
-.sf-cta:active{ transform:scale(.97); }
 .sf-cta:disabled{ opacity:.45; }
 .sf-cta-quiet{
   background:rgba(255,255,255,.06); color:var(--sfink);
@@ -14507,7 +14562,6 @@ input[type=number] { width:84px; }
   border-radius:15px; padding:14px 15px; cursor:pointer;
   transition:transform .3s var(--ease-bloop), border-color .2s var(--ease);
 }
-.sf-name:active{ transform:scale(.98); }
 .sf-name:disabled{ opacity:.42; }
 .sf-name i{ font-style:normal; font-size:11.5px; font-weight:600; color:var(--sfink3); }
 .sf-name em{
@@ -14543,7 +14597,7 @@ input[type=number] { width:84px; }
   border-radius:16px; min-height:52px; cursor:pointer; display:grid; place-items:center;
   transition:transform .26s var(--ease-bloop), background .16s var(--ease);
 }
-.sf-key:active{ transform:scale(.93); background:color-mix(in srgb, var(--a1) 26%, transparent); }
+.sf-key:active{ background:color-mix(in srgb, var(--a1) 26%, transparent); }
 .sf-key:disabled{ opacity:.4; }
 .sf-key-word{ font-size:12.5px; font-weight:650; letter-spacing:.02em; }
 .sf-key-go{ color:#08101B; background:linear-gradient(140deg, var(--led), var(--a2)); border-color:transparent; }
@@ -14570,7 +14624,6 @@ input[type=number] { width:84px; }
   font-family:var(--sffont); transition:transform .3s var(--ease-bloop);
 }
 .sf-band:last-child{ border-bottom:0; }
-.sf-band:active{ transform:scale(.985); }
 .sf-band-fig{ flex:0 0 auto; }
 .sf-band-dm{ --cell:5px; display:block; }
 .sf-band-dm .ld{ background:var(--ld-off); }
@@ -14659,7 +14712,6 @@ input[type=number] { width:84px; }
   transition:transform .3s var(--ease-bloop), opacity .2s linear;
 }
 .sf-owe-go:disabled{ opacity:.4; cursor:default; }
-.sf-owe-go:active:not(:disabled){ transform:scale(.98); }
 .sf-owe-fine{ margin:14px 0 0; font-size:12px; line-height:1.55; color:var(--sfink2);
   /* The panel's glow sits under the foot of this screen, and the dimmest ink on
      the palette disappears into it. This line is the one that says the floor is
@@ -14672,7 +14724,6 @@ input[type=number] { width:84px; }
   border:1px solid rgba(255,255,255,.07); border-radius:16px; padding:15px 16px; cursor:pointer;
   transition:transform .3s var(--ease-bloop);
 }
-.sf-jump:active{ transform:scale(.98); }
 .sf-jump span{
   margin-left:auto; font-family:var(--sfmono); font-size:10px; letter-spacing:.1em;
   text-transform:uppercase; color:var(--sfink3);
@@ -14942,7 +14993,6 @@ input[type=number] { width:84px; }
   border:1px solid rgba(228,201,141,.5); background:rgba(228,201,141,.12); cursor:pointer;
   display:flex; align-items:center; justify-content:center; flex:0 0 auto;
   transition:transform .12s ease; }
-.mc-icobtn:active{ transform:scale(.88); }
 .mc-cbars{ display:flex; align-items:flex-end; gap:2.5px; height:12px; }
 .mc-cbars i{ display:block; width:3.5px; border-radius:2px; }
 .mc-pace{ display:flex; align-items:center; gap:9px; margin-top:11px; position:relative; z-index:1; }
@@ -15078,7 +15128,6 @@ input[type=number] { width:84px; }
 .mc-tab{ position:relative; z-index:1; width:46px; border:0; background:none; border-radius:999px;
   padding:9px 0; cursor:pointer; color:rgba(237,242,234,.55); display:flex; align-items:center;
   justify-content:center; transition:transform .12s ease; }
-.mc-tab:active{ transform:scale(.88); }
 .mc-tab.on{ color:#e4c98d; }
 /* ---- the corner, round three ------------------------------------------------
    A's tones, the hero coloured by pace, the podium, the trail, and the ground
@@ -15513,7 +15562,6 @@ input[type=number] { width:84px; }
 .mc-help{ position:absolute; top:-2px; right:-8px; width:26px; height:26px; border-radius:50%;
   border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05); color:rgba(237,242,234,.8);
   cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform .12s ease; }
-.mc-help:active{ transform:scale(.88); }
 .mc-tab.alert{ color:#8fd8af; }
 .mc-tab.alert svg, .mc-tab.alert span{ animation:mcRec 1.4s ease-in-out infinite; }
 .mc-off > *:not(.mc-offc){ opacity:.32; }
@@ -15689,7 +15737,6 @@ input[type=number] { width:84px; }
   color:var(--sfink2); font-size:13px; font-weight:640; letter-spacing:-.01em;
   transition:color .25s var(--ease), transform .28s var(--ease-bloop);
 }
-.sf-seg-btn:active:not(:disabled){ transform:scale(.94); }
 .sf-seg-btn:disabled{ opacity:.6; }
 .sf-seg-btn.on{ color:#04121C; }
 .sf-seg-btn > span{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -15706,7 +15753,6 @@ input[type=number] { width:84px; }
   font-family:var(--sffont); font-size:15px; font-weight:620; color:var(--sfink2);
   transition:color .2s var(--ease), background .2s var(--ease), transform .28s var(--ease-bloop);
 }
-.sf-link:active:not(:disabled){ transform:scale(.96); }
 .sf-link:hover:not(:disabled){ color:var(--sfink); background:rgba(255,255,255,.05); }
 .sf-link .sf-ico{ color:currentColor; filter:none; }
 .sf-link-quiet{ color:var(--sfink3); }
@@ -15756,7 +15802,7 @@ input[type=number] { width:84px; }
 }
 /* The press has to be felt as well as heard — a button this size with no travel
    reads as unresponsive on a phone that has not caught up yet. */
-.sf-go:active{ transform:translateY(2px) scale(.985); box-shadow:0 4px 14px -8px rgba(4,20,15,.7); }
+.sf-go:active{ transform:translateY(2px); box-shadow:0 4px 14px -8px rgba(4,20,15,.7); }
 .sf-go:disabled{ opacity:.6; }
 /* PIN screen — its own "something else fun" entrance (a spring pop, no curtain) */
 .q-stage-pin{animation:qpinpop .58s cubic-bezier(.2,.9,.25,1.35) both;transform-origin:center 40%;}
@@ -15893,7 +15939,6 @@ input[type=number] { width:84px; }
 .fba-btn{flex:1;border-radius:17px;padding:16px 10px 13px;text-align:center;cursor:pointer;
   display:flex;flex-direction:column;align-items:center;gap:7px;background:rgba(255,255,255,.04);
   border:1.5px solid; transition:transform .12s ease;}
-.fba-btn:active{transform:scale(.96);}
 .fba-btn.fly{color:#e8a93c;border-color:rgba(232,169,60,.5);}
 .fba-btn.to{color:#f08a80;border-color:rgba(216,72,60,.5);}
 .fba-btn b{display:block;font:700 17px var(--font-display);}
@@ -16434,7 +16479,6 @@ input[type=number] { width:84px; }
         padding:12px 0 10px; border:1px solid transparent; border-radius:10px; background:rgba(255,255,255,.09);
         color:var(--sfink2); font-size:13.5px; font-weight:600; cursor:pointer;
         transition:background .3s, color .3s, box-shadow .3s, transform .28s cubic-bezier(.3,1.3,.4,1); }
-.sft:active:not(:disabled) { transform:scale(.94); }
 .sft:disabled { opacity:.6; }
 .sft.on { background:#fff; color:#0B1430; box-shadow:0 0 14px rgba(255,255,255,.35); }
 .sft .sf-ico { color:currentColor; filter:none; }
@@ -16484,7 +16528,6 @@ input[type=number] { width:84px; }
 .lf-kind:hover:not(.on) { border-color:#2E3A32; }
 .lf-kind.on { background:#2E3A32; border-color:#2E3A32; color:#F1F2EE;
         box-shadow:0 6px 18px rgba(46,58,50,0.18); }
-.lf-kind:active { transform:scale(.985); }
 .lf-kindnote { font-size:13px; line-height:1.5; color:#6E6E76; margin:10px 0 0; text-align:left; }
 .lf-acctid { font-size:12px; color:#8A8A90; margin-top:14px; }
 .lf-acctid b { font-weight:600; color:#6E6E76; }
