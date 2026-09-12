@@ -7654,7 +7654,10 @@ function useTrackLight(ref, key, pipSel) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const dots = [...el.querySelectorAll(".lt")];
+    /* The rail's own dots only. A pip can carry "lt" too (light ink on a light
+       tag), and taking those along shrank the person to a dot and rode them
+       down the rail with the light. */
+    const dots = [...el.querySelectorAll(":scope > s.lt")];
     const r = el.getBoundingClientRect();
     if (!dots.length || !r.width) return undefined;
     const stops = [...el.querySelectorAll(pipSel)]
@@ -9012,22 +9015,22 @@ function McTrack({ line, meId, roster }) {
   };
   /* The head of the line sits at the end of the rail: its edge a few points
      short of the rounded end, whatever size it is drawn at, and everyone
-     behind steps back from there. --edge is the head's radius plus that gap. */
-  const back = (pct) => `calc(100% - var(--edge, 19px) - ${pct}%)`;
-  const headL = (i) => back(i * 15);
-  const youL = back(ahead.length * 15);
-  const behindL = (k) => back(ahead.length * 15 + (k + 1) * 13);
+     behind steps back from there, --p percent of the rail; the CSS turns
+     that into a place, with --edge the head's radius plus that gap. */
+  const headL = (i) => i * 15;
+  const youL = ahead.length * 15;
+  const behindL = (k) => ahead.length * 15 + (k + 1) * 13;
   useTrackLight(ref, waiting.map((p2) => p2.id).join(","), ".mcf-pip, .mcf-you");
   return (
     <div className="mcf-track" ref={ref}>
       <s className="lt" /><s className="lt" />
       {ahead.map((p2, i) => (
-        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ left: headL(i) }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i) }}>{labelOf(p2.id)}</span>
       ))}
       {behind.map((p2, k) => (
-        <span key={p2.id} className="mcf-pip bh" style={{ left: behindL(k) }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k) }}>{labelOf(p2.id)}</span>
       ))}
-      {meIdx >= 0 && <span className="mcf-you" style={{ left: youL }}>{labelOf(meId)}</span>}
+      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL }}>{labelOf(meId)}</span>}
     </div>
   );
 }
@@ -9364,10 +9367,10 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
             <s className="lt" /><s className="lt" /><s className="lt" />
             {(line || []).slice(0, 8).map((p, i) => {
               const mine2 = p.id === meId;
-              const left = `calc(100% - 19px - ${Math.min(82, i * 13)}%)`;   // the head at the rail's end, the rest 13% a step back
+              const step = Math.min(82, i * 13);   // the head at the rail's end, the rest 13% a step back; the CSS puts it there
               const lbl = p.label || ((roster || []).find((r) => r.id === p.id) || {}).label || ((roster || []).find((r) => r.id === p.id) || {}).name || "";
               return <i key={p.id || i} className={"mc-pip" + (i === 0 ? " hd" : "") + (mine2 ? " you" : "") + (mine2 && iAmUp ? " g" : "") + (p.status && p.status !== "waiting" ? " off" : "")}
-                style={{ left,
+                style={{ "--p": step,
                   background: mine2 ? undefined
                     : (p.status && p.status !== "waiting"
                         ? `hsl(${hueFromName(lbl)} 20% 33%)`      // off the line: quieter, still solid
@@ -15191,11 +15194,11 @@ input[type=number] { width:84px; }
 .mc-rail{ position:relative; display:block; height:34px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); overflow:hidden; }
 /* the light along the line: dots in from the left edge, a stop at every
    person, as far as the head, then again; the phone room's cord's logic */
-.mc-rail .lt, .mcf-track .lt, .fr-rail .lt{ position:absolute; left:-3px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%;
+.mc-rail > s.lt, .mcf-track > s.lt, .fr-rail > s.lt{ position:absolute; left:-3px; top:50%; width:6px; height:6px; margin-top:-3px; border-radius:50%;
   background:rgba(143,216,175,.7); box-shadow:0 0 6px rgba(143,216,175,.7); opacity:0; pointer-events:none; }
 .mc-rail.up{ background:rgba(143,216,175,.1); }
 .mc-rail.up .lt{ background:#8FD8AF; box-shadow:0 0 10px rgba(143,216,175,1); }
-.mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; transition:left .65s cubic-bezier(.3,1.3,.4,1); }
+.mc-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:22px; height:22px; border-radius:50%; color:#fff; text-shadow:0 1px 1px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-family:var(--sfmono); font-size:7px; font-weight:700; font-style:normal; left:calc(100% - var(--edge,19px) - var(--p,0) * 1%); transition:left .65s cubic-bezier(.3,1.3,.4,1); }
 .mc-pip.hd{ width:30px; height:30px; font-size:9.5px; box-shadow:0 0 0 2px rgba(255,255,255,.35); }
 /* Somebody off the line used to be drawn at 45% opacity, which on a dark
    ground reads as a smudge rather than a person and was never in the draft.
@@ -15389,6 +15392,7 @@ input[type=number] { width:84px; }
 .mcf-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:24px; height:24px;
   border-radius:50%; background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center;
   justify-content:center; font-family:var(--sfmono); font-size:8px; font-weight:700;
+  left:calc(100% - var(--edge,19px) - var(--p,0) * 1%);
   transition:left .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
 .mcf-pip.hd{ width:30px; height:30px; font-size:9px; background:rgba(232,238,242,.34); }
 .mcf-pip.bh{ width:20px; height:20px; font-size:7px; background:rgba(232,238,242,.16); }
@@ -15396,7 +15400,21 @@ input[type=number] { width:84px; }
   border-radius:50%; background:#8fd8af; color:#12251b; display:flex; align-items:center;
   justify-content:center; font-family:var(--sfmono); font-size:8.5px; font-weight:700;
   box-shadow:0 0 12px rgba(143,216,175,.95);
+  left:calc(100% - var(--edge,19px) - var(--p,0) * 1%);
   transition:left .65s cubic-bezier(.3,1.3,.4,1); }
+/* The pips ride on transform, not left: a change of place is then drawn by
+   the compositor, in step with everything else on the screen, rather than laid
+   out again on the main thread every frame of the spring, which is what made a
+   line moving up stutter while the row behind it rendered. The rail is its own
+   container so a place can still be said in the rail's width. --p is the step
+   back from the head in percent; --edge is the head's radius plus its gap from
+   the rounded end. Without container units the pips keep the left they had. */
+@supports (width: 1cqw) {
+  .mc-rail, .mcf-track { container-type:inline-size; }
+  .mc-pip, .mcf-pip, .mcf-you { left:0; transform:translate(calc(100cqw - var(--edge,19px) - var(--p,0) * 1cqw - 50%), -50%); }
+  .mc-pip, .mcf-you { transition:transform .65s cubic-bezier(.3,1.3,.4,1); }
+  .mcf-pip { transition:transform .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
+}
 .mcf-tmr{ display:flex; gap:26px; margin-top:16px; }
 .mcf-tmr > span{ display:flex; flex-direction:column; align-items:center; }
 .mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:16px;
@@ -15557,7 +15575,7 @@ input[type=number] { width:84px; }
 .mcf-track{ --edge:21px; }
 .mcf-pip.bh{ width:22px; height:22px; font-size:9px; }
 .mcf-you{ width:26px; height:26px; font-size:9px; }
-.mcf-track .lt{ width:8px; height:8px; margin-top:-4px; left:-4px; }
+.mcf-track > s.lt{ width:8px; height:8px; margin-top:-4px; left:-4px; }
 .mcf-tmr{ gap:28px; margin-top:18px; }
 .mcf-tmr .v{ font-size:14px; height:18px; gap:7px; }
 .mcf-tmr .l{ font-size:10px; margin-top:4px; }
