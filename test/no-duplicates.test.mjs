@@ -29,7 +29,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
-const APP = path.join(ROOT, "src/LeadPerformanceCalculator.jsx");
+/* The app is one program in two files: the core, and the manager's pages
+   split out of it so a phone downloads less (src/Manager.jsx). */
+const APP_FILES = ["src/LeadPerformanceCalculator.jsx", "src/Manager.jsx"].map((f) => path.join(ROOT, f));
+const readApp = () => APP_FILES.map((f) => fs.readFileSync(f, "utf8")).join("\n");
 const API = path.join(ROOT, "api");
 
 /* Names allowed to exist twice, each with the reason it is not worth sharing.
@@ -64,7 +67,7 @@ const serverFiles = () => {
 };
 
 test("nothing is defined in both the app and a server file", () => {
-  const app = topLevelNames(fs.readFileSync(APP, "utf8"));
+  const app = topLevelNames(readApp());
   const clashes = [];
   for (const file of serverFiles()) {
     const rel = path.relative(ROOT, file);
@@ -96,7 +99,7 @@ test("the shared files stay importable by the browser", async () => {
 });
 
 test("every name the app imports from a shared file is really exported", async () => {
-  const src = fs.readFileSync(APP, "utf8");
+  const src = readApp();
   const rx = /import\s*\{([^}]+)\}\s*from\s*"(\.\.\/api\/[^"]+)"/g;
   let m, checked = 0;
   while ((m = rx.exec(src))) {
@@ -211,7 +214,7 @@ test("no component reads a state variable that belongs to another one", () => {
      Narrow on purpose. A general undefined-name check over JSX is a research
      project and a noisy one; this covers the exact shape that reached production,
      and costs nothing. */
-  const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+  const APP = readApp();
   /* Sliced on the RAW file, and only then stripped of comments and strings.
      The first version stripped first, and the scanner does not preserve line
      structure, so `^function` matched a fraction of the file: the check found 99

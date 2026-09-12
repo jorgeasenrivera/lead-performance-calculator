@@ -120,7 +120,7 @@ test("a field that was deleted is not quietly still around", () => {
     assert.ok(!FIELD_POLICY[f], `${f} is deleted but still has a merge rule`);
     assert.ok(!ASSIGNED.has(f), `${f} is deleted but the merge still writes it`);
     assert.ok(!SNAPSHOT.has(f), `${f} is deleted but the importer still snapshots it`);
-    const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+    const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8") + fs.readFileSync(path.join(ROOT, "src/Manager.jsx"), "utf8");
     assert.ok(!APP.includes(f), `${f} is deleted but the app still carries it around`);
   }
 });
@@ -134,7 +134,7 @@ test("the app actually writes the stamps these rules are settled by", () => {
      Each entry is the field, and a line the app must contain to be writing its
      stamp. Deliberately the assignment itself rather than a loose mention, so
      that a stamp being read somewhere does not count as one being written. */
-  const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+  const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8") + fs.readFileSync(path.join(ROOT, "src/Manager.jsx"), "utf8");
   const writers = [
     ["restrictions", "next.restrictionsAt[assoc.id] ="],
     ["goals", "next.goalsAt[a.id] ="],

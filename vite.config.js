@@ -53,9 +53,9 @@ export default defineConfig({
            on a phone on a forecourt is the slowest part of opening Sage. Split
            out, a returning phone fetches only the app.
 
-           The app itself is still one chunk. Splitting the manager's pages from
-           the salesperson's would be the real win, and it needs the one big
-           source file broken up first, which is its own job. */
+           The manager's pages are their own chunk too (src/Manager.jsx, loaded
+           lazily by the core), so a salesperson's phone fetches the corner and
+           the rooms and not the desk. */
         manualChunks: {
           vendor: ["react", "react-dom", "@supabase/supabase-js", "qrcode-generator"],
         },
