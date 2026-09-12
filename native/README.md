@@ -36,8 +36,12 @@ send notifications.
 
 ## Checked before the merge
 
-A pull request that touches `native/` gets an iOS build with no upload, and a
-comment on the pull request saying whether the app builds from the change.
+A pull request that touches `native/` and carries the label `build ios` gets an
+iOS build with no upload, and a comment on the pull request saying whether the
+app builds from the change. The label is the switch because Expo's plan allows
+a fixed number of builds a month (twenty-five on Starter) and every merge that
+touches `native/` spends one too: add it when the Swift or the native config
+changed, leave it off for a README line or a workflow comment.
 The Xcode log is kept with the run for fourteen days, and the lines that
 matter (`error:`, and expressions Swift found slow) are printed in the job's
 log, so nobody has to open it.
