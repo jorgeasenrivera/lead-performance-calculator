@@ -252,9 +252,24 @@ jobs:
           # The shell aborts on a failed command, which is how a failed build
           # used to end this step before anything could report why.
           set +e
-          eas build --platform "$PLATFORM" --profile "$profile" --non-interactive --wait --json > build.json
+          eas build --platform "$PLATFORM" --profile "$profile" --non-interactive --wait --json > build.json 2> eas.err
           code=$?
           set -e
+          cat eas.err
+          # The Expo free plan allows a few store builds a month. When they are
+          # gone, a pull request cannot be checked, which is not the same as a
+          # change that does not build: say so and leave the check neutral. A
+          # merge's own build still fails here, because a release that could
+          # not be built is a failure.
+          if grep -q "used its iOS builds from the Free plan\|used its Android builds from the Free plan\|used its .* builds from the Free plan" eas.err; then
+            echo "quota=true" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "::warning::The Expo account has used its free-plan builds for the month, so this change could not be checked. The merge's own build will say. Upgrade the plan (eas billing:subscribe starter) or wait for the month to reset."
+              exit 0
+            fi
+            echo "::error::The Expo account has used its free-plan builds for the month; nothing can be built until it resets or the plan is upgraded (eas billing:subscribe starter)."
+            exit 1
+          fi
           node -e '
             try {
               const fs = require("fs");
@@ -359,6 +374,7 @@ jobs:
           SUBMIT_OUTCOME: ${{ steps.submit.outcome }}
           BUILD_VERSION: ${{ steps.build.outputs.build_version }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
+          QUOTA: ${{ steps.build.outputs.quota }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -375,20 +391,23 @@ jobs:
             if (context.eventName === "pull_request") {
               // A check, not a release: one comment per pull request, kept current.
               const mark = "<!-- sage-app-check -->";
-              body = mark + "\n" + (built
-                ? `The app builds from this change (build ${v || "?"}). Nothing was uploaded; the merge does that.`
-                : `The app does not build from this change. [The run](${run}) says why, and the Xcode log is kept with it.`);
+              body = mark + "\n" + (process.env.QUOTA === "true"
+                ? `The app could not be checked from this change: the Expo account has used its free-plan builds for the month. The merge's own build will say. [The run](${run}) has the note.`
+                : built
+                  ? `The app builds from this change (build ${v || "?"}). Nothing was uploaded; the merge does that.`
+                  : `The app does not build from this change. [The run](${run}) says why, and the Xcode log is kept with it.`);
               const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: pr.number, per_page: 100 });
               const mine = comments.find((c) => c.body && c.body.startsWith(mark));
               if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
               else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
               return;
             }
-            if (!built) body = `The app build for this merge failed. [The run](${run}) says why.`;
+            if (process.env.QUOTA === "true") body = `The app was not built for this merge: the Expo account has used its free-plan builds for the month. Upgrade the plan or wait for the reset, then run the Sage app workflow by hand. [The run](${run}) has the note.`;
+            else if (!built) body = `The app build for this merge failed. [The run](${run}) says why.`;
             else if (process.env.SUBMIT_OUTCOME === "success") body = `App build ${v || ""} is on its way to TestFlight${url ? " ([the build](" + url + "))" : ""}. It shows in TestFlight once Apple has processed it, usually within the hour.`;
             else body = `App build ${v || ""} finished${url ? " ([the build](" + url + "))" : ""}, but the upload to TestFlight failed. [The run](${run}) says why.`;
             await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
 
       - name: Forget the keys
         if: always()
-        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json build.json && git checkout -- eas.json app.json 2>/dev/null || true
+        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json build.json eas.err && git checkout -- eas.json app.json 2>/dev/null || true
