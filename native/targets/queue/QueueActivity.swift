@@ -764,9 +764,19 @@ private struct Cord: View {
   private let p0 = CGPoint(x: -6, y: 40), p1 = CGPoint(x: 96, y: 66), p2 = CGPoint(x: 196, y: -14), p3 = CGPoint(x: 314, y: 26)
   private let flat0 = CGPoint(x: -6, y: 30), flat1 = CGPoint(x: 96, y: 48), flat2 = CGPoint(x: 196, y: -6), flat3 = CGPoint(x: 314, y: 19)
   private func pt(_ t: Double, _ a: CGPoint, _ b: CGPoint, _ c: CGPoint, _ d: CGPoint, sx: Double, sy: Double) -> CGPoint {
-    let u = 1 - t
-    let x = u*u*u*a.x + 3*u*u*t*b.x + 3*u*t*t*c.x + t*t*t*d.x
-    let y = u*u*u*a.y + 3*u*u*t*b.y + 3*u*t*t*c.y + t*t*t*d.y
+    /* Written as four weights and a sum on purpose. The one-line form with
+       the literals inline is the expression Swift's type checker gave up on
+       ("unable to type-check this expression in reasonable time"), which
+       failed the build twice, once per axis. */
+    let u: Double = 1.0 - t
+    let uu: Double = u * u
+    let tt: Double = t * t
+    let k0: Double = uu * u
+    let k1: Double = 3.0 * uu * t
+    let k2: Double = 3.0 * u * tt
+    let k3: Double = tt * t
+    let x: Double = k0 * Double(a.x) + k1 * Double(b.x) + k2 * Double(c.x) + k3 * Double(d.x)
+    let y: Double = k0 * Double(a.y) + k1 * Double(b.y) + k2 * Double(c.y) + k3 * Double(d.y)
     return CGPoint(x: x * sx, y: y * sy)
   }
   var body: some View {
@@ -816,12 +826,16 @@ private struct Cord: View {
 /* The desks, in one row: who is at each, which is free, which is yours. */
 private struct DeskRow: View {
   let desks: [QueueAttributes.Desk]
+  /* The ink on a desk that is yours or open: one constant, made once, rather
+     than the same Color built inline on both arms of a ternary the type
+     checker had to weigh. */
+  static let ink = Color(red: 11.0 / 255.0, green: 20.0 / 255.0, blue: 48.0 / 255.0)
   var body: some View {
     HStack(spacing: 4) {
       ForEach(Array(desks.enumerated()), id: \.offset) { (_, d) in
         Text(d.n)
           .font(.system(size: 9, weight: .semibold, design: .monospaced))
-          .foregroundStyle(d.mine ? Color(red: 0x0B/255, green: 0x14/255, blue: 0x30/255) : d.open ? Color(red: 0x0B/255, green: 0x14/255, blue: 0x30/255) : .white.opacity(0.42))
+          .foregroundStyle((d.mine || d.open) ? DeskRow.ink : Color.white.opacity(0.42))
           .frame(maxWidth: .infinity, minHeight: 20)
           .background(RoundedRectangle(cornerRadius: 6).fill(d.mine ? Color.white : d.open ? led : Color.white.opacity(0.07)))
       }
