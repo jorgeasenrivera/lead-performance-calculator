@@ -68,7 +68,11 @@ async function run(req, res) {
       return fail(res, 400, "That request was not readable", e);
     }
   }
-  const store = reading ? String(req.query.store || "") : body.store;
+  /* The query string is read from the URL itself. The platform's req.query is
+     a lazy helper built on url.parse(), which Node now warns about on every
+     call (DEP0169); that warning was this route's only "error" in the logs. */
+  const query = reading ? new URL(req.url || "/", "http://sage").searchParams : null;
+  const store = reading ? String(query.get("store") || "") : body.store;
   const { person_id: personId, user_id: userId, unlink } = body;
   if (!store) return res.status(400).json({ error: "store is required" });
   if (!reading && !userId) return res.status(400).json({ error: "user_id is required" });
