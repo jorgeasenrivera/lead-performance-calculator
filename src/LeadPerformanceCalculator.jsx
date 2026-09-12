@@ -6530,7 +6530,7 @@ async function mutateQueueRow(store, date, fn, kind) {
     if (cur === undefined) throw new Error("The queue could not be read just now, so nothing was changed.");
     const next = fn(cur ? JSON.parse(JSON.stringify(cur)) : null);
     if (!next) return cur;                       // a mutator that changed nothing
-    await saveQueueRow(store, date, next, kind);
+    if (!(await saveQueueRow(store, date, next, kind))) throw new Error("The change could not be saved just now.");
     return next;
   };
   const prev = qChains.get(key) || Promise.resolve();
@@ -6807,7 +6807,7 @@ function SfIcon({ name, size = 26 }) {
    Same mechanic as the bottom bar on the manager side: measured off the live
    segment rather than placed by index, because "On a call" is a wider word than
    "Away" and the labels differ per queue. */
-function SfStatusSelect({ value, variant, flags, busy, onPick }) {
+function SfStatusSelect({ value, variant, flags, onPick }) {
   /* "Here" is always the first segment; the rest are whichever ways this queue
      lets you stand down. Live Floor has no "with customer" state of its own, so
      its track is three wide, not four. */
@@ -6845,7 +6845,6 @@ function SfStatusSelect({ value, variant, flags, busy, onPick }) {
         <button key={st} type="button" role="radio" aria-checked={st === value}
           ref={(el) => { segRefs.current[st] = el; }}
           className={"sf-seg-btn" + (st === value ? " on" : "")}
-          disabled={busy}
           onClick={() => { if (st !== value) { buzz(12); onPick(st); } }}>
           <SfIcon name={st} size={22} />
           <span>{label(st)}</span>
@@ -7777,12 +7776,12 @@ function SfLineTimers({ onLine, atDesk, today }) {
    and no sliding pill. The options change shape with the state on purpose:
    at a desk, "here" and "away" mean nothing, so the tiles there are Lunch
    and Leave the desk. */
-function SfTiles({ value, options, busy, onPick }) {
+function SfTiles({ value, options, onPick }) {
   return (
     <div className="sft-row" role="radiogroup" aria-label="Where you are">
       {options.map((o) => (
         <button key={o.key} type="button" role="radio" aria-checked={o.key === value}
-          className={"sft" + (o.key === value ? " on" : "")} disabled={busy}
+          className={"sft" + (o.key === value ? " on" : "")}
           onClick={() => { if (o.key !== value) { buzz(12); onPick(o.key); } }}>
           <SfIcon name={o.glyph || o.key} size={22} />
           <span>{o.label}</span>
@@ -7792,7 +7791,7 @@ function SfTiles({ value, options, busy, onPick }) {
   );
 }
 
-function SfLineLive({ cfg, store, row, meId, me, busy, onFlag, onRelease }) {
+function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -7890,7 +7889,7 @@ function SfLineLive({ cfg, store, row, meId, me, busy, onFlag, onRelease }) {
         <SfLineTimers onLine={onLine} atDesk={atDesk} today={today} />
         <div className="sfl-title">{title}</div>
       </div>
-      <SfTiles value={mine ? null : st} options={options} busy={busy} onPick={pick} />
+      <SfTiles value={mine ? null : st} options={options} onPick={pick} />
     </>
   );
 }
@@ -7980,12 +7979,16 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     },
   });
 
-  const refetch = useCallback(async () => {
+  const writes = useRef(0);
+  const refetch = useCallback(async (force) => {
+    if (writes.current > 0) return;            // a tap is still landing; its answer is the next read
+    if (force === true) rowStamps.delete(QUEUE_TABLE + "|" + queueRowId(store, date, variant.kind));
     const got = await loadRowIfChanged(QUEUE_TABLE, queueRowId(store, date, variant.kind));
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date, variant.kind]);
-  const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
+  const mutateRow = useCallback((fn) => mutateQueueRow(store, date, fn, variant.kind), [store, date, variant.kind]);
+  const commit = useCommit(setRow, mutateRow, refetch, writes);
   const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), refetch);
   /* Looked at: every five seconds, or thirty with the socket open. Not looked
      at (the other room is up): thirty, and a fresh read the moment it is. */
@@ -8107,9 +8110,12 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [liveKey, shownKey, screen]);
 
-  async function joinAs(person) {
-    setBusy(true);
-    const next = await mutateRow((cur) => {
+  /* Getting on is the screen changing under the finger, not a wait for the
+     row: you are on the line at once and the write lands behind that. */
+  function joinAs(person) {
+    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
+    remember(person.id);
+    commit((cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
       if (!cur.line.some((p) => p.id === person.id)) {
@@ -8119,9 +8125,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       }
       return cur;
     });
-    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
-    remember(person.id);
-    if (next) setRow(next);
     setStep("done"); setPin(""); setPin2(""); setBusy(false);
   }
 
@@ -8164,25 +8167,11 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     setBusy(false);
   }
 
-  async function setFlag(status) {
-    if (busy || !meId) return; setBusy(true);
-    /* Change the screen first, then tell the server. Waiting for the round trip meant
-       a second of nothing happening after a tap, which on a busy floor reads as a
-       button that did not work, so people press it again. If the write fails the next
-       poll puts the old state back within seconds and the alert says so. */
-    setRow((cur) => {
-      if (!cur) return cur;
-      const copy = JSON.parse(JSON.stringify(cur));
-      const p = (copy.line || []).find((x) => x.id === meId);
-      if (p) {
-        if (status === "waiting") p.awayReason = null; else p.awayReason = status;
-        p.status = status; p.statusAt = qNowIso();
-      }
-      return copy;
-    });
+  function setFlag(status) {
+    if (!meId) return;
     // Back in line means the next turn should show the up-take overlay again.
     if (status === "waiting") setTookIt(false);
-    const next = await mutateRow((cur) => {
+    commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -8199,25 +8188,21 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       }
       return cur;
     });
-    if (next) setRow(next);
-    setBusy(false);
   }
   /* Getting up from a desk, from the desk. The same release the lot fence
      runs; `why` is what the day's record says about it, and `then` is the
      state they get up into. */
-  async function releaseSeat(why = "out", then = null) {
-    if (busy || !meId) return; setBusy(true);
-    const next = await mutateRow((cur) => {
+  function releaseSeat(why = "out", then = null) {
+    if (!meId) return;
+    commit((cur) => {
       const r = releasePerson(cur || {}, meId, qNowIso(), why);
       return r.changed ? r.row : null;
     });
-    if (next) setRow(next);
-    setBusy(false);
     if (then) then();
   }
-  async function leave() {
-    if (busy || !meId) return; setBusy(true);
-    const next = await mutateRow((cur) => {
+  function leave() {
+    if (!meId) return;
+    commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
@@ -8225,8 +8210,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       return cur;
     });
     remember(null);
-    if (next) setRow(next);
-    setStep("name"); setBusy(false);
+    setStep("name");
   }
 
   /* ---------- render ---------- */
@@ -8281,8 +8265,8 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             ? (onCount ? "Get on and take your place in the line." : "You would be first.")
             : "The desk opens the Phone Line to start the day. Your corner is ready meanwhile."}</div>
           {open && meEntry && (
-            <button className="sf-go mcf-go" disabled={busy} onClick={() => { buzz(10); joinAs({ id: meEntry.id, label: meEntry.label || meEntry.name || "" }); }}>
-              {busy ? "Checking\u2026" : "Get me on"}
+            <button className="sf-go mcf-go" onClick={() => { buzz(10); joinAs({ id: meEntry.id, label: meEntry.label || meEntry.name || "" }); }}>
+              Get me on
             </button>
           )}
           {open && !meEntry && (
@@ -8316,7 +8300,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         <button type="button" className="sf-link" onClick={() => { buzz(10); setMyDay(true); }}>
           <SfIcon name="mine" size={14} /><span>My day</span>
         </button>
-        <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={leave}>
+        <button type="button" className="sf-link sf-link-quiet" onClick={leave}>
           <SfIcon name="door" size={14} /><span>{variant.leave}</span>
         </button>
       </div>
@@ -8330,7 +8314,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             foot already says which room this is. */}
         {nudge}
         <SfLineLive cfg={cfg} store={store} row={row} meId={meId} me={me}
-          busy={busy} onFlag={setFlag} onRelease={releaseSeat} />
+          onFlag={setFlag} onRelease={releaseSeat} />
         <div className="sf-actions">{links}</div>
         <MyStationDay row={row} meId={meId} store={store} date={date} />
       </div>
@@ -8354,7 +8338,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         </div>
         <div className="sf-actions">
           <SfStatusSelect value={st} variant={variant} flags={variant.kind === "line" ? LINE_SELF_FLAGS : QUEUE_SELF_FLAGS}
-            busy={busy} onPick={setFlag} />
+            onPick={setFlag} />
           {links}
         </div>
         <MyStationDay row={row} meId={meId} store={store} date={date} />
@@ -8372,7 +8356,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </div>
             <h2>You're up</h2>
             <p>{variant.upSub}</p>
-            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>Got it</button>
+            <button className="sf-go" onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>Got it</button>
           </div>
         )}
       </div>
@@ -8669,6 +8653,28 @@ async function mutateFloorRow(store, date, fn) {
   return p;
 }
 
+/* One tap, one frame. The screen takes the change the moment the finger
+   lifts and the server hears about it afterwards. What the server hands back
+   is applied only when no later tap is still in flight, so a slow write can
+   never drag the screen back to a state the person has already moved past;
+   the poll holds off for the same reason (`writes` is the count it checks).
+   A write that fails buzzes and rereads, and the screen shows the truth.
+   Nothing on the way is disabled while a round trip runs: the next tap is
+   its own write, queued behind this one. */
+function useCommit(setRow, mutate, refetch, writes) {
+  return useCallback((fn) => {
+    setRow((cur) => {
+      if (!cur) return cur;
+      const out = fn(JSON.parse(JSON.stringify(cur)));
+      return out || cur;
+    });
+    writes.current++;
+    return mutate(fn).then(
+      (next) => { writes.current--; if (next && writes.current === 0) setRow(next); return next; },
+      (e) => { writes.current--; console.error("write", e); buzz([40, 60, 40]); refetch(true); return null; });
+  }, [setRow, mutate, refetch, writes]);
+}
+
 /* Several days at once, for the screen that looks back rather than at now.
    A claim can only be reconciled after the day's activity report has landed, and
    the report lands the next morning, so the thing a manager reviews is always
@@ -8779,11 +8785,10 @@ function PlanMap({ plan, cls = "", deco, onTap, children }) {
 
 /* ---- the salesperson's side: two buttons, a where, and the chip that waits
    with you. Lives on the floor phone screen, under the status control. ---- */
-function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
+function AssistBlock({ meId, meName, fence, plan, row, commit }) {
   const [open, setOpen] = useState(null);          // "fly" | "to" | null
   const [where, setWhere] = useState(null);        // table n, or "lot"
   const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
   const mine = activeAssists(row).find((a) => a.byId === meId) || null;
   useAssistTick(!!mine);
 
@@ -8803,38 +8808,29 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
     } catch (e) { /* no fix is not a reason to block the ask */ }
   };
 
-  const send = async () => {
-    if (busy || !open) return;
-    setBusy(true);
-    try {
-      const ask = { id: uid(), t: qNowIso(), kind: open, byId: meId, byName: meName,
-        table: where === "lot" ? null : where, spot: where === "lot" ? "lot" : "floor",
-        note: note || null };
-      const next = await mutateFloorRow(store, date, (cur) => {
-        if (!cur) return null;
-        // one live ask per person: a second press replaces, never stacks
-        cur.assists = [ask, ...((cur.assists || []).filter((a) => !(a.byId === meId && !a.doneAt)))].slice(0, 40);
-        return cur;
-      });
-      if (next && onRow) onRow(next);
-      setOpen(null);
-      buzz([15, 30, 15]);
-    } catch (e) { /* the row poll will tell the truth either way */ }
-    setBusy(false);
+  const send = () => {
+    if (!open) return;
+    const ask = { id: uid(), t: qNowIso(), kind: open, byId: meId, byName: meName,
+      table: where === "lot" ? null : where, spot: where === "lot" ? "lot" : "floor",
+      note: note || null };
+    commit((cur) => {
+      if (!cur) return null;
+      // one live ask per person: a second press replaces, never stacks
+      cur.assists = [ask, ...((cur.assists || []).filter((a) => !(a.byId === meId && !a.doneAt)))].slice(0, 40);
+      return cur;
+    });
+    setOpen(null);
+    buzz([15, 30, 15]);
   };
-  const cancel = async () => {
-    if (busy || !mine) return;
-    setBusy(true);
-    try {
-      const next = await mutateFloorRow(store, date, (cur) => {
-        if (!cur) return null;
-        const x = (cur.assists || []).find((a) => a.id === mine.id);
-        if (x && !x.doneAt) { x.doneAt = qNowIso(); x.cancelled = true; }
-        return cur;
-      });
-      if (next && onRow) onRow(next);
-    } catch (e) {}
-    setBusy(false);
+  const cancel = () => {
+    if (!mine) return;
+    const id = mine.id;
+    commit((cur) => {
+      if (!cur) return null;
+      const x = (cur.assists || []).find((a) => a.id === id);
+      if (x && !x.doneAt) { x.doneAt = qNowIso(); x.cancelled = true; }
+      return cur;
+    });
   };
 
   if (mine) {
@@ -8847,7 +8843,7 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
           <i>{(mine.kind === "to" ? "T.O." : "FlyBy")} · {assistWhere(mine)}{mine.note ? ` · ${mine.note}` : ""}</i>
         </span>
         <span className="fba-age">{mine.claimedBy ? "" : fmtAssistAge(age)}</span>
-        {!mine.claimedBy && <button type="button" className="fba-x" disabled={busy} onClick={cancel} aria-label="Never mind">Never mind</button>}
+        {!mine.claimedBy && <button type="button" className="fba-x" onClick={cancel} aria-label="Never mind">Never mind</button>}
       </div>
     );
   }
@@ -8880,8 +8876,7 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
               ))}
             </div>
             <div className="fba-send">
-              <button type="button" className="fba-go" disabled={busy || (!where && open === "to" && false)}
-                onClick={send}>{open === "to" ? "Send the T.O." : "Send the FlyBy"}</button>
+              <button type="button" className="fba-go" onClick={send}>{open === "to" ? "Send the T.O." : "Send the FlyBy"}</button>
               <button type="button" className="fba-back" onClick={() => setOpen(null)}>Back</button>
             </div>
           </div>
@@ -8893,27 +8888,20 @@ function AssistBlock({ store, date, meId, meName, fence, plan, row, onRow }) {
 }
 
 /* ---- the seat: one tap when you take a guest, and the map is true ---- */
-function SeatBlock({ store, date, meId, plan, row, onRow }) {
+function SeatBlock({ store, meId, plan, row, commit }) {
   const me = ((row && row.line) || []).find((p) => p.id === meId);
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
   if (!me || me.status !== "customer") return null;
-  const seat = async (n) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const next = await mutateFloorRow(store, date, (cur) => {
-        if (!cur) return null;
-        const p = (cur.line || []).find((x) => x.id === meId);
-        if (p) p.table = n;
-        return cur;
-      });
-      if (next && onRow) onRow(next);
-      try { localStorage.setItem(`lpcf:seat:${store}`, String(n)); } catch (e) {}
-      setOpen(false);
-      buzz(12);
-    } catch (e) {}
-    setBusy(false);
+  const seat = (n) => {
+    commit((cur) => {
+      if (!cur) return null;
+      const p = (cur.line || []).find((x) => x.id === meId);
+      if (p) p.table = n;
+      return cur;
+    });
+    try { localStorage.setItem(`lpcf:seat:${store}`, String(n)); } catch (e) {}
+    setOpen(false);
+    buzz(12);
   };
   const remembered = (() => { try { return localStorage.getItem(`lpcf:seat:${store}`); } catch (e) { return null; } })();
   if (me.table && !open) {
@@ -8930,7 +8918,7 @@ function SeatBlock({ store, date, meId, plan, row, onRow }) {
         <b>Where are you two sitting?</b>
         <span>One tap and the desk knows where to find you.</span>
         <div className="fba-seatrow">
-          {remembered && <button type="button" className="fba-go" disabled={busy} onClick={() => seat(remembered)}>
+          {remembered && <button type="button" className="fba-go" onClick={() => seat(remembered)}>
             {String(remembered).startsWith("O") ? "Office " + String(remembered).slice(1) : "Table " + remembered} again</button>}
           <button type="button" className={remembered ? "fba-back" : "fba-go"} onClick={() => setOpen(true)}>Pick on the map</button>
         </div>
@@ -9728,11 +9716,16 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   useEffect(() => { loadShared("lpc:config:v2", null).then(setCfg).catch(() => {}); }, []);
   const std = { ...DEFAULT_ACTIVITY_STANDARDS, ...(((cfg && cfg.stores) || []).find((s) => s.id === store)?.activityStandards || {}) };
 
-  const refetch = useCallback(async () => {
+  const writes = useRef(0);
+  const refetch = useCallback(async (force) => {
+    if (writes.current > 0) return;            // a tap is still landing; its answer is the next read
+    if (force === true) rowStamps.delete(FLOOR_TABLE + "|" + floorRowId(store, date));
     const got = await loadRowIfChanged(FLOOR_TABLE, floorRowId(store, date));
     if (got === undefined || got === "same") return;
     setRow(got || null);
   }, [store, date]);
+  const mutateRow = useCallback((fn) => mutateFloorRow(store, date, fn), [store, date]);
+  const commit = useCommit(setRow, mutateRow, refetch, writes);
   const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), refetch);
   /* Looked at: every five seconds, or thirty with the socket open. Not looked
      at (the other room is up): thirty, and a fresh read the moment it is. */
@@ -9872,7 +9865,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     }
   };
   // The ticket: print, then file to the desk, then good night.
-  const startTicket = () => { if (busy || !meId) return; buzz(10); setTicket("printing"); };
+  const startTicket = () => { if (!meId) return; buzz(10); setTicket("printing"); };
   /* Left from the lock screen, out on the road, with no page open to print a
      ticket or file the day's numbers. The desk got a stub at the time; this
      fills it in the next time the app is opened and shows the person the
@@ -10060,7 +10053,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       setBusy(false);
       return;
     }
-    const next = await mutateFloorRow(store, date, (cur) => {
+    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
+    remember(person.id);
+    commit((cur) => {
       if (!cur) return null;
       cur.line = cur.line || [];
       if (!cur.line.some((p) => p.id === person.id)) {
@@ -10074,9 +10069,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       }
       return cur;
     });
-    try { localStorage.setItem(`lpcq:name:${store}`, person.label); } catch {}
-    remember(person.id);
-    if (next) setRow(next);
     if (door.why !== "inside") setDoorNote(door);
     setStep("done"); setPin(""); setPin2(""); setBusy(false);
   }
@@ -10119,25 +10111,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     setBusy(false);
   }
 
-  async function setFlag(status) {
-    if (busy || !meId) return; setBusy(true);
-    /* Change the screen first, then tell the server. Waiting for the round trip meant
-       a second of nothing happening after a tap, which on a busy floor reads as a
-       button that did not work, so people press it again. If the write fails the next
-       poll puts the old state back within seconds and the alert says so. */
-    setRow((cur) => {
-      if (!cur) return cur;
-      const copy = JSON.parse(JSON.stringify(cur));
-      const p = (copy.line || []).find((x) => x.id === meId);
-      if (p) {
-        if (status === "waiting") p.awayReason = null; else p.awayReason = status;
-        p.status = status; p.statusAt = qNowIso();
-      }
-      return copy;
-    });
+  function setFlag(status) {
+    if (!meId) return;
     // Back in line means the next turn should show the up-take overlay again.
     if (status === "waiting") setTookIt(false);
-    const next = await mutateFloorRow(store, date, (cur) => {
+    commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -10154,13 +10132,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       }
       return cur;
     });
-    if (next) setRow(next);
-    setBusy(false);
   }
   // accidental check-in: reverse the auto-flip (within the store's window)
-  async function undoCheckin() {
-    if (busy || !meId) return; setBusy(true);
-    const next = await mutateFloorRow(store, date, (cur) => {
+  function undoCheckin() {
+    if (!meId) return;
+    commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       if (p) {
@@ -10170,12 +10146,10 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       }
       return cur;
     });
-    if (next) setRow(next);
-    setBusy(false);
   }
-  async function leave() {
-    if (busy || !meId) return; setBusy(true);
-    const next = await mutateFloorRow(store, date, (cur) => {
+  function leave() {
+    if (!meId) return;
+    commit((cur) => {
       if (!cur) return null;
       const p = (cur.line || []).find((x) => x.id === meId);
       cur.line = (cur.line || []).filter((x) => x.id !== meId);
@@ -10184,8 +10158,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     });
     // Through the door the account stays who they are; only the line entry goes.
     remember(account || null);
-    if (next) setRow(next);
-    setStep("name"); setBusy(false);
+    setStep("name");
   }
 
   /* ---- leaving the lot ----
@@ -10516,9 +10489,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           </div>
         )}
         <div className="sf-actions">
-          {canUndo && <button className="sf-leave" disabled={busy} onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
+          {canUndo && <button className="sf-leave" onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           {st === "customer" && (
-            <button type="button" className="sf-go mcf-go mcf-left" disabled={busy} onClick={() => { buzz([14, 40, 14]); setFlag("waiting"); }}>
+            <button type="button" className="sf-go mcf-go mcf-left" onClick={() => { buzz([14, 40, 14]); setFlag("waiting"); }}>
               <PixIcon glyph="check" size={16} /><span>Customer left, put me back in line</span>
             </button>
           )}
@@ -10526,17 +10499,17 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
               this screen too — its own comment says the floor's track is three
               wide rather than four — and was simply never wired in here. */}
           <SfStatusSelect value={st} variant={FLOOR_SEG} flags={FLOOR_SELF_FLAGS}
-            busy={busy} onPick={setFlag} />
-          <SeatBlock store={store} date={date} meId={meId} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
-          <AssistBlock store={store} date={date} meId={meId} meName={meFull || meLabel}
-            fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} onRow={setRow} />
+            onPick={setFlag} />
+          <SeatBlock store={store} meId={meId} plan={floorPlanOf(cfg, store)} row={row} commit={commit} />
+          <AssistBlock meId={meId} meName={meFull || meLabel}
+            fence={storeFence} plan={floorPlanOf(cfg, store)} row={row} commit={commit} />
           <div className="sf-links">
             {/* The corner is the main page and already carries the day, so this
                 goes back there rather than opening a second copy of it. */}
             <button type="button" className="sf-link" onClick={() => { buzz(10); setTab("corner"); }}>
               <SfIcon name="mine" size={14} /><span>Home</span>
             </button>
-            <button type="button" className="sf-link sf-link-quiet" disabled={busy} onClick={() => { buzz(10); startTicket(); }}>
+            <button type="button" className="sf-link sf-link-quiet" onClick={() => { buzz(10); startTicket(); }}>
               <SfIcon name="door" size={14} /><span>Leave the floor</span>
             </button>
           </div>
@@ -10556,7 +10529,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             </div>
             <h2>You're up</h2>
             <p>Head to the door. The next one is yours.</p>
-            <button className="sf-go" disabled={busy} onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
+            <button className="sf-go" onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
           </div>
         )}
         {doorAside && <p className="sf-door-aside">{doorAside}</p>}
