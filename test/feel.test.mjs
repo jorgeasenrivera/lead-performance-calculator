@@ -129,3 +129,22 @@ test("the rails spring on transform, not left", () => {
   assert.ok(/\.fr-pip \{ left:0; transform:translate\(calc\(100cqw/.test(mgr), "the manager's pips ride on transform");
   assert.ok(/querySelectorAll\(":scope > s\.lt"\)/.test(core), "the light takes the rail's own dots only");
 });
+
+test("one object across rooms: the mark flies, the rooms dot-dissolve, and less motion gets the cut", () => {
+  assert.ok(/const crossRooms = \(from, to\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor"\);/.test(core), "a tab switch crosses the rooms");
+  assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches; \} catch \(e\) \{\}\n    if \(reduce\) return;/.test(core), "less motion asks for the cut");
+  assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.3,1\.3,\.4,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the spring");
+  assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ animation:arDotsIn var\(--t-swap\) steps\(5,end\) both; \}/.test(core), "the room arriving fills in from dots over the swap token");
+  assert.ok(/\.ar-room\.ar-out > \.q-page\.sf\{ animation:arDotsOut var\(--t-exit\) steps\(3,end\) both; \}/.test(core), "the room leaving breaks into dots over the exit token");
+  assert.ok(/@property --ar-r\{ syntax:"<length>"; inherits:false; initial-value:0px; \}/.test(core), "the dot radius is a registered property, so the steps are real");
+  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\)\}/.test(core), "the room leaving stays on screen for its dots");
+});
+
+test("the rooms in sunlight: deep green ground, cream on it, only the tokens change, off by default", () => {
+  assert.ok(/html\.sun \.q-page\.sf\.mc-floor, html\.sun \.q-page\.sf\.sf-line\{[^}]*background:#2E4A38;/.test(core), "the ground is the curtain's deep green");
+  assert.ok(/html\.sun \.mc-floor \.sf-seg-pill, html\.sun \.sf-line \.sf-seg-pill\{ background:#8FD8AF; box-shadow:none; \}/.test(core), "the pill is mint");
+  assert.ok(/html\.sun \.mc-floor \.fba-btn\.fly\{ background:#F6E3C3;/.test(core) && /html\.sun \.mc-floor \.fba-btn\.to\{ background:#F3D4CC;/.test(core), "the help cards are filled chips");
+  assert.ok(/localStorage\.getItem\("lpcf:pref:sun"\) === "1"/.test(core), "off unless switched on");
+  assert.ok(/glyph="sun"/.test(core) && /Sunlight<span className="hint">/.test(core), "a switch on the corner");
+  assert.ok(!/html\.sun[^{]*\{[^}]*(padding|margin|font-size|animation)/.test(core), "layout, type sizes and animation stay");
+});
