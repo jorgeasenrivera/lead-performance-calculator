@@ -26,7 +26,7 @@ const ROOT = new URL("..", import.meta.url).pathname;
 /* Still read as text, and rightly so: the three checks at the bottom are about
    the repair tool and the importer, which do live in the app file. Only the
    merge moved out. */
-const src = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+const src = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8") + fs.readFileSync(path.join(ROOT, "src/Manager.jsx"), "utf8");
 
 const rosterMerge = (next, serverCopy) =>
   mergeAgainstServer(JSON.parse(JSON.stringify(next)), serverCopy);

@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
-const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8");
+const APP = fs.readFileSync(path.join(ROOT, "src/LeadPerformanceCalculator.jsx"), "utf8") + fs.readFileSync(path.join(ROOT, "src/Manager.jsx"), "utf8");
 
 const begin = APP.indexOf("/* dm-daterows-begin */");
 const end = APP.indexOf("/* dm-daterows-end */");
