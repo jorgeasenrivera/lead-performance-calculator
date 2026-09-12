@@ -43,7 +43,8 @@ const { default: link } = await import(API+"/link-person.mjs");
 const { default: reg }  = await import(API+"/register-device.mjs");
 const mkRes = () => { const r={code:200}; r.status=(c)=>{r.code=c;return r;}; r.json=(x)=>{r.body=x;return r;}; return r; };
 const call = (fn, body, jwt="jwt") => { const res=mkRes(); return fn({method:"POST",headers:jwt?{authorization:`Bearer ${jwt}`}:{},body},res).then(()=>res); };
-const get = (fn, query, jwt="jwt") => { const res=mkRes(); return fn({method:"GET",headers:jwt?{authorization:`Bearer ${jwt}`}:{},query},res).then(()=>res); };
+/* The query rides in the URL, as it does on the platform; the handler reads it from there. */
+const get = (fn, query, jwt="jwt") => { const res=mkRes(); const url = "/api/link-person?" + new URLSearchParams(query || {}).toString(); return fn({method:"GET",url,headers:jwt?{authorization:`Bearer ${jwt}`}:{},query},res).then(()=>res); };
 
 // ---- the defect this round exists to fix ----
 test("the defect this round exists to fix", async () => {
