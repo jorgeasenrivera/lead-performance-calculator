@@ -115,6 +115,14 @@ test("the phone speaks six things by feel, by name, in the page and in the shell
   assert.ok(/pref === "quiet" && !isTick/.test(core), "quiet keeps the tick only");
 });
 
+test("no connection is a bar with weight; stale is a small stamp; nothing greys out", () => {
+  assert.ok(/className=\{"ar-net" \+ \(back \? " back" : ""\)\}/.test(core), "the bar, mint for a beat on the way back");
+  assert.ok(/\.ar-net\{ position:fixed; z-index:102; top:0;/.test(core) && /animation:netIn var\(--t-settle\) var\(--spring\) both/.test(core), "it drops in from the top on the settle token");
+  assert.ok(/staleMins > 0 && \(/.test(core) && /className="ar-age"/.test(core), "the stale stamp");
+  assert.ok(/if \(!offline\) netState\.okAt = Date\.now\(\);/.test(core), "the last read that worked is remembered");
+  assert.ok(/html\.net-off \.q-page\.sf\{ --glow:/.test(core) && !/html\.net-off[^}]*opacity/.test(core), "the glow cools; nothing dims");
+});
+
 test("the rails spring on transform, not left", () => {
   assert.ok(!/style=\{\{ left: (headL|behindL|youL|leftOf)/.test(core + mgr), "no pip placed by an inline left");
   assert.ok(/\.mc-pip, \.mcf-pip, \.mcf-you \{ left:0; transform:translate\(calc\(100cqw/.test(core), "the phone's pips ride on transform");

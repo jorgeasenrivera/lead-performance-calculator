@@ -227,8 +227,10 @@ jobs:
               });
           '
 
-      # Ties this folder to a project on the Expo account. Idempotent: the same
-      # account and slug resolve to the same project every run.
+      # Ties this folder to its project on Expo. app.json names the owner (the
+      # team, where the plan is) and pins the project id, so this can only ever
+      # resolve to the one project Sage has had since the first build; it can
+      # never quietly create a second one on another account.
       - name: Expo project
         run: eas init --force --non-interactive
 

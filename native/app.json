@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Sage",
+    "owner": "jorgeasenrivs-team",
     "slug": "sage",
     "scheme": "sage",
     "version": "1.0.0",
@@ -74,7 +75,7 @@
     "extra": {
       "siteUrl": "https://www.sageonline.io",
       "eas": {
-        "projectId": ""
+        "projectId": "6b755c67-3bd6-4f28-ae12-6d9759c0f667"
       }
     }
   }

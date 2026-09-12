@@ -997,11 +997,14 @@ function withTimeout(promise, ms) {
 /* What the phone knows about its connection, from the reads that matter: off
    after a failed one, on again after the next that works, with the stamp of
    the memory on screen so the person knows how old it is. */
-const netState = { offline: false, asOf: null };
+const netState = { offline: false, asOf: null, okAt: null };
 function netSet(offline, asOf) {
   const was = netState.offline;
   netState.offline = offline;
   netState.asOf = offline ? (asOf || netState.asOf) : null;
+  /* And when the last read that worked was, so a screen that is online but
+     has not heard anything for a while can say how old its numbers are. */
+  if (!offline) netState.okAt = Date.now();
   if (was !== offline || offline) { try { window.dispatchEvent(new CustomEvent("lpc:net")); } catch (e) {} }
 }
 function useNet() {
@@ -7568,14 +7571,36 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const GLYPH = { home: "home", floor: "door", line: "phone" };
   const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
   const net = useNet();
+  /* Two weights for two different things. No connection is a bar across the
+     top of the room in solid sand, with the warn glyph and how old the
+     numbers are; when the signal returns it turns mint, says Back, and leaves.
+     Stale (online, but nothing heard for over a minute) is a small stamp at
+     the top right, because that is exactly "numbers last updated". Nothing
+     greys out under either: stale numbers are still the best the phone has. */
+  const [netTick, setNetTick] = useState(0);
+  useEffect(() => { const t = setInterval(() => setNetTick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
+  const [back, setBack] = useState(false);
+  const wasOff = useRef(false);
+  useEffect(() => {
+    if (wasOff.current && !net.offline) { setBack(true); const t = setTimeout(() => setBack(false), 1200); wasOff.current = false; return () => clearTimeout(t); }
+    wasOff.current = net.offline;
+    return undefined;
+  }, [net.offline]);
+  useEffect(() => { try { document.documentElement.classList.toggle("net-off", !!net.offline); } catch (e) {} return () => { try { document.documentElement.classList.remove("net-off"); } catch (e) {} }; }, [net.offline]);
+  const minsOld = (t) => Math.max(1, Math.floor((Date.now() - t) / 60000));
+  const staleMins = !net.offline && net.okAt && Date.now() - net.okAt > 60000 ? minsOld(net.okAt) : 0;
+  void netTick;
 
   return (
     <>
-      {net.offline && (
-        <div className="ar-net" role="status">
-          <PixIcon glyph="warn" size={12} />
-          <span>No connection{net.asOf ? ` · as of ${mcClock(new Date(net.asOf).toISOString()) || ""}` : ""}</span>
+      {(net.offline || back) && (
+        <div className={"ar-net" + (back ? " back" : "")} role="status">
+          <PixIcon glyph={back ? "check" : "warn"} size={13} />
+          <span>{back ? "Back" : `No connection${net.asOf ? ` · showing ${minsOld(new Date(net.asOf).getTime())} min ago` : ""}`}</span>
         </div>
+      )}
+      {staleMins > 0 && (
+        <div className="ar-age" role="status"><i /><span>as of {staleMins} min ago</span></div>
       )}
       {/* Both rooms stay mounted once they have been opened, and a tab shows
           one of them. Switching used to rebuild the room from nothing: a
@@ -14396,9 +14421,24 @@ input[type=number] { width:84px; }
    anything below that number is painted under the whole screen no matter what
    it sits above inside it. */
 /* the strip that says the screen is the phone's memory, not the network */
-.ar-net{ position:fixed; z-index:102; bottom:calc(env(safe-area-inset-bottom, 0px) + 82px); left:50%; transform:translateX(-50%);
-  display:flex; align-items:center; gap:7px; padding:7px 13px; border-radius:999px; background:rgba(31,42,34,.88); color:#E4C98D; white-space:nowrap;
-  font:700 10.5px var(--sfmono, ui-monospace, monospace); letter-spacing:.1em; text-transform:uppercase; box-shadow:0 8px 24px -12px rgba(0,0,0,.6); pointer-events:none; }
+/* No connection: a bar across the top of the room in solid sand, dropping
+   in on the spring; mint for a beat on the way back. */
+.ar-net{ position:fixed; z-index:102; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  display:flex; align-items:center; justify-content:center; gap:8px; background:#E4C98D; color:#15211B; white-space:nowrap;
+  font:700 11px var(--sfmono, ui-monospace, monospace); letter-spacing:.08em; text-transform:uppercase; box-shadow:0 8px 24px -12px rgba(0,0,0,.6); pointer-events:none;
+  animation:netIn var(--t-settle) var(--spring) both; }
+.ar-net.back{ background:#8FD8AF; animation:netIn var(--t-swap) var(--ease) both; }
+@keyframes netIn{ from{ transform:translateY(-110%); } to{ transform:none; } }
+/* Stale: online, nothing heard for over a minute. Small, top right, sand. */
+.ar-age{ position:fixed; z-index:102; top:calc(env(safe-area-inset-top, 0px) + 12px); right:14px; display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:999px; border:1px solid rgba(228,201,141,.35); background:rgba(228,201,141,.12); color:#E4C98D;
+  font:600 10.5px var(--sfmono, ui-monospace, monospace); letter-spacing:.06em; pointer-events:none; animation:ageIn var(--t-settle) var(--ease-bloop) both; }
+.ar-age i{ width:6px; height:6px; border-radius:50%; background:#E4C98D; animation:agePulse 1.8s ease-in-out infinite; }
+@keyframes ageIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:none; } }
+@keyframes agePulse{ 50%{ opacity:.35; } }
+/* Under the bar the room's glow cools to grey; the numbers stay as they are. */
+html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A3; transition:filter var(--t-settle) var(--ease); }
+@media (prefers-reduced-motion: reduce){ .ar-net, .ar-net.back, .ar-age, .ar-age i{ animation:none; } }
 .boot-stall{ position:fixed; z-index:70; left:50%; top:50%; transform:translate(-50%,-50%); width:min(320px, calc(100vw - 40px));
   background:#fff; color:#1F2A22; border-radius:18px; padding:20px 20px 18px; box-shadow:0 24px 60px -20px rgba(0,0,0,.45); text-align:center; }
 .boot-stall.phone{ background:#0D130F; color:#EDF2EA; box-shadow:0 24px 60px -20px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.08); }
