@@ -469,6 +469,11 @@ function Shell() {
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
         geolocationEnabled
+        /* App-bound: iOS runs the site's service worker (the files that let
+           Sage open with no signal) only for domains named in the plist, and
+           only in a WebView that says it stays on them. Outside links already
+           go to the phone's browser. */
+        limitsNavigationsToAppBoundDomains
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
       />

@@ -1,5 +1,33 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
+
+/* The service worker (src/sw.js) needs to know this build's files. After the
+   bundle is written, the page is read back for the chunks it starts with,
+   and the worker is written out with that list and a version that changes
+   whenever any of them do — which is what makes the browser install the new
+   build. Only the starting files are put away up front; the manager's PDF
+   reader and the map are kept as they are first used. */
+function sageWorker() {
+  let outDir = "dist";
+  return {
+    name: "sage-worker",
+    apply: "build",
+    configResolved(c) { outDir = c.build.outDir; },
+    closeBundle() {
+      const html = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
+      const starts = [...new Set([...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]))];
+      const precache = ["/", ...starts];
+      const version = crypto.createHash("sha1").update(html + precache.join("\n")).digest("hex").slice(0, 12);
+      const sw = fs.readFileSync(path.join("src", "sw.js"), "utf8")
+        .replace("__VERSION__", version)
+        .replace("__PRECACHE__", JSON.stringify(precache));
+      fs.writeFileSync(path.join(outDir, "sw.js"), sw);
+    },
+  };
+}
 
 // Every deploy stamps itself. Nobody has to remember to bump a number.
 //  - the date comes from the build machine
@@ -13,7 +41,7 @@ const sha = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7);
 const version = stamp + (sha ? "." + sha : "");
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), sageWorker()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
   },

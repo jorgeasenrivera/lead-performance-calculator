@@ -2710,9 +2710,19 @@ export default function LeadPerformanceCalculator() {
         // First load: pull every accessible store, cache it, pick a starting view.
         const all = {};
         for (const s of accessible) {
-          const r = await loadStrict(storeKey(s.id));
-          if (!r.ok) { setLoadErr(true); return; }   // never let a failed read look like an empty store
-          let d = r.value;
+          const got = await withTimeout(loadStrict(storeKey(s.id)));
+          const r = got.value || { ok: false };
+          let d = r.ok ? r.value : undefined;
+          if (!r.ok) {
+            /* Never let a failed read look like an empty store. The copy the
+               phone remembers stands in where there is one; a salesperson's
+               corner reads its own rows and goes on without; the desk, which
+               works from this document, is told and offered a retry. */
+            const c = cacheGet("store:" + s.id);
+            if (c && c.value) { d = c.value; netSet(true, c.at); }
+            else if (wantsFloor) continue;
+            else { setLoadErr(true); return; }
+          } else if (d) cachePut("store:" + s.id, d);
           if (!d) {
             const legacy = await loadStrict(`lpc:store:${s.id}:v1`);
             if (!legacy.ok) { setLoadErr(true); return; }

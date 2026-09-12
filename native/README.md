@@ -34,6 +34,15 @@ Expo (`appVersionSource: remote`) so every upload is new to TestFlight. That key
 server uses: one lets Expo sign and upload builds, the other lets the server
 send notifications.
 
+## Opening with no signal
+
+The site keeps its own files on the phone with a service worker (`src/sw.js`),
+so Sage opens on a lot with no reception and a deploy is not a fresh download.
+iOS runs a site's worker inside an app only for app-bound domains, which is
+why `WKAppBoundDomains` names `sageonline.io` in `app.json` and the WebView
+sets `limitsNavigationsToAppBoundDomains`. Outside links already open in the
+phone's browser, so nothing else changes.
+
 ## Running on a computer, if one is available
 
 ```

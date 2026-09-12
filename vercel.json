@@ -3,5 +3,20 @@
     "api/ingest.mjs": {
       "includeFiles": "node_modules/pdfjs-dist/legacy/build/*.js"
     }
-  }
+  },
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, max-age=0, must-revalidate"
+        },
+        {
+          "key": "Service-Worker-Allowed",
+          "value": "/"
+        }
+      ]
+    }
+  ]
 }
