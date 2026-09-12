@@ -8,7 +8,8 @@ import crypto from "node:crypto";
    bundle is written, the page is read back for the chunks it starts with,
    and the worker is written out with that list and a version that changes
    whenever any of them do — which is what makes the browser install the new
-   build. Only the starting files are put away up front; the manager's PDF
+   build. The fonts the page preloads count as starting files. Only the
+   starting files are put away up front; the manager's PDF
    reader and the map are kept as they are first used. */
 function sageWorker() {
   let outDir = "dist";
@@ -18,7 +19,7 @@ function sageWorker() {
     configResolved(c) { outDir = c.build.outDir; },
     closeBundle() {
       const html = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
-      const starts = [...new Set([...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]))];
+      const starts = [...new Set([...html.matchAll(/(?:src|href)="(\/(?:assets|fonts)\/[^"]+)"/g)].map((m) => m[1]))];
       const precache = ["/", ...starts];
       const version = crypto.createHash("sha1").update(html + precache.join("\n")).digest("hex").slice(0, 12);
       const sw = fs.readFileSync(path.join("src", "sw.js"), "utf8")

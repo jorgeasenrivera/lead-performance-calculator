@@ -34,6 +34,20 @@ Expo (`appVersionSource: remote`) so every upload is new to TestFlight. That key
 server uses: one lets Expo sign and upload builds, the other lets the server
 send notifications.
 
+## Checked before the merge
+
+A pull request that touches `native/` gets an iOS build with no upload, and a
+comment on the pull request saying whether the app builds from the change.
+The Xcode log is kept with the run for fourteen days, and the lines that
+matter (`error:`, and expressions Swift found slow) are printed in the job's
+log, so nobody has to open it.
+
+Swift is asked to warn about any expression that takes more than 150 ms to
+type-check (`plugins/withSwiftTypeCheckWarning.js`, on every target's Swift).
+Builds 18 and 19 failed on the compiler giving up on two such expressions in
+the Live Activity, twenty minutes after their merges; the warning names the
+line while it is still a warning.
+
 ## Opening with no signal
 
 The site keeps its own files on the phone with a service worker (`src/sw.js`),

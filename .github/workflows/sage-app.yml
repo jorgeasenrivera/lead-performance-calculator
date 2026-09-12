@@ -34,11 +34,19 @@
 # uploads it to TestFlight, then says so on the pull request that was merged,
 # with the build number. Web changes need no build (the app is a shell around
 # the site), so only native/ counts.
+#
+# And it checks before the merge: a pull request that touches native/ gets an
+# iOS build with no upload, and the result on the pull request. Builds 18 and
+# 19 failed in Xcode twenty minutes after their merges, with the reason in a
+# log behind a signed link; now the same failure lands on the pull request,
+# and the Xcode log is kept with the run.
 name: Sage app
 
 on:
   push:
     branches: [main]
+    paths: ['native/**']
+  pull_request:
     paths: ['native/**']
   workflow_dispatch:
     inputs:
@@ -57,12 +65,13 @@ on:
         default: true
 
 concurrency:
-  group: sage-app-${{ github.event_name == 'push' && 'ios' || inputs.platform }}
-  cancel-in-progress: false
+  # One check per pull request, the newest push winning; one store build at a time.
+  group: sage-app-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'workflow_dispatch' && inputs.platform || 'ios') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
-    name: Build ${{ github.event_name == 'push' && 'ios' || inputs.platform }}
+    name: ${{ github.event_name == 'pull_request' && 'Check ios' || format('Build {0}', github.event_name == 'workflow_dispatch' && inputs.platform || 'ios') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -73,9 +82,10 @@ jobs:
         working-directory: native
     env:
       # A run started by a merge has no inputs: it is iOS, built and uploaded.
-      PLATFORM: ${{ github.event_name == 'push' && 'ios' || inputs.platform }}
-      SUBMIT: ${{ (github.event_name == 'push' || inputs.submit) && 'true' || 'false' }}
-      REBUILD: ${{ (github.event_name == 'push' || inputs.rebuild) && 'true' || 'false' }}
+      # A run started by a pull request is iOS, built and not uploaded.
+      PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'ios' }}
+      SUBMIT: ${{ (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.submit)) && 'true' || 'false' }}
+      REBUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.rebuild) && 'true' || 'false' }}
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EAS_BUILD_NO_EXPO_GO_WARNING: "true"
       EXPO_ASC_API_KEY_PATH: ${{ github.workspace }}/native/asc-key.p8
@@ -242,9 +252,24 @@ jobs:
           # The shell aborts on a failed command, which is how a failed build
           # used to end this step before anything could report why.
           set +e
-          eas build --platform "$PLATFORM" --profile "$profile" --non-interactive --wait --json > build.json
+          eas build --platform "$PLATFORM" --profile "$profile" --non-interactive --wait --json > build.json 2> eas.err
           code=$?
           set -e
+          cat eas.err
+          # The Expo free plan allows a few store builds a month. When they are
+          # gone, a pull request cannot be checked, which is not the same as a
+          # change that does not build: say so and leave the check neutral. A
+          # merge's own build still fails here, because a release that could
+          # not be built is a failure.
+          if grep -q "used its iOS builds from the Free plan\|used its Android builds from the Free plan\|used its .* builds from the Free plan" eas.err; then
+            echo "quota=true" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              echo "::warning::The Expo account has used its free-plan builds for the month, so this change could not be checked. The merge's own build will say. Upgrade the plan (eas billing:subscribe starter) or wait for the month to reset."
+              exit 0
+            fi
+            echo "::error::The Expo account has used its free-plan builds for the month; nothing can be built until it resets or the plan is upgraded (eas billing:subscribe starter)."
+            exit 1
+          fi
           node -e '
             try {
               const fs = require("fs");
@@ -278,8 +303,32 @@ jobs:
             echo "::group::what EAS returned"
             cat build.json || true
             echo "::endgroup::"
+            # The Xcode log, here and kept with the run. EAS hands it out as a
+            # signed link that lasts fifteen minutes; the first two Swift
+            # failures were diagnosed against that clock. The lines that matter
+            # are printed so nobody has to open it.
+            url=$(node -e '
+              try { const b = JSON.parse(require("fs").readFileSync("build.json", "utf8")); const one = Array.isArray(b) ? b[0] : b;
+                    console.log(((one && one.artifacts) || {}).xcodeBuildLogsUrl || ""); } catch (e) { console.log(""); }')
+            if [ -n "$url" ]; then
+              curl -sS --compressed -o xcode.log "$url" || true
+              if [ -s xcode.log ]; then
+                echo "::group::what Xcode said"
+                grep -nE "error:|warning: expression took" xcode.log | head -60 || true
+                echo "::endgroup::"
+              fi
+            fi
           fi
           exit $code
+
+      - name: Keep the Xcode log
+        if: always() && env.REBUILD == 'true' && env.PLATFORM == 'ios'
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-log
+          path: native/xcode.log
+          if-no-files-found: ignore
+          retention-days: 14
 
       # eas submit reads the App Store Connect key from a submit profile in
       # eas.json rather than from flags. Written here for the run and never
@@ -318,27 +367,47 @@ jobs:
       # The pull request that was merged hears how it went, so nobody has to
       # open the Actions tab to learn the build number or that it failed.
       - name: Tell the pull request
-        if: github.event_name == 'push' && always()
+        if: always() && (github.event_name == 'push' || github.event_name == 'pull_request')
         uses: actions/github-script@v7
         env:
           BUILD_OUTCOME: ${{ steps.build.outcome }}
           SUBMIT_OUTCOME: ${{ steps.submit.outcome }}
           BUILD_VERSION: ${{ steps.build.outputs.build_version }}
           BUILD_URL: ${{ steps.build.outputs.build_url }}
+          QUOTA: ${{ steps.build.outputs.quota }}
         with:
           script: |
             const { owner, repo } = context.repo;
-            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: context.sha });
-            const pr = prs.find((p) => p.merged_at) || prs[0];
+            let pr = context.payload.pull_request;
+            if (!pr) {
+              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ owner, repo, commit_sha: context.sha });
+              pr = prs.find((p) => p.merged_at) || prs[0];
+            }
             if (!pr) { core.info("no pull request for " + context.sha); return; }
             const run = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const v = process.env.BUILD_VERSION, url = process.env.BUILD_URL;
+            const built = process.env.BUILD_OUTCOME === "success";
             let body;
-            if (process.env.BUILD_OUTCOME !== "success") body = `The app build for this merge failed. [The run](${run}) says why.`;
+            if (context.eventName === "pull_request") {
+              // A check, not a release: one comment per pull request, kept current.
+              const mark = "<!-- sage-app-check -->";
+              body = mark + "\n" + (process.env.QUOTA === "true"
+                ? `The app could not be checked from this change: the Expo account has used its free-plan builds for the month. The merge's own build will say. [The run](${run}) has the note.`
+                : built
+                  ? `The app builds from this change (build ${v || "?"}). Nothing was uploaded; the merge does that.`
+                  : `The app does not build from this change. [The run](${run}) says why, and the Xcode log is kept with it.`);
+              const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: pr.number, per_page: 100 });
+              const mine = comments.find((c) => c.body && c.body.startsWith(mark));
+              if (mine) await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+              else await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
+              return;
+            }
+            if (process.env.QUOTA === "true") body = `The app was not built for this merge: the Expo account has used its free-plan builds for the month. Upgrade the plan or wait for the reset, then run the Sage app workflow by hand. [The run](${run}) has the note.`;
+            else if (!built) body = `The app build for this merge failed. [The run](${run}) says why.`;
             else if (process.env.SUBMIT_OUTCOME === "success") body = `App build ${v || ""} is on its way to TestFlight${url ? " ([the build](" + url + "))" : ""}. It shows in TestFlight once Apple has processed it, usually within the hour.`;
             else body = `App build ${v || ""} finished${url ? " ([the build](" + url + "))" : ""}, but the upload to TestFlight failed. [The run](${run}) says why.`;
             await github.rest.issues.createComment({ owner, repo, issue_number: pr.number, body });
 
       - name: Forget the keys
         if: always()
-        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json build.json && git checkout -- eas.json app.json 2>/dev/null || true
+        run: rm -f asc-key.p8 play-key.json google-services.json dist.p12 sage.mobileprovision queue.mobileprovision credentials.json build.json eas.err && git checkout -- eas.json app.json 2>/dev/null || true

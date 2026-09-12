@@ -60,7 +60,16 @@ async function ensureMock() {
 /* ---- the floor as the check needs it: this account on the line, two ahead ---- */
 async function prepFloor() {
   const j = async (u) => (await fetch(u)).json();
-  const doc = (await j(MOCK + "/rest/v1/app_data?select=key,value")).find((r) => r.key === `lpc:store:${STORE}:v2`);
+  const all = await j(MOCK + "/rest/v1/app_data?select=key,value");
+  const doc = all.find((r) => r.key === `lpc:store:${STORE}:v2`);
+  /* Both rooms on for the store, so the phone line is a tab the check can
+     open. A fresh mock (the one CI starts) has the line off. */
+  const cfg = all.find((r) => r.key === "lpc:config:v2");
+  if (cfg && cfg.value && Array.isArray(cfg.value.stores)) {
+    cfg.value.stores = cfg.value.stores.map((st) => ({ ...st, rooms: { ...(st.rooms || {}), floor: true, line: true } }));
+    await fetch(MOCK + "/rest/v1/app_data", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify([{ key: cfg.key, value: cfg.value, updated_at: new Date().toISOString() }]) });
+  }
   const link = (await j(MOCK + "/rest/v1/floor_people?select=*"))[0];
   if (!doc || !link) throw new Error("the mock is not in SALESPERSON=1 mode, or has no demo store");
   const short = (n) => { const [a, ...r] = String(n).trim().split(/\s+/); return r.length ? `${a} ${r[r.length - 1][0]}.` : a; };

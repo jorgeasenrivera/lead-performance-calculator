@@ -1,10 +1,24 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import LeadPerformanceCalculator from "./LeadPerformanceCalculator.jsx";
-import { installReporter } from "./report.js";
+import { installReporter, reportVital } from "./report.js";
+import { onINP, onLCP, onCLS } from "web-vitals/attribution";
+import { injectSpeedInsights } from "@vercel/speed-insights";
 
 /* Before anything else can go wrong: what does is sent to the error feed. */
 installReporter();
+
+/* And how fast it felt, to the vitals feed: the slowest tap on the page
+   (INP), the first screen's paint (LCP), anything that jumped (CLS), each
+   with the room and the build it happened in. Vercel's Speed Insights gets
+   the same numbers by route, for the dashboard; ours carry the room. Nothing
+   is measured in development. */
+if (import.meta.env.PROD) {
+  onINP(reportVital, { reportAllChanges: false });
+  onLCP(reportVital);
+  onCLS(reportVital);
+  try { injectSpeedInsights(); } catch (e) { /* the dashboard's script is optional */ }
+}
 
 /* ---- the app's files stay on the phone ----
    A worker (src/sw.js) keeps this build's files so Sage opens with no signal

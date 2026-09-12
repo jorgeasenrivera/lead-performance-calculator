@@ -25,7 +25,9 @@
         "NSLocationWhenInUseUsageDescription": "Sage checks you are at the store when you get on the floor.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true,
-        "WKAppBoundDomains": ["sageonline.io"],
+        "WKAppBoundDomains": [
+          "sageonline.io"
+        ],
         "NSSupportsLiveActivitiesFrequentUpdates": true,
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Sage notices when you leave the lot so it can ask whether you are done for the day.",
         "NSLocationAlwaysUsageDescription": "Sage notices when you leave the lot so it can ask whether you are done for the day."
@@ -65,6 +67,7 @@
           "isIosBackgroundLocationEnabled": true
         }
       ],
+      "./plugins/withSwiftTypeCheckWarning.js",
       "@bacons/apple-targets",
       "./plugins/withQueueIntent.js"
     ],
