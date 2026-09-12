@@ -34,6 +34,14 @@ Expo (`appVersionSource: remote`) so every upload is new to TestFlight. That key
 server uses: one lets Expo sign and upload builds, the other lets the server
 send notifications.
 
+## Whose project it is
+
+`app.json` names the owner, `jorgeasenrivs-team`, and pins the project id.
+The project was transferred there from the personal account so the builds
+draw on the team's plan. `eas init` in the workflow then links to that one
+project and can never create a second one elsewhere. `EXPO_TOKEN` is a
+personal token of an owner of the team, which is enough.
+
 ## Checked before the merge
 
 A pull request that touches `native/` and carries the label `build ios` gets an
