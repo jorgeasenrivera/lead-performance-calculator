@@ -85,6 +85,13 @@ test("the clocks roll: only the changed digit moves, on the settle token", () =>
   assert.ok(/prefers-reduced-motion: reduce\)\{ \.roll-in, \.roll-out\{ animation:none; \}/.test(core), "reduced motion cuts");
 });
 
+test("the status pill glides on the tokens and the heading crossfades", () => {
+  assert.ok(/\.sf-seg-pill\{[^}]*transition:transform var\(--t-settle\) var\(--spring\)/.test(core), "the pill rides the settle token");
+  assert.equal(core.split('className="mcf-title" key={title}').length - 1, 2, "the floor's heading remounts on change");
+  assert.ok(/className="sfl-title" key=\{title\}/.test(core) && /className="sf-line-1" key=\{title\}/.test(core), "the line's headings too");
+  assert.ok(/\.mcf-title, \.sfl-title, \.sf-line-1\{ animation:titleIn var\(--t-settle\)/.test(core), "the crossfade reads its token");
+});
+
 test("the rails spring on transform, not left", () => {
   assert.ok(!/style=\{\{ left: (headL|behindL|youL|leftOf)/.test(core + mgr), "no pip placed by an inline left");
   assert.ok(/\.mc-pip, \.mcf-pip, \.mcf-you \{ left:0; transform:translate\(calc\(100cqw/.test(core), "the phone's pips ride on transform");
