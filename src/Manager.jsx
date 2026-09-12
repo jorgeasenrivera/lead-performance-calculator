@@ -6131,12 +6131,10 @@ function usePlanViewport(plan, zoom, setZoom, { natH = 340, capH = 280, minW = 5
    whole line as a list. */
 function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = "DOOR" }) {
   const ref = useRef(null);
-  /* Steps back from the head, in percent of the rail. The head itself sits at
-     the rail's end: its edge 4px short of the rounded cap, so 25px in from it
-     at 42px across. */
-  const EDGE = 25;
+  /* Steps back from the head, in percent of the rail (--p; the CSS places
+     it). The head itself sits at the rail's end: its edge 4px short of the
+     rounded cap, so 25px in from it at 42px across, which is the rail's --edge. */
   const posOf = (i) => { const x = 91 - i * 15; return x >= 24 ? x : 24 - Math.ceil((24 - x) / 15) * 6; };
-  const leftOf = (i) => `calc(100% - ${EDGE}px - ${91 - posOf(i)}%)`;
   useTrackLight(ref, people.map((p) => p.id).join(","), ".fr-pip");
   return (
     <div className="fr-rail" ref={ref}>
@@ -6149,7 +6147,7 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = 
         return (
           <button key={p.id} type="button"
             className={"fr-pip" + (i === 0 ? " hd" : "") + (bunched ? " bunch" : "") + (c ? " tg" : "") + (c && lightOf(p.id) ? " lt" : "")}
-            style={{ left: leftOf(i), zIndex: 40 - i, background: c || undefined }}
+            style={{ "--p": 91 - posOf(i), zIndex: 40 - i, background: c || undefined }}
             onClick={() => (bunched ? onBunch() : onPick(p.id))}
             aria-label={nm + (bunched ? ", and the rest of the line" : "")}>
             {initialsOf(nm)}
@@ -27203,10 +27201,18 @@ button.da-lbrow { cursor:pointer; }
 .fr-zoom button{ width:30px; height:30px; border-radius:10px; background:rgba(7,10,8,.7); border:1px solid rgba(255,255,255,.2); display:grid; place-items:center; color:#fff; padding:0; }
 .fr-reseat{ position:absolute; left:8px; right:8px; top:8px; z-index:2; border:0; border-radius:10px; background:var(--frsand); color:#2A2418;
   font:700 11px var(--font-mono); letter-spacing:.06em; padding:8px 10px; }
-.fr-rail{ position:relative; height:50px; margin:12px 26px 4px -14px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
+.fr-rail{ --edge:25px; position:relative; height:50px; margin:12px 26px 4px -14px; border-radius:0 999px 999px 0; background:rgba(255,255,255,.07); }
 .fr-pip{ position:absolute; top:50%; transform:translate(-50%,-50%); width:34px; height:34px; border-radius:50%; border:0; padding:0;
   background:rgba(232,238,242,.24); color:#e8eef2; display:flex; align-items:center; justify-content:center; font:700 11px var(--font-mono);
+  left:calc(100% - var(--edge,25px) - var(--p,0) * 1%);
   transition:left .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
+/* On transform, not left, for the reason the phone's rails are (see the core's
+   rail note): the spring is then the compositor's, not the main thread's. */
+@supports (width: 1cqw) {
+  .fr-rail { container-type:inline-size; }
+  .fr-pip { left:0; transform:translate(calc(100cqw - var(--edge,25px) - var(--p,0) * 1cqw - 50%), -50%);
+    transition:transform .65s cubic-bezier(.3,1.3,.4,1), width .5s ease, height .5s ease; }
+}
 .fr-pip.tg{ color:#fff; }
 .fr-pip.bunch{ box-shadow:0 0 0 1.5px rgba(232,238,242,.35); }
 .fr-badge{ position:absolute; right:-4px; top:-5px; width:15px; height:15px; border-radius:50%; background:#0B100D; display:grid; place-items:center;
