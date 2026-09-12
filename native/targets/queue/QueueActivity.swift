@@ -292,6 +292,69 @@ private struct BigGlyph: View {
   }
 }
 
+/* One person on a rail or a track. Its own view on purpose: the rail's
+   ForEach used to build each dot inline, with nested ternaries mixing
+   CGFloat and Double, and Swift's type checker gave up on the whole body
+   ("unable to type-check this expression in reasonable time"). Every value
+   here is typed before it is used. */
+private struct PipDot: View {
+  let pip: QueueAttributes.Pip
+  let head: Bool
+  let up: Bool
+  let size: CGFloat
+  let fontSize: CGFloat
+
+  private var lit: Color { up ? mint : sand }
+
+  private var fill: Color {
+    if pip.me { return lit }
+    let hue: Double = Double(pip.h) / 360.0
+    return Color(hue: hue, saturation: 0.62, brightness: 0.62)
+  }
+
+  var body: some View {
+    let dim: Double = (pip.s == "w" || pip.me) ? 1.0 : 0.45
+    let glow: Color = pip.me ? lit.opacity(0.9) : Color.clear
+    let glowRadius: CGFloat = pip.me ? 6 : 0
+    let inkColor: Color = pip.me ? inkDeep : Color.white
+    ZStack {
+      Circle().fill(fill)
+      if head { Circle().stroke(Color.white.opacity(0.35), lineWidth: 2) }
+      Text(pip.i)
+        .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+        .foregroundStyle(inkColor)
+    }
+    .frame(width: size, height: size)
+    .opacity(dim)
+    .shadow(color: glow, radius: glowRadius)
+  }
+}
+
+/* Where the light's dots rest: from the left edge as far as you. */
+private func lightStops(width w: Double, mine: Int, stride: Double, step: Double) -> [Double] {
+  let toYou: Double = w - Double(mine) * stride - 17.0
+  let reach: Double = max(14.0, toYou) - 20.0
+  guard reach > 6.0 else { return [] }
+  return Array(Swift.stride(from: 6.0, to: reach, by: step))
+}
+
+/* The head of the line sits at the end of the rail, its edge two points short
+   of the rounded cap; everyone behind steps left in fixed strides. */
+private func pipCenter(width w: Double, index i: Int, size: CGFloat, stride: Double) -> Double {
+  let fromEnd: Double = w - Double(size) / 2.0 - 2.0 - Double(i) * stride
+  return max(14.0, fromEnd)
+}
+
+private func pipSize(you: Bool, head: Bool, mini: Bool) -> CGFloat {
+  if mini { return you ? 21 : (head ? 17 : 14) }
+  return you ? 30 : (head ? 24 : 20)
+}
+
+private func pipFont(you: Bool, head: Bool, mini: Bool) -> CGFloat {
+  if mini { return you ? 7 : 6 }
+  return you ? 10 : (head ? 8 : 7)
+}
+
 /// The rail: from the left edge toward the door on the right, everybody in
 /// their colour, you lit sand (mint when up).
 private struct Rail: View {
@@ -299,41 +362,27 @@ private struct Rail: View {
   let up: Bool
   var body: some View {
     GeometryReader { geo in
-      let w = geo.size.width
+      let w: Double = geo.size.width
+      let mid: Double = geo.size.height / 2.0
+      let mine: Int = line.firstIndex(where: { $0.me }) ?? -1
+      let stops: [Double] = mine < 0 ? [] : lightStops(width: w, mine: mine, stride: 25.0, step: 11.0)
       ZStack(alignment: .leading) {
         RoundedRectangle(cornerRadius: 15).fill(Color.white.opacity(up ? 0.1 : 0.07))
         /* The light along the line, as the app runs it: dots in from the left
            edge as far as you. A Live Activity cannot loop them, so they rest
            where the app's light stops longest. */
-        if let mine = line.firstIndex(where: { $0.me }) {
-          let reach = max(14, w - Double(mine) * 25 - 17) - 20
-          ForEach(Array(stride(from: 6.0, to: reach, by: 11.0)), id: \.self) { x in
-            Circle()
-              .fill((up ? mint : sand).opacity(0.55))
-              .frame(width: 4, height: 4)
-              .position(x: x, y: geo.size.height / 2)
-          }
+        ForEach(stops, id: \.self) { x in
+          Circle()
+            .fill((up ? mint : sand).opacity(0.55))
+            .frame(width: 4, height: 4)
+            .position(x: x, y: mid)
         }
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
-          // The door is the right-hand end of the rail and the front of the line
-          // sits on it; everyone behind steps left in fixed strides. You are the
-          // big one, wherever you stand, so the glance finds you first.
-          let you = p.me
-          let size: CGFloat = you ? 30 : (i == 0 ? 24 : 20)
-          // The head of the line sits at the end of the rail: its edge two points
-          // short of the rounded cap, whatever size it is drawn at.
-          let x = max(14, w - Double(size) / 2 - 2 - Double(i) * 25)
-          ZStack {
-            Circle().fill(you ? (up ? mint : sand) : Color(hue: Double(p.h) / 360, saturation: 0.62, brightness: 0.62))
-            if i == 0 { Circle().stroke(Color.white.opacity(0.35), lineWidth: 2) }
-            Text(p.i)
-              .font(.system(size: you ? 10 : (i == 0 ? 8 : 7), weight: .bold, design: .monospaced))
-              .foregroundStyle(you ? inkDeep : .white)
-          }
-          .frame(width: size, height: size)
-          .opacity(p.s == "w" || you ? 1 : 0.45)
-          .shadow(color: you ? (up ? mint : sand).opacity(0.9) : .clear, radius: you ? 6 : 0)
-          .position(x: x, y: geo.size.height / 2)
+          let head: Bool = i == 0
+          let size: CGFloat = pipSize(you: p.me, head: head, mini: false)
+          let x: Double = pipCenter(width: w, index: i, size: size, stride: 25.0)
+          PipDot(pip: p, head: head, up: up, size: size, fontSize: pipFont(you: p.me, head: head, mini: false))
+            .position(x: x, y: mid)
         }
       }
     }
@@ -712,39 +761,34 @@ private struct HalfCapsule: Shape {
 /* The floor's track, v2: in from the left edge, the head at the rounded end,
    you the big lit one, the light resting as dots from the edge as far as you.
    `mini` is the small lane's size. */
+/* The floor's track, v2: in from the left edge, the head at the rounded end,
+   you the big lit one, the light resting as dots from the edge as far as you.
+   `mini` is the small lane's size. */
 private struct Track: View {
   let line: [QueueAttributes.Pip]
   let up: Bool
   var mini: Bool = false
   var body: some View {
     GeometryReader { geo in
-      let w = geo.size.width
-      let stride: Double = mini ? 18 : 25
+      let w: Double = geo.size.width
+      let mid: Double = geo.size.height / 2.0
+      let stride: Double = mini ? 18.0 : 25.0
+      let dot: CGFloat = mini ? 3 : 4
+      let mine: Int = line.firstIndex(where: { $0.me }) ?? -1
+      let stops: [Double] = mine < 0 ? [] : lightStops(width: w, mine: mine, stride: stride, step: mini ? 9.0 : 11.0)
       ZStack(alignment: .leading) {
         HalfCapsule().fill(Color.white.opacity(up ? 0.1 : 0.07))
-        if let mine = line.firstIndex(where: { $0.me }) {
-          let reach = max(14, w - Double(mine) * stride - 17) - 20
-          ForEach(Array(Swift.stride(from: 6.0, to: reach, by: mini ? 9.0 : 11.0)), id: \.self) { x in
-            Circle().fill((up ? mint : sand).opacity(0.55))
-              .frame(width: mini ? 3 : 4, height: mini ? 3 : 4)
-              .position(x: x, y: geo.size.height / 2)
-          }
+        ForEach(stops, id: \.self) { x in
+          Circle().fill((up ? mint : sand).opacity(0.55))
+            .frame(width: dot, height: dot)
+            .position(x: x, y: mid)
         }
         ForEach(Array(line.enumerated()), id: \.offset) { (i, p) in
-          let you = p.me
-          let size: CGFloat = mini ? (you ? 21 : (i == 0 ? 17 : 14)) : (you ? 30 : (i == 0 ? 24 : 20))
-          let x = max(14, w - Double(size) / 2 - 2 - Double(i) * stride)
-          ZStack {
-            Circle().fill(you ? (up ? mint : sand) : Color(hue: Double(p.h) / 360, saturation: 0.62, brightness: 0.62))
-            if i == 0 { Circle().stroke(Color.white.opacity(0.35), lineWidth: 2) }
-            Text(p.i)
-              .font(.system(size: mini ? (you ? 7 : 6) : (you ? 10 : (i == 0 ? 8 : 7)), weight: .bold, design: .monospaced))
-              .foregroundStyle(you ? inkDeep : .white)
-          }
-          .frame(width: size, height: size)
-          .opacity(p.s == "w" || you ? 1 : 0.45)
-          .shadow(color: you ? (up ? mint : sand).opacity(0.9) : .clear, radius: you ? 6 : 0)
-          .position(x: x, y: geo.size.height / 2)
+          let head: Bool = i == 0
+          let size: CGFloat = pipSize(you: p.me, head: head, mini: mini)
+          let x: Double = pipCenter(width: w, index: i, size: size, stride: stride)
+          PipDot(pip: p, head: head, up: up, size: size, fontSize: pipFont(you: p.me, head: head, mini: mini))
+            .position(x: x, y: mid)
         }
       }
     }
