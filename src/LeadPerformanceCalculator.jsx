@@ -1572,13 +1572,81 @@ async function loadSharedIfChanged(key, tag) {
     return data ? data.value : null;
   } catch (e) { console.error("poll", key, e); return undefined; }
 }
+/* ---- the phone's memory of the last answer ----
+   A dealership lot is not a place with signal. The app used to know nothing
+   until the network answered, though it knew everything a minute ago: the
+   store's setup, who is signed in, the line as it stood. Each of those is
+   now kept on the phone after a good read and handed back when a read fails
+   or takes too long, with the time it was true, so the app opens to the
+   last thing it knew rather than to a pulsing mark. Nothing is ever WRITTEN
+   from a remembered answer: the read that failed is retried, and the memory
+   only fills the screen in the meantime. */
+const CACHE_NS = "lpc:cache:";
+function cacheGet(k) {
+  try { const v = localStorage.getItem(CACHE_NS + k); return v ? JSON.parse(v) : null; } catch (e) { return null; }
+}
+function cachePut(k, value) {
+  try { localStorage.setItem(CACHE_NS + k, JSON.stringify({ at: Date.now(), value })); } catch (e) { /* full or blocked: no memory, no harm */ }
+}
+function cacheDel(k) { try { localStorage.removeItem(CACHE_NS + k); } catch (e) {} }
+/* A read that takes longer than this is treated as failed: the memory fills
+   in, the read carries on, and whichever answers first is what is shown. */
+const SLOW_MS = 5000;
+/* Once one read has failed, the next are given only a moment: the auth client
+   retries its own refresh with backoff and every read waits behind that lock,
+   so without this the profile, the setup, the link and the line each took
+   their full turn and the screen arrived half a minute later. The reads still
+   go out, and the first that gets through turns the wait back up. */
+const QUICK_MS = 1500;
+function withTimeout(promise, ms) {
+  if (ms == null) ms = netState.offline ? QUICK_MS : SLOW_MS;
+  return new Promise((resolve) => {
+    let done = false;
+    const t = setTimeout(() => { if (!done) { done = true; resolve({ timedOut: true }); } }, ms);
+    Promise.resolve(promise).then(
+      (value) => { if (!done) { done = true; clearTimeout(t); resolve({ value }); } },
+      (error) => { if (!done) { done = true; clearTimeout(t); resolve({ error }); } });
+  });
+}
+/* What the phone knows about its connection, from the reads that matter: off
+   after a failed one, on again after the next that works, with the stamp of
+   the memory on screen so the person knows how old it is. */
+const netState = { offline: false, asOf: null };
+function netSet(offline, asOf) {
+  const was = netState.offline;
+  netState.offline = offline;
+  netState.asOf = offline ? (asOf || netState.asOf) : null;
+  if (was !== offline || offline) { try { window.dispatchEvent(new CustomEvent("lpc:net")); } catch (e) {} }
+}
+function useNet() {
+  const [st, setSt] = useState({ ...netState });
+  useEffect(() => {
+    const on = () => setSt({ ...netState });
+    window.addEventListener("lpc:net", on);
+    return () => window.removeEventListener("lpc:net", on);
+  }, []);
+  return st;
+}
+/* The shared rows worth remembering: the store's setup and its public slice.
+   The rest are either large or somebody else's numbers, and a memory of those
+   would cost more than it saves. */
+const REMEMBERED_SHARED = new Set(["lpc:config:v2", "lpc:board:stores:v1"]);
 async function loadShared(key, fallback, throwOnError) {
   if (!supabase) return fallback;
   try {
-    const { data, error } = await supabase.from("app_data").select("value").eq("key", key).maybeSingle();
+    const read = supabase.from("app_data").select("value").eq("key", key).maybeSingle();
+    const r = REMEMBERED_SHARED.has(key) ? await withTimeout(read) : { value: await read };
+    if (r.timedOut) throw new Error("timed out");
+    if (r.error) throw r.error;
+    const { data, error } = r.value;
     if (error) throw error;
+    if (REMEMBERED_SHARED.has(key) && data) cachePut("shared:" + key, data.value);
     return data ? data.value : fallback;
-  } catch (e) { console.error("load failed", key, e); if (throwOnError) throw e; return fallback; }
+  } catch (e) {
+    console.error("load failed", key, e);
+    if (REMEMBERED_SHARED.has(key)) { const c = cacheGet("shared:" + key); if (c) return c.value; }
+    if (throwOnError) throw e; return fallback;
+  }
 }
 /* =======================================================================
    SPLIT STORAGE
@@ -1891,7 +1959,11 @@ async function authGetProfile() {
   if (!session) return null;
   const { data, error } = await supabase
     .from("profiles").select("*").eq("id", session.user.id).maybeSingle();
-  if (error || !data) return null;
+  /* A read that failed is not "nobody is signed in". Said as an error, so
+     the boot can fall back on what the phone remembers about this account
+     rather than showing a signed-in person the sign-in screen. */
+  if (error) throw error;
+  if (!data) return null;
   /* The claim (which store, which name on its roster) lives in the account's
      own metadata rather than the profile row, so it needs no database change
      and only the person and a manager can ever see it. */
@@ -2005,7 +2077,12 @@ async function myFloorLinks() {
       .select("store, person_id").eq("user_id", session.user.id);
     if (error) throw error;
     return data || [];
-  } catch (e) { console.error("myFloorLinks", e); return []; }
+  } catch (e) {
+    /* Not "nobody has linked this account": a read that failed. Thrown, so
+       the door can stand on what the phone remembers rather than sending a
+       linked salesperson to the waiting screen because the lot has no signal. */
+    console.error("myFloorLinks", e); throw e;
+  }
 }
 
 async function loadFloorLinks(store) {
@@ -2259,18 +2336,31 @@ export default function LeadPerformanceCalculator() {
      own corner, today, with no daily code. undefined = not asked yet; [] = asked
      and nobody has linked this account, so the waiting screen is the truth. */
   const [floorLinks, setFloorLinks] = useState(undefined);
+  /* The boot could not get through and nothing is remembered: said, with a retry. */
+  const [bootStall, setBootStall] = useState(false);
   const [doorDay, setDoorDay] = useState(() => today());
   const wantsFloor = !!session && session.role !== "admin" && (session.pending || (session.wants || session.requested_role) === "associate");
+  const [linksWave, setLinksWave] = useState(0);
   useEffect(() => {
     if (!wantsFloor) { setFloorLinks(undefined); return; }
     let dead = false;
-    const ask = () => myFloorLinks().then((l) => { if (!dead) setFloorLinks(l); });
+    const ck = "links:" + (session && session.id);
+    const ask = async () => {
+      const r = await withTimeout(myFloorLinks());
+      if (dead) return;
+      if (!r.timedOut && !r.error) { setFloorLinks(r.value); cachePut(ck, r.value); return; }
+      const c = cacheGet(ck);
+      if (c) { setFloorLinks(c.value); netSet(true, c.at); return; }
+      /* asked, no answer, nothing remembered: the same stall as the boot,
+         with the same retry, rather than a curtain with no end */
+      if (floorLinks === undefined) setBootStall(true);
+    };
     ask();
     /* Somebody sitting on the waiting screen is waiting for exactly one thing,
        and it should not take a sign-out to notice it happened. */
     const t = setInterval(() => { if (!document.hidden) ask(); }, 30000);
     return () => { dead = true; clearInterval(t); };
-  }, [wantsFloor, session && session.id]);   // eslint-disable-line
+  }, [wantsFloor, session && session.id, linksWave]);   // eslint-disable-line
   /* The phone stays open across midnight; the corner has to roll over with it. */
   useEffect(() => {
     if (!wantsFloor) return;
@@ -2434,9 +2524,18 @@ export default function LeadPerformanceCalculator() {
   // Who is signed in? Preview returns a stand-in admin; the hosted site
   // reads the real Supabase session and its matching profile row.
   const refreshProfile = useCallback(async () => {
-    const p = await authGetProfile();
-    setSession(p);
-    setAuthReady(true);
+    const r = await withTimeout(authGetProfile());
+    if (!r.timedOut && !r.error) {
+      setSession(r.value);
+      if (r.value) cachePut("profile", r.value); else cacheDel("profile");
+      setAuthReady(true);
+      return;
+    }
+    /* Slow or dead: the account the phone remembers, as of when it last
+       answered. Without one, nothing to show but the truth and a retry. */
+    const c = cacheGet("profile");
+    if (c && c.value) { setSession(c.value); netSet(true, c.at); setAuthReady(true); return; }
+    setBootStall(true);
   }, []);
 
   // Sign-in drops straight into the Performance dashboard. On the first sign-in of
@@ -2507,12 +2606,22 @@ export default function LeadPerformanceCalculator() {
       // Strict read. If this FAILS we must not proceed: a failed read used to look
       // identical to "no config yet", and the app would helpfully write DEFAULT_CONFIG
       // straight over the real one, wiping every store. Bail out and say so instead.
-      const res = await loadStrict(CONFIG_KEY);
-      if (!res.ok) { setLoadErr(true); return; }
+      const got = await withTimeout(loadStrict(CONFIG_KEY));
+      const res = got.value || { ok: false };
+      if (!res.ok) {
+        /* Could not be read, or not in time. The setup the phone remembers
+           stands in, unchanged and unsaved, until a read gets through; with
+           nothing remembered the boot says so and offers to try again. */
+        const c = cacheGet("shared:" + CONFIG_KEY);
+        if (c && c.value) { netSet(true, c.at); setConfig(c.value); return; }
+        setBootStall(true); return;
+      }
+      netSet(false);
 
       let cfg = res.value;
 
       if (cfg) {
+        cachePut("shared:" + CONFIG_KEY, cfg);
         let dirty = false;
         /* The positions wear the site's own warm palette now. Only the colours
            nobody chose are rewritten — the seeded defaults and the old ramp — so
@@ -3527,7 +3636,8 @@ export default function LeadPerformanceCalculator() {
   if (floorParams) {
     return <Shell ground={false}><FloorSignIn store={floorParams.store} date={floorParams.date} token={floorParams.token} tag={floorParams.tag} /><Style /></Shell>;
   }
-  if (loadErr) return <div style={{ padding: 40, fontFamily: "sans-serif" }}>Couldn't reach saved data. Reload the page to try again.</div>;
+  const retryBoot = () => { setBootStall(false); setLoadErr(false); netSet(false); setCfgWave((w) => w + 1); setLinksWave((w) => w + 1); refreshProfile(); };
+  if (loadErr || bootStall) return <Shell><BootStall onRetry={retryBoot} /><Style /></Shell>;
   /* ---- the sign-in screen is a LAYER, not a branch ----
      It used to be one of this component's early returns, which meant the app
      underneath it did not exist until the jump handed over — so the dashboard
@@ -3574,6 +3684,7 @@ export default function LeadPerformanceCalculator() {
   if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
+    cacheDel("profile");
     await authSignOut();
     viewPicked.current = false;
     setSession(null); setEntered(false); setAppModule("perf");
@@ -9696,10 +9807,19 @@ async function mutateQueueRow(store, date, fn, kind) {
 async function loadQueueIdentities(store) {
   if (!supabase) return {};
   try {
-    const { data, error } = await supabase.from(QUEUE_ID_TABLE).select("data").eq("id", store).maybeSingle();
+    const r = await withTimeout(supabase.from(QUEUE_ID_TABLE).select("data").eq("id", store).maybeSingle());
+    if (r.timedOut) throw new Error("timed out");
+    if (r.error) throw r.error;
+    const { data, error } = r.value;
     if (error) throw error;
-    return (data && data.data) || {};
-  } catch (e) { console.error("loadQueueIdentities", e); return {}; }
+    const v = (data && data.data) || {};
+    cachePut("ids:" + store, v);
+    return v;
+  } catch (e) {
+    console.error("loadQueueIdentities", e);
+    const c = cacheGet("ids:" + store);
+    return c ? c.value : {};
+  }
 }
 async function mutateQueueIdentities(store, fn) {
   const cur = await loadQueueIdentities(store);
@@ -10682,9 +10802,16 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   };
   const GLYPH = { home: "home", floor: "door", line: "phone" };
   const LABEL = { home: "Home", floor: "Live Floor", line: "Phone Line" };
+  const net = useNet();
 
   return (
     <>
+      {net.offline && (
+        <div className="ar-net" role="status">
+          <PixIcon glyph="warn" size={12} />
+          <span>No connection{net.asOf ? ` · as of ${mcClock(new Date(net.asOf).toISOString()) || ""}` : ""}</span>
+        </div>
+      )}
       {room === "line"
         ? <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
             variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} />
@@ -13671,7 +13798,7 @@ const rowStamps = new Map();
 async function loadRowIfChanged(table, id, tag) {
   if (!supabase) return undefined;
   const k = tag || (table + "|" + id);
-  try {
+  const read = async () => {
     const { data: s, error: e1 } = await supabase.from(table).select("updated_at").eq("id", id).maybeSingle();
     if (e1) throw e1;
     const stamp = s ? (s.updated_at || "none") : "missing";
@@ -13679,8 +13806,26 @@ async function loadRowIfChanged(table, id, tag) {
     const { data, error } = await supabase.from(table).select("data,updated_at").eq("id", id).maybeSingle();
     if (error) throw error;
     rowStamps.set(k, data ? (data.updated_at || "none") : "missing");
+    if (data) cachePut("row:" + table + "|" + id, data.data);
     return data ? data.data : null;
-  } catch (e) { console.error("poll", table, id, e); return undefined; }
+  };
+  try {
+    const r = await withTimeout(read());
+    if (r.timedOut) throw new Error("timed out");
+    if (r.error) throw r.error;
+    netSet(false);
+    return r.value;
+  } catch (e) {
+    console.error("poll", table, id, e);
+    /* The first read of the day failing used to leave the screen on its
+       curtain. The line as the phone last saw it stands in, marked as of
+       when, and the next poll that works replaces it. A read that fails once
+       something is on screen changes nothing: the screen keeps what it has. */
+    const c = cacheGet("row:" + table + "|" + id);
+    netSet(true, c ? c.at : null);
+    if (!rowStamps.has(k) && c) return c.value;
+    return undefined;
+  }
 }
 /* Postgres pushes a change down a socket the moment it is written, so a phone in
    line learns it is up as the desk clicks rather than on the next poll. The poll
@@ -28200,14 +28345,35 @@ function SageCurtain({ wiping = false, hold = false }) {
   );
 }
 
+/* The boot could not get through and the phone remembers nothing to show
+   instead. Said plainly, with the one thing they can do. On a phone it sits
+   on the curtain; on a desk, on the loading screen's ground. */
+function BootStall({ onRetry }) {
+  const phone = usePhoneLayout();
+  return (
+    <>
+      {phone ? <SageCurtain hold /> : <div className="loadscreen" />}
+      <div className={"boot-stall" + (phone ? " phone" : "")} role="alert">
+        <div className="boot-stall-h">Slow connection</div>
+        <p>Sage can&rsquo;t reach its data right now. Check your signal, or try again.</p>
+        <button type="button" onClick={onRetry}>Try again</button>
+      </div>
+    </>
+  );
+}
+
+/* Loading for longer than a read should take: still the curtain, and a line
+   under the mark that says so, so a stall reads as slow rather than broken. */
 function LoadingScreen({ label = "Loading" }) {
   const phone = usePhoneLayout();
-  if (phone) return <SageCurtain hold />;
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), SLOW_MS); return () => clearTimeout(t); }, []);
+  if (phone) return <><SageCurtain hold />{slow && <div className="boot-slow">Slow connection, still trying</div>}</>;
   return (
     <div className="loadscreen">
       <div className="loadscreen-inner">
         <div className="loadscreen-logo"><Logo size={72} loading /></div>
-        {label ? <div className="loadscreen-label">{label}</div> : null}
+        {label ? <div className="loadscreen-label">{slow ? "Slow connection, still trying" : label}</div> : null}
       </div>
     </div>
   );
@@ -36626,6 +36792,9 @@ const SAGE_CSS = `
          landing while they are still out of sight. */
       .signin-over { position:fixed; inset:0; z-index:200; overflow:auto; }
       html.jump-under .lpc > *:not(.sage-ground) { visibility:hidden; }
+      /* the stall is the one thing that has to show while the app is still
+         under the jump: it is the reason nothing else has arrived */
+      html.jump-under .lpc > .boot-stall, html.jump-under .lpc > .boot-slow { visibility:visible; }
       /* And it must not scroll either. The app underneath is hidden but still
          laid out, so it was giving the document a scrollbar on a screen with
          nothing scrollable on it — and a scrollbar shifts the centre of every
@@ -38633,6 +38802,19 @@ const SAGE_CSS = `
    the shell root itself is z-index 100 and creates a stacking context, so
    anything below that number is painted under the whole screen no matter what
    it sits above inside it. */
+/* the strip that says the screen is the phone's memory, not the network */
+.ar-net{ position:fixed; z-index:102; bottom:calc(env(safe-area-inset-bottom, 0px) + 82px); left:50%; transform:translateX(-50%);
+  display:flex; align-items:center; gap:7px; padding:7px 13px; border-radius:999px; background:rgba(31,42,34,.88); color:#E4C98D; white-space:nowrap;
+  font:700 10.5px var(--sfmono, ui-monospace, monospace); letter-spacing:.1em; text-transform:uppercase; box-shadow:0 8px 24px -12px rgba(0,0,0,.6); pointer-events:none; }
+.boot-stall{ position:fixed; z-index:70; left:50%; top:50%; transform:translate(-50%,-50%); width:min(320px, calc(100vw - 40px));
+  background:#fff; color:#1F2A22; border-radius:18px; padding:20px 20px 18px; box-shadow:0 24px 60px -20px rgba(0,0,0,.45); text-align:center; }
+.boot-stall.phone{ background:#0D130F; color:#EDF2EA; box-shadow:0 24px 60px -20px rgba(0,0,0,.8), inset 0 0 0 1px rgba(255,255,255,.08); }
+.boot-stall-h{ font-size:17px; font-weight:800; letter-spacing:-.01em; }
+.boot-stall p{ margin:8px 0 14px; font-size:13.5px; line-height:1.45; opacity:.75; }
+.boot-stall button{ min-height:44px; padding:0 22px; border-radius:12px; border:0; background:#1F2A22; color:#fff; font-weight:700; font-size:14px; cursor:pointer; }
+.boot-stall.phone button{ background:#8FD8AF; color:#12251B; }
+.boot-slow{ position:fixed; z-index:61; left:0; right:0; top:calc(50% + 70px); text-align:center; color:rgba(255,255,255,.75);
+  font:700 11px var(--sfmono, ui-monospace, monospace); letter-spacing:.14em; text-transform:uppercase; animation:loadFadeIn .45s both; }
 .ar-bar{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
   bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
   display:flex; padding:4px; border-radius:999px;

@@ -22,7 +22,7 @@
  *   - opens outside links in the phone's browser rather than inside itself.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
+import { AppState, BackHandler, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -167,6 +167,11 @@ function Shell() {
      WebView cannot, so this is how edge to edge stays tappable there. */
   const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
+  /* The page could not be fetched at all: no signal on the lot, or the site
+     down. The splash used to sit there for good. Now it comes down and says
+     so, with the one thing to press. A failure after the page is up is the
+     page's own to handle; it remembers its data and says when it is stale. */
+  const [failed, setFailed] = useState(false);
   /* The build number travels with the rest of the handoff. iOS Settings shows
      only the marketing version, which is 1.0.0 for every build ever made, so
      "which build is this?" has cost this project several hours and one whole
@@ -429,11 +434,24 @@ function Shell() {
   return (
     <View style={[styles.root, { backgroundColor: chrome }]}>
       <StatusBar style={lightChrome ? "dark" : "light"} translucent backgroundColor="transparent" />
+      {failed && (
+        <View style={styles.stall} pointerEvents="box-none">
+          <View style={styles.stallCard}>
+            <Text style={styles.stallH}>Slow connection</Text>
+            <Text style={styles.stallP}>Sage couldn&apos;t load. Check your signal, or try again.</Text>
+            <Pressable style={styles.stallBtn} onPress={() => { setFailed(false); if (web.current) web.current.reload(); }}>
+              <Text style={styles.stallBtnT}>Try again</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
       <WebView
         ref={web}
         source={{ uri: SITE }}
         style={styles.web}
         onLoadEnd={() => { setReady(true); SplashScreen.hideAsync().catch(() => {}); }}
+        onError={() => { if (!ready) setFailed(true); SplashScreen.hideAsync().catch(() => {}); }}
+        onHttpError={(e) => { const st = e && e.nativeEvent && e.nativeEvent.statusCode; if (!ready && st >= 500) setFailed(true); SplashScreen.hideAsync().catch(() => {}); }}
         onMessage={onMessage}
         onShouldStartLoadWithRequest={onShouldStart}
         injectedJavaScriptBeforeContentLoaded={handoff + insetJs}
@@ -461,4 +479,11 @@ function Shell() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: INK },
   web: { flex: 1, backgroundColor: "transparent" },
+  stall: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, zIndex: 10, alignItems: "center", justifyContent: "center" },
+  stallCard: { width: 300, backgroundColor: "#0D130F", borderRadius: 18, padding: 20, alignItems: "center",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)" },
+  stallH: { color: "#EDF2EA", fontSize: 17, fontWeight: "800" },
+  stallP: { color: "rgba(237,242,234,0.75)", fontSize: 13.5, lineHeight: 19, textAlign: "center", marginTop: 8, marginBottom: 14 },
+  stallBtn: { minHeight: 44, paddingHorizontal: 22, borderRadius: 12, backgroundColor: "#8FD8AF", alignItems: "center", justifyContent: "center" },
+  stallBtnT: { color: "#12251B", fontWeight: "700", fontSize: 14 },
 });
