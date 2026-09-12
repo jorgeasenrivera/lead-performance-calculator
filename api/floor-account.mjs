@@ -28,13 +28,14 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
+import { serverFault } from "./_report.mjs";
 
 /* Same guard as /api/link-person, and for the same reason: without it anything
    that throws comes back as the platform's bare 500 with no JSON in it, and the
    browser has nothing to print but the number. See the note there. */
 function fail(res, code, error, err) {
   const detail = err && (err.message || err.details || err.hint || String(err));
-  if (err) console.error("floor-account:", error, err);
+  if (err) { console.error("floor-account:", error, err); serverFault("floor-account", err, { error, code }); }
   return res.status(code).json({ error: detail ? error + " (" + detail + ")" : error });
 }
 

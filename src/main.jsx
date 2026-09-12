@@ -1,6 +1,10 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import LeadPerformanceCalculator from "./LeadPerformanceCalculator.jsx";
+import { installReporter } from "./report.js";
+
+/* Before anything else can go wrong: what does is sent to the error feed. */
+installReporter();
 
 /* ---- the app's files stay on the phone ----
    A worker (src/sw.js) keeps this build's files so Sage opens with no signal

@@ -29,6 +29,7 @@ import { phoneExtras, withRocked } from "./_phone-rows.mjs";
    cannot disagree about who this store's people are. */
 import { admitsEveryone, holdPerson } from "./_people-status.mjs";
 import { supabaseUrl } from "./_env.mjs";
+import { serverFault } from "./_report.mjs";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 try {
@@ -881,6 +882,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, stores, skippedFiles, pdfReads });
   } catch (e) {
     console.error(e);
+    await serverFault("ingest", e);
     return res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 }

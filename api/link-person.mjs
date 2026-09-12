@@ -22,6 +22,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { checkLink, claimsFor } from "./_people-link.mjs";
 import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
+import { serverFault } from "./_report.mjs";
 
 /* ---- why every failure below now says what went wrong ----
    This handler had no try/catch, so anything that threw — a malformed body, a
@@ -37,7 +38,7 @@ import { supabaseUrl, envGap, serviceKey } from "./_env.mjs";
    only be guessed at. */
 function fail(res, code, error, err) {
   const detail = err && (err.message || err.details || err.hint || String(err));
-  if (err) console.error("link-person:", error, err);
+  if (err) { console.error("link-person:", error, err); serverFault("link-person", err, { error, code }); }
   return res.status(code).json({ error: detail ? error + " (" + detail + ")" : error });
 }
 
