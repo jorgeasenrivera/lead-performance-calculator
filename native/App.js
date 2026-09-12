@@ -379,10 +379,26 @@ function Shell() {
     }
     /* Where the lot is, while they are on the floor; off when they are not. */
     if (msg.type === "fence") { watchLot(msg.payload || null); return; }
+    /* The page's haptic vocabulary, played as Apple's tuned types rather than
+       a motor duration: a name comes with the pattern, and the name wins here.
+       A bare pattern (an older page, or a tap) plays as before. */
     if (msg.type === "buzz") {
       const p = msg.payload;
-      const heavy = Array.isArray(p) ? p.length > 1 : Number(p) >= 20;
-      Haptics.impactAsync(heavy ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      const name = p && typeof p === "object" && !Array.isArray(p) ? p.name : null;
+      const pat = p && typeof p === "object" && !Array.isArray(p) ? p.pattern : p;
+      const H = Haptics;
+      const then = (ms, f) => new Promise((r) => setTimeout(r, ms)).then(f);
+      const play = {
+        tick: () => H.selectionAsync(),
+        taken: () => H.notificationAsync(H.NotificationFeedbackType.Success),
+        sent: () => H.impactAsync(H.ImpactFeedbackStyle.Medium).then(() => then(90, () => H.impactAsync(H.ImpactFeedbackStyle.Light))),
+        asked: () => H.notificationAsync(H.NotificationFeedbackType.Warning),
+        up: () => H.impactAsync(H.ImpactFeedbackStyle.Light).then(() => then(90, () => H.impactAsync(H.ImpactFeedbackStyle.Light))).then(() => then(90, () => H.impactAsync(H.ImpactFeedbackStyle.Heavy))),
+        refused: () => H.notificationAsync(H.NotificationFeedbackType.Error),
+      }[name];
+      if (play) { play().catch(() => {}); return; }
+      const heavy = Array.isArray(pat) ? pat.length > 1 : Number(pat) >= 20;
+      H.impactAsync(heavy ? H.ImpactFeedbackStyle.Heavy : H.ImpactFeedbackStyle.Light).catch(() => {});
       return;
     }
     /* "queue" carries the person's standing: which line, how many ahead, and

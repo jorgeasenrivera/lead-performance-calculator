@@ -104,6 +104,17 @@ test("a departure at the door shuffles the line up, 40 ms apart, on the rail and
   assert.ok(/const lag = \(id\) => `\$\{Math\.max\(0, fromHead\.indexOf\(id\)\) \* 40\}ms`;/.test(core) && /offsetDistance: sfPct\(tOf\[p\.id\]\), transitionDelay: lag\(p\.id\)/.test(core), "the cord staggers from the handset");
 });
 
+test("the phone speaks six things by feel, by name, in the page and in the shell", () => {
+  const names = ["tick", "taken", "sent", "asked", "up", "refused"];
+  const m = /const BUZZ = \{([^}]*)\};/.exec(core); assert.ok(m, "the vocabulary exists");
+  for (const n of names) assert.ok(new RegExp("\\b" + n + ":").test(m[1]), "web has " + n);
+  assert.ok(/nativePost\("buzz", name \? \{ name, pattern \} : pattern\)/.test(core), "the name travels to the shell with the pattern");
+  assert.ok(!/buzz\(\[30, 60, 30\]\)/.test(core) && !/buzz\(\[40, 60, 40\]\)/.test(core), "you're up and refused are named, not numbered");
+  const shell = fs.readFileSync(new URL("../native/App.js", import.meta.url), "utf8");
+  for (const n of names) assert.ok(new RegExp("\\b" + n + ": \\(\\) => H\\.").test(shell), "shell plays " + n);
+  assert.ok(/pref === "quiet" && !isTick/.test(core), "quiet keeps the tick only");
+});
+
 test("the rails spring on transform, not left", () => {
   assert.ok(!/style=\{\{ left: (headL|behindL|youL|leftOf)/.test(core + mgr), "no pip placed by an inline left");
   assert.ok(/\.mc-pip, \.mcf-pip, \.mcf-you \{ left:0; transform:translate\(calc\(100cqw/.test(core), "the phone's pips ride on transform");
