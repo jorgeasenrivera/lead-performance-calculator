@@ -4085,7 +4085,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
     const now = LIST.filter((c) => c.from && isDone(c)).map((c) => c.id).join(",");
     if (seen.current !== null && now !== seen.current) {
       const fresh = LIST.find((c) => c.from && isDone(c) && !seen.current.includes(c.id));
-      if (fresh) { setPop(fresh.id); buzz([18, 40, 18]); setTimeout(() => setPop(null), 1600); }
+      if (fresh) { setPop(fresh.id); buzz("taken"); setTimeout(() => setPop(null), 1600); }
     }
     seen.current = now;
   }, [a.calls, a.video, a.tasks]); // eslint-disable-line
@@ -4238,7 +4238,7 @@ function MyDay({ store, date, meId, meName, stats, std, config, updatedAt, month
       await writeGoalNote(store, date, note);
       setRecord((r) => ({ ...(r || { lift: null, signedIn: new Set() }),
         notes: notesFor(addNote((r && r.notes) || [], note)) }));
-      setNoteText(""); buzz([18, 40, 18]);
+      setNoteText(""); buzz("taken");
       /* And send it to somebody. The floor row is the RECORD — it is what clears
          the flag and what a manager reads back later — but a record nobody is
          prompted to open is the void this was built to avoid. A ticket is the one
@@ -6690,16 +6690,34 @@ let buzzTickAt = 0;
    screen and the clock that paces it cannot drift apart. */
 const MOTION = { press: 70, release: 240, exit: 140, swap: 180, settle: 320, wipe: 380 };
 
+/* The haptic vocabulary: six things the phone says by feel, by name, so a
+   person learns them in a day without looking. The same names reach the
+   shell, which plays Apple's tuned types for them (native/App.js); on the
+   web and on Android the millisecond pattern beside each name plays.
+     tick     touch-down on any control (the press gives it)
+     taken    your tap landed on the server: Here, Lunch, a desk, a note
+     sent     a FlyBy or a T.O. went out
+     asked    somebody asked you: swing by, are you done for the day
+     up       you reached the door, or a desk is yours
+     refused  the server refused the change and the screen went back */
+const BUZZ = { tick: 6, taken: [10, 40, 10], sent: [8, 30, 24], asked: [24, 60, 24, 60, 24], up: [12, 50, 12, 50, 36], refused: [60, 40, 60] };
+
 function buzz(pattern, tick) {
-  /* a person can turn the buzz off on their own phone; the tap still does its work */
-  try { if (localStorage.getItem("lpcf:pref:buzz") === "0") return; } catch (e) {}
+  const name = typeof pattern === "string" ? pattern : null;
+  if (name) pattern = BUZZ[name] || BUZZ.tick;
+  /* a person can turn the buzz off on their own phone; the tap still does its
+     work. "quiet" keeps the tick under the finger and nothing else. */
+  let pref = null; try { pref = localStorage.getItem("lpcf:pref:buzz"); } catch (e) {}
+  if (pref === "0") return;
+  const isTick = tick || name === "tick" || (typeof pattern === "number" && pattern <= 14);
+  if (pref === "quiet" && !isTick) return;
   /* A short buzz on the click that follows a touch-down tick would say the
      same thing twice; the press already gave it. Patterns still play: they
-     mean something (taken, sent, failed) beyond "that was a tap". */
+     mean something (taken, sent, refused) beyond "that was a tap". */
   if (tick) buzzTickAt = Date.now();
-  else if (typeof pattern === "number" && pattern <= 14 && Date.now() - buzzTickAt < 400) return;
+  else if (isTick && Date.now() - buzzTickAt < 400) return;
   try { if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
-  nativePost("buzz", pattern);
+  nativePost("buzz", name ? { name, pattern } : pattern);
 }
 // bridge to the native app shell (Expo WebView). No-op in a normal browser.
 function nativePost(type, payload) {
@@ -6713,10 +6731,13 @@ function nativePost(type, payload) {
 const postToNativeShell = (payload) => nativePost("queue", payload);
 function DmNumber({ value, up }) {
   const s = String(value);
+  const ref = useRef(null);
+  const chars = s.split("");
+  useDotsReform(ref, chars, ".dm-digit");
   return (
-    <div className={"dm" + (up ? " dm-up" : "")}>
-      {s.split("").map((ch, i) => (
-        <span className="dm-digit" key={`${i}-${ch}`}>
+    <div className={"dm" + (up ? " dm-up" : "")} ref={ref}>
+      {chars.map((ch, i) => (
+        <span className="dm-digit" key={i}>
           {(LED_FONT[ch] || ["000", "000", "000", "000", "000"]).flatMap((r, ri) =>
             r.split("").map((b, ci) => <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} />))}
         </span>
@@ -7736,6 +7757,10 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
   const pips = useRef({});
   const seen = useRef(null);
   const [ghosts, setGhosts] = useState([]);
+  /* A departure at the handset is a shuffle, not a jump: each person moves
+     40 ms after the one in front, from the handset backwards along the cord. */
+  const fromHead = [...ahead, ...behind].map((p) => p.id).sort((a, b) => tOf[b] - tOf[a]);
+  const lag = (id) => `${Math.max(0, fromHead.indexOf(id)) * 40}ms`;
 
   /* Who came and who went since the last render. Layout effect, so a newcomer
      is already moving before the first frame that would show them in place. */
@@ -7794,7 +7819,7 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
 
   const oth = (p, extra) => (
     <span key={p.id} ref={(el) => { pips.current[p.id] = el; }} className={"sfc-oth" + (extra || "")}
-      style={{ offsetDistance: sfPct(tOf[p.id]) }}>{sfInitials(p.label)}</span>
+      style={{ offsetDistance: sfPct(tOf[p.id]), transitionDelay: lag(p.id) }}>{sfInitials(p.label)}</span>
   );
   return (
     <div className={"sfc" + (landed ? " landed" : "")}>
@@ -7805,7 +7830,7 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
       </svg>
       <div className="sfc-pips">
         {ahead.map((p) => oth(p))}
-        <span ref={youRef} className="sfc-you" style={{ offsetDistance: sfPct(youT) }}>
+        <span ref={youRef} className="sfc-you" style={{ offsetDistance: sfPct(youT), transitionDelay: `${ahead.length * 40}ms` }}>
           <DmNumber value={landed ? 1 : pos} />
         </span>
         {behind.map((p) => oth(p))}
@@ -8104,7 +8129,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   // by accident by somebody scrolling the name list.
   const roster = ((row && row.roster) || []).filter((r) => !r.test || test);
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
-  useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
+  useEffect(() => { if (iAmUp) buzz("up"); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
   const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
   const wasOn = useRef(false);
@@ -8436,7 +8461,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
             </div>
             <h2>You're up</h2>
             <p>{variant.upSub}</p>
-            <button className="sf-go" onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>Got it</button>
+            <button className="sf-go" onClick={() => { buzz("taken"); setTookIt(true); setFlag("customer"); }}>Got it</button>
           </div>
         )}
       </div>
@@ -8524,11 +8549,59 @@ const LED_FONT = {
   "9": ["111", "101", "111", "001", "111"],
   "#": ["101", "111", "101", "111", "101"],
   ".": ["000", "000", "000", "000", "010"],
+  "U": ["101", "101", "101", "101", "111"],
+  "P": ["111", "101", "111", "100", "100"],
 };
+const LED_ON = (rows) => { const out = []; rows.forEach((r, y) => [...r].forEach((b, x) => { if (b === "1") out.push(y * 3 + x); })); return out; };
+/* The dots re-form. A change of value used to redraw the glyph in one frame;
+   now the dots the two glyphs share stay lit, a dot that is no longer needed
+   travels to the nearest place a new one is needed, and the rest bloom in.
+   A change of position is something you see happen.
+
+   Shared by the rooms' LED and the cord's count. A layout effect, so the
+   travelling dots start from their old places on the first frame of the new
+   glyph; nothing waits on it, the value is right at once. Each digit's dots
+   are read off the DOM as fifteen children in grid order, and the distance a
+   dot travels is measured from the two dots' own boxes, so it holds for any
+   cell size. Reduced motion draws the new glyph and moves nothing. */
+function useDotsReform(ref, chars, digitSel) {
+  const drawn = useRef(null);
+  useLayoutEffect(() => {
+    const was = drawn.current;
+    drawn.current = chars.map((ch) => LED_FONT[ch] || null);
+    const el = ref.current;
+    if (!el || !was) return;
+    let still = false; try { still = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (still) return;
+    const digits = el.querySelectorAll(digitSel);
+    chars.forEach((ch, di) => {
+      const now = LED_FONT[ch], old = was[di];
+      if (!now || !old || now === old || !digits[di]) return;
+      const a = LED_ON(old), b = LED_ON(now);
+      const leaving = a.filter((i) => !b.includes(i)), free = b.filter((i) => !a.includes(i));
+      const dots = digits[di].children;
+      if (dots.length < 15) return;
+      leaving.forEach((l) => {
+        if (!free.length) return;
+        const lx = l % 3, ly = (l - lx) / 3;
+        let k = 0, best = Infinity;
+        free.forEach((c, j) => { const d = Math.hypot(lx - c % 3, ly - (c - c % 3) / 3); if (d < best) { best = d; k = j; } });
+        const to = free.splice(k, 1)[0], d = dots[to], f = dots[l];
+        if (!d || !f || !d.animate) return;
+        const p = f.getBoundingClientRect(), q = d.getBoundingClientRect();
+        d.animate([{ transform: `translate(${p.left - q.left}px, ${p.top - q.top}px)` }, { transform: "translate(0, 0)" }],
+          { duration: MOTION.settle, easing: "cubic-bezier(.32,.72,.33,1)" });
+      });
+      free.forEach((c) => { const d = dots[c]; if (d && d.animate) d.animate([{ transform: "scale(.2)", opacity: .2 }, { transform: "scale(1)", opacity: 1 }], { duration: MOTION.settle, easing: "cubic-bezier(.34,1.56,.64,1)" }); });
+    });
+  });
+}
 function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3, dim = "rgba(255,255,255,.07)" }) {
   const chars = String(value).split("");
+  const ref = useRef(null);
+  useDotsReform(ref, chars, ".led-digit");
   return (
-    <div className="led-num" style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
+    <div className="led-num" ref={ref} style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
       {chars.map((ch, di) => {
         const rows = LED_FONT[ch];
         if (!rows) return <div key={di} style={{ width: cell }} />;
@@ -8751,7 +8824,7 @@ function useCommit(setRow, mutate, refetch, writes) {
     writes.current++;
     return mutate(fn).then(
       (next) => { writes.current--; if (next && writes.current === 0) setRow(next); return next; },
-      (e) => { writes.current--; console.error("write", e); report("write", e); buzz([40, 60, 40]); refetch(true); return null; });
+      (e) => { writes.current--; console.error("write", e); report("write", e); buzz("refused"); refetch(true); return null; });
   }, [setRow, mutate, refetch, writes]);
 }
 
@@ -8900,7 +8973,7 @@ function AssistBlock({ meId, meName, fence, plan, row, commit }) {
       return cur;
     });
     setOpen(null);
-    buzz([15, 30, 15]);
+    buzz("sent");
   };
   const cancel = () => {
     if (!mine) return;
@@ -9081,13 +9154,16 @@ function McTrack({ line, meId, roster }) {
   return (
     <div className="mcf-track" ref={ref}>
       <s className="lt" /><s className="lt" />
+      {/* A departure at the door is a shuffle, not a jump: each person moves
+          40 ms after the one in front, from the door backwards. The delay
+          rides every move, which on a join reads as the line making room. */}
       {ahead.map((p2, i) => (
-        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i) }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i), transitionDelay: `${i * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
       {behind.map((p2, k) => (
-        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k) }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k), transitionDelay: `${(ahead.length + 1 + k) * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
-      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL }}>{labelOf(meId)}</span>}
+      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL, transitionDelay: `${ahead.length * 40}ms` }}>{labelOf(meId)}</span>}
     </div>
   );
 }
@@ -9881,7 +9957,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         });
         if (next) setRow(next);
         try { localStorage.setItem(`lpcf:seat:${store}`, String(tag)); } catch (e) {}
-        buzz([15, 30, 15]);
+        buzz("taken");
       } catch (e) { /* the poll corrects the screen either way */ }
     })();
   }, [tag, row ? 1 : 0, meId]); // eslint-disable-line
@@ -9897,8 +9973,8 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     const was = lastPlace.current; lastPlace.current = myPlace;
     if (!was || !myPlace || was === myPlace) return;
     const [ws, wi] = was.split("|"); const [ns, ni] = myPlace.split("|");
-    if (ns === "waiting" && ni === "0" && !(ws === "waiting" && wi === "0")) buzz([30, 60, 30]);
-    else if (ws !== ns) buzz([14, 40, 14]);
+    if (ns === "waiting" && ni === "0" && !(ws === "waiting" && wi === "0")) buzz("up");
+    else if (ws !== ns) buzz("taken");
     else buzz(8);
   }, [myPlace]);
   // Filtered out entirely unless the address asked for it, so it cannot be picked
@@ -10039,7 +10115,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     return n;
   })();
   const iAmUp = (() => { if (!me || me.status !== "waiting") return false; const i = line.findIndex((p) => p.id === meId); return i >= 0 && line.slice(0, i).filter((p) => p.status === "waiting").length === 0; })();
-  useEffect(() => { if (iAmUp) buzz([30, 60, 30]); }, [iAmUp]);
+  useEffect(() => { if (iAmUp) buzz("up"); }, [iAmUp]);
   const myIdx = me ? line.findIndex((p) => p.id === meId) : -1;
   const aheadCount = myIdx >= 0 ? line.slice(0, myIdx).filter((p) => p.status === "waiting").length : 0;
   const wasOn = useRef(false);
@@ -10307,7 +10383,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       if (dead || !reading) return;
       const next = settle(lotState.current, reading, storeFence, Date.now(), { confirmations: 2, dwellMs: 60 * 1000 });
       lotState.current = next;
-      if (next.crossed === "left") { setLotAsk(true); buzz([14, 40, 14]); }
+      if (next.crossed === "left") { setLotAsk(true); buzz("asked"); }
     };
     check();
     const t = setInterval(check, 75 * 1000);
@@ -10329,7 +10405,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     return undefined;
   }, [!!me, storeFence]); // eslint-disable-line
   useEffect(() => {
-    const on = () => { if (me && !ticket) { setLotAsk(true); buzz([14, 40, 14]); } };
+    const on = () => { if (me && !ticket) { setLotAsk(true); buzz("asked"); } };
     window.addEventListener("lpc:lot", on);
     return () => window.removeEventListener("lpc:lot", on);
   }, [!!me, ticket]); // eslint-disable-line
@@ -10369,7 +10445,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       try {
         if (act === "lunch" || act === "away") await setFlag(act);
         else if (act === "back" || act === "done") await setFlag("waiting");
-        else if (act === "take") { buzz([20, 40, 20]); setTookIt(true); await setFlag("customer"); }
+        else if (act === "take") { buzz("taken"); setTookIt(true); await setFlag("customer"); }
         else if (act === "pass") {
           const next = await mutateFloorRow(store, date, (cur) => {
             if (!cur) return null;
@@ -10598,7 +10674,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             below it are the new ones and they stayed. */}
         {st === "waiting" ? (
           <div className="mcf-top">
-            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={10} gap={4} dim="transparent" /></span>
+            <span className={"mcf-count" + (isNext ? " up" : "")}><LedNumber value={isNext ? "UP" : availableAhead} color={isNext ? "#8FD8AF" : "#E9CE96"} cell={10} gap={4} dim="transparent" /></span>
             <div className="mcf-cap">TO THE DOOR</div>
             <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
             <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
@@ -10615,7 +10691,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <div className="sf-actions">
           {canUndo && <button className="sf-leave" onClick={() => { buzz(12); undoCheckin(); }} style={{ color: "var(--led)" }}>That is not my customer. Put me back in line.</button>}
           {st === "customer" && (
-            <button type="button" className="sf-go mcf-go mcf-left" onClick={() => { buzz([14, 40, 14]); setFlag("waiting"); }}>
+            <button type="button" className="sf-go mcf-go mcf-left" onClick={() => { buzz("taken"); setFlag("waiting"); }}>
               <PixIcon glyph="check" size={16} /><span>Customer left, put me back in line</span>
             </button>
           )}
@@ -10653,7 +10729,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             </div>
             <h2>You're up</h2>
             <p>Head to the door. The next one is yours.</p>
-            <button className="sf-go" onClick={() => { buzz([20, 40, 20]); setTookIt(true); setFlag("customer"); }}>I've got it</button>
+            <button className="sf-go" onClick={() => { buzz("taken"); setTookIt(true); setFlag("customer"); }}>I've got it</button>
           </div>
         )}
         {doorAside && <p className="sf-door-aside">{doorAside}</p>}
@@ -10735,7 +10811,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <PixIcon glyph="door" size={26} />
             <div className="mc-lot-h">Looks like you've left the lot</div>
             <p className="mc-lot-p">Done for the day? Your ticket prints and the desk takes you off the floor. If you only stepped out, you stay {me.status === "away" ? "on the floor" : "in line"}.</p>
-            <button type="button" className="sf-go mcf-go mc-lot-go" onClick={() => { buzz([20, 40, 20]); setLotAsk(false); startTicket(); }}>Yes, I'm done for the day</button>
+            <button type="button" className="sf-go mcf-go mc-lot-go" onClick={() => { buzz("taken"); setLotAsk(false); startTicket(); }}>Yes, I'm done for the day</button>
             <button type="button" className="mc-lot-no" onClick={lotLater}>No, I'm coming back</button>
           </div>
         </div>
@@ -10791,7 +10867,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             </div>
             <div className="mc-bcode" />
             <button type="button" className="mc-tk-go" disabled={ticket !== "sent" && ticket !== "failed"}
-              onClick={() => { buzz([20, 40, 20]); setTicket(null); leave(); }}>Good night</button>
+              onClick={() => { buzz("taken"); setTicket(null); leave(); }}>Good night</button>
           </div>
           </div>
           <div className={"mc-send" + (ticket === "sent" ? " done" : ticket === "failed" ? " fail" : "")}>
@@ -15536,6 +15612,10 @@ input[type=number] { width:84px; }
 @keyframes rollIn{ from{ transform:translateY(100%); } to{ transform:none; } }
 @keyframes rollOut{ from{ transform:none; } to{ transform:translateY(-100%); } }
 @media (prefers-reduced-motion: reduce){ .roll-in, .roll-out{ animation:none; } .roll-out{ display:none; } }
+/* At the door the count's dots gather into UP, in mint, and pulse once. */
+.mcf-count.up{ animation:countUp .42s var(--ease-bloop) both; }
+@keyframes countUp{ 0%{ transform:scale(1); } 45%{ transform:scale(1.08); } 100%{ transform:scale(1); } }
+@media (prefers-reduced-motion: reduce){ .mcf-count.up{ animation:none; } }
 .mcf-tmr{ display:flex; gap:26px; margin-top:16px; }
 .mcf-tmr > span{ display:flex; flex-direction:column; align-items:center; }
 .mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:16px;
