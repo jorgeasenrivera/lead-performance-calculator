@@ -23,7 +23,8 @@
  *
  * Needs Playwright:  npm i -D playwright && npx playwright install chromium
  * or point FEEL_CHROME at a Chromium binary and FEEL_PLAYWRIGHT at a playwright
- * package directory. FEEL_LAG sets the added delay.
+ * package directory. FEEL_LAG sets the added delay; FEEL_CPU=4 slows the page's
+ * processor four times over, the shape of an old phone or a shared runner.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -122,6 +123,11 @@ async function run(b) {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   if (LAG) await ctx.route(/127\.0\.0\.1:5433/, async (r) => { await new Promise((z) => setTimeout(z, LAG)); r.continue(); });
   const p = await ctx.newPage();
+  /* FEEL_CPU=4 slows the page's processor four times over, which is roughly a
+     three-year-old phone on a hot afternoon, and the shape of a shared CI
+     runner. The bars are meant to hold there too. */
+  const cpu = Number(process.env.FEEL_CPU || 1);
+  if (cpu > 1) { try { const c = await ctx.newCDPSession(p); await c.send("Emulation.setCPUThrottlingRate", { rate: cpu }); } catch (e) { say("no CPU throttle: " + e.message); } }
   const errs = []; p.on("pageerror", (e) => errs.push(String(e).slice(0, 160)));
   await p.addInitScript(([s]) => {
     try { localStorage.setItem(`lpcf:room:${s}`, "floor"); localStorage.setItem(`lpcf:pref:open:${s}`, "floor"); } catch (e) {}
@@ -168,6 +174,15 @@ async function run(b) {
   const mine = ((server && server.line) || []).find((x) => x.id === floor.me.id);
   const burstOk = trace[trace.length - 1] === "Here" && trace.indexOf("Lunch") >= 0 && trace.indexOf("Lunch") < trace.lastIndexOf("Here") && mine && mine.status === "waiting";
   row("two taps in one round trip: " + trace.join(" > ") + ", server " + (mine ? mine.status : "?"), burstOk ? 0 : 1, 0, burstOk);
+  if (!burstOk) {
+    /* Which side lost the tap: the row's history says what the server was
+       asked, in order; the samples say what the screen showed, with times. */
+    const hist = ((server && server.history) || []).slice(-4).map((h) => `${h.action}@${String(h.t).slice(11, 23)}`).join(", ");
+    console.log("       server history: " + (hist || "(none)"));
+    console.log("       screen samples: " + seen.map((v, i) => (i === 0 || v !== seen[i - 1]) ? `${v}@${i * 40}ms` : null).filter(Boolean).join(", "));
+    const errsNow = await p.evaluate(() => (window.__lpcErrs || []).slice(-3));
+    if (errsNow.length) console.log("       page errors: " + errsNow.join(" | "));
+  }
 
   /* a FlyBy sent is a chip at once, and taken back at once */
   await p.locator(".fba-btn.fly").click(); await p.waitForSelector(".fba-sheet.ask");

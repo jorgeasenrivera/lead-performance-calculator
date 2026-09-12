@@ -92,6 +92,18 @@ test("the status pill glides on the tokens and the heading crossfades", () => {
   assert.ok(/\.mcf-title, \.sfl-title, \.sf-line-1\{ animation:titleIn var\(--t-settle\)/.test(core), "the crossfade reads its token");
 });
 
+test("the LED dots re-form on a change, in the rooms and on the cord, and gather into UP at the door", () => {
+  assert.ok(/function useDotsReform\(ref, chars, digitSel\)/.test(core) && /useLayoutEffect\(\(\) => \{\s*const was = drawn\.current;/.test(core), "one reform for every dot-matrix number");
+  assert.ok(/useDotsReform\(ref, chars, "\.led-digit"\)/.test(core) && /useDotsReform\(ref, chars, "\.dm-digit"\)/.test(core), "the rooms' LED and the cord's count both reform");
+  assert.ok(/duration: MOTION\.settle, easing: "cubic-bezier\(\.32,\.72,\.33,1\)"/.test(core), "a travelling dot rides the settle token");
+  assert.ok(/"U": \["101", "101", "101", "101", "111"\]/.test(core) && /value=\{isNext \? "UP" : availableAhead\}/.test(core), "UP at the door");
+});
+
+test("a departure at the door shuffles the line up, 40 ms apart, on the rail and on the cord", () => {
+  assert.ok(/"mcf-pip" \+ \(i === 0 \? " hd" : ""\)\} style=\{\{ "--p": headL\(i\), transitionDelay: `\$\{i \* 40\}ms`/.test(core), "the track staggers from the door");
+  assert.ok(/const lag = \(id\) => `\$\{Math\.max\(0, fromHead\.indexOf\(id\)\) \* 40\}ms`;/.test(core) && /offsetDistance: sfPct\(tOf\[p\.id\]\), transitionDelay: lag\(p\.id\)/.test(core), "the cord staggers from the handset");
+});
+
 test("the rails spring on transform, not left", () => {
   assert.ok(!/style=\{\{ left: (headL|behindL|youL|leftOf)/.test(core + mgr), "no pip placed by an inline left");
   assert.ok(/\.mc-pip, \.mcf-pip, \.mcf-you \{ left:0; transform:translate\(calc\(100cqw/.test(core), "the phone's pips ride on transform");

@@ -6713,10 +6713,13 @@ function nativePost(type, payload) {
 const postToNativeShell = (payload) => nativePost("queue", payload);
 function DmNumber({ value, up }) {
   const s = String(value);
+  const ref = useRef(null);
+  const chars = s.split("");
+  useDotsReform(ref, chars, ".dm-digit");
   return (
-    <div className={"dm" + (up ? " dm-up" : "")}>
-      {s.split("").map((ch, i) => (
-        <span className="dm-digit" key={`${i}-${ch}`}>
+    <div className={"dm" + (up ? " dm-up" : "")} ref={ref}>
+      {chars.map((ch, i) => (
+        <span className="dm-digit" key={i}>
           {(LED_FONT[ch] || ["000", "000", "000", "000", "000"]).flatMap((r, ri) =>
             r.split("").map((b, ci) => <span key={`${ri}-${ci}`} className={"ld" + (b === "1" ? " on" : "")} />))}
         </span>
@@ -7736,6 +7739,10 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
   const pips = useRef({});
   const seen = useRef(null);
   const [ghosts, setGhosts] = useState([]);
+  /* A departure at the handset is a shuffle, not a jump: each person moves
+     40 ms after the one in front, from the handset backwards along the cord. */
+  const fromHead = [...ahead, ...behind].map((p) => p.id).sort((a, b) => tOf[b] - tOf[a]);
+  const lag = (id) => `${Math.max(0, fromHead.indexOf(id)) * 40}ms`;
 
   /* Who came and who went since the last render. Layout effect, so a newcomer
      is already moving before the first frame that would show them in place. */
@@ -7794,7 +7801,7 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
 
   const oth = (p, extra) => (
     <span key={p.id} ref={(el) => { pips.current[p.id] = el; }} className={"sfc-oth" + (extra || "")}
-      style={{ offsetDistance: sfPct(tOf[p.id]) }}>{sfInitials(p.label)}</span>
+      style={{ offsetDistance: sfPct(tOf[p.id]), transitionDelay: lag(p.id) }}>{sfInitials(p.label)}</span>
   );
   return (
     <div className={"sfc" + (landed ? " landed" : "")}>
@@ -7805,7 +7812,7 @@ function SfCord({ ahead, behind, pos, landed, lit }) {
       </svg>
       <div className="sfc-pips">
         {ahead.map((p) => oth(p))}
-        <span ref={youRef} className="sfc-you" style={{ offsetDistance: sfPct(youT) }}>
+        <span ref={youRef} className="sfc-you" style={{ offsetDistance: sfPct(youT), transitionDelay: `${ahead.length * 40}ms` }}>
           <DmNumber value={landed ? 1 : pos} />
         </span>
         {behind.map((p) => oth(p))}
@@ -8524,11 +8531,59 @@ const LED_FONT = {
   "9": ["111", "101", "111", "001", "111"],
   "#": ["101", "111", "101", "111", "101"],
   ".": ["000", "000", "000", "000", "010"],
+  "U": ["101", "101", "101", "101", "111"],
+  "P": ["111", "101", "111", "100", "100"],
 };
+const LED_ON = (rows) => { const out = []; rows.forEach((r, y) => [...r].forEach((b, x) => { if (b === "1") out.push(y * 3 + x); })); return out; };
+/* The dots re-form. A change of value used to redraw the glyph in one frame;
+   now the dots the two glyphs share stay lit, a dot that is no longer needed
+   travels to the nearest place a new one is needed, and the rest bloom in.
+   A change of position is something you see happen.
+
+   Shared by the rooms' LED and the cord's count. A layout effect, so the
+   travelling dots start from their old places on the first frame of the new
+   glyph; nothing waits on it, the value is right at once. Each digit's dots
+   are read off the DOM as fifteen children in grid order, and the distance a
+   dot travels is measured from the two dots' own boxes, so it holds for any
+   cell size. Reduced motion draws the new glyph and moves nothing. */
+function useDotsReform(ref, chars, digitSel) {
+  const drawn = useRef(null);
+  useLayoutEffect(() => {
+    const was = drawn.current;
+    drawn.current = chars.map((ch) => LED_FONT[ch] || null);
+    const el = ref.current;
+    if (!el || !was) return;
+    let still = false; try { still = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (still) return;
+    const digits = el.querySelectorAll(digitSel);
+    chars.forEach((ch, di) => {
+      const now = LED_FONT[ch], old = was[di];
+      if (!now || !old || now === old || !digits[di]) return;
+      const a = LED_ON(old), b = LED_ON(now);
+      const leaving = a.filter((i) => !b.includes(i)), free = b.filter((i) => !a.includes(i));
+      const dots = digits[di].children;
+      if (dots.length < 15) return;
+      leaving.forEach((l) => {
+        if (!free.length) return;
+        const lx = l % 3, ly = (l - lx) / 3;
+        let k = 0, best = Infinity;
+        free.forEach((c, j) => { const d = Math.hypot(lx - c % 3, ly - (c - c % 3) / 3); if (d < best) { best = d; k = j; } });
+        const to = free.splice(k, 1)[0], d = dots[to], f = dots[l];
+        if (!d || !f || !d.animate) return;
+        const p = f.getBoundingClientRect(), q = d.getBoundingClientRect();
+        d.animate([{ transform: `translate(${p.left - q.left}px, ${p.top - q.top}px)` }, { transform: "translate(0, 0)" }],
+          { duration: MOTION.settle, easing: "cubic-bezier(.32,.72,.33,1)" });
+      });
+      free.forEach((c) => { const d = dots[c]; if (d && d.animate) d.animate([{ transform: "scale(.2)", opacity: .2 }, { transform: "scale(1)", opacity: 1 }], { duration: MOTION.settle, easing: "cubic-bezier(.34,1.56,.64,1)" }); });
+    });
+  });
+}
 function LedNumber({ value, color = "#8fc0ff", cell = 8, gap = 3, dim = "rgba(255,255,255,.07)" }) {
   const chars = String(value).split("");
+  const ref = useRef(null);
+  useDotsReform(ref, chars, ".led-digit");
   return (
-    <div className="led-num" style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
+    <div className="led-num" ref={ref} style={{ display: "flex", gap: cell + 1 }} aria-label={String(value)}>
       {chars.map((ch, di) => {
         const rows = LED_FONT[ch];
         if (!rows) return <div key={di} style={{ width: cell }} />;
@@ -9081,13 +9136,16 @@ function McTrack({ line, meId, roster }) {
   return (
     <div className="mcf-track" ref={ref}>
       <s className="lt" /><s className="lt" />
+      {/* A departure at the door is a shuffle, not a jump: each person moves
+          40 ms after the one in front, from the door backwards. The delay
+          rides every move, which on a join reads as the line making room. */}
       {ahead.map((p2, i) => (
-        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i) }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} className={"mcf-pip" + (i === 0 ? " hd" : "")} style={{ "--p": headL(i), transitionDelay: `${i * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
       {behind.map((p2, k) => (
-        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k) }}>{labelOf(p2.id)}</span>
+        <span key={p2.id} className="mcf-pip bh" style={{ "--p": behindL(k), transitionDelay: `${(ahead.length + 1 + k) * 40}ms` }}>{labelOf(p2.id)}</span>
       ))}
-      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL }}>{labelOf(meId)}</span>}
+      {meIdx >= 0 && <span className="mcf-you" style={{ "--p": youL, transitionDelay: `${ahead.length * 40}ms` }}>{labelOf(meId)}</span>}
     </div>
   );
 }
@@ -10598,7 +10656,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             below it are the new ones and they stayed. */}
         {st === "waiting" ? (
           <div className="mcf-top">
-            <span className="mcf-count"><LedNumber value={availableAhead} color="#E9CE96" cell={10} gap={4} dim="transparent" /></span>
+            <span className={"mcf-count" + (isNext ? " up" : "")}><LedNumber value={isNext ? "UP" : availableAhead} color={isNext ? "#8FD8AF" : "#E9CE96"} cell={10} gap={4} dim="transparent" /></span>
             <div className="mcf-cap">TO THE DOOR</div>
             <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
             <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
@@ -15536,6 +15594,10 @@ input[type=number] { width:84px; }
 @keyframes rollIn{ from{ transform:translateY(100%); } to{ transform:none; } }
 @keyframes rollOut{ from{ transform:none; } to{ transform:translateY(-100%); } }
 @media (prefers-reduced-motion: reduce){ .roll-in, .roll-out{ animation:none; } .roll-out{ display:none; } }
+/* At the door the count's dots gather into UP, in mint, and pulse once. */
+.mcf-count.up{ animation:countUp .42s var(--ease-bloop) both; }
+@keyframes countUp{ 0%{ transform:scale(1); } 45%{ transform:scale(1.08); } 100%{ transform:scale(1); } }
+@media (prefers-reduced-motion: reduce){ .mcf-count.up{ animation:none; } }
 .mcf-tmr{ display:flex; gap:26px; margin-top:16px; }
 .mcf-tmr > span{ display:flex; flex-direction:column; align-items:center; }
 .mcf-tmr .v{ display:inline-flex; align-items:center; gap:6px; height:16px;
