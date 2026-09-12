@@ -3905,7 +3905,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
 
       {metrics && (
         <div className="da-kpis fh-kpis">
-          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="users" size={10} /> {kind === "floor" ? "On the floor" : "Signed in"}</div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="line" size={10} /> {kind === "floor" ? "On the floor" : "Signed in"}</div>
             <div className="da-krow"><span className="da-knum">{M.onFloor ?? 0}</span>
               <span className="da-ksub">of {M.scheduled ?? 0} scheduled</span></div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="clock" size={10} /> Avg wait</div>
@@ -3913,7 +3913,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="handshake" size={10} /> With a customer</div>
             <div className="da-krow"><span className="da-knum">{M.withCust ?? 0}</span>
               <span className="da-ksub">{M.ready ?? 0} ready</span></div></div>
-          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="star" size={10} /> Fairness</div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="fair" size={10} /> Fairness</div>
             <div className="da-krow"><span className="da-knum">{M.fairness == null ? "–" : Math.round(M.fairness * 100) + "%"}</span>
               <span className="da-ksub">even rotation</span></div></div>
         </div>
@@ -4257,7 +4257,7 @@ function SmartAssign({ line, realName, repTags, onSaveTags, onAssign, kind, clos
               <div key={p.id} className="sa-mrow">
                 <div className="sa-nm">{name}</div>
                 <div className="sa-tags">
-                  {tagsOf(p.id).map((t) => <span key={t} className="sa-tag sa-tag-edit">{t}<button className="sa-tag-x" onClick={() => removeTag(p.id, t)} aria-label="Remove"><PixIcon glyph="close" size={11} /></button></span>)}
+                  {tagsOf(p.id).map((t) => <span key={t} className="sa-tag sa-tag-edit">{t}<button className="sa-tag-x" onClick={() => removeTag(p.id, t)} aria-label="Remove"><PixIcon glyph="remove" size={11} /></button></span>)}
                 </div>
                 <div className="sa-add">
                   <input className="sa-input sa-add-in" value={tagInput[p.id] || ""} placeholder="Add a tag"
@@ -4699,7 +4699,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
             {seatsOf(plan).length > 8 && (
               <div className="fr-zoom">
                 <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
-                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
+                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="minus" size={14} /></button>
               </div>
             )}
           </div>
@@ -4729,13 +4729,13 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
         )}
         <div className="fr-tools">
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "line" })}>
-            <PixIcon glyph="users" size={16} />{variant.kind === "online" ? "Queue" : rotates ? "The line" : "Who is in"}<em>{withoutTest(line).length}</em>
+            <PixIcon glyph="line" size={16} />{variant.kind === "online" ? "Queue" : rotates ? "The line" : "Who is in"}<em>{withoutTest(line).length}</em>
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "opps" })}>
             <PixIcon glyph="tap" size={16} />Opportunities<em>{upsToday}</em>
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}>
-            <PixIcon glyph="door" size={16} />Sign-in code
+            <PixIcon glyph="clipboard" size={16} />Sign-in code
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "pins" })}>
             <PixIcon glyph="clipboard" size={16} />PINs
@@ -5464,7 +5464,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
           return (
             <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""}`}>
               <div className="q-ord">
-                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="triup" size={9} /></button>
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="moveup" size={9} /></button>
                 <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down"><PixIcon glyph="tridown" size={9} /></button>
               </div>
               <div className="q-rank">{i + 1}</div>
@@ -6396,8 +6396,8 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
               </>
             )}
             {p.status === "customer" && p.autoFlip && <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "waiting"); close(); }}>Not a customer</button>}
-            <button type="button" className="fr-b" disabled={busy || idx <= 0} onClick={() => moveInLine(id, -1)}><PixIcon glyph="arrowup" size={16} />Move up</button>
-            <button type="button" className="fr-b" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(id, 1)}><PixIcon glyph="arrowdown" size={16} />Move down</button>
+            <button type="button" className="fr-b" disabled={busy || idx <= 0} onClick={() => moveInLine(id, -1)}><PixIcon glyph="moveup" size={16} />Move up</button>
+            <button type="button" className="fr-b" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(id, 1)}><PixIcon glyph="movedown" size={16} />Move down</button>
             {p.status === "waiting" ? (
               <>
                 <button type="button" className="fr-b" disabled={busy} onClick={() => { setFlag(id, "lunch"); close(); }}><PixIcon glyph="lunch" size={16} />Lunch</button>
@@ -6429,7 +6429,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
         </div>
         <div className="fr-acts">
           <button type="button" className="fr-b pri" disabled={busy} onClick={() => { setFlag(p.id, "waiting"); close(); }}>Guest left</button>
-          <button type="button" className="fr-b seat" disabled={busy} onClick={() => { setReseat(p.id); close(); }}><PixIcon glyph="arrow" size={16} />Re-seat</button>
+          <button type="button" className="fr-b seat" disabled={busy} onClick={() => { setReseat(p.id); close(); }}><PixIcon glyph="assign" size={16} />Re-seat</button>
           <button type="button" className="fr-b fly" disabled={busy} onClick={() => raiseAsk("fly", n)}><PixIcon glyph="bolt" size={16} />FlyBy</button>
           <button type="button" className="fr-b to" disabled={busy} onClick={() => raiseAsk("to", n)}><PixIcon glyph="swap" size={16} />T.O.</button>
         </div>
@@ -6506,7 +6506,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
               <button type="button" className="fr-rowt" onClick={() => setPop({ k: "person", id: p.id })}><span className="fr-nm">{nm}</span><span className="fr-meta">{pills(p.id)}</span></button>
               <span className="fr-wt">{qWaitLabel(qMinsSince(p.joinedAt))}</span>
               <span className="fr-mv">
-                <button type="button" disabled={busy || idx <= 0} onClick={() => moveInLine(p.id, -1)} aria-label="Move up"><PixIcon glyph="arrowup" size={14} /></button>
+                <button type="button" disabled={busy || idx <= 0} onClick={() => moveInLine(p.id, -1)} aria-label="Move up"><PixIcon glyph="moveup" size={14} /></button>
                 <button type="button" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(p.id, 1)} aria-label="Move down"><PixIcon glyph="arrowdown" size={14} /></button>
               </span>
             </div>
@@ -6730,7 +6730,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           </div>
           <div className="fr-zoom">
             <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
-            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
+            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="minus" size={14} /></button>
           </div>
           {reseat && <button type="button" className="fr-reseat" onClick={() => setReseat(null)}>Re-seating {realName(reseat).split(" ")[0]}: tap a table · cancel</button>}
         </div>
@@ -6750,7 +6750,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           {hours.length > 0 && <div className="fr-scale"><span>{hourLabel(hours[0].h)}</span><span>{hourLabel(hours[hours.length - 1].h + 1)}</span></div>}
         </button>
         <div className="fr-tools">
-          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}><PixIcon glyph="door" size={16} />Sign-in code</button>
+          <button type="button" className="fr-tool" onClick={() => setPop({ k: "code" })}><PixIcon glyph="clipboard" size={16} />Sign-in code</button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "rec" })}><PixIcon glyph="clipboard" size={16} />Record</button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "ups" })}><PixIcon glyph="tap" size={16} />Ups today <em>{upsToday}</em></button>
           <button type="button" className={"fr-tool" + (asking > 0 ? " asking" : "")} onClick={() => setPop({ k: "roster" })}><PixIcon glyph="users" size={16} />Roster{asking > 0 && <em>{asking} asking</em>}</button>
@@ -7212,7 +7212,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
           return (
             <div key={p.id} className={`q-row ${avail ? "" : "q-off"} ${isNext ? "q-next" : ""} ${p.status === "customer" ? "f-row-cust" : ""}`}>
               <div className="q-ord">
-                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="triup" size={9} /></button>
+                <button className="q-ord-b" disabled={busy || i === 0} onClick={() => move(p.id, -1)} title="Move up"><PixIcon glyph="moveup" size={9} /></button>
                 <button className="q-ord-b" disabled={busy || i === line.length - 1} onClick={() => move(p.id, 1)} title="Move down"><PixIcon glyph="tridown" size={9} /></button>
               </div>
               <div className="q-rank">{i + 1}</div>
@@ -8694,7 +8694,7 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
           {outreach && fig(r.text, null, null, "texts", nd)}
           {outreach && fig(r.email, null, null, "emails", nd)}
           <button type="button" className={"co-f co-frq " + (r.qual === "yes" ? "co-yes" : "co-no")} onClick={() => cycleQualified(k)} aria-label={r.qual === "yes" ? "RockEd qualified. Tap for not yet." : "RockEd not yet. Tap to mark qualified."}>
-            <span className="co-rqp"><PixIcon glyph={r.qual === "yes" ? "check" : "close"} size={14} /></span><small className="co-case">RockEd</small>
+            <span className="co-rqp"><PixIcon glyph={r.qual === "yes" ? "check" : "nope"} size={14} /></span><small className="co-case">RockEd</small>
           </button>
         </div>
       </div>
@@ -8803,7 +8803,7 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
           {on.map((r) => <div key={r.a.id} className="co-nr"><span>{r.a.name}</span><span className={"fr-st " + (anywayRows.includes(r) ? "cust" : "in")}>{anywayRows.includes(r) ? "off · in anyway" : "on"}</span></div>)}
           {off.map((r) => <div key={r.a.id} className="co-nr co-dim"><span>{r.a.name}</span><span className="fr-st off">off</span></div>)}
         </div>
-        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { close(); onRoom(); }}>Full month</button><button type="button" className="fr-b" onClick={() => { close(); onUpload(); }}><PixIcon glyph="arrowdown" size={14} /> Upload</button></div></>);
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { close(); onRoom(); }}>Full month</button><button type="button" className="fr-b" onClick={() => { close(); onUpload(); }}><PixIcon glyph="upload" size={14} /> Upload</button></div></>);
     }
     if (pop.k === "person") {
       const r = rows.find((x) => x.a.id === pop.id);
@@ -8839,7 +8839,7 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
             {cell(r.video ?? 0, std.minVideos, r.hasData ? r.videoMet : null, "videos")}
             {outreach && cell(r.text, null, null, "texts")}
             {outreach && cell(r.email, null, null, "emails")}
-            <div><b className={r.qual === "yes" ? "co-ok" : "co-bad"}><PixIcon glyph={r.qual === "yes" ? "check" : "close"} size={18} /></b><span className="co-case">RockEd</span></div>
+            <div><b className={r.qual === "yes" ? "co-ok" : "co-bad"}><PixIcon glyph={r.qual === "yes" ? "check" : "nope"} size={18} /></b><span className="co-case">RockEd</span></div>
           </div>
         )}
         <div className="co-mo">
@@ -8848,10 +8848,10 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
           <div className="co-dl2"><span>{monthDays.length ? dayLabel(monthDays.slice().sort()[0]).replace(/^\w+, /, "").toUpperCase() : ""}</span><span>{day === today() ? "today" : dayLabel(day).replace(/^\w+, /, "").toUpperCase()}</span></div>
         </div>
         <div className="fr-acts">
-          {r.off ? <button type="button" className="fr-b pri" onClick={() => { toggleOff(a); close(); }}><PixIcon glyph="triup" size={14} /> Put back on</button>
+          {r.off ? <button type="button" className="fr-b pri" onClick={() => { toggleOff(a); close(); }}><PixIcon glyph="moveup" size={14} /> Put back on</button>
             : ask ? <><button type="button" className="fr-b pri" onClick={() => { confirmOn(a); close(); }}>On today</button><button type="button" className="fr-b" onClick={() => { toggleOff(a); close(); }}>Off today</button></>
-            : <><button type="button" className={"fr-b " + (r.qual === "yes" ? "co-unq" : "co-qual")} onClick={() => cycleQualified(k)}><PixIcon glyph={r.qual === "yes" ? "close" : "check"} size={14} /> {r.qual === "yes" ? "Not yet" : "Qualified"}</button>
-              <button type="button" className="fr-b" onClick={() => { toggleOff(a); close(); }}><PixIcon glyph="clock" size={14} /> Mark off</button></>}
+            : <><button type="button" className={"fr-b " + (r.qual === "yes" ? "co-unq" : "co-qual")} onClick={() => cycleQualified(k)}><PixIcon glyph={r.qual === "yes" ? "nope" : "check"} size={14} /> {r.qual === "yes" ? "Not yet" : "Qualified"}</button>
+              <button type="button" className="fr-b" onClick={() => { toggleOff(a); close(); }}><PixIcon glyph="off" size={14} /> Mark off</button></>}
           {onCoach && <button type="button" className="fr-b" style={{ flexBasis: "100%" }} onClick={() => { close(); onCoach(a); }}><PixIcon glyph="user" size={14} /> Coach</button>}
         </div>
       </>);
@@ -8874,9 +8874,9 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
         </div>
         <div className="co-std">
           <button type="button" onClick={() => setPop({ k: "min" })}><b>{atMin}<small>/{withData.length}</small></b><span><PixIcon glyph="check" size={9} />At minimums</span></button>
-          <button type="button" onClick={() => setPop({ k: "rock" })}><b>{qualToday}</b><span className="co-case"><PixIcon glyph="trophy" size={9} />RockEd</span></button>
-          <button type="button" onClick={() => setPop({ k: "clean" })}><b>{rockedCount}</b><span><PixIcon glyph="bolt" size={9} />Clean sheets</span></button>
-          <button type="button" className={noShowSuspects.length ? "co-alert" : ""} onClick={() => setPop({ k: "asks" })}><b>{noShowSuspects.length}</b><span><PixIcon glyph="question" size={9} />No log</span></button>
+          <button type="button" onClick={() => setPop({ k: "rock" })}><b>{qualToday}</b><span className="co-case"><PixIcon glyph="book" size={9} />RockEd</span></button>
+          <button type="button" onClick={() => setPop({ k: "clean" })}><b>{rockedCount}</b><span><PixIcon glyph="sparkle" size={9} />Clean sheets</span></button>
+          <button type="button" className={noShowSuspects.length ? "co-alert" : ""} onClick={() => setPop({ k: "asks" })}><b>{noShowSuspects.length}</b><span><PixIcon glyph="minus" size={9} />No log</span></button>
         </div>
         <div className="bp-secdiv" />
         <div className="co-wk">
@@ -8897,9 +8897,9 @@ function CheckOutPhone({ store, data, std, outreach, day, setDay, activityDays, 
       </div>
 
       <div className="co-tools">
-        <button type="button" className="fr-tool" onClick={onReport}><PixIcon glyph="doc" size={16} />Daily report</button>
-        <button type="button" className="fr-tool" onClick={() => setPop({ k: "sched" })}><PixIcon glyph="calendar" size={16} />Schedule</button>
-        <button type="button" className="fr-tool" onClick={onUpload}><PixIcon glyph="arrowdown" size={16} />Upload</button>
+        <button type="button" className="fr-tool" onClick={onReport}><PixIcon glyph="report" size={16} />Daily report</button>
+        <button type="button" className="fr-tool" onClick={() => setPop({ k: "sched" })}><PixIcon glyph="schedule" size={16} />Schedule</button>
+        <button type="button" className="fr-tool" onClick={onUpload}><PixIcon glyph="upload" size={16} />Upload</button>
       </div>
 
       <div className="co-grp co-gon">
@@ -9140,13 +9140,13 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
         <span className="da-cell">
           <em>Calls</em>
           {r.hasData
-            ? <b className={r.callsMet ? "cg" : "cr"}><PixIcon glyph={r.callsMet ? "check" : "close"} size={9} /> {r.calls ?? 0}<i>/{std.minCalls}</i></b>
+            ? <b className={r.callsMet ? "cg" : "cr"}><PixIcon glyph={r.callsMet ? "check" : "nope"} size={9} /> {r.calls ?? 0}<i>/{std.minCalls}</i></b>
             : <b><i>–</i></b>}
         </span>
         <span className="da-cell">
           <em>Videos</em>
           {r.hasData
-            ? <b className={r.videoMet ? "cg" : "cr"}><PixIcon glyph={r.videoMet ? "check" : "close"} size={9} /> {r.video ?? 0}<i>/{std.minVideos}</i></b>
+            ? <b className={r.videoMet ? "cg" : "cr"}><PixIcon glyph={r.videoMet ? "check" : "nope"} size={9} /> {r.video ?? 0}<i>/{std.minVideos}</i></b>
             : <b><i>–</i></b>}
         </span>
         {/* Not graded and deliberately unmarked: a number the manager can see
@@ -9162,7 +9162,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
           <em style={{ textTransform: "none" }}>RockEd</em>
           <button className={"da-qual " + (r.qual === "yes" ? "yes" : "no")} onClick={() => cycleQualified(norm(r.a.name))}
             title="RockEd: tap to mark Qualified, tap again for Not yet.">
-            {r.qual === "yes" ? <><PixIcon glyph="check" size={10} /> Qualified</> : <><PixIcon glyph="close" size={10} /> Not yet</>}
+            {r.qual === "yes" ? <><PixIcon glyph="check" size={10} /> Qualified</> : <><PixIcon glyph="nope" size={10} /> Not yet</>}
           </button>
         </span>
         <button className="da-markoff" onClick={() => toggleOff(r.a)} title="Mark this person off for the day.">Mark off</button>
@@ -9170,7 +9170,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
           <em>Points</em>
           {!r.hasData ? <span className="da-ptb off">no data</span>
             : <span className={"da-ptb" + (r.points === 0 ? " p0" : "")} title={r.missed.length ? "Missed: " + r.missed.join(", ") : "All standards met"}>
-                <PixIcon glyph={r.points === 0 ? "check" : "close"} size={9} /> {r.points} {r.points === 1 ? "pt" : "pts"}
+                <PixIcon glyph={r.points === 0 ? "check" : "nope"} size={9} /> {r.points} {r.points === 1 ? "pt" : "pts"}
               </span>}
         </span>
       </div>
@@ -9216,9 +9216,9 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
             <select className="da-daysel" value={day} onChange={(e) => setDay(e.target.value)} aria-label="Which day to read">
               {activityDays.map((d) => <option key={d} value={d}>{new Date(d + "T12:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</option>)}
             </select>
-            <button className="da-hbtn" onClick={() => setShowReport(true)}><PixIcon glyph="doc" size={11} /> Daily report</button>
-            <button className="da-hbtn" onClick={() => setShowRoom(true)}><PixIcon glyph="calendar" size={11} /> The schedule</button>
-            <button className="da-hbtn" onClick={() => setShowSchedule(true)}><PixIcon glyph="arrowdown" size={11} /> Upload schedule</button>
+            <button className="da-hbtn" onClick={() => setShowReport(true)}><PixIcon glyph="report" size={11} /> Daily report</button>
+            <button className="da-hbtn" onClick={() => setShowRoom(true)}><PixIcon glyph="schedule" size={11} /> The schedule</button>
+            <button className="da-hbtn" onClick={() => setShowSchedule(true)}><PixIcon glyph="upload" size={11} /> Upload schedule</button>
           </div>
         </div>
         <div className="da-kpis">
@@ -9231,9 +9231,9 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="trophy" size={10} /> <span style={{ textTransform: "none" }}>RockEd</span></div>
             <div className="da-krow"><span className="da-knum">{qualToday}</span><span className="da-ksub">qualified</span></div></div>
           {noShowSuspects.length > 0
-            ? <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="question" size={10} /> Unanswered</div>
+            ? <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Unanswered</div>
                 <div className="da-krow"><span className="da-knum">{noShowSuspects.length}</span><span className="da-ksub">no log yet</span></div></div>
-            : <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="bolt" size={10} /> Clean sheets</div>
+            : <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="sparkle" size={10} /> Clean sheets</div>
                 <div className="da-krow"><span className="da-knum">{rockedCount}</span><span className="da-ksub">0 pts today</span></div></div>}
         </div>
         </div>
@@ -9270,7 +9270,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
 
       {noShowSuspects.length > 0 && (
         <div className="da-panel da-askpanel">
-          <div className="da-pcap"><PixIcon glyph="question" size={13} /> Nothing logged today · say which it is</div>
+          <div className="da-pcap"><PixIcon glyph="minus" size={13} /> Nothing logged today · say which it is</div>
           <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>
           <div className="da-asks">
             {noShowSuspects.map((r) => (
@@ -9288,7 +9288,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
       {section("user", "Scheduled off, in anyway", anywayRows, (r) => sheetRow(r, "scheduled off · worked"))}
       {offRows.length > 0 && (
         <div className="da-tbl">
-          <div className="warmhead"><PixIcon glyph="clock" size={16} style={{ color: "#D0821E" }} />Off today <span className="da-count">{offRows.length}</span></div>
+          <div className="warmhead"><PixIcon glyph="off" size={16} style={{ color: "#D0821E" }} />Off today <span className="da-count">{offRows.length}</span></div>
           {offRows.map((r) => (
             <div key={r.a.id} className="da-row da-offrow">
               <span className="da-stripe st-dim" aria-hidden="true" />
@@ -9296,7 +9296,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
               <span className="da-offchip">Off</span>
               <span className="da-flex" />
               <span className="da-ptb off">–</span>
-              <button className="da-pbo" onClick={() => toggleOff(r.a)}><PixIcon glyph="triup" size={10} /> Put back on</button>
+              <button className="da-pbo" onClick={() => toggleOff(r.a)}><PixIcon glyph="moveup" size={10} /> Put back on</button>
             </div>
           ))}
         </div>
@@ -11308,7 +11308,7 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
         <div className="fr-acts">
           <button type="button" className="fr-b" onClick={() => setRegistryFlag(r.id, "reusable", !r.reusable, r.reusable ? "Marked plate one-time" : "Marked plate reusable")}>{r.reusable ? "Make one-time" : "Make reusable"}</button>
           <button type="button" className="fr-b" onClick={() => setRegistryFlag(r.id, "retired", !r.retired, r.retired ? "Returned plate to service" : "Retired plate")}>{r.retired ? "Back in service" : "Retire"}</button>
-          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { removeRegistry(r.id); setPop({ k: "master" }); }}><PixIcon glyph="close" size={14} /> Remove from the list</button>
+          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { removeRegistry(r.id); setPop({ k: "master" }); }}><PixIcon glyph="remove" size={14} /> Remove from the list</button>
         </div></>);
     }
     if (pop.k === "out") return (<>{hd("Out now", <span className="fr-w">{outN} {outN === 1 ? "plate" : "plates"}</span>)}{recordList(heldNow, "Nobody is holding a plate.")}</>);
@@ -11332,7 +11332,7 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
       return (<>{hd(`Hand ${r.tag} over`, <span className="fr-w">from {r.assignee || "unassigned"}</span>)}
         <div className="pl-who">{roster.filter((a) => a.name !== r.assignee).map((a) => personRow(a.name, pickWho === a.name, () => { setPickWho(pickWho === a.name ? "" : a.name); setFreeWho(""); }))}</div>
         <div className="pl-in"><input value={freeWho} onChange={(e) => { setFreeWho(e.target.value); setPickWho(""); }} placeholder="Or type a name" autoComplete="off" /></div>
-        <div className="fr-acts"><button type="button" className="fr-b pri" disabled={!(pickWho || freeWho.trim())} onClick={() => { handOver(r.id, pickWho || freeWho); close(); }}><PixIcon glyph="swap" size={14} /> Hand over · logged now</button></div></>);
+        <div className="fr-acts"><button type="button" className="fr-b pri" disabled={!(pickWho || freeWho.trim())} onClick={() => { handOver(r.id, pickWho || freeWho); close(); }}><PixIcon glyph="handover" size={14} /> Hand over · logged now</button></div></>);
     }
     if (pop.k === "time") {
       const hit = recordById(pop.id); if (!hit) return null;
@@ -11363,9 +11363,9 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
           {miss ? <><button type="button" className="fr-b pri" onClick={() => { markReturnedPrior(hit.d, r.id); close(); }}><PixIcon glyph="check" size={14} /> Returned now</button><button type="button" className="fr-b warn" onClick={() => { dropPriorRecord(hit.d, r.id); close(); }}>Not this store's</button></>
             : r.checkedIn ? <button type="button" className="fr-b pri" onClick={() => { toggleIn(r.id); close(); }}><PixIcon glyph="car" size={14} /> Out again</button>
             : <><button type="button" className="fr-b pri" onClick={() => { toggleIn(r.id); close(); }}><PixIcon glyph="check" size={14} /> Mark returned</button>
-              <button type="button" className="fr-b" onClick={() => { setPickWho(""); setFreeWho(""); clearErr(); setPop({ k: "hand", id: r.id }); }}><PixIcon glyph="swap" size={14} /> Hand over</button>
-              <button type="button" className="fr-b" onClick={() => setPop({ k: "time", id: r.id })}><PixIcon glyph="clock" size={14} /> Edit time</button></>}
-          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { if (window.confirm(`Remove the record of ${r.tag}?`)) { remove(r.id); close(); } }}><PixIcon glyph="close" size={14} /> Remove</button>
+              <button type="button" className="fr-b" onClick={() => { setPickWho(""); setFreeWho(""); clearErr(); setPop({ k: "hand", id: r.id }); }}><PixIcon glyph="handover" size={14} /> Hand over</button>
+              <button type="button" className="fr-b" onClick={() => setPop({ k: "time", id: r.id })}><PixIcon glyph="edit" size={14} /> Edit time</button></>}
+          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { if (window.confirm(`Remove the record of ${r.tag}?`)) { remove(r.id); close(); } }}><PixIcon glyph="remove" size={14} /> Remove</button>
         </div></>);
     }
     return null;
@@ -11386,12 +11386,12 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
           <button type="button" onClick={() => setPop({ k: "out" })}><b>{outN}</b><span><PixIcon glyph="car" size={9} />Out</span></button>
           <button type="button" onClick={() => setPop({ k: "back" })}><b>{backToday.length}</b><span><PixIcon glyph="check" size={9} />Back today</span></button>
           <button type="button" className={missing.length ? "co-alert" : ""} onClick={() => setPop({ k: "missing" })}><b>{missing.length}</b><span><PixIcon glyph="warn" size={9} />Missing</span></button>
-          <button type="button" onClick={() => setPop({ k: "master" })}><b>{knownN}</b><span><PixIcon glyph="doc" size={9} />Known</span></button>
+          <button type="button" onClick={() => setPop({ k: "master" })}><b>{knownN}</b><span><PixIcon glyph="list" size={9} />Known</span></button>
         </div>
         <div className="pl-tools">
-          <button type="button" className="fr-tool pri" style={{ gridColumn: standing ? "span 2" : "span 1" }} onClick={() => openAssign("")}><PixIcon glyph="plus" size={16} />Take out</button>
-          {!standing && <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "carry" })}><PixIcon glyph="arrow" size={16} />Carry forward</button>}
-          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "master" })}><PixIcon glyph="doc" size={16} />Master list</button>
+          <button type="button" className="fr-tool pri" style={{ gridColumn: standing ? "span 2" : "span 1" }} onClick={() => openAssign("")}><PixIcon glyph="car" size={16} />Take out</button>
+          {!standing && <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "carry" })}><PixIcon glyph="pass" size={16} />Carry forward</button>}
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "master" })}><PixIcon glyph="list" size={16} />Master list</button>
           <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "setup" })}><PixIcon glyph="more" size={16} />Setup</button>
         </div>
       </div>
@@ -11970,7 +11970,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Missing</div>
             <div className="da-krow"><span className="da-knum" style={missingN ? { color: "#C2361F" } : undefined}>{missingN}</span>
               {missingN > 0 && <span className="da-ksub">not checked back in</span>}</div></div>
-          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="doc" size={10} /> Registry</div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="list" size={10} /> Registry</div>
             <div className="da-krow"><span className="da-knum">{knownN}</span><span className="da-ksub">plates known</span></div></div>
         </div>
         </div>
@@ -12353,7 +12353,7 @@ function ChecklistEditor({ config, storeId, onChange }) {
         {own.map((c, i) => (
           <div key={c.id} className="cl-row">
             <span className="cl-ord">
-              <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" aria-label="Move up"><PixIcon glyph="arrowup" size={11} /></button>
+              <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" aria-label="Move up"><PixIcon glyph="moveup" size={11} /></button>
               <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down" aria-label="Move down"><PixIcon glyph="arrowdown" size={11} /></button>
             </span>
             <span className="cl-fields">
@@ -13389,7 +13389,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       )}
       {!query && recap.length > 0 && (
         <div className="da-tbl s2-recap">
-          <div className="warmhead"><PixIcon glyph="calendar" size={16} style={{ color: "#D0821E" }} />{monthLabel(prevYm())} wrap-up · focus areas <span className="da-count">{recap.length}</span></div>
+          <div className="warmhead"><PixIcon glyph="report" size={16} style={{ color: "#D0821E" }} />{monthLabel(prevYm())} wrap-up · focus areas <span className="da-count">{recap.length}</span></div>
           <p className="da-hint s2-recaphint">Judged by last month's requirements. Use the first {graceDays} days to coach these before restrictions resume.</p>
           {recap.map((r, i) => (
             <div key={i} className="recap-row">
@@ -13480,7 +13480,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
       {unassigned.length > 0 && (
         <section className="da-tbl lite s2-rolecard unassigned" style={{ "--role": "#8E8E93" }}>
           <div className="warmhead">
-            <PixIcon glyph="question" size={16} style={{ color: "#D0821E" }} />
+            <PixIcon glyph="warn" size={16} style={{ color: "#D0821E" }} />
             Needs a position <span className="da-count">{unassigned.length}</span>
           </div>
           <p className="da-hint s2-recaphint">These names came in from reports. Give each one a position to start scoring them.</p>
@@ -13954,7 +13954,7 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
           <button className="assoc-act" aria-label="Confirm removed from leads"
             title="They are off leads? Press to confirm it and set the re-check date"
             onClick={(e) => { e.stopPropagation(); setShowRestrict(true); }}>
-            <PixIcon glyph="close" size={11} />
+            <PixIcon glyph="remove" size={11} />
           </button>
         )}
         <span className="s2-rgo" aria-hidden="true">›</span>
@@ -15238,7 +15238,7 @@ function UploadHistory({ data, onChange, storeId }) {
      the file, what it was, when it landed and where, and the way back out. */
   return (
     <div className="up-hist">
-      <div className="p-cap"><PixIcon glyph="doc" size={13} /> Upload history</div>
+      <div className="p-cap"><PixIcon glyph="upload" size={13} /> Upload history</div>
       <p className="hint up-hint">
         Activity days can be deleted on their own. The other reports overwrite the month's
         totals, so undoing one rewinds to just before it.
@@ -15607,7 +15607,7 @@ function CoachingPhone({ config, store, data, onChange, userName, scored, withDa
     if (pop.k === "recaps") {
       return (<>{hd("Month-end recaps", <span className="fr-w">{new Date(lm + "-15T12:00").toLocaleDateString("en-US", { month: "long" })}</span>)}
         <div className="bp-defn">One page per person: last month against their goal, the effort it took, and this month's goal. Prints as one document.</div>
-        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { close(); printAllMonthEndRecaps({ store, config, data }); }}><PixIcon glyph="doc" size={14} /> Print all {scored.length}</button></div></>);
+        <div className="fr-acts"><button type="button" className="fr-b pri" onClick={() => { close(); printAllMonthEndRecaps({ store, config, data }); }}><PixIcon glyph="print" size={14} /> Print all {scored.length}</button></div></>);
     }
     if (pop.k === "person") {
       const row = scored.find((r) => r.a.id === pop.id);
@@ -15621,7 +15621,7 @@ function CoachingPhone({ config, store, data, onChange, userName, scored, withDa
     <div className="bp-page cx-page">
       <div className="bp-hero cx-hero">
         <div className="cx-hh">
-          <span className="cx-top"><PixIcon glyph="trophy" size={11} />The bar</span>
+          <span className="cx-top"><PixIcon glyph="bar" size={11} />The bar</span>
           <span className="cx-days">{top.length} of {withData.length} set it</span>
         </div>
         <button type="button" className="cx-big" onClick={() => setPop({ k: "under" })}>
@@ -15632,8 +15632,8 @@ function CoachingPhone({ config, store, data, onChange, userName, scored, withDa
           ? <button type="button" className="cx-bench" onClick={() => setPop({ k: "bench" })}>{benchTiles.map((b) => <span key={b.id} className="cx-bt"><b>{fmtB(b, topAvg[b.id])}</b><span>{shortLabel(b)}</span></span>)}</button>
           : <div className="cx-none">Needs Daily Activity imported before it can set a bar.</div>}
         <div className="cx-tools">
-          {new Date().getDate() <= 10 && <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "recaps" })}><PixIcon glyph="doc" size={16} />Print all month-end recaps</button>}
-          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "bench" })}><PixIcon glyph="users" size={16} />Who sets the bar · {top.length}</button>
+          {new Date().getDate() <= 10 && <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "recaps" })}><PixIcon glyph="print" size={16} />Print all month-end recaps</button>}
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "bench" })}><PixIcon glyph="bar" size={16} />Who sets the bar · {top.length}</button>
         </div>
       </div>
 
@@ -15779,9 +15779,9 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
           {isExcluded && <span className="fr-st off">out of stats</span>}</div></div>
     </div>
     <div className="cx-acts">
-      <button type="button" className="fr-tool pri" disabled={!goal} onClick={printPager}><PixIcon glyph="doc" size={16} />Print one-pager</button>
-      {new Date().getDate() <= 10 ? <button type="button" className="fr-tool" disabled={!goal} onClick={printRecap}><PixIcon glyph="calendar" size={16} />Month-end recap</button> : null}
-      <button type="button" className="fr-tool" onClick={copy}><PixIcon glyph="tap" size={16} />Copy summary</button>
+      <button type="button" className="fr-tool pri" disabled={!goal} onClick={printPager}><PixIcon glyph="print" size={16} />Print one-pager</button>
+      {new Date().getDate() <= 10 ? <button type="button" className="fr-tool" disabled={!goal} onClick={printRecap}><PixIcon glyph="report" size={16} />Month-end recap</button> : null}
+      <button type="button" className="fr-tool" onClick={copy}><PixIcon glyph="copy" size={16} />Copy summary</button>
       <button type="button" className={"fr-tool" + (more ? " on" : "")} onClick={() => setMore((v) => !v)}><PixIcon glyph="more" size={16} />More</button>
     </div>
     {more && (
@@ -15956,7 +15956,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
             <span className="fh-chip">Your own floor</span>
             {new Date().getDate() <= 10 && (
               <button className="da-hbtn" onClick={() => printAllMonthEndRecaps({ store, config, data })}>
-                <PixIcon glyph="doc" size={11} /> Print all Month-End recaps
+                <PixIcon glyph="print" size={11} /> Print all Month-End recaps
               </button>
             )}
           </div>
@@ -18472,8 +18472,8 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       return (<>
         {hd("Month pace · by stock", <><span className="fr-w">{fmtNum(split.nw)} new</span><span className="fr-w">{fmtNum(split.us)} used</span></>)}
         <div className="bp-stk">
-          <div className="bp-rw"><PixIcon glyph="car" size={12} style={{ color: "#D0821E" }} />New: pace <b>{nPace == null ? "–" : nPace}</b> · goal <b>{nGoal == null ? "–" : nGoal}</b>{nt[1] && <span className={"fr-st " + nt[0]}>{nt[1]}</span>}</div>
-          <div className="bp-rw"><PixIcon glyph="car" size={12} style={{ color: "var(--p2d)" }} />Used: pace <b>{uPace == null ? "–" : uPace}</b> · goal <b>{uGoal == null ? "–" : uGoal}</b>{ut[1] && <span className={"fr-st " + ut[0]}>{ut[1]}</span>}</div>
+          <div className="bp-rw"><PixIcon glyph="sold" size={12} style={{ color: "#D0821E" }} />New: pace <b>{nPace == null ? "–" : nPace}</b> · goal <b>{nGoal == null ? "–" : nGoal}</b>{nt[1] && <span className={"fr-st " + nt[0]}>{nt[1]}</span>}</div>
+          <div className="bp-rw"><PixIcon glyph="sold" size={12} style={{ color: "var(--p2d)" }} />Used: pace <b>{uPace == null ? "–" : uPace}</b> · goal <b>{uGoal == null ? "–" : uGoal}</b>{ut[1] && <span className={"fr-st " + ut[0]}>{ut[1]}</span>}</div>
           <div className="bp-bar2"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></div>
           <div className="bp-barl"><span>{split.newPct != null ? Math.round(split.newPct * 100) : 0}% new</span><span>{split.usedPct != null ? Math.round(split.usedPct * 100) : 0}% used</span></div>
           <div className="bp-defn" style={{ padding: "10px 0 0" }}>Where the month lands by stock at today's mix, against each side of the goal.</div>
@@ -19049,7 +19049,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         </div>
         <div className="s2-body">
           <div className="s2-left">
-            <div className="s2-cap"><PixIcon glyph="car" size={11} /> Units this month</div>
+            <div className="s2-cap"><PixIcon glyph="sold" size={11} /> Units this month</div>
             <div className="s2-big">
               <DotNum value={String(totalUnits)} dot={6} color="#fff" />
               {/* The goal is read here, so it is set here: with one already on
@@ -19238,7 +19238,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             {/* The calendar is the only thing that says the date now; this is just
                 the door to the round-up, not a second copy of the day. */}
             <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
-              <PixIcon glyph="star" size={11} /> Round-up
+              <PixIcon glyph="roundup" size={11} /> Round-up
             </button>
             <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
               <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
@@ -19335,7 +19335,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={spotOn} onHold={setSpotHeld} />
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
-            <div className="s2-scap"><PixIcon glyph="bolt" size={12} /> Talk to these first</div>
+            <div className="s2-scap"><PixIcon glyph="sparkle" size={12} /> Talk to these first</div>
             {urgent.length === 0 && <div className="s2-none">Nobody below standard right now.</div>}
             {urgent.slice(0, 3).map((u) => (
               <button key={u.name} className="s2-person" onClick={() => onFocus && onFocus(u.name)}>
@@ -19819,7 +19819,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         {/* One per layout: this panel returns one tree or the other, never both,
             so exactly one of these is ever mounted. */}
         {xcheck && <CrossCheck store={store} data={data} config={config} onClose={() => setXcheck(false)} />}
-        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}</div>}
+        {log.length > 0 && <div className="import-log">{log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "nope"} size={12} /> {l.msg}</div>)}</div>}
         <BaselineImport data={data} onChange={onChange} />
         <UploadHistory data={data} onChange={onChange} storeId={store.id} />
 
@@ -19904,7 +19904,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
         </div>
 
         <div className="imp-panel">
-          <div className="p-cap"><PixIcon glyph="calendar" size={13} /> Daily Activity import</div>
+          <div className="p-cap"><PixIcon glyph="upload" size={13} /> Daily Activity import</div>
           {setActivityScope && (
             <div className="imp-scope">
               {[["day", "Today", today()], ["day", "Yesterday", yday], ["month", "Whole month", aDay]].map(([sc, label, d], i) => {
@@ -19932,7 +19932,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
 
       {log.length > 0 && (
         <div className="import-log">
-          {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "close"} size={12} /> {l.msg}</div>)}
+          {log.map((l, i) => <div key={i} className={l.ok ? "log-ok" : "log-err"}><PixIcon glyph={l.ok ? "check" : "nope"} size={12} /> {l.msg}</div>)}
         </div>
       )}
       <Explain label="What an import does to the numbers">
@@ -20360,14 +20360,14 @@ function SummaryPhone({ config, stores, data, month, setMonth, monthOptions, row
         {rows.length > 0 && (
           <div className="co-std">
             <button type="button" onClick={() => setPop({ k: "below" })}><b>{restricted.length}<small>/{rows.length}</small></b><span><PixIcon glyph="warn" size={9} />Below</span></button>
-            <button type="button" className={paused.length ? "co-alert" : ""} onClick={() => setPop({ k: "paused" })}><b>{paused.length}</b><span><PixIcon glyph="close" size={9} />Paused</span></button>
+            <button type="button" className={paused.length ? "co-alert" : ""} onClick={() => setPop({ k: "paused" })}><b>{paused.length}</b><span><PixIcon glyph="nope" size={9} />Paused</span></button>
             <button type="button" onClick={() => setPop({ k: "grace" })}><b>{trending.length}</b><span><PixIcon glyph="clock" size={9} />In grace</span></button>
             <button type="button" onClick={() => setPop({ k: "holding" })}><b>{cleared.length}</b><span><PixIcon glyph="check" size={9} />Holding</span></button>
           </div>
         )}
         <div className="cx-tools">
-          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="doc" size={16} />Print</button>
-          <button type="button" className="fr-tool dk" onClick={exportCSV}><PixIcon glyph="arrowdown" size={16} />Export CSV</button>
+          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="print" size={16} />Print</button>
+          <button type="button" className="fr-tool dk" onClick={exportCSV}><PixIcon glyph="export" size={16} />Export CSV</button>
         </div>
       </div>
       {rows.length === 0 && <p className="fr-empty">No data for this month yet.</p>}
@@ -20507,8 +20507,8 @@ function HistoryPhone({ config, store, data, months, month, setMonth, roster, th
             return <button key={f.k} type="button" onClick={() => setPop({ k: "store", f: f.k })}><i style={{ background: f.col }} /><b>{f.now == null ? "–" : fmtPct(f.now)}</b><span>{shortLabel(f)}</span><em className={mv == null ? "na" : Math.abs(mv) < 0.05 ? "na" : mv > 0 ? "up" : "dn"}>{mv == null ? "–" : Math.abs(mv) < 0.05 ? "level" : `${mv > 0 ? "▲" : "▼"} ${Math.abs(mv).toFixed(1)}`}</em></button>; })}
         </div>
         <div className="cx-tools">
-          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="doc" size={16} />Print the month</button>
-          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "targets" })}><PixIcon glyph="tap" size={16} />Targets in force</button>
+          <button type="button" className="fr-tool dk" onClick={() => window.print()}><PixIcon glyph="print" size={16} />Print the month</button>
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "targets" })}><PixIcon glyph="target" size={16} />Targets in force</button>
         </div>
       </div>
 
@@ -20701,18 +20701,18 @@ function GMSummary({ config, data, stores }) {
             <select className="da-daysel" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Which month">
               {(monthOptions.length ? monthOptions : [ym()]).map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
-            <button className="da-hbtn" onClick={() => window.print()}><PixIcon glyph="doc" size={11} /> Print</button>
-            <button className="da-hbtn" onClick={exportCSV}><PixIcon glyph="arrowdown" size={11} /> Export CSV</button>
+            <button className="da-hbtn" onClick={() => window.print()}><PixIcon glyph="print" size={11} /> Print</button>
+            <button className="da-hbtn" onClick={exportCSV}><PixIcon glyph="export" size={11} /> Export CSV</button>
           </div>
         </div>
         {rows.length > 0 && (
           <div className="da-kpis">
-            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="car" size={10} /> Units delivered</div>
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="sold" size={10} /> Units delivered</div>
               <div className="da-krow"><span className="da-knum">{fmtNum(totalUnits)}</span>
                 {single?.goal?.units ? <span className="da-ksub">goal {fmtNum(single.goal.units)}</span> : null}</div></div>
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Below standard</div>
               <div className="da-krow"><span className="da-knum">{restricted.length}<span className="da-ksub">/{rows.length}</span></span></div></div>
-            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="close" size={10} /> Paused right now</div>
+            <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="nope" size={10} /> Paused right now</div>
               <div className="da-krow"><span className="da-knum">{paused.length}</span><span className="da-ksub">leads held</span></div></div>
             <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="clock" size={10} /> Inside grace</div>
               <div className="da-krow"><span className="da-knum">{trending.length}</span></div></div>
@@ -20808,7 +20808,7 @@ function GMSummary({ config, data, stores }) {
 
       {paused.length > 0 && (
         <div className="da-tbl sm-sec">
-          <div className="warmhead"><PixIcon glyph="close" size={16} style={{ color: "#D0821E" }} />Leads paused right now <span className="da-count">{paused.length}</span></div>
+          <div className="warmhead"><PixIcon glyph="nope" size={16} style={{ color: "#D0821E" }} />Leads paused right now <span className="da-count">{paused.length}</span></div>
           <div className="sm-secbody">
             <p className="da-hint">At their cap and below standard, so the tool is holding their next lead.</p>
             <table className="gm-table">
@@ -20975,7 +20975,7 @@ function HistoryPanel({ config, store, data }) {
               {months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
             </select>
             <button className="da-hbtn" onClick={() => window.print()}>
-              <PixIcon glyph="doc" size={11} /> Print the month
+              <PixIcon glyph="print" size={11} /> Print the month
             </button>
           </div>
         </div>
@@ -21743,7 +21743,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
         </div>
         <div className="cx-tools pe-tools">
           <button type="button" className="fr-tool pri" onClick={() => setPop({ k: "add" })}><PixIcon glyph="plus" size={16} />Add a person</button>
-          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "why" })}><PixIcon glyph="question" size={16} />Left, and not ours</button>
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "why" })}><PixIcon glyph="warn" size={16} />Left, and not ours</button>
         </div>
       </div>
 
@@ -23210,7 +23210,7 @@ function HolidayPanel({ config, onChange }) {
                 {new Date(h.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 {h.name && <em>{h.name}</em>}
                 <button title="Remove"
-                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="remove" size={13} /></button>
               </span>
             ))}
           </div>
@@ -23311,7 +23311,7 @@ function SettingsPanel({ config, onChange }) {
             <div key={s.id} className="store-item" style={{ "--sp": (s.brand || DEFAULT_BRAND).primary }}>
               <div className="store-item-main">
                 <div className="store-item-order">
-                  <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up" aria-label="Move up"><PixIcon glyph="arrowup" size={11} /></button>
+                  <button className="btn-arrow" disabled={idx === 0} onClick={() => moveStore(idx, -1)} title="Move up" aria-label="Move up"><PixIcon glyph="moveup" size={11} /></button>
                   <button className="btn-arrow" disabled={idx === config.stores.length - 1} onClick={() => moveStore(idx, 1)} title="Move down" aria-label="Move down"><PixIcon glyph="arrowdown" size={11} /></button>
                 </div>
                 {s.icon ? <img className="store-logo" src={s.icon} alt="" /> : <div className="store-logo placeholder">{s.name[0]}</div>}
