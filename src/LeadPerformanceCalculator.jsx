@@ -485,6 +485,7 @@ const PIX = {
   away:      ["1111100","1000000","1000100","1000110","1011111","1000110","1000100"],
   swap:      ["0001000","0011100","0111110","0000000","0111110","0011100","0001000"],
   home:      ["0001000","0011100","0111110","1111111","0110110","0110110","0111110"],
+  sun:       ["0001000","0100010","0011100","1011101","0011100","0100010","0001000"],
   cup:       ["0000000","1111100","1111110","1111101","1111110","0111100","0000000"],
   walk:      ["0011000","0011000","0001000","0111110","0001000","0010100","0100010"],
   /* ---- one per job: the second set ---- */
@@ -7528,14 +7529,77 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   useEffect(() => { const t = setTimeout(() => setWarm(true), 2500); return () => clearTimeout(t); }, []);
   if (warm) { if (list.includes("line")) seen.current.line = true; if (list.includes("floor")) seen.current.floor = true; }
   const scrolls = useRef({ floor: 0, line: 0 });
+  /* One object across rooms. A tab used to cut from one room to the other.
+     Now the salesperson's own mark, the mint pip on the floor's rail or the
+     numbered circle on the line's cord, lifts off one and lands on the other,
+     changing size and colour on the way, on the wipe token and the spring.
+     Under it the rooms swap through a dot dissolve, the way the mark itself
+     is drawn: the room leaving breaks into dots over the exit token while
+     the room arriving fills in from dots over the swap token. The switch is
+     still drawn at once; the mark and the dots are decoration on top, and a
+     phone that asks for less motion gets the cut it had. */
+  const [cross, setCross] = useState(null);
+  const crossTimer = useRef(null);
+  const flight = useRef(null);
+  const markOf = (r) => document.querySelector(`.ar-room[data-room="${r}"] ` + (r === "line" ? ".sfc-you" : ".mcf-you"));
+  const crossRooms = (from, to) => {
+    let reduce = false;
+    try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    if (reduce) return;
+    let src = null;
+    try {
+      const el = markOf(from);
+      const a = el && el.getBoundingClientRect();
+      if (a && a.width) {
+        const cs = getComputedStyle(el);
+        src = { x: a.left, y: a.top, w: a.width, h: a.height, text: (el.textContent || "").trim(), color: cs.color,
+          bg: cs.backgroundImage, bgc: cs.backgroundColor, shadow: cs.boxShadow };
+      }
+    } catch (e) {}
+    setCross({ from, to, src, n: Date.now() });
+    clearTimeout(crossTimer.current);
+    crossTimer.current = setTimeout(() => setCross(null), MOTION.swap + 20);
+  };
+  useEffect(() => () => clearTimeout(crossTimer.current), []);
+  useLayoutEffect(() => {
+    if (!cross || !cross.src) return;
+    const a = cross.src;
+    let dest = null, b = null;
+    try { dest = markOf(cross.to); b = dest && dest.getBoundingClientRect(); } catch (e) {}
+    if (!b || !b.width || typeof dest.animate !== "function") return;
+    if (flight.current) flight.current.cancel();
+    const cs = getComputedStyle(dest);
+    const fly = document.createElement("span");
+    /* The cord's circle carries a dot-matrix number, not letters, so the
+       initials come from whichever end has them. */
+    fly.className = "ar-fly"; fly.textContent = a.text || (dest.textContent || "").trim(); fly.setAttribute("aria-hidden", "true");
+    Object.assign(fly.style, { left: a.x + "px", top: a.y + "px", width: a.w + "px", height: a.h + "px", color: a.color });
+    document.body.appendChild(fly);
+    dest.style.visibility = "hidden";
+    const anim = fly.animate([
+      { transform: "translate(0,0)", width: a.w + "px", height: a.h + "px", backgroundImage: a.bg, backgroundColor: a.bgc, boxShadow: a.shadow },
+      { transform: `translate(${b.left - a.x}px, ${b.top - a.y}px)`, width: b.width + "px", height: b.height + "px", backgroundImage: cs.backgroundImage, backgroundColor: cs.backgroundColor, boxShadow: cs.boxShadow },
+    ], { duration: MOTION.wipe, easing: "cubic-bezier(.3,1.3,.4,1)", fill: "both" });
+    const done = () => { dest.style.visibility = ""; fly.remove(); if (flight.current === anim) flight.current = null; };
+    anim.onfinish = done; anim.oncancel = done;
+    flight.current = anim;
+  }, [cross && cross.n]);   // eslint-disable-line
   const pick = (r) => {
     if (r !== room) {
       try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
       const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
       requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
+      crossRooms(room === "line" ? "line" : "floor", r === "line" ? "line" : "floor");
     }
     setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
   };
+  /* The rooms in sunlight: the curtain's deep green as the ground, with
+     cream on it, for a phone out on the lot. A switch on the corner; the
+     note is read here so the ground is right from the first room. */
+  useEffect(() => {
+    try { document.documentElement.classList.toggle("sun", localStorage.getItem("lpcf:pref:sun") === "1"); } catch (e) {}
+    return () => { try { document.documentElement.classList.remove("sun"); } catch (e) {} };
+  }, []);
   useLiveStanding({ config, store, date, account, room });
 
   /* Both switched off. A real state — somebody has done it deliberately — and
@@ -7609,12 +7673,14 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
-      <div className="ar-room" hidden={room !== "line"} inert={room !== "line" ? "" : undefined}>
+      <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")} data-room="line"
+        hidden={room !== "line" && !(cross && cross.from === "line")} inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
           <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
             variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
-      <div className="ar-room" hidden={room === "line"} inert={room === "line" ? "" : undefined}>
+      <div className={"ar-room" + (cross && cross.to === "floor" ? " ar-in" : cross && cross.from === "floor" ? " ar-out" : "")} data-room="floor"
+        hidden={room === "line" && !(cross && cross.from === "floor")} inert={room === "line" ? "" : undefined}>
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
             account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
@@ -10552,6 +10618,14 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [, prefTick] = useState(0);
   const prefOn = (k) => { try { return localStorage.getItem(k) !== "0"; } catch (e) { return true; } };
   const flipPref = (k) => { try { localStorage.setItem(k, prefOn(k) ? "0" : "1"); } catch (e) {} buzz(8); prefTick((n) => n + 1); };
+  /* Off unless switched on: the night look is the default. */
+  const sunOn = () => { try { return localStorage.getItem("lpcf:pref:sun") === "1"; } catch (e) { return false; } };
+  const flipSun = () => {
+    const on = !sunOn();
+    try { localStorage.setItem("lpcf:pref:sun", on ? "1" : "0"); } catch (e) {}
+    try { document.documentElement.classList.toggle("sun", on); } catch (e) {}
+    buzz(8); prefTick((n) => n + 1);
+  };
   const [sysLight, setSysLight] = useState(() => { try { return window.matchMedia("(prefers-color-scheme: light)").matches; } catch (e) { return false; } });
   useEffect(() => {
     let mq; try { mq = window.matchMedia("(prefers-color-scheme: light)"); } catch (e) { return; }
@@ -10987,6 +11061,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
                   <span className={"mc-sw" + (prefOn(k) ? " on" : "")} aria-hidden="true" />
                 </button>
               ))}
+              <button type="button" className="mc-set-row" role="switch" aria-checked={sunOn()} onClick={flipSun}>
+                <span className="ic"><PixIcon glyph="sun" size={16} /></span>
+                <span>Sunlight<span className="hint">Deep green rooms for out on the lot</span></span>
+                <span className={"mc-sw" + (sunOn() ? " on" : "")} aria-hidden="true" />
+              </button>
             </div>
 
             <div className="mc-cap">REACH</div>
@@ -14464,6 +14543,51 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .ar-tab.on{ color:#fff; }
 /* Up once the first room is there: it rises from below the foot on the spring. */
 .ar-bar.up{ transform:translateX(-50%); }
+/* One object across rooms. The rooms swap through a dot dissolve: a mask of
+   dots on an 8px grid, the room leaving shrinking its dots over the exit
+   token in three holds, the room arriving growing its dots over the swap
+   token in five, both stepped so it reads as LEDs rather than a crossfade.
+   Over them the salesperson's own mark flies between the rail and the cord. */
+@property --ar-r{ syntax:"<length>"; inherits:false; initial-value:0px; }
+.ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{
+  -webkit-mask-image:radial-gradient(circle, #000 var(--ar-r), transparent calc(var(--ar-r) + .5px));
+  mask-image:radial-gradient(circle, #000 var(--ar-r), transparent calc(var(--ar-r) + .5px));
+  -webkit-mask-size:8px 8px; mask-size:8px 8px; }
+.ar-room.ar-in > .q-page.sf{ animation:arDotsIn var(--t-swap) steps(5,end) both; }
+.ar-room.ar-out > .q-page.sf{ animation:arDotsOut var(--t-exit) steps(3,end) both; }
+@keyframes arDotsIn{ from{ --ar-r:0px; } to{ --ar-r:7px; } }
+@keyframes arDotsOut{ from{ --ar-r:7px; } to{ --ar-r:0px; } }
+.ar-fly{ position:fixed; z-index:101; border-radius:50%; display:grid; place-items:center; box-sizing:border-box;
+  font-family:var(--font-mono); font-size:8.5px; font-weight:700; pointer-events:none; will-change:transform; }
+@media (prefers-reduced-motion: reduce){
+  .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; mask-image:none; -webkit-mask-image:none; }
+  .ar-room.ar-out{ display:none; } }
+/* The rooms in sunlight: the curtain's deep green for the ground, cream for
+   what sits on it, the pill in mint with ink on it, and the two help cards
+   filled rather than outlined so a control is a control in glare. Only the
+   tokens and colours change; layout, spacing and every animation stay. */
+html.sun .q-page.sf.mc-floor, html.sun .q-page.sf.sf-line{
+  --sfink:#F6E3C3; --sfink2:#DCE7DE; --sfink3:#9FB5A6; --sfcard:rgba(255,255,255,.08); --sfstroke:rgba(255,255,255,.14);
+  --led:#F6E3C3; --ld-off:rgba(246,227,195,.16); --glow:rgba(143,216,175,.28);
+  background:#2E4A38; color:var(--sfink); }
+html.sun .q-page.sf.mc-floor::before, html.sun .q-page.sf.sf-line::before{
+  background:radial-gradient(60% 60% at 60% 90%, rgba(143,216,175,.28), transparent 70%); }
+html.sun .mc-floor .mcf-cap, html.sun .sf-line .mcf-cap, html.sun .sf-line .sfl-cap{ color:#BFD3C4; }
+html.sun .mc-floor .mcf-tmr .v, html.sun .sf-line .mcf-tmr .v{ color:#F6E3C3; }
+html.sun .mc-floor .mcf-tmr .l, html.sun .sf-line .mcf-tmr .l, html.sun .mc-floor .mcf-sub, html.sun .sf-line .mcf-sub{ color:#BFD3C4; }
+html.sun .mc-floor .mcf-title, html.sun .sf-line .mcf-title, html.sun .sf-line .sfl-title{ color:#F6E3C3; }
+html.sun .mc-floor .mcf-track{ background:rgba(255,255,255,.08); }
+html.sun .mc-floor .mcf-pip{ background:#5B7A66; color:#F6E3C3; }
+html.sun .mc-floor .sf-seg, html.sun .sf-line .sf-seg{ background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.14); }
+html.sun .mc-floor .sf-seg-btn, html.sun .sf-line .sf-seg-btn{ color:#DCE7DE; }
+html.sun .mc-floor .sf-seg-pill, html.sun .sf-line .sf-seg-pill{ background:#8FD8AF; box-shadow:none; }
+html.sun .mc-floor .sf-seg-btn.on, html.sun .sf-line .sf-seg-btn.on{ color:#12251B; }
+html.sun .mc-floor .fba-btn.fly{ background:#F6E3C3; border-color:#F6E3C3; color:#5A3D0E; }
+html.sun .mc-floor .fba-btn.to{ background:#F3D4CC; border-color:#F3D4CC; color:#7A2A22; }
+html.sun .sf-line .sfd:not(.open):not(.free):not(.you) b{ color:#F6E3C3; }
+html.sun .sf-line .sfd:not(.open):not(.free):not(.you) em{ color:#BFD3C4; }
+html.sun .sf-line .sft{ background:rgba(255,255,255,.08); color:#DCE7DE; }
+html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 @media (prefers-reduced-motion: reduce){ .ar-ind, .ar-bar{ transition:none; } }
 /* The bar floats, so the last card in the shell has to end above it. Padding on
    the scroll container was the first try and it does nothing: when the content
