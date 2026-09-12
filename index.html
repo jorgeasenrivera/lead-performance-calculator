@@ -45,6 +45,17 @@
       try {
         var g = localStorage.getItem("lpcf:ground");
         if (g === "dark") document.documentElement.style.background = "#0E1512";
+        /* A phone that lives in the rooms opens under the curtain, and the
+           curtain is what gets painted first: its green, edge to edge, and the
+           status bar to match. The app then draws the same curtain over it,
+           mark and all, and holds it until the room is there. */
+        if (localStorage.getItem("lpcf:boot") === "rooms") {
+          var h = document.documentElement;
+          h.style.background = "linear-gradient(150deg,#7FA98A 0%,#55795F 55%,#26382C 100%) fixed";
+          h.style.minHeight = "100%";
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute("content", "#5E8468");
+        }
       } catch (e) {}
     </script>
   </head>
