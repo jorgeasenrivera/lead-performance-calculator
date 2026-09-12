@@ -35,11 +35,15 @@
 # with the build number. Web changes need no build (the app is a shell around
 # the site), so only native/ counts.
 #
-# And it checks before the merge: a pull request that touches native/ gets an
-# iOS build with no upload, and the result on the pull request. Builds 18 and
-# 19 failed in Xcode twenty minutes after their merges, with the reason in a
-# log behind a signed link; now the same failure lands on the pull request,
-# and the Xcode log is kept with the run.
+# And it checks before the merge, when asked: a pull request that touches
+# native/ and carries the "build ios" label gets an iOS build with no upload,
+# and the result on the pull request. Builds 18 and 19 failed in Xcode twenty
+# minutes after their merges, with the reason in a log behind a signed link;
+# now the same failure can land on the pull request, and the Xcode log is
+# kept with the run. The label is the switch because Expo's plan allows a
+# fixed number of builds a month, and a check on every push would spend
+# them: add the label when the Swift or the native config changed, leave it
+# off for a README or a workflow comment.
 name: Sage app
 
 on:
@@ -47,6 +51,7 @@ on:
     branches: [main]
     paths: ['native/**']
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths: ['native/**']
   workflow_dispatch:
     inputs:
@@ -71,6 +76,9 @@ concurrency:
 
 jobs:
   build:
+    # A pull request builds only when labelled "build ios"; a merge and a
+    # hand-started run always do.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'build ios')
     name: ${{ github.event_name == 'pull_request' && 'Check ios' || format('Build {0}', github.event_name == 'workflow_dispatch' && inputs.platform || 'ios') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
