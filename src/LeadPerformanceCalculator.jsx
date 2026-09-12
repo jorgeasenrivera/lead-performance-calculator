@@ -7430,7 +7430,25 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   });
   const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
   const room = openRoom(config, store, want);
-  const pick = (r) => { setWant(r); try { localStorage.setItem(key, r); } catch (e) {} };
+  /* Which rooms have been opened this visit: a room is built the first time
+     it is looked at and kept from then on. Each remembers where it was
+     scrolled to, so coming back lands where they left. */
+  const seen = useRef({ floor: false, line: false });
+  if (room) seen.current[room === "line" ? "line" : "floor"] = true;
+  /* And the other one is built quietly a moment after the first has settled,
+     so the first tap across is as quick as every tap after it. */
+  const [warm, setWarm] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setWarm(true), 2500); return () => clearTimeout(t); }, []);
+  if (warm) { if (list.includes("line")) seen.current.line = true; if (list.includes("floor")) seen.current.floor = true; }
+  const scrolls = useRef({ floor: 0, line: 0 });
+  const pick = (r) => {
+    if (r !== room) {
+      try { scrolls.current[room === "line" ? "line" : "floor"] = window.scrollY; } catch (e) {}
+      const back = scrolls.current[r === "line" ? "line" : "floor"] || 0;
+      requestAnimationFrame(() => { try { window.scrollTo(0, back); } catch (e) {} });
+    }
+    setWant(r); try { localStorage.setItem(key, r); } catch (e) {}
+  };
   useLiveStanding({ config, store, date, account, room });
 
   /* Both switched off. A real state — somebody has done it deliberately — and
@@ -7475,11 +7493,23 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           <span>No connection{net.asOf ? ` · as of ${mcClock(new Date(net.asOf).toISOString()) || ""}` : ""}</span>
         </div>
       )}
-      {room === "line"
-        ? <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
-            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} />
-        : <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
-            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} />}
+      {/* Both rooms stay mounted once they have been opened, and a tab shows
+          one of them. Switching used to rebuild the room from nothing: a
+          refetch of its row, its identities and the setup, and the curtain
+          over all of it, which on the lot was a second and a half of curtain
+          for a screen the phone already had. Now it is the screen the phone
+          already had. The hidden one is inert, so nothing in it can be
+          tapped or focused, and it polls slowly until it is looked at. */}
+      <div className="ar-room" hidden={room !== "line"} inert={room !== "line" ? "" : undefined}>
+        {seen.current.line && (
+          <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
+            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} />)}
+      </div>
+      <div className="ar-room" hidden={room === "line"} inert={room === "line" ? "" : undefined}>
+        {seen.current.floor && (
+          <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} />)}
+      </div>
       {tabs.length > 1 && (
         <div className="ar-bar" role="tablist" aria-label="Where to go">
           <span className="ar-ind" style={{ transform: `translateX(${tabs.indexOf(active) * 100}%)`,
@@ -7866,7 +7896,7 @@ function SfLineLive({ cfg, store, row, meId, me, busy, onFlag, onRelease }) {
 }
 
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false,
-  account = null, onSignOut = null, rooms = null, onRoom = null }) {
+  account = null, onSignOut = null, rooms = null, onRoom = null, active = true }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   /* An account that a manager has joined to a name IS the identity, the same
@@ -7957,7 +7987,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   }, [store, date, variant.kind]);
   const mutateRow = (fn) => mutateQueueRow(store, date, fn, variant.kind);
   const live = useLiveRow(QUEUE_TABLE, queueRowId(store, date, variant.kind), refetch);
-  useEffect(() => { refetch(); const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
+  /* Looked at: every five seconds, or thirty with the socket open. Not looked
+     at (the other room is up): thirty, and a fresh read the moment it is. */
+  useEffect(() => { refetch(); const t = setInterval(refetch, live || !active ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live, active]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   // Today's activity for this person only. The split day rows made this cheap: it
@@ -9574,7 +9606,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    identity and the day is always today, so there is no token to check, no name
    to type and no PIN; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
-function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null,
+function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null, active = true,
   tab: tabFrom = null, onTab = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
@@ -9702,7 +9734,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     setRow(got || null);
   }, [store, date]);
   const live = useLiveRow(FLOOR_TABLE, floorRowId(store, date), refetch);
-  useEffect(() => { refetch(); const t = setInterval(refetch, live ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live]);
+  /* Looked at: every five seconds, or thirty with the socket open. Not looked
+     at (the other room is up): thirty, and a fresh read the moment it is. */
+  useEffect(() => { refetch(); const t = setInterval(refetch, live || !active ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live, active]);
   useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   const isToday = date === today();
