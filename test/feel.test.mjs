@@ -79,6 +79,12 @@ test("the bar at the foot rises once the first room is there, and the boot is un
   assert.ok(/lpcf:boot"\) === "rooms"/.test(html), "index.html paints the curtain's green first");
 });
 
+test("the clocks roll: only the changed digit moves, on the settle token", () => {
+  assert.equal(core.split("<b><Roll text={fmt(").length - 1, 5, "the floor's two clocks and the line's three roll");
+  assert.ok(/\.roll-in\{ animation:rollIn var\(--t-settle\) var\(--spring\) both; \}/.test(core), "the roll reads its tokens");
+  assert.ok(/prefers-reduced-motion: reduce\)\{ \.roll-in, \.roll-out\{ animation:none; \}/.test(core), "reduced motion cuts");
+});
+
 test("the rails spring on transform, not left", () => {
   assert.ok(!/style=\{\{ left: (headL|behindL|youL|leftOf)/.test(core + mgr), "no pip placed by an inline left");
   assert.ok(/\.mc-pip, \.mcf-pip, \.mcf-you \{ left:0; transform:translate\(calc\(100cqw/.test(core), "the phone's pips ride on transform");
