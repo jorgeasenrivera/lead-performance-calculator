@@ -6833,6 +6833,12 @@ function SfStatusSelect({ value, variant, flags, onPick }) {
   const trackRef = useRef(null);
   const segRefs = useRef({});
   const [pill, setPill] = useState(null);
+  /* Whether a tap is a change is judged against the last TAP, not the last
+     render. Two taps inside one round trip used to lose the second on a slow
+     phone: the first had not been drawn yet, so the second read as a tap on
+     the segment already chosen and did nothing. */
+  const want = useRef(value);
+  useEffect(() => { want.current = value; }, [value]);
 
   useLayoutEffect(() => {
     const track = trackRef.current;
@@ -6863,7 +6869,7 @@ function SfStatusSelect({ value, variant, flags, onPick }) {
         <button key={st} type="button" role="radio" aria-checked={st === value}
           ref={(el) => { segRefs.current[st] = el; }}
           className={"sf-seg-btn" + (st === value ? " on" : "")}
-          onClick={() => { if (st !== value) { buzz(12); onPick(st); } }}>
+          onClick={() => { if (st !== want.current) { want.current = st; buzz(12); onPick(st); } }}>
           <SfIcon name={st} size={22} />
           <span>{label(st)}</span>
         </button>
