@@ -7954,7 +7954,7 @@ function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
           )}
         </div>
         <SfLineTimers onLine={onLine} atDesk={atDesk} today={today} />
-        <div className="sfl-title">{title}</div>
+        <div className="sfl-title" key={title}>{title}</div>
       </div>
       <SfTiles value={mine ? null : st} options={options} onPick={pick} />
     </>
@@ -8412,7 +8412,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
           <div className="sf-ring"><div className="sf-ringface">{st === "waiting" ? <DmNumber value={myPos} /> : <SfIcon name={st} size={74} />}</div></div>
           </div>
           <div className="sf-meta">
-            <div className="sf-line-1">{title}</div>
+            <div className="sf-line-1" key={title}>{title}</div>
             <div className="sf-line-2">{sub}</div>
           </div>
         </div>
@@ -10602,13 +10602,13 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
             <div className="mcf-cap">TO THE DOOR</div>
             <McTrack line={line} meId={meId} roster={(row && row.roster) || []} />
             <McTimers sinceOn={me.joinedAt} sinceMove={me.movedAt || me.statusAt || me.joinedAt} />
-            <div className="mcf-title">{title}</div>
+            <div className="mcf-title" key={title}>{title}</div>
           </div>
         ) : (
           <div className="mcf-top">
             <span className="mcf-sticon"><SfIcon name={st} size={64} /></span>
             <McTimers sinceOn={me.joinedAt} sinceMove={me.statusAt || me.joinedAt} />
-            <div className="mcf-title">{title}</div>
+            <div className="mcf-title" key={title}>{title}</div>
             <div className="mcf-sub">{sub}</div>
           </div>
         )}
@@ -15887,15 +15887,23 @@ input[type=number] { width:84px; }
   background:linear-gradient(135deg, var(--a1), var(--a2));
   box-shadow:0 8px 20px -10px var(--a1);
   pointer-events:none;
-  transition:transform .42s var(--ease-bloop), width .42s var(--ease-bloop), opacity .2s var(--ease);
+  transition:transform var(--t-settle) var(--spring), width var(--t-settle) var(--spring), opacity .2s var(--ease);
 }
 @media (prefers-reduced-motion: reduce){ .sf-seg-pill{ transition:opacity .2s linear; } }
+/* The chosen segment's icon blooms in as the pill arrives under it, and the
+   heading under the segments crossfades rather than cutting: keyed on its
+   text, it remounts on a change and plays this once. */
+.sf-seg-btn.on .sf-ico{ animation:segBloom var(--t-settle) var(--ease-bloop) both; }
+@keyframes segBloom{ from{ transform:scale(.82); opacity:.5; } to{ transform:none; opacity:1; } }
+.mcf-title, .sfl-title, .sf-line-1{ animation:titleIn var(--t-settle) var(--ease) both; }
+@keyframes titleIn{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){ .sf-seg-btn.on .sf-ico, .mcf-title, .sfl-title, .sf-line-1{ animation:none; } }
 .sf-seg-btn{
   flex:1 1 0; min-width:0; position:relative; z-index:1;
   display:flex; flex-direction:column; align-items:center; gap:6px;
   padding:12px 3px 10px; border:0; background:none; cursor:pointer;
   color:var(--sfink2); font-size:13px; font-weight:640; letter-spacing:-.01em;
-  transition:color .25s var(--ease), transform .28s var(--ease-bloop);
+  transition:color var(--t-swap) var(--ease), transform .28s var(--ease-bloop);
 }
 .sf-seg-btn:disabled{ opacity:.6; }
 .sf-seg-btn.on{ color:#04121C; }
