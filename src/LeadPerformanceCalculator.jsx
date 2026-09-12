@@ -2870,6 +2870,12 @@ export default function LeadPerformanceCalculator() {
      quickly, and once one does show it stays long enough to read. See useHeld. */
   const bootHeld = useHeld(!config || !authReady);
   const storeHeld = useHeld(!storeData);
+  /* Except on a phone that lives in the rooms: there the wait is under the
+     curtain from the first frame, because the light ground behind it is the
+     pale flash a salesperson sees before every open. index.html has already
+     painted the curtain's green from the same note; this keeps it. */
+  const phoneBoot = usePhoneLayout();
+  const [bootRooms] = useState(() => { try { return localStorage.getItem("lpcf:boot") === "rooms"; } catch (e) { return false; } });
 
   // --- phone-lead / online-lead queue: public sign-in intercept (before any auth) ---
   const queueParams = (() => {
@@ -2964,7 +2970,7 @@ export default function LeadPerformanceCalculator() {
   ) : null;
   const wrap = (node) => <React.Suspense fallback={<Shell><LoadingScreen /><Style /></Shell>}><RoomBoundary name="app">{node}</RoomBoundary>{signInLayer}</React.Suspense>;
 
-  if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld ? <LoadingScreen /> : null}<Style /></Shell>);
+  if (!config || !authReady || bootHeld) return wrap(<Shell>{bootHeld || (phoneBoot && bootRooms) ? <LoadingScreen /> : null}<Style /></Shell>);
 
   const signOut = async () => {
     cacheDel("profile");
@@ -4843,6 +4849,10 @@ function ClaimPicker({ config, value, onChange, onName }) {
 
 /* ---------------- Login (real accounts) ---------------- */
 function Login({ config, onBack, onAuthed, onHandover, onJump }) {
+  /* The other half of lpcf:boot: a phone that reached the sign-in screen
+     opens on the light ground next time, not under a curtain for rooms it
+     may not go back to. AssociateRooms writes "rooms" when it mounts. */
+  useEffect(() => { try { localStorage.setItem("lpcf:boot", "app"); } catch (e) {} }, []);
   const [mode, setMode] = useState("signin"); // signin | signup | forgot
   const [kind, setKind] = useState("associate");
   const [email, setEmail] = useState("");
@@ -7461,6 +7471,22 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   const [tab, setTab] = useState(openTo === "floor" ? "floor" : "corner");
   const room = openRoom(config, store, want);
   useEffect(() => { setReportContext({ store, person: account || null, screen: room }); }, [store, account, room]);
+  /* Remembered for the next cold start: index.html paints the curtain's green
+     and the boot waits under the curtain, so opening the app is the curtain
+     from the first frame to the room. The sign-in screen writes the other
+     note, so a phone that signs out lands on the light ground it will see. */
+  useEffect(() => { try { localStorage.setItem("lpcf:boot", "rooms"); } catch (e) {} }, []);
+  /* The bar at the foot rises once the first room is there. Drawn over the
+     curtain from the start it was the one thing on screen that had arrived
+     before the room, and it read as a control for a screen that did not
+     exist yet. */
+  const [ready, setReady] = useState(false);
+  const onReady = useCallback(() => {
+    setReady(true);
+    /* index.html painted the curtain's green under everything for the boot;
+       with the room here the page's own ground takes over, as before. */
+    try { if (localStorage.getItem("lpcf:boot") === "rooms") document.documentElement.style.background = ""; } catch (e) {}
+  }, []);
   /* Which rooms have been opened this visit: a room is built the first time
      it is looked at and kept from then on. Each remembers where it was
      scrolled to, so coming back lands where they left. */
@@ -7534,15 +7560,15 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       <div className="ar-room" hidden={room !== "line"} inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
           <QueueSignIn key={"line:" + store + ":" + date} store={store} date={date} token={null}
-            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} /></RoomBoundary>)}
+            variant={LEAD_VARIANTS.line} account={account} onSignOut={onSignOut} active={room === "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
       <div className="ar-room" hidden={room === "line"} inert={room === "line" ? "" : undefined}>
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
-            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} /></RoomBoundary>)}
+            account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
       </div>
       {tabs.length > 1 && (
-        <div className="ar-bar" role="tablist" aria-label="Where to go">
+        <div className={"ar-bar" + (ready ? " up" : "")} role="tablist" aria-label="Where to go">
           <span className="ar-ind" style={{ transform: `translateX(${tabs.indexOf(active) * 100}%)`,
             width: `calc((100% - 8px) / ${tabs.length})` }} />
           {tabs.map((t) => (
@@ -7930,7 +7956,7 @@ function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
 }
 
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false,
-  account = null, onSignOut = null, rooms = null, onRoom = null, active = true }) {
+  account = null, onSignOut = null, rooms = null, onRoom = null, active = true , onReady = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   /* An account that a manager has joined to a name IS the identity, the same
@@ -7947,6 +7973,9 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const [held, setHeld] = useState(true);
   const holdT = useRef(null);
   const wipeT = useRef({ swap: null, end: null });
+  /* The shell's bar at the foot waits for this: the first time the curtain
+     lets go, the room is there. */
+  useEffect(() => { if (!held && onReady) onReady(); }, [held]); // eslint-disable-line react-hooks/exhaustive-deps
   /* The curtain's exit clears itself here, on its own effect, because the
      screen-change effect below re-runs the moment the first page is swapped
      in, and its cleanup would cancel the timer before it fired. */
@@ -9640,7 +9669,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
    to type and no PIN; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
 function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null, active = true,
-  tab: tabFrom = null, onTab = null }) {
+  tab: tabFrom = null, onTab = null , onReady = null }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
@@ -9661,6 +9690,9 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [held, setHeld] = useState(true);
   const holdT = useRef(null);
   const wipeT = useRef({ swap: null, end: null });
+  /* The shell's bar at the foot waits for this: the first time the curtain
+     lets go, the room is there. */
+  useEffect(() => { if (!held && onReady) onReady(); }, [held]); // eslint-disable-line react-hooks/exhaustive-deps
   /* The curtain's exit clears itself here, on its own effect, because the
      screen-change effect below re-runs the moment the first page is swapped
      in, and its cleanup would cancel the timer before it fired. */
@@ -13125,6 +13157,11 @@ html.jump-under .lpc > *:not(.sage-ground) { visibility:hidden; }
 /* the stall is the one thing that has to show while the app is still
          under the jump: it is the reason nothing else has arrived */
 html.jump-under .lpc > .boot-stall, html.jump-under .lpc > .boot-slow { visibility:visible; }
+/* And a held curtain: on a phone that lives in the rooms the boot waits
+         under the curtain from the first frame, before the session has been
+         read, which is exactly when this rule is on. Held only: a sweeping
+         curtain is a room's, and a room is never under the jump. */
+html.jump-under .lpc > .q-curtain.q-hold { visibility:visible; }
 /* And it must not scroll either. The app underneath is hidden but still
          laid out, so it was giving the document a scrollbar on a screen with
          nothing scrollable on it — and a scrollbar shifts the centre of every
@@ -14256,7 +14293,8 @@ input[type=number] { width:84px; }
 .boot-stall.phone button{ background:#8FD8AF; color:#12251B; }
 .boot-slow{ position:fixed; z-index:61; left:0; right:0; top:calc(50% + 70px); text-align:center; color:rgba(255,255,255,.75);
   font:700 11px var(--sfmono, ui-monospace, monospace); letter-spacing:.14em; text-transform:uppercase; animation:loadFadeIn .45s both; }
-.ar-bar{ position:fixed; z-index:101; left:50%; transform:translateX(-50%);
+.ar-bar{ position:fixed; z-index:101; left:50%; transform:translate(-50%, calc(100% + 40px));
+  transition:transform var(--t-settle) var(--spring);
   bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
   display:flex; padding:4px; border-radius:999px;
   background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.13);
@@ -14269,7 +14307,9 @@ input[type=number] { width:84px; }
   border:0; background:none; cursor:pointer; color:rgba(255,255,255,.42);
   transition:color .2s; }
 .ar-tab.on{ color:#fff; }
-@media (prefers-reduced-motion: reduce){ .ar-ind{ transition:none; } }
+/* Up once the first room is there: it rises from below the foot on the spring. */
+.ar-bar.up{ transform:translateX(-50%); }
+@media (prefers-reduced-motion: reduce){ .ar-ind, .ar-bar{ transition:none; } }
 /* The bar floats, so the last card in the shell has to end above it. Padding on
    the scroll container was the first try and it does nothing: when the content
    is shorter than the screen there is nothing to scroll, and space added below
