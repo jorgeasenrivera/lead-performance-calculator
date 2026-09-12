@@ -54,6 +54,8 @@ jobs:
           npm run build
       - name: Measure
         id: feel
+        # A container job's steps run in sh unless told; PIPESTATUS is bash's.
+        shell: bash
         run: |
           SALESPERSON=1 node scripts/mock-supabase.mjs > mock.log 2>&1 &
           npx vite preview --port 5178 --host 127.0.0.1 > preview.log 2>&1 &
