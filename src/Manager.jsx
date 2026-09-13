@@ -541,12 +541,34 @@ function DotNum({ value, dot = 6, color = "currentColor" }) {
 /* Four goal tiers, everywhere a number is judged against a target: way below
    (deep red, glowing), below (amber, quiet), above (green, glowing), and way
    above (bright emerald, haloed). The class pairs with the .tier-* glow rules. */
+/* ---- one verdict, said three ways (five-second pass, item 5) ----
+   Colour alone reaches nobody with red-green colour blindness, which is
+   about one man in twelve and so, on a ten-person sales floor, usually
+   somebody. Every figure with a target carries a glyph and a word as well
+   as a colour, and the three colours are picked to stay apart under
+   simulation: a blue-leaning green, a yellow-leaning amber, a deep red. */
+const TARGET_VERDICT = {
+  on:    { col: "#1F8A6B", mark: "check", word: "on" },
+  over:  { col: "#12A06E", mark: "check", word: "on" },
+  near:  { col: "#E0A100", mark: "clock", word: "near" },
+  short: { col: "#C8352B", mark: "warn",  word: "short" },
+};
 function goalTier(v, t) {
   const r = v / t;
-  if (r < 0.6) return { col: "#C2361F", cls: "tier-miss" };
-  if (r < 1) return { col: "#C98A00", cls: "" };
-  if (r < 1.25) return { col: "#1E8A4C", cls: "tier-hit" };
-  return { col: "#0BB25F", cls: "tier-hit2" };
+  if (r < 0.6) return { ...TARGET_VERDICT.short, cls: "tier-miss" };
+  if (r < 1) return { ...TARGET_VERDICT.near, cls: "" };
+  if (r < 1.25) return { ...TARGET_VERDICT.on, cls: "tier-hit" };
+  return { ...TARGET_VERDICT.over, cls: "tier-hit2" };
+}
+/* The mark itself. `word` prints the word beside the glyph, for the places
+   with room for it; everywhere else the glyph carries it. */
+function Verdict({ ratio, size = 11, word = false, className }) {
+  const t = goalTier(ratio, 1);
+  return (
+    <span className={"vmark v-" + t.word + (className ? " " + className : "")} style={{ "--vc": t.col }}>
+      <PixIcon glyph={t.mark} size={size} />{word ? <b>{t.word}</b> : null}
+    </span>
+  );
 }
 
 /* ---- The touch side of the bloop system. ----
@@ -1197,7 +1219,7 @@ function LEADERBOARD_HTML(p) {
   @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Sora:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');
   * { margin:0; padding:0; box-sizing:border-box; }
   :root { --blue:#2A5E9B; --dblue:#1D4674; --lime:#C1D730; --lblue:#88C6EA;
-    --green:#2E9E4F; --greenbg:#E4F4E7; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#D5433A; --redbg:#FBE3E1; }
+    --green:#1F8A6B; --greenbg:#E1F1EA; --yellow:#E0A100; --yellowbg:#FCF2D3; --red:#C8352B; --redbg:#FAE4E2; }
   /* Same guard as the app: plenty of these screens are driven by an Android stick
      or an Android TV, and every size on this board is computed from the height of
      the screen. Chrome deciding a column should be bigger than the arithmetic said
@@ -1893,7 +1915,8 @@ function LEADERBOARD_HTML(p) {
     return 'r';
   }
   // symbol as well as colour, so the board reads for colour-blind viewers too
-  function toneMark(t){ return pix(t === 'g' ? 'check' : t === 'y' ? 'warn' : 'close'); }
+  /* The same three glyphs the app uses (five-second pass, item 5). */
+  function toneMark(t){ return pix(t === 'g' ? 'check' : t === 'y' ? 'clock' : 'warn'); }
   // direction AND distance moved since the previous report, in percentage points
   function arrow(cur, prev){
     if (cur==null||prev==null) return ['flat', pix('dot','pix-flat'), ''];
@@ -13747,7 +13770,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
                 <i style={{ height: h.toFixed(1) + "%" }} /><s />
               </span>
-              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i></span>
+              <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
                 <div className="bw-title">{def.label}</div>
                 <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -13777,7 +13800,7 @@ function MetricStrip({ ev, stats, thr, first }) {
               })()}
               <text x="22" y="18.4" textAnchor="middle" style={{ font: "700 8.5px var(--font-mono)", fill: vShow == null ? "#B9BEC6" : col }}>{shown}</text>
             </svg>
-            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i></span>
+            <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : def.kind === "pct" ? tgt + "%" : tgt}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
             <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : col }}>
               <div className="bw-title">{def.label}</div>
               <div className="bw-big">{vShow == null ? "no data yet" : shown}{" "}
@@ -19438,7 +19461,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   const col = CHANNEL_SERIES[c.id] || (t ? t.col : "rgba(255,255,255,.3)");
                   return (
                     <div key={c.id} className="s2-hbar bloop-host" tabIndex={0}>
-                      <b>{pctV == null ? "–" : fmtPct(c.pct)}</b>
+                      <b>{pctV == null ? "–" : fmtPct(c.pct)}{t && <Verdict ratio={pctV / target} size={10} />}</b>
                       <span className="s2-hmid">
                         <span className="s2-hcol">
                           <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: pctV == null ? "rgba(255,255,255,.3)" : col }} />
@@ -19468,7 +19491,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   {videoDials.map((v, i) => (
                     <div key={v.m} className="s2-mark bloop-host" tabIndex={0}>
                       <S2Dial value={Math.round(v.mean * 100)} ratio={v.mean} size={54} />
-                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}</span>
+                      <span className="s2-mklbl">{METRIC_TINY[v.m] || METRICS[v.m].short}<Verdict ratio={v.mean} size={9} /></span>
                       <BloopWin cls={i >= videoDials.length - 1 ? "r" : ""} style={{ "--bw": goalTier(v.mean, 1).col }}>
                         <div className="bw-title">{METRICS[v.m].label}</div>
                         <div className="bw-big">{Math.round(v.mean * 100)}% <small>of target on average</small></div>
@@ -25688,7 +25711,7 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
 .sd-cov{ margin:11px 0 4px; }
 .sd-cov .fr-hours{ display:flex; gap:3px; }
 .sd-cov .fr-hours i{ flex:1; height:20px; border-radius:5px; background:rgba(16,32,52,.08); }
-.sd-cov .fr-hours i.thin{ background:#C98A00; }
+.sd-cov .fr-hours i.thin{ background:#E0A100; }
 .sd-cov .fr-scale{ display:flex; justify-content:space-between; margin-top:4px;
   font-family:var(--mfmono); font-size:9.5px; color:var(--mfink3); }
 .sd-grid2{ display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); gap:22px; margin-top:16px; }
@@ -26038,9 +26061,9 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
         margin:14px 2px 7px; display:flex; align-items:center; gap:8px; }
 .sec-cap::after { content:""; flex:1; height:2px; opacity:.3;
         background:radial-gradient(circle, currentColor 1px, transparent 1.25px) 0 50% / 6px 2px; }
-.tier-hit svg, svg.tier-hit { filter:drop-shadow(0 0 6px rgba(15,163,90,.55)); }
-.tier-hit2 svg, svg.tier-hit2 { filter:drop-shadow(0 0 9px rgba(11,178,95,.75)); }
-.tier-miss svg, svg.tier-miss { filter:drop-shadow(0 0 5px rgba(194,54,31,.45)); }
+.tier-hit svg, svg.tier-hit { filter:drop-shadow(0 0 6px rgba(31,138,107,.55)); }
+.tier-hit2 svg, svg.tier-hit2 { filter:drop-shadow(0 0 9px rgba(18,160,110,.75)); }
+.tier-miss svg, svg.tier-miss { filter:drop-shadow(0 0 5px rgba(200,53,43,.45)); }
 .wfix { width:64px; flex:0 0 auto; justify-content:center; text-align:center; }
 .bloop-host { position:relative; }
 .bloop-mark { display:block; width:0; height:0; }
@@ -27029,7 +27052,7 @@ button.da-lbrow { cursor:pointer; }
         .s2-rgo { display:none; }
         .s2g4 { width:auto; }
       }
-.bp-page{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
+.bp-page{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61;
   margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
 .bp-page *{ box-sizing:border-box; }
@@ -27885,6 +27908,13 @@ button.da-lbrow { cursor:pointer; }
   .s2-cap, .s2-scap, .sec-cap, .sec-cap.tg-cap, .da-kcap, .sd-cap2, .sd-cap, .bp-fivehead .bp-lbl, .stnd-hh, .s2-mc-sub, .s2-mc-cap, .s2-gcap, .s2-greet, .sd-nextwho em, .sd-none, .sd-chairlbl, .fr-w, .s2-vitals, .s2-none{ font-size:12.5px; }
   .cap-sent, .sd-cap2.cap-sent{ font-size:13.5px; }
 }
+/* The verdict mark (five-second pass, item 5). It rides beside the figure it
+   judges, at the figure's own colour, and never on its own: a mark with no
+   number is not a verdict. */
+.vmark{ display:inline-flex; align-items:center; gap:3px; color:var(--vc); vertical-align:middle; margin-left:4px; }
+.vmark b{ font:700 9.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
+.s2-mklbl .vmark, .s2g4-l .vmark{ margin-left:3px; }
+.s2-hbar > b .vmark{ margin-left:3px; }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 

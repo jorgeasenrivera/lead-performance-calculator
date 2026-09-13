@@ -277,3 +277,16 @@ test("five-second pass, items 6 to 12: plain words, one verdict per row, the emp
   assert.ok(/\.cap-sent\{ font-family:var\(--font-ui\); font-weight:600; letter-spacing:0; text-transform:none; font-size:12\.5px; \}/.test(mgr) && /\.sd-cap, \.bp-fivehead \.bp-lbl, \.stnd-hh[^{]*\{ font-size:11\.5px; \}/.test(mgr) && /@media \(max-width:760px\)\{\n  \.s2-cap,[^{]*\{ font-size:12\.5px; \}/.test(mgr), "the caption floor is 11.5 on the desk and 12.5 on the phone");
   assert.ok((mgr.match(/className="btn btn-primary" onClick=\{\(\) => setShowQR\(true\)\}>Sign-in code<\/button>/g) || []).length === 2 && (mgr.match(/<div className="q-setup">/g) || []).length === 2, "sign-in code is the filled daily control; set-up is behind one button on both rooms");
 });
+
+test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on every figure with a target", () => {
+  assert.ok(/const TARGET_VERDICT = \{\n\s*on:\s*\{ col: "#1F8A6B", mark: "check", word: "on" \},/.test(mgr), "the verdict is defined once");
+  assert.ok(/near:\s*\{ col: "#E0A100", mark: "clock", word: "near" \},/.test(mgr) && /short: \{ col: "#C8352B", mark: "warn",\s*word: "short" \},/.test(mgr), "near is a clock, short is a warn");
+  assert.ok(/function Verdict\(\{ ratio, size = 11, word = false, className \}\) \{/.test(mgr) && /<PixIcon glyph=\{t\.mark\} size=\{size\} \/>/.test(mgr), "the mark is a pix glyph");
+  assert.ok(!/col: "#C2361F"|col: "#C98A00"|col: "#1E8A4C"|col: "#0BB25F"/.test(mgr), "the old tier colours are gone");
+  assert.ok(/fmtPct\(c\.pct\)\}\{t && <Verdict ratio=\{pctV \/ target\} size=\{10\}/.test(mgr), "the hero's channels carry the mark");
+  assert.ok(/<span className="s2-mklbl">\{METRIC_TINY\[v\.m\] \|\| METRICS\[v\.m\]\.short\}<Verdict ratio=\{v\.mean\} size=\{9\} \/><\/span>/.test(mgr), "the video rings carry the mark");
+  assert.ok((mgr.match(/\{t && <Verdict ratio=\{vShow \/ tgt\} size=\{9\} \/>\}/g) || []).length === 2, "both shapes of the desk table carry the mark");
+  assert.ok(/toneMark\(t\)\{ return pix\(t === 'g' \? 'check' : t === 'y' \? 'clock' : 'warn'\); \}/.test(mgr) && /--green:#1F8A6B; --greenbg:#E1F1EA; --yellow:#E0A100;[^}]*--red:#C8352B;/.test(mgr), "the TV board speaks the same three");
+  assert.ok(/--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(mgr) && /--frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;/.test(core), "the rooms and the phone take the same three");
+  assert.ok(/\.vmark\{ display:inline-flex; align-items:center; gap:3px; color:var\(--vc\);/.test(mgr), "the mark takes its figure's colour");
+});
