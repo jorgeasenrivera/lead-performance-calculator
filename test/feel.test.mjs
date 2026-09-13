@@ -328,7 +328,7 @@ test("the record slims down: backups prune by what is on the server, day rows ha
   assert.ok(/await saveShared\(row\.key, null, true\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true\)/.test(core), "the prunes and the backup rows are housekeeping");
   assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
   assert.ok(/\.select\("key"\)\.like\("key", "lpc:config:backup:%"\)/.test(core), "the orphaned meta rows go with them");
-  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
+  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep, true\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
   assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId\) \{/.test(core), "the day rows have a window");
   assert.ok(/const GOAL_LOOKBACK = 21;/.test(core), "and the window clears the longest read of them by a fortnight");
   assert.ok(/\]\.slice\(0, 2\),/.test(core) && /\]\.slice\(0, 2\),/.test(mgr) && /\.\.\.\(next\.snapshots \|\| \[\]\)\]\.slice\(0, 2\);/.test(ing), "a row carries two restore points, not six, eight or twelve");
