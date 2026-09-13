@@ -333,3 +333,14 @@ test("the record slims down: backups prune by what is on the server, day rows ha
   assert.ok(!/data\.stars\?\.\[/.test(core + mgr) && !/const starsFor/.test(mgr), "the star count RockEd replaced is no longer read");
   assert.ok(/return null;\s*\/\/ no RockEd mark at all/.test(core), "no mark means no mark");
 });
+
+test("the Online room says it is not a room yet, in the house's own parts", () => {
+  assert.ok(/function OnlineSoon\(\{ store, rooms, onToolChange \}\) \{/.test(mgr), "the room has a page of its own");
+  assert.ok(/\) : queue === "online" \? \(\n\s*<OnlineSoon store=\{store\} rooms=\{roomListOf\(config, store\.id\)\} onToolChange=\{onToolChange\} \/>/.test(mgr), "and it is what Online opens, instead of a queue that does nothing");
+  assert.ok(/aria-label="Under construction"/.test(mgr) && /<PixIcon glyph="warn" size=\{22\} \/>/.test(mgr) && /<b>Room under construction<\/b>/.test(mgr), "the sign is the pix set's own warn on sand");
+  assert.ok(/repeating-linear-gradient\(135deg, #E4C98D 0 10px, #241A06 10px 20px\)/.test(mgr), "and the tape is painted the way tape is painted");
+  assert.ok(/Seventeen days have been opened in this room/.test(mgr), "the joke is a real number or it is not a joke");
+  assert.ok(/<div className="s2-led onsoon-led"><i style=\{\{ width: "0%" \}\} \/><\/div>/.test(mgr), "the progress bar is the app's own track, at nothing");
+  assert.ok(/\.onsoon\{ padding-bottom:104px; \}/.test(mgr), "the last card ends above the dock on a phone");
+  assert.ok(/onClick=\{\(\) => onToolChange\(id\)\}/.test(mgr), "and there is a way out to a room that exists");
+});

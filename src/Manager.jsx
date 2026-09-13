@@ -8639,6 +8639,93 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 /* `shell` is the chrome the app already has on hand — who is signed in, how to
    sign out, the help node — passed as one object so this module doesn't grow
    six props it only forwards. */
+/**
+ * Online, before there is an Online.
+ * -------------------------------------------------------------------------
+ * The room has a tool pill, a sign-in link, a board, a parameter and a row
+ * family in the database. What it does not have is a single person who has
+ * ever stood in it: seventeen days were opened here across the group between
+ * August and September and every one of them is empty. Nobody joined, nothing
+ * happened.
+ *
+ * So rather than draw a working room that does not work, it says so. The joke
+ * is only funny because the numbers are real, which is the only kind of joke
+ * this app is allowed to make.
+ */
+function OnlineSoon({ store, rooms, onToolChange }) {
+  const list = Array.isArray(rooms) ? rooms : [];
+  const out = [
+    list.includes("line") ? ["line", "Phone Line", "phone"] : null,
+    list.includes("floor") ? ["floor", "Live Floor", "door"] : null,
+  ].filter(Boolean);
+  return (
+    <div className="onsoon">
+      <div className="s2-hero onsoon-hero">
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
+        <div className="s2-tube">
+          {/* The sign. Sand and ink on the diagonal, the way every sign like
+              it has been painted since somebody first dug up a road. */}
+          <div className="onsoon-sign" role="img" aria-label="Under construction">
+            <span className="onsoon-tape" aria-hidden="true" />
+            <span className="onsoon-signin">
+              <PixIcon glyph="warn" size={22} />
+              <b>Room under construction</b>
+            </span>
+            <span className="onsoon-tape" aria-hidden="true" />
+          </div>
+          <div className="onsoon-head">
+            <div className="s2-cap"><PixIcon glyph="globe" size={11} /> Online</div>
+            <h2>There is no room here yet</h2>
+            <p>
+              It has a door, a sign, a light switch and a link you can send to a phone.
+              What it does not have is a floor.
+            </p>
+          </div>
+          {/* The honest progress bar. The app's own track, at nothing, because
+              that is where it is. */}
+          <div className="onsoon-prog">
+            <div className="s2-led onsoon-led"><i style={{ width: "0%" }} /></div>
+            <div className="onsoon-proglbl"><span>poured</span><b>0%</b><span>ready</span></div>
+          </div>
+          <p className="onsoon-real">
+            Seventeen days have been opened in this room across the group since August.
+            Nobody has ever stood in one. Not one person, not one lead, not one minute.
+          </p>
+        </div>
+      </div>
+
+      <div className="onsoon-grid">
+        <div className="onsoon-card">
+          <div className="s2-cap cap-sent"><PixIcon glyph="list" size={12} /> What it will be</div>
+          <ul className="onsoon-list">
+            <li><PixIcon glyph="globe" size={15} /><span>Internet leads arrive here on their own, the moment the CRM says so.</span></li>
+            <li><PixIcon glyph="assign" size={15} /><span>The next one goes to whoever is up, the way the phone line hands out a call.</span></li>
+            <li><PixIcon glyph="chart" size={15} /><span>And closing them counts where it already counts, against Internet delivered.</span></li>
+          </ul>
+        </div>
+        <div className="onsoon-card">
+          <div className="s2-cap cap-sent"><PixIcon glyph="door" size={12} /> Next door, and open</div>
+          <p className="onsoon-sub">Both of these are real rooms with real people in them.</p>
+          <div className="onsoon-outs">
+            {out.map(([id, label, glyph]) => (
+              <button key={id} type="button" className="btn btn-primary onsoon-go" onClick={() => onToolChange(id)}>
+                <PixIcon glyph={glyph} size={14} /> {label}
+              </button>
+            ))}
+            {out.length === 0 && <p className="onsoon-sub">This store has not turned on a room yet. A manager can switch one on in the store&rsquo;s settings.</p>}
+          </div>
+        </div>
+      </div>
+
+      <p className="onsoon-foot">
+        <PixIcon glyph="clock" size={12} />
+        This page took an afternoon. The room will take longer than that, and it will be
+        built when somebody actually needs it rather than before.
+      </p>
+    </div>
+  );
+}
+
 /* ---- the floor tools' loading beat ----
    Live Floor, Phone Line and Online fetch their store before they can draw a
    board, and that wait used to be a bare line of text. The seven dots run
@@ -8835,7 +8922,9 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
           <div className="checkout"><p className="muted">No store available.</p></div>
         ) : data === null || loadBeat !== "done" ? (
           <FloorLoading store={store} finishing={loadBeat === "finish"} />
-        ) : queue === "line" || queue === "online" ? (
+        ) : queue === "online" ? (
+          <OnlineSoon store={store} rooms={roomListOf(config, store.id)} onToolChange={onToolChange} />
+        ) : queue === "line" ? (
           <QueueTab config={config} store={store} data={data} userName={session.name} onChange={persist} variant={LEAD_VARIANTS[queue]} />
         ) : effSub === "settings" && isAdmin ? (
           <FloorConfigEditor config={config} storeId={store.id} onChange={onSaveConfig} />
@@ -28039,6 +28128,50 @@ button.da-lbrow { cursor:pointer; }
   box-shadow:inset 0 0 0 1px rgba(255,120,105,.5); }
 .s2-hlbl{ display:inline-flex; align-items:center; gap:5px; }
 .s2-hid{ width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+/* ---- Online, before there is an Online ---- */
+.onsoon{ max-width:1000px; margin:0 auto; }
+.onsoon-hero{ --hA:#8B5CF6; --hB:#6D3FD6; --hC:#3B1E86; text-align:center; align-items:center; }
+.onsoon-sign{ display:flex; align-items:center; gap:12px; width:100%; }
+.onsoon-tape{ flex:1; height:14px; border-radius:3px;
+  background:repeating-linear-gradient(135deg, #E4C98D 0 10px, #241A06 10px 20px); opacity:.9; }
+.onsoon-signin{ display:inline-flex; align-items:center; gap:9px; padding:7px 14px; border-radius:10px;
+  background:#E4C98D; color:#3A2A08; white-space:nowrap; }
+.onsoon-signin b{ font:700 11px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; }
+.onsoon-head h2{ font:700 30px/1.1 var(--font-display); letter-spacing:-.015em; margin:8px 0 0; text-wrap:balance; }
+.onsoon-head p{ margin:8px auto 0; max-width:52ch; font-size:14.5px; line-height:1.5; color:rgba(255,255,255,.84); }
+.onsoon-prog{ width:min(420px, 100%); margin:4px auto 0; }
+.onsoon-led{ height:10px; }
+.onsoon-proglbl{ display:flex; justify-content:space-between; align-items:baseline; margin-top:6px;
+  font:600 11.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.72); }
+.onsoon-proglbl b{ font-family:var(--font-display); font-size:15px; letter-spacing:0; color:#fff; }
+.onsoon-real{ margin:0 auto; max-width:60ch; font:500 13px/1.6 var(--font-ui); color:rgba(255,255,255,.78); }
+.onsoon-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px; }
+.onsoon-card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+.onsoon-card .s2-cap{ color:var(--ink-2); }
+.onsoon-list{ list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:11px; }
+.onsoon-list li{ display:flex; align-items:flex-start; gap:10px; font-size:14px; line-height:1.45; }
+.onsoon-list .pix{ flex:0 0 auto; margin-top:2px; color:#7C4DEE; }
+.onsoon-sub{ margin:10px 0 0; font-size:13.5px; color:var(--ink-2); }
+.onsoon-outs{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.onsoon-go{ gap:7px; }
+.onsoon-foot{ display:flex; align-items:flex-start; justify-content:center; gap:8px; margin:16px auto 0; max-width:62ch;
+  font-size:12.5px; line-height:1.5; color:var(--ink-2); text-align:left; }
+.onsoon-foot .pix{ flex:0 0 auto; margin-top:2px; }
+@media (max-width:760px){
+  .onsoon-head h2{ font-size:25px; }
+  .onsoon-signin{ width:100%; justify-content:center; }
+  .onsoon-signin b{ font-size:10px; }
+  /* The tape either reads as tape or it does not. Squeezed to a 50px stub
+     either side of the sign it read as two smudges, so on a phone the sign
+     takes the width and the tape goes under it, full width, where it looks
+     like what it is. */
+  .onsoon-sign{ flex-direction:column; gap:8px; }
+  .onsoon-tape{ width:100%; height:12px; }
+  .onsoon-sign .onsoon-tape:first-child{ display:none; }
+  /* The dock floats over the foot of the page, so the last thing on it has
+     to end above the dock rather than under it. */
+  .onsoon{ padding-bottom:104px; }
+}
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
