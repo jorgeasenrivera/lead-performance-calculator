@@ -1080,9 +1080,9 @@ function DeliveryGuideModal({ onClose }) {
    before 188 without cutting it off mid-flight — and a block that vanishes halfway
    through leaving is exactly what reads as a flicker. Same arithmetic as
    TOOL_EXIT. */
-const TAB_EXIT = 190;
+const TAB_EXIT = 210;
 
-const TAB_ENTER = 400;
+const TAB_ENTER = 460;
 
 let tabTimers = [];
 
@@ -24429,8 +24429,10 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
         letter-spacing:.04em; background:rgba(229,71,60,.13); color:#C13529; padding:1px 7px; border-radius:99px; }
 .section-title { font-size:28px; font-weight:700; letter-spacing:-.035em; margin:4px 0 22px; }
 .section-sub { font-size:14px; font-weight:500; color:var(--ink-2); margin-left:8px; letter-spacing:0; }
-.tab-dir-r { --tabx-out:-26px; --tabx-in:26px; }
-.tab-dir-l { --tabx-out:26px;  --tabx-in:-26px; }
+/* The section move lands the way the tool move does (desk items 1 and 8):
+   out 60 px the way you are going, in from 110 px the other side. */
+.tab-dir-r { --tabx-out:-60px; --tabx-in:110px; }
+.tab-dir-l { --tabx-out:60px;  --tabx-in:-110px; }
 .role-empty { padding:16px; border:1.5px dashed var(--line); border-radius:12px; color:var(--ink-3); text-align:center; }
 .assoc-row { display:flex; align-items:center; gap:13px; cursor:pointer; position:relative;
         padding:11px 16px 11px 19px; }

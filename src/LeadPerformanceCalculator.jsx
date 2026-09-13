@@ -5175,7 +5175,7 @@ const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
    taste number: the last staggered block starts at 66ms and its exit runs 190ms,
    so anything below 256 cuts a block off mid-exit, and a block that vanishes
    halfway through leaving is exactly what reads as a flicker. */
-const TOOL_EXIT = 260;
+const TOOL_EXIT = 220;
 let toolTimers = [];
 function clearToolMove() {
   toolTimers.forEach(clearTimeout);
@@ -12729,21 +12729,25 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          from the side, overshoots the resting point, and is pulled back, so it
          reads as having been thrown and stopped rather than placed. */
 .tool-exit .page > *, .tool-exit .board-page > *, .tool-exit .tab-page > * {
-        animation: toolOut .19s cubic-bezier(.5,0,.95,.35) both; }
+        animation: toolOut var(--t-exit) cubic-bezier(.5,0,.9,.4) both; }
 .tool-enter .page > *, .tool-enter .board-page > *, .tool-enter .tab-page > * {
-        animation: toolIn .56s cubic-bezier(.16,.86,.3,1) both; }
+        animation: toolIn var(--t-settle) linear both; }
 /* Element by element, and tighter than the first version: 22ms apart, so
          the blocks land in sequence without the last one arriving late. The last
          block's exit finishes at 66 + 190 = 256ms, which is what TOOL_EXIT is
          set from: swapping before that cut the last block mid-flight, and a
          block that disappears halfway through leaving is a flicker. */
-.tool-move .page > *:nth-child(2), .tool-move .board-page > *:nth-child(2), .tool-move .tab-page > *:nth-child(2) { animation-delay:.022s; }
-.tool-move .page > *:nth-child(3), .tool-move .board-page > *:nth-child(3), .tool-move .tab-page > *:nth-child(3) { animation-delay:.044s; }
-.tool-move .page > *:nth-child(n+4), .tool-move .board-page > *:nth-child(n+4), .tool-move .tab-page > *:nth-child(n+4) { animation-delay:.066s; }
+/* The exit leaves 22 ms apart; the arrival lands 40 ms apart. */
+.tool-exit .page > *:nth-child(2), .tool-exit .board-page > *:nth-child(2), .tool-exit .tab-page > *:nth-child(2) { animation-delay:22ms; }
+.tool-exit .page > *:nth-child(3), .tool-exit .board-page > *:nth-child(3), .tool-exit .tab-page > *:nth-child(3) { animation-delay:44ms; }
+.tool-exit .page > *:nth-child(n+4), .tool-exit .board-page > *:nth-child(n+4), .tool-exit .tab-page > *:nth-child(n+4) { animation-delay:66ms; }
+.tool-enter .page > *:nth-child(2), .tool-enter .board-page > *:nth-child(2), .tool-enter .tab-page > *:nth-child(2) { animation-delay:40ms; }
+.tool-enter .page > *:nth-child(3), .tool-enter .board-page > *:nth-child(3), .tool-enter .tab-page > *:nth-child(3) { animation-delay:80ms; }
+.tool-enter .page > *:nth-child(n+4), .tool-enter .board-page > *:nth-child(n+4), .tool-enter .tab-page > *:nth-child(n+4) { animation-delay:120ms; }
 /* Going right: the old page leaves to the left and the new one comes in
          from the right. Going left, the mirror. */
-.tool-dir-r { --tx-out:-64px; --tx-in:64px; --tx-slide:180px; }
-.tool-dir-l { --tx-out:64px;  --tx-in:-64px; --tx-slide:-180px; }
+.tool-dir-r { --tx-out:-60px; --tx-in:110px; --tx-slide:110px; }
+.tool-dir-l { --tx-out:60px;  --tx-in:-110px; --tx-slide:-110px; }
 @keyframes toolOut {
         from { opacity:1; transform:none; }
         to   { opacity:0; transform: translateX(var(--tx-out)); }
@@ -12752,11 +12756,16 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          travel at the moment of impact, then let go. */
 /* A slide, full stop. No fade at all: the page arrives whole from the
          side it was sent from, and opacity never enters into it. */
+/* The hard landing (desk items 1 and 8, approved): in at speed from 110 px
+         on the side you came from, on the mark at 60% of the settle token, 8 px
+         past it with a 1.5% squash at 72%, then pulled back onto the mark. The
+         timing function is linear on the animation; each step carries its own
+         curve. The section move shares this landing through the same keyframes
+         with its own variables. */
 @keyframes toolIn {
-        0%   { opacity:1; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); }
-        62%  { transform: translateX(calc(var(--tx-out) * .16)) scaleX(1.014); }
-        82%  { transform: translateX(calc(var(--tx-in) * .045)) scaleX(.995); }
-        92%  { transform: translateX(calc(var(--tx-out) * .015)) scaleX(1.001); }
+        0%   { opacity:0; transform: translateX(var(--tx-slide, var(--tx-in))) scaleX(1); animation-timing-function:cubic-bezier(.1,.7,.3,1); }
+        60%  { opacity:1; transform: translateX(0) scaleX(1); animation-timing-function:cubic-bezier(.4,0,.8,.6); }
+        72%  { opacity:1; transform: translateX(calc(var(--tx-out) * .1333)) scaleX(.985); animation-timing-function:cubic-bezier(.2,.8,.3,1); }
         100% { opacity:1; transform:none; }
       }
 /* Nothing that says "loading" belongs in the middle of a move. The new
@@ -12795,7 +12804,7 @@ html:has(.q-page.sf), body:has(.q-page.sf),
 .tool-enter .board-page, .tool-enter .tab-page {
         animation: pageLand .56s cubic-bezier(.16,.86,.3,1) both; }
 @keyframes pageLand {
-        from { transform: translateX(calc(var(--tx-in) * .35)); opacity:1; }
+        from { transform: translateX(calc(var(--tx-in) * .12)); opacity:1; }
         to   { transform:none; opacity:1; }
       }
 @media (prefers-reduced-motion: reduce) {
@@ -12808,12 +12817,15 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          and half a move is what a flicker IS — the old content vanished on the
          click and only the arriving half was drawn. */
 .tab-exit .page > *, .tab-exit .board-page > *, .tab-exit .tab-page > * {
-        animation: tabOut .14s cubic-bezier(.45,0,.9,.4) both; }
+        animation: tabOut var(--t-exit) cubic-bezier(.5,0,.9,.4) both; }
 .tab-enter .page > *, .tab-enter .board-page > *, .tab-enter .tab-page > * {
-        animation: tabIn .4s cubic-bezier(.16,.86,.3,1) both; }
-.tab-move .page > *:nth-child(2), .tab-move .board-page > *:nth-child(2), .tab-move .tab-page > *:nth-child(2) { animation-delay:.016s; }
-.tab-move .page > *:nth-child(3), .tab-move .board-page > *:nth-child(3), .tab-move .tab-page > *:nth-child(3) { animation-delay:.032s; }
-.tab-move .page > *:nth-child(n+4), .tab-move .board-page > *:nth-child(n+4), .tab-move .tab-page > *:nth-child(n+4) { animation-delay:.048s; }
+        animation: tabIn var(--t-settle) linear both; }
+.tab-exit .page > *:nth-child(2), .tab-exit .board-page > *:nth-child(2), .tab-exit .tab-page > *:nth-child(2) { animation-delay:22ms; }
+.tab-exit .page > *:nth-child(3), .tab-exit .board-page > *:nth-child(3), .tab-exit .tab-page > *:nth-child(3) { animation-delay:44ms; }
+.tab-exit .page > *:nth-child(n+4), .tab-exit .board-page > *:nth-child(n+4), .tab-exit .tab-page > *:nth-child(n+4) { animation-delay:66ms; }
+.tab-enter .page > *:nth-child(2), .tab-enter .board-page > *:nth-child(2), .tab-enter .tab-page > *:nth-child(2) { animation-delay:40ms; }
+.tab-enter .page > *:nth-child(3), .tab-enter .board-page > *:nth-child(3), .tab-enter .tab-page > *:nth-child(3) { animation-delay:80ms; }
+.tab-enter .page > *:nth-child(n+4), .tab-enter .board-page > *:nth-child(n+4), .tab-enter .tab-page > *:nth-child(n+4) { animation-delay:120ms; }
 @keyframes tabOut {
         from { opacity:1; transform:none; }
         to   { opacity:0; transform: translateX(var(--tabx-out)); }
@@ -12822,9 +12834,9 @@ html:has(.q-page.sf), body:has(.q-page.sf),
          No opacity step after the first: fading a block in while it is still
          travelling is what made the arrival read as a dissolve. */
 @keyframes tabIn {
-        0%   { opacity:0; transform: translateX(var(--tabx-in)); }
-        34%  { opacity:1; }
-        72%  { transform: translateX(calc(var(--tabx-in) * -.08)); }
+        0%   { opacity:0; transform: translateX(var(--tabx-in)) scaleX(1); animation-timing-function:cubic-bezier(.1,.7,.3,1); }
+        60%  { opacity:1; transform: translateX(0) scaleX(1); animation-timing-function:cubic-bezier(.4,0,.8,.6); }
+        72%  { opacity:1; transform: translateX(calc(var(--tabx-out) * .1333)) scaleX(.985); animation-timing-function:cubic-bezier(.2,.8,.3,1); }
         100% { opacity:1; transform:none; }
       }
 /* Sideways only. The page's own mount animation lifts from the bottom,

@@ -191,3 +191,17 @@ test("the rooms move with the phones: a seat or a re-seat flies the person's mar
   assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches\) return; \} catch \(e\) \{\}\n  if \(typeof from\.animate/.test(mgr), "less motion gets the cut");
   assert.ok(/if \(needsOverride\(gate\) && !forced\) \{ setWarn\(\{ station, person, gate, viaOffer \}\); return false; \}/.test(mgr) && (mgr.match(/\) !== false\) setOpen\(null\)/g) || []).length === 2, "the desk keeps its panel open when the answer is a warning");
 });
+
+test("a tool or section switch is a shove: out thinning 22 ms apart on the exit token, in with a hard landing 40 ms apart on the settle token", () => {
+  assert.ok(/animation: toolOut var\(--t-exit\) cubic-bezier\(\.5,0,\.9,\.4\) both;/.test(core) && /animation: tabOut var\(--t-exit\) cubic-bezier\(\.5,0,\.9,\.4\) both;/.test(core), "the exit on the exit token, both moves");
+  assert.ok(/animation: toolIn var\(--t-settle\) linear both;/.test(core) && /animation: tabIn var\(--t-settle\) linear both;/.test(core), "the entrance on the settle token, both moves");
+  for (const k of ["toolIn", "tabIn"]) {
+    const kf = new RegExp("@keyframes " + k + " \\{([\\s\\S]*?)\\}\\s*\\}").exec(core); assert.ok(kf, k + " keyframes");
+    assert.ok(/60%\s*\{ opacity:1; transform: translateX\(0\) scaleX\(1\);/.test(kf[1]) && /72%\s*\{ opacity:1; transform: translateX\(calc\(var\(--(?:tx|tabx)-out\) \* \.1333\)\) scaleX\(\.985\);/.test(kf[1]), k + " lands at 60%, 8 px past with a 1.5% squash at 72%, then back");
+  }
+  assert.ok(/\.tool-enter \.page > \*:nth-child\(2\)[^{]*\{ animation-delay:40ms; \}/.test(core) && /\.tab-enter \.page > \*:nth-child\(2\)[^{]*\{ animation-delay:40ms; \}/.test(core), "arrivals 40 ms apart");
+  assert.ok(/\.tool-exit \.page > \*:nth-child\(2\)[^{]*\{ animation-delay:22ms; \}/.test(core) && /\.tab-exit \.page > \*:nth-child\(2\)[^{]*\{ animation-delay:22ms; \}/.test(core), "exits 22 ms apart");
+  assert.ok(/--tx-in:110px; --tx-slide:110px;/.test(core) && /--tabx-out:-60px; --tabx-in:110px;/.test(mgr), "110 px in, 60 px out, both moves");
+  assert.ok(/const TOOL_EXIT = 220;/.test(core) && /const TAB_EXIT = 210;/.test(mgr) && /const TAB_ENTER = 460;/.test(mgr), "the beats wait for the last element");
+});
+
