@@ -14634,8 +14634,8 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    every time a seat is tapped. */
 .sd-panel.warn{ background:color-mix(in srgb,#C77800 10%, #fff); }
 .sd-panel.warn .sd-ptitle{ color:#8A5300; }
-.sd-cov .fr-hours i.ok{ background:#1E8A4C; }
-.sd-cov .fr-hours i.gap{ background:#C2361F; }
+.sd-cov .fr-hours i.ok{ background:#1F8A6B; }
+.sd-cov .fr-hours i.gap{ background:#C8352B; }
 /* A narrow desk, and the iPad in portrait: the side panel drops under the room
    and the day's two readings stack rather than each getting half of nothing. */
 @media (max-width:1100px){
@@ -17172,7 +17172,7 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .hs-v small.up{ color:var(--frok); }
 .hs-v small.down{ color:var(--frgap); }
 .hs-bars i.now{ opacity:1; }
-.fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1E8A4C; --frthin:#C98A00; --frgap:#C2361F;
+.fr-page,.fr-pop{ --frink:#15211B; --frsand:#E4C98D; --frsand2:#D0821E; --frfly:#E8A93C; --frto:#D8483C; --frok:#1F8A6B; --frthin:#E0A100; --frgap:#C8352B;
   --frline:#E1E5E0; --frpaper:#EEF1EC; --frink2:#5C6660; --frink3:#9AA39D; --frp2d:#567D61; }
 .fr-page{ margin:-4px -4px 0; padding:0 0 8px; color:var(--frink); }
 .fr-page *,.fr-pop *{ box-sizing:border-box; }
