@@ -15,10 +15,7 @@ import http from "node:http";
 import { buildDemo, DEMO_STORE_ID, DEMO_STORE_NAME } from "./demo-seed.mjs";
 
 const demo = buildDemo();
-/* queue_identity is what the sign-in page reads to know whether somebody has a
-   PIN yet. Without it the PIN step can never complete and the salesperson's
-   own screens are unreachable in this harness. */
-const TABLES = { app_data: [], profiles: [], floor_people: [], deal_events: [], queue_public: [], floor_public: [], queue_identity: [] };
+const TABLES = { app_data: [], profiles: [], floor_people: [], deal_events: [], queue_public: [], floor_public: [] };
 for (const { table, row } of demo.rows) TABLES[table].push(row);
 
 const TIERS = [

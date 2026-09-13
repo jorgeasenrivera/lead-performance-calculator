@@ -346,3 +346,12 @@ test("the Online room says it is not a room yet, in the house's own parts", () =
   assert.ok(/\.onsoon\{ padding-bottom:104px; \}/.test(mgr), "the last card ends above the dock on a phone");
   assert.ok(/onClick=\{\(\) => onToolChange\(id\)\}/.test(mgr), "and there is a way out to a room that exists");
 });
+
+test("picking a name is the whole of signing in: no PIN screen, no pad, no identity row", () => {
+  assert.ok(/function pickPerson\(p\) \{\n\s*setSelected\(p\); setMsg\(""\);\n\s*joinAs\(p\);\n\s*\}/.test(core), "picking a name joins, in both flows");
+  assert.equal(core.split("function pickPerson(p) {").length - 1, 2, "both the line and the floor pick the same way");
+  assert.ok(!/function submitPin\(|function SfPin\(|function SfPad\(/.test(core), "the PIN screen and the pad it stood on are gone");
+  assert.ok(!/step === "pin"|step === "switch"|pinMode|qHashPin|qRandSalt|qFindByPin/.test(core), "no PIN stage, no clash check, no hashing");
+  assert.ok(!/queue_identity|loadQueueIdentities|mutateQueueIdentities/.test(core + mgr), "and nothing reads or writes the identity row");
+  assert.ok(!/resetPin|setShowPins|sf-pin-cell|q-stage-pin/.test(core + mgr), "the manager's reset path and the PIN sheets go with it");
+});

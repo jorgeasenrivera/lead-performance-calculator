@@ -6443,7 +6443,6 @@ async function saveTicket(t) {
   } catch (e) { console.error("saveTicket", e); return false; }
 }
 
-const QUEUE_ID_TABLE = "queue_identity";
 const queueRowId = (store, date, kind) => (!kind || kind === "line" ? `${store}:${date}` : `${store}:${date}:${kind}`);
 
 
@@ -6552,60 +6551,6 @@ async function mutateQueueRow(store, date, fn, kind) {
   const p = prev.then(run, run);
   qChains.set(key, p.catch(() => {}));
   return p;
-}
-
-/* ---- Supabase access: the persistent identity row (queue_identity), one per store ---- */
-async function loadQueueIdentities(store) {
-  if (!supabase) return {};
-  try {
-    const r = await withTimeout(supabase.from(QUEUE_ID_TABLE).select("data").eq("id", store).maybeSingle());
-    if (r.timedOut) throw new Error("timed out");
-    if (r.error) throw r.error;
-    const { data, error } = r.value;
-    if (error) throw error;
-    const v = (data && data.data) || {};
-    cachePut("ids:" + store, v);
-    return v;
-  } catch (e) {
-    console.error("loadQueueIdentities", e);
-    const c = cacheGet("ids:" + store);
-    return c ? c.value : {};
-  }
-}
-async function mutateQueueIdentities(store, fn) {
-  const cur = await loadQueueIdentities(store);
-  const next = fn(JSON.parse(JSON.stringify(cur || {})));
-  if (!next) return cur;
-  if (supabase) {
-    try {
-      const { error } = await supabase.from(QUEUE_ID_TABLE).upsert(
-        { id: store, data: next, updated_at: qNowIso() }, { onConflict: "id" });
-      if (error) throw error;
-    } catch (e) { console.error("saveQueueIdentities", e); }
-  }
-  return next;
-}
-
-/* ---- PIN hashing (Web Crypto; plaintext never stored or sent) ---- */
-const qRandSalt = () => {
-  const a = new Uint8Array(8);
-  (window.crypto || window.msCrypto).getRandomValues(a);
-  return Array.from(a).map((b) => b.toString(16).padStart(2, "0")).join("");
-};
-async function qHashPin(pin, salt) {
-  const enc = new TextEncoder().encode(`${salt}:${pin}`);
-  const buf = await (window.crypto.subtle).digest("SHA-256", enc);
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-async function qFindByPin(identities, pin, exceptId) {
-  for (const id of Object.keys(identities || {})) {
-    if (exceptId && id === exceptId) continue;
-    const rec = identities[id];
-    if (!rec || !rec.h || !rec.s) continue;
-    // eslint-disable-next-line no-await-in-loop
-    if ((await qHashPin(pin, rec.s)) === rec.h) return id;
-  }
-  return null;
 }
 
 /* ---- fuzzy name matching against the published roster ({id,label,role}) ---- */
@@ -6978,42 +6923,6 @@ function SfDisplay({ a, b, small }) {
   return <h2 className={"sf-display" + (small ? " sm" : "")}>{a}<span className="sf-dim">{b}</span></h2>;
 }
 
-/* The PIN pad, on the screen.
-   It used to be a text input, which means iOS throws its keyboard up, the page
-   shifts under your thumb, and someone with a customer three feet away is
-   aiming at a 9mm key. These are 44pt targets that never move, the field is
-   readOnly so the OS keyboard stays down, and the digits land in cells drawn on
-   the same dot grid as the rest of the app. */
-function SfPad({ value, onChange, onSubmit, busy, max = 6, cells = 4, goGlyph = "check" }) {
-  const push = (d) => { if (value.length < max) { onChange(value + d); buzz(8); } };
-  const del = () => { if (value.length) { onChange(value.slice(0, -1)); buzz(8); } };
-  const shown = Math.max(cells, value.length);
-  return (
-    <>
-      <div className="sf-pin-cells">
-        {Array.from({ length: shown }, (_, i) => (
-          <span key={i} className={"sf-pin-cell" + (i < value.length ? " on" : "")}>
-            {i < value.length ? <PixIcon glyph="dot" size={13} /> : null}
-          </span>
-        ))}
-      </div>
-      <div className="sf-pad">
-        {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-          <button key={d} type="button" className="sf-key" disabled={busy}
-            onClick={() => push(d)}>{d}</button>
-        ))}
-        <button type="button" className="sf-key sf-key-word" disabled={busy || !value.length}
-          onClick={del} aria-label="Delete a digit">Delete</button>
-        <button type="button" className="sf-key" disabled={busy} onClick={() => push("0")}>0</button>
-        <button type="button" className="sf-key sf-key-go" disabled={busy || value.length < 4}
-          onClick={onSubmit} aria-label={goGlyph === "arrow" ? "Next" : "Done"}>
-          <PixIcon glyph={goGlyph} size={18} />
-        </button>
-      </div>
-    </>
-  );
-}
-
 /* ---- ten days of one person's numbers -----------------------------------
    The activity rows are already one per day per store, keyed by date, so a
    fortnight is one query rather than a new table. This is the same row the
@@ -7028,10 +6937,10 @@ function lastDays(n, endISO) {
   }
   return out;
 }
-/* ---- the four ways in -------------------------------------------------- */
-/* Name, then one of: straight through, "did you mean", "which one of these",
-   or "that PIN belongs to someone else". All four are the same screen with a
-   different question, so they share the frame and differ only in the middle. */
+/* ---- the ways in ------------------------------------------------------- */
+/* Name, then one of: straight through, "did you mean", or "which one of
+   these". All three are the same screen with a different question, so they
+   share the frame and differ only in the middle. */
 function SfName({ variant, storeName, typed, setTyped, submit, msg, suggestions, onPick, spine }) {
   return (
     <SfScreen spine={spine} className="sf-v-name">
@@ -7060,50 +6969,6 @@ function SfName({ variant, storeName, typed, setTyped, submit, msg, suggestions,
   );
 }
 
-function SfPin({ variant, who, pinMode, pin, setPin, pin2, setPin2, submitPin, msg, busy, onNotMe, spine }) {
-  /* Creating a PIN needs it twice. One pad fills the first row, then the second.
-     The stage is held rather than derived from pin.length: derived, it flipped to
-     "again" the moment a fourth digit landed, which made a five or six digit PIN
-     impossible to type. */
-  const [stage, setStage] = useState(1);
-  const creating = pinMode === "create";
-  const val = stage === 2 ? pin2 : pin;
-  const set = stage === 2 ? setPin2 : setPin;
-  const go = () => {
-    if (creating && stage === 1) { if (pin.length >= 4) { setStage(2); buzz(12); } return; }
-    submitPin();
-  };
-  /* A hardware keyboard still works — a manager checking this on a laptop, and
-     anyone using a Bluetooth keyboard, would otherwise have no way in. */
-  useEffect(() => {
-    const onKey = (e) => {
-      if (busy) return;
-      if (/^[0-9]$/.test(e.key)) { if (val.length < 6) set(val + e.key); }
-      else if (e.key === "Backspace") { set(val.slice(0, -1)); }
-      else if (e.key === "Enter" && val.length >= 4) { go(); }
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-  return (
-    <SfScreen spine={spine} className="sf-v-pin">
-      <button type="button" className="sf-back" disabled={busy} onClick={onNotMe}>
-        <PixIcon glyph="arrowleft" size={12} /><span>That&rsquo;s not me</span>
-      </button>
-      <p className="sf-kicker">{who} · {variant.label}</p>
-      <SfDisplay
-        a={creating ? "Set your" : "Enter your"}
-        b={creating && stage === 2 ? "PIN again" : "PIN"} />
-      {creating && stage === 1
-        ? <p className="sf-sub">Four to six digits. You will use it every day.</p> : null}
-      {msg ? <p className="sf-err">{msg}</p> : null}
-      <SfPad value={val} onChange={set} busy={busy} onSubmit={go}
-        goGlyph={creating && stage === 1 ? "arrow" : "check"} />
-    </SfScreen>
-  );
-}
 
 function SfAsk({ variant, question, lead, yes, no, yesLabel = "Yes, that's me", noLabel = "No", busy, spine, note }) {
   return (
@@ -7702,7 +7567,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
       )}
       {/* Both rooms stay mounted once they have been opened, and a tab shows
           one of them. Switching used to rebuild the room from nothing: a
-          refetch of its row, its identities and the setup, and the curtain
+          refetch of its row and the setup, and the curtain
           over all of it, which on the lot was a second and a half of curtain
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
@@ -8122,9 +7987,8 @@ function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
 function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = false,
   account = null, onSignOut = null, rooms = null, onRoom = null, active = true , onReady = null }) {
   const [row, setRow] = useState(undefined);
-  const [identities, setIdentities] = useState(null);
   /* An account that a manager has joined to a name IS the identity, the same
-     way it already is on the floor: no daily code, no name, no PIN. The QR
+     way it already is on the floor: no daily code, no name to type. The QR
      stays the second door into this very screen for anybody without one. */
   const [meId, setMeId] = useState(() => {
     if (account) return account;
@@ -8154,10 +8018,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [pin, setPin] = useState("");
-  const [pin2, setPin2] = useState("");
-  const [pinMode, setPinMode] = useState("verify");
-  const [switchTo, setSwitchTo] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   const [myDay, setMyDay] = useState(false);
@@ -8222,7 +8082,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   /* Looked at: every five seconds, or thirty with the socket open. Not looked
      at (the other room is up): thirty, and a fresh read the moment it is. */
   useEffect(() => { refetch(); const t = setInterval(refetch, live || !active ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live, active]);
-  useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   // Today's activity for this person only. The split day rows made this cheap: it
   // is one small row, not the whole store document.
@@ -8299,7 +8158,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   // which screen should be visible right now (drives the curtain wipe)
   let screen;
-  if (row === undefined || identities === null) screen = "loading";
+  if (row === undefined) screen = "loading";
   /* A stale code is a stale code; an account is never stale, so a line the
      desk has not opened is a plain word on home rather than a refusal. */
   else if (!isToday || (!valid && !account)) screen = "invalid";
@@ -8307,8 +8166,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
   /* Through the account door and not on the line: one button, no typing,
      the same screen the floor gives them. */
   else if (account && !me) screen = "home";
-  else if (step === "pin" && switchTo) screen = "switch";
-  else if (step === "pin" && selected) screen = "pin";
   else if (step === "pick") screen = "pick";
   else if (step === "confirm") screen = "confirm";
   else screen = "name";
@@ -8333,8 +8190,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, MOTION.exit);
       return undefined;
     }
-    // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
-    if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
     /* The timers live outside the effect on purpose. The swap changes
        shownKey, which re-runs this effect, and a cleanup that cleared both
        timers took the end of the wipe with it: the curtain's class stayed on,
@@ -8363,7 +8218,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
       }
       return cur;
     });
-    setStep("done"); setPin(""); setPin2(""); setBusy(false);
+    setStep("done"); setBusy(false);
   }
 
   function submitName() {
@@ -8375,34 +8230,17 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
     else if (r.kind === "pick") setStep("pick");
     else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
   }
+  /* ---- picking a name is the whole of it ----
+     There used to be a PIN here: pick your name, then set or type four digits,
+     checked against everybody else's for a clash. Six identities were ever
+     created across every store in two months, against three people linked to
+     real accounts, so it was a lock on a door nobody was opening. What it
+     bought was stopping somebody putting themselves on the line as a
+     colleague; the honest version of that is the account sign-in, which is
+     where it belongs, not four digits typed on a shared phone. */
   function pickPerson(p) {
-    setSelected(p); setSwitchTo(null); setMsg("");
-    const hasPin = !!(identities && identities[p.id] && identities[p.id].h);
-    setPinMode(hasPin ? "verify" : "create");
-    setStep("pin");
-  }
-
-  async function submitPin() {
-    if (!selected) return;
-    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4 to 6 digits."); return; }
-    setBusy(true); setMsg("");
-    const idents = identities || (await loadQueueIdentities(store));
-    if (pinMode === "create") {
-      if (pin !== pin2) { setMsg("The two PINs don't match."); setBusy(false); return; }
-      const clash = await qFindByPin(idents, pin, selected.id);
-      if (clash) { setMsg("That PIN is already taken by someone here. Pick a different one."); setBusy(false); return; }
-      const salt = qRandSalt(); const h = await qHashPin(pin, salt);
-      const nextIds = await mutateQueueIdentities(store, (cur) => { cur[selected.id] = { h, s: salt, label: selected.label, setAt: qNowIso() }; return cur; });
-      setIdentities(nextIds);
-      await joinAs(selected);
-      return;
-    }
-    const rec = idents[selected.id];
-    if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
-    const other = await qFindByPin(idents, pin, null);
-    if (other && other !== selected.id) { setSwitchTo({ id: other, label: idents[other].label || "that person" }); setMsg(""); setBusy(false); return; }
-    setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
-    setBusy(false);
+    setSelected(p); setMsg("");
+    joinAs(p);
   }
 
   function setFlag(status) {
@@ -8599,24 +8437,6 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
         )}
       </div>
     );
-  } else if (eff === "switch" && selected && switchTo) {
-    content = (
-      <SfAsk variant={variant} spine={queueSpine}
-        lead={`That PIN is on ${switchTo.label}'s file`}
-        question={["Are you", switchTo.label + "?"]}
-        note={`You picked ${selected.label}.`}
-        busy={busy}
-        yes={() => joinAs({ id: switchTo.id, label: switchTo.label })}
-        no={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}
-        noLabel="No, try again" />
-    );
-  } else if (eff === "pin" && selected) {
-    content = (
-      <SfPin variant={variant} spine={queueSpine} who={selected.label}
-        pinMode={pinMode} pin={pin} setPin={setPin} pin2={pin2} setPin2={setPin2}
-        submitPin={submitPin} msg={msg} busy={busy}
-        onNotMe={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }} />
-    );
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
       <SfPickList variant={variant} spine={queueSpine} typed={typed}
@@ -8644,7 +8464,7 @@ function QueueSignIn({ store, date, token, variant = LEAD_VARIANTS.line, test = 
 
   return (
     <div className={`q-page sf ${variant.sf}`} ref={pageRef}>
-      <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
+      <div className="q-stage" key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       <SageCurtain wiping={wiping} hold={held} />
       {/* Everyone gets a way out of a problem, including the people with no account. */}
       <HelpButton config={cfg} who={meLabel} store={store} context={`${variant.label} sign-in, ${store}, ${date}`} dark />
@@ -8791,15 +8611,14 @@ const stnFirst = (nm) => String(nm || "").split(" ")[0];
 /* ==========================================================================
    SMARTFLOOR — "Live Floor" walk-in / showroom queue (v1)
    --------------------------------------------------------------------------
-   Self-governed floor "up" queue. Same sign-up as Phone Line (type name + PIN,
-   reuse queue_identity), but driven by DriveCentric deal_events so nobody has
+   Self-governed floor "up" queue. Same sign-up as Phone Line (pick your name),
+   but driven by DriveCentric deal_events so nobody has
    to remember to flag themselves — the auto-flip that fixes the old human-only
    floor system.
 
    Storage:
      - floor_public  : per-day floor state row  (id = "<store>:<date>")
-     - queue_identity : REUSED for PINs (shared with Phone Line)
-     - deal_events    : read-only feed (authenticated read via RLS)
+     - deal_events   : read-only feed (authenticated read via RLS)
 
    The event engine keys off the SUBJECT event (seg 1), NOT the ALERT — the two
    "sold" events (ProspectSoldGeneral / Prospect Sold - Pending) share an identical
@@ -9243,7 +9062,7 @@ function SeatBlock({ store, meId, plan, row, commit }) {
 
 /* =========================================================================
    FloorSignIn — salesperson phone page for the walk-in floor.
-   Mirrors QueueSignIn (name fuzzy-match + PIN, curtain wipe, reuse identities);
+   Mirrors QueueSignIn (name fuzzy-match, curtain wipe);
    the "done" screen adds the accidental-check-in self-reverse.
    ========================================================================= */
 /* =========================================================================
@@ -9917,12 +9736,11 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
 /* account: the roster id this signed-in account is linked to, when the page was
    reached through the account door rather than a scanned code. The link is the
    identity and the day is always today, so there is no token to check, no name
-   to type and no PIN; the corner is home whether or not they are on the line
+   to type; the corner is home whether or not they are on the line
    yet, and the floor tab is where they get on. */
 function FloorSignIn({ store, date, token, tag = null, test = false, account = null, onSignOut = null, active = true,
   tab: tabFrom = null, onTab = null , onReady = null }) {
   const [row, setRow] = useState(undefined);
-  const [identities, setIdentities] = useState(null);
   const [meId, setMeId] = useState(() => { if (account) return account; try { return localStorage.getItem(`lpcf:${store}:${date}`) || null; } catch { return null; } });
   /* The salesperson's home. Corner is the default room; the floor screen is one
      tap on the pill, and being up next drags the view there on its own because
@@ -9958,10 +9776,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   const [typed, setTyped] = useState(() => { try { return localStorage.getItem(`lpcq:name:${store}`) || ""; } catch { return ""; } });
   const [resolved, setResolved] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [pin, setPin] = useState("");
-  const [pin2, setPin2] = useState("");
-  const [pinMode, setPinMode] = useState("verify");
-  const [switchTo, setSwitchTo] = useState(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
   // Same as Phone Line: somebody standing on the floor should be able to see their own
@@ -10059,7 +9873,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
   /* Looked at: every five seconds, or thirty with the socket open. Not looked
      at (the other room is up): thirty, and a fresh read the moment it is. */
   useEffect(() => { refetch(); const t = setInterval(refetch, live || !active ? 30000 : 5000); return () => clearInterval(t); }, [refetch, live, active]);
-  useEffect(() => { loadQueueIdentities(store).then(setIdentities); }, [store]);
 
   const isToday = date === today();
   /* A table tag carries no daily token; it is valid only for a phone that is
@@ -10288,13 +10101,12 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
 
   /* ---- who you are, if the phone already knows ----
      A salesperson with an account and a link is already identified, so the name
-     list and the PIN are two screens asking a question that has been answered.
-     The session persists, so this happens once and every morning after is a scan
-     and a tap.
+     list is a screen asking a question that has been answered. The session
+     persists, so this happens once and every morning after is a scan and a tap.
 
-     The name-and-PIN path stays exactly as it was underneath. It is what the
-     podium uses, what somebody with no account uses, and what everybody uses on
-     the morning the sign-in service is having a bad day. */
+     The name list stays exactly as it was underneath. It is what the podium
+     uses, what somebody with no account uses, and what everybody uses on the
+     morning the sign-in service is having a bad day. */
   const [knownAs, setKnownAs] = useState(account || undefined);   // undefined = still asking
   useEffect(() => {
     if (account) return;
@@ -10307,13 +10119,11 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     : null;
 
   let screen;
-  if (row === undefined || identities === null || knownAs === undefined) screen = "loading";
+  if (row === undefined || knownAs === undefined) screen = "loading";
   else if (!isToday || !valid) screen = "invalid";
   else if (step === "done" && me) screen = "done";
   /* Through the door and not on the line: the corner is still home. */
   else if (account && !me) screen = "home";
-  else if (step === "pin" && switchTo) screen = "switch";
-  else if (step === "pin" && selected) screen = "pin";
   else if (step === "pick") screen = "pick";
   else if (step === "confirm") screen = "confirm";
   /* Identified by their account, and not on the line yet: one button, no typing. */
@@ -10337,8 +10147,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       holdT.current = setTimeout(() => { setHeld(false); setWiping("out"); }, MOTION.exit);
       return undefined;
     }
-    // The PIN screen gets its own fun entrance (a spring pop) instead of the curtain.
-    if (screen === "pin") { setShown("pin"); setShownKey(liveKey); return; }
     /* The timers live outside the effect on purpose. The swap changes
        shownKey, which re-runs this effect, and a cleanup that cleared both
        timers took the end of the wipe with it: the curtain's class stayed on,
@@ -10406,7 +10214,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
       return cur;
     });
     if (door.why !== "inside") setDoorNote(door);
-    setStep("done"); setPin(""); setPin2(""); setBusy(false);
+    setStep("done"); setBusy(false);
   }
 
   function submitName() {
@@ -10418,35 +10226,18 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
     else if (r.kind === "pick") setStep("pick");
     else { setStep("name"); setMsg("We couldn't find that name. Check the spelling, or tap a suggestion below."); }
   }
+  /* ---- picking a name is the whole of it ----
+     There used to be a PIN here: pick your name, then set or type four digits,
+     checked against everybody else's for a clash. Six identities were ever
+     created across every store in two months, against three people linked to
+     real accounts, so it was a lock on a door nobody was opening. What it
+     bought was stopping somebody putting themselves on the line as a
+     colleague; the honest version of that is the account sign-in, which is
+     where it belongs, not four digits typed on a shared phone. */
   function pickPerson(p) {
-    setSelected(p); setSwitchTo(null); setMsg("");
-    const hasPin = !!(identities && identities[p.id] && identities[p.id].h);
-    setPinMode(hasPin ? "verify" : "create");
-    setStep("pin");
+    setSelected(p); setMsg("");
+    joinAs(p);
   }
-  async function submitPin() {
-    if (!selected) return;
-    if (!/^\d{4,6}$/.test(pin)) { setMsg("Your PIN is 4 to 6 digits."); return; }
-    setBusy(true); setMsg("");
-    const idents = identities || (await loadQueueIdentities(store));
-    if (pinMode === "create") {
-      if (pin !== pin2) { setMsg("The two PINs don't match."); setBusy(false); return; }
-      const clash = await qFindByPin(idents, pin, selected.id);
-      if (clash) { setMsg("That PIN is already taken by someone here. Pick a different one."); setBusy(false); return; }
-      const salt = qRandSalt(); const h = await qHashPin(pin, salt);
-      const nextIds = await mutateQueueIdentities(store, (cur) => { cur[selected.id] = { h, s: salt, label: selected.label, setAt: qNowIso() }; return cur; });
-      setIdentities(nextIds);
-      await joinAs(selected);
-      return;
-    }
-    const rec = idents[selected.id];
-    if (rec && (await qHashPin(pin, rec.s)) === rec.h) { await joinAs(selected); return; }
-    const other = await qFindByPin(idents, pin, null);
-    if (other && other !== selected.id) { setSwitchTo({ id: other, label: idents[other].label || "that person" }); setMsg(""); setBusy(false); return; }
-    setMsg(`That PIN doesn't match ${selected.label}'s file. Try again, or see a manager to reset it.`);
-    setBusy(false);
-  }
-
   function setFlag(status) {
     if (!meId) return;
     // Back in line means the next turn should show the up-take overlay again.
@@ -10890,24 +10681,6 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
       );
     }
-  } else if (eff === "switch" && selected && switchTo) {
-    content = (
-      <SfAsk variant={variant} spine={queueSpine}
-        lead={`That PIN is on ${switchTo.label}'s file`}
-        question={["Are you", switchTo.label + "?"]}
-        note={`You picked ${selected.label}.`}
-        busy={busy}
-        yes={() => joinAs({ id: switchTo.id, label: switchTo.label })}
-        no={() => { setSwitchTo(null); setPin(""); setMsg("No problem. Enter your own PIN."); }}
-        noLabel="No, try again" />
-    );
-  } else if (eff === "pin" && selected) {
-    content = (
-      <SfPin variant={variant} spine={queueSpine} who={selected.label}
-        pinMode={pinMode} pin={pin} setPin={setPin} pin2={pin2} setPin2={setPin2}
-        submitPin={submitPin} msg={msg} busy={busy}
-        onNotMe={() => { setStep("name"); setSelected(null); setPin(""); setPin2(""); setMsg(""); }} />
-    );
   } else if (eff === "pick" && resolved && resolved.people) {
     content = (
       <SfPickList variant={variant} spine={queueSpine} typed={typed}
@@ -10935,7 +10708,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
 
   return (
     <div className={"q-page f-page sf sf-floor" + (inShell ? " mc-shell" : "") + (inShell && tab !== "corner" ? " mc-floor" : "") + (inShell && tab === "corner" && lightMode ? " mc-light" : "")} ref={pageRef}>
-      <div className={"q-stage" + (eff === "pin" ? " q-stage-pin" : "")} key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
+      <div className="q-stage" key={eff + (eff === "done" && me ? ":" + me.status : "")}>{content}</div>
       {inShell && !onTab && (() => {
         const idx = line.findIndex((p2) => p2.id === meId);
         const upRoot = !!me && me.status === "waiting" && idx >= 0 && line.slice(0, idx).filter((p2) => p2.status === "waiting").length === 0;
@@ -14448,9 +14221,7 @@ input[type=number] { width:84px; }
 .q-qr svg{display:block;}
 /* coaching card — phone line block */
 /* v3 additions */
-/* PIN fields: label above, and stop the placeholder from being letter-spaced */
 /* manager reorder arrows */
-/* manager PIN panel */
 /* v4: curtain wipe + custom line icons */
 .q-stage{position:relative;z-index:1;width:100%;display:flex;justify-content:center;}
 .q-curtain{position:fixed;inset:0;z-index:60;background:linear-gradient(120deg,#3b72e0 0%,#5a97ff 55%,#6ea0ff 100%);
@@ -14902,7 +14673,6 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
 .mf .q-missing, .mf .f-unmatched, .mf .q-add{ background:#fff; border:1px solid var(--mfline); border-radius:16px; box-shadow:0 1px 2px rgba(16,32,52,.04); }
 .mf .q-add{ padding:12px 16px; }
 .mf .q-missing-head, .mf .f-unmatched-head{ font-family:var(--mffont); font-weight:600; color:var(--mfink); }
-.mf .q-pin-name{ color:var(--mfink); }
 .mf .q-qr-box{ background:#fff; }
 .mf .q-missing-chip{ background:#fff; border:1px solid var(--mfline); border-radius:999px; color:var(--mfink2); }
 .mf .q-missing-chip:hover{ border-color:var(--a1); color:var(--mfink); }
@@ -15101,39 +14871,6 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
   font-style:normal; margin-left:auto; font-family:var(--sfmono); font-size:9px;
   letter-spacing:.12em; text-transform:uppercase; color:var(--led);
 }
-/* ---- the PIN pad ----
-   Four cells that light as digits land, and a pad that owns the bottom third.
-   The field is gone entirely, so iOS never puts its keyboard up and the layout
-   never moves under a thumb. */
-.sf-pin-cells{ display:flex; gap:10px; margin:26px 0 0; padding-right:16px; }
-.sf-pin-cell{
-  flex:0 0 auto; width:46px; height:58px; border-radius:14px;
-  background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
-  display:grid; place-items:center; color:var(--led);
-  transition:border-color .3s var(--ease), background .3s var(--ease);
-}
-.sf-pin-cell.on{
-  border-color:color-mix(in srgb, var(--a2) 60%, transparent);
-  background:color-mix(in srgb, var(--a1) 14%, transparent);
-}
-.sf-pad{
-  margin-top:auto; padding-top:24px; padding-right:16px;
-  display:grid; grid-template-columns:repeat(3,1fr); gap:9px;
-}
-/* Geist, like every other button in the app — the sweep rule above owns this and
-   a local font-family here would be dead code. tabular-nums is what a keypad
-   actually needs from its digits: without it the 1 is narrower than the 8 and
-   the pad reads as slightly crooked. */
-.sf-key{
-  font-size:22px; font-weight:500; color:var(--sfink); font-variant-numeric:tabular-nums;
-  background:rgba(255,255,255,.055); border:1px solid rgba(255,255,255,.05);
-  border-radius:16px; min-height:52px; cursor:pointer; display:grid; place-items:center;
-  transition:transform .26s var(--ease-bloop), background .16s var(--ease);
-}
-.sf-key:active{ background:color-mix(in srgb, var(--a1) 26%, transparent); }
-.sf-key:disabled{ opacity:.4; }
-.sf-key-word{ font-size:12.5px; font-weight:650; letter-spacing:.02em; }
-.sf-key-go{ color:#08101B; background:linear-gradient(140deg, var(--led), var(--a2)); border-color:transparent; }
 /* ---- the day, the list, and one number ----
    The day screen is the same frame as the way in: body left, spine right, the
    queue's colour bleeding up from the floor. It arrives over the live screen as
@@ -15358,14 +15095,12 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    under its ring, and two rules for one name is how one of them quietly wins. */
 .sf-loading{ margin:auto; text-align:center; color:var(--sfink2); }
 .sf-loading p{ margin-top:14px; font-family:var(--sfmono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; }
-/* very short screens: the pad keeps its targets, the heading gives way */
+/* very short screens: the heading gives way first */
 @media (max-height: 680px){
   .sf-display{ font-size:clamp(26px,7.5vw,32px); }
-  .sf-pin-cell{ width:40px; height:50px; }
-  .sf-key{ min-height:46px; font-size:20px; }
   .sf-kicker{ margin-top:16px; }
 }
-/* restyle the shared sign-in surfaces (name / pin / pick / confirm) */
+/* restyle the shared sign-in surfaces (name / pick / confirm) */
 /* dot-matrix primitives */
 .sf .dm{ display:flex; gap:calc(var(--cell,12px)*.72); align-items:center; justify-content:center; perspective:600px; }
 .sf .dm-digit{ display:grid; grid-template-columns:repeat(3,var(--cell,12px)); gap:calc(var(--cell,12px)*.44); transform-style:preserve-3d;
@@ -16376,22 +16111,6 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    reads as unresponsive on a phone that has not caught up yet. */
 .sf-go:active{ transform:translateY(2px); box-shadow:0 4px 14px -8px rgba(4,20,15,.7); }
 .sf-go:disabled{ opacity:.6; }
-/* PIN screen — its own "something else fun" entrance (a spring pop, no curtain) */
-.q-stage-pin{animation:qpinpop .58s cubic-bezier(.2,.9,.25,1.35) both;transform-origin:center 40%;}
-/* The pop was written for a card sitting in the middle of a page. The PIN screen
-   is the whole screen now, so scaling it scales the layout — the cells lighting
-   as digits land is the feedback that matters here. */
-.sf .q-stage-pin{ animation:none; }
-@keyframes qpinpop{
-  0%{opacity:0;transform:scale(.72) translateY(14px) rotate(-1.2deg);}
-  55%{opacity:1;transform:scale(1.04) translateY(0) rotate(.4deg);}
-  100%{opacity:1;transform:scale(1) translateY(0) rotate(0);}
-}
-@keyframes qpinglow{
-  0%{box-shadow:0 0 0 0 rgba(120,150,255,0);}
-  40%{box-shadow:0 0 0 6px rgba(120,150,255,.18);}
-  100%{box-shadow:0 0 0 0 rgba(120,150,255,0);}
-}
 /* ===== SmartFloor / Live Floor — greens where the phone line runs blue ===== */
 .f-page .q-curtain, .q-curtain.sage-curtain {background:linear-gradient(150deg,#7FA98A 0%,#55795F 55%,#26382C 100%);}
 .q-curtain.q-hold{transform:none;animation:none;}
@@ -17441,4 +17160,4 @@ function ensureStyleNamed(id, css) {
 }
 
 /* What the manager's file (Manager.jsx) reads from here. */
-export { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
+export { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
