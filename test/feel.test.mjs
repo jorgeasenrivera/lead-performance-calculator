@@ -15,6 +15,7 @@ const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", imp
 const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
+const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
 
 test("the status controls are never greyed out for a round trip", () => {
@@ -380,4 +381,12 @@ test("printing opens one window the same way, and the poster takes the room", ()
   assert.equal(mgr.split('room: "floor" }').length - 1, 2, "and two are the floor");
   assert.ok(/function printOnePager\(/.test(mgr) && /function printMonthEndRecap\(/.test(mgr), "the coaching sheet and the recap keep their own bodies");
   assert.ok(!/w\.close\(\); toast\("No associates/.test(mgr), "and an empty batch no longer leaves a blank window open");
+});
+
+test("the burst check measures from inside the page, and reads the server until it stops moving", () => {
+  assert.ok(/window\.__segRaf = requestAnimationFrame\(tick\);/.test(feel), "the screen records itself on its own frames");
+  assert.ok(!/while \(Date\.now\(\) - t0 < 3200\)/.test(feel), "and is not sampled over the debugging channel forty times a second");
+  assert.ok(/for \(let i = 0; i < 16; i\+\+\) \{/.test(feel) && /if \(now\.st === last\.st\) \{ settled = now; break; \}/.test(feel), "the server is read until two reads agree, not on a fixed clock");
+  assert.ok(/trace\[trace\.length - 1\] === "Here" && trace\.indexOf\("Lunch"\) >= 0 && trace\.indexOf\("Lunch"\) < trace\.lastIndexOf\("Here"\) && mine && mine\.status === "waiting"/.test(feel), "and the bar itself is unchanged: the second tap arrives, stays, and the server ends on it");
+  assert.ok(/let n = \(window\.__vib \|\| \[\]\)\.length, still = 0;/.test(feel), "the press test waits for the phone to stop buzzing before it starts counting");
 });
