@@ -222,3 +222,18 @@ test("the hero loses its signal like a tape, with a clean display over it", () =
   assert.ok(/stale > 0 && <span className="s2-age"/.test(mgr), "stale is a sand stamp");
   assert.ok(/export \{ buzz, MOTION, useNet,/.test(core), "the rooms' connection hook is shared");
 });
+
+test("consistency pass, items 1, 4, 7 and 9: one close, one name each, honest icons, Import once on the phone", () => {
+  assert.ok(/\.lpc \.x-close\{ width:36px; height:36px; border-radius:50%;/.test(core), "one close look");
+  for (const cls of ["ac-x", "ru-x", "fr-x", "drawer-x"]) assert.ok(!new RegExp('className="' + cls + '"').test(mgr), cls + " wears the one close");
+  assert.ok(!/className="mc-x"/.test(core), "the rooms' close wears it too");
+  assert.ok(!/(?:x-close"[^>]*>\s*<PixIcon glyph="close" size=\{)(?!15\})/.test(mgr + core), "every close glyph is 15 px");
+  assert.ok(!/board: "Board"|checkout: "Checkout"|queue: "Phones"/.test(mgr), "the phone shortens widths, never words");
+  assert.ok(/\["board", "TV Board"\]/.test(mgr) && !/"The Board"/.test(mgr), "the TV tool is the TV Board");
+  assert.ok(/Who is taking desk \$\{st\.n\}\?/.test(mgr) && !/Station \$\{st\.n\}|Station \{st\.n\}/.test(mgr), "a desk is a desk on every surface");
+  assert.ok(/drawer-section-label">Sections</.test(mgr) && /drawer-section-label">Tools</.test(mgr), "the drawer uses the desk's words");
+  assert.ok(/aria-label="Zoom in"><PixIcon glyph="plus"/.test(mgr) && /  plus:      \[/.test(core) && /  dash:      \[/.test(core), "zoom in is a plus; a dash exists for no data");
+  assert.ok(!/aria-label="Close"><PixIcon glyph="remove"/.test(mgr), "close is never the remove glyph");
+  assert.ok(/glyph="dash" size=\{13\} \/> Nothing logged today/.test(mgr), "nothing logged is a dash, not a minus");
+  assert.ok(!/drawer-item[\s\S]{0,400}<ImportBadge/.test(mgr), "the drawer no longer repeats the dock's import count");
+});

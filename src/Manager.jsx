@@ -1046,7 +1046,7 @@ function DeliveryGuideModal({ onClose }) {
       <div className="modal guide-modal" onClick={(e) => e.stopPropagation()}>
         <div className="guide-modal-head">
           <h2 className="guide-title">How to pull the Appointment and Video reports</h2>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
         <p className="guide-intro">Follow these steps every time. Two reports, uploaded together.</p>
         <AppointmentVideoGuideSteps />
@@ -2739,7 +2739,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
             <div className="s2-greet">
               Choose a store · it opens in its own window, sized for a TV, and refreshes every 30 seconds
             </div>
-            <h2 className="s2-store">The Board</h2>
+            <h2 className="s2-store">TV Board</h2>
           </div>
           <div className="s2-chips">
             <span className="fh-chip">{stores.length} {stores.length === 1 ? "store" : "stores"}</span>
@@ -2852,7 +2852,7 @@ function BoardScreen({ storeId }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0B1622", overflow: "hidden" }}>
       {html
-        ? <iframe title="The Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
+        ? <iframe title="TV Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
         : <div style={{ height: "100%", display: "grid", placeItems: "center", padding: "32px", textAlign: "center",
             color: "#CFE0F0", font: "500 20px/1.5 system-ui, -apple-system, sans-serif" }}>{msg}</div>}
     </div>
@@ -3707,7 +3707,7 @@ function ToolSheet({ title, sub, onClose, wide, children }) {
     <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
       <div className={"acard toolsheet" + (wide ? " wide" : "") + (closing ? " closing" : "")}
         role="dialog" aria-label={title}>
-        <button className="ac-x" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
+        <button className="ac-x x-close" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         <div className="ac-name">{title}</div>
         {sub && <div className="ac-sub">{sub}</div>}
         <div className="ts-body">{children}</div>
@@ -3897,7 +3897,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
         {onAssign && (
           <button className="fh-go" disabled={assignDisabled} onClick={onAssign}>
             <PixIcon glyph="arrow" size={12} />
-            {assignBusy ? "Assigning" : (assignLabel || ("Assign " + (nextName ? nextName.split(" ")[0] : "next")))}
+            {assignBusy ? "Assigning" : (assignLabel || ("Assign " + (nextName ? nextName.split(" ")[0] : "the up")))}
           </button>
         )}
       </div>
@@ -4709,7 +4709,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
             {seatsOf(plan).length > 8 && (
               <div className="fr-zoom">
                 <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
-                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="minus" size={14} /></button>
+                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
               </div>
             )}
           </div>
@@ -4887,7 +4887,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
     if (st.offerTo && pick !== st.n) return (
       <div className="sd-panel">
         <div className="sd-ptitle">
-          Station {st.n} is {st.offerLabel}&rsquo;s
+          Desk {st.n} is {st.offerLabel}&rsquo;s
           <span className="sd-pmeta">{stnLeft(st.offerLeftMs)} left</span>
         </div>
         <p className="sd-psub">
@@ -4906,7 +4906,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
     return (
       <div className="sd-panel">
         <div className="sd-ptitle">
-          {own ? `Station ${st.n} is ${own.name}\u2019s desk` : `Who is taking station ${st.n}?`}
+          {own ? `Desk ${st.n} is ${own.name}\u2019s` : `Who is taking desk ${st.n}?`}
         </div>
         {/* Its owner first and on their own. Somebody who sits at the same desk
             every day is the person most likely to have forgotten to check in,
@@ -6094,7 +6094,7 @@ function FrPop({ title, onClose, children, cls }) {
   return createPortal(
     <div className="fr-pop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={"fr-sheet" + (cls ? " " + cls : "")} role="dialog" aria-label={title} ref={sheetRef}>
-        <button type="button" className="fr-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
+        <button type="button" className="fr-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         {children}
       </div>
     </div>, document.body);
@@ -6590,7 +6590,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
               <span className="fr-wt">{qWaitLabel(qMinsSince(p.joinedAt))}</span>
               <span className="fr-mv">
                 <button type="button" disabled={busy || idx <= 0} onClick={() => moveInLine(p.id, -1)} aria-label="Move up"><PixIcon glyph="moveup" size={14} /></button>
-                <button type="button" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(p.id, 1)} aria-label="Move down"><PixIcon glyph="arrowdown" size={14} /></button>
+                <button type="button" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(p.id, 1)} aria-label="Move down"><PixIcon glyph="movedown" size={14} /></button>
               </span>
             </div>
           );
@@ -6813,7 +6813,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           </div>
           <div className="fr-zoom">
             <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
-            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="minus" size={14} /></button>
+            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
           </div>
           {reseat && <button type="button" className="fr-reseat" onClick={() => setReseat(null)}>Re-seating {realName(reseat).split(" ")[0]}: tap a table · cancel</button>}
         </div>
@@ -9353,7 +9353,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
 
       {noShowSuspects.length > 0 && (
         <div className="da-panel da-askpanel">
-          <div className="da-pcap"><PixIcon glyph="minus" size={13} /> Nothing logged today · say which it is</div>
+          <div className="da-pcap"><PixIcon glyph="dash" size={13} /> Nothing logged today · say which it is</div>
           <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>
           <div className="da-asks">
             {noShowSuspects.map((r) => (
@@ -9823,7 +9823,7 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
               {imgState === "working" ? "Building..." : imgState === "copied" ? "Copied" : "Copy as image"}
             </button>
             <button className="btn secondary" onClick={saveImage}>Save image</button>
-            <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+            <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
           </div>
         </div>
 
@@ -10851,7 +10851,7 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
             <button className={mode === "edit" ? "on" : ""} onClick={() => setMode("edit")}>The month</button>
             <button className={mode === "raw" ? "on" : ""} onClick={() => setMode("raw")}>As uploaded</button>
           </div>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         {changed > 0 && (
@@ -11129,7 +11129,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
             <h2 className="plate-hist-title">Upload monthly schedule</h2>
             <p className="plate-hist-sub">Applies days off and vacation for the month. Off-days are excluded from the point system and from days worked.</p>
           </div>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         {sheetPick ? (
@@ -12316,7 +12316,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                 <h2 className="plate-hist-title">Plate {openPlate.tag}</h2>
                 <p className="plate-hist-sub">Currently {openPlate.checkedIn ? "returned" : "out with " + (openPlate.assignee || "unassigned")}. Full custody trail below.</p>
               </div>
-              <button className="btn-x" onClick={() => setHistoryFor(null)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+              <button className="btn-x x-close" onClick={() => setHistoryFor(null)} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
             </div>
             <ol className="plate-hist-list">
               {(openPlate.history || []).slice().reverse().map((h, i) => (
@@ -12437,7 +12437,7 @@ function ChecklistEditor({ config, storeId, onChange }) {
           <div key={c.id} className="cl-row">
             <span className="cl-ord">
               <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" aria-label="Move up"><PixIcon glyph="moveup" size={11} /></button>
-              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down" aria-label="Move down"><PixIcon glyph="arrowdown" size={11} /></button>
+              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down" aria-label="Move down"><PixIcon glyph="movedown" size={11} /></button>
             </span>
             <span className="cl-fields">
               <input className="help-in" value={c.label} placeholder="What to do"
@@ -13040,8 +13040,8 @@ function RoundUp({ config, store, data, M }) {
                     <div className="ru-verdict-sub">{ru2.up} of {ru2.up + ru2.down} measures improved</div>
                   </div>
                 )}
-                <button type="button" className="ru-x" onClick={close} aria-label="Close the round-up">
-                  <PixIcon glyph="close" size={13} />
+                <button type="button" className="ru-x x-close" onClick={close} aria-label="Close the round-up">
+                  <PixIcon glyph="close" size={15} />
                 </button>
               </div>
 
@@ -13830,7 +13830,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
   return createPortal(
     <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
       <div ref={boxRef} className={"acard" + (closing ? " closing" : "")} role="dialog" aria-label={a.name}>
-        <button className="ac-x" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
+        <button className="ac-x x-close" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         <div className="ac-head">
           <span className="ac-ava">{ini}</span>
           <div>
@@ -17442,7 +17442,7 @@ function ToolSwitcher({ value, onChange }) {
   const tools = [
     ["perf", "Performance"],
     ["activity", "Daily Activity"],
-    ["board", "The Board"],
+    ["board", "TV Board"],
   ];
   const queues = [
     ["floor", "Live Floor", "#10B981", "door"],
@@ -17798,11 +17798,11 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
    label — Summary, Import, History, Roster, Access, Coaching, Standards,
    Overview, Tickets, Stores, Backup. */
 const NAV_SHORT = {
-  board: "Board", dashboard: "Board",  // "Dashboard", or "Combined Board" in the group view
-  checkout: "Checkout",                // "Check Out"
+  /* Widths only, never different words (consistency pass, item 4): the
+     dashboard is "Dashboard" on every surface, Check Out is two words
+     everywhere, the phone room is the Phone Line everywhere. */
   plates: "Plates",                    // "License Plates"
   audit: "Audit",                      // "Audit Log"
-  queue: "Phones",                     // "Phone Line"
   floor: "Floor",                      // "Live Floor"
 };
 
@@ -17817,7 +17817,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open, onClose]);
 
-  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "The Board"], ["floor", "Live Floor"], ["line", "Phone Line"], ["online", "Online"]];
+  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "TV Board"], ["floor", "Live Floor"], ["line", "Phone Line"], ["online", "Online"]];
   const pick = (id) => { onChange && onChange(id); onClose(); };
 
   return (
@@ -17826,7 +17826,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
       <aside className="drawer" role="dialog" aria-label="Menu">
         <div className="drawer-head">
           {storeName ? <div className="drawer-store">{storeName}</div> : <div className="drawer-store">Menu</div>}
-          <button className="drawer-x" onClick={onClose} aria-label="Close menu"><PixIcon glyph="close" size={13} /></button>
+          <button className="drawer-x x-close" onClick={onClose} aria-label="Close menu"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         <div className="drawer-scroll">
@@ -17834,12 +17834,12 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
               alone, so the "Go to" heading would sit over nothing. */}
           {items && items.length > 0 && (
             <>
-              <div className="drawer-section-label">Go to</div>
+              <div className="drawer-section-label">Sections</div>
               <nav className="drawer-nav">
                 {items.map(([id, label]) => (
                   <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
                     <span>{label}</span>
-                    {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+                    {/* The dock's centre button carries the import count on the phone; a second copy here said it twice (consistency pass, item 9). */}
                     {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
                   </button>
                 ))}
@@ -17847,7 +17847,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
             </>
           )}
 
-          <div className="drawer-section-label">Switch tool</div>
+          <div className="drawer-section-label">Tools</div>
           <nav className="drawer-nav">
             {tools.map(([id, label]) => (
               <button key={id} className={"drawer-item " + (appModule === id ? "on" : "")} onClick={() => onToolChange(id)}>
@@ -19696,7 +19696,7 @@ function CrossCheck({ store, data, config, onClose }) {
             <div className="xc-sub">Nothing here is imported or changed</div>
             <h2>Check the board against the report</h2>
           </div>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         <div className="xc-body">
@@ -23368,7 +23368,7 @@ function HolidayPanel({ config, onChange }) {
                 {new Date(h.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 {h.name && <em>{h.name}</em>}
                 <button title="Remove"
-                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="remove" size={13} /></button>
+                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
               </span>
             ))}
           </div>
@@ -23508,7 +23508,7 @@ function SettingsPanel({ config, onChange }) {
         </p>
         <table className="roster-table">
           <thead>
-            <tr><th>Position</th><th>Show on The Board</th><th>Include in Coaching</th></tr>
+            <tr><th>Position</th><th>Show on the TV Board</th><th>Include in Coaching</th></tr>
           </thead>
           <tbody>
             {config.roles.map((r) => (

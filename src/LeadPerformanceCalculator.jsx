@@ -458,6 +458,8 @@ const PIX = {
   question:  ["0011100","0100010","0000010","0000100","0001000","0000000","0001000"],
   plus:      ["0001000","0001000","0001000","1111111","0001000","0001000","0001000"],
   minus:     ["0000000","0000000","0000000","1111111","0000000","0000000","0000000"],
+  plus:      ["0001000","0001000","0001000","1111111","0001000","0001000","0001000"],
+  dash:      ["0000000","0000000","0000000","0011100","0000000","0000000","0000000"],
   arrowup:   ["0001000","0011100","0101010","1001001","0001000","0001000","0001000"],
   arrowdown: ["0001000","0001000","0001000","1001001","0101010","0011100","0001000"],
   arrow:     ["0001000","0000100","0000010","1111111","0000010","0000100","0001000"],
@@ -9696,7 +9698,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <div className="mc-sheet">
             <div className="mc-sheet-head">
               <b>{sheet === "closing" ? "Closing" : sheet === "sched" ? new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long" }) : "The board"}</b>
-              <button type="button" className="mc-x" onClick={() => { setSheet(null); setOpenCh(null); }} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
+              <button type="button" className="mc-x x-close" onClick={() => { setSheet(null); setOpenCh(null); }} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
             </div>
             {sheet === "closing" && (
               <>
@@ -10918,7 +10920,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setAppOpen(false); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>The Sage app</b>
-              <button type="button" className="mc-x" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
+              <button type="button" className="mc-x x-close" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
             <p className="mc-steps-p">The Sage app is on its way to the App Store and Google Play. It is the way to carry your corner and the line, with a buzz when you are up. Until it lands, this page in your browser is the same screen.</p>
           </div>
         </div></Overlay>
@@ -10930,7 +10932,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
           <div className="mc-sheet mc-you">
             <div className="mc-sheet-head"><b>You</b>
-              <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
+              <button type="button" className="mc-x x-close" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
             <div className="mc-you-hero">
               <span className="mc-set-av" style={{ background: `hsl(${(String(meFull || meLabel).split("").reduce((h2, c2) => (h2 * 31 + c2.charCodeAt(0)) % 360, 0))} 62% 46%)` }}>{String(meLabel || meFull).trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</span>
               <span className="mc-you-who"><b>{meFull || meLabel}</b><span className="hint">{(row && row.storeName) || ""}{myGoal != null ? ` \u00b7 goal ${myGoal}` : ""}</span></span>
@@ -13801,6 +13803,15 @@ input[type=number] { width:84px; }
 /* Red for everything, including Cancel, Crop, Move up and Download: a
          screen of ordinary actions read as a screen of warnings. Neutral now,
          with red kept for the ones that actually take something away. */
+
+/* One close (consistency pass, item 1). Every X that closes a sheet, a card,
+   a panel or a drawer is this: a 36 px disc in the surface's own tint, the
+   dotted cross at 15 px. The six classes it sits on keep their place; the
+   look is one. */
+.lpc .x-close{ width:36px; height:36px; border-radius:50%; border:0; padding:0; display:grid; place-items:center; cursor:pointer;
+  background:color-mix(in srgb, currentColor 9%, transparent); color:inherit; font-size:0; line-height:0; }
+.lpc .x-close:hover{ background:color-mix(in srgb, currentColor 16%, transparent); }
+.lpc .x-close .pix{ display:block; }
 .btn-x { background:transparent; border:none; color:var(--ink-2); cursor:pointer; font-size:12px; font-weight:600;
         padding:4px 8px; border-radius:8px; transition: background .2s, color .2s; }
 .btn-x:hover { background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--p2d); }
