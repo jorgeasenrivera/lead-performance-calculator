@@ -3559,7 +3559,7 @@ function QueueBoardLink({ storeId, kind }) {
         navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
           () => askCopy("Point a screen at this address", url));
       }}>
-      {said ? "Copied" : "Copy board link"}
+      {said ? "Copied" : "TV link"}
     </button>
   );
 }
@@ -3574,7 +3574,7 @@ function TestLink({ storeId, date, token, param }) {
         navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
           () => askCopy("Open this on your phone to test the salesperson view", url));
       }}>
-      {said ? "Copied" : "Copy test link"}
+      {said ? "Copied" : "Salesperson link"}
     </button>
   );
 }
@@ -3855,7 +3855,10 @@ function AlsoOnClock({ roster, line, data, date, realName, onAdd, onNudge, nudge
    store's identity, the day's shape as chips, the big who's-up block the drafts
    asked for, and the day's numbers as tiles on the green. */
 function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, accent, kind, metrics,
-                    onAssign, assignDisabled, assignBusy, assignLabel }) {
+                    onAssign, assignDisabled, assignBusy, assignLabel, onEmpty }) {
+  /* An empty room says its state and offers its one action (five-second
+     pass, item 8), instead of two dashes and a greyed verb. */
+  const empty = !nextName && (waitingNames || []).length === 0;
   const stack = (waitingNames || []).slice(0, 6);
   const extra = Math.max(0, (waitingNames || []).length - stack.length);
   const M = metrics || {};
@@ -3876,6 +3879,17 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
         )}
       </div>
 
+      {empty && onEmpty ? (
+        <div className="fh-up fh-quiet">
+          <span className="fh-ava"><PixIcon glyph="door" size={18} /></span>
+          <div className="fh-main">
+            <div className="s2-cap">{kind === "floor" ? "The floor" : kind === "online" ? "The queue" : "The phone line"}</div>
+            <div className="fh-name">{kind === "floor" ? "Nobody has signed in yet" : "Nobody is on the line yet"}</div>
+            <div className="fh-sub">Send the code and people appear here as they sign in.</div>
+          </div>
+          <button className="fh-go" onClick={onEmpty}><PixIcon glyph="clipboard" size={12} />Send the sign-in code</button>
+        </div>
+      ) : (
       <div className="fh-up">
         <span className="fh-ava">{nextName ? initialsOf(nextName) : "--"}</span>
         <div className="fh-main">
@@ -3901,6 +3915,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
           </button>
         )}
       </div>
+      )}
 
       {metrics && (
         <div className="da-kpis fh-kpis">
@@ -5108,7 +5123,12 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
 
         <div className="sd-grid2">
           <div>
-            <div className="sd-cap2">When the room was covered</div>
+            <div className="sd-cap2 cap-sent">When the room was covered</div>
+            {/* The grid appears once it has three hours to show (five-second
+                pass, item 9). Before that its space holds one sentence. */}
+            {occ.byHour.filter((b) => b.staffed > 0).length < 3 ? (
+              <p className="sd-none">Coverage shows once three hours have somebody at a desk.</p>
+            ) : (
             <div className="stnd">
               <div className="stnd-grid-scroll">
                 <div className="stnd-grid" style={{ "--cols": occ.hours.length }}>
@@ -5131,7 +5151,8 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
                 </div>
               </div>
             </div>
-            {occ.thinnest && occ.thinnest.staffed < occ.thinnest.of && (
+            )}
+            {occ.thinnest && occ.thinnest.staffed < occ.thinnest.of && occ.byHour.filter((b) => b.staffed > 0).length >= 3 && (
               <p className="sd-note">
                 Thinnest at {label(occ.thinnest.hour)}{Number(occ.thinnest.hour) < 12 ? "am" : "pm"}:{" "}
                 {occ.thinnest.staffed} of {occ.thinnest.of} stations.
@@ -5140,7 +5161,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
           </div>
 
           <div>
-            <div className="sd-cap2">What came in while they were sitting</div>
+            <div className="sd-cap2 cap-sent">What came in while they were sitting</div>
             {people.length === 0
               ? <p className="sd-note">Nobody has taken a desk today.</p>
               : (
@@ -5179,6 +5200,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
 function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARIANTS.line }) {
   const [row, setRow] = useState(undefined);
   const [showQR, setShowQR] = useState(false);
+  const [setup, setSetup] = useState(false);
   const [showPins, setShowPins] = useState(false);
   const [identities, setIdentities] = useState({});
   const [pendingAssign, setPendingAssign] = useState(null);
@@ -5431,11 +5453,16 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     <div className={`checkout q-tab mf ${variant.mf}`}>
       <div className="q-topline">
         <div className="q-topline-actions">
-          <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
-          <button className="btn" onClick={() => setShowQR(true)}>Sign-in code</button>
-          <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
-          <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
+          <button className="btn btn-primary" onClick={() => setShowQR(true)}>Sign-in code</button>
+          <button className={"btn" + (setup ? " on" : "")} aria-expanded={setup} onClick={() => setSetup((v) => !v)}>Set up</button>
         </div>
+        {setup && (
+          <div className="q-setup">
+            <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
+            <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
+            <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
+          </div>
+        )}
       </div>
 
       {(() => {
@@ -5462,7 +5489,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
             waitingNames={withoutTest(line).map((p) => realName(p.id))}
             accent={variant.accent} kind={variant.kind} metrics={M}
             assignLabel={variant.kind === "online" ? "Assign the lead" : "Assign the call"}
-            onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+            onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy}
+            onEmpty={withoutTest(line).length === 0 ? () => setShowQR(true) : null} />
         );
       })()}
 
@@ -6885,6 +6913,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
   const [row, setRow] = useState(undefined);
   const [identities, setIdentities] = useState({});
   const [showQR, setShowQR] = useState(false);
+  const [setup, setSetup] = useState(false);
   const [showPins, setShowPins] = useState(false);
   const [showPhones, setShowPhones] = useState(false);
   const [asking, setAsking] = useState(0);
@@ -7169,8 +7198,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
 
   if (row === undefined || data === null) return <div className="checkout"><p className="muted">Loading the floor…</p></div>;
 
-  const norms = (cfg.dealershipNorms || []).filter(Boolean);
-  const notConfigured = !norms.length;
   const expectedNotHere = salesRoster.filter((a) => !isOff(data, a.id, date) && !line.some((p) => p.id === a.id));
   const notInLine = salesRoster.filter((a) => !line.some((p) => p.id === a.id));
   const url = row ? floorSignInUrl(store.id, date, row.token) : "";
@@ -7200,9 +7227,12 @@ function FloorBoard({ config, store, data, onData, userName }) {
     <div className="checkout q-tab f-tab mf mf-floor">
       <div className="q-topline">
         <div className="q-topline-actions">
-          <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
-          <button className={"btn" + (asking > 0 && !showPhones ? " f-asking" : "")} onClick={() => setShowPhones((v) => !v)}>
-            {showPhones ? "Hide phones" : asking > 0 ? `Phones · ${asking} asking` : "Phones"}</button>
+          {/* The daily control first and filled; set-up behind one button
+              (five-second pass, item 11). Phones stays out only while
+              somebody is asking. */}
+          <button className="btn btn-primary" onClick={() => setShowQR(true)}>Sign-in code</button>
+          {(asking > 0 || showPhones) && <button className={"btn" + (asking > 0 && !showPhones ? " f-asking" : "")} onClick={() => setShowPhones((v) => !v)}>
+            {showPhones ? "Hide phones" : `Phones · ${asking} asking`}</button>}
           {/* Only ever shown when there is something in it. A button that reads
               "0 to review" every day of the year teaches a manager to stop
               looking at exactly the place they are meant to look. */}
@@ -7216,22 +7246,20 @@ function FloorBoard({ config, store, data, onData, userName }) {
               learns to stop looking at the place they are meant to look. */}
           {behindCount > 0 && (
             <button className={"btn" + (showBehind ? "" : " f-bl-btn")} onClick={() => setShowBehind((v) => !v)}>
-              {showBehind ? "Hide behind" : `Behind · ${behindCount}`}
+              {showBehind ? "Hide" : `${behindCount} not signed in`}
             </button>
           )}
-          <button className="btn" onClick={() => setShowQR(true)}>Sign-in code</button>
-          <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
-          <QueueBoardLink storeId={store.id} kind="floor" />
+          <button className={"btn" + (setup ? " on" : "")} aria-expanded={setup} onClick={() => setSetup((v) => !v)}>Set up</button>
         </div>
+        {setup && (
+          <div className="q-setup">
+            <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
+            <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
+            <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
+            <QueueBoardLink storeId={store.id} kind="floor" />
+          </div>
+        )}
       </div>
-
-      {notConfigured && (
-        <div className="f-warn">
-          No dealership is linked to this store yet, so deal events won't reach the floor. An admin can add one under
-          <strong> Settings → Live Floor</strong> (the DriveCentric dealership name, e.g. "Driver's Mart Winter Park").
-          The board still works as a manual floor line in the meantime.
-        </div>
-      )}
 
       {/* The room, front and centre: the drawn floor with the up rotation
           docked at the real door, guests on their tables, asks glowing over
@@ -7254,7 +7282,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
             waitingNames={withoutTest(line).map((p) => realName(p.id))}
             accent="#0FB37E" kind="floor" metrics={M}
             assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "the up")}
-            onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
+            onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy}
+            onEmpty={withoutTest(line).length === 0 ? () => setShowQR(true) : null} />
         );
       })()}
 
@@ -8312,6 +8341,10 @@ function FloorConfigEditor({ config, storeId, onChange }) {
   const store = config.stores.find((s) => s.id === storeId);
   const cfg = floorCfg(store);
   const map = floorEventMap(store);
+  /* The "no dealership linked" note lives here, where the link is made,
+     as one line (five-second pass, item 8). It used to be a paragraph at
+     the top of the board. */
+  const unlinked = !(cfg.dealershipNorms || []).filter(Boolean).length;
   const [dealerInput, setDealerInput] = useState("");
   const [evEvent, setEvEvent] = useState("");
   const [evAction, setEvAction] = useState("checkin");
@@ -8381,6 +8414,7 @@ function FloorConfigEditor({ config, storeId, onChange }) {
 
   return (
     <div className="standards f-settings mf mf-floor mf-settings">
+      {unlinked && <div className="f-note"><PixIcon glyph="warn" size={12} /> No dealership is linked yet, so deal events do not reach the floor. Add the DriveCentric dealership name below; the board works as a manual line until then.</div>}
       <div className="mf-settings-banner">Live Floor settings</div>      <div className="card">
         <h3>Live Floor <span className="section-sub">{store.name}</span></h3>
         <p className="hint">The floor board self-governs from DriveCentric deal events. Turn it off to run a purely manual floor line.</p>
@@ -9346,20 +9380,20 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
             <div className="da-krow"><span className="da-knum">{fmtNum(tNow.c)}</span>{kpiChip(dCalls)}</div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="doc" size={10} /> Team videos</div>
             <div className="da-krow"><span className="da-knum">{fmtNum(tNow.v)}</span>{kpiChip(dVideos)}</div></div>
-          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> At minimums</div>
+          <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="check" size={10} /> Hit their minimums</div>
             <div className="da-krow"><span className="da-knum">{atMin}<span className="da-ksub">/{withData.length}</span></span></div></div>
           <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="trophy" size={10} /> <span style={{ textTransform: "none" }}>RockEd</span></div>
-            <div className="da-krow"><span className="da-knum">{qualToday}</span><span className="da-ksub">qualified</span></div></div>
+            <div className="da-krow"><span className="da-knum">{qualToday}</span><span className="da-ksub">done today</span></div></div>
           {noShowSuspects.length > 0
             ? <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="warn" size={10} /> Unanswered</div>
                 <div className="da-krow"><span className="da-knum">{noShowSuspects.length}</span><span className="da-ksub">no log yet</span></div></div>
-            : <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="sparkle" size={10} /> Clean sheets</div>
-                <div className="da-krow"><span className="da-knum">{rockedCount}</span><span className="da-ksub">0 pts today</span></div></div>}
+            : <div className="da-kpi"><div className="da-kcap"><PixIcon glyph="sparkle" size={10} /> Nothing missed</div>
+                <div className="da-krow"><span className="da-knum">{rockedCount}</span><span className="da-ksub">no points today</span></div></div>}
         </div>
         </div>
       </div>
 
-      <div className="sec-cap da-seccap"><PixIcon glyph="tridown" size={12} style={{ color: "#C2361F" }} /> Biggest Loser · most points this month</div>
+      <div className="sec-cap da-seccap cap-sent"><PixIcon glyph="tridown" size={12} style={{ color: "#C2361F" }} /> Most penalty points this month</div>
       {offenders.length === 0 ? (
         <div className="da-panel">
           <div className="da-pcap"><PixIcon glyph="check" size={13} /> No points this month</div>
@@ -13487,7 +13521,7 @@ function Board({ config, store, data, onMove, onSetRestriction, readOnly, filter
         )
       )}
       {!query && top3.length > 0 && (<>
-        <div className="sec-cap"><PixIcon glyph="trophy" size={12} /> Top performers · units delivered, standards break the tie</div>
+        <div className="sec-cap cap-sent"><PixIcon glyph="trophy" size={12} /> Top performers, by units delivered; standards break the tie</div>
         <div className="s2-podium">
           {top3.map((r, i) => (
             <button key={r.name} className={"s2-pod" + (i === 0 ? " first" : "")} onClick={() => onFocus && onFocus(r.name)}>
@@ -15949,7 +15983,7 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
       <label className="cx-gnum"><input type="number" inputMode="numeric" min="0" value={goalDraft} placeholder="0" onChange={(e) => setGoalDraft(e.target.value)} onBlur={commitGoal} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /><span>goal · units</span></label>
       <div className="cx-pace">
         <span className="cx-strip"><span className="cx-dots">{Array.from({ length: dotN }, (_, i) => <i key={i} className={i < delivered ? "d" : ""} />)}</span>{goal > 0 && <span className="cx-mk" style={{ left: Math.min(100, (calElapsed / workingDays) * 100) + "%" }} />}</span>
-        <span className="cx-stripl"><span>today</span><span className={"cx-pc" + (goal > 0 && pace != null ? (onTrack ? " ok" : " bad") : "")}>{goal > 0 ? (pace == null ? "pace after 3 days" : `projected ${fmtNum(Math.min(pace, paceCap))}${pace > paceCap ? "+" : ""}`) : ""}</span><span>{goal > 0 ? `${goal} to hit` : "no goal"}</span></span>
+        <span className="cx-stripl"><span>today</span><span className={"cx-pc" + (goal > 0 && pace != null ? (onTrack ? " ok" : " bad") : "")}>{goal > 0 ? (pace == null ? "pace after 3 days" : `projected ${fmtNum(Math.min(pace, paceCap))}${pace > paceCap ? "+" : ""}`) : ""}</span><span>{goal > 0 ? `${goal} goal` : "no goal"}</span></span>
       </div>
     </div>
     <div className="cx-stats">
@@ -17565,7 +17599,7 @@ const BAR_TOOLS = [
   /* gear, not users: this tab is the only one in the bar that opens a set of
      tools rather than going somewhere, and the cog reads as a hub. `users` also
      belonged to Roster, so it said "people" twice for two different things. */
-  [QUEUE_TAB, "Up Next", "gear"],
+  [QUEUE_TAB, "Rooms", "door"],
 ];
 
 const inQueues = (mod) => QUEUE_TOOLS.some((q) => q.id === mod);
@@ -18165,6 +18199,10 @@ function S2DeliveryChart({ digests, thr, moTrail, drawKey, onHold }) {
   useEffect(() => () => { onHold && onHold(false); }, []); // eslint-disable-line
   const series = useMemo(() => dailySeries(digests, thr), [digests, thr]);
   const daily = !!series;
+  /* Three points before there is a line (five-second pass, item 9). A frame
+     with two dots stops the eye and says nothing. */
+  const shown = daily ? series[0].pts.filter((p) => p.pct != null).length : (moTrail || []).length;
+  if (shown < 3) return <div className="s2-none s2-notyet">The month's line starts once three days have figures.</div>;
 
   const SER = CHANNEL_SERIES;
   const ids = ["internet", "phone", "showroom"];
@@ -18717,7 +18755,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
               {parX != null && <span className={"bp-mk bp-td" + paceCls} style={{ left: parX + "%" }} />}
               {goalBar > 0 && <span className="bp-mk bp-goalmk" style={{ left: "99%" }} />}
             </span>
-            <span className="bp-stripl"><span>today</span><span className={"bp-pc" + paceCls}>{paceWord}</span><span>{goalBar ? `${fmtNum(goalBar)} to hit` : ""}</span></span>
+            <span className="bp-stripl"><span>today</span><span className={"bp-pc" + paceCls}>{paceWord}</span><span>{goalBar ? `${fmtNum(goalBar)} goal` : ""}</span></span>
           </button>
           <button type="button" className="bp-l3" onClick={() => setPop({ k: "stock" })}>
             <span className="bp-nu"><i className="bp-n" style={{ flex: Math.max(split.nw, 0.01) }} /><i className="bp-u" style={{ flex: Math.max(split.us, 0.01) }} /></span>
@@ -18761,11 +18799,11 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
             const n = people.filter((p) => p.a.roleId === r.id).length;
             return <button type="button" key={r.id} className={!limitOnly && roleFilter === r.id ? "on" : ""} onClick={() => { setRoleFilter(r.id); setLimitOnly(false); }}>{r.name} · {n}</button>;
           })}
-          <button type="button" className={limitOnly ? "on" : ""} onClick={() => setLimitOnly((v) => !v)}>At the limit · {limitCount}</button>
+          <button type="button" className={limitOnly ? "on" : ""} onClick={() => setLimitOnly((v) => !v)}>Lead cap reached · {limitCount}</button>
           {drill && <button type="button" className="on drill" onClick={() => setDrill(null)}>{drill.label} <PixIcon glyph="close" size={10} /></button>}
         </div>
-        <div className="bp-fivehead"><span /><span className="bp-lbl">Limit</span>
-          <PixIcon glyph="globe" size={13} /><PixIcon glyph="phone" size={13} /><PixIcon glyph="door" size={13} /><PixIcon glyph="calendar" size={13} /><PixIcon glyph="tap" size={13} />
+        <div className="bp-fivehead"><span /><span className="bp-lbl">Leads</span>
+          <span className="bp-lbl bp-r">standards</span>
           <span className="bp-lbl bp-r">units</span></div>
         {rows.length === 0 && <p className="fr-empty">Nobody here.</p>}
         {rows.map((p) => (
@@ -18775,11 +18813,24 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
               <span className="bp-nmx">{p.a.name}</span>
               <span className="bp-lim">
                 <span className="bp-pb"><i className={"bp-" + p.stand[0]} style={{ width: (p.ev.cap ? Math.min(100, (p.ev.opps / p.ev.cap) * 100) : 0) + "%" }} /></span>
-                <b>{p.ev.cap != null ? `${p.ev.opps ?? 0}/${p.ev.cap}` : "–"}</b>
+                <b>{p.ev.cap != null ? `${p.ev.opps ?? 0} of ${p.ev.cap}` : "no cap"}</b>
                 {p.stand[0] !== "ok" && p.stand[0] !== "na" && <span className={"bp-stnd bp-" + p.stand[0]}>{p.stand[1]}</span>}
               </span>
             </span>
-            {p.five.map((f) => <span key={f.key} className={"bp-dotc bp-" + f.state}><i /></span>)}
+            {/* One verdict, not five dots (five-second pass, item 7): how many
+                of the standards are met, in the worst one's colour, with the
+                glyph that says it. The card behind the row lists the five. */}
+            {(() => {
+              const withData = p.five.filter((f) => f.state !== "na");
+              const met = withData.filter((f) => f.state === "ok").length;
+              const worst = withData.some((f) => f.state === "bad") ? "bad" : withData.some((f) => f.state === "warn") ? "warn" : withData.length ? "ok" : "na";
+              return (
+                <span className={"bp-verdict bp-" + worst}>
+                  <PixIcon glyph={worst === "ok" ? "check" : worst === "bad" ? "warn" : worst === "warn" ? "clock" : "dash"} size={11} />
+                  {withData.length ? `${met} of ${withData.length}` : "no data"}
+                </span>
+              );
+            })()}
             <span className="bp-un">{fmtNum(p.units)}</span>
           </button>
         ))}
@@ -19274,8 +19325,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   </span>
                 : storePace.goal
                   ? (canSetGoal
-                      ? <button className="s2-den s2-goaledit" title="Change this month's goal" onClick={() => { setGoalDraft(String(storePace.goal.units)); setGoalOpen(true); }}>/ {fmtNum(storePace.goal.bar)} to hit</button>
-                      : <span className="s2-den">/ {fmtNum(storePace.goal.bar)} to hit</span>)
+                      ? <button className="s2-den s2-goaledit" title="Change this month's goal" onClick={() => { setGoalDraft(String(storePace.goal.units)); setGoalOpen(true); }}>/ {fmtNum(storePace.goal.bar)} goal</button>
+                      : <span className="s2-den">/ {fmtNum(storePace.goal.bar)} goal</span>)
                   : canSetGoal && <button className="s2-den s2-goalask" onClick={() => { setGoalDraft(lastGoal ? String(lastGoal) : ""); setGoalOpen(true); }}>/ set a goal{lastGoal ? ` · last month ${fmtNum(lastGoal)}` : ""}</button>}
             </div>
             {storePace.goal && (
@@ -19288,7 +19339,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                   <span style={{ color: paceCol, fontWeight: 700 }}>
                     {storePace.tooEarly ? "too early to project" : `pace ${Math.round(storePace.projected)}`}
                   </span>
-                  <span>{fmtNum(storePace.goal.bar)} to hit</span>
+                  <span>{fmtNum(storePace.goal.bar)} goal</span>
                 </div>
                 <BloopWin cls="dn s2-pacewin">
                   <div className="bw-title">The month, against the ask</div>
@@ -19365,8 +19416,8 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                 the list, and search is how you narrow it. */}
             <div className="s2-vitals">
               <span className={"s2-vdot s2-v-" + (pct >= 75 ? "g" : pct >= 55 ? "y" : "r")} />
-              {healthWord}{attN > 0 ? <> · <b>{nPct}%</b> of standard</> : null}
-              {" · "}{nRoster} on the board · <b>{nOpps}</b>/{capTotal || "-"} leads held
+              {attN > 0 && nPct >= 100 ? "Everyone is on standard" : <>{healthWord}{attN > 0 ? <> · <b>{nPct}%</b> of standard</> : null}</>}
+              {" · "}{nRoster} on the board{capTotal ? <> · <b>{nOpps}</b> of {capTotal} leads held</> : null}
             </div>
           </div>
           <div className="s2-right">
@@ -19447,7 +19498,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             {/* The calendar is the only thing that says the date now; this is just
                 the door to the round-up, not a second copy of the day. */}
             <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
-              <PixIcon glyph="roundup" size={11} /> Round-up
+              <PixIcon glyph="roundup" size={11} /> Month so far
             </button>
             <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
               <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
@@ -19460,7 +19511,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
           </div>
           <div className="s2-chip-state">
             <div className="s2-rota bloop-host" tabIndex={0}>
-              <b>{onCount} on{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
+              <b>{onCount} working today{offToday.length ? <i> · {offToday.length} off</i> : null}</b>
               <div className="bloopwin dn r s2-rotawin">
                 <div className="bw-title">On today · {onCount}</div>
                 <div className="s2-names">
@@ -19540,11 +19591,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             if (Math.abs(dx) > 40) { setSpotOn((i) => (i + (dx < 0 ? 1 : SPOT_N - 1)) % SPOT_N); armSpot(); }
           }}>
           <div className={"s2-slide" + (spotOn === 0 ? " on" : "")}>
-            <div className="s2-scap"><PixIcon glyph="chart" size={12} /> Delivery against target · all three channels</div>
+            <div className="s2-scap cap-sent"><PixIcon glyph="chart" size={12} /> Sold against goal, by channel</div>
             <S2DeliveryChart digests={digests} thr={thr} moTrail={moTrail} drawKey={spotOn} onHold={setSpotHeld} />
           </div>
           <div className={"s2-slide" + (spotOn === 1 ? " on" : "")}>
-            <div className="s2-scap"><PixIcon glyph="sparkle" size={12} /> Talk to these first</div>
+            <div className="s2-scap cap-sent"><PixIcon glyph="sparkle" size={12} /> Talk to these first</div>
             {urgent.length === 0 && <div className="s2-none">Nobody below standard right now.</div>}
             {urgent.slice(0, 3).map((u) => (
               <button key={u.name} className="s2-person" onClick={() => onFocus && onFocus(u.name)}>
@@ -21378,6 +21429,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
             <button type="button"><b>{store?.graceDays ?? 10}</b><span>Grace days</span></button>
             <button type="button"><b>{std.tiers.length}</b><span>Lead caps</span></button>
           </div>
+          <div className="tg-hint">Grace days: how long a new hire is judged on effort before results count. Lead caps: how many leads one person can hold at a time, by tier.</div>
         </div>
       ) : (
       <div className="s2-hero tg-hero">
@@ -21751,11 +21803,11 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
 
   const standingPill = (p) => p.status === "active" ? <span className="fr-st in">on the floor</span>
     : p.status === "departed" ? <span className="fr-st off">left{p.departedAt ? " " + dayOf(p.departedAt) : ""}</span>
-    : <span className="fr-st away">not ours</span>;
+    : <span className="fr-st away">not this store's</span>;
   const acctPill = (p) => {
     if (!storeId || links === null || !p.id || p.status === "ignored") return null;
     const l = linkFor(p);
-    if (!l) return <span className="fr-st pe-noacct">no account</span>;
+    if (!l) return null;
     const a = acctFor(l);
     return <span className={"fr-st pe-acct" + (a && a.active === false ? " pe-off" : "")}>{a && a.active === false ? "switched off" : "account"}</span>;
   };
@@ -21773,7 +21825,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
   const popBody = () => {
     if (!pop) return null;
     if (pop.k === "who") {
-      const title = { active: "On the floor", departed: "Left", ignored: "Never ours", noacct: "Without an account" }[pop.s];
+      const title = { active: "On the floor", departed: "Left", ignored: "Not this store's", noacct: "Without an account" }[pop.s];
       const list = pop.s === "noacct"
         ? people.filter((p) => p.status === "active" && p.id && !(links || []).some((l) => l.person_id === p.id))
         : people.filter((p) => p.status === pop.s);
@@ -21782,9 +21834,9 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
       return (<>{hd(title, <span className="fr-w">{list.length}</span>)}<div className="bp-defn">{defn}</div>
         {nameList(list, (r) => roleName(r.roleId) || null, (r) => pop.s === "noacct" ? <span className="fr-st pe-noacct">no account</span> : <span />)}<div style={{ height: 12 }} /></>);
     }
-    if (pop.k === "why") return (<>{hd("Left, and not ours")}
+    if (pop.k === "why") return (<>{hd("Left, or not this store's")}
       <div className="bp-defn"><b>Left</b> keeps everything they did on file and their cars in the month they sold them, because the store did sell those. They come off the board, the sheet and the line straight away.<br /><br />
-        <b>Never ours</b> is for a name that arrived in a report by mistake. Their figures come back off the store entirely. Said by mistake, it is one tap to undo: the figures are set aside, not thrown away, and putting the person back on the floor puts them back.</div></>);
+        <b>Not this store's</b> is for a name that arrived in a report by mistake. Their figures come back off the store entirely. Said by mistake, it is one tap to undo: the figures are set aside, not thrown away, and putting the person back on the floor puts them back.</div></>);
     if (pop.k === "add") {
       const nm = nuName.trim();
       const reset = () => { setNuName(""); setNuRole(config.roles?.[0]?.id || null); setNuDate(today()); };
@@ -21919,10 +21971,10 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
         <div className="fr-acts pe-acts">
           {p.status !== "active" && <button type="button" className="fr-b pri" onClick={() => { move(p.name, "active"); close(); }}>Back on the floor</button>}
           {p.status !== "departed" && <button type="button" className="fr-b" onClick={() => { move(p.name, "departed"); close(); }}>Left the store</button>}
-          {p.status !== "ignored" && <button type="button" className="fr-b warn" onClick={() => { move(p.name, "ignored"); close(); }}>Never ours</button>}
+          {p.status !== "ignored" && <button type="button" className="fr-b warn" onClick={() => { move(p.name, "ignored"); close(); }}>Not this store's</button>}
           {p.status === "active" && (allStores || []).length > 1 && <button type="button" className="fr-b" onClick={() => { setMoving(p); setMoveTo(""); setPop({ k: "move" }); }}>Move store</button>}
         </div>
-        <div className="bp-defn">Left keeps everything they did on file. Never ours takes their figures back off the store.</div>
+        <div className="bp-defn">Left keeps everything they did on file. Not this store's takes their figures back off the store.</div>
       </>);
     }
     return null;
@@ -21947,12 +21999,12 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
         <div className="co-std pe-std">
           {counter("active", counts.active, "On the floor")}
           {counter("departed", counts.departed, "Left")}
-          {counter("ignored", counts.ignored, "Never ours")}
-          {links !== null && counter("noacct", noAcct, "No account", noAcct > 0 ? "co-alert" : "")}
+          {counter("ignored", counts.ignored, "Not this store's")}
+          {links !== null && counter("noacct", noAcct, "Without an account", noAcct > 0 ? "co-alert" : "")}
         </div>
         <div className="cx-tools pe-tools">
           <button type="button" className="fr-tool pri" onClick={() => setPop({ k: "add" })}><PixIcon glyph="plus" size={16} />Add a person</button>
-          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "why" })}><PixIcon glyph="warn" size={16} />Left, and not ours</button>
+          <button type="button" className="fr-tool dk" onClick={() => setPop({ k: "why" })}><PixIcon glyph="warn" size={16} />Left, or not this store's</button>
         </div>
       </div>
 
@@ -22010,7 +22062,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           <button type="button" className={"pe-sel" + (picking ? " on" : "")} onClick={() => (picking ? stopPicking() : setPicking(true))}>{picking ? "Done" : "Select"}</button>
         </div>
         <div className="pe-filters">
-          {[["active", "On the floor"], ["departed", "Left"], ["ignored", "Not ours"], ["all", "Everyone"]].map(([id, lbl]) => (
+          {[["active", "On the floor"], ["departed", "Left"], ["ignored", "Not this store's"], ["all", "Everyone"]].map(([id, lbl]) => (
             <button key={id} type="button" className={"pe-ft" + (only === id ? " on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
           ))}
         </div>
@@ -22025,7 +22077,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
                 const c = pickedPeople.reduce((n, p) => n + (monthUnitsFor(p.key) || 0), 0);
                 if (!(await confirmBatch(picked, c, "Take"))) return;
                 move(picked, "ignored"); stopPicking();
-              }}>Never ours</button>}
+              }}>Not this store's</button>}
             </div>
           </div>
         )}
@@ -22540,7 +22592,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <div className="pp-hstat"><span className="s2-cap">Left</span>
             <span className="pp-hbig">{counts.departed}</span>
             <span className="pp-hsub">keep the cars they sold</span></div>
-          <div className="pp-hstat"><span className="s2-cap">Never ours</span>
+          <div className="pp-hstat"><span className="s2-cap">Not this store's</span>
             <span className="pp-hbig">{counts.ignored}</span>
             <span className="pp-hsub">figures come back off</span></div>
           {links !== null && (
@@ -22553,7 +22605,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
       </div>
 
       <div className="card pp-card">
-        <Explain label="Left, and not ours: what the difference costs">
+        <Explain label="Left, or not this store's: what the difference costs">
           Somebody who <b>leaves</b> keeps the cars they sold in the month they sold them, because the store
           did sell those, and a month that loses a leaver's deliveries reads as 84.5 where 85 were
           delivered. Somebody who was <b>never here</b> loses theirs, because the store never earned them
@@ -22566,7 +22618,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <input className="help-in pp-q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a name…" />
           {showRest ? (
             <div className="seg-small">
-              {[["active", "On the floor"], ["departed", "Left"], ["ignored", "Not ours"], ["all", "Everyone"]].map(([id, lbl]) => (
+              {[["active", "On the floor"], ["departed", "Left"], ["ignored", "Not this store's"], ["all", "Everyone"]].map(([id, lbl]) => (
                 <button key={id} className={"seg-opt " + (only === id ? "on" : "")} onClick={() => setOnly(id)}>{lbl}</button>
               ))}
             </div>
@@ -22680,7 +22732,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     if (!storeId || links === null || !p.id) return null;
                     const l = linkFor(p);
                     const a = acctFor(l);
-                    if (!l) return <span className="pp-noacct">no account</span>;
+                    if (!l) return null;
                     const off = a && a.active === false;
                     return (
                       <span className={"pp-acct" + (off ? " pp-acct-off" : "")}
@@ -27045,10 +27097,10 @@ button.da-lbrow { cursor:pointer; }
 .bp-filt{ display:flex; gap:6px; padding:10px 12px 8px; flex-wrap:wrap; }
 .bp-filt button{ padding:6px 11px; border-radius:99px; border:1.5px solid var(--frline); font:700 11px var(--font-ui); color:var(--frink2); }
 .bp-filt button.drill{ background:var(--frsand2); border-color:var(--frsand2); display:inline-flex; align-items:center; gap:6px; }
-.bp-fivehead{ display:grid; grid-template-columns:28px minmax(0,1fr) repeat(5,22px) 34px; column-gap:5px; align-items:center; padding:8px 10px 4px; border-bottom:1px solid var(--frline); }
+.bp-fivehead{ display:grid; grid-template-columns:28px minmax(0,1fr) 84px 34px; column-gap:5px; align-items:center; padding:8px 10px 4px; border-bottom:1px solid var(--frline); }
 .bp-fivehead .bp-lbl{ font:700 8.5px var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--frink3); }
 .bp-fivehead .bp-lbl.bp-r{ text-align:center; }
-.bp-row{ display:grid; grid-template-columns:28px minmax(0,1fr) repeat(5,22px) 34px; column-gap:5px; align-items:center; height:56px; padding:0 10px; border-bottom:1px solid var(--frline); width:100%; }
+.bp-row{ display:grid; grid-template-columns:28px minmax(0,1fr) 84px 34px; column-gap:5px; align-items:center; height:56px; padding:0 10px; border-bottom:1px solid var(--frline); width:100%; }
 .bp-row:last-child{ border-bottom:0; }
 .bp-row .fr-av.bp-sm{ width:28px; height:28px; font-size:9.5px; }
 .bp-row .bp-who{ min-width:0; display:flex; flex-direction:column; }
@@ -27071,6 +27123,11 @@ button.da-lbrow { cursor:pointer; }
 .bp-row .bp-dotc.bp-bad{ background:#FBE5E0; color:var(--frgap); }
 .bp-row .bp-dotc.bp-na{ background:var(--frpaper); color:#B4BBB6; }
 .bp-row .bp-un{ font:700 15px var(--font-display); text-align:center; }
+.bp-row .bp-verdict{ justify-self:center; display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 9px; border-radius:999px; font:700 12px var(--font-mono); white-space:nowrap; }
+.bp-row .bp-verdict.bp-ok{ background:#E3F3E9; color:var(--frok); }
+.bp-row .bp-verdict.bp-warn{ background:#FFF3DE; color:var(--frthin); }
+.bp-row .bp-verdict.bp-bad{ background:#FBE5E0; color:var(--frgap); }
+.bp-row .bp-verdict.bp-na{ background:var(--frpaper); color:#8A928D; }
 .bp-nm{ white-space:normal !important; overflow:visible !important; line-height:1.15; }
 .bp-defn{ padding:4px 16px 12px; font:500 13px/1.5 var(--font-ui); color:var(--frink2); }
 .bp-divider{ margin:6px 16px 0; border-top:2px dotted var(--frline); }
@@ -27808,6 +27865,26 @@ button.da-lbrow { cursor:pointer; }
 .toast.bad{ background:#8A2A2A; }
 @keyframes toastIn{ from{ transform:translateY(12px); opacity:0 } to{ transform:none; opacity:1 } }
 @media (prefers-reduced-motion: reduce){ .ask-pop, .ask-sheet, .toast{ animation:none; } }
+/* ---- the five-second pass, items 8 to 11 ---- */
+.tg-hint{ margin-top:8px; font:500 12.5px/1.45 var(--font-ui); color:var(--ink-2); max-width:70ch; }
+.f-note{ display:flex; align-items:flex-start; gap:8px; margin:0 0 12px; padding:10px 12px; border-radius:10px; background:rgba(255,180,60,.12); border:1px solid rgba(255,180,60,.4); color:#7A4B00; font:500 13px/1.45 var(--font-ui); }
+.f-note .pix{ flex:0 0 auto; margin-top:2px; }
+.fh-quiet .fh-ava{ display:grid; place-items:center; background:rgba(255,255,255,.14); color:#fff; }
+.fh-quiet .fh-sub{ opacity:.85; }
+.q-setup{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; padding:8px 10px; border-radius:12px; background:rgba(16,32,52,.05); border:1px dashed rgba(16,32,52,.18); }
+.q-topline .btn.on{ background:var(--ink,#1D1D1F); color:#fff; }
+.s2-notyet{ padding:18px 0; }
+/* Small type (item 10): the caption floor is 11.5 px on the desk and 12.5 px
+   on the phone, captions on dark grounds are 78% white, and a caption longer
+   than two words is a sentence in the body face. */
+.s2-cap, .s2-scap, .sec-cap, .sec-cap.tg-cap, .da-kcap, .sd-cap2, .sd-cap, .bp-fivehead .bp-lbl, .stnd-hh, .s2-mc-sub, .s2-mc-cap, .s2-gcap, .s2-greet, .sd-nextwho em, .sd-none, .sd-chairlbl, .fr-w, .s2-vitals, .s2-none{ font-size:11.5px; }
+.s2-hero .s2-cap, .s2-hero .s2-greet, .s2-hero .s2-mc-sub, .sd-cap2, .sd-nextwho em, .sd-none, .sd-chairlbl{ color:rgba(255,255,255,.78); }
+.cap-sent{ font-family:var(--font-ui); font-weight:600; letter-spacing:0; text-transform:none; font-size:12.5px; }
+.sd-cap2.cap-sent{ font-size:12.5px; }
+@media (max-width:760px){
+  .s2-cap, .s2-scap, .sec-cap, .sec-cap.tg-cap, .da-kcap, .sd-cap2, .sd-cap, .bp-fivehead .bp-lbl, .stnd-hh, .s2-mc-sub, .s2-mc-cap, .s2-gcap, .s2-greet, .sd-nextwho em, .sd-none, .sd-chairlbl, .fr-w, .s2-vitals, .s2-none{ font-size:12.5px; }
+  .cap-sent, .sd-cap2.cap-sent{ font-size:13.5px; }
+}
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
