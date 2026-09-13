@@ -35,6 +35,14 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const URL_APP = process.env.FEEL_URL || "http://127.0.0.1:5178/";
 const MOCK = "http://127.0.0.1:5433";
 const LAG = Number(process.env.FEEL_LAG || 400);
+/* ---- which room is being measured ----
+   Both rooms stay mounted once they have been opened, so after the phone line
+   has been visited once there are two sets of these controls in the page and
+   the hidden one comes FIRST in the markup. Unscoped, the taps below landed on
+   a display:none button: nothing happened, the screen never moved, and the
+   harness reported the app had lost a tap. It had not; the measurement had.
+   Every room-level selector says which room it means. */
+const ROOM = ".ar-room:not([hidden])";
 const STORE = "sage-demo";
 const STORE_TZ = "America/New_York";                 // the app's dealership day
 const day = () => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(new Date());
@@ -150,24 +158,24 @@ async function run(b) {
   await p.waitForTimeout(1500); await p.evaluate(() => document.querySelector(".mc-flash-b")?.click()); await p.waitForTimeout(600);
 
   /* tabs: the other room is already mounted */
-  let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(".sf-seg-btn", { timeout: 30000 }); row("Home to Floor tab", ms(t), BAR.tab);
+  let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Home to Floor tab", ms(t), BAR.tab);
   await p.waitForTimeout(800);
-  const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll(".sf-seg-btn")].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
-  t = Date.now(); await p.locator('.sf-seg-btn:has-text("Lunch")').click(); await segOn("Lunch"); row("tap Lunch to shown", ms(t), BAR.tap);
+  const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
+  t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Lunch")').click(); await segOn("Lunch"); row("tap Lunch to shown", ms(t), BAR.tap);
   await p.waitForTimeout(700);
-  t = Date.now(); await p.locator('.sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
+  t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
   await p.waitForTimeout(700);
   t = Date.now(); await p.locator('.ar-tab[aria-label*="Phone"]').click(); await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); row("Floor to Phone tab", ms(t), BAR.tab);
   await p.waitForTimeout(600);
-  t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(".sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
+  t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
   await p.waitForTimeout(800);
 
   /* two taps inside one round trip: the screen shows the second and stays, the server ends on it */
-  const onSeg = () => p.evaluate(() => { const b = [...document.querySelectorAll(".sf-seg-btn")].find((x) => /\bon\b/.test(x.className)); return b ? b.textContent.trim() : null; });
+  const onSeg = () => p.evaluate(() => { const b = [...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((x) => /\bon\b/.test(x.className)); return b ? b.textContent.trim() : null; });
   const seen = []; const t0 = Date.now();
   const sampler = (async () => { while (Date.now() - t0 < 3200) { seen.push(await onSeg()); await p.waitForTimeout(40); } })();
-  await p.locator('.sf-seg-btn:has-text("Lunch")').click({ force: true }); await p.waitForTimeout(120);
-  await p.locator('.sf-seg-btn:has-text("Here")').click({ force: true });
+  await p.locator(ROOM + ' .sf-seg-btn:has-text("Lunch")').click({ force: true }); await p.waitForTimeout(120);
+  await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click({ force: true });
   await sampler;
   const trace = seen.filter((v, i) => i === 0 || v !== seen[i - 1]);
   const server = (await (await fetch(`${MOCK}/rest/v1/floor_public?id=eq.${floor.id}&select=data`)).json())[0]?.data;
@@ -194,7 +202,7 @@ async function run(b) {
      tick at touch-down and nothing on the click. The segment already chosen,
      so the click changes nothing and no pattern plays for a change of state. */
   const cdp = await ctx.newCDPSession(p);
-  const seg = (label) => `[...document.querySelectorAll(".sf-seg-btn")].find((b) => b.textContent.includes("${label}"))`;
+  const seg = (label) => `[...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((b) => b.textContent.includes("${label}"))`;
   const box = await p.evaluate(`(() => { const r = ${seg("Here")}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await p.evaluate(() => { window.__vib.length = 0; });
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x, y: box.y }] });

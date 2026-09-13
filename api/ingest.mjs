@@ -314,8 +314,13 @@ function applyToStore(data, entries, sourceLabel) {
        the database's egress allowance. Six covers most of a week of daily
        imports, which is as far back as anyone has ever actually restored; the
        undo screen already says the right thing when a point has aged out. */
+    /* Two, not six. A restore point is a full copy of the store, and it rides
+       inside the row that every single save ships: six of them were three and
+       a half times the store they protect (2.8 MB against 790 kB at the
+       largest store). Two covers the case this exists for, which is an import
+       that went in wrong and the one before it. */
     next.snapshots = [{ t: snapT, by: "Auto-import", reason: "Before email import", data: snapCopy },
-      ...(next.snapshots || [])].slice(0, 6);
+      ...(next.snapshots || [])].slice(0, 2);
   }
 
   const nowISO = new Date().toISOString();

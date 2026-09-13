@@ -377,14 +377,14 @@ function isOff(data, aId, d) {
 // (calls, videos, RockEd), each judged independently. 0-3. Days off and days with
 // no data at all score no points. RockEd is a simple "qualified" mark now: the manager
 // ticks whether the person qualified in the RockEd training tool that day, rather than
-// typing a star count. Legacy star counts (>= the old bar) still read as qualified.
+// typing a star count. The star count it replaced is no longer read: nobody can enter
+// one, three stores carried a residue key from it, and two ways to say one thing is one
+// too many. Anything already marked qualified stays qualified.
 function isQualified(data, aName, d, std) {
   const q = data.qualified?.[d]?.[norm(aName)];
   if (q === true) return true;
   if (q === false) return false;
-  const stars = data.stars?.[d]?.[norm(aName)]; // legacy
-  if (stars == null) return null;               // no RockEd mark at all
-  return stars >= (std.rockEdStars ?? 40);
+  return null;                                  // no RockEd mark at all
 }
 function dayPoints(data, a, d, std) {
   if (isOff(data, a.id, d)) return { off: true, points: 0, missed: [] };
@@ -1137,16 +1137,22 @@ async function loadStoreStamp(key) {
 }
 
 let lastSaveError = null;
-async function saveShared(key, value) {
+/* `quiet` is for housekeeping: a prune, a backup row, anything the app does
+   for itself rather than because somebody tapped something. The named beats
+   mean "what you just did landed", so a tidy-up that deletes three hundred
+   stale rows must not buzz a phone three hundred times. The feel harness
+   caught exactly that, which is what it is for. */
+async function saveShared(key, value, quiet) {
   if (!supabase) { lastSaveError = "No database client"; return false; }
   try {
     const { error } = await supabase.from("app_data").upsert({ key, value }, { onConflict: "key" });
     if (error) throw error;
-    lastSaveError = null; buzz("taken");
+    lastSaveError = null; if (!quiet) buzz("taken");
     return true;
   } catch (e) {
     console.error("save failed", key, e);
-    buzz("refused"); lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+    if (!quiet) buzz("refused");
+    lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
     return false;
   }
 }
@@ -1473,10 +1479,10 @@ async function runAutoBackup(config, adminData, byName) {
   // Each store first. If any one of them cannot be written the backup is incomplete,
   // and an incomplete backup that looks complete is worse than none at all.
   for (const sid of storeIds) {
-    const ok = await saveShared(backupStoreKey(sid, id), stores[sid]);
+    const ok = await saveShared(backupStoreKey(sid, id), stores[sid], true);
     if (!ok) {
       console.error("backup failed for store", sid, lastSaveError);
-      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null);
+      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null, true);
       return index;
     }
   }
@@ -1490,22 +1496,63 @@ async function runAutoBackup(config, adminData, byName) {
     storeIds,
     audit: await loadShared(AUDIT_KEY, []),
   };
-  const okMeta = await saveShared(backupMetaKey(id), meta);
+  const okMeta = await saveShared(backupMetaKey(id), meta, true);
   if (!okMeta) {
     console.error("backup meta failed", lastSaveError);
-    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null);
+    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null, true);
     return index;
   }
 
   const next = [{ id, t: exportedAt, stores: storeIds.length, storeIds, auto: true }, ...index];
   const keep = next.slice(0, KEEP_BACKUPS);
-  // free the space used by anything that fell off the end
-  for (const old of next.slice(KEEP_BACKUPS)) {
-    for (const sid of (old.storeIds || [])) await saveShared(backupStoreKey(sid, old.id), null);
-    await saveShared(backupMetaKey(old.id), null);
-  }
-  await saveShared(BACKUP_INDEX_KEY, keep);
+  await saveShared(BACKUP_INDEX_KEY, keep, true);
+  await pruneBackups(keep);
   return keep;
+}
+
+/* ---- keeping fourteen, for real ----
+   This used to delete only what fell off the end of the index in THIS run. A
+   row that left the index another way — an index rewritten by hand, a write
+   that failed after its store rows landed, a store added after a backup was
+   taken — was never looked at again, because nothing ever asked the server
+   what was actually there. Two months in, every store was carrying between
+   thirty-five and forty-five backups against the fourteen the app believes it
+   keeps, and they were forty megabytes: eight times every live store put
+   together.
+
+   So the question is asked of the server instead. Every backup row is listed,
+   the ids the index is keeping are spared, and everything else goes, whatever
+   put it there. The restore list already shows only what the index holds, so
+   nothing a manager can see changes. */
+async function pruneBackups(keep) {
+  if (!supabase) return { kept: 0, dropped: 0 };
+  const alive = new Set((keep || []).map((b) => b && b.id).filter(Boolean));
+  let dropped = 0;
+  try {
+    const { data, error } = await supabase.from("app_data").select("key").like("key", "lpc:backup:%");
+    if (error) throw error;
+    for (const row of data || []) {
+      /* lpc:backup:<store>:<id>:v1 — the id is everything between the store and
+         the version, and a store id can itself contain colons in principle, so
+         the id is taken from the end rather than by counting from the front. */
+      const parts = String(row.key).split(":");
+      const id = parts.length >= 5 ? parts[parts.length - 2] : null;
+      if (!id || alive.has(id)) continue;
+      if (await saveShared(row.key, null, true)) dropped++;
+    }
+    /* The per-backup meta rows are indexed the same way and were orphaned by
+       the same gap. */
+    const { data: metas } = await supabase.from("app_data").select("key").like("key", "lpc:config:backup:%");
+    for (const row of metas || []) {
+      const parts = String(row.key).split(":");
+      const id = parts.length >= 5 ? parts[parts.length - 2] : null;
+      if (!id || alive.has(id)) continue;
+      if (await saveShared(row.key, null, true)) dropped++;
+    }
+  } catch (e) {
+    console.error("pruneBackups", e);
+  }
+  return { kept: alive.size, dropped };
 }
 
 const emptyStoreData = () => ({ roster: [], months: {} });
@@ -3277,7 +3324,7 @@ export default function LeadPerformanceCalculator() {
                         plates: current.plates, restrictions: current.restrictions, aliases: current.aliases,
                       })) },
                       ...(current.snapshots || []),
-                    ].slice(0, 8),
+                    ].slice(0, 2),
                   };
                   /* A rollback has to be able to undo a deletion, and the plate log
                      records deletions as tombstones — which would otherwise filter
@@ -3565,6 +3612,16 @@ async function publishBoard(config, storeId, sdata) {
         await saveShared(key, slim);
       } catch (e) {}
     }
+    /* ---- the day rows do not grow for ever ----
+       Every save writes today's floor figures to their own row, and nothing
+       ever took an old one away: a month in, there were three hundred and
+       fifteen of them. They are not a TV archive, which is what they looked
+       like from the outside; they are the only record of a day that a
+       signed-out phone can read, they carry the day's accumulated hours, and
+       the missed-standard record reads them three weeks back. So the window
+       is generous rather than tight: anything older than the longest read,
+       with a fortnight's headroom on top, goes on the way past. */
+    pruneBoardDays(storeId).catch(() => {});
     const ok = await saveShared(boardKey(storeId), buildBoardPayload(config, storeId, sdata));
     if (!ok) console.error("board publish failed", boardKey(storeId), lastSaveError);
     return { ok, err: ok ? null : (lastSaveError || "unknown") };
@@ -3574,6 +3631,25 @@ async function publishBoard(config, storeId, sdata) {
   }
 }
 
+
+/* Keeps BOARD_DAYS of day rows for a store. Fire and forget: a publish that
+   cannot tidy up is still a publish, and the next one tries again. */
+const BOARD_DAYS = 45;
+let boardPruned = new Set();
+async function pruneBoardDays(storeId) {
+  if (!supabase || boardPruned.has(storeId)) return;
+  boardPruned.add(storeId);                 // once per store per session is plenty
+  const cutoff = dayIn(new Date(Date.now() - BOARD_DAYS * 864e5));
+  try {
+    const prefix = `lpc:board:${storeId}:act:`;
+    const { data, error } = await supabase.from("app_data").select("key").like("key", prefix + "%");
+    if (error) throw error;
+    for (const row of data || []) {
+      const day = String(row.key).slice(prefix.length);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cutoff) await saveShared(row.key, null, true);
+    }
+  } catch (e) { console.error("pruneBoardDays", e); }
+}
 
 // Opens a standalone, auto-refreshing leaderboard in a new window sized for a TV.
 async function openLeaderboard(config, storeId) {
