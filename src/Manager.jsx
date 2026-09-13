@@ -21831,7 +21831,46 @@ function RoleBadge({ role, count, big }) {
    Never offers somebody themselves, and never offers a name the store has said is
    not one of its people — folding a real month into a heading is the one mistake
    here that costs figures. */
-function SameAsPicker({ data, people, name, label = "Same as someone\u2026", confirm = false, onPick }) {
+/* ---- one way to say "these two are the same person" --------------------
+   It can be said from three places: a person's own card, the "one name was
+   read wrong" banner, and the repair panel. Each used to ask in its own words
+   and write its own line in the audit — "Folded a duplicate person", "Merged a
+   misread name", "Folded a spelling into a person" — for an outcome that is
+   the same every time. A manager reading the log afterwards could not tell
+   whether they had already done it. One sentence, one line, one rule about
+   when it asks, wherever it is said.
+
+   It asks when the name being folded is somebody this store claims: that
+   person comes off its lists, which is worth a sentence first. A stranger in
+   the figures has nothing to lose, so the repair panel's own guess stays one
+   tap, the way it has always been. */
+const FOLD_ACTION = "Folded two names into one person";
+const foldCars = (n) => fmtNum(Math.round((n || 0) * 10) / 10);
+const foldClaimed = (people, name) => (people || []).some((x) => x.key === norm(name) && x.status !== "ignored");
+const foldSentence = (from, to, units) =>
+  `${from} and ${to} are the same person?\n\n` +
+  `${from}'s figures move onto ${to}` + (units > 0 ? ` — ${foldCars(units)} cars` : "") +
+  `, and ${from} comes off this store's lists. ` +
+  `The spelling is remembered, so the next report needs no repair.`;
+async function foldNames({ data, people, from, to, units = 0, why, by, onChange, after }) {
+  if (foldClaimed(people, from) && !(await askConfirm(foldSentence(from, to, units)))) return;
+  onChange(sameAs(data, from, to, { by, note: why || "picked by hand" }),
+    { action: FOLD_ACTION, detail: `${from} \u2192 ${to}` });
+  if (after) after();
+}
+/* The banner's batch button is the same sentence said once for a list. */
+async function foldAll({ data, rows, storeName, by, onChange }) {
+  const units = (rows || []).reduce((n, r) => n + (r.units || 0), 0);
+  if (rows.length > 1 && !(await askConfirm(
+    `Merge ${rows.length} misread names back into your people?\n\n` +
+    rows.slice(0, 10).map((r) => `${r.from}  \u2192  ${r.to}`).join("\n") +
+    (rows.length > 10 ? `\n\u2026and ${rows.length - 10} more` : "") +
+    (units > 0 ? `\n\n${foldCars(units)} cars move onto the right people.` : "")))) return;
+  onChange(mergeManglings(data, rows, { by }),
+    { action: FOLD_ACTION, detail: `${rows.length} names at ${storeName || "this store"}` });
+}
+
+function SameAsPicker({ data, people, name, label = "Same as someone\u2026", onPick }) {
   const key = norm(name);
   const hits = likelyMatches(data, name).filter((h) => h.key !== key);
   const best = hits.find((h) => h.confident);
@@ -21839,18 +21878,10 @@ function SameAsPicker({ data, people, name, label = "Same as someone\u2026", con
     .filter((x) => x.status !== "ignored" && x.key !== key && !hits.some((h) => h.key === x.key));
   return (
     <select className="q-flag-sel pp-same" value=""
-      onChange={async (e) => {
+      onChange={(e) => {
         const to = e.target.value;
         e.target.value = "";
-        if (!to) return;
-        /* Asked only where the name being folded is somebody the store claims.
-           A stranger in the figures has nothing to lose; a person on the roster
-           comes off it, and that is worth a sentence first. */
-        if (confirm && !(await askConfirm(
-          `${name} and ${to} are the same person?\n\n` +
-          `${name}'s figures move onto ${to}, and ${name} comes off this store's lists. ` +
-          `The spelling is remembered, so the next report needs no repair.`))) return;
-        onPick(to);
+        if (to) onPick(to);
       }}>
       <option value="">{best ? `Same as ${best.name}?` : label}</option>
       {hits.map((h) => (
@@ -22029,8 +22060,8 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
             <div className="pl-picks">{(earnedFor[p.key] || []).map((sk) => <span key={sk.id} className="pl-pk pe-earned" title={`Earned: top three for ${sk.what}`}>{sk.label}</span>)}</div>
             <div className="bp-defn">Worked out from what they have actually done. Nobody sets these.</div></>)}
           <div className="pl-sec">Same person as</div>
-          <div className="pl-in pe-selwrap"><SameAsPicker data={data} people={people} name={p.name} confirm label={"Somebody already on this list…"}
-            onPick={(to) => { onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }), { action: "Folded a duplicate person", detail: `${p.name} → ${to}` }); close(); }} /></div>
+          <div className="pl-in pe-selwrap"><SameAsPicker data={data} people={people} name={p.name} label={"Somebody already on this list…"}
+            onPick={(to) => foldNames({ data, people, from: p.name, to, why: "the same person, twice", by: userName, onChange, after: close })} /></div>
           <div className="bp-defn">Only when they are genuinely one person under two spellings. {p.name} comes off this store's lists and their cars move across.</div>
           {isTestName(p.name) && (
             <div className="fr-acts"><button type="button" className="fr-b sm" onClick={() => onChange(seedExampleFigures(data, p.name), { action: "Filled example figures", detail: p.name + (storeName ? " · " + storeName : "") })}>
@@ -22117,14 +22148,11 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
         <div className="pl-miss pe-miss">
           <div className="pe-misshd"><b>{wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}</b>
             <span>Your own people with something stuck to their name. Merging puts the figures back together and remembers the spelling.</span></div>
-          <div className="fr-acts pe-missacts"><button type="button" className="fr-b sm" onClick={async () => {
-            const c = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
-            if (wrongRead.length > 1 && !(await askConfirm(`Merge ${wrongRead.length} misread names back into your people?\n\n` + wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") + (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") + (c > 0 ? `\n\n${cars(c)} cars move onto the right people.` : "")))) return;
-            onChange(mergeManglings(data, wrongRead, { by: userName }), { action: "Merged misread names", detail: `${wrongRead.length} at ${storeName || "this store"}` });
-          }}>Merge all {wrongRead.length}</button></div>
+          <div className="fr-acts pe-missacts"><button type="button" className="fr-b sm"
+            onClick={() => foldAll({ data, rows: wrongRead, storeName, by: userName, onChange })}>Merge all {wrongRead.length}</button></div>
           {wrongRead.slice(0, 40).map((r) => repairRow(r.from, <>→ <b>{r.to}</b>{r.units > 0 ? ` · ${cars(r.units)} cars` : ""}</>, <>
-            <button type="button" className="fr-b sm" onClick={() => onChange(mergeManglings(data, [r], { by: userName }), { action: "Merged a misread name", detail: `${r.from} → ${r.to}` })}>Merge</button>
-            {sameSel(r.from, (to) => onChange(sameAs(data, r.from, to, { by: userName, note: "picked by hand" }), { action: "Merged a misread name", detail: `${r.from} → ${to}` }), "or somebody else…")}
+            <button type="button" className="fr-b sm" onClick={() => foldNames({ data, people, from: r.from, to: r.to, units: r.units, why: `read wrong: ${r.why}`, by: userName, onChange })}>Merge</button>
+            {sameSel(r.from, (to) => foldNames({ data, people, from: r.from, to, units: r.units, by: userName, onChange }), "or somebody else…")}
           </>))}
         </div>
       )}
@@ -22141,7 +22169,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           {waiting.map((w) => repairRow(w.name, `${w.units > 0 ? cars(w.units) + " cars held" : "no cars"}${w.days > 0 ? ` · ${w.days} ${w.days === 1 ? "day" : "days"}` : ""}${w.files.length ? ` · from ${w.files.slice(0, 2).join(", ")}` : ""}`, <>
             <button type="button" className="fr-b sm" onClick={() => onChange(claimPending(data, [w.name], { by: userName, roleId: config.roles?.[0]?.id || null, newId: uid() }), { action: "Claimed a name from a report", detail: w.name })}>Works here</button>
             <button type="button" className="fr-b sm warn" onClick={() => onChange(dropPending(data, [w.name], { by: userName }), { action: "Rejected a name from a report", detail: w.name })}>Not ours</button>
-            {sameSel(w.name, (to) => onChange(sameAs(data, w.name, to, { by: userName }), { action: "Folded a spelling into a person", detail: `${w.name} → ${to}` }))}
+            {sameSel(w.name, (to) => foldNames({ data, people, from: w.name, to, units: w.units, by: userName, onChange }))}
           </>))}
         </div>
       )}
@@ -22156,7 +22184,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           {strangers.map((s) => repairRow(s.name, `${s.units > 0 ? cars(s.units) + " cars" : "no cars"}${s.days > 0 ? ` · ${s.days} ${s.days === 1 ? "day" : "days"}` : ""}${s.months.length ? ` · ${s.months.join(", ")}` : ""}`, <>
             <button type="button" className="fr-b sm" onClick={() => move(s.name, "active", "claimed from unmatched figures")}>Works here</button>
             <button type="button" className="fr-b sm warn" onClick={() => move(s.name, "ignored", "figures belonged to another store")}>Not ours</button>
-            {sameSel(s.name, (to) => onChange(sameAs(data, s.name, to, { by: userName }), { action: "Folded a spelling into a person", detail: `${s.name} → ${to}` }))}
+            {sameSel(s.name, (to) => foldNames({ data, people, from: s.name, to, units: s.units, by: userName, onChange }))}
           </>))}
         </div>
       )}
@@ -22495,16 +22523,8 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             is never offered here: it could be split two ways and both would be wrong.
           </Explain>
           <div className="pp-batch">
-            <button className="btn" onClick={async () => {
-              const cars = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
-              if (wrongRead.length > 1 && !(await askConfirm(
-                `Merge ${wrongRead.length} misread names back into your people?\n\n` +
-                wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") +
-                (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") +
-                (cars > 0 ? `\n\n${fmtNum(Math.round(cars * 10) / 10)} cars move onto the right people.` : "")))) return;
-              onChange(mergeManglings(data, wrongRead, { by: userName }),
-                { action: "Merged misread names", detail: `${wrongRead.length} at ${storeName || "this store"}` });
-            }}>Merge all {wrongRead.length}</button>
+            <button className="btn"
+              onClick={() => foldAll({ data, rows: wrongRead, storeName, by: userName, onChange })}>Merge all {wrongRead.length}</button>
             <span className="pp-batch-n">
               {(() => { const c = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
                 return c > 0 ? `${fmtNum(Math.round(c * 10) / 10)} cars move onto the right people` : "no cars involved"; })()}
@@ -22519,15 +22539,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                 <span className="pp-ev">
                   {r.units > 0 ? <><b>{fmtNum(Math.round(r.units * 10) / 10)}</b> cars · </> : null}{r.why}
                 </span>
-                <button className="btn btn-sm" onClick={() => onChange(
-                  mergeManglings(data, [r], { by: userName }),
-                  { action: "Merged a misread name", detail: `${r.from} → ${r.to}` })}>Merge</button>
+                <button className="btn btn-sm" onClick={() => foldNames({ data, people, from: r.from, to: r.to,
+                  units: r.units, why: `read wrong: ${r.why}`, by: userName, onChange })}>Merge</button>
                 {/* The arrow is the app's guess. It is right almost always and
                     unarguable never, and a wrong guess used to leave nothing to do
                     but merge it wrongly or leave it alone for ever. */}
                 <SameAsPicker data={data} people={people} name={r.from} label="or somebody else\u2026"
-                  onPick={(to) => onChange(sameAs(data, r.from, to, { by: userName, note: "picked by hand" }),
-                    { action: "Merged a misread name", detail: `${r.from} → ${to}` })} />
+                  onPick={(to) => foldNames({ data, people, from: r.from, to, units: r.units, by: userName, onChange })} />
               </div>
             ))}
             {wrongRead.length > 40 && (
@@ -22605,8 +22623,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     case that no measure can safely offer, so the list is not
                     limited to the suggestions. */}
                 <SameAsPicker data={data} people={people} name={w.name} onPick={(to) =>
-                  onChange(sameAs(data, w.name, to, { by: userName }),
-                    { action: "Folded a spelling into a person", detail: `${w.name} → ${to}` })} />
+                  foldNames({ data, people, from: w.name, to, units: w.units, by: userName, onChange })} />
               </div>
             ))}
           </div>
@@ -22665,8 +22682,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     to say — so the figures either stayed as a duplicate row or were
                     thrown away. */}
                 <SameAsPicker data={data} people={people} name={sname.name} onPick={(to) =>
-                  onChange(sameAs(data, sname.name, to, { by: userName }),
-                    { action: "Folded a spelling into a person", detail: `${sname.name} → ${to}` })} />
+                  foldNames({ data, people, from: sname.name, to, units: sname.units, by: userName, onChange })} />
               </div>
             ))}
           </div>
@@ -23070,10 +23086,10 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                       files itself correctly. */}
                   <div className="pp-move-row pp-samerow">
                     <span className="pp-date">Same person as</span>
-                    <SameAsPicker data={data} people={people} name={p.name} confirm
+                    <SameAsPicker data={data} people={people} name={p.name}
                       label={"Somebody already on this list\u2026"}
-                      onPick={(to) => onChange(sameAs(data, p.name, to, { by: userName, note: "the same person, twice" }),
-                        { action: "Folded a duplicate person", detail: `${p.name} → ${to}` })} />
+                      onPick={(to) => foldNames({ data, people, from: p.name, to, why: "the same person, twice",
+                        by: userName, onChange })} />
                   </div>
                   <Explain label="When to use this">
                     Only when they are genuinely one person under two spellings. {p.name} comes off this

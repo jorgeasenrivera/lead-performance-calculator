@@ -355,3 +355,15 @@ test("picking a name is the whole of signing in: no PIN screen, no pad, no ident
   assert.ok(!/queue_identity|loadQueueIdentities|mutateQueueIdentities/.test(core + mgr), "and nothing reads or writes the identity row");
   assert.ok(!/resetPin|setShowPins|sf-pin-cell|q-stage-pin/.test(core + mgr), "the manager's reset path and the PIN sheets go with it");
 });
+
+test("one way to say two names are one person: one sentence, one audit line", () => {
+  assert.ok(/const FOLD_ACTION = "Folded two names into one person";/.test(mgr), "the audit says the same thing every time");
+  assert.ok(!/"Folded a duplicate person"|"Merged a misread name"|"Folded a spelling into a person"|"Merged misread names"/.test(mgr.replace(/\/\*[\s\S]*?\*\//g, "")), "and the three old wordings are gone from the code that runs");
+  assert.ok(/async function foldNames\(\{ data, people, from, to, units = 0, why, by, onChange, after \}\) \{/.test(mgr), "one function folds two names");
+  assert.ok(/async function foldAll\(\{ data, rows, storeName, by, onChange \}\) \{/.test(mgr), "and one folds the banner's list");
+  assert.equal(mgr.split("foldNames({").length - 1, 11, "every single fold on the desk and the phone goes through it (ten call sites and the function itself)");
+  assert.equal(mgr.split("foldAll({").length - 1, 3, "and both Merge all buttons through the other");
+  assert.ok(mgr.split("sameAs(data,").length - 1 === 1 && /onChange\(sameAs\(data, from, to,/.test(mgr), "nothing writes the fold except the one flow");
+  assert.ok(/const foldClaimed = \(people, name\) =>/.test(mgr) && /if \(foldClaimed\(people, from\) && !\(await askConfirm\(foldSentence\(from, to, units\)\)\)\) return;/.test(mgr), "it asks by one rule, not by a prop three call sites had to remember");
+  assert.ok(!/confirm = false, onPick/.test(mgr), "the picker no longer carries a question of its own");
+});
