@@ -175,3 +175,11 @@ test("arrivals on the tokens: nothing waits for a scroll, cards arrive 40 ms apa
   assert.ok(/\.botnav-fab\.ready \{ animation:fabAsk 1\.2s var\(--ease\) 2; \}/.test(mgr) && /if \(ready\) buzz\("asked"\)/.test(mgr), "Import asks when it is due");
 });
 
+test("a card grows from its row and goes back the way it came", () => {
+  assert.ok(/setOrigin\(\{ x: e\.clientX, y: e\.clientY, rect: \{ left: rr\.left, top: rr\.top, width: rr\.width, height: rr\.height \} \}\)/.test(mgr), "the desk row hands over its rect");
+  assert.ok(/frLastTap\.rect = \{ left: rr\.left/.test(mgr) && /frLastTap\.rect = null;/.test(core), "the phone row hands over its rect, and any other tap clears it");
+  assert.ok(/el\.animate\(\[\{ transform: from \}, \{ transform: "none" \}\], \{ duration: MOTION\.settle, easing: "cubic-bezier\(\.32,\.72,\.33,1\)", fill: "both" \}\)/.test(mgr), "it grows on the settle token and the spring");
+  assert.ok(/el\.animate\(\[\{ transform: "none" \}, \{ transform: grew\.current \}\]/.test(mgr), "and shrinks back into the row");
+  assert.ok(/\{ opacity: 0, offset: 0\.35 \}, \{ opacity: 1 \}/.test(mgr), "the inside fades in a beat later");
+});
+

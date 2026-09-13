@@ -46,7 +46,7 @@ import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
 import qrcodeGen from "qrcode-generator";
-import { buzz, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
+import { buzz, MOTION, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
 
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -13662,13 +13662,43 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
   const thr = normThresholds(thresholds);
   const [closing, setClosing] = useState(false);
   const boxRef = useRef(null);
-  const shut = () => { setClosing(true); setTimeout(onClose, 240); };
-  /* The click point is in screen space; a transform-origin is in the card's own
-     space, so it has to be measured once the card is on screen — before paint,
-     or the first frame of the grow animation uses the wrong corner. */
+  /* The row is the card's first frame. When the opener hands over the row's
+     rect, the card mounts at its own place and plays from the row's position
+     and size to its own, on the settle token and the spring, its inside
+     fading in a beat later; close and it goes back the way it came. Without
+     a rect (an opener that only knows the tap), it pops from the point. */
+  const grew = useRef(null);
+  const shut = () => {
+    const el = boxRef.current;
+    if (grew.current && el) {
+      el.querySelectorAll(":scope > *").forEach((k) => k.animate([{ opacity: 1 }, { opacity: 0 }], { duration: MOTION.exit, easing: "ease-out", fill: "both" }));
+      el.animate([{ transform: "none" }, { transform: grew.current }], { duration: MOTION.settle, easing: "cubic-bezier(.32,.72,.33,1)", fill: "both" });
+      setTimeout(onClose, MOTION.settle);
+      return;
+    }
+    setClosing(true); setTimeout(onClose, 240);
+  };
   useLayoutEffect(() => {
     const el = boxRef.current;
     if (!el || !origin) return;
+    let reduce = false;
+    try { reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+    const a = origin.rect;
+    if (a && a.width && !reduce && typeof el.animate === "function") {
+      /* Measured with the pop animation off: its first frame is a scaled
+         card, and a rect taken through it is the wrong size. */
+      el.style.animation = "none";
+      el.style.transformOrigin = "0 0";
+      const r = el.getBoundingClientRect();
+      if (!r.width) return;
+      const from = `translate(${(a.left - r.left).toFixed(1)}px, ${(a.top - r.top).toFixed(1)}px) scale(${(a.width / r.width).toFixed(4)}, ${(a.height / r.height).toFixed(4)})`;
+      grew.current = from;
+      el.animate([{ transform: from }, { transform: "none" }], { duration: MOTION.settle, easing: "cubic-bezier(.32,.72,.33,1)", fill: "both" });
+      el.querySelectorAll(":scope > *").forEach((k) => k.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: MOTION.settle, easing: "ease-out", fill: "both" }));
+      return;
+    }
+    /* The click point is in screen space; a transform-origin is in the card's
+       own space, so it is measured once the card is on screen, before paint. */
     const r = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(r.width, origin.x - r.left));
     const y = Math.max(-80, Math.min(r.height + 80, origin.y - r.top));
@@ -13856,8 +13886,9 @@ function AssociateRow({ a, stats, ev, missing, incomplete, grace, rank, star, re
         if (e.target.closest && e.target.closest(".bloop-host")) return;
         if (e.target.closest && e.target.closest(".s2-rowfoot")) return;
         if (picking) { onPick(); return; }
-        // the card grows from the point that was clicked
-        setOrigin({ x: e.clientX, y: e.clientY });
+        // the card grows from the row itself; the point is the fallback
+        const rr = e.currentTarget.getBoundingClientRect();
+        setOrigin({ x: e.clientX, y: e.clientY, rect: { left: rr.left, top: rr.top, width: rr.width, height: rr.height } });
         setOpen(!open);
       }}>
         <span className={"da-stripe st-" + (restrictedNow || incomplete ? "dim"
@@ -18601,7 +18632,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           <span className="bp-lbl bp-r">units</span></div>
         {rows.length === 0 && <p className="fr-empty">Nobody here.</p>}
         {rows.map((p) => (
-          <button type="button" key={p.a.id} className="bp-row" onClick={() => setPop({ k: "person", id: p.a.id })}>
+          <button type="button" key={p.a.id} className="bp-row" onClick={(e) => { const rr = e.currentTarget.getBoundingClientRect(); frLastTap.rect = { left: rr.left, top: rr.top, width: rr.width, height: rr.height }; setPop({ k: "person", id: p.a.id }); }}>
             <span className="fr-av bp-sm" style={avStyle(p)}>{initialsOf(p.a.name)}</span>
             <span className="bp-who">
               <span className="bp-nmx">{p.a.name}</span>
@@ -18620,7 +18651,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
       {pop && pop.k !== "person" && <FrPop title={popTitle} onClose={close} cls={"fr-k-" + pop.k}>{popBody()}</FrPop>}
       {person && (
         <AssocCard a={person.a} stats={person.st} ev={person.ev} data={data} config={config} thresholds={store.thresholds}
-          origin={frLastTap.x != null ? { x: frLastTap.x, y: frLastTap.y } : null} onClose={close}
+          origin={frLastTap.x != null ? { x: frLastTap.x, y: frLastTap.y, rect: frLastTap.rect || null } : null} onClose={close}
           actions={
             <div className="fr-acts ac-acts">
               {person.restricted
