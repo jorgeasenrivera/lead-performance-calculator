@@ -222,3 +222,42 @@ test("the hero loses its signal like a tape, with a clean display over it", () =
   assert.ok(/stale > 0 && <span className="s2-age"/.test(mgr), "stale is a sand stamp");
   assert.ok(/export \{ buzz, MOTION, useNet,/.test(core), "the rooms' connection hook is shared");
 });
+
+test("consistency pass, items 1, 4, 7 and 9: one close, one name each, honest icons, Import once on the phone", () => {
+  assert.ok(/\.lpc \.x-close\{ width:36px; height:36px; border-radius:50%;/.test(core), "one close look");
+  for (const cls of ["ac-x", "ru-x", "fr-x", "drawer-x"]) assert.ok(!new RegExp('className="' + cls + '"').test(mgr), cls + " wears the one close");
+  assert.ok(!/className="mc-x"/.test(core), "the rooms' close wears it too");
+  assert.ok(!/(?:x-close"[^>]*>\s*<PixIcon glyph="close" size=\{)(?!15\})/.test(mgr + core), "every close glyph is 15 px");
+  assert.ok(!/board: "Board"|checkout: "Checkout"|queue: "Phones"/.test(mgr), "the phone shortens widths, never words");
+  assert.ok(/\["board", "TV Board"\]/.test(mgr) && !/"The Board"/.test(mgr), "the TV tool is the TV Board");
+  assert.ok(/Who is taking desk \$\{st\.n\}\?/.test(mgr) && !/Station \$\{st\.n\}|Station \{st\.n\}/.test(mgr), "a desk is a desk on every surface");
+  assert.ok(/drawer-section-label">Sections</.test(mgr) && /drawer-section-label">Tools</.test(mgr), "the drawer uses the desk's words");
+  assert.ok(/aria-label="Zoom in"><PixIcon glyph="plus"/.test(mgr) && /  plus:      \[/.test(core) && /  dash:      \[/.test(core), "zoom in is a plus; a dash exists for no data");
+  assert.ok(!/aria-label="Close"><PixIcon glyph="remove"/.test(mgr), "close is never the remove glyph");
+  assert.ok(/glyph="dash" size=\{13\} \/> Nothing logged today/.test(mgr), "nothing logged is a dash, not a minus");
+  assert.ok(!/drawer-item[\s\S]{0,400}<ImportBadge/.test(mgr), "the drawer no longer repeats the dock's import count");
+});
+
+test("consistency pass, items 2, 3, 5, 6 and 8: one primary, one status control, three shapes, two bars one language, help is help", () => {
+  assert.ok(/\.fr-b\.pri, \.fr-b\.go\{ flex-basis:100%; min-height:48px; font-size:16px; background:var\(--frp2d\);/.test(mgr), "the room's go button is the primary, 48 px on the phone");
+  assert.ok(/\.fh-go \{[^}]*min-height:40px;[^}]*color:#fff; background:var\(--facc, #10B981\);/.test(mgr) && /\.lpc \.btn\.btn-primary\{ min-height:40px; \}/.test(core), "the floor's assign is a filled 40 px primary like the desk's");
+  assert.ok(/<SfStatusSelect value=\{st\} variant=\{LEAD_VARIANTS\.line\} flags=\{LINE_SELF_FLAGS\} onPick=\{pick\} \/>/.test(core), "the line wears the floor's status pill");
+  assert.ok(/\.lpc \.sect-strip\{ background:rgba\(118,118,128,\.14\); border-radius:12px;/.test(core) && /\.lpc \.sect-strip \.sect-pill\{ background:rgba\(255,255,255,\.92\); border-radius:9px;/.test(core), "the phone's strip is the desk's strip");
+  assert.ok(/\.mc-you \.mc-seg3 button\.on\{ background:#8FD8AF; color:#12251B; \}/.test(core) && /\.lpc \.qpick \.qpick-btn\{ flex-direction:row;[^}]*border-radius:999px; background:var\(--qa\); color:#fff;/.test(core), "the corner's three-ways are the status pill; Up Next's tiles are tool pills");
+  assert.ok(/<span className="ar-lbl">\{LABEL\[t\]\}<\/span>/.test(core) && /display:flex; padding:4px; border-radius:26px;/.test(core), "the salesperson's bar names its rooms and shares the dock's geometry");
+  assert.ok(/onHelp=\{\(\) => \{ buzz\(8\); setHelpPanel\(true\); \}\} onYou=\{\(\) => \{ buzz\(8\); setHelpOpen\(true\); \}\}/.test(core) && /className="mc-me" onClick=\{onYou\} aria-label="You"/.test(core), "the ? is help; the initials are You");
+});
+
+test("consistency pass, items 10 and 11: the app asks in its own voice, and a seat is one tap", () => {
+  assert.ok(/function AskHost\(\) \{/.test(mgr) && /<AskHost \/>/.test(mgr), "one host for every ask, mounted in the shell");
+  const left = mgr.split("\n").filter((l) => /window\.(confirm|prompt|alert)\(/.test(l) && !/resolve\(window\.|window\.alert\(text\)|window\.prompt\(req\.title/.test(l) && !/^\s*(\/\*|\*|\/\/)/.test(l) && !/wore the browser/.test(l));
+  assert.deepEqual(left, [], "no browser dialog is left outside the fallback");
+  assert.ok(/const askStock = \(name\) => askText\(`Assigning \$\{name\}`/.test(mgr) && (mgr.match(/await askStock\(realName\(/g) || []).length === 4, "the stock number is asked in a sheet at every assign");
+  assert.ok(/danger: opts\.danger != null \? opts\.danger : DANGER\.test\(title\)/.test(mgr) && /\.ask-btns \.btn-primary\.bad\{ background:#C43F3F; \}/.test(mgr), "a removing question wears red");
+  assert.ok(/ok: `Yes, \$\{near\.tag\}`, cancel: `No, \$\{t\} is new`/.test(mgr) && /ok: "Reused", cancel: "One-time"/.test(mgr), "the plate questions have real answers, not OK means yes");
+  assert.ok(/toast\("Card copied\. Paste it into an email or a text\.", \{ kind: "ok" \}\)/.test(mgr) && /@media \(max-width:760px\)\{ \.toasts\{ bottom:calc\(92px \+ var\(--sab,0px\)\); \} \}/.test(mgr), "notices are toasts that stand above the dock");
+  assert.ok(/const freeDesks = board\.seats\.filter\(\(s\) => !s\.taken && !s\.offerTo\);/.test(mgr) && /className="sd-chair" disabled=\{!!busy\}\n\s*onClick=\{\(\) => seat\(s\.n, \{ id: nextP\.id, label: realName\(nextP\.id\) \}\)\}>\{s\.n\}<\/button>/.test(mgr), "the free desks are chips on the next-up card");
+  assert.ok(/\{warn && !open && \(\s*<div className="sd-inwarn">/.test(mgr), "the standard's warning lands in the same card");
+  assert.ok(/stnDeco\(board, t, realName, rotates && !!nextP && !taken\.has\(nextP\.id\)\)/.test(mgr) && /\.stn-map \.fbp-tbl\.stn-off\.stn-hot\{ border-style:solid;[^}]*animation:stnHot 1\.8s var\(--ease\) infinite; \}/.test(core), "a free desk breathes while somebody waits");
+  assert.ok(/const solo = Array\.isArray\(rooms\) && rooms\.length === 1 \? queueTool\(rooms\[0\]\) : null;/.test(mgr) && /rooms=\{store \? roomListOf\(config, store\.id\) : null\}/.test(mgr) && /\{picking && !solo && \(/.test(mgr), "a one-room store's dock goes straight to the room");
+});

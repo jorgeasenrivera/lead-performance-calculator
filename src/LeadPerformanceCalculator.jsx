@@ -458,6 +458,7 @@ const PIX = {
   question:  ["0011100","0100010","0000010","0000100","0001000","0000000","0001000"],
   plus:      ["0001000","0001000","0001000","1111111","0001000","0001000","0001000"],
   minus:     ["0000000","0000000","0000000","1111111","0000000","0000000","0000000"],
+  dash:      ["0000000","0000000","0000000","0011100","0000000","0000000","0000000"],
   arrowup:   ["0001000","0011100","0101010","1001001","0001000","0001000","0001000"],
   arrowdown: ["0001000","0001000","0001000","1001001","0101010","0011100","0001000"],
   arrow:     ["0001000","0000100","0000010","1111111","0000010","0000100","0001000"],
@@ -3138,7 +3139,8 @@ export default function LeadPerformanceCalculator() {
       <AppShell entering={entering}
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
-        appModule="board" onToolChange={switchTool} onImport={goImport}>
+        appModule="board" onToolChange={switchTool} onImport={goImport}
+        rooms={currentStore ? roomListOf(config, currentStore.id) : null}>
         <div className="page">
           <BoardLauncher config={config} session={session}
             onLaunch={(storeId) => openLeaderboard(config, storeId)}
@@ -3208,6 +3210,7 @@ export default function LeadPerformanceCalculator() {
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
       appModule={appModule} onToolChange={switchTool} onImport={goImport}
+      rooms={currentStore ? roomListOf(config, currentStore.id) : null}
       corner={(isAdmin || session.role === "manager") && currentStore
         ? <AssistWatcher store={currentStore.id} meName={session.name} /> : null}
       brand={currentStore?.brand}
@@ -7619,6 +7622,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
             <button key={t} type="button" role="tab" aria-selected={active === t} aria-label={LABEL[t]}
               className={"ar-tab" + (active === t ? " on" : "")} onClick={() => go(t)}>
               <PixIcon glyph={GLYPH[t]} size={20} />
+              <span className="ar-lbl">{LABEL[t]}</span>
             </button>
           ))}
         </div>
@@ -7998,7 +8002,12 @@ function SfLineLive({ cfg, store, row, meId, me, onFlag, onRelease }) {
         <SfLineTimers onLine={onLine} atDesk={atDesk} today={today} />
         <div className="sfl-title" key={title}>{title}</div>
       </div>
-      <SfTiles value={mine ? null : st} options={options} onPick={pick} />
+      {/* One status control (consistency pass, item 3): the same pill the floor
+          has, in the line's own colour; the tiles stay only for the two actions
+          a seated person has, which are verbs, not states. */}
+      {mine
+        ? <SfTiles value={null} options={options} onPick={pick} />
+        : <SfStatusSelect value={st} variant={LEAD_VARIANTS.line} flags={LINE_SELF_FLAGS} onPick={pick} />}
     </>
   );
 }
@@ -9334,7 +9343,7 @@ const openToOf = (store) => {
 };
 
 function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, cfg,
-                    monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp,
+                    monthStats, boardThr, goals, off, days, offToday, offState, activityNow, onOffAnswer, onHelp, onYou = null,
                     line, myPos, availableAhead, toFloor, joinable = false, upsToday = 0, roster = [] }) {
   const [sheet, setSheet] = useState(null);   // "closing" | "board" | "sched" | null
   const [pickDay, setPickDay] = useState(null);
@@ -9538,6 +9547,9 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
         </div>
         <div className="mc-corner">
           {mineAt && <span className="mc-asof"><s />AS OF {mcClock(mineAt) || ""}</span>}
+          {/* A question mark means help everywhere (consistency pass, item 8);
+              the person's own settings are behind their own initials. */}
+          {onYou && <button type="button" className="mc-me" onClick={onYou} aria-label="You">{initialsOf(meFull || meLabel || "")}</button>}
           <button type="button" className="mc-help" onClick={onHelp} aria-label="Help"><PixIcon glyph="question" size={16} /></button>
         </div>
       </div>
@@ -9696,7 +9708,7 @@ function MyCorner({ store, date, me, meId, meFull, meLabel, mine, mineAt, std, c
           <div className="mc-sheet">
             <div className="mc-sheet-head">
               <b>{sheet === "closing" ? "Closing" : sheet === "sched" ? new Date(y, mo - 1, 1).toLocaleDateString([], { month: "long" }) : "The board"}</b>
-              <button type="button" className="mc-x" onClick={() => { setSheet(null); setOpenCh(null); }} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
+              <button type="button" className="mc-x x-close" onClick={() => { setSheet(null); setOpenCh(null); }} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
             </div>
             {sheet === "closing" && (
               <>
@@ -10659,7 +10671,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
           goals={boardExtra.goals} off={boardExtra.off} days={days}
           offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
-          onHelp={() => { buzz(8); setHelpOpen(true); }}
+          onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
           line={line} myPos={0} availableAhead={0} joinable={open && !!accountPerson} toFloor={() => setTab("floor")}
           upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
       );
@@ -10766,7 +10778,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
           mine={mine} mineAt={mineAt} std={std} cfg={cfg} monthStats={monthStats} boardThr={boardThr}
           goals={boardExtra.goals} off={boardExtra.off} days={days}
           offToday={offToday} offState={offState} activityNow={activityNow} onOffAnswer={answerOff}
-          onHelp={() => { buzz(8); setHelpOpen(true); }}
+          onHelp={() => { buzz(8); setHelpPanel(true); }} onYou={() => { buzz(8); setHelpOpen(true); }}
           line={line} myPos={myPos} availableAhead={availableAhead} toFloor={() => setTab("floor")}
           upsToday={((row && row.history) || []).filter((e) => e && e.id === meId && e.action === "assigned").length} roster={roster} />
       );
@@ -10918,7 +10930,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setAppOpen(false); }}>
           <div className="mc-sheet">
             <div className="mc-sheet-head"><b>The Sage app</b>
-              <button type="button" className="mc-x" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
+              <button type="button" className="mc-x x-close" onClick={() => setAppOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
             <p className="mc-steps-p">The Sage app is on its way to the App Store and Google Play. It is the way to carry your corner and the line, with a buzz when you are up. Until it lands, this page in your browser is the same screen.</p>
           </div>
         </div></Overlay>
@@ -10930,7 +10942,7 @@ function FloorSignIn({ store, date, token, tag = null, test = false, account = n
         <Overlay><div className="mc-ov" onClick={(e) => { if (e.target === e.currentTarget) setHelpOpen(false); }}>
           <div className="mc-sheet mc-you">
             <div className="mc-sheet-head"><b>You</b>
-              <button type="button" className="mc-x" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
+              <button type="button" className="mc-x x-close" onClick={() => setHelpOpen(false)} aria-label="Close"><PixIcon glyph="close" size={14} /></button></div>
             <div className="mc-you-hero">
               <span className="mc-set-av" style={{ background: `hsl(${(String(meFull || meLabel).split("").reduce((h2, c2) => (h2 * 31 + c2.charCodeAt(0)) % 360, 0))} 62% 46%)` }}>{String(meLabel || meFull).trim().split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2)}</span>
               <span className="mc-you-who"><b>{meFull || meLabel}</b><span className="hint">{(row && row.storeName) || ""}{myGoal != null ? ` \u00b7 goal ${myGoal}` : ""}</span></span>
@@ -13801,6 +13813,15 @@ input[type=number] { width:84px; }
 /* Red for everything, including Cancel, Crop, Move up and Download: a
          screen of ordinary actions read as a screen of warnings. Neutral now,
          with red kept for the ones that actually take something away. */
+
+/* One close (consistency pass, item 1). Every X that closes a sheet, a card,
+   a panel or a drawer is this: a 36 px disc in the surface's own tint, the
+   dotted cross at 15 px. The six classes it sits on keep their place; the
+   look is one. */
+.lpc .x-close{ width:36px; height:36px; border-radius:50%; border:0; padding:0; display:grid; place-items:center; cursor:pointer;
+  background:color-mix(in srgb, currentColor 9%, transparent); color:inherit; font-size:0; line-height:0; }
+.lpc .x-close:hover{ background:color-mix(in srgb, currentColor 16%, transparent); }
+.lpc .x-close .pix{ display:block; }
 .btn-x { background:transparent; border:none; color:var(--ink-2); cursor:pointer; font-size:12px; font-weight:600;
         padding:4px 8px; border-radius:8px; transition: background .2s, color .2s; }
 .btn-x:hover { background:color-mix(in srgb, var(--p2) 10%, transparent); color:var(--p2d); }
@@ -14392,6 +14413,12 @@ input[type=number] { width:84px; }
   border:1.5px dashed rgba(255,255,255,.48); }
 .stn-map .fbp-tbl.stn-off:hover{ background:rgba(255,255,255,.18); border-style:solid;
   border-color:rgba(255,255,255,.7); color:#fff; }
+/* Somebody is waiting and this desk is free: it breathes, so the eye lands on
+   it before the manager has read a single name (consistency pass, item 11). */
+.stn-map .fbp-tbl.stn-off.stn-hot{ border-style:solid; border-color:rgba(255,255,255,.9); animation:stnHot 1.8s var(--ease) infinite; }
+@keyframes stnHot{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,255,255,0); background:rgba(255,255,255,.14) }
+  50%{ box-shadow:0 0 0 6px rgba(255,255,255,.22); background:rgba(255,255,255,.26) } }
+@media (prefers-reduced-motion: reduce){ .stn-map .fbp-tbl.stn-off.stn-hot{ animation:none; box-shadow:0 0 0 4px rgba(255,255,255,.22); } }
 .stn-map .fbp-tbl.stn-on{ background:#fff; border-color:transparent; color:var(--mfink);
   box-shadow:0 10px 26px -12px rgba(8,20,60,.45); }
 .stn-map .fbp-tbl.stn-on .fbp-sub{ color:var(--mfink2); }
@@ -14475,17 +14502,40 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .boot-stall.phone button{ background:#8FD8AF; color:#12251B; }
 .boot-slow{ position:fixed; z-index:61; left:0; right:0; top:calc(50% + 70px); text-align:center; color:rgba(255,255,255,.75);
   font:700 11px var(--sfmono, ui-monospace, monospace); letter-spacing:.14em; text-transform:uppercase; animation:loadFadeIn .45s both; }
+
+/* Two bars, one language (consistency pass, item 6): the salesperson's bar
+   names its rooms under the glyphs as the manager's dock does, and shares
+   its geometry (26 px bar, 22 px thumb). */
+.ar-lbl{ font:700 9.5px var(--font-ui); letter-spacing:-.01em; white-space:nowrap; }
+/* The person's own entry on the corner (item 8). */
+.mc-corner .mc-me{ width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; background:#567D61; color:#fff;
+  font:700 12px var(--sfmono); letter-spacing:.02em; display:grid; place-items:center; }
+/* Three shapes, not nine (item 5). The phone's section strip is the desk's
+   strip: a grey track, a white thumb that glides. The corner's three-ways are
+   the rooms' status pill in mint. Up Next's tiles are the tool bar's pills. */
+.lpc .sect-strip{ background:rgba(118,118,128,.14); border-radius:12px; padding:3px; gap:2px; margin:9px 14px 8px; backdrop-filter:none; -webkit-backdrop-filter:none; box-shadow:none; }
+.lpc .sect-strip .sect-chip{ border:0; background:transparent; color:var(--ink-2, #4E5A50); font-weight:600; border-radius:9px; }
+.lpc .sect-strip .sect-chip.on{ color:var(--ink, #15211B); background:transparent; }
+.lpc .sect-strip .sect-pill{ background:rgba(255,255,255,.92); border-radius:9px; box-shadow:inset 0 1px 0 rgba(255,255,255,1), 0 1px 5px rgba(31,54,86,.18); }
+.mc-you .mc-seg3{ background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07); border-radius:13px; padding:3px; }
+.mc-you .mc-seg3 button{ border-radius:10px; transition:background var(--t-swap) var(--ease), color var(--t-swap) var(--ease); }
+.mc-you .mc-seg3 button.on{ background:#8FD8AF; color:#12251B; }
+.lpc .qpick .qpick-btn{ flex-direction:row; gap:8px; padding:9px 14px; border-radius:999px; background:var(--qa); color:#fff; font-weight:600; }
+.lpc .qpick .qpick-btn .qpick-ico{ width:22px; height:22px; border-radius:6px; background:rgba(255,255,255,.18); color:#fff; box-shadow:none; }
+.lpc .qpick .qpick-btn.on .qpick-ico{ background:rgba(255,255,255,.28); }
+/* One primary (item 2): 40 px on the desk. */
+.lpc .btn.btn-primary{ min-height:40px; }
 .ar-bar{ position:fixed; z-index:101; left:50%; transform:translate(-50%, calc(100% + 40px));
   transition:transform var(--t-settle) var(--spring);
   bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
-  display:flex; padding:4px; border-radius:999px;
+  display:flex; padding:4px; border-radius:26px;
   background:rgba(6,10,8,.86); border:1px solid rgba(255,255,255,.13);
   backdrop-filter:blur(10px) saturate(140%); -webkit-backdrop-filter:blur(10px) saturate(140%);
   box-shadow:0 10px 24px -10px rgba(0,0,0,.7); }
-.ar-ind{ position:absolute; left:4px; top:4px; bottom:4px; border-radius:999px;
+.ar-ind{ position:absolute; left:4px; top:4px; bottom:4px; border-radius:22px;
   background:rgba(255,255,255,.15);
   transition:transform .38s cubic-bezier(.3,1.6,.4,1); will-change:transform; }
-.ar-tab{ position:relative; display:grid; place-items:center; width:64px; height:44px;
+.ar-tab{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:72px; height:50px;
   border:0; background:none; cursor:pointer; color:rgba(255,255,255,.42);
   transition:color .2s; }
 .ar-tab.on{ color:#fff; }

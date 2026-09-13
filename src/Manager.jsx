@@ -1046,7 +1046,7 @@ function DeliveryGuideModal({ onClose }) {
       <div className="modal guide-modal" onClick={(e) => e.stopPropagation()}>
         <div className="guide-modal-head">
           <h2 className="guide-title">How to pull the Appointment and Video reports</h2>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
         <p className="guide-intro">Follow these steps every time. Two reports, uploaded together.</p>
         <AppointmentVideoGuideSteps />
@@ -2739,7 +2739,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
             <div className="s2-greet">
               Choose a store · it opens in its own window, sized for a TV, and refreshes every 30 seconds
             </div>
-            <h2 className="s2-store">The Board</h2>
+            <h2 className="s2-store">TV Board</h2>
           </div>
           <div className="s2-chips">
             <span className="fh-chip">{stores.length} {stores.length === 1 ? "store" : "stores"}</span>
@@ -2795,7 +2795,7 @@ function CastLink({ storeId, label, config, compact }) {
       <button className={compact ? "bl-tvb" : "btn-link cast-link"} title={url}
         onClick={() => {
           navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 3000); },
-            () => window.prompt("Copy this address into the TV's browser:", url));
+            () => askCopy("Copy this address into the TV's browser", url));
         }}>
         {said ? "Copied" : (label ? "Copy TV link for " + label : compact ? "Copy TV link" : "Copy the TV link")}
       </button>
@@ -2852,7 +2852,7 @@ function BoardScreen({ storeId }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "#0B1622", overflow: "hidden" }}>
       {html
-        ? <iframe title="The Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
+        ? <iframe title="TV Board" srcDoc={html} style={{ border: 0, width: "100%", height: "100%", display: "block" }} />
         : <div style={{ height: "100%", display: "grid", placeItems: "center", padding: "32px", textAlign: "center",
             color: "#CFE0F0", font: "500 20px/1.5 system-ui, -apple-system, sans-serif" }}>{msg}</div>}
     </div>
@@ -3089,7 +3089,7 @@ function RepairPanel({ config }) {
 
   const apply = async () => {
     if (!chosen.length) return;
-    if (!window.confirm(`Remove ${chosen.length} entries from ${plan.store}?\n\nA full copy of the store is saved first, and only the ticked names are touched.`)) return;
+    if (!(await askConfirm(`Remove ${chosen.length} entries from ${plan.store}?\n\nA full copy of the store is saved first, and only the ticked names are touched.`))) return;
     setBusy(true);
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -3557,7 +3557,7 @@ function QueueBoardLink({ storeId, kind }) {
     <button className="btn-quiet" title={url}
       onClick={() => {
         navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
-          () => window.prompt("Point a screen at this address:", url));
+          () => askCopy("Point a screen at this address", url));
       }}>
       {said ? "Copied" : "Copy board link"}
     </button>
@@ -3572,7 +3572,7 @@ function TestLink({ storeId, date, token, param }) {
     <button className="btn-quiet" title="Opens this queue as a test person nobody else can see"
       onClick={() => {
         navigator.clipboard.writeText(url).then(() => { setSaid(true); setTimeout(() => setSaid(false), 2500); },
-          () => window.prompt("Open this on your phone to test the salesperson view:", url));
+          () => askCopy("Open this on your phone to test the salesperson view", url));
       }}>
       {said ? "Copied" : "Copy test link"}
     </button>
@@ -3588,7 +3588,7 @@ async function printQueueSignIn({ store, url, date, by }) {
     svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
   } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
   const w = window.open("", "lpc_qr_" + store.id, "width=800,height=1040");
-  if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
+  if (!w) { toast("Allow pop-ups for this site to print the sign-in code."); return; }
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
@@ -3707,7 +3707,7 @@ function ToolSheet({ title, sub, onClose, wide, children }) {
     <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
       <div className={"acard toolsheet" + (wide ? " wide" : "") + (closing ? " closing" : "")}
         role="dialog" aria-label={title}>
-        <button className="ac-x" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
+        <button className="ac-x x-close" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         <div className="ac-name">{title}</div>
         {sub && <div className="ac-sub">{sub}</div>}
         <div className="ts-body">{children}</div>
@@ -3897,7 +3897,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
         {onAssign && (
           <button className="fh-go" disabled={assignDisabled} onClick={onAssign}>
             <PixIcon glyph="arrow" size={12} />
-            {assignBusy ? "Assigning" : (assignLabel || ("Assign " + (nextName ? nextName.split(" ")[0] : "next")))}
+            {assignBusy ? "Assigning" : (assignLabel || ("Assign " + (nextName ? nextName.split(" ")[0] : "the up")))}
           </button>
         )}
       </div>
@@ -4415,12 +4415,13 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
     }
   };
   const release = (n) => write((cur) => releaseStation(cur, n, qNowIso(), "out"), n);
-  const skip = (n, offer) => {
-    const why = window.prompt(
-      `Skipping ${offer.offerLabel} for desk ${n}.\nWhy? (it goes in today's history, and desk ${n} moves to the next person)`, "");
+  const skip = async (n, offer) => {
+    const why = await askText(`Skipping ${stnFirst(offer.offerLabel)} for desk ${n}`,
+      `Why? It goes in today's history, and desk ${n} moves to the next person.`,
+      { placeholder: "The reason", ok: "Skip" });
     if (why === null) return;
     const reason = why.trim();
-    if (!reason) { alert("A skip needs a reason. Nothing was changed."); return; }
+    if (!reason) { toast("A skip needs a reason. Nothing was changed."); return; }
     write((cur) => skipOffer(cur, n, qNowIso(), { by: userName || "the desk", why: reason }), n);
   };
 
@@ -4709,7 +4710,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
             {seatsOf(plan).length > 8 && (
               <div className="fr-zoom">
                 <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
-                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="minus" size={14} /></button>
+                <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
               </div>
             )}
           </div>
@@ -4761,9 +4762,16 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
 /* How a seat is drawn, wherever it is drawn. Taken, held, offered, free — the
    four states, in the one place, so the desk and the handset cannot end up
    showing the same chair differently. */
-function stnDeco(board, t, nameOf) {
+function stnDeco(board, t, nameOf, hot) {
   const s = board.seats.find((x) => x.n === String(t.n));
   if (!s) return {};
+  /* Somebody is waiting for a desk and this one is free: it glows, so the
+     manager's eye lands on where the next person can go without reading. */
+  const free = !s.taken && !s.offerTo;
+  if (free && hot) {
+    const own = s.owner && nameOf ? nameOf(s.owner) : null;
+    return own ? { cls: "stn-off stn-own stn-hot", sub: stnFirst(own) } : { cls: "stn-off stn-hot" };
+  }
   if (s.taken) return {
     cls: s.state === "held" ? "stn-on stn-held" : "stn-on",
     sub: stnFirst(s.label),
@@ -4831,6 +4839,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
   const nextP = waiting[0] || null;
   const taken = new Set(board.seats.filter((s) => s.taken).map((s) => s.id));
   const canSit = (salesRoster || []).filter((p) => p && p.id && !taken.has(p.id));
+  const freeDesks = board.seats.filter((s) => !s.taken && !s.offerTo);
   const held = board.seats.filter((s) => s.state === "held").length;
   const M = metrics || {};
 
@@ -4887,7 +4896,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
     if (st.offerTo && pick !== st.n) return (
       <div className="sd-panel">
         <div className="sd-ptitle">
-          Station {st.n} is {st.offerLabel}&rsquo;s
+          Desk {st.n} is {st.offerLabel}&rsquo;s
           <span className="sd-pmeta">{stnLeft(st.offerLeftMs)} left</span>
         </div>
         <p className="sd-psub">
@@ -4906,7 +4915,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
     return (
       <div className="sd-panel">
         <div className="sd-ptitle">
-          {own ? `Station ${st.n} is ${own.name}\u2019s desk` : `Who is taking station ${st.n}?`}
+          {own ? `Desk ${st.n} is ${own.name}\u2019s` : `Who is taking desk ${st.n}?`}
         </div>
         {/* Its owner first and on their own. Somebody who sits at the same desk
             every day is the person most likely to have forgotten to check in,
@@ -4959,7 +4968,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
                 No fitting and no zoom: this is the width the coordinates were
                 authored against. */}
             <PlanMap plan={plan} cls="stn-map"
-              deco={(t) => stnDeco(board, t, realName)}
+              deco={(t) => stnDeco(board, t, realName, rotates && !!nextP && !taken.has(nextP.id))}
               onTap={(t) => { setPick(null); setWarn(null); setOpen(open === String(t.n) ? null : String(t.n)); }} />
             {/* The rail is the same one the handset draws, and its pips are
                 buttons. On a desk the console below already holds every action
@@ -4988,6 +4997,33 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
                     </div>
                     <button type="button" className="btn btn-primary sd-assign" disabled={tabBusy || !waiting.length}
                       onClick={assignNext}>Assign the call</button>
+                    {/* One tap to a chair (consistency pass, item 11). Seating
+                        used to be tap the desk, then find the name in a list;
+                        the desk already knows who is next, so the free desks
+                        are offered here as chips and the name is implied. The
+                        below-standard warning lands in the same card, because
+                        the panel it used to open in belongs to a tapped desk
+                        and nothing was tapped. */}
+                    {!taken.has(nextP.id) && freeDesks.length > 0 && !(warn && !open) && (
+                      <div className="sd-chairs">
+                        <span className="sd-chairlbl">Seat at</span>
+                        {freeDesks.map((s) => (
+                          <button key={s.n} type="button" className="sd-chair" disabled={!!busy}
+                            onClick={() => seat(s.n, { id: nextP.id, label: realName(nextP.id) })}>{s.n}</button>
+                        ))}
+                      </div>
+                    )}
+                    {warn && !open && (
+                      <div className="sd-inwarn">
+                        <b>{realName(warn.person.id)} is below standard on the phone</b>
+                        <p>{fmtPct(warn.gate.pct)} closing this month against {warn.gate.standard}%. Seating them is allowed and goes to the audit log with your name on it.</p>
+                        <div className="sd-pbtns">
+                          <button type="button" className="btn btn-sm" disabled={!!busy}
+                            onClick={() => seat(warn.station, warn.person, { viaOffer: warn.viaOffer, forced: true })}>Seat them anyway</button>
+                          <button type="button" className="btn btn-sm btn-primary" onClick={() => setWarn(null)}>Not now</button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : <p className="sd-none">Nobody is waiting for a call.</p>}
               </div>
@@ -5257,7 +5293,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       const next = await mutateRow((cur) => (cur ? mutator(cur) : cur));
       if (next) { setRow(next); mirror(next, audit); }
     } catch (e) {
-      alert("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
+      toast("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
         + String((e && e.message) || e)
         + "\n\nTry once more. If it happens again, use the Help button in the corner and it will be sent with everything needed to look into it.");
     }
@@ -5273,11 +5309,11 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     return cur;
   };
 
-  const assignNext = () => {
+  const assignNext = async () => {
     // The test identity never gets handed a real customer.
     const first = line.find((p) => p.status === "waiting" && !isTestId(p.id));
     if (!first) return;
-    const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    const ref = await askStock(realName(first.id));
     if (ref === null) return;
     const rf = ref.trim();
     act((cur) => {
@@ -5288,8 +5324,8 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
       return moveToBack(cur, p.id);
     }, { action: "Queue: assigned next", detail: realName(first.id) + (rf ? " \u00b7 " + rf : "") });
   };
-  const assignSpecific = (id, reason) => {
-    const ref = window.prompt(`Assigning ${realName(id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+  const assignSpecific = async (id, reason) => {
+    const ref = await askStock(realName(id));
     if (ref === null) return;
     const rf = ref.trim();
     act((cur) => {
@@ -5350,16 +5386,16 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
     pushH(cur, { action: "signed-in", id, who: label, by: "manager" });
     return cur;
   }, { action: "Queue: added", detail: realName(id) });
-  const clearLine = () => {
-    if (!window.confirm("Clear the current line? Today's history is kept for coaching; only the live line is emptied.")) return;
+  const clearLine = async () => {
+    if (!(await askConfirm("Clear the current line? Today's history is kept for coaching; only the live line is emptied."))) return;
     act((cur) => { cur.line = []; pushH(cur, { action: "cleared", by: "manager" }); return cur; }, { action: "Queue: line cleared", detail: store.name });
   };
-  const regenToken = () => {
-    if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
+  const regenToken = async () => {
+    if (!(await askConfirm("Generate a new code? Any code already posted or screenshotted will stop working."))) return;
     act((cur) => { cur.token = uid(); return cur; }, { action: "Queue: code regenerated", detail: store.name });
   };
   const resetPin = async (id) => {
-    if (!window.confirm(`Reset ${realName(id)}'s PIN? They'll set a new one the next time they sign in.`)) return;
+    if (!(await askConfirm(`Reset ${realName(id)}'s PIN? They'll set a new one the next time they sign in.`))) return;
     const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
     setIdentities(next);
     act((cur) => { pushH(cur, { action: "pin-reset", id, who: realName(id), by: "manager" }); return cur; }, { action: "Queue: PIN reset", detail: realName(id) });
@@ -6003,7 +6039,7 @@ async function printFloorSignIn({ store, url, date, by }) {
     svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
   } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
   const w = window.open("", "lpc_floor_" + store.id, "width=800,height=1040");
-  if (!w) { alert("Allow pop-ups for this site to print the sign-in code."); return; }
+  if (!w) { toast("Allow pop-ups for this site to print the sign-in code."); return; }
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
   const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
@@ -6094,7 +6130,7 @@ function FrPop({ title, onClose, children, cls }) {
   return createPortal(
     <div className="fr-pop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={"fr-sheet" + (cls ? " " + cls : "")} role="dialog" aria-label={title} ref={sheetRef}>
-        <button type="button" className="fr-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={14} /></button>
+        <button type="button" className="fr-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         {children}
       </div>
     </div>, document.body);
@@ -6590,7 +6626,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
               <span className="fr-wt">{qWaitLabel(qMinsSince(p.joinedAt))}</span>
               <span className="fr-mv">
                 <button type="button" disabled={busy || idx <= 0} onClick={() => moveInLine(p.id, -1)} aria-label="Move up"><PixIcon glyph="moveup" size={14} /></button>
-                <button type="button" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(p.id, 1)} aria-label="Move down"><PixIcon glyph="arrowdown" size={14} /></button>
+                <button type="button" disabled={busy || idx >= line.length - 1} onClick={() => moveInLine(p.id, 1)} aria-label="Move down"><PixIcon glyph="movedown" size={14} /></button>
               </span>
             </div>
           );
@@ -6813,7 +6849,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
           </div>
           <div className="fr-zoom">
             <button type="button" onClick={() => bump(-1)} aria-label="Zoom out"><PixIcon glyph="minus" size={14} /></button>
-            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="minus" size={14} /></button>
+            <button type="button" onClick={() => bump(1)} aria-label="Zoom in"><PixIcon glyph="plus" size={14} /></button>
           </div>
           {reseat && <button type="button" className="fr-reseat" onClick={() => setReseat(null)}>Re-seating {realName(reseat).split(" ")[0]}: tap a table · cancel</button>}
         </div>
@@ -7041,7 +7077,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
       const next = await mutateFloorRow(store.id, date, (cur) => (cur ? mutator(cur) : cur));
       if (next) setRow(next);
     } catch (e) {
-      alert("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
+      toast("That did not save, so it will disappear in a moment when the page next checks the server. Nothing else was changed.\n\nWhat the database said:\n"
         + String((e && e.message) || e)
         + "\n\nTry once more. If it happens again, use the Help button in the corner and it will be sent with everything needed to look into it.");
     }
@@ -7057,11 +7093,11 @@ function FloorBoard({ config, store, data, onData, userName }) {
     return cur;
   };
 
-  const assignNext = () => {
+  const assignNext = async () => {
     // The test identity never gets handed a real customer.
     const first = line.find((p) => p.status === "waiting" && !isTestId(p.id));
     if (!first) return;
-    const ref = window.prompt(`Assigning ${realName(first.id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+    const ref = await askStock(realName(first.id));
     if (ref === null) return;
     const rf = ref.trim();
     act((cur) => {
@@ -7072,8 +7108,8 @@ function FloorBoard({ config, store, data, onData, userName }) {
       return moveToBack(cur, p.id);
     }, { action: "Floor: assigned next", detail: realName(first.id) + (rf ? " \u00b7 " + rf : "") });
   };
-  const assignSpecific = (id, reason) => {
-    const ref = window.prompt(`Assigning ${realName(id)}.\nStock # or lead name (so this opportunity can be tracked and looked up later):`, "");
+  const assignSpecific = async (id, reason) => {
+    const ref = await askStock(realName(id));
     if (ref === null) return;
     const rf = ref.trim();
     act((cur) => {
@@ -7117,16 +7153,16 @@ function FloorBoard({ config, store, data, onData, userName }) {
     return cur;
   }, { action: "Floor: added", detail: realName(id) });
   const dismissUnmatched = (key) => act((cur) => { cur.unmatched = (cur.unmatched || []).filter((u) => u.key !== key); return cur; });
-  const clearLine = () => {
-    if (!window.confirm("Clear the floor line? Today's history is kept; only the live line is emptied.")) return;
+  const clearLine = async () => {
+    if (!(await askConfirm("Clear the floor line? Today's history is kept; only the live line is emptied."))) return;
     act((cur) => { cur.line = []; pushH(cur, { action: "cleared", by: "manager" }); return cur; }, { action: "Floor: line cleared", detail: store.name });
   };
-  const regenToken = () => {
-    if (!window.confirm("Generate a new code? Any code already posted or screenshotted will stop working.")) return;
+  const regenToken = async () => {
+    if (!(await askConfirm("Generate a new code? Any code already posted or screenshotted will stop working."))) return;
     act((cur) => { cur.token = uid(); return cur; }, { action: "Floor: code regenerated", detail: store.name });
   };
   const resetPin = async (id) => {
-    if (!window.confirm(`Reset ${realName(id)}'s PIN? This is the shared PIN, so it also resets it for the phone line. They'll set a new one next sign-in.`)) return;
+    if (!(await askConfirm(`Reset ${realName(id)}'s PIN? This is the shared PIN, so it also resets it for the phone line. They'll set a new one next sign-in.`))) return;
     const next = await mutateQueueIdentities(store.id, (cur) => { delete cur[id]; return cur; });
     setIdentities(next);
   };
@@ -7217,7 +7253,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
             nextSub={nextP ? `waiting ${qWaitLabel(qMinsSince(nextP.joinedAt))}` : null}
             waitingNames={withoutTest(line).map((p) => realName(p.id))}
             accent="#0FB37E" kind="floor" metrics={M}
-            assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "next")}
+            assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "the up")}
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
         );
       })()}
@@ -8583,7 +8619,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   const persist = async (next, audit) => {
     const st = storeRef.current;
     if (!st) return;
-    if (failRef.current) { alert("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
+    if (failRef.current) { toast("This store's data didn't finish loading, so saving is paused to protect your records. Please reload the page and try again."); return; }
     if (next && next.__storeId && next.__storeId !== st.id) {
       console.error("refused cross-store save", { belongsTo: next.__storeId, wouldWriteTo: st.id });
       return;
@@ -8673,6 +8709,7 @@ function FloorModule({ config, session, accessibleStores, currentStoreId, isAdmi
   return (
     <AppShell {...shell}
       appModule={queue} onToolChange={onToolChange} onImport={onImport}
+      rooms={store ? roomListOf(config, store.id) : null}
       brand={store?.brand}
       navItems={navItems} navValue={navValue} navOnChange={navOnChange}
       storeName={store?.name || ""}
@@ -9353,7 +9390,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
 
       {noShowSuspects.length > 0 && (
         <div className="da-panel da-askpanel">
-          <div className="da-pcap"><PixIcon glyph="minus" size={13} /> Nothing logged today · say which it is</div>
+          <div className="da-pcap"><PixIcon glyph="dash" size={13} /> Nothing logged today · say which it is</div>
           <p className="da-hint">The schedule has them in, the report has run, and nothing is against their name. Off stops the day counting against them; On counts it as normal. Left alone, it closes out as a day off after midnight.</p>
           <div className="da-asks">
             {noShowSuspects.map((r) => (
@@ -9823,7 +9860,7 @@ function DayReportModal({ store, day, rows, offenders, streaks = {}, freshness, 
               {imgState === "working" ? "Building..." : imgState === "copied" ? "Copied" : "Copy as image"}
             </button>
             <button className="btn secondary" onClick={saveImage}>Save image</button>
-            <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+            <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
           </div>
         </div>
 
@@ -10851,7 +10888,7 @@ function ScheduleRoom({ store, config, data, onChange, onClose }) {
             <button className={mode === "edit" ? "on" : ""} onClick={() => setMode("edit")}>The month</button>
             <button className={mode === "raw" ? "on" : ""} onClick={() => setMode("raw")}>As uploaded</button>
           </div>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         {changed > 0 && (
@@ -11129,7 +11166,7 @@ function ScheduleUpload({ store, roster, data, onClose, onChange }) {
             <h2 className="plate-hist-title">Upload monthly schedule</h2>
             <p className="plate-hist-sub">Applies days off and vacation for the month. Off-days are excluded from the point system and from days worked.</p>
           </div>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         {sheetPick ? (
@@ -11291,11 +11328,11 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
     return [...map.entries()].sort((a, b) => (a[0] || "zzz").localeCompare(b[0] || "zzz"));
   })();
   const openAssign = (t) => { setPickTag(t || ""); setNewTag(""); setPickWho(""); setFreeWho(""); clearErr(); setPop({ k: "assign" }); };
-  const doAssign = () => {
+  const doAssign = async () => {
     const t = (pickTag === "__new" ? newTag : pickTag).trim();
     const who = (pickWho || freeWho).trim();
     if (!t) return;
-    const ok = addPlate(t, who);
+    const ok = await addPlate(t, who);
     if (ok) close();
   };
   const hd = (title, meta) => (
@@ -11448,7 +11485,7 @@ function PlatesPhone({ standing, day, setDay, plateDays, plates, dayPlates, held
             : <><button type="button" className="fr-b pri" onClick={() => { toggleIn(r.id); close(); }}><PixIcon glyph="check" size={14} /> Mark returned</button>
               <button type="button" className="fr-b" onClick={() => { setPickWho(""); setFreeWho(""); clearErr(); setPop({ k: "hand", id: r.id }); }}><PixIcon glyph="handover" size={14} /> Hand over</button>
               <button type="button" className="fr-b" onClick={() => setPop({ k: "time", id: r.id })}><PixIcon glyph="edit" size={14} /> Edit time</button></>}
-          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={() => { if (window.confirm(`Remove the record of ${r.tag}?`)) { remove(r.id); close(); } }}><PixIcon glyph="remove" size={14} /> Remove</button>
+          <button type="button" className="fr-b warn" style={{ flexBasis: "100%" }} onClick={async () => { if (await askConfirm(`Remove the record of ${r.tag}?`)) { remove(r.id); close(); } }}><PixIcon glyph="remove" size={14} /> Remove</button>
         </div></>);
     }
     return null;
@@ -11766,18 +11803,18 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
     onChange(next, { action: label, detail: entry.tag });
   };
 
-  const removeRegistry = (id) => {
+  const removeRegistry = async (id) => {
     const entry = registry.find((r) => r.id === id); if (!entry) return;
     const used = Object.values(data.plates || {}).some((list) => (list || []).some((p) => p.tag === entry.tag));
     if (used) {
-      if (!window.confirm(`${entry.tag} has been logged out before. Removing it from the master list does NOT delete that history, but it will stop being suggested.\n\nRetiring it instead keeps it on the list, greyed out. Remove it anyway?`)) return;
-    } else if (!window.confirm(`Remove ${entry.tag} from the master plate list?`)) return;
+      if (!(await askConfirm(`${entry.tag} has been logged out before. Removing it from the master list does NOT delete that history, but it will stop being suggested.\n\nRetiring it instead keeps it on the list, greyed out. Remove it anyway?`))) return;
+    } else if (!(await askConfirm(`Remove ${entry.tag} from the master plate list?`))) return;
     const next = JSON.parse(JSON.stringify(data));
     next.plateRegistry = (next.plateRegistry || []).filter((r) => r.id !== id);
     next.plateRegGone = { ...(next.plateRegGone || {}), [id]: new Date().toISOString() };
     onChange(next, { action: "Removed plate from the master list", detail: entry.tag });
   };
-  const addPlate = (tagArg, whoArg) => {
+  const addPlate = async (tagArg, whoArg) => {
     let t = String(typeof tagArg === "string" ? tagArg : tag).trim().toUpperCase(); if (!t) return false;
     if (typeof whoArg !== "string") whoArg = undefined;
     setPlateErr("");
@@ -11809,11 +11846,11 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
       // whether it is one character away from a plate that IS on the list, because
       // that is almost always a typo rather than a plate nobody has logged before.
       const near = nearestKnown(t);
-      if (near && window.confirm(`${t} is not on the master plate list.\n\nDid you mean ${near.tag}?\n\nOK = yes, use ${near.tag} · Cancel = no, ${t} really is a new plate`)) {
+      if (near && await askConfirm(`Did you mean ${near.tag}?\n${t} is not on the master plate list, and ${near.tag} is one character away.`, { ok: `Yes, ${near.tag}`, cancel: `No, ${t} is new` })) {
         enteredAs = t;
         t = near.tag;
       } else {
-        const reusable = window.confirm(`${t} will be added to the master plate list.\n\nIs this a plate that will be REUSED (a dealer plate)?\n\nOK = yes, reusable · Cancel = one-time`);
+        const reusable = await askConfirm(`Is ${t} a dealer plate?\nIt will be added to the master plate list. A dealer plate is reused; a one-time plate goes out once.`, { ok: "Reused", cancel: "One-time" });
         registryMutate = (next) => {
           next.plateRegistry = [...(next.plateRegistry || []), { id: uid(), tag: t, reusable, addedAt: new Date().toISOString() }];
         };
@@ -12001,10 +12038,10 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   /* A plate that was never this store's has no business being marked returned: that
      writes a false custody record saying this store had it and gave it back. It has
      to be removed instead, and the audit log says which was done and why. */
-  const dropPriorRecord = (d, id) => {
+  const dropPriorRecord = async (d, id) => {
     const p = ((data.plates || {})[d] || []).find((x) => x.id === id);
     if (!p) return;
-    if (!window.confirm(`Remove the record of ${p.tag} entirely?\n\nUse this only if the plate was never this store's, for example if it arrived here by mistake. The whole entry for ${d} goes, including its custody log. If this store really did have the plate, use Mark returned instead so the record stays honest.`)) return;
+    if (!(await askConfirm(`Remove the record of ${p.tag} entirely?\n\nUse this only if the plate was never this store's, for example if it arrived here by mistake. The whole entry for ${d} goes, including its custody log. If this store really did have the plate, use Mark returned instead so the record stays honest.`))) return;
     const next = JSON.parse(JSON.stringify(data));
     next.plates = next.plates || {};
     next.plates[d] = (next.plates[d] || []).filter((x) => x.id !== id);
@@ -12316,7 +12353,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
                 <h2 className="plate-hist-title">Plate {openPlate.tag}</h2>
                 <p className="plate-hist-sub">Currently {openPlate.checkedIn ? "returned" : "out with " + (openPlate.assignee || "unassigned")}. Full custody trail below.</p>
               </div>
-              <button className="btn-x" onClick={() => setHistoryFor(null)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+              <button className="btn-x x-close" onClick={() => setHistoryFor(null)} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
             </div>
             <ol className="plate-hist-list">
               {(openPlate.history || []).slice().reverse().map((h, i) => (
@@ -12397,8 +12434,8 @@ function ChecklistEditor({ config, storeId, onChange }) {
     setDraft({ label: "", hint: "" });
   };
   const edit = (id, field, v) => write(own.map((c) => (c.id === id ? { ...c, [field]: v } : c)), "reworded an item");
-  const drop = (c) => {
-    if (!window.confirm(`Remove "${c.label}" from the checklist?`)) return;
+  const drop = async (c) => {
+    if (!(await askConfirm(`Remove "${c.label}" from the checklist?`))) return;
     write(own.filter((x) => x.id !== c.id), `removed "${c.label}"`);
   };
   const move = (i, dir) => {
@@ -12408,8 +12445,8 @@ function ChecklistEditor({ config, storeId, onChange }) {
     [copy[i], copy[to]] = [copy[to], copy[i]];
     write(copy, "reordered");
   };
-  const reset = () => {
-    if (!window.confirm("Put the checklist back to the standard list?")) return;
+  const reset = async () => {
+    if (!(await askConfirm("Put the checklist back to the standard list?"))) return;
     write(DEFAULT_CHECKLIST.filter((c) => !AUTO_CHECK_IDS.includes(c.id)).map((c) => ({ id: c.id, label: c.label, hint: c.hint })), "reset to standard");
   };
 
@@ -12437,7 +12474,7 @@ function ChecklistEditor({ config, storeId, onChange }) {
           <div key={c.id} className="cl-row">
             <span className="cl-ord">
               <button className="btn-x" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" aria-label="Move up"><PixIcon glyph="moveup" size={11} /></button>
-              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down" aria-label="Move down"><PixIcon glyph="arrowdown" size={11} /></button>
+              <button className="btn-x" onClick={() => move(i, 1)} disabled={i === own.length - 1} title="Move down" aria-label="Move down"><PixIcon glyph="movedown" size={11} /></button>
             </span>
             <span className="cl-fields">
               <input className="help-in" value={c.label} placeholder="What to do"
@@ -13040,8 +13077,8 @@ function RoundUp({ config, store, data, M }) {
                     <div className="ru-verdict-sub">{ru2.up} of {ru2.up + ru2.down} measures improved</div>
                   </div>
                 )}
-                <button type="button" className="ru-x" onClick={close} aria-label="Close the round-up">
-                  <PixIcon glyph="close" size={13} />
+                <button type="button" className="ru-x x-close" onClick={close} aria-label="Close the round-up">
+                  <PixIcon glyph="close" size={15} />
                 </button>
               </div>
 
@@ -13830,7 +13867,7 @@ function AssocCard({ a, stats, ev, data, config, thresholds, origin, onClose, ac
   return createPortal(
     <div className="acard-scrim" onClick={(e) => { if (e.target === e.currentTarget) shut(); }}>
       <div ref={boxRef} className={"acard" + (closing ? " closing" : "")} role="dialog" aria-label={a.name}>
-        <button className="ac-x" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
+        <button className="ac-x x-close" onClick={shut} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         <div className="ac-head">
           <span className="ac-ava">{ini}</span>
           <div>
@@ -14293,12 +14330,12 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
       ? found.store.name
       : o.id.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 
-    const name = window.prompt(
+    const name = await askText(
+      found ? "Restoring this store" : "What should this store be called?",
       found
-        ? "Restoring this store from the backup taken " + new Date(found.when).toLocaleString() +
-          ". Its logo and colours are coming back too. Name:"
-        : "No backup found for this store, so its logo and colours will start fresh. What should it be called?",
-      suggested
+        ? "From the backup taken " + new Date(found.when).toLocaleString() + ". Its logo and colours are coming back too."
+        : "No backup was found for it, so its logo and colours will start fresh.",
+      { value: suggested, placeholder: "Store name", ok: "Restore" }
     );
     if (!name || !name.trim()) return;
 
@@ -14390,10 +14427,10 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
     const live = await loadShared(storeKey(want), null);
     if (!live) { setRecSaid("There is nothing saved under that store."); return; }
     const from = config.stores.find((x) => x.id === live.__storeId)?.name || live.__storeId || "no store";
-    if (!window.confirm(
+    if (!(await askConfirm(
       `Keep everything in the ${name} row and change its label from ${from} to ${name}?\n\n` +
       `Do this only if the people in it (${(live.roster || []).slice(0, 5).map((a) => a && a.name).filter(Boolean).join(", ")}) ` +
-      `are ${name}'s own. The row as it is now is saved first so this can be undone.`)) return;
+      `are ${name}'s own. The row as it is now is saved first so this can be undone.`))) return;
     setBusy(true); setRecSaid("");
     try {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -14414,11 +14451,11 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
   const recoverFrom = async (row) => {
     const want = recStore;
     const name = config.stores.find((x) => x.id === want)?.name || want;
-    if (!window.confirm(
+    if (!(await askConfirm(
       `Put ${name} back to the copy from ${new Date(row.t).toLocaleString()}?\n\n` +
       `That copy has ${row.roster} on the roster${row.names.length ? ": " + row.names.join(", ") : ""}.\n\n` +
       `Only ${name} is written. Every other store is left alone, and the row as it stands right now is ` +
-      `saved first so this can be undone.`)) return;
+      `saved first so this can be undone.`))) return;
     setBusy(true); setRecSaid("");
     try {
       /* Keep what is there now before overwriting it, whosever it turns out to be.
@@ -14459,13 +14496,13 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
   };
 
   const restoreAuto = async (b) => {
-    if (!window.confirm(
+    if (!(await askConfirm(
       "Restore the automatic backup from " + new Date(b.t).toLocaleString() + "?" +
       String.fromCharCode(10, 10) +
       "This OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and settings. It cannot be undone." +
       String.fromCharCode(10, 10) +
       "Download a fresh backup first if you're unsure."
-    )) return;
+    ))) return;
     setBusy(true);
     const data = await fetchAuto(b);
     if (!data) { setBusy(false); setMsg("That backup couldn't be read."); return; }
@@ -14511,7 +14548,7 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
         setMsg("That doesn't look like a Sage backup file."); return;
       }
       const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString() : "an unknown date";
-      if (!window.confirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`)) return;
+      if (!(await askConfirm(`Restore the backup from ${when}?\n\nThis OVERWRITES everything currently in the tool: all stores, rosters, imports, standards, and users. This cannot be undone.\n\nConsider downloading a fresh backup first.`))) return;
       setBusy(true);
       await onRestoreAll(data);
       setBusy(false);
@@ -14670,8 +14707,8 @@ function BackupPanel({ config, adminData, session, onRestoreAll, onRestoreStore 
                     <div key={i} className="snap-row">
                       <span className="snap-when">{new Date(sn.t).toLocaleString()}</span>
                       <span className="snap-reason">{sn.reason}{sn.by ? ` · ${sn.by}` : ""}</span>
-                      <button className="btn-x" onClick={() => {
-                        if (!window.confirm(`Roll ${s.name} back to ${new Date(sn.t).toLocaleString()}?\n\nAnything imported or changed at this store since then will be lost.`)) return;
+                      <button className="btn-x" onClick={async () => {
+                        if (!(await askConfirm(`Roll ${s.name} back to ${new Date(sn.t).toLocaleString()}?\n\nAnything imported or changed at this store since then will be lost.`))) return;
                         onRestoreStore(s.id, sn);
                       }}>Restore this</button>
                     </div>
@@ -15092,14 +15129,14 @@ function BaselineImport({ data, onChange }) {
     setPreview({ people, fileName: file.name });
   };
 
-  const commit = () => {
+  const commit = async () => {
     const d = parseInt(days) || 0;
     if (!preview?.people?.length || d <= 0) return;
-    if (seeded && !window.confirm(
+    if (seeded && !(await askConfirm(
       "This overwrites the existing baseline for everyone in the file." +
       String.fromCharCode(10, 10) +
       "Their history is what every coaching target is built from, so only do this if the old seed was wrong."
-    )) return;
+    ))) return;
 
     const next = JSON.parse(JSON.stringify(data));
     next.baselines = next.baselines || {};
@@ -15253,7 +15290,7 @@ function UploadHistory({ data, onChange, storeId }) {
       if (error) throw error;
       const v = row && row.value;
       if (!v || !v.b64) {
-        alert("This file is not in the archive. Files are kept for reports that arrived by email after the archive shipped, for sixty days; hand-dropped files never leave this browser.");
+        toast("This file is not in the archive. Files are kept for reports that arrived by email after the archive shipped, for sixty days; hand-dropped files never leave this browser.");
         return;
       }
       const bin = atob(v.b64);
@@ -15263,7 +15300,7 @@ function UploadHistory({ data, onChange, storeId }) {
       window.open(url, "_blank");
       setTimeout(() => URL.revokeObjectURL(url), 120000);
     } catch (e) {
-      alert("The archive could not be read just now. Try again in a moment.");
+      toast("The archive could not be read just now. Try again in a moment.");
     }
     setFileBusy("");
   };
@@ -15281,14 +15318,14 @@ function UploadHistory({ data, onChange, storeId }) {
 
   const laterThan = (entry) => log.filter((u) => new Date(u.t) > new Date(entry.t)).length;
 
-  const deleteActivityDay = (u) => {
-    if (!window.confirm(
+  const deleteActivityDay = async (u) => {
+    if (!(await askConfirm(
       "Delete the activity for " + new Date(u.day + "T12:00").toLocaleDateString() + "?" +
       String.fromCharCode(10, 10) +
       "Only that day is removed. Every other day and every other report stays exactly as it is." +
       String.fromCharCode(10, 10) +
       "Stars you typed in for that day are kept, in case you re-import it."
-    )) return;
+    ))) return;
     setBusy(true);
     const next = JSON.parse(JSON.stringify(data));
     if (next.activity) delete next.activity[u.day];
@@ -15301,18 +15338,18 @@ function UploadHistory({ data, onChange, storeId }) {
     setBusy(false);
   };
 
-  const undoUpload = (u) => {
+  const undoUpload = async (u) => {
     const snap = (data.snapshots || []).find((s) => s.t === u.snapT);
     const after = laterThan(u);
     if (!snap) {
-      alert(
+      toast(
         "The restore point for this upload has aged out, so it can no longer be undone cleanly." +
         String.fromCharCode(10, 10) +
         "Re-import the correct file instead: it overwrites these numbers. Or restore a backup from the Backup tab."
       );
       return;
     }
-    if (!window.confirm(
+    if (!(await askConfirm(
       "Undo " + u.label + " from " + new Date(u.t).toLocaleString() + "?" +
       String.fromCharCode(10, 10) +
       "This report overwrote the month's running totals, so the only way back is to restore the state from just before it." +
@@ -15320,7 +15357,7 @@ function UploadHistory({ data, onChange, storeId }) {
         ? String.fromCharCode(10, 10) + "WARNING: " + after + " later upload" + (after === 1 ? "" : "s") +
           " will also be undone. You will need to re-import " + (after === 1 ? "it" : "them") + "."
         : "")
-    )) return;
+    ))) return;
 
     setBusy(true);
     const current = JSON.parse(JSON.stringify(data));
@@ -15852,8 +15889,8 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
     if (behind.length === 0) L.push("  You are at or above the benchmark on every behavior.");
     for (const g of behind) L.push(`  ${g.label}: ${fmtB(g, g.mine)} vs ${fmtB(g, g.theirs)}`);
     if (ahead.length) { L.push("", "Strengths:"); for (const g of ahead) L.push(`  ${g.label}: ${fmtB(g, g.mine)} vs ${fmtB(g, g.theirs)}`); }
-    try { await navigator.clipboard.writeText(L.join("\n")); alert("Card copied. Paste it into an email or a text."); }
-    catch (e) { alert("Couldn't copy automatically. Use Print instead."); }
+    try { await navigator.clipboard.writeText(L.join("\n")); toast("Card copied. Paste it into an email or a text.", { kind: "ok" }); }
+    catch (e) { toast("Couldn't copy automatically. Use Print instead."); }
   };
   const toggleExcluded = () => {
     const next = JSON.parse(JSON.stringify(data));
@@ -15867,8 +15904,8 @@ function CoachPersonSheet({ config, store, data, onChange, userName, row, topAvg
     onChange(next, { action: has ? "Included in store stats" : "Excluded from store stats", detail: a.name });
     setMore(false);
   };
-  const depart = () => {
-    if (!window.confirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`)) return;
+  const depart = async () => {
+    if (!(await askConfirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`))) return;
     onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
     onClose();
   };
@@ -16291,7 +16328,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     '</div>';
   if (returnHtml) return { css: CSS, sheet };
   const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
-  if (!w) { alert("Allow pop-ups to print the month-end recap."); return; }
+  if (!w) { toast("Allow pop-ups to print the month-end recap."); return; }
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body>' + sheet + '</body></html>');
   w.document.close();
   setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
@@ -16299,7 +16336,7 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
 
 function printAllMonthEndRecaps({ store, config, data }) {
   const w = window.open("", "lpc_recap_all", "width=850,height=1050");
-  if (!w) { alert("Allow pop-ups to print the recaps."); return; }
+  if (!w) { toast("Allow pop-ups to print the recaps."); return; }
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
   const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
@@ -16318,7 +16355,7 @@ function printAllMonthEndRecaps({ store, config, data }) {
     css = out.css;
     return out.sheet;
   }).filter(Boolean);
-  if (!sheets.length) { w.close(); alert("No associates with last month's data to print yet."); return; }
+  if (!sheets.length) { w.close(); toast("No associates with last month's data to print yet."); return; }
   w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Month-end recaps &middot; ' + esc(store.name) + '</title><style>' + css + '.sheet + .sheet{page-break-before:always;}</style></head><body>' + sheets.join("") + '</body></html>');
   w.document.close();
   setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 450);
@@ -16326,7 +16363,7 @@ function printAllMonthEndRecaps({ store, config, data }) {
 
 function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act, data }) {
   const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
-  if (!w) { alert("Allow pop-ups for this site to print the one-pager."); return; }
+  if (!w) { toast("Allow pop-ups for this site to print the one-pager."); return; }
 
   const delivered = oyoUnits(mtd);
   const calElapsed = Math.min(workingDays, Math.max(1, elapsedDays ?? workingDaysElapsed()));
@@ -17240,8 +17277,8 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
   };
 
   const copy = async () => {
-    try { await navigator.clipboard.writeText(summaryText()); alert("Card copied. Paste it into an email or a text."); }
-    catch (e) { alert("Couldn't copy automatically. Use Print instead."); }
+    try { await navigator.clipboard.writeText(summaryText()); toast("Card copied. Paste it into an email or a text.", { kind: "ok" }); }
+    catch (e) { toast("Couldn't copy automatically. Use Print instead."); }
   };
 
   const recordPrint = () => {
@@ -17268,8 +17305,8 @@ function AssociateCard({ config, store, row, topAvg, topCount, data, onChange, u
             {isStatsExcluded ? <><PixIcon glyph="check" size={11} /> Out of store stats</> : "Exclude from store stats"}
           </button>
           <button className="btn-ghost" onClick={copy}>Copy summary</button>
-          <button className="btn-ghost danger" onClick={() => {
-            if (!window.confirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`)) return;
+          <button className="btn-ghost danger" onClick={async () => {
+            if (!(await askConfirm(`${a.name} has left ${store.name}?\n\nThey come off the roster, the check out sheet, the line and the board straight away, and future reports will not put them back. Everything they did stays on file, and you can undo this under Roster.`))) return;
             onChange(markDeparted(data, a, userName), { action: "Marked as no longer with the store", detail: a.name });
           }}>No longer here</button>
           <button className="btn" disabled={!goal} title={goal ? "" : "Set a monthly goal first"}
@@ -17442,7 +17479,7 @@ function ToolSwitcher({ value, onChange }) {
   const tools = [
     ["perf", "Performance"],
     ["activity", "Daily Activity"],
-    ["board", "The Board"],
+    ["board", "TV Board"],
   ];
   const queues = [
     ["floor", "Live Floor", "#10B981", "door"],
@@ -17547,7 +17584,7 @@ function importProgress(storeData, activity) {
    it outlives a remount. See the pill placement below. */
 let lastBarTool = null;
 
-function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
+function BottomNav({ appModule, onToolChange, storeData, onImport, onMore, rooms }) {
   const activity = appModule === "activity";
   const { done, need } = importProgress(storeData, activity);
   const R = 27, C = 2 * Math.PI * R;
@@ -17650,6 +17687,10 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
 
   const [, queueLabel, queueGlyph] = BAR_TOOLS[2];
   const here = queueOn ? queueTool(appModule) : null;
+  /* A store with one room does not need a menu to choose it (consistency
+     pass, item 11). The slot becomes that room's own button, in its glyph
+     and its colour, and goes straight there. */
+  const solo = Array.isArray(rooms) && rooms.length === 1 ? queueTool(rooms[0]) : null;
 
   return (
    <>
@@ -17696,6 +17737,15 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
           aria-expanded and a popup role — and it wears the glyph and the colour
           of whichever queue you are actually in, which is the only thing the
           fixed "Up Next" label cannot tell you. */}
+      {solo ? (
+        <button ref={(el) => { tabRefs.current[QUEUE_TAB] = el; }}
+          className={"botnav-btn" + (queueOn ? " on" : "")}
+          style={{ "--sp": solo.accent }}
+          onClick={() => { if (appModule !== solo.id) onToolChange(solo.id); }}>
+          <span className="botnav-ico"><PixIcon glyph={solo.glyph} size={17} /></span>
+          <span className="botnav-lbl">{solo.label}</span>
+        </button>
+      ) : (
       <button ref={(el) => { tabRefs.current[QUEUE_TAB] = el; }}
         className={"botnav-btn" + (queueOn ? " on" : "") + (picking ? " open" : "")}
         style={here ? { "--sp": here.accent } : null}
@@ -17704,12 +17754,13 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         <span className="botnav-ico"><PixIcon glyph={here ? here.glyph : queueGlyph} size={17} /></span>
         <span className="botnav-lbl">{queueLabel}</span>
       </button>
+      )}
 
       {/* A sibling of the tab, not a child of it: a button inside a button is
           invalid, and every tap on the menu would bubble back out and reopen the
           thing it just closed. It spans the bar and blooms from the tab's corner
           instead, which transform-origin handles. */}
-      {picking && (
+      {picking && !solo && (
         <div className="qpick" role="menu">
           {QUEUE_TOOLS.map((q) => (
             <button key={q.id} role="menuitem" style={{ "--qa": q.accent }}
@@ -17798,11 +17849,11 @@ function SectionStrip({ items, value, onChange, appModule, storeData }) {
    label — Summary, Import, History, Roster, Access, Coaching, Standards,
    Overview, Tickets, Stores, Backup. */
 const NAV_SHORT = {
-  board: "Board", dashboard: "Board",  // "Dashboard", or "Combined Board" in the group view
-  checkout: "Checkout",                // "Check Out"
+  /* Widths only, never different words (consistency pass, item 4): the
+     dashboard is "Dashboard" on every surface, Check Out is two words
+     everywhere, the phone room is the Phone Line everywhere. */
   plates: "Plates",                    // "License Plates"
   audit: "Audit",                      // "Audit Log"
-  queue: "Phones",                     // "Phone Line"
   floor: "Floor",                      // "Live Floor"
 };
 
@@ -17817,7 +17868,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
     return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
   }, [open, onClose]);
 
-  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "The Board"], ["floor", "Live Floor"], ["line", "Phone Line"], ["online", "Online"]];
+  const tools = [["perf", "Performance"], ["activity", "Daily Activity"], ["board", "TV Board"], ["floor", "Live Floor"], ["line", "Phone Line"], ["online", "Online"]];
   const pick = (id) => { onChange && onChange(id); onClose(); };
 
   return (
@@ -17826,7 +17877,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
       <aside className="drawer" role="dialog" aria-label="Menu">
         <div className="drawer-head">
           {storeName ? <div className="drawer-store">{storeName}</div> : <div className="drawer-store">Menu</div>}
-          <button className="drawer-x" onClick={onClose} aria-label="Close menu"><PixIcon glyph="close" size={13} /></button>
+          <button className="drawer-x x-close" onClick={onClose} aria-label="Close menu"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         <div className="drawer-scroll">
@@ -17834,12 +17885,12 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
               alone, so the "Go to" heading would sit over nothing. */}
           {items && items.length > 0 && (
             <>
-              <div className="drawer-section-label">Go to</div>
+              <div className="drawer-section-label">Sections</div>
               <nav className="drawer-nav">
                 {items.map(([id, label]) => (
                   <button key={id} className={"drawer-item " + (value === id ? "on" : "")} onClick={() => pick(id)}>
                     <span>{label}</span>
-                    {id === "import" && storeData && <ImportBadge storeData={storeData} activity={appModule === "activity"} />}
+                    {/* The dock's centre button carries the import count on the phone; a second copy here said it twice (consistency pass, item 9). */}
                     {value === id && <span className="drawer-tick"><PixIcon glyph="check" size={12} /></span>}
                   </button>
                 ))}
@@ -17847,7 +17898,7 @@ function MobileDrawer({ open, onClose, items, value, onChange, appModule, storeD
             </>
           )}
 
-          <div className="drawer-section-label">Switch tool</div>
+          <div className="drawer-section-label">Tools</div>
           <nav className="drawer-nav">
             {tools.map(([id, label]) => (
               <button key={id} className={"drawer-item " + (appModule === id ? "on" : "")} onClick={() => onToolChange(id)}>
@@ -19696,7 +19747,7 @@ function CrossCheck({ store, data, config, onClose }) {
             <div className="xc-sub">Nothing here is imported or changed</div>
             <h2>Check the board against the report</h2>
           </div>
-          <button className="btn-x" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
+          <button className="btn-x x-close" onClick={onClose} aria-label="Close"><PixIcon glyph="close" size={15} /></button>
         </div>
 
         <div className="xc-body">
@@ -21631,17 +21682,17 @@ function SameAsPicker({ data, people, name, label = "Same as someone\u2026", con
     .filter((x) => x.status !== "ignored" && x.key !== key && !hits.some((h) => h.key === x.key));
   return (
     <select className="q-flag-sel pp-same" value=""
-      onChange={(e) => {
+      onChange={async (e) => {
         const to = e.target.value;
         e.target.value = "";
         if (!to) return;
         /* Asked only where the name being folded is somebody the store claims.
            A stranger in the figures has nothing to lose; a person on the roster
            comes off it, and that is worth a sentence first. */
-        if (confirm && !window.confirm(
+        if (confirm && !(await askConfirm(
           `${name} and ${to} are the same person?\n\n` +
           `${name}'s figures move onto ${to}, and ${name} comes off this store's lists. ` +
-          `The spelling is remembered, so the next report needs no repair.`)) return;
+          `The spelling is remembered, so the next report needs no repair.`))) return;
         onPick(to);
       }}>
       <option value="">{best ? `Same as ${best.name}?` : label}</option>
@@ -21909,9 +21960,9 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
         <div className="pl-miss pe-miss">
           <div className="pe-misshd"><b>{wrongRead.length === 1 ? "One name was read wrong" : `${wrongRead.length} names were read wrong`}</b>
             <span>Your own people with something stuck to their name. Merging puts the figures back together and remembers the spelling.</span></div>
-          <div className="fr-acts pe-missacts"><button type="button" className="fr-b sm" onClick={() => {
+          <div className="fr-acts pe-missacts"><button type="button" className="fr-b sm" onClick={async () => {
             const c = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
-            if (wrongRead.length > 1 && !window.confirm(`Merge ${wrongRead.length} misread names back into your people?\n\n` + wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") + (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") + (c > 0 ? `\n\n${cars(c)} cars move onto the right people.` : ""))) return;
+            if (wrongRead.length > 1 && !(await askConfirm(`Merge ${wrongRead.length} misread names back into your people?\n\n` + wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") + (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") + (c > 0 ? `\n\n${cars(c)} cars move onto the right people.` : "")))) return;
             onChange(mergeManglings(data, wrongRead, { by: userName }), { action: "Merged misread names", detail: `${wrongRead.length} at ${storeName || "this store"}` });
           }}>Merge all {wrongRead.length}</button></div>
           {wrongRead.slice(0, 40).map((r) => repairRow(r.from, <>→ <b>{r.to}</b>{r.units > 0 ? ` · ${cars(r.units)} cars` : ""}</>, <>
@@ -21925,9 +21976,9 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           <div className="pe-misshd"><b>{waiting.length === 1 ? "One name is waiting on you" : `${waiting.length} names are waiting on you`}</b>
             <span>A report named {waiting.length === 1 ? "somebody" : "people"} not on this store's list. Nothing is in the books until you say.</span></div>
           <div className="fr-acts pe-missacts">
-            <button type="button" className="fr-b sm" onClick={() => { const names = waiting.map((w) => w.name); if (!confirmBatch(names, 0, "Put")) return;
+            <button type="button" className="fr-b sm" onClick={async () => { const names = waiting.map((w) => w.name); if (!(await confirmBatch(names, 0, "Put"))) return;
               onChange(claimPending(data, names, { by: userName, roleId: config.roles?.[0]?.id || null, newId: uid() }), { action: "Claimed names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` }); }}>They all work here</button>
-            <button type="button" className="fr-b sm warn" onClick={() => { const names = waiting.map((w) => w.name); if (!confirmBatch(names, 0, "Reject")) return;
+            <button type="button" className="fr-b sm warn" onClick={async () => { const names = waiting.map((w) => w.name); if (!(await confirmBatch(names, 0, "Reject"))) return;
               onChange(dropPending(data, names, { by: userName }), { action: "Rejected names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` }); }}>None are ours</button>
           </div>
           {waiting.map((w) => repairRow(w.name, `${w.units > 0 ? cars(w.units) + " cars held" : "no cars"}${w.days > 0 ? ` · ${w.days} ${w.days === 1 ? "day" : "days"}` : ""}${w.files.length ? ` · from ${w.files.slice(0, 2).join(", ")}` : ""}`, <>
@@ -21942,8 +21993,8 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
           <div className="pe-misshd"><b>{strangers.length === 1 ? "One name has figures here but is not one of your people" : `${strangers.length} names have figures here but are not your people`}</b>
             <span>Credited with work at {storeName || "this store"}, and on none of your lists.</span></div>
           <div className="fr-acts pe-missacts">
-            <button type="button" className="fr-b sm" onClick={() => { const names = strangers.map((x) => x.name); if (!confirmBatch(names, 0, "Put")) return; move(names, "active", "claimed from unmatched figures"); }}>They all work here</button>
-            <button type="button" className="fr-b sm warn" onClick={() => { const names = strangers.map((x) => x.name); const c = strangers.reduce((n, x) => n + (x.units || 0), 0); if (!confirmBatch(names, c, "Take")) return; move(names, "ignored", "figures belonged to another store"); }}>None are ours</button>
+            <button type="button" className="fr-b sm" onClick={async () => { const names = strangers.map((x) => x.name); if (!(await confirmBatch(names, 0, "Put"))) return; move(names, "active", "claimed from unmatched figures"); }}>They all work here</button>
+            <button type="button" className="fr-b sm warn" onClick={async () => { const names = strangers.map((x) => x.name); const c = strangers.reduce((n, x) => n + (x.units || 0), 0); if (!(await confirmBatch(names, c, "Take"))) return; move(names, "ignored", "figures belonged to another store"); }}>None are ours</button>
           </div>
           {strangers.map((s) => repairRow(s.name, `${s.units > 0 ? cars(s.units) + " cars" : "no cars"}${s.days > 0 ? ` · ${s.days} ${s.days === 1 ? "day" : "days"}` : ""}${s.months.length ? ` · ${s.months.join(", ")}` : ""}`, <>
             <button type="button" className="fr-b sm" onClick={() => move(s.name, "active", "claimed from unmatched figures")}>Works here</button>
@@ -21970,9 +22021,9 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
               {only !== "active" && <button type="button" className="fr-b sm" disabled={!picked.length} onClick={() => { move(picked, "active"); stopPicking(); }}>On the floor</button>}
               {only !== "departed" && <button type="button" className="fr-b sm" disabled={!picked.length} onClick={() => { move(picked, "departed"); stopPicking(); }}>Mark left</button>}
               <button type="button" className="fr-b sm" disabled={!pickedPeople.some((p) => p.id)} onClick={() => setPop({ k: "role" })}>Change role</button>
-              {only !== "ignored" && <button type="button" className="fr-b sm warn" disabled={!picked.length} onClick={() => {
+              {only !== "ignored" && <button type="button" className="fr-b sm warn" disabled={!picked.length} onClick={async () => {
                 const c = pickedPeople.reduce((n, p) => n + (monthUnitsFor(p.key) || 0), 0);
-                if (!confirmBatch(picked, c, "Take")) return;
+                if (!(await confirmBatch(picked, c, "Take"))) return;
                 move(picked, "ignored"); stopPicking();
               }}>Never ours</button>}
             </div>
@@ -22006,7 +22057,7 @@ function PeoplePhone({ config, data, storeId, storeName, allStores, onChange, us
               <div className="bp-defn">Spellings this store has said belong to somebody. Reports file them under that person. Undoing one frees the spelling from the next report on; the months already merged stay merged.</div>
               {foldList.map((f) => { const target = people.find((x) => x.key === f.to); const toName = target ? target.name : cased(f.to);
                 return <div key={f.key} className="pe-fold"><span className="pe-fixt"><span className="pe-fixn"><s>{cased(f.from)}</s> → {toName}</span>{f.at && <small>{dayOf(f.at)}</small>}</span>
-                  <button type="button" className="fr-b sm" onClick={() => { if (!window.confirm(`Stop folding "${cased(f.from)}" into ${toName}?\n\nFrom the next report onwards it is a name of its own again. The figures already merged stay merged.`)) return;
+                  <button type="button" className="fr-b sm" onClick={async () => { if (!(await askConfirm(`Stop folding "${cased(f.from)}" into ${toName}?\n\nFrom the next report onwards it is a name of its own again. The figures already merged stay merged.`))) return;
                     onChange(unfold(data, f.from, { by: userName }), { action: "Undid a fold", detail: `${cased(f.from)} is no longer ${toName}` }); }}>Not the same</button></div>; })}
             </div>)}
           </>)}
@@ -22160,9 +22211,9 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
 
   /* A batch that removes figures is worth a second look. One name is a click a
      manager meant; twenty is a click they might not have. */
-  const confirmBatch = (names, cars, what) => {
+  const confirmBatch = async (names, cars, what) => {
     if (names.length < 2) return true;
-    return window.confirm(
+    return askConfirm(
       `${what} ${names.length} people?\n\n${names.slice(0, 12).join("\n")}${names.length > 12 ? `\n…and ${names.length - 12} more` : ""}` +
       (cars > 0 ? `\n\nThis takes ${fmtNum(Math.round(cars * 10) / 10)} cars out of this store's totals.` : ""));
   };
@@ -22218,15 +22269,15 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
     try {
       const packed = packUp(data, moving.name, storeId, storeName);
       const destData = await loadStore(dest.id, null, true);
-      if (!destData) { setMoveBusy(""); alert(`${dest.name} has no data document yet, so there is nowhere to move them to.`); return; }
+      if (!destData) { setMoveBusy(""); toast(`${dest.name} has no data document yet, so there is nowhere to move them to.`); return; }
       const res = await saveStoreCAS(storeKey(dest.id), (server) =>
         ({ ...transferIn(server || destData, packed, { by: userName, newId: uid() }), __storeId: dest.id }));
-      if (!res.ok) { setMoveBusy(""); alert(`Could not write ${dest.name}: ${lastSaveError || "unknown"}. Nobody has been moved.`); return; }
+      if (!res.ok) { setMoveBusy(""); toast(`Could not write ${dest.name}: ${lastSaveError || "unknown"}. Nobody has been moved.`); return; }
       onChange(transferOut(data, moving.name, dest.name, { by: userName }), {
         action: "Transferred to another store", detail: `${moving.name}: ${storeName} → ${dest.name}` });
       setMoving(null); setMoveTo("");
     } catch (e) {
-      alert("That did not finish: " + String(e.message || e));
+      toast("That did not finish: " + String(e.message || e));
     } finally { setMoveBusy(""); }
   };
 
@@ -22287,13 +22338,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             is never offered here: it could be split two ways and both would be wrong.
           </Explain>
           <div className="pp-batch">
-            <button className="btn" onClick={() => {
+            <button className="btn" onClick={async () => {
               const cars = wrongRead.reduce((n, r) => n + (r.units || 0), 0);
-              if (wrongRead.length > 1 && !window.confirm(
+              if (wrongRead.length > 1 && !(await askConfirm(
                 `Merge ${wrongRead.length} misread names back into your people?\n\n` +
                 wrongRead.slice(0, 10).map((r) => `${r.from}  →  ${r.to}`).join("\n") +
                 (wrongRead.length > 10 ? `\n…and ${wrongRead.length - 10} more` : "") +
-                (cars > 0 ? `\n\n${fmtNum(Math.round(cars * 10) / 10)} cars move onto the right people.` : ""))) return;
+                (cars > 0 ? `\n\n${fmtNum(Math.round(cars * 10) / 10)} cars move onto the right people.` : "")))) return;
               onChange(mergeManglings(data, wrongRead, { by: userName }),
                 { action: "Merged misread names", detail: `${wrongRead.length} at ${storeName || "this store"}` });
             }}>Merge all {wrongRead.length}</button>
@@ -22348,17 +22399,17 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <BatchBar rows={waiting}
             onAll={() => setBatch(new Set(waiting.map((w) => norm(w.name))))}
             onNone={() => setBatch(new Set())}>
-            <button className="btn btn-sm" onClick={() => {
+            <button className="btn btn-sm" onClick={async () => {
               const names = batchNames(waiting);
-              if (!confirmBatch(names, 0, "Put")) return;
+              if (!(await confirmBatch(names, 0, "Put"))) return;
               onChange(claimPending(data, names, { by: userName, roleId: config.roles?.[0]?.id || null, newId: uid() }),
                 { action: "Claimed names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` });
               setBatch(new Set());
             }}>They all work here</button>
-            <button className="btn btn-sm pp-danger" onClick={() => {
+            <button className="btn btn-sm pp-danger" onClick={async () => {
               const names = batchNames(waiting);
               const cars = waiting.filter((w) => inBatch(w.name)).reduce((n, w) => n + (w.units || 0), 0);
-              if (!confirmBatch(names, 0, "Reject")) return;
+              if (!(await confirmBatch(names, 0, "Reject"))) return;
               onChange(dropPending(data, names, { by: userName }),
                 { action: "Rejected names from a report", detail: `${names.length}: ${names.slice(0, 8).join(", ")}` });
               setBatch(new Set());
@@ -22423,16 +22474,16 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
           <BatchBar rows={strangers}
             onAll={() => setBatch(new Set(strangers.map((x) => norm(x.name))))}
             onNone={() => setBatch(new Set())}>
-            <button className="btn btn-sm" onClick={() => {
+            <button className="btn btn-sm" onClick={async () => {
               const names = batchNames(strangers);
-              if (!confirmBatch(names, 0, "Put")) return;
+              if (!(await confirmBatch(names, 0, "Put"))) return;
               move(names, "active", "claimed from unmatched figures");
               setBatch(new Set());
             }}>They all work here</button>
-            <button className="btn btn-sm pp-danger" onClick={() => {
+            <button className="btn btn-sm pp-danger" onClick={async () => {
               const names = batchNames(strangers);
               const cars = strangers.filter((x) => inBatch(x.name)).reduce((n, x) => n + (x.units || 0), 0);
-              if (!confirmBatch(names, cars, "Take")) return;
+              if (!(await confirmBatch(names, cars, "Take"))) return;
               move(names, "ignored", "figures belonged to another store");
               setBatch(new Set());
             }}>None of them are ours</button>
@@ -22572,13 +22623,13 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
             <span>{picked.length} selected</span>
             <button className="btn btn-sm" onClick={() => move(picked, "active")}>On the floor</button>
             <button className="btn btn-sm" onClick={() => move(picked, "departed")}>They left</button>
-            <button className="btn btn-sm pp-danger" onClick={() => {
+            <button className="btn btn-sm pp-danger" onClick={async () => {
               /* This one takes their figures with them, so a batch gets a second
                  look and the cars are named. One name is a click a manager meant;
                  twenty is a click they might not have. */
               const cars = people.filter((p) => sel.has(p.name))
                 .reduce((n, p) => n + (monthUnitsFor(p.key) || 0), 0);
-              if (!confirmBatch(picked, cars, "Take")) return;
+              if (!(await confirmBatch(picked, cars, "Take"))) return;
               move(picked, "ignored");
             }}>Not ours</button>
             <button className="btn-quiet" onClick={() => setSel(new Set())}>Clear</button>
@@ -22956,12 +23007,12 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
                     <span className="pp-arrow">&rarr;</span>
                     <span className="pp-nm">{target ? target.name : cased(f.to)}</span>
                     {f.at && <span className="pp-log-when">{new Date(f.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
-                    <button className="pp-act" onClick={() => {
-                      if (!window.confirm(
+                    <button className="pp-act" onClick={async () => {
+                      if (!(await askConfirm(
                         `Stop folding "${cased(f.from)}" into ${target ? target.name : cased(f.to)}?\n\n` +
                         `From the next report onwards it is a name of its own again, and you can put it ` +
                         `on the floor or mark it as not yours.\n\nThe figures already merged stay merged: ` +
-                        `there is no record of which of them came from which spelling.`)) return;
+                        `there is no record of which of them came from which spelling.`))) return;
                       onChange(unfold(data, f.from, { by: userName }),
                         { action: "Undid a fold", detail: `${cased(f.from)} is no longer ${target ? target.name : cased(f.to)}` });
                     }}>
@@ -23032,16 +23083,16 @@ function AccessPanel({ config, session, onChange }) {
   const setRole = (u, role) =>
     patch(u.id, { role }, { action: "Changed role", detail: u.email + " -> " + role });
 
-  const promote = (u) => {
-    if (!window.confirm("Make " + (u.name || u.email) + " a Group Admin?" + String.fromCharCode(10, 10) +
-      "Admins see and change everything across every store, manage accounts, and edit standards. Only do this for someone you fully trust.")) return;
+  const promote = async (u) => {
+    if (!(await askConfirm("Make " + (u.name || u.email) + " a Group Admin?" + String.fromCharCode(10, 10) +
+      "Admins see and change everything across every store, manage accounts, and edit standards. Only do this for someone you fully trust."))) return;
     patch(u.id, { role: "admin", pending: false }, { action: "Promoted to admin", detail: u.email });
   };
 
-  const demote = (u) => {
+  const demote = async (u) => {
     const others = (people || []).filter((x) => x.role === "admin" && x.id !== u.id && x.active);
-    if (others.length === 0) { alert("You can't remove the last admin. Promote someone else first."); return; }
-    if (!window.confirm("Remove admin rights from " + (u.name || u.email) + "? They become a store manager with no store access until you assign one.")) return;
+    if (others.length === 0) { toast("You can't remove the last admin. Promote someone else first."); return; }
+    if (!(await askConfirm("Remove admin rights from " + (u.name || u.email) + "? They become a store manager with no store access until you assign one."))) return;
     patch(u.id, { role: "manager", stores: [] }, { action: "Removed admin rights", detail: u.email });
   };
 
@@ -23049,8 +23100,8 @@ function AccessPanel({ config, session, onChange }) {
     patch(u.id, { active: !u.active }, { action: u.active ? "Deactivated account" : "Reactivated account", detail: u.email });
 
   const remove = async (u) => {
-    if (!window.confirm("Delete " + (u.name || u.email) + " permanently?" + String.fromCharCode(10, 10) +
-      "This removes their profile. It does not delete any store data they imported.")) return;
+    if (!(await askConfirm("Delete " + (u.name || u.email) + " permanently?" + String.fromCharCode(10, 10) +
+      "This removes their profile. It does not delete any store data they imported."))) return;
     setBusy(true);
     const ok = await deleteProfile(u.id);
     setBusy(false);
@@ -23368,7 +23419,7 @@ function HolidayPanel({ config, onChange }) {
                 {new Date(h.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 {h.name && <em>{h.name}</em>}
                 <button title="Remove"
-                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="remove" size={13} /></button>
+                  onClick={() => save(list.filter((x) => x.date !== h.date), `Removed ${h.date}`)} aria-label="Close"><PixIcon glyph="close" size={13} /></button>
               </span>
             ))}
           </div>
@@ -23410,7 +23461,7 @@ function SettingsPanel({ config, onChange }) {
     onChange(next, { action: "Reordered stores", detail: `${item.name} moved ${dir < 0 ? "up" : "down"}` });
   };
   const deleteStore = async (s) => {
-    const ok = window.confirm(`Delete ${s.name}? Its roster, imports, and history stay saved in storage, but the store disappears from every view and its standards are removed. Anyone whose only access was this store will have nothing to see.`);
+    const ok = await askConfirm(`Delete ${s.name}? Its roster, imports, and history stay saved in storage, but the store disappears from every view and its standards are removed. Anyone whose only access was this store will have nothing to see.`);
     if (!ok) return;
     const next = JSON.parse(JSON.stringify(config));
     next.stores = next.stores.filter((x) => x.id !== s.id);
@@ -23441,7 +23492,7 @@ function SettingsPanel({ config, onChange }) {
   };
   const setIcon = (storeId, file) => {
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) { alert("That image is too large. Please use one under 4 MB."); return; }
+    if (file.size > 4 * 1024 * 1024) { toast("That image is too large. Please use one under 4 MB."); return; }
     const reader = new FileReader();
     reader.onload = () => setCropping({ storeId, src: reader.result });
     reader.readAsDataURL(file);
@@ -23508,7 +23559,7 @@ function SettingsPanel({ config, onChange }) {
         </p>
         <table className="roster-table">
           <thead>
-            <tr><th>Position</th><th>Show on The Board</th><th>Include in Coaching</th></tr>
+            <tr><th>Position</th><th>Show on the TV Board</th><th>Include in Coaching</th></tr>
           </thead>
           <tbody>
             {config.roles.map((r) => (
@@ -23645,6 +23696,152 @@ function LogoCropper({ src, onCancel, onSave }) {
   );
 }
 
+/* ---- Asking, in the app's own voice (consistency pass, item 10) ----
+   window.prompt, window.confirm and window.alert wore the browser's face:
+   a grey box with OK and Cancel, in the system font, that a phone drew half
+   off screen and a WebView drew as an alert with no title. They also ran
+   the page synchronously, so nothing could animate under them. Every ask
+   now goes through one sheet, drawn in the room's own colours and words,
+   and every notice through one toast. The old calls stay as the fallback
+   for a screen with no host, which is only the printed pages. */
+let askSink = null;
+let toastSink = null;
+const askWaiting = [];
+const ask = (req) => new Promise((resolve) => {
+  if (askSink) askSink({ ...req, resolve });
+  else if (req.kind === "confirm") resolve(window.confirm([req.title, req.body].filter(Boolean).join("\n\n")));
+  else if (req.kind === "copy") { window.prompt(req.title, req.value); resolve(null); }
+  else resolve(window.prompt([req.title, req.body].filter(Boolean).join("\n"), req.value || ""));
+});
+/* Titles are the first line; the browser dialogs carried the whole thing as
+   one string, so a bare string is split for them: the question is the title,
+   what follows is the body. */
+const splitAsk = (text) => {
+  const t = String(text || "");
+  const nl = t.indexOf("\n");
+  if (nl > 0) return [t.slice(0, nl).trim(), t.slice(nl).trim()];
+  const q = t.indexOf("? ");
+  if (q > 0 && q < 90) return [t.slice(0, q + 1), t.slice(q + 2).trim()];
+  return [t, ""];
+};
+const DANGER = /^(remove|delete|reset|clear|undo|restore|roll)\b/i;
+const VERB = /^(remove|delete|reset|clear|undo|restore|merge|skip|stop)\b/i;
+const askConfirm = (text, opts = {}) => {
+  const [title, body] = splitAsk(text);
+  const v = title.match(VERB);
+  return ask({ kind: "confirm", title, body,
+    ok: opts.ok || (v ? v[1][0].toUpperCase() + v[1].slice(1).toLowerCase() : "Yes"),
+    cancel: opts.cancel || "Cancel",
+    danger: opts.danger != null ? opts.danger : DANGER.test(title) });
+};
+const askText = (title, body, opts = {}) => ask({ kind: "text", title, body, ...opts });
+const askStock = (name) => askText(`Assigning ${name}`,
+  "Stock number or lead name, so this opportunity can be looked up later. Leave it blank if there is none yet.",
+  { placeholder: "Stock # or lead name", ok: "Assign", allowEmpty: true });
+const askCopy = (title, value) => ask({ kind: "copy", title, value });
+const toast = (text, opts = {}) => {
+  if (toastSink) toastSink({ text: String(text), kind: opts.kind || "bad" });
+  else window.alert(text);
+};
+
+function AskHost() {
+  const [req, setReq] = useState(null);
+  const [val, setVal] = useState("");
+  const [toasts, setToasts] = useState([]);
+  const [closing, setClosing] = useState(false);
+  const inputRef = useRef(null);
+  const reqRef = useRef(null);
+  reqRef.current = req;
+  useEffect(() => {
+    askSink = (r) => {
+      if (reqRef.current) { askWaiting.push(r); return; }
+      setVal(r.value || ""); setClosing(false); setReq(r);
+    };
+    toastSink = (t) => {
+      const id = uid();
+      setToasts((l) => [...l.slice(-2), { ...t, id }]);
+      setTimeout(() => setToasts((l) => l.filter((x) => x.id !== id)), t.kind === "bad" ? 9000 : 3600);
+    };
+    return () => { askSink = null; toastSink = null; };
+  }, []);
+  useEffect(() => {
+    if (!req) return;
+    const t = setTimeout(() => {
+      const el = inputRef.current;
+      if (el) { el.focus(); if (req.kind === "copy") el.select(); }
+    }, 30);
+    return () => clearTimeout(t);
+  }, [req]);
+  const done = (v) => {
+    const r = reqRef.current;
+    if (!r) return;
+    setClosing(true);
+    setTimeout(() => {
+      setReq(null); setClosing(false);
+      r.resolve(v);
+      const next = askWaiting.shift();
+      if (next) { setVal(next.value || ""); setReq(next); }
+    }, MOTION.exit);
+  };
+  useEffect(() => {
+    if (!req) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(req.kind === "confirm" ? false : null); }
+      if (e.key === "Enter" && req.kind === "confirm") { e.preventDefault(); done(true); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [req]); // eslint-disable-line
+  const stack = toasts.length ? (
+    <div className="toasts" aria-live="polite">
+      {toasts.map((t) => (
+        <button key={t.id} type="button" className={"toast " + t.kind}
+          onClick={() => setToasts((l) => l.filter((x) => x.id !== t.id))}>
+          <PixIcon glyph={t.kind === "ok" ? "check" : "warn"} size={14} />
+          <span>{t.text}</span>
+        </button>
+      ))}
+    </div>
+  ) : null;
+  if (!req) return stack;
+  const canGo = req.kind !== "text" || req.allowEmpty || val.trim().length > 0;
+  const submit = (e) => { if (e) e.preventDefault(); if (!canGo) return; done(req.kind === "copy" ? null : val); };
+  return (
+    <>
+      {createPortal(
+        <div className={"ask-pop" + (closing ? " closing" : "")}
+          onClick={(e) => { if (e.target === e.currentTarget) done(req.kind === "confirm" ? false : null); }}>
+          <form className={"ask-sheet" + (req.danger ? " danger" : "")} role="dialog" aria-modal="true" aria-label={req.title}
+            onSubmit={submit}>
+            <div className="ask-title">{req.title}</div>
+            {req.body ? <p className="ask-body">{req.body}</p> : null}
+            {req.kind === "text" && (
+              <input ref={inputRef} className="ask-in" value={val} placeholder={req.placeholder || ""}
+                autoComplete="off" autoCapitalize="characters" spellCheck={false}
+                onChange={(e) => setVal(e.target.value)} />
+            )}
+            {req.kind === "copy" && (
+              <input ref={inputRef} className="ask-in mono" value={req.value || ""} readOnly
+                onFocus={(e) => e.target.select()} />
+            )}
+            <div className="ask-btns">
+              {req.kind === "copy" ? (
+                <button type="submit" className="btn btn-primary">Done</button>
+              ) : (
+                <>
+                  <button type="button" className="btn" onClick={() => done(req.kind === "confirm" ? false : null)}>{req.cancel || "Cancel"}</button>
+                  <button type="submit" className={"btn btn-primary" + (req.danger ? " bad" : "")} disabled={!canGo}
+                    onClick={req.kind === "confirm" ? (e) => { e.preventDefault(); done(true); } : undefined}>{req.ok || "OK"}</button>
+                </>
+              )}
+            </div>
+          </form>
+        </div>, document.body)}
+      {stack}
+    </>
+  );
+}
+
 /* One shell for every module.
 
    There used to be three: the performance shell, The Board's, and Live Floor's.
@@ -23764,7 +23961,7 @@ function TubeGlass() {
 function AppShell({
   entering, session, isAdmin, isOverseer, onSignOut, onReplayIntro, onHelp, help,
   right, navItems, navValue, navOnChange, appModule, onToolChange, onImport,
-  storeData, storeName, brand, children, corner,
+  storeData, storeName, brand, children, corner, rooms,
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -23817,7 +24014,7 @@ function AppShell({
       {children}
 
       <BottomNav
-        appModule={appModule} storeData={storeData}
+        appModule={appModule} storeData={storeData} rooms={rooms}
         onToolChange={onToolChange}
         onImport={onImport}
         onMore={() => setDrawerOpen(true)} />
@@ -23829,6 +24026,7 @@ function AppShell({
       <Style />
       {help}
           {corner}
+      <AskHost />
     </Shell>
   );
 }
@@ -25389,6 +25587,17 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
 .sd-nextwho em{ display:block; font-family:var(--mfmono); font-size:10.5px; font-style:normal; color:rgba(255,255,255,.6); }
 .sd-assign{ width:100%; }
 .sd-none{ margin:0; font-family:var(--mfmono); font-size:11.5px; color:rgba(255,255,255,.6); }
+/* One tap to a chair (consistency pass, item 11): the chips wear the free
+   desk's own dashed look, so a chip and the desk it seats at read as one. */
+.sd-chairs{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+.sd-chairlbl{ font-family:var(--mfmono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:rgba(255,255,255,.6); margin-right:2px; }
+.sd-chair{ min-width:40px; height:36px; padding:0 10px; border-radius:10px; border:1.5px dashed rgba(255,255,255,.55);
+  background:rgba(255,255,255,.1); color:#fff; font:700 14px var(--mffont); cursor:pointer; }
+.sd-chair:hover{ background:#fff; color:var(--a1,#1f4f8f); border-style:solid; }
+.sd-chair:disabled{ opacity:.45; }
+.sd-inwarn{ margin-top:10px; padding:10px 12px; border-radius:12px; background:rgba(255,196,84,.16); border:1px solid rgba(255,196,84,.5); }
+.sd-inwarn b{ display:block; font:600 13px var(--mffont); }
+.sd-inwarn p{ margin:4px 0 8px; font-size:12px; line-height:1.4; color:rgba(255,255,255,.8); }
 .sd-who{ background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16);
   border-radius:16px; padding:12px 12px 10px; }
 .sd-whohead{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
@@ -26329,8 +26538,8 @@ button.da-lbrow { cursor:pointer; }
 .fh-stack i { width:30px; height:30px; border-radius:50%; border:2px solid #fff; margin-left:-8px;
         display:inline-flex; align-items:center; justify-content:center; color:#fff;
         font:700 9.5px var(--font-mono); font-style:normal; }
-.fh-go { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:12px; cursor:pointer;
-        padding:12px 18px; font:700 12px var(--font-display); color:var(--hC); background:#fff;
+.fh-go { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:12px; cursor:pointer; min-height:40px;
+        padding:0 18px; font:700 13px var(--font-display); color:#fff; background:var(--facc, #10B981);
         box-shadow:0 10px 24px -12px rgba(12,24,18,.6); flex:0 0 auto; margin-left:auto; }
 .fh-go:disabled { opacity:.5; cursor:default; box-shadow:none; }
 .fh-kpis { margin-top:18px; }
@@ -27462,7 +27671,11 @@ button.da-lbrow { cursor:pointer; }
 .fr-b{ flex:1 1 44%; min-height:58px; border-radius:16px; border:2px solid var(--frline); background:#fff; color:var(--frink); font:700 16px var(--font-ui);
   display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; }
 .fr-b:disabled{ opacity:.45; }
-.fr-b.pri{ flex-basis:100%; min-height:64px; font-size:17px; background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
+/* One primary (consistency pass, item 2): the decision is filled in the
+   room's own colour at one height on the phone (48 px); everything else
+   is a ghost. The go button had no rule and looked like the ghosts beside it. */
+.fr-b{ min-height:48px; }
+.fr-b.pri, .fr-b.go{ flex-basis:100%; min-height:48px; font-size:16px; background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
 .fr-why{ display:flex; gap:6px; flex-wrap:wrap; padding:10px 16px 12px; border-bottom:1px solid var(--frline); background:#F3F6F2; }
 .fr-why button{ padding:9px 12px; border-radius:10px; border:1.5px solid var(--frp2d); background:#fff; color:var(--frp2d); font:700 13px var(--font-ui); }
 .fr-empty{ margin:0; padding:14px 16px 18px; font:500 13px var(--font-ui); color:var(--frink3); }
@@ -27558,6 +27771,43 @@ button.da-lbrow { cursor:pointer; }
   .s2-hero.s2-off .s2-noise, .s2-hero.s2-off .s2-sweep, .s2-hero.s2-off .s2-tube, .s2-hero.s2-off .s2-tube > * { animation:none; }
   .s2-hero.s2-off .s2-sweep { opacity:0; } .s2-osd { animation:none; transform:translate(-50%, 0); } }
 
+/* ---- the ask sheet and the toasts (consistency pass, item 10) ----
+   One sheet for every question the app asks, one toast for every notice.
+   The sheet rises from the foot on a phone and sits centred on a desk;
+   the toasts stand above the dock so the dock never covers them. */
+.ask-pop{ position:fixed; inset:0; z-index:420; display:flex; align-items:flex-end; justify-content:center; padding:16px;
+  padding-bottom:max(16px, var(--sab, 0px)); background:rgba(16,32,52,.38);
+  -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); animation:askIn var(--t-swap) var(--ease) both; }
+@media (min-width:761px){ .ask-pop{ align-items:center; } }
+.ask-pop.closing{ animation:askOut var(--t-exit) var(--ease) both; }
+.ask-sheet{ width:min(420px,100%); background:var(--card,#fff); color:var(--ink,#1D1D1F); border-radius:22px; padding:20px 20px 18px;
+  box-shadow:0 30px 70px -20px rgba(10,20,14,.5); animation:askUp var(--t-settle) var(--ease-bloop) both; font-family:var(--font-ui); }
+.ask-pop.closing .ask-sheet{ animation:askDown var(--t-exit) var(--ease) both; }
+.ask-title{ font:700 19px/1.2 var(--font-display); letter-spacing:-.01em; text-wrap:balance; }
+.ask-body{ margin:8px 0 0; font-size:14px; line-height:1.45; color:var(--ink-2,#6E6E73); white-space:pre-line; }
+.ask-in{ display:block; width:100%; margin-top:14px; min-height:48px; padding:0 14px; border:1.5px solid var(--line,#E3E6EA); border-radius:14px;
+  font:600 17px var(--font-ui); color:var(--ink,#1D1D1F); background:#fff; }
+.ask-in:focus{ outline:2px solid var(--p2,#2E9E5B); outline-offset:1px; border-color:transparent; }
+.ask-in.mono{ font:600 13px var(--font-mono); }
+.ask-btns{ display:flex; gap:10px; margin-top:16px; }
+.ask-btns .btn{ flex:1; min-height:48px; justify-content:center; font-size:16px; }
+.ask-btns .btn:not(.btn-primary){ background:rgba(16,32,52,.06); color:var(--ink,#1D1D1F); }
+.ask-btns .btn-primary.bad{ background:#C43F3F; }
+@keyframes askIn{ from{ opacity:0 } to{ opacity:1 } }
+@keyframes askOut{ from{ opacity:1 } to{ opacity:0 } }
+@keyframes askUp{ from{ transform:translateY(24px) scale(.97); opacity:0 } to{ transform:none; opacity:1 } }
+@keyframes askDown{ from{ transform:none; opacity:1 } to{ transform:translateY(16px) scale(.98); opacity:0 } }
+.toasts{ position:fixed; left:50%; bottom:calc(24px + var(--sab,0px)); transform:translateX(-50%); z-index:430;
+  display:flex; flex-direction:column; gap:8px; width:min(420px, calc(100% - 32px)); pointer-events:none; }
+@media (max-width:760px){ .toasts{ bottom:calc(92px + var(--sab,0px)); } }
+.toast{ pointer-events:auto; display:flex; align-items:flex-start; gap:10px; padding:12px 14px; border:0; border-radius:14px; text-align:left;
+  font:500 14px/1.4 var(--font-ui); color:#fff; background:#1D1D1F; box-shadow:0 12px 30px -10px rgba(0,0,0,.4);
+  animation:toastIn var(--t-settle) var(--ease-bloop) both; cursor:pointer; white-space:pre-line; }
+.toast .pix{ flex:0 0 auto; margin-top:2px; }
+.toast.ok{ background:#1F7A45; }
+.toast.bad{ background:#8A2A2A; }
+@keyframes toastIn{ from{ transform:translateY(12px); opacity:0 } to{ transform:none; opacity:1 } }
+@media (prefers-reduced-motion: reduce){ .ask-pop, .ask-sheet, .toast{ animation:none; } }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
