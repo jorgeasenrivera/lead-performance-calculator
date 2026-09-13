@@ -304,3 +304,12 @@ test("five-second pass, items 1, 3, 4 and 8: the lamp, the sentence, five shades
   assert.ok(/timeZone: STORE_TZ, hour: "numeric", hour12: false/.test(mgr), "the day's line uses the store's clock");
   assert.ok(!/onClick=\{\(\) => setShowPins\(true\)\}>PINs<\/button>/.test(mgr) && !/\["pins", "PINs"\]/.test(mgr), "the PIN list is off the manager's rooms");
 });
+
+test("five-second pass, item 2: the shortfall is drawn, and its height is the severity", () => {
+  assert.ok(/const band = pctV == null \|\| h >= TARGET_AT \? null\n\s*: \{ bottom: h, height: TARGET_AT - h, deep: pctV < \(thr\[c\.id\]\.yellow \?\? target \/ 2\) \};/.test(mgr), "the band runs from the fill to the target line");
+  assert.ok(/className=\{"s2-hgap" \+ \(band\.deep \? " deep" : ""\)\}/.test(mgr), "under the yellow line it goes deep");
+  assert.ok(/\.s2-hgap\{ position:absolute; left:0; right:0;[^}]*repeating-linear-gradient\(135deg, rgba\(224,161,0,\.30\)/.test(mgr) && /\.s2-hgap\.deep\{ background:repeating-linear-gradient\(135deg, rgba\(255,120,105,\.42\)/.test(mgr), "hatched amber, then hatched red");
+  assert.ok(!/ch-short|s2-hbar\.ch-near|animation:chShort/.test(mgr), "nothing flashes and nothing is outlined");
+  assert.ok(/<span className="s2-mklbl s2-hlbl"><i className="s2-hid" style=\{\{ background: ident \}\} \/>\{c\.label\}<\/span>/.test(mgr), "the channel's identity is a dot by its name");
+  assert.ok(/const col = t \? t\.col : "rgba\(255,255,255,\.3\)";/.test(mgr), "the fill takes the verdict, not the identity");
+});

@@ -19512,13 +19512,27 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                      reading as two different colours made them look like two
                      different figures. Whether the channel is at target is still
                      said by the bar against the dashed cap, and in words on hover. */
-                  const col = CHANNEL_SERIES[c.id] || (t ? t.col : "rgba(255,255,255,.3)");
+                  const col = t ? t.col : "rgba(255,255,255,.3)";
+                  const ident = CHANNEL_SERIES[c.id];
+                  /* How far short, drawn rather than announced (five-second
+                     pass, item 2). The band between the fill and the dashed
+                     target is the shortfall itself: a channel a little under
+                     shows a sliver, one at a third of target shows a column
+                     of it. Nothing blinks and nothing shouts; the amount of
+                     tint IS the severity. */
+                  const TARGET_AT = 100 / 1.2;
+                  const band = pctV == null || h >= TARGET_AT ? null
+                    : { bottom: h, height: TARGET_AT - h, deep: pctV < (thr[c.id].yellow ?? target / 2) };
                   return (
                     <div key={c.id} className="s2-hbar bloop-host" tabIndex={0}>
                       <b>{pctV == null ? "–" : fmtPct(c.pct)}{t && <Verdict ratio={pctV / target} size={10} />}</b>
                       <span className="s2-hmid">
                         <span className="s2-hcol">
                           <i className={t ? t.cls : ""} style={{ height: `${h.toFixed(1)}%`, background: pctV == null ? "rgba(255,255,255,.3)" : col }} />
+                          {band && (
+                            <s className={"s2-hgap" + (band.deep ? " deep" : "")} aria-hidden="true"
+                              style={{ bottom: `${band.bottom.toFixed(1)}%`, height: `${band.height.toFixed(1)}%` }} />
+                          )}
                         </span>
                         {d != null && (
                           <span className={"s2-hd " + (d >= 0 ? "up" : "dn")}>
@@ -19526,7 +19540,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                           </span>
                         )}
                       </span>
-                      <span className="s2-mklbl">{c.label}</span>
+                      <span className="s2-mklbl s2-hlbl"><i className="s2-hid" style={{ background: ident }} />{c.label}</span>
                       <BloopWin cls={i === closing.length - 1 ? "r" : ""} style={{ "--bw": pctV == null ? undefined : col }}>
                         <div className="bw-title">{(METRICS[c.id + "Pct"] && METRICS[c.id + "Pct"].label) || c.label}</div>
                         <div className="bw-big">{pctV == null ? "no data yet" : fmtPct(c.pct)} {pctV != null && <small>of {target}% target</small>}</div>
@@ -28015,6 +28029,17 @@ button.da-lbrow { cursor:pointer; }
 /* What "covered" means, set by the store. */
 .prc-cover{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
 .prc-cover input{ width:70px; }
+/* Item 2, round four: the shortfall is drawn, not announced. The band runs
+   from the top of the fill to the dashed target, so its height is exactly how
+   far short the channel is. Hatched rather than solid, so it reads as missing
+   rather than as more bar. */
+.s2-hgap{ position:absolute; left:0; right:0; border-radius:9px; pointer-events:none;
+  background:repeating-linear-gradient(135deg, rgba(224,161,0,.30) 0 3px, rgba(224,161,0,.08) 3px 7px);
+  box-shadow:inset 0 0 0 1px rgba(224,161,0,.35); }
+.s2-hgap.deep{ background:repeating-linear-gradient(135deg, rgba(255,120,105,.42) 0 3px, rgba(255,120,105,.12) 3px 7px);
+  box-shadow:inset 0 0 0 1px rgba(255,120,105,.5); }
+.s2-hlbl{ display:inline-flex; align-items:center; gap:5px; }
+.s2-hid{ width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
