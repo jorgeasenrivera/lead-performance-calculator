@@ -46,7 +46,7 @@ import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
 import qrcodeGen from "qrcode-generator";
-import { buzz, MOTION, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
+import { buzz, MOTION, useNet, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
 
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -2731,7 +2731,7 @@ function BoardLauncher({ config, session, onLaunch, onBack }) {
   return (
     <div className="board-launch">
       <div className="s2-hero bl-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
@@ -3861,7 +3861,7 @@ function QueueHero({ store, title, sub, chips, nextName, nextSub, waitingNames, 
   const M = metrics || {};
   return (
     <div className="s2-hero floor-hero" style={{ "--facc": accent }}>
-      <i className="s2-noise" aria-hidden="true" />
+      <i className="s2-noise" aria-hidden="true" /><HeroSignal />
       <div className="s2-tube">
       <div className="s2-head">
         <div className="s2-ava">{store && store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
@@ -6169,6 +6169,49 @@ function flyMark(from, to, look = {}) {
 const tableEl = (n) => (n == null ? null : document.querySelector(`.fbp-tbl[data-n="${String(n).replace(/"/g, "")}"]`));
 const pipEl = (id) => (id == null ? null : document.querySelector(`.fr-pip[data-id="${String(id).replace(/"/g, "")}"]`));
 const SEAT_LOOK = { bg: "#E4C98D", color: "#1F2A22" };
+
+/* The hero loses its signal the way a tape does (desk item 7, approved). When
+   the connection drops the hero goes grey and everything on it joins the
+   noise: grain over the picture, a tracking band dragging a slice sideways,
+   the figures twitching, a red and cyan fringe on the type. Over it, clean,
+   an on-screen display: NO CONNECTION, a blinking dot, how old the numbers
+   are. When the signal returns the display says BACK in mint for a beat and
+   lifts. Stale (online, nothing heard for over a minute) is a small sand
+   stamp in the corner. The classes go on the hero this sits in; the display
+   and the stamp are drawn here. */
+function HeroSignal() {
+  const net = useNet();
+  const ref = useRef(null);
+  const [back, setBack] = useState(false);
+  const wasOff = useRef(false);
+  const [, tick] = useState(0);
+  useEffect(() => { const t = setInterval(() => tick((n) => n + 1), 15000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (wasOff.current && !net.offline) { setBack(true); const t = setTimeout(() => setBack(false), 1100); wasOff.current = false; return () => clearTimeout(t); }
+    wasOff.current = net.offline;
+    return undefined;
+  }, [net.offline]);
+  useEffect(() => {
+    const hero = ref.current && ref.current.parentElement;
+    if (!hero) return undefined;
+    hero.classList.toggle("s2-off", !!net.offline);
+    hero.classList.toggle("s2-back", back);
+    return () => { hero.classList.remove("s2-off", "s2-back"); };
+  }, [net.offline, back]);
+  const mins = (t) => Math.max(1, Math.floor((Date.now() - t) / 60000));
+  const stale = !net.offline && net.okAt && Date.now() - net.okAt > 60000 ? mins(net.okAt) : 0;
+  return (
+    <span ref={ref} className="s2-signal">
+      {(net.offline || back) && (
+        <span className={"s2-osd" + (back ? " back" : "")} role="status">
+          <b>{back ? "BACK" : "NO CONNECTION"}</b>
+          <span><i />{back ? "live" : `showing ${net.asOf ? mins(new Date(net.asOf).getTime()) : 1} min ago`}</span>
+        </span>
+      )}
+      {stale > 0 && <span className="s2-age" role="status"><i />as of {stale} min ago</span>}
+    </span>
+  );
+}
 
 function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = "DOOR" }) {
   const ref = useRef(null);
@@ -9244,7 +9287,7 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
   return (
     <div className="checkout da-page">
       <div className="s2-hero da-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
@@ -11991,7 +12034,7 @@ function PlateTracker({ data, onChange, userName, storeId, saving, onRemote }) {
   return (
     <div className="plates">
       <div className="s2-hero plate-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="car" size={26} /></div>
@@ -12974,7 +13017,7 @@ function RoundUp({ config, store, data, M }) {
                   brand gradient, which made the round-up read as a different
                   product to the page it hands you to. */}
               <div className="ru-sheet-head s2-hero">
-                <i className="s2-noise" aria-hidden="true" />
+                <i className="s2-noise" aria-hidden="true" /><HeroSignal />
                 <div className="ru-head-id">
                   <div className="s2-ava">
                     {store.icon ? <img src={store.icon} alt="" /> : <Logo size={34} />}
@@ -13149,7 +13192,7 @@ function AdminOverview({ config, adminData, onOpenStore }) {
   return (
     <div className="admin">
       <div className="s2-hero gv-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="globe" size={24} /></div>
@@ -16011,7 +16054,7 @@ function CoachingPanel({ config, store, data, onChange, userName }) {
           the evidence rather than as a promise about it: "the top 6 of your 18,
           every imported day" is what makes "not a number someone made up" true. */}
       <div className="s2-hero cx-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="bolt" size={24} /></div>
@@ -19078,16 +19121,41 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     spotTimer.current = setInterval(() => setSpotOn((i) => (i + 1) % SPOT_N), 6000);
   };
   useEffect(() => { armSpot(); return () => clearInterval(spotTimer.current); }, [spotHeld]); // eslint-disable-line
-  // fresh numbers arrive like flipping the channel on a tube
-  const heroRef = useRef(null); const prevUnitsRef = useRef(null);
-  useEffect(() => {
+  /* Fresh numbers arrive the way a tube redraws (desk item 2, approved): one
+     beam sweeps down the picture over the settle token, and everything above
+     it is the new frame, everything below it the old. The old frame is a
+     clone of the tube taken after every render while nothing is sweeping; on
+     a change it is laid over the live tube in the same grid cell, the two
+     clipped against each other from one y, and the beam drawn at that y.
+     Nothing changes on a timer; it changes at the line. The dots are sliced
+     mid-circle because the clone is a whole picture, not a list of figures. */
+  const heroRef = useRef(null); const tubeRef = useRef(null); const ghostRef = useRef(null);
+  const prevUnitsRef = useRef(null); const scanning = useRef(false);
+  useEffect(() => { const t = tubeRef.current; if (t && !scanning.current) { try { ghostRef.current = t.cloneNode(true); } catch (e) { ghostRef.current = null; } } });
+  useLayoutEffect(() => {
     const prev = prevUnitsRef.current; prevUnitsRef.current = totalUnits;
-    if (prev == null || prev === totalUnits) return;
-    const el = heroRef.current;
-    if (!el || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    el.classList.remove("s2-chswitch"); void el.offsetWidth; el.classList.add("s2-chswitch");
-    const t = setTimeout(() => el.classList.remove("s2-chswitch"), 860);
-    return () => clearTimeout(t);
+    if (prev == null || prev === totalUnits) return undefined;
+    const hero = heroRef.current, tube = tubeRef.current, ghost = ghostRef.current;
+    if (!hero || !tube || !ghost || matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+    scanning.current = true;
+    ghost.classList.add("s2-ghost"); ghost.setAttribute("aria-hidden", "true");
+    const beam = document.createElement("i"); beam.className = "s2-beam";
+    tube.parentElement.insertBefore(ghost, tube.nextSibling); hero.appendChild(beam);
+    const H = hero.clientHeight, T = tube.offsetTop, TH = Math.max(1, tube.offsetHeight);
+    const t0 = performance.now();
+    let raf = 0;
+    const step = () => {
+      const p = Math.min(1, (performance.now() - t0) / MOTION.settle);
+      const y = -2 + p * (H + 4);
+      beam.style.top = y + "px";
+      const f = Math.max(0, Math.min(1, (y - T) / TH));
+      tube.style.clipPath = `inset(0 0 ${(100 - f * 100).toFixed(2)}% 0)`;
+      ghost.style.clipPath = `inset(${(f * 100).toFixed(2)}% 0 0 0)`;
+      if (p < 1) raf = requestAnimationFrame(step);
+      else { tube.style.clipPath = ""; ghost.remove(); beam.remove(); scanning.current = false; }
+    };
+    raf = requestAnimationFrame(step);
+    return () => { cancelAnimationFrame(raf); tube.style.clipPath = ""; ghost.remove(); beam.remove(); scanning.current = false; };
   }, [totalUnits]);
   useEffect(() => { installBloopManager(); }, []);
   /* A store with no goal has no pace, no par tick and no bar to hit, and until
@@ -19121,7 +19189,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
   return (
     <div className="hero" style={brandVars}>
       <div className="s2-hero s2-hasrail" ref={heroRef}>
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <i className="s2-fx" aria-hidden="true">
           <i className="s2-rgb"><i className="r" /><i className="c" /></i>
           <i className="s2-sweep" />
@@ -19129,7 +19197,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
         {/* Everything the tube shows sits in here, and the glass bows this and
             not the card's own edge: a silhouette that wobbled against the page
             read as a rendering fault rather than as a screen. */}
-        <div className="s2-tube">
+        <div className="s2-tube" ref={tubeRef}>
         <div className="s2-head">
           <AvaSeat>{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</AvaSeat>
           <div className="s2-idtx">
@@ -19802,7 +19870,7 @@ function ImportPanel({ store, config, data, log, dropActive, setDropActive, onFi
     </div>
   ) : (
     <div className="s2-hero import-hero">
-      <i className="s2-noise" aria-hidden="true" />
+      <i className="s2-noise" aria-hidden="true" /><HeroSignal />
       <div className="s2-tube">
       <div className="s2-head">
         <div className="s2-ava"><PixIcon glyph="arrowdown" size={24} /></div>
@@ -20779,7 +20847,7 @@ function GMSummary({ config, data, stores }) {
       {/* the printed page keeps its plain title; the green hero is for the screen */}
       <div className="sm-printhead">Lead Performance Summary · {monthLabel(month)} · {stores.map((s) => s.name).join(" · ")}</div>
       <div className="s2-hero da-hero sm-hero no-print">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{single && single.icon ? <img src={single.icon} alt="" /> : <Logo size={40} />}</div>
@@ -21048,7 +21116,7 @@ function HistoryPanel({ config, store, data }) {
   return (
     <div className="history">
       <div className="s2-hero hist-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava">{store.icon ? <img src={store.icon} alt="" /> : <Logo size={40} />}</div>
@@ -21262,7 +21330,7 @@ function TargetsEditor({ config, storeId, data, onChange }) {
         </div>
       ) : (
       <div className="s2-hero tg-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="chart" size={24} /></div>
@@ -22398,7 +22466,7 @@ function StorePeoplePanel({ config, data, storeId, storeName, allStores, onChang
       )}
 
       <div className="s2-hero pp-hero">
-        <i className="s2-noise" aria-hidden="true" />
+        <i className="s2-noise" aria-hidden="true" /><HeroSignal />
         <div className="s2-tube">
         <div className="s2-head">
           <div className="s2-ava"><PixIcon glyph="users" size={24} /></div>
@@ -27454,6 +27522,42 @@ button.da-lbrow { cursor:pointer; }
   outline:2px solid var(--p2, #2E9E5B); outline-offset:2px; }
 @media (prefers-reduced-motion: reduce){
   .lpc :is(button, [role="button"], [role="tab"], [role="switch"]):not(:disabled):active{ transform:none; } }
+/* ---- The hero redraws like a tube (desk item 2) ---- */
+.s2-ghost { pointer-events:none; }
+.s2-hero.s2-hasrail > .s2-ghost { grid-column:1; grid-row:1; }
+.s2-beam { position:absolute; left:0; right:0; height:16px; margin-top:-16px; z-index:5; pointer-events:none; border-radius:inherit;
+  background:linear-gradient(180deg, transparent, rgba(246,227,195,0) 20%, rgba(246,227,195,.55) 78%, #fff 92%, #fff); }
+/* ---- The hero loses its signal like a tape (desk item 7) ---- */
+@property --hA { syntax:"<color>"; inherits:true; initial-value:#5A7D63; }
+@property --hB { syntax:"<color>"; inherits:true; initial-value:#3E5A46; }
+@property --hC { syntax:"<color>"; inherits:true; initial-value:#26382C; }
+.s2-hero { transition:--hA var(--t-settle) var(--ease), --hB var(--t-settle) var(--ease), --hC var(--t-settle) var(--ease); }
+.s2-hero.s2-off { --hA:#6B7580; --hB:#4A525B; --hC:#2D343B; }
+.s2-hero.s2-off .s2-noise { opacity:.22; animation:s2grain .25s steps(3) infinite; }
+@keyframes s2grain { 0% { background-position:0 0, 0 0, 0 0; } 50% { background-position:3px 1px, -2px 0, 0 2px; } 100% { background-position:-2px 2px, 1px 0, 0 -1px; } }
+.s2-hero.s2-off .s2-sweep { opacity:1; height:14%; animation:s2track 1.4s linear infinite;
+  background:linear-gradient(180deg, transparent, rgba(255,255,255,.18) 40%, rgba(0,0,0,.25) 60%, transparent); }
+@keyframes s2track { 0% { top:-20%; } 30% { top:110%; } 100% { top:110%; } }
+.s2-hero.s2-off .s2-tube { text-shadow:-1px 0 rgba(255,60,60,.7), 1px 0 rgba(60,220,255,.7); animation:s2jit .25s steps(3) infinite; }
+.s2-hero.s2-off .s2-tube > *:nth-child(odd) { animation:s2jit .25s steps(3) infinite reverse; }
+@keyframes s2jit { 0% { transform:translateX(0); } 33% { transform:translateX(.6px); opacity:.94; } 66% { transform:translateX(-.5px); } 100% { transform:translateX(0); } }
+.s2-signal { display:contents; }
+.s2-osd { position:absolute; left:50%; bottom:10px; transform:translate(-50%, 6px); z-index:6; display:flex; align-items:center; gap:12px; padding:7px 12px;
+  background:rgba(0,0,0,.82); color:#fff; font:700 12px var(--font-mono); letter-spacing:.14em; border-radius:4px; white-space:nowrap;
+  animation:osdIn var(--t-swap) var(--ease) both; }
+@keyframes osdIn { from { opacity:0; transform:translate(-50%, 6px); } to { opacity:1; transform:translate(-50%, 0); } }
+.s2-osd > span { display:inline-flex; align-items:center; gap:6px; font-weight:500; letter-spacing:.06em; font-size:10.5px; opacity:.9; }
+.s2-osd > span i { width:7px; height:7px; border-radius:50%; background:#F08A80; animation:osdblink 1s steps(2,end) infinite; }
+@keyframes osdblink { 50% { opacity:0; } }
+.s2-osd.back { background:#8FD8AF; color:#12251B; } .s2-osd.back > span i { background:#12251B; animation:none; }
+.s2-age { position:absolute; right:14px; top:12px; z-index:6; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+  font:500 10px var(--font-mono); letter-spacing:.06em; color:#E4C98D; background:rgba(228,201,141,.12); border:1px solid rgba(228,201,141,.35); }
+.s2-age i { width:6px; height:6px; border-radius:50%; background:#E4C98D; animation:agePulse 1.8s ease-in-out infinite; }
+@keyframes agePulse { 50% { opacity:.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .s2-hero.s2-off .s2-noise, .s2-hero.s2-off .s2-sweep, .s2-hero.s2-off .s2-tube, .s2-hero.s2-off .s2-tube > * { animation:none; }
+  .s2-hero.s2-off .s2-sweep { opacity:0; } .s2-osd { animation:none; transform:translate(-50%, 0); } }
+
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 

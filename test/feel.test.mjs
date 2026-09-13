@@ -205,3 +205,20 @@ test("a tool or section switch is a shove: out thinning 22 ms apart on the exit 
   assert.ok(/const TOOL_EXIT = 220;/.test(core) && /const TAB_EXIT = 210;/.test(mgr) && /const TAB_ENTER = 460;/.test(mgr), "the beats wait for the last element");
 });
 
+
+test("the hero redraws like a tube: one beam, new above it, old below, on the settle token", () => {
+  assert.ok(/ghostRef\.current = t\.cloneNode\(true\)/.test(mgr), "the old frame is a clone of the whole picture");
+  assert.ok(/tube\.style\.clipPath = `inset\(0 0 \$\{\(100 - f \* 100\)\.toFixed\(2\)\}% 0\)`;\n\s*ghost\.style\.clipPath = `inset\(\$\{\(f \* 100\)\.toFixed\(2\)\}% 0 0 0\)`;/.test(mgr), "one y clips both layers against each other");
+  assert.ok(/const p = Math\.min\(1, \(performance\.now\(\) - t0\) \/ MOTION\.settle\);/.test(mgr) && /beam\.style\.top = y \+ "px";/.test(mgr), "the beam takes the settle token and is drawn at the clip's own y");
+  assert.ok(!/el\.classList\.add\("s2-chswitch"\)/.test(mgr), "the channel flip is retired");
+});
+
+test("the hero loses its signal like a tape, with a clean display over it", () => {
+  assert.ok(/function HeroSignal\(\) \{/.test(mgr) && (mgr.match(/<HeroSignal \/>/g) || []).length >= 7, "every hero carries the signal");
+  assert.ok(/hero\.classList\.toggle\("s2-off", !!net\.offline\);/.test(mgr), "the hero goes off with the connection");
+  assert.ok(/\.s2-hero\.s2-off \{ --hA:#6B7580; --hB:#4A525B; --hC:#2D343B; \}/.test(mgr) && /\.s2-hero\.s2-off \.s2-noise \{ opacity:\.22; animation:s2grain/.test(mgr) && /animation:s2track 1\.4s linear infinite/.test(mgr), "grey, grain and a tracking band");
+  assert.ok(/text-shadow:-1px 0 rgba\(255,60,60,\.7\), 1px 0 rgba\(60,220,255,\.7\); animation:s2jit/.test(mgr), "the type fringes and twitches");
+  assert.ok(/<b>\{back \? "BACK" : "NO CONNECTION"\}<\/b>/.test(mgr) && /\.s2-osd \{ position:absolute;[^}]*background:rgba\(0,0,0,\.82\); color:#fff;/.test(mgr), "the display is clean, white on black");
+  assert.ok(/stale > 0 && <span className="s2-age"/.test(mgr), "stale is a sand stamp");
+  assert.ok(/export \{ buzz, MOTION, useNet,/.test(core), "the rooms' connection hook is shared");
+});
