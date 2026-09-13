@@ -148,3 +148,46 @@ test("the rooms in sunlight: deep green ground, cream on it, only the tokens cha
   assert.ok(/glyph="sun"/.test(core) && /Sunlight<span className="hint">/.test(core), "a switch on the corner");
   assert.ok(!/html\.sun[^{]*\{[^}]*(padding|margin|font-size|animation)/.test(core), "layout, type sizes and animation stay");
 });
+
+test("the desk speaks the same vocabulary: tokens, one press, one focus ring, a tick on the phone", () => {
+  const mgrCss = mgr.slice(mgr.indexOf("const MANAGER_CSS"), mgr.indexOf("ensureStyleNamed(\"sage-manager\""));
+  const raw = mgrCss.split("\n").filter((l) => /transition/.test(l) && /(?<![\w.])\.[0-4]\d?s\b/.test(l));
+  assert.deepEqual(raw, [], "no hand-written control duration under half a second in a transition");
+  assert.ok(!/cubic-bezier\(\.34,1\.[45],\.64,1\)|cubic-bezier\(\.3,1\.3,\.[34]5?,1\)|cubic-bezier\(\.2,\.8,\.2,1\)/.test(mgrCss), "the hand springs are the shared curves");
+  assert.ok(/\.lpc :is\(button, \[role="button"\], \[role="tab"\], \[role="switch"\]\):not\(:disabled\):not\(\.tdial\):not\(\.sf \*\):active\{\n  transform:scale\(\.96\); transition-duration:var\(--t-press\);/.test(mgrCss), "one press, on the press token, and the rooms keep their own");
+  assert.ok(/:focus-visible\{\n  outline:2px solid var\(--p2, #2E9E5B\); outline-offset:2px; \}/.test(mgrCss), "one focus ring");
+  assert.ok(/if \(e\.pointerType !== "touch"\) return;[\s\S]{0,300}buzz\("tick", true\)/.test(mgr), "the phone ticks at touch-down; a mouse never buzzes");
+  assert.ok(/lastSaveError = null; buzz\("taken"\);/.test(core) && /buzz\("refused"\); lastSaveError = \(e/.test(core), "saves say taken and refused");
+});
+
+test("the phone's section chips glide under one pill, on the wipe token and the bloop curve", () => {
+  assert.ok(/className="sect-pill" aria-hidden="true" style=\{pill \? \{ opacity: 1, width: pill\.w/.test(mgr), "one pill, measured off the chip");
+  assert.ok(/\.sect-pill \{ position:absolute;[^}]*transition:transform var\(--t-wipe\) var\(--ease-bloop\), width var\(--t-wipe\) var\(--ease-bloop\)/.test(core), "it glides on the tokens");
+  assert.ok(/\.sect-chip\.on \{ color:#fff; background:transparent; border-color:transparent; \}/.test(core), "the chip itself no longer paints the highlight");
+});
+
+test("arrivals on the tokens: nothing waits for a scroll, cards arrive 40 ms apart, the dock rises, Import asks", () => {
+  assert.ok(!/is-in|settleReveals|useReveal/.test(core + mgr), "the scroll observer and its patch are gone");
+  assert.ok(/:where\(\.page > \*:not\(\.board-page\):not\(\.tab-page\), \.board-page > \*, \.tab-page > \*\) \{ animation: cardIn var\(--t-settle\) var\(--ease\) both; \}/.test(core), "the page's blocks arrive on the settle token, under any move's own entrance");
+  assert.ok(/:nth-child\(2\) \{ animation-delay:40ms; \}/.test(core) && /:nth-child\(n\+4\) \{ animation-delay:120ms; \}/.test(core), "40 ms apart");
+  assert.ok(/\.card \{[^}]*transition: box-shadow var\(--t-wipe\) var\(--ease\); \}/.test(core), "a card no longer transitions opacity or transform");
+  assert.ok(/className=\{"botnav no-print" \+ \(up \? " up" : ""\)\}/.test(mgr) && /\.botnav\.up \{ transform:none; \}/.test(mgr), "the dock rises after the first paint");
+  assert.ok(/\.botnav-fab\.ready \{ animation:fabAsk 1\.2s var\(--ease\) 2; \}/.test(mgr) && /if \(ready\) buzz\("asked"\)/.test(mgr), "Import asks when it is due");
+});
+
+test("a card grows from its row and goes back the way it came", () => {
+  assert.ok(/setOrigin\(\{ x: e\.clientX, y: e\.clientY, rect: \{ left: rr\.left, top: rr\.top, width: rr\.width, height: rr\.height \} \}\)/.test(mgr), "the desk row hands over its rect");
+  assert.ok(/frLastTap\.rect = \{ left: rr\.left/.test(mgr) && /frLastTap\.rect = null;/.test(core), "the phone row hands over its rect, and any other tap clears it");
+  assert.ok(/el\.animate\(\[\{ transform: from \}, \{ transform: "none" \}\], \{ duration: MOTION\.settle, easing: "cubic-bezier\(\.32,\.72,\.33,1\)", fill: "both" \}\)/.test(mgr), "it grows on the settle token and the spring");
+  assert.ok(/el\.animate\(\[\{ transform: "none" \}, \{ transform: grew\.current \}\]/.test(mgr), "and shrinks back into the row");
+  assert.ok(/\{ opacity: 0, offset: 0\.35 \}, \{ opacity: 1 \}/.test(mgr), "the inside fades in a beat later");
+});
+
+test("the rooms move with the phones: a seat or a re-seat flies the person's mark on the wipe token", () => {
+  assert.ok(/function flyMark\(from, to, look = \{\}\) \{/.test(mgr) && /duration: MOTION\.wipe, easing: "cubic-bezier\(\.32,\.72,\.33,1\)", fill: "both"/.test(mgr), "one flight, on the wipe token and the spring");
+  assert.ok(/flyMark\(pipEl\(person\.id\) \|\| tableEl\(sat && sat\.n\) \|\| tapped, tableEl\(station\)/.test(mgr), "seating flies from the pip, the old desk, or the name that was tapped, to the station");
+  assert.ok((mgr.match(/flyMark\(tableEl\(was && was\.table\), tableEl\(/g) || []).length === 2, "re-seating flies between tables in both floor rooms");
+  assert.ok(/data-id=\{p\.id\}/.test(mgr) && /data-n=\{t\.n\}/.test(core), "pips and tables can be found by id");
+  assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches\) return; \} catch \(e\) \{\}\n  if \(typeof from\.animate/.test(mgr), "less motion gets the cut");
+  assert.ok(/if \(needsOverride\(gate\) && !forced\) \{ setWarn\(\{ station, person, gate, viaOffer \}\); return false; \}/.test(mgr) && (mgr.match(/\) !== false\) setOpen\(null\)/g) || []).length === 2, "the desk keeps its panel open when the answer is a warning");
+});
