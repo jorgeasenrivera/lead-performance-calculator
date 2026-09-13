@@ -458,7 +458,6 @@ const PIX = {
   question:  ["0011100","0100010","0000010","0000100","0001000","0000000","0001000"],
   plus:      ["0001000","0001000","0001000","1111111","0001000","0001000","0001000"],
   minus:     ["0000000","0000000","0000000","1111111","0000000","0000000","0000000"],
-  plus:      ["0001000","0001000","0001000","1111111","0001000","0001000","0001000"],
   dash:      ["0000000","0000000","0000000","0011100","0000000","0000000","0000000"],
   arrowup:   ["0001000","0011100","0101010","1001001","0001000","0001000","0001000"],
   arrowdown: ["0001000","0001000","0001000","1001001","0101010","0011100","0001000"],
@@ -3140,7 +3139,8 @@ export default function LeadPerformanceCalculator() {
       <AppShell entering={entering}
         session={session} isAdmin={isAdmin} isOverseer={isOverseer}
         onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
-        appModule="board" onToolChange={switchTool} onImport={goImport}>
+        appModule="board" onToolChange={switchTool} onImport={goImport}
+        rooms={currentStore ? roomListOf(config, currentStore.id) : null}>
         <div className="page">
           <BoardLauncher config={config} session={session}
             onLaunch={(storeId) => openLeaderboard(config, storeId)}
@@ -3210,6 +3210,7 @@ export default function LeadPerformanceCalculator() {
       session={session} isAdmin={isAdmin} isOverseer={isOverseer}
       onSignOut={signOut} onReplayIntro={replayIntro} onHelp={() => setHelpOpen(true)} help={helpNode}
       appModule={appModule} onToolChange={switchTool} onImport={goImport}
+      rooms={currentStore ? roomListOf(config, currentStore.id) : null}
       corner={(isAdmin || session.role === "manager") && currentStore
         ? <AssistWatcher store={currentStore.id} meName={session.name} /> : null}
       brand={currentStore?.brand}
@@ -14412,6 +14413,12 @@ input[type=number] { width:84px; }
   border:1.5px dashed rgba(255,255,255,.48); }
 .stn-map .fbp-tbl.stn-off:hover{ background:rgba(255,255,255,.18); border-style:solid;
   border-color:rgba(255,255,255,.7); color:#fff; }
+/* Somebody is waiting and this desk is free: it breathes, so the eye lands on
+   it before the manager has read a single name (consistency pass, item 11). */
+.stn-map .fbp-tbl.stn-off.stn-hot{ border-style:solid; border-color:rgba(255,255,255,.9); animation:stnHot 1.8s var(--ease) infinite; }
+@keyframes stnHot{ 0%,100%{ box-shadow:0 0 0 0 rgba(255,255,255,0); background:rgba(255,255,255,.14) }
+  50%{ box-shadow:0 0 0 6px rgba(255,255,255,.22); background:rgba(255,255,255,.26) } }
+@media (prefers-reduced-motion: reduce){ .stn-map .fbp-tbl.stn-off.stn-hot{ animation:none; box-shadow:0 0 0 4px rgba(255,255,255,.22); } }
 .stn-map .fbp-tbl.stn-on{ background:#fff; border-color:transparent; color:var(--mfink);
   box-shadow:0 10px 26px -12px rgba(8,20,60,.45); }
 .stn-map .fbp-tbl.stn-on .fbp-sub{ color:var(--mfink2); }
