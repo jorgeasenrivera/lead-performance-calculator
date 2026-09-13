@@ -1137,16 +1137,22 @@ async function loadStoreStamp(key) {
 }
 
 let lastSaveError = null;
-async function saveShared(key, value) {
+/* `quiet` is for housekeeping: a prune, a backup row, anything the app does
+   for itself rather than because somebody tapped something. The named beats
+   mean "what you just did landed", so a tidy-up that deletes three hundred
+   stale rows must not buzz a phone three hundred times. The feel harness
+   caught exactly that, which is what it is for. */
+async function saveShared(key, value, quiet) {
   if (!supabase) { lastSaveError = "No database client"; return false; }
   try {
     const { error } = await supabase.from("app_data").upsert({ key, value }, { onConflict: "key" });
     if (error) throw error;
-    lastSaveError = null; buzz("taken");
+    lastSaveError = null; if (!quiet) buzz("taken");
     return true;
   } catch (e) {
     console.error("save failed", key, e);
-    buzz("refused"); lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+    if (!quiet) buzz("refused");
+    lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
     return false;
   }
 }
@@ -1473,10 +1479,10 @@ async function runAutoBackup(config, adminData, byName) {
   // Each store first. If any one of them cannot be written the backup is incomplete,
   // and an incomplete backup that looks complete is worse than none at all.
   for (const sid of storeIds) {
-    const ok = await saveShared(backupStoreKey(sid, id), stores[sid]);
+    const ok = await saveShared(backupStoreKey(sid, id), stores[sid], true);
     if (!ok) {
       console.error("backup failed for store", sid, lastSaveError);
-      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null);
+      for (const done of storeIds) await saveShared(backupStoreKey(done, id), null, true);
       return index;
     }
   }
@@ -1490,16 +1496,16 @@ async function runAutoBackup(config, adminData, byName) {
     storeIds,
     audit: await loadShared(AUDIT_KEY, []),
   };
-  const okMeta = await saveShared(backupMetaKey(id), meta);
+  const okMeta = await saveShared(backupMetaKey(id), meta, true);
   if (!okMeta) {
     console.error("backup meta failed", lastSaveError);
-    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null);
+    for (const sid of storeIds) await saveShared(backupStoreKey(sid, id), null, true);
     return index;
   }
 
   const next = [{ id, t: exportedAt, stores: storeIds.length, storeIds, auto: true }, ...index];
   const keep = next.slice(0, KEEP_BACKUPS);
-  await saveShared(BACKUP_INDEX_KEY, keep);
+  await saveShared(BACKUP_INDEX_KEY, keep, true);
   await pruneBackups(keep);
   return keep;
 }
@@ -1532,7 +1538,7 @@ async function pruneBackups(keep) {
       const parts = String(row.key).split(":");
       const id = parts.length >= 5 ? parts[parts.length - 2] : null;
       if (!id || alive.has(id)) continue;
-      if (await saveShared(row.key, null)) dropped++;
+      if (await saveShared(row.key, null, true)) dropped++;
     }
     /* The per-backup meta rows are indexed the same way and were orphaned by
        the same gap. */
@@ -1541,7 +1547,7 @@ async function pruneBackups(keep) {
       const parts = String(row.key).split(":");
       const id = parts.length >= 5 ? parts[parts.length - 2] : null;
       if (!id || alive.has(id)) continue;
-      if (await saveShared(row.key, null)) dropped++;
+      if (await saveShared(row.key, null, true)) dropped++;
     }
   } catch (e) {
     console.error("pruneBackups", e);
@@ -3640,7 +3646,7 @@ async function pruneBoardDays(storeId) {
     if (error) throw error;
     for (const row of data || []) {
       const day = String(row.key).slice(prefix.length);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cutoff) await saveShared(row.key, null);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cutoff) await saveShared(row.key, null, true);
     }
   } catch (e) { console.error("pruneBoardDays", e); }
 }

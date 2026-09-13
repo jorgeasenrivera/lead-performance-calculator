@@ -324,6 +324,8 @@ test("five-second pass, item 2: the shortfall is drawn, and its height is the se
 });
 
 test("the record slims down: backups prune by what is on the server, day rows have a window, restore points are two, no legacy stars", () => {
+  assert.ok(/async function saveShared\(key, value, quiet\) \{/.test(core) && /lastSaveError = null; if \(!quiet\) buzz\("taken"\);/.test(core), "housekeeping writes do not buzz a phone");
+  assert.ok(/await saveShared\(row\.key, null, true\)/.test(core) && /saveShared\(backupStoreKey\(sid, id\), stores\[sid\], true\)/.test(core), "the prunes and the backup rows are housekeeping");
   assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
   assert.ok(/\.select\("key"\)\.like\("key", "lpc:config:backup:%"\)/.test(core), "the orphaned meta rows go with them");
   assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
