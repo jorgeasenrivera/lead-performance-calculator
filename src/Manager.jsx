@@ -24,7 +24,7 @@ import {
 } from "../api/_store-keys.mjs";
 import { phoneExtras, withRocked, pointsForDay, stampLineMoves, channelSeries } from "../api/_phone-rows.mjs";
 import { stampHours } from "../api/_hours.mjs";
-import { stationPlanOf, claimStation, releaseStation,
+import { stationPlanOf, claimStation, releaseStation, coverLineOf,
   releasePerson, stationOf, sitsFor,
   stationLine, rollOffers, takeOffer, skipOffer, tightenPlan, seatsOf,
   stationModeOf, DEFAULT_STATION_PLAN, ownerAction, roomInUse, OFFER_MS } from "../api/_stations.mjs";
@@ -4772,7 +4772,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
               </span>
             </button>
             <button type="button" className="fr-cov" onClick={() => setPop({ k: "day" })}>
-              <StnHourBars occ={occ} />
+              <StnHourBars occ={occ} coverAt={coverLineOf(config, store.id, (board.seats || []).length)} />
             </button>
           </>
         )}
@@ -4787,7 +4787,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
             <PixIcon glyph="clipboard" size={16} />Sign-in code
           </button>
           <button type="button" className="fr-tool" onClick={() => setPop({ k: "pins" })}>
-            <PixIcon glyph="clipboard" size={16} />PINs
+            <PixIcon glyph="clipboard" size={16} />Sign-in code
           </button>
         </div>
       </div>
@@ -4828,14 +4828,31 @@ function stnDeco(board, t, nameOf, hot) {
    half and up. Two thirds was the first threshold and it made a six-seat room
    read amber all day, since three people on the phones is a normal shift
    rather than a shortfall. Half is the bar a manager would use out loud. */
-function StnHourBars({ occ }) {
+function StnHourBars({ occ, coverAt, key: _k }) {
   const num = (h) => (Number(h) % 12 === 0 ? 12 : Number(h) % 12);
   const tag = (h) => (Number(h) < 12 ? "a" : "p");
+  /* Five states, named under the bar (five-second pass, item 4). Grey is an
+     hour the room has not reached or had not opened for; red is an hour with
+     nobody at a desk; amber is thin; green is covered, which is the store's
+     own number; blue is a full room, which is its own problem, because there
+     is no free desk to seat the next person. */
+  const line = Math.max(1, coverAt || Math.ceil((occ.byHour[0]?.of || 2) / 2));
+  const first = occ.byHour.findIndex((b) => b.staffed > 0);
+  /* The store's hour, not the browser's: a manager in Orlando and a group
+     admin in Phoenix have to see the same bar. */
+  const nowH = Number(new Intl.DateTimeFormat("en-US", { timeZone: STORE_TZ, hour: "numeric", hour12: false }).format(new Date()));
+  const stateOf = (b, i) => {
+    const h = Number(b.hour);
+    if (first < 0 || i < first || h > nowH) return "pre";
+    if (b.staffed === 0) return "gap";
+    if (b.staffed >= b.of) return "full";
+    return b.staffed >= line ? "ok" : "thin";
+  };
   return (
     <>
       <div className="fr-hours">
-        {occ.byHour.map((b) => (
-          <i key={b.hour} className={b.pct >= 0.5 ? "ok" : b.pct > 0 ? "thin" : "gap"} />
+        {occ.byHour.map((b, i) => (
+          <i key={b.hour} className={stateOf(b, i)} title={`${b.staffed} of ${b.of} desks`} />
         ))}
       </div>
       {occ.hours.length > 0 && (
@@ -4844,6 +4861,13 @@ function StnHourBars({ occ }) {
           <span>{num(occ.hours[occ.hours.length - 1])}{tag(occ.hours[occ.hours.length - 1])}</span>
         </div>
       )}
+      <div className="fr-key">
+        <span className="k-pre">not yet</span>
+        <span className="k-gap">nobody</span>
+        <span className="k-thin">thin</span>
+        <span className="k-ok">covered</span>
+        <span className="k-full">full</span>
+      </div>
     </>
   );
 }
@@ -5142,7 +5166,7 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
             {waiting.length > 0 ? ` · ${waiting.length} waiting` : ""}
           </span>
         </div>
-        <div className="sd-cov"><StnHourBars occ={occ} /></div>
+        <div className="sd-cov"><StnHourBars occ={occ} coverAt={coverLineOf(config, store.id, board.seats.length)} /></div>
 
         <div className="sd-grid2">
           <div>
@@ -5481,7 +5505,6 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
         </div>
         {setup && (
           <div className="q-setup">
-            <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
             <TestLink storeId={store.id} date={date} token={row && row.token} param={variant.param} />
             <QueueBoardLink storeId={store.id} kind={variant.kind === "online" ? "online" : "line"} />
           </div>
@@ -6803,7 +6826,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
     <>
       <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Roster</div></div></div>
       <div className="fr-tabs">
-        {[["floor", "Put on"], ["phones", "Phones" + (asking > 0 ? " · " + asking : "")], ["pins", "PINs"]].map(([k, l]) => (
+        {[["floor", "Put on"], ["phones", "Phones" + (asking > 0 ? " · " + asking : "")]].map(([k, l]) => (
           <button key={k} type="button" className={rosterTab === k ? "on" : ""} onClick={() => setRosterTab(k)}>{l}</button>
         ))}
       </div>
@@ -7276,7 +7299,6 @@ function FloorBoard({ config, store, data, onData, userName }) {
         </div>
         {setup && (
           <div className="q-setup">
-            <button className="btn" onClick={() => setShowPins(true)}>PINs</button>
             <button className="btn" onClick={() => setShowPhones((v) => !v)}>{showPhones ? "Hide phones" : "Phones"}</button>
             <TestLink storeId={store.id} date={date} token={row && row.token} param="f" />
             <QueueBoardLink storeId={store.id} kind="floor" />
@@ -8275,6 +8297,15 @@ function PhoneRoomCard({ config, storeId, onChange }) {
   const setRoom = (k, on) => save((s) => { s.rooms = { ...roomsOf(config, storeId), [k]: on }; },
     { action: on ? "Turned a room on for the floor" : "Turned a room off for the floor",
       detail: `${store.name}: ${k === "line" ? "Phone Line" : "Live Floor"}` });
+  /* What "covered" means here (five-second pass, item 4). The day's line on
+     the desk paints an hour green at this many desks; a BDC that runs three
+     of six is covered, a room that needs five is not. */
+  const seatCount = seats.length || 1;
+  const coverAt = coverLineOf(config, storeId, seatCount);
+  const setCoverAt = (v) => save((s) => {
+    const n = Math.max(1, Math.min(seatCount, Math.round(Number(v) || 0)));
+    s.coverAt = n;
+  }, { action: "Set what counts as a covered hour", detail: `${store.name}: ${v} of ${seatCount} desks` });
   const setOwner = (n, id) => save((s) => {
     const p = s.stationPlan && (s.stationPlan.seats || s.stationPlan.tables)
       ? JSON.parse(JSON.stringify(s.stationPlan))
@@ -8317,6 +8348,20 @@ function PhoneRoomCard({ config, storeId, onChange }) {
           </p>
         )}
       </div>
+
+      <div className="prc-cap prc-cap2">A covered hour</div>
+      <div className="prc-cover">
+        <label>
+          Covered once{" "}
+          <input type="number" min="1" max={seatCount} value={coverAt}
+            onChange={(e) => setCoverAt(e.target.value)} />{" "}
+          of {seatCount} {seatCount === 1 ? "desk is" : "desks are"} taken
+        </label>
+      </div>
+      <p className="hint">
+        The day&rsquo;s line on the Phone Line tab paints an hour green at this many desks, amber
+        under it, red when nobody was at a desk, and blue when every desk was taken.
+      </p>
 
       <div className="prc-cap prc-cap2">How the desk runs the room</div>
       <div className="prc-modes">
@@ -19437,10 +19482,19 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             {/* One line, as the drafts have it: the floor's health, then what the
                 board is holding. The bucket chips are gone; the board itself is
                 the list, and search is how you narrow it. */}
-            <div className="s2-vitals">
-              <span className={"s2-vdot s2-v-" + (pct >= 75 ? "g" : pct >= 55 ? "y" : "r")} />
-              {attN > 0 && nPct >= 100 ? "Everyone is on standard" : <>{healthWord}{attN > 0 ? <> · <b>{nPct}%</b> of standard</> : null}</>}
-              {" · "}{nRoster} on the board{capTotal ? <> · <b>{nOpps}</b> of {capTotal} leads held</> : null}
+            {/* The line under the number answers the question the number
+                raises (five-second pass, item 3). The floor's health is the
+                card below it, and the board's count is the board. */}
+            <div className="s2-vitals s2-say" style={{ color: paceCol }}>
+              {storePace.goal && !storePace.tooEarly ? (
+                <>
+                  <Verdict ratio={storePace.short > 0 ? Math.max(0.01, storePace.projected / storePace.goal.bar) : 1} size={13} />
+                  {storePace.short > 0
+                    ? <>Short by <b>{fmtNum(Math.round(storePace.short))}</b> at this pace</>
+                    : <>On pace for <b>{Math.round(storePace.projected)}</b> of {fmtNum(storePace.goal.bar)}</>}
+                </>
+              ) : storePace.goal ? <>Too early to call the month &#183; <b>{fmtNum(totalUnits)}</b> of {fmtNum(storePace.goal.bar)}</>
+                : <>No goal set for this month &#183; <b>{fmtNum(totalUnits)}</b> delivered</>}
             </div>
           </div>
           <div className="s2-right">
@@ -19523,10 +19577,14 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <button className="s2-ru" onClick={openRoundUp} title="Open the morning round-up">
               <PixIcon glyph="roundup" size={11} /> Month so far
             </button>
-            <button className={"s2-imp" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
-              <span className="s2-imp-ico"><PixIcon glyph={missing.length ? "warn" : "check"} size={13} /></span>
+            {/* The one card in the hero that asks for something wears a lamp
+                (five-second pass, item 1): amber and breathing while a report
+                is owed, green and still once they are all in. The units
+                figure stays the loudest thing on the card. */}
+            <button className={"s2-imp s2-lampbtn" + (missing.length ? "" : " done")} onClick={() => onGoTab("import")}>
+              <i className={"s2-lamp " + (missing.length ? "y" : "g")}><PixIcon glyph={missing.length ? "upload" : "check"} size={17} /></i>
               <span className="s2-imp-tx">
-                <b>{missing.length ? (missing.length === 1 ? "Import due" : "Imports due") : "Imports in"}</b>
+                <b>{missing.length ? `${missing.length} due today` : "All in"}</b>
                 <i>{missing.length ? missing.join(" and ") : `${done.length} of ${need.length} reports today`}</i>
               </span>
               <PixIcon glyph="arrow" size={11} />
@@ -19590,11 +19648,15 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
       </div>
 
       <div className="s2-focusgrid">
+        {/* Five grounds, not one red (five-second pass, item 4): from deep
+            red at half of target to green once the weakest standard is met,
+            so the card's colour alone says how far off the store is. Red now
+            means somebody needs you, which is what red is for. */}
         {weakest && (
-          <div className="s2-ansq bloop-host" tabIndex={0}>
-            <div className="s2-an-cap"><PixIcon glyph="warn" size={13} /> Weakest standard</div>
-            <div className="s2-an-name">{METRICS[weakest.metric].label}</div>
-            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>of target on average</small></div>
+          <div className={"s2-ansq bloop-host an-" + (weakest.mean >= 1 ? 5 : weakest.mean >= 0.9 ? 4 : weakest.mean >= 0.75 ? 3 : weakest.mean >= 0.5 ? 2 : 1)} tabIndex={0}>
+            <div className="s2-an-cap"><Verdict ratio={weakest.mean} size={13} className="on-dark" /> {weakest.below === 0 ? "Standards" : "Weakest standard"}</div>
+            <div className="s2-an-name">{weakest.below === 0 ? "Everyone is on target" : METRICS[weakest.metric].label}</div>
+            <div className="s2-an-big"><DotNum value={Math.round(weakest.mean * 100) + "%"} dot={4.6} color="#fff" /><small>{weakest.below === 0 ? `on ${METRICS[weakest.metric].short}, the lowest` : "of target on average"}</small></div>
             <div className="s2-an-sub">{weakest.below} of {weakest.total} below · mouse over for the play</div>
             <div className="bloopwin dn s2-answin">
               <div className="bw-title">The play</div>
@@ -27915,6 +27977,44 @@ button.da-lbrow { cursor:pointer; }
 .vmark b{ font:700 9.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; }
 .s2-mklbl .vmark, .s2g4-l .vmark{ margin-left:3px; }
 .s2-hbar > b .vmark{ margin-left:3px; }
+/* ---- five-second pass, items 1, 3, 4 ---- */
+/* Item 1: the lamp on the one card that is asking for something. */
+.s2-lampbtn{ padding:7px 12px 7px 7px; gap:10px; }
+.s2-lampbtn .s2-lamp{ width:34px; height:34px; border-radius:50%; display:grid; place-items:center; flex:0 0 auto; color:#fff; }
+.s2-lampbtn .s2-lamp.g{ background:#1F8A6B; box-shadow:0 0 0 4px rgba(31,138,107,.2); }
+.s2-lampbtn .s2-lamp.y{ background:#E0A100; color:#3A2A00; box-shadow:0 0 0 4px rgba(224,161,0,.22); animation:lampPulse 1.8s ease-in-out infinite; }
+.s2-lampbtn .s2-imp-tx b{ font-size:13px; }
+.s2-lampbtn .s2-imp-tx i{ font-size:9.5px; }
+@keyframes lampPulse{ 0%,100%{ box-shadow:0 0 0 4px rgba(224,161,0,.22) } 50%{ box-shadow:0 0 0 8px rgba(224,161,0,.1) } }
+@media (prefers-reduced-motion: reduce){ .s2-lampbtn .s2-lamp.y{ animation:none; } }
+/* Item 3: the sentence under the number. */
+.s2-say{ display:flex; align-items:center; gap:7px; font:700 14px var(--font-ui); line-height:1.35; }
+.s2-say b{ font-family:var(--font-mono); color:currentColor; }
+.s2-say .vmark{ margin:0; }
+/* Item 4: five grounds for the standards card. */
+.s2-ansq.an-1{ background:linear-gradient(150deg,#C8352B,#8E1F17); box-shadow:0 16px 38px -18px rgba(142,31,23,.65); }
+.s2-ansq.an-2{ background:linear-gradient(150deg,#D9663A,#A33E1B); box-shadow:0 16px 38px -18px rgba(163,62,27,.6); }
+.s2-ansq.an-3{ background:linear-gradient(150deg,#D9A01A,#A8760A); box-shadow:0 16px 38px -18px rgba(168,118,10,.6); }
+.s2-ansq.an-4{ background:linear-gradient(150deg,#8FA32E,#5F7016); box-shadow:0 16px 38px -18px rgba(95,112,22,.6); }
+.s2-ansq.an-5{ background:linear-gradient(150deg,#2A9C77,#1B6E54); box-shadow:0 16px 38px -18px rgba(27,110,84,.6); }
+.s2-an-cap .vmark{ margin:0; }
+.s2-an-cap .vmark.on-dark{ color:#fff; }
+/* Item 4: the day's coverage, in five states with a key. */
+.sd-cov .fr-hours i.pre{ background:rgba(16,32,52,.07); }
+.sd-cov .fr-hours i.full{ background:#2563C9; }
+.fr-key{ display:flex; flex-wrap:wrap; gap:10px; margin-top:6px; font:600 11px var(--font-ui); color:var(--mfink2); }
+.fr-key span{ display:inline-flex; align-items:center; gap:5px; }
+.fr-key span::before{ content:""; width:10px; height:10px; border-radius:3px; }
+.fr-key .k-pre::before{ background:rgba(16,32,52,.12); }
+.fr-key .k-gap::before{ background:#C8352B; }
+.fr-key .k-thin::before{ background:#E0A100; }
+.fr-key .k-ok::before{ background:#1F8A6B; }
+.fr-key .k-full::before{ background:#2563C9; }
+.fr-cov .fr-key{ color:var(--frink3); font-size:10px; gap:8px; }
+.fr-cov .fr-key span::before{ width:8px; height:8px; }
+/* What "covered" means, set by the store. */
+.prc-cover{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
+.prc-cover input{ width:70px; }
 `;
 ensureStyleNamed("sage-manager", MANAGER_CSS);
 
