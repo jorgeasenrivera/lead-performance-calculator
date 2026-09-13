@@ -148,3 +148,20 @@ test("the rooms in sunlight: deep green ground, cream on it, only the tokens cha
   assert.ok(/glyph="sun"/.test(core) && /Sunlight<span className="hint">/.test(core), "a switch on the corner");
   assert.ok(!/html\.sun[^{]*\{[^}]*(padding|margin|font-size|animation)/.test(core), "layout, type sizes and animation stay");
 });
+
+test("the desk speaks the same vocabulary: tokens, one press, one focus ring, a tick on the phone", () => {
+  const mgrCss = mgr.slice(mgr.indexOf("const MANAGER_CSS"), mgr.indexOf("ensureStyleNamed(\"sage-manager\""));
+  const raw = mgrCss.split("\n").filter((l) => /transition/.test(l) && /(?<![\w.])\.[0-4]\d?s\b/.test(l));
+  assert.deepEqual(raw, [], "no hand-written control duration under half a second in a transition");
+  assert.ok(!/cubic-bezier\(\.34,1\.[45],\.64,1\)|cubic-bezier\(\.3,1\.3,\.[34]5?,1\)|cubic-bezier\(\.2,\.8,\.2,1\)/.test(mgrCss), "the hand springs are the shared curves");
+  assert.ok(/\.lpc :is\(button, \[role="button"\], \[role="tab"\], \[role="switch"\]\):not\(:disabled\):not\(\.tdial\):not\(\.sf \*\):active\{\n  transform:scale\(\.96\); transition-duration:var\(--t-press\);/.test(mgrCss), "one press, on the press token, and the rooms keep their own");
+  assert.ok(/:focus-visible\{\n  outline:2px solid var\(--p2, #2E9E5B\); outline-offset:2px; \}/.test(mgrCss), "one focus ring");
+  assert.ok(/if \(e\.pointerType !== "touch"\) return;[\s\S]{0,300}buzz\("tick", true\)/.test(mgr), "the phone ticks at touch-down; a mouse never buzzes");
+  assert.ok(/lastSaveError = null; buzz\("taken"\);/.test(core) && /buzz\("refused"\); lastSaveError = \(e/.test(core), "saves say taken and refused");
+});
+
+test("the phone's section chips glide under one pill, on the wipe token and the bloop curve", () => {
+  assert.ok(/className="sect-pill" aria-hidden="true" style=\{pill \? \{ opacity: 1, width: pill\.w/.test(mgr), "one pill, measured off the chip");
+  assert.ok(/\.sect-pill \{ position:absolute;[^}]*transition:transform var\(--t-wipe\) var\(--ease-bloop\), width var\(--t-wipe\) var\(--ease-bloop\)/.test(core), "it glides on the tokens");
+  assert.ok(/\.sect-chip\.on \{ color:#fff; background:transparent; border-color:transparent; \}/.test(core), "the chip itself no longer paints the highlight");
+});

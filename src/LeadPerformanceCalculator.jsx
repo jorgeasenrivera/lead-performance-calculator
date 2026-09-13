@@ -1192,11 +1192,11 @@ async function saveShared(key, value) {
   try {
     const { error } = await supabase.from("app_data").upsert({ key, value }, { onConflict: "key" });
     if (error) throw error;
-    lastSaveError = null;
+    lastSaveError = null; buzz("taken");
     return true;
   } catch (e) {
     console.error("save failed", key, e);
-    lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+    buzz("refused"); lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
     return false;
   }
 }
@@ -1252,7 +1252,7 @@ async function saveStoreCAS(key, build, tries = 8) {
           if (String(error.code) === "23505") { conflicts++; continue; }   // someone beat us
           throw error;
         }
-        lastSaveError = null;
+        lastSaveError = null; buzz("taken");
         casCache.set(key, { rev: value.rev, value });
         return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
       }
@@ -1269,7 +1269,7 @@ async function saveStoreCAS(key, build, tries = 8) {
       const { data: hit, error } = await q.select("key");
       if (error) throw error;
       if (hit && hit.length) {
-        lastSaveError = null;
+        lastSaveError = null; buzz("taken");
         casCache.set(key, { rev: value.rev, value });
         return { ok: true, rev: value.rev, value, conflictsResolved: conflicts };
       }
@@ -1279,7 +1279,7 @@ async function saveStoreCAS(key, build, tries = 8) {
       await new Promise((r) => setTimeout(r, 90 * (attempt + 1) + Math.random() * 120));
     } catch (e) {
       console.error("save failed", key, e);
-      lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
+      buzz("refused"); lastSaveError = (e && (e.message || e.error_description || e.hint || e.details || e.code)) || String(e);
       return { ok: false, rev: null, conflictsResolved: conflicts };
     }
   }
@@ -14107,7 +14107,12 @@ input[type=number] { width:84px; }
            20px and fades it out, so the backdrop arrives gradually instead. */
         /* no position declaration here — .topstack is sticky, which is already a
            positioned ancestor, and re-declaring it relative would unstick it. */
-        .sect-chip.on { color:#fff; background:var(--ink); border-color:var(--ink); }
+        .sect-chip.on { color:#fff; background:transparent; border-color:transparent; }
+        .sect-chip { position:relative; z-index:1; transition:color var(--t-swap) var(--ease), background var(--t-swap) var(--ease), border-color var(--t-swap) var(--ease); }
+        .sect-strip { position:relative; }
+        .sect-pill { position:absolute; left:0; top:0; z-index:0; border-radius:999px; background:var(--ink); pointer-events:none;
+          transition:transform var(--t-wipe) var(--ease-bloop), width var(--t-wipe) var(--ease-bloop), opacity var(--t-swap) var(--ease); }
+        @media (prefers-reduced-motion: reduce) { .sect-pill { transition:opacity var(--t-swap) linear; } }
 
         /* --- bottom bar: the tools ---
            The bar floats rather than sitting welded to the bottom edge. An
@@ -17281,4 +17286,4 @@ function ensureStyleNamed(id, css) {
 }
 
 /* What the manager's file (Manager.jsx) reads from here. */
-export { ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, settleReveals, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
+export { buzz, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, settleReveals, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
