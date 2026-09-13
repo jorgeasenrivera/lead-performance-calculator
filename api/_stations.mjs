@@ -606,3 +606,17 @@ export function tightenPlan(plan, { pad = 14 } = {}) {
   if (plan.door) out.door = { ...plan.door, y: up(plan.door.y) };
   return out;
 }
+
+/* ---- what "covered" means, per store ----
+   The day's line on the desk paints an hour green once the room is covered.
+   How many desks that takes is a floor decision, not a technical one: a
+   six-desk BDC that runs three people is fully covered, and a six-desk room
+   that needs five is not. The default is half the room, rounded up, which is
+   what the bar used before this was settable. */
+export function coverLineOf(config, storeId, seatCount) {
+  const st = ((config && config.stores) || []).find((x) => x && x.id === storeId);
+  const n = st && Number(st.coverAt);
+  const seats = Math.max(1, Number(seatCount) || 1);
+  if (Number.isFinite(n) && n >= 1) return Math.min(seats, Math.round(n));
+  return Math.ceil(seats / 2);
+}
