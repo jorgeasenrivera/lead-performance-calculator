@@ -7217,7 +7217,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
             nextSub={nextP ? `waiting ${qWaitLabel(qMinsSince(nextP.joinedAt))}` : null}
             waitingNames={withoutTest(line).map((p) => realName(p.id))}
             accent="#0FB37E" kind="floor" metrics={M}
-            assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "next")}
+            assignLabel={"Assign " + (nextNm ? nextNm.split(" ")[0] : "the up")}
             onAssign={assignNext} assignDisabled={busy || availCount === 0} assignBusy={busy} />
         );
       })()}
@@ -26329,8 +26329,8 @@ button.da-lbrow { cursor:pointer; }
 .fh-stack i { width:30px; height:30px; border-radius:50%; border:2px solid #fff; margin-left:-8px;
         display:inline-flex; align-items:center; justify-content:center; color:#fff;
         font:700 9.5px var(--font-mono); font-style:normal; }
-.fh-go { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:12px; cursor:pointer;
-        padding:12px 18px; font:700 12px var(--font-display); color:var(--hC); background:#fff;
+.fh-go { display:inline-flex; align-items:center; gap:7px; border:0; border-radius:12px; cursor:pointer; min-height:40px;
+        padding:0 18px; font:700 13px var(--font-display); color:#fff; background:var(--facc, #10B981);
         box-shadow:0 10px 24px -12px rgba(12,24,18,.6); flex:0 0 auto; margin-left:auto; }
 .fh-go:disabled { opacity:.5; cursor:default; box-shadow:none; }
 .fh-kpis { margin-top:18px; }
@@ -27462,7 +27462,11 @@ button.da-lbrow { cursor:pointer; }
 .fr-b{ flex:1 1 44%; min-height:58px; border-radius:16px; border:2px solid var(--frline); background:#fff; color:var(--frink); font:700 16px var(--font-ui);
   display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 12px; }
 .fr-b:disabled{ opacity:.45; }
-.fr-b.pri{ flex-basis:100%; min-height:64px; font-size:17px; background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
+/* One primary (consistency pass, item 2): the decision is filled in the
+   room's own colour at one height on the phone (48 px); everything else
+   is a ghost. The go button had no rule and looked like the ghosts beside it. */
+.fr-b{ min-height:48px; }
+.fr-b.pri, .fr-b.go{ flex-basis:100%; min-height:48px; font-size:16px; background:var(--frp2d); border-color:var(--frp2d); color:#fff; }
 .fr-why{ display:flex; gap:6px; flex-wrap:wrap; padding:10px 16px 12px; border-bottom:1px solid var(--frline); background:#F3F6F2; }
 .fr-why button{ padding:9px 12px; border-radius:10px; border:1.5px solid var(--frp2d); background:#fff; color:var(--frp2d); font:700 13px var(--font-ui); }
 .fr-empty{ margin:0; padding:14px 16px 18px; font:500 13px var(--font-ui); color:var(--frink3); }

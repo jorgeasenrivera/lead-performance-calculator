@@ -237,3 +237,13 @@ test("consistency pass, items 1, 4, 7 and 9: one close, one name each, honest ic
   assert.ok(/glyph="dash" size=\{13\} \/> Nothing logged today/.test(mgr), "nothing logged is a dash, not a minus");
   assert.ok(!/drawer-item[\s\S]{0,400}<ImportBadge/.test(mgr), "the drawer no longer repeats the dock's import count");
 });
+
+test("consistency pass, items 2, 3, 5, 6 and 8: one primary, one status control, three shapes, two bars one language, help is help", () => {
+  assert.ok(/\.fr-b\.pri, \.fr-b\.go\{ flex-basis:100%; min-height:48px; font-size:16px; background:var\(--frp2d\);/.test(mgr), "the room's go button is the primary, 48 px on the phone");
+  assert.ok(/\.fh-go \{[^}]*min-height:40px;[^}]*color:#fff; background:var\(--facc, #10B981\);/.test(mgr) && /\.lpc \.btn\.btn-primary\{ min-height:40px; \}/.test(core), "the floor's assign is a filled 40 px primary like the desk's");
+  assert.ok(/<SfStatusSelect value=\{st\} variant=\{LEAD_VARIANTS\.line\} flags=\{LINE_SELF_FLAGS\} onPick=\{pick\} \/>/.test(core), "the line wears the floor's status pill");
+  assert.ok(/\.lpc \.sect-strip\{ background:rgba\(118,118,128,\.14\); border-radius:12px;/.test(core) && /\.lpc \.sect-strip \.sect-pill\{ background:rgba\(255,255,255,\.92\); border-radius:9px;/.test(core), "the phone's strip is the desk's strip");
+  assert.ok(/\.mc-you \.mc-seg3 button\.on\{ background:#8FD8AF; color:#12251B; \}/.test(core) && /\.lpc \.qpick \.qpick-btn\{ flex-direction:row;[^}]*border-radius:999px; background:var\(--qa\); color:#fff;/.test(core), "the corner's three-ways are the status pill; Up Next's tiles are tool pills");
+  assert.ok(/<span className="ar-lbl">\{LABEL\[t\]\}<\/span>/.test(core) && /display:flex; padding:4px; border-radius:26px;/.test(core), "the salesperson's bar names its rooms and shares the dock's geometry");
+  assert.ok(/onHelp=\{\(\) => \{ buzz\(8\); setHelpPanel\(true\); \}\} onYou=\{\(\) => \{ buzz\(8\); setHelpOpen\(true\); \}\}/.test(core) && /className="mc-me" onClick=\{onYou\} aria-label="You"/.test(core), "the ? is help; the initials are You");
+});
