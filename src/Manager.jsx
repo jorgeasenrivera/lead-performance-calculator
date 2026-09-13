@@ -3602,49 +3602,84 @@ function TestLink({ storeId, date, token, param }) {
   );
 }
 
-/* ---- printable sign-in poster (matches the app font; NextUp-ready) ---- */
-async function printQueueSignIn({ store, url, date, by }) {
+/* ---- printing, in one place --------------------------------------------
+   Sage opened a print window five ways: the one-pager, the month-end recap,
+   all the recaps at once, and a sign-in poster for each of the two rooms. Each
+   carried its own window.open, its own pop-up warning, its own doctype and
+   head and its own call to print — five copies of the same six lines, and a
+   blocked pop-up reported five different ways.
+
+   One opener now, one page writer, and one poster that takes the room.
+
+   What is NOT merged, against what the audit page proposed: the one-pager and
+   the month-end recap. Read side by side they are not one page with a
+   different span. The one-pager is a plan for the month running — goal, pace,
+   what to do this week. The recap is a verdict on the month finished —
+   closing against standard, the plays, and two signatures at the bottom.
+   Welding them would cost both. They share the window and the chrome; their
+   bodies stay their own. */
+function printPage({ name, width = 850, height = 1050, title, head = "", css = "", body, warn, delay = 400 }) {
+  const w = window.open("", name, `width=${width},height=${height}`);
+  if (!w) { toast(warn || "Allow pop-ups for this site to print."); return null; }
+  w.document.open();
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${head}<style>${css}</style></head><body>${body}</body></html>`);
+  w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, delay);
+  return w;
+}
+
+/* The sign-in poster. Two rooms, one page: everything below was identical in
+   the phone line's copy and the floor's except the colour, the glyph and three
+   lines of words, which is exactly what an argument is for. */
+const SIGN_IN_POSTER = {
+  line: { win: "lpc_qr_", head: "Phone Line", tint: "#4c8bf5", glyph: "phone", banner: "Phone Opportunities",
+    h1: "Get in Line",
+    sub: "Pick your name to claim your spot for the next phone opportunity. No app, no login. This code only works today." },
+  floor: { win: "lpc_floor_", head: "Live Floor", tint: "#0f9d76", glyph: "door", banner: "Live Floor",
+    h1: "Get on the Floor",
+    sub: "Pick your name to claim your spot for the next walk-up. Your spot updates on its own as customers check in and deals happen. No app, no login. This code only works today." },
+};
+async function printSignIn({ store, url, date, by, room = "line" }) {
+  const r = SIGN_IN_POSTER[room] || SIGN_IN_POSTER.line;
   let svg = "";
   try {
     const qrcode = await loadQRCode();
     const qr = qrcode(0, "M"); qr.addData(url); qr.make();
     svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
   } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
-  const w = window.open("", "lpc_qr_" + store.id, "width=800,height=1040");
-  if (!w) { toast("Allow pop-ups for this site to print the sign-in code."); return; }
   const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
-  const phoneSvg = pixSvgString("phone", 18);
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Phone Line · ${store.name}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-  <style>
+  const foot = by ? `Generated ${when} \u00b7 Printed by ${by}` : `Generated ${when}`;
+  printPage({
+    name: r.win + store.id, width: 800, height: 1040,
+    title: `${r.head} \u00b7 ${store.name}`,
+    warn: "Allow pop-ups for this site to print the sign-in code.",
+    head: `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">`,
+    css: `
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
-    .banner{display:inline-flex;align-items:center;gap:10px;background:#4c8bf5;color:#fff;font-weight:700;
+    .banner{display:inline-flex;align-items:center;gap:10px;background:${r.tint};color:#fff;font-weight:700;
       font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
     h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
     .store{font-size:22px;font-weight:700;color:#334;}
     .date{font-size:16px;color:#667;margin-top:6px;}
-    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid #4c8bf5;border-radius:24px;}
+    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid ${r.tint};border-radius:24px;}
     .qr svg{display:block;width:100%;height:auto;}
     .how{font-size:20px;font-weight:700;margin-top:10px;}
     .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
     .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
-    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
-  </style></head><body>
-    <div class="banner">${phoneSvg} Phone Opportunities</div>
-    <h1>Get in Line</h1>
+    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}`,
+    body: `
+    <div class="banner">${pixSvgString(r.glyph, 18)} ${r.banner}</div>
+    <h1>${r.h1}</h1>
     <div class="store">${store.name}</div>
     <div class="date">${nice}</div>
     <div class="qr">${svg}</div>
     <div class="how">Scan with your phone camera to sign in</div>
-    <div class="sub">Pick your name to claim your spot for the next phone opportunity. No app, no login. This code only works today.</div>
-    <div class="foot">${foot}</div>
-    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
-  </body></html>`);
-  w.document.close();
+    <div class="sub">${r.sub}</div>
+    <div class="foot">${foot}</div>`,
+  });
 }
 
 /* =========================================================================
@@ -4672,7 +4707,7 @@ function QueueRoomPhone({ config, store, data, row, line, salesRoster, realName,
       <div className="q-qr-box"><QueueQR url={queueSignInUrl(store.id, date, row && row.token, variant.param)} /></div>
       <p className="qr-pmuted">Salespeople scan it, pick their name, and they are {variant.count}.</p>
       <div className="qr-pbtns">
-        <button type="button" className="fr-b" onClick={() => printQueueSignIn({ store, url: queueSignInUrl(store.id, date, row && row.token, variant.param), date, by: userName })}>Print</button>
+        <button type="button" className="fr-b" onClick={() => printSignIn({ store, url: queueSignInUrl(store.id, date, row && row.token, variant.param), date, by: userName, room: "line" })}>Print</button>
         <button type="button" className="fr-b" onClick={regenToken}>New code</button>
       </div>
     </div>
@@ -5517,7 +5552,7 @@ function QueueTab({ config, store, data, onChange, userName, variant = LEAD_VARI
           <div className="q-qr-box"><QueueQR url={url} /></div>
           <p className="ts-note">Salespeople scan it, pick their name, and they're {variant.count}. No login.</p>
           <div className="q-qr-btns">
-            <button className="btn" onClick={() => printQueueSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+            <button className="btn" onClick={() => printSignIn({ store, url, date, by: userName, room: "line" })}>Print sign-in code</button>
             <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
             <button className="btn" onClick={regenToken}>New code</button>
           </div>
@@ -6060,49 +6095,6 @@ function floorApplyEvents(cur, events, store) {
 }
 
 /* ---- printable sign-in poster (SmartFloor branded) ---- */
-async function printFloorSignIn({ store, url, date, by }) {
-  let svg = "";
-  try {
-    const qrcode = await loadQRCode();
-    const qr = qrcode(0, "M"); qr.addData(url); qr.make();
-    svg = qr.createSvgTag({ cellSize: 10, margin: 1, scalable: true });
-  } catch (e) { svg = "<p>QR unavailable. Reopen and try again.</p>"; }
-  const w = window.open("", "lpc_floor_" + store.id, "width=800,height=1040");
-  if (!w) { toast("Allow pop-ups for this site to print the sign-in code."); return; }
-  const when = new Date().toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-  const nice = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const foot = by ? `Generated ${when} · Printed by ${by}` : `Generated ${when}`;
-  const doorSvg = pixSvgString("door", 18);
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Live Floor · ${store.name}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0b1220;padding:48px 44px;text-align:center;}
-    .banner{display:inline-flex;align-items:center;gap:10px;background:#0f9d76;color:#fff;font-weight:700;
-      font-size:16px;letter-spacing:.16em;text-transform:uppercase;padding:10px 22px;border-radius:999px;}
-    h1{font-size:52px;font-weight:700;margin:20px 0 4px;letter-spacing:-.02em;}
-    .store{font-size:22px;font-weight:700;color:#334;}
-    .date{font-size:16px;color:#667;margin-top:6px;}
-    .qr{width:360px;max-width:70vw;margin:30px auto 14px;padding:22px;border:3px solid #0f9d76;border-radius:24px;}
-    .qr svg{display:block;width:100%;height:auto;}
-    .how{font-size:20px;font-weight:700;margin-top:10px;}
-    .sub{font-size:15px;color:#667;margin-top:8px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.5;}
-    .foot{margin-top:38px;font-size:12px;color:#99a;border-top:1px solid #e5e7eb;padding-top:14px;}
-    @media print{body{padding:24px;} .banner{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
-  </style></head><body>
-    <div class="banner">${doorSvg} Live Floor</div>
-    <h1>Get on the Floor</h1>
-    <div class="store">${store.name}</div>
-    <div class="date">${nice}</div>
-    <div class="qr">${svg}</div>
-    <div class="how">Scan with your phone camera to sign in</div>
-    <div class="sub">Pick your name to claim your spot for the next walk-up. Your spot updates on its own as customers check in and deals happen. No app, no login. This code only works today.</div>
-    <div class="foot">${foot}</div>
-    <script>window.onload=function(){setTimeout(function(){window.print();},400);};<\/script>
-  </body></html>`);
-  w.document.close();
-}
 
 function floorSignInUrl(storeId, date, token) {
   const base = window.location.origin + window.location.pathname;
@@ -6768,7 +6760,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
       <div className="fr-hd"><div className="fr-hdt"><div className="fr-nm">Sign-in code</div></div></div>
       <div className="fr-qr"><QueueQR url={url} cell={5} /></div>
       <div className="fr-acts">
-        <button type="button" className="fr-b pri" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print</button>
+        <button type="button" className="fr-b pri" onClick={() => printSignIn({ store, url, date, by: userName, room: "floor" })}>Print</button>
         <button type="button" className="fr-b" onClick={() => window.open(url, "_blank")}>Open page</button>
         <button type="button" className="fr-b warn" onClick={regenToken}>New code</button>
       </div>
@@ -7301,7 +7293,7 @@ function FloorBoard({ config, store, data, onData, userName }) {
           <div className="q-qr-box"><QueueQR url={url} /></div>
           <p className="ts-note">Salespeople scan it, pick their name, and they're on the floor. Their spot updates on its own as customers check in and deals happen.</p>
           <div className="q-qr-btns">
-            <button className="btn" onClick={() => printFloorSignIn({ store, url, date, by: userName })}>Print sign-in code</button>
+            <button className="btn" onClick={() => printSignIn({ store, url, date, by: userName, room: "floor" })}>Print sign-in code</button>
             <button className="btn" onClick={() => window.open(url, "_blank")}>Open page</button>
             <button className="btn" onClick={regenToken}>New code</button>
           </div>
@@ -16435,16 +16427,11 @@ function printMonthEndRecap({ store, a, stats, ev, mtd, goalLast, goalThis, base
     '<div class="signs"><div class="sig"><div class="sig-line"></div><span>Salesperson signature</span></div><div class="sig"><div class="sig-line"></div><span>Manager signature</span></div></div>' +
     '</div>';
   if (returnHtml) return { css: CSS, sheet };
-  const w = window.open("", "lpc_recap_" + a.id, "width=850,height=1050");
-  if (!w) { toast("Allow pop-ups to print the month-end recap."); return; }
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Month-end recap</title><style>' + CSS + '</style></head><body>' + sheet + '</body></html>');
-  w.document.close();
-  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
+  printPage({ name: "lpc_recap_" + a.id, title: esc(a.name) + " - Month-end recap",
+    warn: "Allow pop-ups to print the month-end recap.", css: CSS, body: sheet, delay: 350 });
 }
 
 function printAllMonthEndRecaps({ store, config, data }) {
-  const w = window.open("", "lpc_recap_all", "width=850,height=1050");
-  if (!w) { toast("Allow pop-ups to print the recaps."); return; }
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const lm = new Date(); lm.setDate(1); lm.setMonth(lm.getMonth() - 1);
   const lmKey = lm.getFullYear() + "-" + String(lm.getMonth() + 1).padStart(2, "0");
@@ -16463,16 +16450,13 @@ function printAllMonthEndRecaps({ store, config, data }) {
     css = out.css;
     return out.sheet;
   }).filter(Boolean);
-  if (!sheets.length) { w.close(); toast("No associates with last month's data to print yet."); return; }
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>Month-end recaps &middot; ' + esc(store.name) + '</title><style>' + css + '.sheet + .sheet{page-break-before:always;}</style></head><body>' + sheets.join("") + '</body></html>');
-  w.document.close();
-  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 450);
+  if (!sheets.length) { toast("No associates with last month's data to print yet."); return; }
+  printPage({ name: "lpc_recap_all", title: "Month-end recaps &middot; " + esc(store.name),
+    warn: "Allow pop-ups to print the recaps.",
+    css: css + ".sheet + .sheet{page-break-before:always;}", body: sheets.join(""), delay: 450 });
 }
 
 function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ratios, goal, workingDays, elapsedDays, topAvg, topCount, act, data }) {
-  const w = window.open("", "lpc_onepager_" + a.id, "width=900,height=1100");
-  if (!w) { toast("Allow pop-ups for this site to print the one-pager."); return; }
-
   const delivered = oyoUnits(mtd);
   const calElapsed = Math.min(workingDays, Math.max(1, elapsedDays ?? workingDaysElapsed()));
   const dataDays = Math.max(1, mtd.daysElapsed);
@@ -16675,8 +16659,7 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
     chanStat("Internet", "internet", stats.internetPct) +
   '</div>';
 
-  const html =
-'<!doctype html><html><head><meta charset="utf-8"><title>' + esc(a.name) + ' - Coaching</title><style>' +
+  const CSS =
 '@page { size: letter portrait; margin: 10mm; }' +
 '* { box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }' +
 /* Four greys and nothing else. The sheet is printed on a mono laser, so green,
@@ -16744,7 +16727,8 @@ function printOnePager({ store, config, a, stats, ev, restriction, mtd, base, ra
 '.chg-f { display:flex; justify-content:space-between; font-size:9px; color:#5B6874; font-weight:700; margin-top:1px; }' +
 '.note { font-size:9.5px; color:#5B6874; }' +
 '.foot { margin-top:auto; padding-top:7px; border-top:1px solid #C9CFCA; font-size:9px; color:#8B95A1; }' +
-'</style></head><body><div class="sheet">' +
+'';
+  const sheet = '<div class="sheet">' +
 
 '<div class="hd">' +
   '<div><div class="nm">' + esc(a.name) + '</div>' +
@@ -16832,12 +16816,12 @@ alertHtml +
 '</div>' +
 
 '<div class="foot">Every number here is from your own reported activity and delivered rates. This is a coaching tool, not a scorecard.</div>' +
-'</div></body></html>';
+'</div>';
 
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
-  setTimeout(function () { w.focus(); w.print(); }, 400);
+  printPage({ name: "lpc_onepager_" + a.id, width: 900, height: 1100,
+    title: esc(a.name) + " - Coaching",
+    warn: "Allow pop-ups for this site to print the one-pager.",
+    css: CSS, body: sheet });
 }
 
 /* ---- where a number came from, as a picture ------------------------------
