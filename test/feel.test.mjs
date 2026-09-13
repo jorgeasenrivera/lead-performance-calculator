@@ -14,6 +14,7 @@ import fs from "node:fs";
 const core = fs.readFileSync(new URL("../src/LeadPerformanceCalculator.jsx", import.meta.url), "utf8");
 const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf8");
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
+const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
 
 test("the status controls are never greyed out for a round trip", () => {
@@ -320,4 +321,15 @@ test("five-second pass, item 2: the shortfall is drawn, and its height is the se
   assert.ok(!/ch-short|s2-hbar\.ch-near|animation:chShort/.test(mgr), "nothing flashes and nothing is outlined");
   assert.ok(/<span className="s2-mklbl s2-hlbl"><i className="s2-hid" style=\{\{ background: ident \}\} \/>\{c\.label\}<\/span>/.test(mgr), "the channel's identity is a dot by its name");
   assert.ok(/const col = t \? t\.col : "rgba\(255,255,255,\.3\)";/.test(mgr), "the fill takes the verdict, not the identity");
+});
+
+test("the record slims down: backups prune by what is on the server, day rows have a window, restore points are two, no legacy stars", () => {
+  assert.ok(/async function pruneBackups\(keep\) \{/.test(core) && /\.select\("key"\)\.like\("key", "lpc:backup:%"\)/.test(core), "the prune asks the server what is actually there");
+  assert.ok(/\.select\("key"\)\.like\("key", "lpc:config:backup:%"\)/.test(core), "the orphaned meta rows go with them");
+  assert.ok(/await saveShared\(BACKUP_INDEX_KEY, keep\);\n\s*await pruneBackups\(keep\);/.test(core), "every backup run prunes");
+  assert.ok(/const BOARD_DAYS = 45;/.test(core) && /async function pruneBoardDays\(storeId\) \{/.test(core), "the day rows have a window");
+  assert.ok(/const GOAL_LOOKBACK = 21;/.test(core), "and the window clears the longest read of them by a fortnight");
+  assert.ok(/\]\.slice\(0, 2\),/.test(core) && /\]\.slice\(0, 2\),/.test(mgr) && /\.\.\.\(next\.snapshots \|\| \[\]\)\]\.slice\(0, 2\);/.test(ing), "a row carries two restore points, not six, eight or twelve");
+  assert.ok(!/data\.stars\?\.\[/.test(core + mgr) && !/const starsFor/.test(mgr), "the star count RockEd replaced is no longer read");
+  assert.ok(/return null;\s*\/\/ no RockEd mark at all/.test(core), "no mark means no mark");
 });

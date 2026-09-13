@@ -9170,14 +9170,13 @@ function CheckOutTracker({ config, store, data, onChange, query = "", onCoach = 
   const activityDays = Object.keys(data.activity || {}).sort().reverse();
   const dayData = data.activity?.[day] || {};
 
-  const starsFor = (k) => data.stars?.[day]?.[k];
-  // RockEd is now a simple qualified/not-qualified mark. Cycle: unset → qualified → not.
+  /* RockEd is a qualified mark. The star count it replaced is no longer read
+     anywhere: nobody can enter one, and two ways to say one thing is one too
+     many. Anything already marked qualified stays qualified. */
   const qualState = (k) => {
     const q = data.qualified?.[day]?.[k];
     if (q === true) return "yes";
     if (q === false) return "no";
-    const s = data.stars?.[day]?.[k]; // legacy stars still count as qualified
-    if (s != null) return s >= (std.rockEdStars ?? 40) ? "yes" : "no";
     return "unset";
   };
   /* Two states now, not three. Unset and Not yet meant the same thing to anybody
@@ -15474,7 +15473,7 @@ function UploadHistory({ data, onChange, storeId }) {
           excluded: current.excluded,
         })) },
         ...(current.snapshots || []),
-      ].slice(0, 12),
+      ].slice(0, 2),
       // the undo itself is undoable
       importLog: (current.importLog || []).filter((x) => new Date(x.t) < new Date(u.t)),
       // these are yours, not the report's: never rewind them
