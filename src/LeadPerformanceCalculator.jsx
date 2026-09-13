@@ -705,57 +705,6 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
 }
 
 
-/* Fades sections in as they come into view. One-shot per element: once it has
-   arrived it is left alone, so scrolling back up never re-triggers anything. */
-function useReveal() {
-  useEffect(() => {
-    const els = document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)");
-    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || typeof IntersectionObserver === "undefined") {
-      els.forEach((el) => el.classList.add("is-in"));
-      /* Cards that appear LATER still need marking, or they sit at opacity 0
-         forever -- the moving path below has a MutationObserver for exactly
-         this, and skipping it here left every late-mounted card (a settings
-         panel opened on demand, a coaching card) invisible for anyone with
-         reduce-motion on, which is every TV this app runs on. */
-      const moQuiet = new MutationObserver((muts) => {
-        for (const m of muts) {
-          for (const n of m.addedNodes) {
-            if (n.nodeType !== 1) continue;
-            if (n.matches && n.matches(".card, .reveal")) n.classList.add("is-in");
-            if (n.querySelectorAll) n.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => el.classList.add("is-in"));
-          }
-        }
-      });
-      moQuiet.observe(document.body, { childList: true, subtree: true });
-      return () => moQuiet.disconnect();
-    }
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        e.target.classList.add("is-in");
-        io.unobserve(e.target);
-      }
-    }, { rootMargin: "0px 0px -6% 0px", threshold: 0.04 });
-    const watch = (root) => root.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => io.observe(el));
-    watch(document);
-    // A card opened by a child component's own state never re-runs this effect,
-    // so it would sit at opacity 0 forever. Coaching cards did exactly that.
-    // Watching the tree means anything that appears later still gets revealed.
-    const mo = new MutationObserver((muts) => {
-      for (const m of muts) {
-        for (const n of m.addedNodes) {
-          if (n.nodeType !== 1) continue;
-          if (n.matches && n.matches(".card, .reveal")) io.observe(n);
-          if (n.querySelectorAll) watch(n);
-        }
-      }
-    });
-    mo.observe(document.body, { childList: true, subtree: true });
-    return () => { io.disconnect(); mo.disconnect(); };
-  });
-}
-
 /* The backdrop drifts against the page: scrolling drags it along at a fraction of
    the speed and it coasts to a stop rather than tracking the finger, and once the
    manager settles on a view the colours morph noticeably faster. Vars go on the
@@ -1598,7 +1547,6 @@ async function appendAudit(entry) {
 
 export default function LeadPerformanceCalculator() {
   useFavicon();
-  useReveal();
   useLivingBackground();
   const [config, setConfig] = useState(null);
   // Set during render rather than in an effect: children read the holiday set as
@@ -3112,14 +3060,6 @@ export default function LeadPerformanceCalculator() {
           document.querySelectorAll(".page, .board-page, .tab-page")
             .forEach((el) => { el.style.animation = "none"; });
         }, 640));
-        /* The new page's cards must be marked in-view BEFORE their first paint:
-           a card painted even one frame unmarked sits at translateY(20px), and
-           the .8s transition then rises it - vertical motion inside a sideways
-           move. The microtask runs after React's batched commit and before any
-           paint; the rAF is the backstop, and rAF callbacks also run pre-paint.
-           The double-rAF this replaces was the bug: its first frame PAINTED. */
-        queueMicrotask(settleReveals);
-        requestAnimationFrame(settleReveals);
         /* The last block starts 66ms in and runs 560ms, so the classes have to
            outlast 626ms or the animation is stripped off mid-landing and the
            block snaps the rest of the way. That snap is the "no landing" note. */
@@ -5237,24 +5177,10 @@ const WARP_ORDER = ["perf", "activity", "board", "floor", "line", "online"];
    halfway through leaving is exactly what reads as a flicker. */
 const TOOL_EXIT = 260;
 let toolTimers = [];
-/* Cards fade up as they scroll into view, and until the observer has marked one
-   it sits at opacity 0. A block that has just been animated into place has not
-   been through that yet, so the frame after a move ended it could drop straight
-   back out — a landing followed by a blink. Anything on screen when a move
-   finishes is, by definition, in view: say so before letting go of it. */
-function settleReveals() {
-  if (typeof document === "undefined") return;
-  const h = window.innerHeight || 0;
-  document.querySelectorAll(".card:not(.is-in), .reveal:not(.is-in)").forEach((el) => {
-    const r = el.getBoundingClientRect();
-    if (r.top < h && r.bottom > 0) el.classList.add("is-in");
-  });
-}
 function clearToolMove() {
   toolTimers.forEach(clearTimeout);
   toolTimers = [];
   if (typeof document === "undefined") return;
-  settleReveals();
   document.documentElement.classList.remove("tool-move", "tool-exit", "tool-enter", "tool-dir-r", "tool-dir-l");
 }
 const WARP_HUE = { perf: "#404E44", activity: "#404E44", board: "#404E44",
@@ -12708,22 +12634,27 @@ html:has(.q-page.sf), body:has(.q-page.sf),
         padding:22px 24px;
         box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,54,86,.07);
         margin-bottom:20px;
-        transition: opacity .8s var(--ease), transform .8s var(--ease), box-shadow .4s var(--ease); }
-/* Sections rise into place as they enter the viewport. Hover only deepens
-         the shadow; lifting the card would fight the reveal's own transform. */
+        transition: box-shadow var(--t-wipe) var(--ease); }
+/* Arrivals on the tokens. A card is visible at rest; nothing waits for a
+         scroll. When a page mounts its cards arrive from six pixels below, 40 ms
+         apart, on the settle token, and that is the only arrival. A tool or
+         section move has its own sideways entrance, written later in this
+         sheet, which wins for as long as the move is on. */
+/* :where keeps this at zero specificity, so a tool or section move's own
+         entrance, written later, wins for as long as the move is on. The
+         blocks are the page's direct children, the same units the move takes. */
+:where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *) { animation: cardIn var(--t-settle) var(--ease) both; }
+:where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *):nth-child(2) { animation-delay:40ms; }
+:where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *):nth-child(3) { animation-delay:80ms; }
+:where(.page > *:not(.board-page):not(.tab-page), .board-page > *, .tab-page > *):nth-child(n+4) { animation-delay:120ms; }
+@keyframes cardIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { :where(.page > *, .board-page > *, .tab-page > *) { animation:none; } }
 /* Colour arrives as a soft bloom out of the top-left corner rather than a
          bar down the edge. Same information, far less repetition down the page. */
 .card { isolation:isolate; }
 .card::after { content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
         border-radius:inherit;
         background: radial-gradient(108% 82% at 0% 0%, var(--tint, transparent), transparent 62%); }
-.js-anim .card:not(.is-in) { opacity:0; transform: translateY(20px); }
-/* And during a tool move the reveal TRANSITION is off entirely: if a card
-         is ever marked late, it snaps into place inside the slide - invisible -
-         instead of rising twenty pixels over most of a second. The vertical
-         rise belongs to scrolling, never to a sideways move. */
-.tool-move .card { transition: box-shadow .4s var(--ease); }
-.card.is-in { opacity:1; transform:none; }
 .card:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.92), var(--shadow-3); }
 /* ---- login ---- */
 /* ---- the ground: blobs and a dot field, behind both screens ----
@@ -17286,4 +17217,4 @@ function ensureStyleNamed(id, css) {
 }
 
 /* What the manager's file (Manager.jsx) reads from here. */
-export { buzz, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, settleReveals, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };
+export { buzz, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed };

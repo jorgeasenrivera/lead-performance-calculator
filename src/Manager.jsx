@@ -46,7 +46,7 @@ import { notesFor, owesNote, makeNote, addNote,
   makeLift, isLifted, readFloorDays, standingFor, gates as gatesMyDay } from "../api/_goal-standing.mjs";
 import { reconcile as reconcilePresence, judge as judgePresence, upheldFor, onOffDayWorked } from "../api/_floor-presence.mjs";
 import qrcodeGen from "qrcode-generator";
-import { buzz, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, settleReveals, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
+import { buzz, ACCOUNT_KINDS, AUDIT_KEY, AUTH_ENABLED, BACKUP_INDEX_KEY, CHANNEL_LIST, CONFIG_KEY, DEFAULT_ACTIVITY_STANDARDS, DEFAULT_BRAND, DEFAULT_CHECKLIST, DEFAULT_FLOOR_PLAN, DEFAULT_TAGS, DEFAULT_TIERS, DmNumber, FLOOR_TABLE, GROUP_HOLIDAYS, KEEP_BACKUPS, LANG_NAMES, LEADERBOARD_REPORTS, LEAD_VARIANTS, LoadingScreen, Logo, Overlay, PIX, PUBLIC_STORES_KEY, PixIcon, PlanMap, QUEUE_TABLE, QUEUE_TOOLS, QueueQR, REPORTS, STORE_TZ, STRENGTH_METRICS, SUPABASE_ANON_KEY, SUPABASE_URL, Shell, Style, TEST_ID, TICKET_PREFIX, activeAssists, apiCall, appendAudit, assistAge, authResetPassword, backupMetaKey, backupStoreKey, currentStreak, dayIn, dayOfMonth, dayPoints, departedNames, departedOnFor, emptyStoreData, extractPdfLinesInBrowser, floorPlanOf, floorRowId, fmtAssistAge, fmtNum, frLastTap, greetingFor, hueFromName, initialsOf, isOff, isTestId, jumpOwnsEntrance, langName, lastDays, lastSaveError, loadActivityRows, loadFloorDays, loadFloorRow, loadPapa, loadPdfJs, loadQRCode, loadQueueIdentities, loadQueueRow, loadRowIfChanged, loadShared, loadStore, loadStoreStamp, looksAbsent, monthLabel, mutateFloorRow, mutateQueueIdentities, mutateQueueRow, normThresholds, publicSlice, publishBoard, qFirstToken, qLev, qMinsSince, qNormName, qNowIso, qWaitLabel, queueRowId, queueSignInUrl, queueTool, saveShared, saveStoreCAS, saveTicket, shortDay, shortLabel, stnFirst, supabase, today, uid, useAssistTick, useBuildWatchdog, useHeld, useLiveRow, usePhoneLayout, useStationHours, useTrackLight, ym, ensureStyleNamed } from "./LeadPerformanceCalculator.jsx";
 
 /* Lazy on purpose: the map and Leaflet with it are a hundred kilobytes that a
    salesperson's phone, the TV board, and every manager who never opens the lot
@@ -1090,7 +1090,6 @@ function clearTabMove() {
   tabTimers.forEach(clearTimeout);
   tabTimers = [];
   if (typeof document === "undefined") return;
-  settleReveals();
   document.documentElement.classList.remove("tab-move", "tab-exit", "tab-enter", "tab-dir-r", "tab-dir-l");
 }
 
@@ -17461,6 +17460,13 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
   const tabRefs = useRef({});
   const [pill, setPill] = useState(null);
   const mounted = useRef(false);
+  /* The bar rises from below the foot once the first page is there, as the
+     rooms' bar does, rather than sitting on screen before anything it points
+     at. And when an import is due the centre button asks, twice, the way a
+     FlyBy asks on a salesperson's phone. */
+  const [up, setUp] = useState(false);
+  useEffect(() => { const r = requestAnimationFrame(() => setUp(true)); return () => cancelAnimationFrame(r); }, []);
+  useEffect(() => { if (ready) buzz("asked"); }, [ready]);
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (!bar) { setPill(null); return; }
@@ -17534,7 +17540,7 @@ function BottomNav({ appModule, onToolChange, storeData, onImport, onMore }) {
         it a containing block for fixed descendants — a scrim rendered inside it
         would be the size of the bar, not the screen. */}
     {picking && <div className="botnav-scrim" onClick={() => setPicking(false)} aria-hidden="true" />}
-    <nav className="botnav no-print" aria-label="Tools" ref={barRef}>
+    <nav className={"botnav no-print" + (up ? " up" : "")} aria-label="Tools" ref={barRef}>
       {/* Rendered even with no measurement yet, at opacity 0, so the first paint
           after a tool change animates from where the pill was rather than
           appearing under the new tab. */}
@@ -25011,6 +25017,7 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           line-height:1.6; border-radius:999px; vertical-align:1px; }
         .botnav { position:fixed; left:10px; right:10px; z-index:340; display:flex;
           align-items:flex-end;
+          transform:translateY(calc(100% + 40px)); transition:transform var(--t-settle) var(--spring);
           bottom:calc(9px + var(--sab));
           padding:7px 5px 8px; border-radius:26px;
           background:rgba(255,255,255,.82); backdrop-filter:blur(22px) saturate(180%);
@@ -25043,6 +25050,11 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
           transform:translateX(-50%); display:flex; align-items:center; justify-content:center;
           box-shadow:0 10px 24px -8px rgba(16,40,68,.5);
           transition:transform var(--t-wipe) var(--ease-bloop); }
+        .botnav.up { transform:none; }
+        .botnav-fab.ready { animation:fabAsk 1.2s var(--ease) 2; }
+        @keyframes fabAsk { 0%, 100% { box-shadow:0 10px 24px -8px rgba(16,40,68,.5); }
+          30% { box-shadow:0 0 0 7px color-mix(in srgb, var(--sp, var(--blue)) 28%, transparent), 0 10px 24px -8px rgba(16,40,68,.5); } }
+        @media (prefers-reduced-motion: reduce) { .botnav { transition:none; } .botnav-fab.ready { animation:none; } }
         .botnav-fablbl { position:absolute; left:-8px; right:-8px; bottom:4px; text-align:center;
           font-size:9px; font-weight:700; color:var(--ink-3); white-space:nowrap;
           pointer-events:none; }

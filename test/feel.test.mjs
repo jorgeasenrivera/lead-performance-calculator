@@ -165,3 +165,13 @@ test("the phone's section chips glide under one pill, on the wipe token and the 
   assert.ok(/\.sect-pill \{ position:absolute;[^}]*transition:transform var\(--t-wipe\) var\(--ease-bloop\), width var\(--t-wipe\) var\(--ease-bloop\)/.test(core), "it glides on the tokens");
   assert.ok(/\.sect-chip\.on \{ color:#fff; background:transparent; border-color:transparent; \}/.test(core), "the chip itself no longer paints the highlight");
 });
+
+test("arrivals on the tokens: nothing waits for a scroll, cards arrive 40 ms apart, the dock rises, Import asks", () => {
+  assert.ok(!/is-in|settleReveals|useReveal/.test(core + mgr), "the scroll observer and its patch are gone");
+  assert.ok(/:where\(\.page > \*:not\(\.board-page\):not\(\.tab-page\), \.board-page > \*, \.tab-page > \*\) \{ animation: cardIn var\(--t-settle\) var\(--ease\) both; \}/.test(core), "the page's blocks arrive on the settle token, under any move's own entrance");
+  assert.ok(/:nth-child\(2\) \{ animation-delay:40ms; \}/.test(core) && /:nth-child\(n\+4\) \{ animation-delay:120ms; \}/.test(core), "40 ms apart");
+  assert.ok(/\.card \{[^}]*transition: box-shadow var\(--t-wipe\) var\(--ease\); \}/.test(core), "a card no longer transitions opacity or transform");
+  assert.ok(/className=\{"botnav no-print" \+ \(up \? " up" : ""\)\}/.test(mgr) && /\.botnav\.up \{ transform:none; \}/.test(mgr), "the dock rises after the first paint");
+  assert.ok(/\.botnav-fab\.ready \{ animation:fabAsk 1\.2s var\(--ease\) 2; \}/.test(mgr) && /if \(ready\) buzz\("asked"\)/.test(mgr), "Import asks when it is due");
+});
+
