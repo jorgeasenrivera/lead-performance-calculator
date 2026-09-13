@@ -7458,15 +7458,30 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
   useEffect(() => { const t = setTimeout(() => setWarm(true), 2500); return () => clearTimeout(t); }, []);
   if (warm) { if (list.includes("line")) seen.current.line = true; if (list.includes("floor")) seen.current.floor = true; }
   const scrolls = useRef({ floor: 0, line: 0 });
-  /* One object across rooms. A tab used to cut from one room to the other.
-     Now the salesperson's own mark, the mint pip on the floor's rail or the
-     numbered circle on the line's cord, lifts off one and lands on the other,
-     changing size and colour on the way, on the wipe token and the spring.
-     Under it the rooms swap through a dot dissolve, the way the mark itself
-     is drawn: the room leaving breaks into dots over the exit token while
-     the room arriving fills in from dots over the swap token. The switch is
-     still drawn at once; the mark and the dots are decoration on top, and a
-     phone that asks for less motion gets the cut it had. */
+  /* ---- one gesture, one clock ----
+     The salesperson's own mark, the mint pip on the floor's rail or the
+     numbered circle on the line's cord, lifts off one room and lands on the
+     other; under it the rooms travel sideways in the direction the bar moved,
+     the arriving one in from its edge and the leaving one a third of the way
+     after it, with a sheen riding the arriving edge.
+
+     It used to be a dot dissolve, and it read as four separate events rather
+     than one gesture, for four reasons worth keeping written down:
+
+       - four clocks. The dots left over the exit token, arrived over the swap
+         token, the mark flew over the wipe token and the bar's pill glided on
+         a fifth number of its own. Nothing landed together.
+       - the dots were stepped, in threes and fives. Stepped is judder by
+         definition; at 140ms in three holds it is three frames of stutter.
+       - the classes came off at swap + 20ms while the mark was still flying
+         for another 180ms, so the room being left vanished mid-flight.
+       - both rooms were in normal flow while both were visible, so the page
+         briefly became two rooms tall and the content under the thumb moved.
+
+     So: one duration (the wipe token) and one curve for the rooms, the mark
+     and the bar's pill; the room being left is taken out of flow for the
+     duration; and nothing is stepped. A phone that asks for less motion still
+     gets the cut it had. */
   const [cross, setCross] = useState(null);
   const crossTimer = useRef(null);
   const flight = useRef(null);
@@ -7485,9 +7500,13 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           bg: cs.backgroundImage, bgc: cs.backgroundColor, shadow: cs.boxShadow };
       }
     } catch (e) {}
-    setCross({ from, to, src, n: Date.now() });
+    /* Which way the bar moved. The line sits right of the floor, so going to
+       it brings the new room in from the right, as a page does. */
+    setCross({ from, to, src, dir: to === "line" ? 1 : -1, n: Date.now() });
     clearTimeout(crossTimer.current);
-    crossTimer.current = setTimeout(() => setCross(null), MOTION.swap + 20);
+    /* Held until the whole gesture is over, not until the dots were: pulling
+       these classes early is what made the old room disappear mid-flight. */
+    crossTimer.current = setTimeout(() => setCross(null), MOTION.wipe + 60);
   };
   useEffect(() => () => clearTimeout(crossTimer.current), []);
   useLayoutEffect(() => {
@@ -7496,6 +7515,16 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     let dest = null, b = null;
     try { dest = markOf(cross.to); b = dest && dest.getBoundingClientRect(); } catch (e) {}
     if (!b || !b.width || typeof dest.animate !== "function") return;
+    /* The room the mark is landing in is itself travelling, so its rect right
+       now is its start-of-slide position, not where it comes to rest. The
+       room's own translation is subtracted, which is exact and needs no
+       second frame. */
+    let dx = 0, dy = 0;
+    try {
+      const roomEl = dest.closest(".q-page.sf") || dest.closest(".ar-room");
+      const m = roomEl && new DOMMatrixReadOnly(getComputedStyle(roomEl).transform);
+      if (m) { dx = m.m41; dy = m.m42; }
+    } catch (e) { /* an older browser lands the mark a few pixels out, which is invisible */ }
     if (flight.current) flight.current.cancel();
     const cs = getComputedStyle(dest);
     const fly = document.createElement("span");
@@ -7507,8 +7536,8 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
     dest.style.visibility = "hidden";
     const anim = fly.animate([
       { transform: "translate(0,0)", width: a.w + "px", height: a.h + "px", backgroundImage: a.bg, backgroundColor: a.bgc, boxShadow: a.shadow },
-      { transform: `translate(${b.left - a.x}px, ${b.top - a.y}px)`, width: b.width + "px", height: b.height + "px", backgroundImage: cs.backgroundImage, backgroundColor: cs.backgroundColor, boxShadow: cs.boxShadow },
-    ], { duration: MOTION.wipe, easing: "cubic-bezier(.3,1.3,.4,1)", fill: "both" });
+      { transform: `translate(${b.left - dx - a.x}px, ${b.top - dy - a.y}px)`, width: b.width + "px", height: b.height + "px", backgroundImage: cs.backgroundImage, backgroundColor: cs.backgroundColor, boxShadow: cs.boxShadow },
+    ], { duration: MOTION.wipe, easing: "cubic-bezier(.35,.12,.2,1)", fill: "both" });
     const done = () => { dest.style.visibility = ""; fly.remove(); if (flight.current === anim) flight.current = null; };
     anim.onfinish = done; anim.oncancel = done;
     flight.current = anim;
@@ -7602,6 +7631,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
           for a screen the phone already had. Now it is the screen the phone
           already had. The hidden one is inert, so nothing in it can be
           tapped or focused, and it polls slowly until it is looked at. */}
+      <div className={"ar-stack" + (cross ? " x" : "")} style={cross ? { "--ar-dx": (cross.dir > 0 ? 1 : -1) * 26 + "%" } : null}>
       <div className={"ar-room" + (cross && cross.to === "line" ? " ar-in" : cross && cross.from === "line" ? " ar-out" : "")} data-room="line"
         hidden={room !== "line" && !(cross && cross.from === "line")} inert={room !== "line" ? "" : undefined}>
         {seen.current.line && (<RoomBoundary name="line">
@@ -7613,6 +7643,7 @@ function AssociateRooms({ config, store, date, account, onSignOut }) {
         {seen.current.floor && (<RoomBoundary name="floor">
           <FloorSignIn key={"floor:" + store + ":" + date} store={store} date={date} token={null}
             account={account} onSignOut={onSignOut} tab={tab} onTab={setTab} active={room !== "line"} onReady={onReady} /></RoomBoundary>)}
+      </div>
       </div>
       {tabs.length > 1 && (
         <div className={"ar-bar" + (ready ? " up" : "")} role="tablist" aria-label="Where to go">
@@ -14477,14 +14508,14 @@ input[type=number] { width:84px; }
 /* the strip that says the screen is the phone's memory, not the network */
 /* No connection: a bar across the top of the room in solid sand, dropping
    in on the spring; mint for a beat on the way back. */
-.ar-net{ position:fixed; z-index:102; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+.ar-net{ position:fixed; z-index:104; top:0; left:0; right:0; padding:calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
   display:flex; align-items:center; justify-content:center; gap:8px; background:#E4C98D; color:#15211B; white-space:nowrap;
   font:700 11px var(--sfmono, ui-monospace, monospace); letter-spacing:.08em; text-transform:uppercase; box-shadow:0 8px 24px -12px rgba(0,0,0,.6); pointer-events:none;
   animation:netIn var(--t-settle) var(--spring) both; }
 .ar-net.back{ background:#8FD8AF; animation:netIn var(--t-swap) var(--ease) both; }
 @keyframes netIn{ from{ transform:translateY(-110%); } to{ transform:none; } }
 /* Stale: online, nothing heard for over a minute. Small, top right, sand. */
-.ar-age{ position:fixed; z-index:102; top:calc(env(safe-area-inset-top, 0px) + 12px); right:14px; display:inline-flex; align-items:center; gap:6px;
+.ar-age{ position:fixed; z-index:104; top:calc(env(safe-area-inset-top, 0px) + 12px); right:14px; display:inline-flex; align-items:center; gap:6px;
   padding:4px 10px; border-radius:999px; border:1px solid rgba(228,201,141,.35); background:rgba(228,201,141,.12); color:#E4C98D;
   font:600 10.5px var(--sfmono, ui-monospace, monospace); letter-spacing:.06em; pointer-events:none; animation:ageIn var(--t-settle) var(--ease-bloop) both; }
 .ar-age i{ width:6px; height:6px; border-radius:50%; background:#E4C98D; animation:agePulse 1.8s ease-in-out infinite; }
@@ -14525,7 +14556,10 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
 .lpc .qpick .qpick-btn.on .qpick-ico{ background:rgba(255,255,255,.28); }
 /* One primary (item 2): 40 px on the desk. */
 .lpc .btn.btn-primary{ min-height:40px; }
-.ar-bar{ position:fixed; z-index:101; left:50%; transform:translate(-50%, calc(100% + 40px));
+/* Above the rooms, including a room in mid-travel. A tab bar is the one
+   thing on the screen that does not move when the screen behind it changes;
+   it went under the arriving sheet the moment that sheet was lifted. */
+.ar-bar{ position:fixed; z-index:105; left:50%; transform:translate(-50%, calc(100% + 40px));
   transition:transform var(--t-settle) var(--spring);
   bottom:calc(env(safe-area-inset-bottom, 0px) + 14px);
   display:flex; padding:4px; border-radius:26px;
@@ -14534,31 +14568,83 @@ html.net-off .q-page.sf{ --glow:rgba(140,150,160,.35); --a1:#7A8794; --a2:#8C97A
   box-shadow:0 10px 24px -10px rgba(0,0,0,.7); }
 .ar-ind{ position:absolute; left:4px; top:4px; bottom:4px; border-radius:22px;
   background:rgba(255,255,255,.15);
-  transition:transform .38s cubic-bezier(.3,1.6,.4,1); will-change:transform; }
+  /* The pill is part of the same gesture, so it takes the same clock and the
+     same curve as the rooms. It used to glide on a number of its own with a
+     big overshoot, and arrived after the room it was pointing at. */
+  transition:transform var(--t-wipe) cubic-bezier(.35,.12,.2,1); will-change:transform; }
 .ar-tab{ position:relative; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; width:72px; height:50px;
   border:0; background:none; cursor:pointer; color:rgba(255,255,255,.42);
   transition:color .2s; }
 .ar-tab.on{ color:#fff; }
 /* Up once the first room is there: it rises from below the foot on the spring. */
 .ar-bar.up{ transform:translateX(-50%); }
-/* One object across rooms. The rooms swap through a dot dissolve: a mask of
-   dots on an 8px grid, the room leaving shrinking its dots over the exit
-   token in three holds, the room arriving growing its dots over the swap
-   token in five, both stepped so it reads as LEDs rather than a crossfade.
-   Over them the salesperson's own mark flies between the rail and the cord. */
-@property --ar-r{ syntax:"<length>"; inherits:false; initial-value:0px; }
-.ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{
-  -webkit-mask-image:radial-gradient(circle, #000 var(--ar-r), transparent calc(var(--ar-r) + .5px));
-  mask-image:radial-gradient(circle, #000 var(--ar-r), transparent calc(var(--ar-r) + .5px));
-  -webkit-mask-size:8px 8px; mask-size:8px 8px; }
-.ar-room.ar-in > .q-page.sf{ animation:arDotsIn var(--t-swap) steps(5,end) both; }
-.ar-room.ar-out > .q-page.sf{ animation:arDotsOut var(--t-exit) steps(3,end) both; }
-@keyframes arDotsIn{ from{ --ar-r:0px; } to{ --ar-r:7px; } }
-@keyframes arDotsOut{ from{ --ar-r:7px; } to{ --ar-r:0px; } }
-.ar-fly{ position:fixed; z-index:101; border-radius:50%; display:grid; place-items:center; box-sizing:border-box;
+/* ---- one room travels in, the other follows it out ----
+   The arriving room comes in from its own edge and the leaving one goes a
+   third of that way after it, which is the parallax a phone uses to say the
+   two are one surface rather than two pictures. Both are on the wipe token
+   and one curve with no overshoot: a page arrives, it does not bounce.
+   Over them the salesperson's own mark flies between the rail and the cord,
+   on the same clock, and a sheen rides the arriving edge. */
+/* The layer that moves is the room's own page, not the div around it. A room
+   is a fixed, full-screen sheet at z-index 100; the div in the markup is a
+   zero-height handle. Putting the travel on the div would have made the div a
+   containing block for the sheet inside it, which is a different box in a
+   different place, and it is the sheet a thumb actually sees. */
+.ar-stack{ position:relative; }
+/* Under both sheets for the length of the switch, in the rooms' own ground.
+   Without it the sliver the leaving room uncovers is the shell behind, which
+   is a light grey, and a white edge on a black room is the one thing a phone
+   never shows. */
+.ar-stack.x::before{ content:""; position:fixed; inset:0; z-index:99; background:#06090F; pointer-events:none; }
+html.sun .ar-stack.x::before{ background:#2E4A38; }
+/* ---- the curve, and why this one ----
+   A transition a thumb STARTED by dragging should carry on at the speed of
+   the drag. A transition a thumb started by TAPPING starts from rest. The
+   curve here was the first kind: it covered 78 per cent of the distance in
+   the first quarter of the time, so the room landed in about 60ms and then
+   sat still for another 320 while the mark was still flying and the bar's
+   pill was still gliding. Three things finishing at three different moments
+   is what reads as disjointed, however short each one is.
+
+   This one starts from rest, does its real moving through the middle of the
+   gesture, and lands softly: 7 per cent of the distance in the first tenth of
+   the time, 58 by the first third, 81 at halfway, and still something left to
+   run at four fifths. Everything in the gesture is on it. */
+/* The arriving room is opaque and covers the one it is replacing, which is
+   what a pushed screen does. Both were crossfading before, and two rooms at
+   half opacity at the same moment is a double exposure: two headings, two
+   sets of Here, Lunch and Away, readable through each other. Nothing fades
+   now. The one leaving parallaxes a third of the way after it and dims, the
+   way a screen under another one is in shade.
+
+   The arriving sheet is lifted one step above the one it covers, because both
+   sit at the same z-index and are siblings: without it the room that happens
+   to be first in the markup wins, and the push runs backwards in one of the
+   two directions. */
+.ar-room.ar-in > .q-page.sf{ z-index:102;
+  animation:arPageIn var(--t-wipe) cubic-bezier(.35,.12,.2,1) both;
+  box-shadow:0 0 44px 10px rgba(0,0,0,.6); will-change:transform; }
+.ar-room.ar-out > .q-page.sf{ z-index:100;
+  animation:arPageOut var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; will-change:transform, filter; }
+@keyframes arPageIn{
+  from{ transform:translate3d(var(--ar-dx, 26%), 0, 0); }
+  to{ transform:translate3d(0, 0, 0); } }
+@keyframes arPageOut{
+  from{ transform:translate3d(0, 0, 0); filter:brightness(1); }
+  to{ transform:translate3d(calc(var(--ar-dx, 26%) * -.34), 0, 0); filter:brightness(.7); } }
+/* The sheen the switch is named for: a soft band of the room's own light that
+   crosses the arriving sheet once and is gone before it lands. */
+.ar-room.ar-in > .q-page.sf::after{ content:""; position:absolute; inset:0; z-index:3; pointer-events:none;
+  background:linear-gradient(100deg, transparent 26%, rgba(255,255,255,.13) 46%, rgba(255,255,255,.04) 60%, transparent 72%);
+  animation:arSheen var(--t-wipe) cubic-bezier(.35,.12,.2,1) both; }
+@keyframes arSheen{ from{ transform:translate3d(-160%, 0, 0); opacity:.85; }
+  80%{ opacity:.22; } to{ transform:translate3d(160%, 0, 0); opacity:0; } }
+.ar-fly{ position:fixed; z-index:106; border-radius:50%; display:grid; place-items:center; box-sizing:border-box;
   font-family:var(--font-mono); font-size:8.5px; font-weight:700; pointer-events:none; will-change:transform; }
 @media (prefers-reduced-motion: reduce){
-  .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; mask-image:none; -webkit-mask-image:none; }
+  .ar-room.ar-in > .q-page.sf, .ar-room.ar-out > .q-page.sf{ animation:none; box-shadow:none; }
+  .ar-room.ar-in > .q-page.sf::after{ animation:none; display:none; }
+  .ar-stack.x::before{ display:none; }
   .ar-room.ar-out{ display:none; } }
 /* The rooms in sunlight: the curtain's deep green for the ground, cream for
    what sits on it, the pill in mint with ink on it, and the two help cards

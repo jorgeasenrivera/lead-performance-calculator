@@ -118,7 +118,7 @@ test("the phone speaks six things by feel, by name, in the page and in the shell
 
 test("no connection is a bar with weight; stale is a small stamp; nothing greys out", () => {
   assert.ok(/className=\{"ar-net" \+ \(back \? " back" : ""\)\}/.test(core), "the bar, mint for a beat on the way back");
-  assert.ok(/\.ar-net\{ position:fixed; z-index:102; top:0;/.test(core) && /animation:netIn var\(--t-settle\) var\(--spring\) both/.test(core), "it drops in from the top on the settle token");
+  assert.ok(/\.ar-net\{ position:fixed; z-index:104; top:0;/.test(core) && /animation:netIn var\(--t-settle\) var\(--spring\) both/.test(core), "it drops in from the top on the settle token");
   assert.ok(/staleMins > 0 && \(/.test(core) && /className="ar-age"/.test(core), "the stale stamp");
   assert.ok(/if \(!offline\) netState\.okAt = Date\.now\(\);/.test(core), "the last read that worked is remembered");
   assert.ok(/html\.net-off \.q-page\.sf\{ --glow:/.test(core) && !/html\.net-off[^}]*opacity/.test(core), "the glow cools; nothing dims");
@@ -131,16 +131,24 @@ test("the rails spring on transform, not left", () => {
   assert.ok(/querySelectorAll\(":scope > s\.lt"\)/.test(core), "the light takes the rail's own dots only");
 });
 
-test("one object across rooms: the mark flies, the rooms dot-dissolve, and less motion gets the cut", () => {
+test("one object across rooms: the mark flies, the rooms travel, and less motion gets the cut", () => {
   assert.ok(/const crossRooms = \(from, to\) => \{/.test(core) && /crossRooms\(room === "line" \? "line" : "floor", r === "line" \? "line" : "floor"\);/.test(core), "a tab switch crosses the rooms");
   assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches; \} catch \(e\) \{\}\n    if \(reduce\) return;/.test(core), "less motion asks for the cut");
-  assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.3,1\.3,\.4,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the spring");
-  assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ animation:arDotsIn var\(--t-swap\) steps\(5,end\) both; \}/.test(core), "the room arriving fills in from dots over the swap token");
-  assert.ok(/\.ar-room\.ar-out > \.q-page\.sf\{ animation:arDotsOut var\(--t-exit\) steps\(3,end\) both; \}/.test(core), "the room leaving breaks into dots over the exit token");
-  assert.ok(/@property --ar-r\{ syntax:"<length>"; inherits:false; initial-value:0px; \}/.test(core), "the dot radius is a registered property, so the steps are real");
-  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\)\}/.test(core), "the room leaving stays on screen for its dots");
+  /* One gesture, one clock: the rooms, the mark and the bar's pill all run for
+     the wipe token on the same curve, and the classes are held until the last
+     of them is done. */
+  assert.ok(/duration: MOTION\.wipe, easing: "cubic-bezier\(\.35,\.12,\.2,1\)", fill: "both"/.test(core), "the mark flies on the wipe token and the page curve");
+  assert.ok(/\.ar-room\.ar-in > \.q-page\.sf\{ z-index:102;\n\s*animation:arPageIn var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core) && /\.ar-room\.ar-out > \.q-page\.sf\{ z-index:100;\n\s*animation:arPageOut var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\) both;/.test(core), "the room's own sheet is what travels, on one clock and one curve");
+  assert.ok(/\.ar-bar\{ position:fixed; z-index:105;/.test(core) && /\.ar-fly\{ position:fixed; z-index:106;/.test(core), "the bar and the mark stay above a room in mid-travel");
+  assert.ok(/\.ar-stack\.x::before\{ content:""; position:fixed; inset:0; z-index:99; background:#06090F;/.test(core), "the rooms' own ground is behind the switch, so no light edge shows");
+  assert.ok(/to\{ transform:translate3d\(calc\(var\(--ar-dx, 26%\) \* -\.34\), 0, 0\); filter:brightness\(\.7\); \} \}/.test(core), "the room being left parallaxes a third of the way and dims");
+  assert.ok(/transition:transform var\(--t-wipe\) cubic-bezier\(\.35,\.12,\.2,1\); will-change:transform; \}/.test(core), "the bar's pill lands with the room");
+  assert.ok(/crossTimer\.current = setTimeout\(\(\) => setCross\(null\), MOTION\.wipe \+ 60\);/.test(core), "the classes are held until the whole gesture is over");
+  assert.ok(!/arFadeIn|arFadeOut/.test(core), "nothing crossfades, so two rooms are never readable through each other");
+  assert.ok(!/arDotsIn|arDotsOut|steps\(5,end\)|steps\(3,end\)|@property --ar-r/.test(core), "nothing in the switch is stepped");
+  assert.ok(/const roomEl = dest\.closest\("\.q-page\.sf"\) \|\| dest\.closest\("\.ar-room"\);/.test(core), "the mark lands where the room comes to rest, not where it started");
+  assert.ok(/hidden=\{room !== "line" && !\(cross && cross\.from === "line"\)\}/.test(core), "the room being left stays on screen for the whole gesture");
 });
-
 test("the rooms in sunlight: deep green ground, cream on it, only the tokens change, off by default", () => {
   assert.ok(/html\.sun \.q-page\.sf\.mc-floor, html\.sun \.q-page\.sf\.sf-line\{[^}]*background:#2E4A38;/.test(core), "the ground is the curtain's deep green");
   assert.ok(/html\.sun \.mc-floor \.sf-seg-pill, html\.sun \.sf-line \.sf-seg-pill\{ background:#8FD8AF; box-shadow:none; \}/.test(core), "the pill is mint");
