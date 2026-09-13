@@ -8936,7 +8936,7 @@ function PlanMap({ plan, cls = "", deco, onTap, children }) {
       {(plan.seats || plan.tables || []).map((t) => {
         const d = deco ? deco(t) : {};
         return (
-          <button key={t.n} type="button"
+          <button key={t.n} type="button" data-n={t.n}
             className={"fbp-tbl" + (t.r ? " round" : "") + (t.s === "s" ? " sz-s" : t.s === "l" ? " sz-l" : "") + (d.cls ? " " + d.cls : "")}
             style={{ left: t.x + "%", top: t.y + "%" }}
             onMouseEnter={d.onHover || undefined} onMouseLeave={d.onLeave || undefined}

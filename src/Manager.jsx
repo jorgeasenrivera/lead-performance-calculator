@@ -4382,7 +4382,18 @@ function useStationRoom({ config, store, data, row, date, userName, onRow, nameO
      the audit log. */
   const seat = (station, person, { viaOffer = false, forced = false } = {}) => {
     const gate = gateFor(person.id);
-    if (needsOverride(gate) && !forced) { setWarn({ station, person, gate, viaOffer }); return; }
+    /* Returns whether it went ahead. A caller that closes its panel on the
+       tap must not close it when the answer is a warning: the desk did, and
+       a below-standard name simply vanished with nothing said. */
+    if (needsOverride(gate) && !forced) { setWarn({ station, person, gate, viaOffer }); return false; }
+    /* the mark flies from their pip, or from the desk they are moving from;
+       somebody on neither flies from the name that was tapped */
+    try {
+      const sat = (typeof board !== "undefined" && board && board.seats || []).find((x) => x.taken && x.id === person.id);
+      const ae = document.activeElement;
+      const tapped = ae && ae.closest && ae.closest(".sd-pbtns, .sd-panel, .fr-sheet, .qr-names") ? ae : null;
+      flyMark(pipEl(person.id) || tableEl(sat && sat.n) || tapped, tableEl(station), { ...SEAT_LOOK, text: initialsOf(person.label || person.name || "") });
+    } catch (e) { /* decoration; the seat itself is written below */ }
     write((cur) => {
       const res = viaOffer ? takeOffer(cur, station, person, qNowIso())
                            : claimStation(cur, station, person, qNowIso());
@@ -4911,13 +4922,13 @@ function StationDesk({ config, store, data, row, line, salesRoster, realName, da
         <div className="sd-pbtns">
           {own && (
             <button type="button" className="btn btn-sm btn-primary" disabled={!!busy}
-              onClick={() => { seat(st.n, { id: own.id, label: own.name }); setOpen(null); }}>
+              onClick={() => { if (seat(st.n, { id: own.id, label: own.name }) !== false) setOpen(null); }}>
               {own.kind === "move" ? `Move ${stnFirst(own.name)} here` : `Seat ${own.name}`}
             </button>
           )}
           {canSit.filter((pp) => !own || pp.id !== own.id).map((pp) => (
             <button key={pp.id} type="button" className="btn btn-sm" disabled={!!busy}
-              onClick={() => { seat(st.n, { id: pp.id, label: pp.label || pp.name }); setOpen(null); }}>
+              onClick={() => { if (seat(st.n, { id: pp.id, label: pp.label || pp.name }) !== false) setOpen(null); }}>
               {pp.label || pp.name}
             </button>
           ))}
@@ -5699,6 +5710,7 @@ function FloorConsole({ row, act, plan, managers, meName, data, date, realName }
       /* the desk fixing a seat: land the move on any table without an ask */
       const from = moveFrom;
       setMoveFrom(null);
+      try { const was = [...seatByTable.values()].find((p) => p.id === from); flyMark(tableEl(was && was.table), tableEl(t.n), { ...SEAT_LOOK, text: initialsOf(realName(from)) }); } catch (e) {}
       act((cur) => {
         const p = (cur.line || []).find((x) => x.id === from);
         if (p && p.status === "customer") p.table = t.n;
@@ -6128,6 +6140,36 @@ function usePlanViewport(plan, zoom, setZoom, { natH = 340, capH = 280, minW = 5
    same spring when somebody joins or takes an up. When the tail of a long line
    runs out of rail it bunches at the start, and a tap on the bunch opens the
    whole line as a list. */
+/* One object across a room (desk item 6). A person is one mark: when the
+   desk seats them at a station, or re-seats them at another table, their
+   mark lifts off where they were (their pip on the rail, or the table they
+   sat at) and lands on where they are going, on the wipe token and the
+   spring, shrinking to a table-sized mark on the way. The rooms already
+   shuffle the rail 40 ms apart behind them. Decoration on top of the state
+   change, which is written the same instant; less motion gets the cut. */
+function flyMark(from, to, look = {}) {
+  if (typeof document === "undefined" || !from || !to || from === to) return;
+  try { if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return; } catch (e) {}
+  if (typeof from.animate !== "function") return;
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+  if (!a.width || !b.width) return;
+  const cs = getComputedStyle(from);
+  const f = document.createElement("span");
+  f.className = "fr-fly"; f.setAttribute("aria-hidden", "true");
+  f.textContent = look.text || (from.textContent || "").trim().slice(0, 2);
+  Object.assign(f.style, { left: a.left + "px", top: a.top + "px", width: a.width + "px", height: a.height + "px",
+    background: look.bg || cs.backgroundColor, color: look.color || cs.color, borderRadius: cs.borderRadius });
+  document.body.appendChild(f);
+  const sc = Math.min(1, 28 / Math.max(a.width, a.height));
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2), dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  const anim = f.animate([{ transform: "translate(0,0) scale(1)" }, { transform: `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${sc.toFixed(3)})` }],
+    { duration: MOTION.wipe, easing: "cubic-bezier(.32,.72,.33,1)", fill: "both" });
+  anim.onfinish = () => f.remove(); anim.oncancel = () => f.remove();
+}
+const tableEl = (n) => (n == null ? null : document.querySelector(`.fbp-tbl[data-n="${String(n).replace(/"/g, "")}"]`));
+const pipEl = (id) => (id == null ? null : document.querySelector(`.fr-pip[data-id="${String(id).replace(/"/g, "")}"]`));
+const SEAT_LOOK = { bg: "#E4C98D", color: "#1F2A22" };
+
 function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = "DOOR" }) {
   const ref = useRef(null);
   /* Steps back from the head, in percent of the rail (--p; the CSS places
@@ -6144,7 +6186,7 @@ function FrRail({ people, nameOf, colorOf, lightOf, onPick, onBunch, endLabel = 
         const nm = nameOf(p.id);
         const nudged = p.nudgedAt && qMinsSince(p.nudgedAt) < 10;
         return (
-          <button key={p.id} type="button"
+          <button key={p.id} type="button" data-id={p.id}
             className={"fr-pip" + (i === 0 ? " hd" : "") + (bunched ? " bunch" : "") + (c ? " tg" : "") + (c && lightOf(p.id) ? " lt" : "")}
             style={{ "--p": 91 - posOf(i), zIndex: 40 - i, background: c || undefined }}
             onClick={() => (bunched ? onBunch() : onPick(p.id))}
@@ -6279,6 +6321,7 @@ function FloorRoomPhone({ config, store, data, row, line, salesRoster, realName,
   const reseatTo = (n) => {
     const from = reseat;
     setReseat(null);
+    try { const was = [...seatByTable.values()].find((p) => p.id === from); flyMark(tableEl(was && was.table), tableEl(n), { ...SEAT_LOOK, text: initialsOf(realName(from)) }); } catch (e) {}
     act((cur) => {
       const p = (cur.line || []).find((x) => x.id === from);
       if (p && p.status === "customer") p.table = n;
@@ -27280,6 +27323,8 @@ button.da-lbrow { cursor:pointer; }
   .fr-pip { left:0; transform:translate(calc(100cqw - var(--edge,25px) - var(--p,0) * 1cqw - 50%), -50%);
     transition:transform .65s var(--ease-bloop), width .5s ease, height .5s ease; }
 }
+.fr-fly{ position:fixed; z-index:500; display:grid; place-items:center; font:700 11px var(--font-mono); pointer-events:none;
+  box-shadow:0 8px 20px -8px rgba(0,0,0,.5); will-change:transform; }
 .fr-pip.tg{ color:#fff; }
 .fr-pip.bunch{ box-shadow:0 0 0 1.5px rgba(232,238,242,.35); }
 .fr-badge{ position:absolute; right:-4px; top:-5px; width:15px; height:15px; border-radius:50%; background:#0B100D; display:grid; place-items:center;

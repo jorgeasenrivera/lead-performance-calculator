@@ -183,3 +183,11 @@ test("a card grows from its row and goes back the way it came", () => {
   assert.ok(/\{ opacity: 0, offset: 0\.35 \}, \{ opacity: 1 \}/.test(mgr), "the inside fades in a beat later");
 });
 
+test("the rooms move with the phones: a seat or a re-seat flies the person's mark on the wipe token", () => {
+  assert.ok(/function flyMark\(from, to, look = \{\}\) \{/.test(mgr) && /duration: MOTION\.wipe, easing: "cubic-bezier\(\.32,\.72,\.33,1\)", fill: "both"/.test(mgr), "one flight, on the wipe token and the spring");
+  assert.ok(/flyMark\(pipEl\(person\.id\) \|\| tableEl\(sat && sat\.n\) \|\| tapped, tableEl\(station\)/.test(mgr), "seating flies from the pip, the old desk, or the name that was tapped, to the station");
+  assert.ok((mgr.match(/flyMark\(tableEl\(was && was\.table\), tableEl\(/g) || []).length === 2, "re-seating flies between tables in both floor rooms");
+  assert.ok(/data-id=\{p\.id\}/.test(mgr) && /data-n=\{t\.n\}/.test(core), "pips and tables can be found by id");
+  assert.ok(/prefers-reduced-motion: reduce\)"\)\.matches\) return; \} catch \(e\) \{\}\n  if \(typeof from\.animate/.test(mgr), "less motion gets the cut");
+  assert.ok(/if \(needsOverride\(gate\) && !forced\) \{ setWarn\(\{ station, person, gate, viaOffer \}\); return false; \}/.test(mgr) && (mgr.match(/\) !== false\) setOpen\(null\)/g) || []).length === 2, "the desk keeps its panel open when the answer is a warning");
+});
