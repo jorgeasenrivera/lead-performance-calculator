@@ -170,15 +170,57 @@ async function run(b) {
   t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
   await p.waitForTimeout(800);
 
-  /* two taps inside one round trip: the screen shows the second and stays, the server ends on it */
-  const onSeg = () => p.evaluate(() => { const b = [...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((x) => /\bon\b/.test(x.className)); return b ? b.textContent.trim() : null; });
-  const seen = []; const t0 = Date.now();
-  const sampler = (async () => { while (Date.now() - t0 < 3200) { seen.push(await onSeg()); await p.waitForTimeout(40); } })();
+  /* two taps inside one round trip: the screen shows the second and stays, the
+     server ends on it.
+
+     Both halves used to be measured from out here, and both were wrong on a
+     busy machine. The screen was sampled by asking the page forty times a
+     second over the debugging channel — the one thing under load that cannot
+     answer forty times a second — so on a loaded runner it returned two
+     samples in three seconds and reported a tap it had simply not looked for.
+     And the server was read on a fixed clock, 3.2 s after the taps, while a
+     write here is a read AND a save: at a dealership's lag that is 1.8 s each
+     and the second one had not landed yet. The check then called a slow
+     server a lost tap. Twice in an afternoon it failed one runner and passed
+     another on the same commit, which is the most expensive kind of check
+     there is.
+
+     Now the screen records itself, in the page, on its own frames, and the
+     server is read until it stops moving. Neither change softens the bar:
+     the trace must still show the second tap arriving and staying, and the
+     server must still end on it. */
+  const t0 = Date.now();
+  await p.evaluate(() => {
+    const on = () => { const b = [...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((x) => /\bon\b/.test(x.className)); return b ? b.textContent.trim() : null; };
+    window.__seg = [{ t: 0, v: on() }];
+    const t = performance.now();
+    const tick = () => {
+      const v = on();
+      if (v !== window.__seg[window.__seg.length - 1].v) window.__seg.push({ t: Math.round(performance.now() - t), v });
+      window.__segRaf = requestAnimationFrame(tick);
+    };
+    window.__segRaf = requestAnimationFrame(tick);
+  });
   await p.locator(ROOM + ' .sf-seg-btn:has-text("Lunch")').click({ force: true }); await p.waitForTimeout(120);
   await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click({ force: true });
-  await sampler;
-  const trace = seen.filter((v, i) => i === 0 || v !== seen[i - 1]);
-  const server = (await (await fetch(`${MOCK}/rest/v1/floor_public?id=eq.${floor.id}&select=data`)).json())[0]?.data;
+  await p.waitForTimeout(1600);
+  await p.evaluate(() => cancelAnimationFrame(window.__segRaf));
+  const frames = await p.evaluate(() => window.__seg);
+  const trace = frames.map((x) => x.v);
+  /* Read until the row stops moving: two reads the same, or eight seconds,
+     whichever comes first. A server still mid-write is not a verdict. */
+  const readMine = async () => {
+    const d = (await (await fetch(`${MOCK}/rest/v1/floor_public?id=eq.${floor.id}&select=data`)).json())[0]?.data;
+    return { d, st: ((d && d.line) || []).find((x) => x.id === floor.me.id)?.status || null };
+  };
+  let last = await readMine(), settled = null;
+  for (let i = 0; i < 16; i++) {
+    await p.waitForTimeout(500);
+    const now = await readMine();
+    if (now.st === last.st) { settled = now; break; }
+    last = now;
+  }
+  const server = (settled || last).d;
   const mine = ((server && server.line) || []).find((x) => x.id === floor.me.id);
   const burstOk = trace[trace.length - 1] === "Here" && trace.indexOf("Lunch") >= 0 && trace.indexOf("Lunch") < trace.lastIndexOf("Here") && mine && mine.status === "waiting";
   row("two taps in one round trip: " + trace.join(" > ") + ", server " + (mine ? mine.status : "?"), burstOk ? 0 : 1, 0, burstOk);
@@ -187,7 +229,8 @@ async function run(b) {
        asked, in order; the samples say what the screen showed, with times. */
     const hist = ((server && server.history) || []).slice(-4).map((h) => `${h.action}@${String(h.t).slice(11, 23)}`).join(", ");
     console.log("       server history: " + (hist || "(none)"));
-    console.log("       screen samples: " + seen.map((v, i) => (i === 0 || v !== seen[i - 1]) ? `${v}@${i * 40}ms` : null).filter(Boolean).join(", "));
+    console.log("       screen frames:  " + frames.map((x) => `${x.v}@${x.t}ms`).join(", "));
+    console.log("       burst took:     " + (Date.now() - t0) + " ms to settle");
     const errsNow = await p.evaluate(() => (window.__lpcErrs || []).slice(-3));
     if (errsNow.length) console.log("       page errors: " + errsNow.join(" | "));
   }
@@ -201,6 +244,18 @@ async function run(b) {
   /* the press: held, the segment has given by the bar; let go, it is back; one
      tick at touch-down and nothing on the click. The segment already chosen,
      so the click changes nothing and no pattern plays for a change of state. */
+  /* The burst's own echo buzzes when the server's answer lands, and at a
+     dealership's lag that can be seconds after the taps. Zeroing the log
+     before the phone has finished feeling the last tap put somebody else's
+     buzz in this measurement. Wait for quiet first. */
+  await p.evaluate(() => new Promise((done) => {
+    let n = (window.__vib || []).length, still = 0;
+    const t = setInterval(() => {
+      const m = window.__vib.length;
+      if (m === n) { if (++still >= 3) { clearInterval(t); done(); } } else { n = m; still = 0; }
+    }, 200);
+    setTimeout(() => { clearInterval(t); done(); }, 6000);
+  }));
   const cdp = await ctx.newCDPSession(p);
   const seg = (label) => `[...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((b) => b.textContent.includes("${label}"))`;
   const box = await p.evaluate(`(() => { const r = ${seg("Here")}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
