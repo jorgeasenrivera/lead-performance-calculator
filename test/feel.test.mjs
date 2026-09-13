@@ -367,3 +367,17 @@ test("one way to say two names are one person: one sentence, one audit line", ()
   assert.ok(/const foldClaimed = \(people, name\) =>/.test(mgr) && /if \(foldClaimed\(people, from\) && !\(await askConfirm\(foldSentence\(from, to, units\)\)\)\) return;/.test(mgr), "it asks by one rule, not by a prop three call sites had to remember");
   assert.ok(!/confirm = false, onPick/.test(mgr), "the picker no longer carries a question of its own");
 });
+
+test("printing opens one window the same way, and the poster takes the room", () => {
+  assert.ok(/function printPage\(\{ name, width = 850, height = 1050, title, head = "", css = "", body, warn, delay = 400 \}\) \{/.test(mgr), "one opener");
+  assert.equal(mgr.split("window.open(\"\", ").length - 1, 1, "and only it opens a print window");
+  assert.equal(mgr.split("printPage({").length - 1, 5, "all four printed things go through it");
+  assert.ok(!/printQueueSignIn|printFloorSignIn/.test(mgr), "the two posters are one function now");
+  assert.ok(/const SIGN_IN_POSTER = \{\n\s*line: \{[^}]*\},\n\s*floor: \{/.test(mgr), "the rooms are an argument, not a copy");
+  assert.ok(/async function printSignIn\(\{ store, url, date, by, room = "line" \}\) \{/.test(mgr), "one poster takes the room");
+  assert.equal(mgr.split("printSignIn({").length - 1, 5, "four Print buttons and the one function");
+  assert.equal(mgr.split('room: "line" }').length - 1, 2, "two of them are the phone line");
+  assert.equal(mgr.split('room: "floor" }').length - 1, 2, "and two are the floor");
+  assert.ok(/function printOnePager\(/.test(mgr) && /function printMonthEndRecap\(/.test(mgr), "the coaching sheet and the recap keep their own bodies");
+  assert.ok(!/w\.close\(\); toast\("No associates/.test(mgr), "and an empty batch no longer leaves a blank window open");
+});
