@@ -24872,7 +24872,13 @@ select.pp-same:hover { border-color:rgba(16,32,52,.34); }
 .assoc-row .vpill { width:170px; flex:0 0 auto; }
 .assoc-who { display:flex; align-items:center; gap:9px; min-width:0; }
 .assoc-who .assoc-name { flex:0 1 auto; }
-@media (max-width: 1200px) {
+/* The row on one line needs about 1310 px of card: 190 for the name, 150 for
+   the bar, 620 for the measures, 76 for the leads, 170 for the verdict, plus
+   the gaps and the padding. The wrap used to start at 1200, so every window
+   between 1200 and roughly 1390 drew a row wider than the card it sits in and
+   pushed the verdict pill and the chevron off the right edge. It starts where
+   the row actually stops fitting. */
+@media (max-width: 1400px) {
         .assoc-row { flex-wrap:wrap; row-gap:9px; }
         .assoc-row .assoc-who { flex:1 1 180px; width:auto; order:0; }
         .assoc-row .assoc-spacer { display:none; }
@@ -26554,7 +26560,15 @@ button.da-lbrow { cursor:pointer; }
 .s2-leg-note { margin-left:auto; color:var(--ink-3); }
 .s2g4 { width:88px; display:grid; grid-template-rows:13px 34px auto; row-gap:3px;
         justify-items:center; align-items:end; text-align:center; }
-.s2g4 svg { width:68px; height:34px; display:block; grid-row:2; }
+/* The dial, and only the dial. This was written as a descendant selector, so it
+   also caught the 9 px verdict glyph inside the label underneath and blew it up
+   to 68 by 34, seven times its size, then forced it into the dial's own grid
+   row. That one rule is what made the roster card look broken: every label grew
+   to twice the width of its column and spilled onto the one beside it, the
+   strip needed 679 px in the 641 it had, and the row needed 1295 px in 1249, so
+   the verdict pill and the chevron ran off the right edge of the card. The
+   drawing is a direct child; the glyph is not. */
+.s2g4 > svg { width:68px; height:34px; display:block; grid-row:2; }
 .s2g4-v { grid-row:1; }
 .s2g4-col { grid-row:2; }
 .s2g4-l { grid-row:3; }
@@ -26573,8 +26587,13 @@ button.da-lbrow { cursor:pointer; }
         transition:height .5s var(--spring); }
 .s2g4-col s { position:absolute; left:-2px; right:-2px; bottom:60%; height:2px; margin-bottom:-1px;
         border-radius:1px; background:var(--ink); opacity:.34; }
+/* The label belongs to its column and stays in it. Held on one line it was the
+   longest of the six, "Engaged Video 40%", that decided how wide the strip had
+   to be, and it wanted sixteen more pixels than the column has. Wrapping costs
+   the row about nine pixels of height once, and no label can push its
+   neighbour again. */
 .s2g4-l { font:700 7.5px var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3);
-        white-space:nowrap; }
+        white-space:normal; line-height:1.25; max-width:100%; }
 .s2g4-l i { font-style:normal; color:var(--ink-3); font-weight:600; }
 .vpill { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:99px;
         padding:6px 10px; font:700 11px var(--font-display); white-space:nowrap; width:100%; box-sizing:border-box; }
@@ -27276,7 +27295,7 @@ button.da-lbrow { cursor:pointer; }
 .ac-splitlbl, .ac-trendlbl{ margin-top:6px; }
 .ac-gauges .mstrip{ gap:12px 4px; grid-template-columns:repeat(6, minmax(0,1fr)); }
 .ac-gauges .mclust{ display:contents; }
-.ac-gauges .s2g4 svg{ width:100%; max-width:68px; height:auto; }
+.ac-gauges .s2g4 > svg{ width:100%; max-width:68px; height:auto; }
 .ac-gauges .s2g4-l{ white-space:normal; overflow:visible; font-size:8px; line-height:1.2; }
 .ac-gauges .s2g4-l i{ display:block; }
 .ac-gauges .mclust + .mclust::before{ display:none; }
@@ -28083,7 +28102,12 @@ button.da-lbrow { cursor:pointer; }
   .onsoon-tape{ width:100%; height:12px; }
   .onsoon-sign .onsoon-tape:first-child{ display:none; }
   /* The dock floats over the foot of the page, so the last thing on it has
-     to end above the dock rather than under it. */
+     to end above the dock rather than under it. This was fixed for the Online
+     page alone, and the dock covers the foot of every section the same way:
+     on the Performance tab it sat across the last person in the roster, who
+     could be read only by scrolling past the end of the list. The dock is 61px
+     and the phone's home bar is under it, so 104 clears both. */
+  .board-page{ padding-bottom:104px; }
   .onsoon{ padding-bottom:104px; }
 }
 `;
