@@ -108,6 +108,10 @@ const SHAPE = {
 };
 
 const pick = (r, [lo, hi]) => lo + Math.floor(r() * (hi - lo + 1));
+/* A rate, in the units the server keeps them in: a ratio between 0 and 1,
+   rounded to three places so a seeded store reads like a real one rather than
+   like a float. `pctOf(r, 8, 14)` is somewhere between 8% and 22%. */
+const pctOf = (r, base, spread) => Math.round((base + r() * spread) * 10) / 1000;
 
 /* One person's day. The fields are the ones a Daily Activity import writes, in
    the same shape, because every page downstream reads that shape and a demo
@@ -299,13 +303,20 @@ export function buildDemo() {
       internetLeads: internetUnits * pick(r, [6, 12]) + pick(r, [4, 12]),
       phoneLeads: phoneUnits * pick(r, [7, 14]) + pick(r, [3, 9]),
       showroomLeads: showroomUnits * pick(r, [3, 6]) + pick(r, [2, 6]),
-      internetPct: Math.round(8 + r() * 14),
-      phonePct: Math.round(7 + r() * 13),
-      showroomPct: Math.round(18 + r() * 22),
-      apptVideoDayPct: Math.round(35 + r() * 45),
-      engagedVideoPct: Math.round(30 + r() * 45),
-      bhVideoPct: Math.round(25 + r() * 45),
-      deliveredPct: Math.round(8 + r() * 12),
+      /* Ratios, not percents. Every store on the server keeps these as a
+         number between 0 and 1 (0.22 is twenty two percent), and everything
+         that draws them multiplies by a hundred on the way out. The seed
+         wrote whole percents, so the demo store has been showing 1800% where
+         it meant 18%: on the roster card's tubes and dials, on the coaching
+         one-pager, and on every printed month-end recap. The figures were
+         never wrong, only the units they were written in. */
+      internetPct: pctOf(r, 8, 14),
+      phonePct: pctOf(r, 7, 13),
+      showroomPct: pctOf(r, 18, 22),
+      apptVideoDayPct: pctOf(r, 35, 45),
+      engagedVideoPct: pctOf(r, 30, 45),
+      bhVideoPct: pctOf(r, 25, 45),
+      deliveredPct: pctOf(r, 8, 12),
       newUnits: Math.round(mine * 0.6),
       usedUnits: mine - Math.round(mine * 0.6),
     };
