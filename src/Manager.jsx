@@ -26587,13 +26587,17 @@ button.da-lbrow { cursor:pointer; }
         transition:height .5s var(--spring); }
 .s2g4-col s { position:absolute; left:-2px; right:-2px; bottom:60%; height:2px; margin-bottom:-1px;
         border-radius:1px; background:var(--ink); opacity:.34; }
-/* The label belongs to its column and stays in it. Held on one line it was the
-   longest of the six, "Engaged Video 40%", that decided how wide the strip had
-   to be, and it wanted sixteen more pixels than the column has. Wrapping costs
-   the row about nine pixels of height once, and no label can push its
-   neighbour again. */
+/* One line, centred, and allowed to use the gap either side of its column.
+   This wrapped for a day and it was the wrong answer: the label is a name, a
+   target and a verdict mark, so the second line was usually the mark on its
+   own, a stray dot sitting between two rows. From across the room that read as
+   muddle rather than as a reading.
+   It fits on one line because the mark is 9 px again. The longest of the six,
+   "Engaged Video 100%", is about 104 px in a 92 px column, so it leans 6 px
+   into the 10 px gap on each side and touches nothing. The old collisions were
+   never the words: they were a 69 px glyph pretending to be a 9 px one. */
 .s2g4-l { font:700 7.5px var(--font-mono); letter-spacing:.04em; text-transform:uppercase; color:var(--ink-3);
-        white-space:normal; line-height:1.25; max-width:100%; }
+        white-space:nowrap; }
 .s2g4-l i { font-style:normal; color:var(--ink-3); font-weight:600; }
 .vpill { display:inline-flex; align-items:center; justify-content:center; gap:6px; border-radius:99px;
         padding:6px 10px; font:700 11px var(--font-display); white-space:nowrap; width:100%; box-sizing:border-box; }
@@ -27940,7 +27944,10 @@ button.da-lbrow { cursor:pointer; }
 .s2-osd > span i { width:7px; height:7px; border-radius:50%; background:#F08A80; animation:osdblink 1s steps(2,end) infinite; }
 @keyframes osdblink { 50% { opacity:0; } }
 .s2-osd.back { background:#8FD8AF; color:#12251B; } .s2-osd.back > span i { background:#12251B; animation:none; }
-.s2-age { position:absolute; right:14px; top:12px; z-index:6; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+/* Out of the buttons' corner. Pinned to the same top right as the hero's own
+   button stack, this sat across "Month so far" and read as two things printed
+   on top of each other. The stamp is the quieter of the two, so it moves. */
+.s2-age { position:absolute; left:14px; top:12px; right:auto; z-index:6; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
   font:500 10px var(--font-mono); letter-spacing:.06em; color:#E4C98D; background:rgba(228,201,141,.12); border:1px solid rgba(228,201,141,.35); }
 .s2-age i { width:6px; height:6px; border-radius:50%; background:#E4C98D; animation:agePulse 1.8s ease-in-out infinite; }
 @keyframes agePulse { 50% { opacity:.35; } }

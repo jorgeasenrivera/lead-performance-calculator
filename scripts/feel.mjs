@@ -42,7 +42,18 @@ const LAG = Number(process.env.FEEL_LAG || 400);
    a display:none button: nothing happened, the screen never moved, and the
    harness reported the app had lost a tap. It had not; the measurement had.
    Every room-level selector says which room it means. */
-const ROOM = ".ar-room:not([hidden])";
+const ROOM = '.ar-room[data-room="floor"]';
+/* And a room switch is not over when the tab has been tapped. Both rooms stay
+   un-hidden for the whole of the wipe, 428 ms measured, so for that window
+   ":not([hidden])" is two rooms rather than one and the line comes first in the
+   markup. This is why the burst once traced as "Here at 25 ms": the recorder
+   read the phone line's segment, which said Here, while the floor said Lunch.
+   Naming the room fixed the selector; this waits for the room to be alone
+   again before anything is measured in it. */
+const roomSettled = (p) => p.waitForFunction(
+  () => document.querySelectorAll(".ar-room:not([hidden])").length === 1
+     && !document.querySelector(".ar-room.ar-in, .ar-room.ar-out"),
+  null, { timeout: 15000 });
 const STORE = "sage-demo";
 const STORE_TZ = "America/New_York";                 // the app's dealership day
 const day = () => new Intl.DateTimeFormat("en-CA", { timeZone: STORE_TZ }).format(new Date());
@@ -159,8 +170,9 @@ async function run(b) {
 
   /* tabs: the other room is already mounted */
   let t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Home to Floor tab", ms(t), BAR.tab);
+  await roomSettled(p);
   await p.waitForTimeout(800);
-  const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
+  const segOn = (label) => p.waitForFunction((l) => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => x.textContent.includes(l)); return b && /\bon\b/.test(b.className); }, label, { timeout: 15000 });
   t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Lunch")').click(); await segOn("Lunch"); row("tap Lunch to shown", ms(t), BAR.tap);
   await p.waitForTimeout(700);
   t = Date.now(); await p.locator(ROOM + ' .sf-seg-btn:has-text("Here")').click(); await segOn("Here"); row("tap Here to shown", ms(t), BAR.tap);
@@ -168,6 +180,7 @@ async function run(b) {
   t = Date.now(); await p.locator('.ar-tab[aria-label*="Phone"]').click(); await p.waitForSelector(".sfl-title, .mcf-home", { timeout: 30000 }); row("Floor to Phone tab", ms(t), BAR.tab);
   await p.waitForTimeout(600);
   t = Date.now(); await p.locator('.ar-tab[aria-label="Live Floor"]').click(); await p.waitForSelector(ROOM + " .sf-seg-btn", { timeout: 30000 }); row("Phone to Floor tab", ms(t), BAR.tab);
+  await roomSettled(p);
   await p.waitForTimeout(800);
 
   /* two taps inside one round trip: the screen shows the second and stays, the
@@ -191,7 +204,7 @@ async function run(b) {
      server must still end on it. */
   const t0 = Date.now();
   await p.evaluate(() => {
-    const on = () => { const b = [...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((x) => /\bon\b/.test(x.className)); return b ? b.textContent.trim() : null; };
+    const on = () => { const b = [...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((x) => /\bon\b/.test(x.className)); return b ? b.textContent.trim() : null; };
     window.__seg = [{ t: 0, v: on() }];
     const t = performance.now();
     const tick = () => {
@@ -257,7 +270,7 @@ async function run(b) {
     setTimeout(() => { clearInterval(t); done(); }, 6000);
   }));
   const cdp = await ctx.newCDPSession(p);
-  const seg = (label) => `[...document.querySelectorAll(".ar-room:not([hidden]) .sf-seg-btn")].find((b) => b.textContent.includes("${label}"))`;
+  const seg = (label) => `[...document.querySelectorAll('.ar-room[data-room="floor"] .sf-seg-btn')].find((b) => b.textContent.includes("${label}"))`;
   const box = await p.evaluate(`(() => { const r = ${seg("Here")}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await p.evaluate(() => { window.__vib.length = 0; });
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x, y: box.y }] });
