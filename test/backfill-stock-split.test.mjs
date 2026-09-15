@@ -53,3 +53,27 @@ test("anything that is not a report key is ignored rather than guessed at", () =
   assert.equal(got.size, 1, "only the one real report key");
   assert.equal(got.get("holler-ford|2026-09").day, "2026-09-15");
 });
+
+/**
+ * Running directly, without being unrunnable or unimportable.
+ * -------------------------------------------------------------------------
+ * Found reviewing Codex's Windows branch (#336) and then in my own script: a
+ * main-module guard built by gluing "file://" onto argv[1] is false on Windows
+ * and false on any path with a space in it, so the script exits 0 having done
+ * nothing. For a backfill that is the worst shape a failure can take, because
+ * it is indistinguishable from a clean dry run.
+ *
+ * The fix has its own edge, which is why this is a test and not just a patch:
+ * pathToFileURL throws on undefined where the glued form merely came out false,
+ * and this module has to stay importable or the test above cannot run at all.
+ */
+test("the script knows when it is being run, and stays importable when it is not", async () => {
+  const src = await import("node:fs").then((fs) =>
+    fs.readFileSync(new URL("../scripts/backfill-stock-split.mjs", import.meta.url), "utf8"));
+  assert.ok(!/`file:\/\/\$\{process\.argv\[1\]\}`/.test(src),
+    "the main-module guard is not built by gluing a string onto argv[1]");
+  assert.ok(/pathToFileURL\(process\.argv\[1\]\)\.href/.test(src),
+    "it goes through pathToFileURL, which handles a drive letter and a space");
+  assert.ok(/process\.argv\[1\] && import\.meta\.url ===/.test(src),
+    "and argv[1] is checked first, because pathToFileURL throws on undefined and this module is imported by this file");
+});
