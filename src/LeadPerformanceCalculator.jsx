@@ -15449,6 +15449,16 @@ html.sun .sf-line .sft.on{ background:#8FD8AF; color:#12251B; box-shadow:none; }
    fitting, at a larger text size or on a narrow phone, the corner takes a line
    of its own at the right rather than printing through the weekday. */
 .mc-corner{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; flex:0 0 auto; margin-left:auto; }
+/* And on that second line it lies across rather than down. Stacked, the stamp,
+   the initials and the question mark cost 128 points of height at Largest, all
+   of it above the month. It is asked of the head and not of the screen, because
+   the text size is a zoom and a zoom does not move a media query: the head is
+   324 points wide at Normal on this phone and 234 at Largest, and it stops
+   fitting on one line at about 300. */
+.mc-head{ container-type:inline-size; container-name:mchead; }
+@container mchead (max-width:300px){
+  .mc-corner{ flex-direction:row; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px 10px; }
+}
 .mc-corner .mc-help{ position:static; }
 .mc-corner .mc-asof{ white-space:nowrap; }
 .mc-aheadlbl{ border:0; background:none; padding:0; text-align:left; cursor:pointer; font-family:var(--sfmono); font-size:11.5px; font-weight:700; letter-spacing:.14em; color:rgba(232,238,242,.6); }

@@ -411,4 +411,5 @@ test("the phone's own measurements survive a larger text size, and the top of th
   assert.ok(/padding:max\(clamp\(52px,8vh,70px\), calc\(66px \+ var\(--sat\)\)\) clamp\(20px,6vw,26px\)/.test(core), "and the first row of desks starts below Help, not eight pixels under the camera");
 
   assert.ok(/\.mc-head\{ display:flex; flex-wrap:wrap;/.test(core) && /\.mc-corner\{[^}]*margin-left:auto; \}/.test(core) && /\.mc-side\{ min-width:0; \}/.test(core), "and the corner head takes a second line rather than printing the stamp through the weekday");
+  assert.ok(/\.mc-head\{ container-type:inline-size; container-name:mchead; \}/.test(core) && /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/.test(core), "and on that line it lies across, asked of the head and not of the screen: the text size is a zoom, and a zoom does not move a media query");
 });
