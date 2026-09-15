@@ -8606,12 +8606,11 @@ function OnlineSoon({ store, rooms, onToolChange }) {
 
       <div className="onsoon-grid">
         <div className="onsoon-card">
-          <div className="s2-cap cap-sent"><PixIcon glyph="list" size={12} /> What it will be</div>
-          <ul className="onsoon-list">
-            <li><PixIcon glyph="globe" size={15} /><span>Internet leads arrive here on their own, the moment the CRM says so.</span></li>
-            <li><PixIcon glyph="assign" size={15} /><span>The next one goes to whoever is up, the way the phone line hands out a call.</span></li>
-            <li><PixIcon glyph="chart" size={15} /><span>And closing them counts where it already counts, against Internet delivered.</span></li>
-          </ul>
+          {/* What a manager gets, not how it is wired. The three bullets that
+              were here described the mechanism, which is the part nobody is
+              waiting for. */}
+          <div className="s2-cap cap-sent"><PixIcon glyph="assign" size={12} /> What it will be</div>
+          <p className="onsoon-why">A manager will know who to give the next lead to, at a glance.</p>
         </div>
         <div className="onsoon-card">
           <div className="s2-cap cap-sent"><PixIcon glyph="door" size={12} /> Next door, and open</div>
@@ -28131,10 +28130,8 @@ button.da-lbrow { cursor:pointer; }
 .onsoon-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px; }
 .onsoon-card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
 .onsoon-card .s2-cap{ color:var(--ink-2); }
-.onsoon-list{ list-style:none; margin:10px 0 0; padding:0; display:flex; flex-direction:column; gap:11px; }
-.onsoon-list li{ display:flex; align-items:flex-start; gap:10px; font-size:14px; line-height:1.45; }
-.onsoon-list .pix{ flex:0 0 auto; margin-top:2px; color:#7C4DEE; }
 .onsoon-sub{ margin:10px 0 0; font-size:13.5px; color:var(--ink-2); }
+.onsoon-why{ margin:10px 0 0; font-size:14px; line-height:1.45; }
 .onsoon-outs{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
 .onsoon-go{ gap:7px; }
 .onsoon-foot{ display:flex; align-items:flex-start; justify-content:center; gap:8px; margin:16px auto 0; max-width:62ch;
