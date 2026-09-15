@@ -306,7 +306,7 @@ test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on
 test("five-second pass, items 1, 3, 4 and 8: the lamp, the sentence, five shades, a covered hour, no PIN list", () => {
   assert.ok(/className=\{"s2-imp s2-lampbtn" \+ \(missing\.length \? "" : " done"\)\}/.test(mgr) && /<b>\{missing\.length \? `\$\{missing\.length\} due today` : "All in"\}<\/b>/.test(mgr), "the imports card is the lamp");
   assert.ok(/\.s2-lampbtn \.s2-lamp\.y\{ background:#E0A100;[^}]*animation:lampPulse/.test(mgr) && !/className="s2-answers"/.test(mgr), "the lamp breathes while a report is owed, and there is no lamp row");
-  assert.ok(/<div className="s2-vitals s2-say" style=\{\{ color: paceCol \}\}>/.test(mgr) && /Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr) && !/on the board\{capTotal/.test(mgr), "the pace sentence replaced the vitals line");
+  assert.ok(/<div className="s2-vitals s2-say" style=\{\{ color: paceCol \}\}>/.test(mgr) && /Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr) && !/on the board\{capTotal/.test(mgr), "the pace sentence replaced the vitals line");
   assert.ok(/"s2-ansq bloop-host an-" \+ \(weakest\.mean >= 1 \? 5 : weakest\.mean >= 0\.9 \? 4 : weakest\.mean >= 0\.75 \? 3 : weakest\.mean >= 0\.5 \? 2 : 1\)/.test(mgr) && /\.s2-ansq\.an-1\{ background:linear-gradient\(150deg,#C8352B,#8E1F17\)/.test(mgr) && /\.s2-ansq\.an-5\{ background:linear-gradient\(150deg,#2A9C77,#1B6E54\)/.test(mgr), "five grounds on the standards card");
   assert.ok(/if \(b\.staffed === 0\) return "gap";\n\s*if \(b\.staffed >= b\.of\) return "full";\n\s*return b\.staffed >= line \? "ok" : "thin";/.test(mgr), "five states on the day's line");
   assert.ok(/<span className="k-pre">not yet<\/span>/.test(mgr) && /<span className="k-full">full<\/span>/.test(mgr), "the key names all five");
@@ -471,4 +471,16 @@ test("the month's goal is asked for once, written by one writer, and a change sa
   assert.ok(/const \[draft, setDraft\] = useState\(""\);/.test(mgr), "the card opens on an empty field");
   assert.ok(!/lastGoal/.test(mgr), "and the hero no longer offers last month's figure either");
   assert.ok(!/placeholder=\{suggest/.test(mgr) && !/last month \$\{fmtNum/.test(mgr), "nor does it print one as a hint");
+});
+
+test("the shortfall printed next to \"at this pace\" is the pace's, not the sell gap", () => {
+  /* Two different numbers, and the line used to print the wrong one under the
+     right words. Holler Ford: goal 200, sold 74, so 126 still to sell while the
+     month runs at 159, which is 41 short. `needPerDay` wants the 126, because
+     that is what actually has to be sold; the sentence wants the 41. */
+  assert.ok(/out\.shortAtPace = Math\.max\(0, goal\.bar - projected\);/.test(mgr), "the pace's own shortfall is goal against projection");
+  assert.ok(/out\.short = Math\.max\(0, goal\.bar - totalUnits\);/.test(mgr), "and the sell gap is still goal against what is delivered");
+  assert.ok(/Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr), "the sentence prints the pace's shortfall");
+  assert.ok(/out\.needPerDay = daysLeft > 0 \? out\.short \/ daysLeft : null;/.test(mgr), "and what to sell a day is still worked from the sell gap");
+  assert.ok(!/Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr), "the two are never swapped back");
 });

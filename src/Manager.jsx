@@ -19219,6 +19219,12 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     const out = { goal, daysAll, daysDone, daysLeft, perDay, projected, units: totalUnits };
     if (goal) {
       out.short = Math.max(0, goal.bar - totalUnits);
+      /* The gap the pace leaves, which is a different number from the gap still
+         to sell and the only one that belongs next to the words "at this pace".
+         Holler Ford: goal 200, sold 74, so 126 still to sell, but the month is
+         running at 159, which is 41 short. The line used to print 126 and call
+         it a pace figure, which is two claims that cannot both be true. */
+      out.shortAtPace = Math.max(0, goal.bar - projected);
       /* What the rest of the month has to run at. Not the average that would have
          got here — the pace from here, which is the only one anybody can still
          do anything about. */
@@ -19591,9 +19597,9 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
             <div className="s2-vitals s2-say" style={{ color: paceCol }}>
               {storePace.goal && !storePace.tooEarly ? (
                 <>
-                  <Verdict ratio={storePace.short > 0 ? Math.max(0.01, storePace.projected / storePace.goal.bar) : 1} size={13} />
-                  {storePace.short > 0
-                    ? <>Short by <b>{fmtNum(Math.round(storePace.short))}</b> at this pace</>
+                  <Verdict ratio={storePace.shortAtPace > 0 ? Math.max(0.01, storePace.projected / storePace.goal.bar) : 1} size={13} />
+                  {storePace.shortAtPace > 0
+                    ? <>Short by <b>{fmtNum(Math.round(storePace.shortAtPace))}</b> at this pace</>
                     : <>On pace for <b>{Math.round(storePace.projected)}</b> of {fmtNum(storePace.goal.bar)}</>}
                 </>
               ) : storePace.goal ? <>Too early to call the month &#183; <b>{fmtNum(totalUnits)}</b> of {fmtNum(storePace.goal.bar)}</>
