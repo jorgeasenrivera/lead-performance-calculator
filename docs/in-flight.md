@@ -52,7 +52,7 @@ waiting on Jorge's proposal page), `in review`, `done`.
 |---|------|-------|--------|-------|--------|-----|
 | C1 | **The Online room.** The under construction page is built and live. The room itself still exists: its tool pill, sign-in parameter, salesperson tab, `LEAD_VARIANTS` entry and row family. Jorge marked this LATER, so it is not to be removed until he says. | - | - | `src/Manager.jsx`, `src/LeadPerformanceCalculator.jsx` | open (deferred by Jorge) | - |
 | C2 | **Ten stores with no goal.** Four of fourteen stores have set a monthly goal. The prompt that would ask for one is not built. Marked LATER. Needs a proposal page before anything is drawn. | - | - | `src/Manager.jsx` | open (deferred by Jorge, needs approval) | - |
-| C3 | **Drop `public.queue_identity`.** Six rows, last touched 22 August, and nothing reads or writes it since the PIN came out in #326. Dropping a table cannot be undone, so it waits for Jorge to say the word. A migration under `supabase/migrations/`, nothing else. | - | - | `supabase/migrations/` | open (waiting on Jorge) | - |
+| C3 | **Drop `public.queue_identity`.** Six rows, last touched 22 August, and nothing reads or writes it since the PIN came out in #326. Jorge said go ahead on 15 September. A migration under `supabase/migrations/`, nothing else. | Claude | `claude/mobile-site-optimization-qvei7u` | `supabase/migrations/` | in progress | - |
 | C4 | **The desks caption on the Live Activity.** It reads "1 and 2 and 3 and 4 and 5 and 6 are open" because the free desk numbers are joined with the word "and". It should say "6 desks open". Written and held: there is no Swift toolchain in a web session, and the pull request's own iOS check could not run because the Expo account has used its free-plan builds for the month. It merges when a real build can check it. The patch is on `claude/desks-caption`. | Claude | `claude/desks-caption` | `native/targets/queue/QueueActivity.swift` | blocked on the Expo build quota | - |
 | X1 | **Make the required checks reliable on Windows.** Git currently converts the checkout to CRLF, which breaks source guards written against LF, and five tests turn a Windows file URL into `C:\\C:\\...`. Keep code files on LF and resolve file URLs with Node's cross-platform helper so Codex can run the same required checks Claude and CI run. No product behaviour or pixels change. | Codex | `codex/windows-checks` | `.gitattributes`, `test/` | in review | #336 |
 | C5 | **Review the `--dvh` and safe-area division inside the text-size zoom.** Merged in #334. One rule redefines `--dvh`, `--sat` and `--sab` inside the four zoom roots so the phone's own measurements are not enlarged along with the words, and it carries every full-height salesperson screen. Verified by measurement and pixel diff in Chromium only, so WebKit is the open question, along with whether `--satx` can leak to the manager and two hand-tuned constants no test holds. The brief is the issue. | Codex | - | review only, no branch | open | #335 |
@@ -76,6 +76,14 @@ Two dead ends, recorded so nobody walks them twice. The heavy `.s2-noise` layer,
 
 Two claims were numbered A7 on 15 September, by two agents within two minutes of each other. That is what the owner prefixes at the top of this file exist to stop. Worth knowing that the board's ids are not a reliable lock on their own: the row is.
 
+**The 13th and the 14th of September are gone.** The outage cost nine of ten
+stores two morning batches, and the reports for those two days were never
+resent. Jorge decided on 15 September to live with them as lost rather than
+chase a backfill from DriveCentric. So any figure covering that window is short
+for nine stores, and it is short on purpose: nobody should go looking for a bug
+in it, and nobody should propose the backfill again without Jorge raising it
+first.
+
 ## Outside the repo, for Jorge
 
 These are not agent work. They are here so nobody proposes them again.
@@ -84,7 +92,7 @@ These are not agent work. They are here so nobody proposes them again.
 |---|------|--------|
 | J1 | Delete the empty "sage" Expo project on the jorgeasenriv team, then retry the transfer. | waiting on Jorge |
 | J2 | Delete the Vercel project `lead-performance-calculator-srnl`. | done 14 September |
-| J3 | Have a word with a salesperson about the PIN coming out of sign-in (#326). It is the only recent change that alters what they do on a Sunday morning. | waiting on Jorge |
+| J3 | Have a word with a salesperson about the PIN coming out of sign-in (#326). | done 15 September |
 
 ## Done
 
