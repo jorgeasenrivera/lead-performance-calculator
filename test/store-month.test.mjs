@@ -58,28 +58,34 @@ test("a month that has already ended is complete", () => {
 });
 
 test("the goal, and the share of it that counts as hitting", () => {
-  const store = { goal: { units: 100, pct: 85, byMonth: {} } };
+  const store = { goal: { pct: 85, byMonth: { "2026-08": 100 } } };
   const g = storeGoalFor(store, "2026-08");
   assert.equal(g.units, 100);
   assert.equal(g.pct, 85);
   assert.equal(g.bar, 85, "the number a manager is actually judged on");
 });
 
-test("this month's own goal beats the standing one", () => {
+test("a goal belongs to its month and to no other", () => {
+  /* There used to be a standing figure a month with no entry fell back on, so
+     the first of October opened holding September's number against a bar nobody
+     had agreed to. The month turns over and the goal goes with it. */
   const store = { goal: { units: 100, pct: 85, byMonth: { "2026-08": 120 } } };
   assert.equal(storeGoalFor(store, "2026-08").bar, 102);
-  assert.equal(storeGoalFor(store, "2026-09").bar, 85, "and a month nobody set falls back");
+  assert.equal(storeGoalFor(store, "2026-09"), null, "and the next month starts with none, whatever the store carries");
 });
 
 test("no percentage set means the goal is the goal", () => {
-  assert.equal(storeGoalFor({ goal: { units: 90 } }, "2026-08").bar, 90);
+  assert.equal(storeGoalFor({ goal: { byMonth: { "2026-08": 90 } } }, "2026-08").bar, 90);
 });
 
 test("a store with no goal says so rather than inventing one", () => {
   assert.equal(storeGoalFor({}, "2026-08"), null);
   assert.equal(storeGoalFor({ goal: {} }, "2026-08"), null);
-  assert.equal(storeGoalFor({ goal: { units: 0, pct: 85 } }, "2026-08"), null);
+  assert.equal(storeGoalFor({ goal: { byMonth: { "2026-08": 0 } }, pct: 85 }, "2026-08"), null);
   assert.equal(storeGoalFor(null, "2026-08"), null);
+  // A leftover standing figure is data nothing reads, not a goal for every month.
+  assert.equal(storeGoalFor({ goal: { units: 100, pct: 85 } }, "2026-08"), null,
+    "a store carrying an old standing figure has no goal in a month it never set");
 });
 
 test("a month explicitly set to zero is not the standing goal in disguise", () => {
@@ -94,7 +100,7 @@ test("the pace a manager acts on", () => {
   const isHol = on("2026-12-25");
   const daysAll = storeDaysInMonth("2026-12", isHol);
   const daysDone = storeDaysDone("2026-12", isHol, "2026-12-21");
-  const g = storeGoalFor({ goal: { units: 100, pct: 85 } }, "2026-12");
+  const g = storeGoalFor({ goal: { pct: 85, byMonth: { "2026-12": 100 } } }, "2026-12");
   assert.equal(daysAll, 30);
   assert.equal(daysDone, 20);
 
@@ -115,7 +121,7 @@ test("the pace a manager acts on", () => {
 });
 
 test("and the same month going badly", () => {
-  const g = storeGoalFor({ goal: { units: 100, pct: 85 } }, "2026-12");
+  const g = storeGoalFor({ goal: { pct: 85, byMonth: { "2026-12": 100 } } }, "2026-12");
   const daysAll = 30, daysDone = 20, units = 40;
   const projected = (units / daysDone) * daysAll;
   assert.equal(projected, 60);

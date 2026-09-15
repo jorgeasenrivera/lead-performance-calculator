@@ -16,6 +16,7 @@ const mgr = fs.readFileSync(new URL("../src/Manager.jsx", import.meta.url), "utf
 const stn = fs.readFileSync(new URL("../api/_stations.mjs", import.meta.url), "utf8");
 const ing = fs.readFileSync(new URL("../api/ingest.mjs", import.meta.url), "utf8");
 const feel = fs.readFileSync(new URL("../scripts/feel.mjs", import.meta.url), "utf8");
+const sm = fs.readFileSync(new URL("../api/_store-month.mjs", import.meta.url), "utf8");
 const fn = (src, name) => { const i = src.indexOf(`function ${name}(`); assert.ok(i >= 0, name + " exists"); return src.slice(i, src.indexOf("\n}\n", i)); };
 
 test("the status controls are never greyed out for a round trip", () => {
@@ -305,7 +306,7 @@ test("five-second pass, item 5: one verdict, three colours, three pix glyphs, on
 test("five-second pass, items 1, 3, 4 and 8: the lamp, the sentence, five shades, a covered hour, no PIN list", () => {
   assert.ok(/className=\{"s2-imp s2-lampbtn" \+ \(missing\.length \? "" : " done"\)\}/.test(mgr) && /<b>\{missing\.length \? `\$\{missing\.length\} due today` : "All in"\}<\/b>/.test(mgr), "the imports card is the lamp");
   assert.ok(/\.s2-lampbtn \.s2-lamp\.y\{ background:#E0A100;[^}]*animation:lampPulse/.test(mgr) && !/className="s2-answers"/.test(mgr), "the lamp breathes while a report is owed, and there is no lamp row");
-  assert.ok(/<div className="s2-vitals s2-say" style=\{\{ color: paceCol \}\}>/.test(mgr) && /Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr) && !/on the board\{capTotal/.test(mgr), "the pace sentence replaced the vitals line");
+  assert.ok(/<div className="s2-vitals s2-say" style=\{\{ color: paceCol \}\}>/.test(mgr) && /Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr) && !/on the board\{capTotal/.test(mgr), "the pace sentence replaced the vitals line");
   assert.ok(/"s2-ansq bloop-host an-" \+ \(weakest\.mean >= 1 \? 5 : weakest\.mean >= 0\.9 \? 4 : weakest\.mean >= 0\.75 \? 3 : weakest\.mean >= 0\.5 \? 2 : 1\)/.test(mgr) && /\.s2-ansq\.an-1\{ background:linear-gradient\(150deg,#C8352B,#8E1F17\)/.test(mgr) && /\.s2-ansq\.an-5\{ background:linear-gradient\(150deg,#2A9C77,#1B6E54\)/.test(mgr), "five grounds on the standards card");
   assert.ok(/if \(b\.staffed === 0\) return "gap";\n\s*if \(b\.staffed >= b\.of\) return "full";\n\s*return b\.staffed >= line \? "ok" : "thin";/.test(mgr), "five states on the day's line");
   assert.ok(/<span className="k-pre">not yet<\/span>/.test(mgr) && /<span className="k-full">full<\/span>/.test(mgr), "the key names all five");
@@ -419,4 +420,67 @@ test("the phone's own measurements survive a larger text size, and the top of th
 
   assert.ok(/\.mc-head\{ display:flex; flex-wrap:wrap;/.test(core) && /\.mc-corner\{[^}]*margin-left:auto; \}/.test(core) && /\.mc-side\{ min-width:0; \}/.test(core), "and the corner head takes a second line rather than printing the stamp through the weekday");
   assert.ok(/\.mc-head\{ container-type:inline-size; container-name:mchead; \}/.test(core) && /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/.test(core), "and on that line it lies across, asked of the head and not of the screen: the text size is a zoom, and a zoom does not move a media query");
+});
+
+test("new and used are counted off the report on every screen that shows them", () => {
+  // One reader, because three screens draw this and three copies of "prefer the
+  // report, else estimate" is three chances to disagree about the same month.
+  assert.ok(/const statedSplitOf = \(M\) => \{/.test(mgr), "there is one reader for the stock split");
+  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 3,
+    "and the three screens that show new and used all go through it: the hero, the phone board and the digest");
+  assert.ok(/M\.stated = \{ \.\.\.M\.stated, vehicles: stated\.vehicles \};/.test(ing),
+    "a roll-up owns how many cars, but the grid still hands over how many were new");
+  assert.ok(/vehicles: stated\.vehicles, day, at: nowISO/.test(ing), "and the grid files its own split with the rest");
+  // The estimate stays, for a month whose report landed before any of this.
+  assert.ok(/const f = statedM\.deliveries \/ known;/.test(mgr),
+    "the scaled fallback is kept for a month filed before the split was carried");
+});
+
+test("the month's goal is asked for once, written by one writer, and a change says what it replaced", () => {
+  /* A goal belongs to one month. The standing figure a month used to fall back
+     on is gone from the reader, from the two writers and from the store editor,
+     because any one of them keeping it would put a new month back on the last
+     one's number. */
+  assert.ok(/const goalMonthState = \(store, month\) => \{/.test(mgr), "one reader for whether a month has a goal");
+  assert.ok(!/g\.units/.test(mgr), "nothing in the manager reads or writes a standing figure any more");
+  assert.ok(/const units = g\.byMonth\[monthKey\];/.test(sm) && !/: g\.units;/.test(sm), "and the shared reader takes the month's own figure or nothing");
+  assert.equal(mgr.split("!goalMonth.set &&").length - 1, 2, "both surfaces ask on the same condition: the desk hero and the phone board");
+
+  // One writer. Two copies of this were two chances to word one event
+  // differently and two places to forget that a change is not a first.
+  assert.ok(/async function saveMonthGoal\(\{ config, store, draft, onSaveConfig, confirm = askConfirm \}\)/.test(mgr), "there is one writer for the goal");
+  assert.equal(mgr.split("saveMonthGoal({ config, store, draft, onSaveConfig })").length - 1, 2, "and both fields go through it");
+  assert.ok(!/action: "Set the monthly unit goal", detail: `\$\{store\.name\}: \$\{n\} units`/.test(mgr), "neither surface writes its own audit line any more");
+
+  assert.ok(/const changing = own != null && own !== n;/.test(mgr), "a change is a figure this month already had, and a different one");
+  assert.ok(/action: changing \? "Changed the monthly unit goal" : "Set the monthly unit goal"/.test(mgr), "Set and Changed are two actions, so a change is findable on its own");
+  assert.ok(/\$\{fmtNum\(own\)\} to \$\{fmtNum\(n\)\} units for \$\{monthLabel\(month\)\}/.test(mgr), "and the line carries the figure it replaced, and which month it was");
+  assert.ok(/if \(changing && !\(await confirm\(/.test(mgr), "only a real change asks first, so the first of the month stays one tap and Enter");
+  assert.ok(/if \(await saveMonthGoal\(\{ config, store, draft, onSaveConfig \}\)\) setGoalOpen\(false\);/.test(mgr), "and a cancel leaves the field open rather than closing as if it had saved");
+
+  /* This one is here because it happened. saveGoal takes the draft as its first
+     argument, so a bare onClick hands it React's click event, parseInt of which
+     is NaN: the Set button silently did nothing and the field stayed open as if
+     the change had been refused. Both fields keep their own draft in state and
+     must call it with no argument at all. */
+  assert.ok(!/onClick=\{saveGoal\}/.test(mgr), "no field hands the click event in as the figure to save");
+
+  /* Written in, not offered. A figure a screen puts up for you is a figure you
+     accept without deciding, and the point of asking is that the month gets a
+     number somebody chose for it. */
+  assert.ok(/const \[draft, setDraft\] = useState\(""\);/.test(mgr), "the card opens on an empty field");
+  assert.ok(!/lastGoal/.test(mgr), "and the hero no longer offers last month's figure either");
+  assert.ok(!/placeholder=\{suggest/.test(mgr) && !/last month \$\{fmtNum/.test(mgr), "nor does it print one as a hint");
+});
+
+test("the shortfall printed next to \"at this pace\" is the pace's, not the sell gap", () => {
+  /* Two different numbers, and the line used to print the wrong one under the
+     right words. Holler Ford: goal 200, sold 74, so 126 still to sell while the
+     month runs at 159, which is 41 short. `needPerDay` wants the 126, because
+     that is what actually has to be sold; the sentence wants the 41. */
+  assert.ok(/out\.shortAtPace = Math\.max\(0, goal\.bar - projected\);/.test(mgr), "the pace's own shortfall is goal against projection");
+  assert.ok(/out\.short = Math\.max\(0, goal\.bar - totalUnits\);/.test(mgr), "and the sell gap is still goal against what is delivered");
+  assert.ok(/Short by <b>\{fmtNum\(Math\.round\(storePace\.shortAtPace\)\)\}<\/b> at this pace/.test(mgr), "the sentence prints the pace's shortfall");
+  assert.ok(/out\.needPerDay = daysLeft > 0 \? out\.short \/ daysLeft : null;/.test(mgr), "and what to sell a day is still worked from the sell gap");
+  assert.ok(!/Short by <b>\{fmtNum\(Math\.round\(storePace\.short\)\)\}<\/b> at this pace/.test(mgr), "the two are never swapped back");
 });

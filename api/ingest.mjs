@@ -43,8 +43,11 @@ const TZ = "America/New_York";
 const todayET = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
 const ymET = () => todayET().slice(0, 7);
 
-/* ---------- shared PDF line extraction ---------- */
-async function extractPdfLines(buffer) {
+/* ---------- shared PDF line extraction ----------
+   Exported because the stock-split backfill reads the same stored reports and
+   must read them the same way. A second copy would drift on the first ligature,
+   which is the seam this function exists to glue. */
+export async function extractPdfLines(buffer) {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
   let items = [];
   for (let pn = 1; pn <= doc.numPages; pn++) {
@@ -353,8 +356,14 @@ function applyToStore(data, entries, sourceLabel) {
     if (stated && stated.total != null && M.stated?.source !== "roll-up") {
       M.stated = {
         deliveries: stated.total, units: stated.units, leads: stated.leads,
-        day, at: nowISO, file: fileName, source: "summary-grid",
+        vehicles: stated.vehicles, day, at: nowISO, file: fileName, source: "summary-grid",
       };
+    } else if (stated && stated.vehicles && M.stated) {
+      /* The roll-up wins on how many cars, because it counts deals rather than
+         F&I deliveries, but it does not say how many were new. The grid does.
+         So when a roll-up already owns the figure, the grid still hands over the
+         stock split rather than letting it die with the rest of the block. */
+      M.stated = { ...M.stated, vehicles: stated.vehicles };
     }
     const raw = type === "delivery-summary"
       ? parseDeliverySummaryRows(rows)
