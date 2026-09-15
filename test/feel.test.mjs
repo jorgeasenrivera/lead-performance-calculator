@@ -434,3 +434,33 @@ test("new and used are counted off the report on every screen that shows them", 
   assert.ok(/const f = statedM\.deliveries \/ known;/.test(mgr),
     "the scaled fallback is kept for a month filed before the split was carried");
 });
+
+test("the month's goal is asked for once, written by one writer, and a change says what it replaced", () => {
+  /* The card only means anything if it can actually appear. `storeGoalFor`
+     falls back to the store's standing figure, so a card keyed on "this store
+     has no goal" would never show again for a store that has ever set one:
+     October would silently inherit September. This is the distinction that
+     stops that, and it is the one worth holding. */
+  assert.ok(/const goalMonthState = \(store, month\) => \{/.test(mgr), "a month's own goal is told apart from one it inherited");
+  assert.ok(/const carried = own == null && g && g\.units > 0 \? g\.units : null;/.test(mgr), "and an inherited figure is named as carried rather than counted as set");
+  assert.equal(mgr.split("!goalMonth.set &&").length - 1, 2, "both surfaces ask on the same condition: the desk hero and the phone board");
+
+  // One writer. Two copies of this were two chances to word one event
+  // differently and two places to forget that a change is not a first.
+  assert.ok(/async function saveMonthGoal\(\{ config, store, draft, onSaveConfig, confirm = askConfirm \}\)/.test(mgr), "there is one writer for the goal");
+  assert.equal(mgr.split("saveMonthGoal({ config, store, draft, onSaveConfig })").length - 1, 2, "and both fields go through it");
+  assert.ok(!/action: "Set the monthly unit goal", detail: `\$\{store\.name\}: \$\{n\} units`/.test(mgr), "neither surface writes its own audit line any more");
+
+  assert.ok(/const changing = own != null && own !== n;/.test(mgr), "a change is a figure this month already had, and a different one");
+  assert.ok(/action: changing \? "Changed the monthly unit goal" : "Set the monthly unit goal"/.test(mgr), "Set and Changed are two actions, so a change is findable on its own");
+  assert.ok(/\$\{fmtNum\(own\)\} to \$\{fmtNum\(n\)\} units for \$\{monthLabel\(month\)\}/.test(mgr), "and the line carries the figure it replaced, and which month it was");
+  assert.ok(/if \(changing && !\(await confirm\(/.test(mgr), "only a real change asks first, so the first of the month stays one tap and Enter");
+  assert.ok(/if \(await saveMonthGoal\(\{ config, store, draft, onSaveConfig \}\)\) setGoalOpen\(false\);/.test(mgr), "and a cancel leaves the field open rather than closing as if it had saved");
+
+  /* This one is here because it happened. saveGoal takes the draft as its first
+     argument, so a bare onClick hands it React's click event, parseInt of which
+     is NaN: the Set button silently did nothing and the field stayed open as if
+     the change had been refused. Both fields keep their own draft in state and
+     must call it with no argument at all. */
+  assert.ok(!/onClick=\{saveGoal\}/.test(mgr), "no field hands the click event in as the figure to save");
+});

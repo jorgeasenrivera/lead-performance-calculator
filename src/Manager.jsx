@@ -286,6 +286,99 @@ const statedSplitOf = (M) => {
   return { nw: nw || 0, us: us || 0, other: other || 0, counted: true };
 };
 
+/* Whether THIS month has a goal of its own, as against one it inherited.
+   `storeGoalFor` falls back to the store's standing figure when the month has
+   no entry, which is right for reading: a month with nothing set still needs a
+   bar to draw. It is wrong for asking. Without this distinction the four stores
+   that have ever set a goal would inherit September's figure into October and
+   for ever after, and the card that asks would never appear for them again.
+   Checked against the live config before it was written: ten of the fourteen
+   stores carry no goal at all, and the other four carry both a standing figure
+   and a September entry equal to it. */
+const goalMonthState = (store, month) => {
+  const g = (store && store.goal) || null;
+  const own = g && g.byMonth && g.byMonth[month] != null ? g.byMonth[month] : null;
+  const carried = own == null && g && g.units > 0 ? g.units : null;
+  const d = new Date(month + "-02"); d.setMonth(d.getMonth() - 1);
+  const last = (g && g.byMonth && g.byMonth[d.toISOString().slice(0, 7)]) || null;
+  /* What the field opens on. Last month's figure first, because that is the
+     number a manager is deciding against; the standing figure only if there is
+     no last month. Both beat an empty box: the first of the month should be one
+     tap and Enter, which is what the hero already offers. */
+  return { own, carried, last, suggest: last || carried || null, set: own != null };
+};
+
+/* Setting the month's goal, from either place that offers the field. The hero
+   and the phone board each wrote their own audit line, which is two chances to
+   word one event differently and two places to forget that a change is not a
+   first. One writer now.
+   Returns false when nothing was written, so a caller can leave its field open
+   on a cancel rather than close as if it had saved. */
+async function saveMonthGoal({ config, store, draft, onSaveConfig, confirm = askConfirm }) {
+  const n = Math.max(0, parseInt(draft, 10) || 0);
+  if (!n || !onSaveConfig) return false;
+  const next = JSON.parse(JSON.stringify(config));
+  const s = next.stores.find((x) => x.id === store.id);
+  if (!s) return false;
+  const month = ym();
+  const { own } = goalMonthState(store, month);
+  const changing = own != null && own !== n;
+  /* Only a real change asks. The first of the month stays one tap and Enter,
+     and re-entering the figure already there is not a change to confirm. */
+  if (changing && !(await confirm(
+    `Change ${monthLabel(month)}'s goal from ${fmtNum(own)} to ${fmtNum(n)}?\nThe old figure is kept in the audit either way.`,
+    { ok: "Change it" }))) return false;
+  const g = s.goal || {};
+  s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [month]: n } };
+  /* Set and Changed are two actions on purpose. The audit already speaks this
+     way (Changed a target, Changed activity standards), and a change written as
+     a first set is a change nobody can find afterwards by anything but diffing
+     two lines that look alike. */
+  onSaveConfig(next, { store: store.id,
+    action: changing ? "Changed the monthly unit goal" : "Set the monthly unit goal",
+    detail: changing
+      ? `${store.name}: ${fmtNum(own)} to ${fmtNum(n)} units for ${monthLabel(month)}`
+      : `${store.name}: ${fmtNum(n)} units for ${monthLabel(month)}` });
+  return true;
+}
+
+/* The card that asks. A month with no figure of its own has an idle pace bar,
+   no projection and no marker on the dots, so the words say what setting one
+   turns on rather than what the field does. It has no way out: Jorge chose that
+   over a dismissable card on the proposal of 15 September, so it sits there
+   until the month has an answer. */
+function GoalAskCard({ store, month, carried, suggest, onSave }) {
+  const [draft, setDraft] = useState(suggest ? String(suggest) : "");
+  const [busy, setBusy] = useState(false);
+  const name = new Date(month + "-02").toLocaleDateString("en-US", { month: "long" });
+  const save = async () => {
+    if (busy || !(parseInt(draft, 10) > 0)) return;
+    setBusy(true);
+    try { await onSave(draft); } finally { setBusy(false); }
+  };
+  return (
+    <div className="gask">
+      <div className="gask-cap"><PixIcon glyph="sold" size={11} /> {store.name}</div>
+      <div className="gask-h">{carried ? `${name} is still running on ${fmtNum(carried)}` : `${name} has no goal yet`}</div>
+      <div className="gask-p">{carried
+        ? "That figure carried over from the last month that had one. Confirm it or set a new one, and the pace bar reads against this month."
+        : "Set one and the pace bar, the projection and every card that reads against it start working."}</div>
+      <div className="gask-act">
+        <label className="gask-f">
+          <input type="number" min="0" inputMode="numeric" value={draft} autoComplete="off"
+            placeholder={suggest ? String(suggest) : "85"}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") save(); }} />
+          <span>units</span>
+        </label>
+        <button type="button" className="gask-set" onClick={save} disabled={busy || !(parseInt(draft, 10) > 0)}>
+          {carried ? "Set it for " + name : "Set it"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // How well someone is holding their standards, whether or not they clear all of
 // them: the share of requirements met, plus a bonus for how far past they are.
 function qualityOf(ev) {
@@ -18673,16 +18766,9 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
     return list;
   }, [people, roleFilter, limitOnly, drill]);
 
-  const saveGoal = () => {
-    const n = Math.max(0, parseInt(goalDraft, 10) || 0);
-    if (!n || !onSaveConfig) return;
-    const next = JSON.parse(JSON.stringify(config));
-    const s = next.stores.find((x) => x.id === store.id);
-    if (!s) return;
-    const g = s.goal || {};
-    s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [ym()]: n } };
-    onSaveConfig(next, { store: store.id, action: "Set the monthly unit goal", detail: `${store.name}: ${n} units` });
-    close();
+  const goalMonth = goalMonthState(store, ym());
+  const saveGoal = async (draft = goalDraft) => {
+    if (await saveMonthGoal({ config, store, draft, onSaveConfig })) close();
   };
   const avStyle = (p) => {
     const t = p.tag;
@@ -18777,7 +18863,7 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
         {canSetGoal && (
           <div className="fr-acts">
             <input className="fr-ref" type="number" min="0" inputMode="numeric" value={goalDraft} onChange={(e) => setGoalDraft(e.target.value)} placeholder={goalUnits ? String(goalUnits) : "85"} />
-            <button type="button" className="fr-b pri" onClick={saveGoal}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
+            <button type="button" className="fr-b pri" onClick={() => saveGoal()}>{goalUnits ? "Change the goal" : "Set the goal"}</button>
           </div>
         )}
       </>);
@@ -18890,6 +18976,10 @@ function BoardRoomPhone({ config, store, data, session, canSetGoal, onSaveConfig
           })}
         </div>
       </div>
+
+      {canSetGoal && !goalMonth.set && (
+        <GoalAskCard store={store} month={ym()} carried={goalMonth.carried} suggest={goalMonth.suggest} onSave={(d) => saveGoal(d)} />
+      )}
 
       <div className="bp-stand">
         <div className="bp-filt">
@@ -19377,16 +19467,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
     const lm = storeGoalFor(store, d.toISOString().slice(0, 7));
     return lm ? lm.units : 0;
   })();
-  const saveGoal = () => {
-    const n = Math.max(0, parseInt(goalDraft, 10) || 0);
-    if (!n || !onSaveConfig) { setGoalOpen(false); return; }
-    const next = JSON.parse(JSON.stringify(config));
-    const s = next.stores.find((x) => x.id === store.id);
-    if (!s) return;
-    const g = s.goal || {};
-    s.goal = { units: n, pct: g.pct ?? 100, byMonth: { ...(g.byMonth || {}), [ym()]: n } };
-    onSaveConfig(next, { store: store.id, action: "Set the monthly unit goal", detail: `${store.name}: ${n} units` });
-    setGoalOpen(false);
+  const goalMonth = goalMonthState(store, ym());
+  const saveGoal = async (draft = goalDraft) => {
+    /* Left open on a cancel or a bad figure. Closing the field on a "no" would
+       read as if the change had gone through. */
+    if (await saveMonthGoal({ config, store, draft, onSaveConfig })) setGoalOpen(false);
   };
   const paceTone = storePace.tooEarly || !storePace.goal ? "dim" : storePace.tone;
   const paceCol = { g: "#8FE3B3", y: "#F2C57C", r: "#FFA294", dim: "rgba(255,255,255,.6)" }[paceTone];
@@ -19427,7 +19512,7 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
                     <input type="number" min="0" autoFocus value={goalDraft} placeholder={String(lastGoal || 85)}
                       onChange={(e) => setGoalDraft(e.target.value)}
                       onKeyDown={(e) => { if (e.key === "Enter") saveGoal(); if (e.key === "Escape") setGoalOpen(false); }} />
-                    <button onClick={saveGoal}>Set</button>
+                    <button onClick={() => saveGoal()}>Set</button>
                   </span>
                 : storePace.goal
                   ? (canSetGoal
@@ -19752,6 +19837,11 @@ function StoreHero({ config, store, data, session, onGoTab, filter, onFilter, on
       </div>
 
       {inGrace && <div className="hero-strip"><span className="strip-note">Grace period · first {graceDays} days, no restrictions recommended yet</span></div>}
+      {/* Under the hero on purpose: the goal is read three inches above this, so
+          the ask and the answer are on the same screen. */}
+      {canSetGoal && !goalMonth.set && (
+        <GoalAskCard store={store} month={ym()} carried={goalMonth.carried} suggest={goalMonth.suggest} onSave={(d) => saveGoal(d)} />
+      )}
     </div>
   );
 }
@@ -28161,6 +28251,37 @@ button.da-lbrow { cursor:pointer; }
 .onsoon-head h2{ font:700 30px/1.1 var(--font-display); letter-spacing:-.015em; margin:8px 0 0; text-wrap:balance; }
 .onsoon-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px; }
 .onsoon-card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
+/* The card that asks for the month's goal. It borrows the app's own card, its
+   mono cap and its sage button rather than inventing a treatment: it appears
+   under the hero and above the board, between two surfaces that already look
+   like this, and a third look between them would read as something bolted on. */
+.gask{ background:var(--card); border:1px solid var(--line); border-radius:16px;
+        padding:15px 17px; margin:12px 0 0; display:flex; flex-direction:column; gap:7px;
+        box-shadow:0 1px 2px rgba(0,0,0,.04); }
+.gask-cap{ font:700 9.5px var(--font-mono); letter-spacing:.12em; text-transform:uppercase;
+        color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+.gask-h{ font:600 16px/1.25 var(--font-display); letter-spacing:-.01em; color:var(--ink); }
+.gask-p{ font-size:13px; color:var(--ink-2); max-width:62ch; }
+.gask-act{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; margin-top:5px; }
+.gask-f{ display:inline-flex; align-items:baseline; gap:6px; border:1px solid var(--line);
+        border-radius:10px; padding:7px 11px; background:var(--bg); }
+.gask-f input{ width:54px; border:0; background:none; padding:0; color:var(--ink);
+        font:700 17px/1 var(--font-display); font-variant-numeric:tabular-nums; }
+.gask-f input:focus{ outline:none; }
+/* The suggestion has to look like one. At the field's own weight and colour a
+   placeholder reads as a figure already entered, which next to a button that is
+   still disabled reads as broken rather than as waiting. */
+.gask-f input::placeholder{ color:var(--ink-3); font-weight:500; }
+.gask-f:focus-within{ border-color:var(--p2); }
+/* The unit, not a second number: the mono cap keeps it from being read as part
+   of the figure beside it. */
+.gask-f span{ font:700 8.5px var(--font-mono); letter-spacing:.12em;
+        text-transform:uppercase; color:var(--ink-3); }
+.gask-set{ background:var(--p2); color:#fff; border:0; border-radius:12px;
+        padding:9px 18px; cursor:pointer; font:600 13px var(--font-ui); }
+.gask-set:hover{ background:var(--p2d); }
+.gask-set:disabled{ background:var(--ink-3); cursor:default; }
+.bp-page > .gask{ margin:12px 14px 0; }
 .onsoon-card .s2-cap{ color:var(--ink-2); }
 .onsoon-sub{ margin:10px 0 0; font-size:13.5px; color:var(--ink-2); }
 .onsoon-why{ margin:10px 0 0; font-size:14px; line-height:1.45; }
