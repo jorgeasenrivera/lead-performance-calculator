@@ -43,8 +43,11 @@ const TZ = "America/New_York";
 const todayET = () => new Date().toLocaleDateString("en-CA", { timeZone: TZ });
 const ymET = () => todayET().slice(0, 7);
 
-/* ---------- shared PDF line extraction ---------- */
-async function extractPdfLines(buffer) {
+/* ---------- shared PDF line extraction ----------
+   Exported because the stock-split backfill reads the same stored reports and
+   must read them the same way. A second copy would drift on the first ligature,
+   which is the seam this function exists to glue. */
+export async function extractPdfLines(buffer) {
   const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise;
   let items = [];
   for (let pn = 1; pn <= doc.numPages; pn++) {
