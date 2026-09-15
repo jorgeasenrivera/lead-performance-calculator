@@ -8583,24 +8583,13 @@ function OnlineSoon({ store, rooms, onToolChange }) {
             </span>
             <span className="onsoon-tape" aria-hidden="true" />
           </div>
+          {/* The sign and the sentence, and nothing else. A cap saying Online
+              under a tab that already says Online, a progress bar that can only
+              ever read nought, and a paragraph of history were all the page
+              talking about itself. */}
           <div className="onsoon-head">
-            <div className="s2-cap"><PixIcon glyph="globe" size={11} /> Online</div>
             <h2>There is no room here yet</h2>
-            <p>
-              It has a door, a sign, a light switch and a link you can send to a phone.
-              What it does not have is a floor.
-            </p>
           </div>
-          {/* The honest progress bar. The app's own track, at nothing, because
-              that is where it is. */}
-          <div className="onsoon-prog">
-            <div className="s2-led onsoon-led"><i style={{ width: "0%" }} /></div>
-            <div className="onsoon-proglbl"><span>poured</span><b>0%</b><span>ready</span></div>
-          </div>
-          <p className="onsoon-real">
-            Seventeen days have been opened in this room across the group since August.
-            Nobody has ever stood in one. Not one person, not one lead, not one minute.
-          </p>
         </div>
       </div>
 
@@ -28111,8 +28100,14 @@ button.da-lbrow { cursor:pointer; }
 .s2-hlbl{ display:inline-flex; align-items:center; gap:5px; }
 .s2-hid{ width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
 /* ---- Online, before there is an Online ---- */
-.onsoon{ max-width:1000px; margin:0 auto; }
+/* Clear of the header. The other content pages start 64px below the topstack
+   and this one started at zero, with the card's top edge against it. */
+.onsoon{ max-width:1000px; margin:64px auto 0; }
 .onsoon-hero{ --hA:#8B5CF6; --hB:#6D3FD6; --hC:#3B1E86; text-align:center; align-items:center; }
+/* The tube is shrink to fit, and the paragraph that used to set its width has
+   gone, which left the tape either side of the sign as two stubs. The sign
+   takes the card so the tape still reads as something across a doorway. */
+.onsoon-hero .s2-tube{ width:100%; }
 .onsoon-sign{ display:flex; align-items:center; gap:12px; width:100%; }
 .onsoon-tape{ flex:1; height:14px; border-radius:3px;
   background:repeating-linear-gradient(135deg, #E4C98D 0 10px, #241A06 10px 20px); opacity:.9; }
@@ -28120,13 +28115,6 @@ button.da-lbrow { cursor:pointer; }
   background:#E4C98D; color:#3A2A08; white-space:nowrap; }
 .onsoon-signin b{ font:700 11px var(--font-mono); letter-spacing:.12em; text-transform:uppercase; }
 .onsoon-head h2{ font:700 30px/1.1 var(--font-display); letter-spacing:-.015em; margin:8px 0 0; text-wrap:balance; }
-.onsoon-head p{ margin:8px auto 0; max-width:52ch; font-size:14.5px; line-height:1.5; color:rgba(255,255,255,.84); }
-.onsoon-prog{ width:min(420px, 100%); margin:4px auto 0; }
-.onsoon-led{ height:10px; }
-.onsoon-proglbl{ display:flex; justify-content:space-between; align-items:baseline; margin-top:6px;
-  font:600 11.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.72); }
-.onsoon-proglbl b{ font-family:var(--font-display); font-size:15px; letter-spacing:0; color:#fff; }
-.onsoon-real{ margin:0 auto; max-width:60ch; font:500 13px/1.6 var(--font-ui); color:rgba(255,255,255,.78); }
 .onsoon-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px; margin-top:12px; }
 .onsoon-card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px 18px; }
 .onsoon-card .s2-cap{ color:var(--ink-2); }
@@ -28146,7 +28134,10 @@ button.da-lbrow { cursor:pointer; }
      takes the width and the tape goes under it, full width, where it looks
      like what it is. */
   .onsoon-sign{ flex-direction:column; gap:8px; }
-  .onsoon-tape{ width:100%; height:12px; }
+  /* flex:1 from the row layout means flex-basis:0 on whichever axis is the
+     main one. Stacked, that is the height, so the tape collapsed to nothing
+     and the phone has never shown it. */
+  .onsoon-tape{ width:100%; height:12px; flex:none; }
   .onsoon-sign .onsoon-tape:first-child{ display:none; }
   /* The dock floats over the foot of the page, so the last thing on it has
      to end above the dock rather than under it. This was fixed for the Online
