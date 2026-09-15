@@ -185,6 +185,7 @@ workers/lpc-mail.js              the Cloudflare email worker that catches the st
 native/                          the Expo shell around the site, and its own README
 docs/routines.md                 the three scheduled jobs that look after Sage unattended
 docs/in-flight.md                the board: who is working on what
+docs/handoff.md                  messages between the two agents
 NOTES.md                         asked for, not built yet, and the decisions behind it
 HANDOFF_3.md, HANDOFF_4.md       what a past session knew
 ```
@@ -286,6 +287,12 @@ is worse than doing the work twice. Every rule below follows from that.
 
 `docs/in-flight.md`. One row per item: what, who, which branch, which files.
 
+Alongside it, `docs/handoff.md` carries messages between the agents. The board
+says who owns what; the handoff says what one agent needs the other to know. It
+is the only channel they have, since one runs in a web session and the other on
+the desktop, so anything urgent still goes through Jorge. Each agent writes only
+in its own section, which is what stops two writers landing on the same line.
+
 Claiming is a commit to `main` **before the work starts**:
 
 ```bash
@@ -367,7 +374,8 @@ the first one is taking a while.
 Codex picks up item C6, moving the restore point out of the store row. The `C`
 says Claude wrote that row; the Owner column is what says who has it now.
 
-1. **Read** `AGENTS.md`, then this file, then `docs/in-flight.md`.
+1. **Read** `AGENTS.md`, then this file, then `docs/in-flight.md`, then
+   `docs/handoff.md`.
 2. **Check the hot files.** C6 touches `src/LeadPerformanceCalculator.jsx`. The
    board shows no open branch on it, so the item is takeable. If Claude had one
    open, Codex would take C3 (a migration) or review instead.
