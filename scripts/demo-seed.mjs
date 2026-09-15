@@ -323,8 +323,14 @@ export function buildDemo() {
   }
   /* The store's own delivered count, which is the only figure that counts a car
      once. Everywhere the store's month is shown reads this instead of the sum. */
+  /* The stock split the way a real report gives it: whole cars, counted once,
+     summing to the store's own delivered figure. The demo used to leave it out,
+     which meant the demo store was the one store still showing the scaled
+     estimate, thirds of a car and all. */
+  const statedNew = Math.round(storeSoFar * 0.46);
   const stated = {
     deliveries: storeSoFar, sold: storeSoFar,
+    vehicles: { new: statedNew, used: storeSoFar - statedNew, other: 0 },
     storeName: DEMO_STORE_NAME, day: today, at: nowIso, source: "roll-up",
   };
 

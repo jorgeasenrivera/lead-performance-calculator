@@ -353,8 +353,14 @@ function applyToStore(data, entries, sourceLabel) {
     if (stated && stated.total != null && M.stated?.source !== "roll-up") {
       M.stated = {
         deliveries: stated.total, units: stated.units, leads: stated.leads,
-        day, at: nowISO, file: fileName, source: "summary-grid",
+        vehicles: stated.vehicles, day, at: nowISO, file: fileName, source: "summary-grid",
       };
+    } else if (stated && stated.vehicles && M.stated) {
+      /* The roll-up wins on how many cars, because it counts deals rather than
+         F&I deliveries, but it does not say how many were new. The grid does.
+         So when a roll-up already owns the figure, the grid still hands over the
+         stock split rather than letting it die with the rest of the block. */
+      M.stated = { ...M.stated, vehicles: stated.vehicles };
     }
     const raw = type === "delivery-summary"
       ? parseDeliverySummaryRows(rows)

@@ -520,8 +520,17 @@ function mapDeliverySummaryGrid(lines) {
   const dcTotal = ["internet", "phone", "showroom", "campaign"]
     .reduce((n, c) => (dcUnits[c] == null ? n : n + dcUnits[c]), 0);
   const dcLeads = { internet: g("internet", 0), phone: g("phone", 0), showroom: g("showroom", 0) };
+  /* The store's own New and Used rows, which were being parsed and then dropped
+     three lines from here. They were kept in storeSources by the same branch
+     that keeps the channel rows, and then nothing read them, so the app had to
+     estimate the stock split by scaling the people's credited figures onto the
+     headline. That is what put 36.3 new and 37.7 used on a card about whole
+     cars. Column 4 is Total Delivered / F&I, the same column the channels are
+     read from. */
+  const dcVeh = { new: g("new", 4), used: g("used", 4), other: g("other", 4) };
+  const anyVeh = ["new", "used", "other"].some((k) => dcVeh[k] != null);
   const stated = Object.keys(storeSources).length
-    ? { units: dcUnits, total: dcTotal, leads: dcLeads } : null;
+    ? { units: dcUnits, total: dcTotal, leads: dcLeads, ...(anyVeh ? { vehicles: dcVeh } : {}) } : null;
   return { storeName, rows, pairings, stated };
 }
 

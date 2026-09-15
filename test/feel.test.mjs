@@ -420,3 +420,17 @@ test("the phone's own measurements survive a larger text size, and the top of th
   assert.ok(/\.mc-head\{ display:flex; flex-wrap:wrap;/.test(core) && /\.mc-corner\{[^}]*margin-left:auto; \}/.test(core) && /\.mc-side\{ min-width:0; \}/.test(core), "and the corner head takes a second line rather than printing the stamp through the weekday");
   assert.ok(/\.mc-head\{ container-type:inline-size; container-name:mchead; \}/.test(core) && /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/.test(core), "and on that line it lies across, asked of the head and not of the screen: the text size is a zoom, and a zoom does not move a media query");
 });
+
+test("new and used are counted off the report on every screen that shows them", () => {
+  // One reader, because three screens draw this and three copies of "prefer the
+  // report, else estimate" is three chances to disagree about the same month.
+  assert.ok(/const statedSplitOf = \(M\) => \{/.test(mgr), "there is one reader for the stock split");
+  assert.equal(mgr.split("statedSplitOf(M)").length - 1, 3,
+    "and the three screens that show new and used all go through it: the hero, the phone board and the digest");
+  assert.ok(/M\.stated = \{ \.\.\.M\.stated, vehicles: stated\.vehicles \};/.test(ing),
+    "a roll-up owns how many cars, but the grid still hands over how many were new");
+  assert.ok(/vehicles: stated\.vehicles, day, at: nowISO/.test(ing), "and the grid files its own split with the rest");
+  // The estimate stays, for a month whose report landed before any of this.
+  assert.ok(/const f = statedM\.deliveries \/ known;/.test(mgr),
+    "the scaled fallback is kept for a month filed before the split was carried");
+});
