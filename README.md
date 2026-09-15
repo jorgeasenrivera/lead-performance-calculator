@@ -211,7 +211,7 @@ Supabase project `dydfevdnpppvxgdptiwv`. The tables that matter:
 | `deal_events` | the read-only feed from DriveCentric that flips a salesperson to "with a guest" without anybody remembering to |
 | `app_errors` | every crash on a phone, failed write and server fault, grouped by fingerprint |
 | `app_vitals` | INP, LCP and CLS from real phones, with the build, the room and the store |
-| `queue_identity` | dead since #326. Six rows. Nothing reads it. See `docs/in-flight.md` item A3 |
+| `queue_identity` | dead since #326. Six rows. Nothing reads it. See `docs/in-flight.md` item C3 |
 
 Row level security is the only boundary, so treat every policy change as a
 security change. Schema changes are migrations under `supabase/migrations/`,
@@ -364,13 +364,14 @@ the first one is taking a while.
 
 ## 9. A worked example
 
-Codex picks up item A4, moving the restore point out of the store row.
+Codex picks up item C6, moving the restore point out of the store row. The `C`
+says Claude wrote that row; the Owner column is what says who has it now.
 
 1. **Read** `AGENTS.md`, then this file, then `docs/in-flight.md`.
-2. **Check the hot files.** A4 touches `src/LeadPerformanceCalculator.jsx`. The
+2. **Check the hot files.** C6 touches `src/LeadPerformanceCalculator.jsx`. The
    board shows no open branch on it, so the item is takeable. If Claude had one
-   open, Codex would take A3 (a migration) or review instead.
-3. **Claim it.** Edit the A4 row: owner Codex, branch `codex/restore-point-key`,
+   open, Codex would take C3 (a migration) or review instead.
+3. **Claim it.** Edit the C6 row: owner Codex, branch `codex/restore-point-key`,
    files, status in progress. Commit to `main`, push. The lock is live.
 4. **Branch** from the `main` commit that carries the claim.
 5. **Build it.** Small commits, comments that say why, no em dashes.
@@ -380,7 +381,7 @@ Codex picks up item A4, moving the restore point out of the store row.
    put what happened in the pull request: what you ran, what came back, what the
    row looked like before and after.
 8. **Open the pull request.** Say what changed, what it costs, what you did not do
-   and why. Set the A4 row to in review in the same branch.
+   and why. Set the C6 row to in review in the same branch.
 9. **Ask Claude to review it.** It looks for the claim the diff does not support.
 10. **Merge** when both checks are green and the review is answered. Set the row to
     done with the pull request number, in the same merge.

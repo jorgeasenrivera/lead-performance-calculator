@@ -17,23 +17,29 @@ row to done and adding the pull request number.
   `supabase/`, `test/`, `workers/`, `native/` or `docs/`, or review the open
   pull request instead.
 
-**When two claims take the same id.** It has happened twice in one afternoon, and
-the second time was caused by fixing the first. Codex claimed A7, Claude claimed
-A7 two minutes later, and then both agents resolved it at once: Claude dropped
-its row, Codex renamed its own to A8, and Claude then wrote a new row at A8
-having read the board before Codex's rename landed. A read, then a write, with
-somebody else's write in between.
+**The ids carry the prefix of whoever wrote the row.** `C` for Claude, `X` for
+Codex, each counting up its own run: `C1`, `C2`, `X1`. Pick the next free number
+in **your own** letter and you cannot collide with the other agent, because
+nobody else is drawing from it. Jorge settled this on 15 September.
 
-So, until the ids are changed to something that cannot collide: **renumber your
-own row, never the other agent's, and re-read the board immediately before you
-push.** If both of you renumber anyway, the row already on `main` keeps its
-number and the later push moves.
+The prefix is the row's author, not the item's owner. A row Claude writes for
+Codex to own is still a `C` row, because the point is the moment of writing: two
+agents both reaching for "the next free number" in one shared run is the race,
+and an owner prefix does not fix it when one agent opens an item for the other.
+The Owner column says who has it.
 
-Better, and worth agreeing rather than one of us imposing it: give the ids an
-owner prefix, `C1` and `C2` for Claude, `X1` and `X2` for Codex, so two agents
-picking a number at the same moment cannot land on the same one. A shared
-counter needs coordination that a commit race does not provide. Jorge and Codex
-to say yes or no; the rows above stay as they are in the meantime.
+This was learned the hard way, twice in one afternoon. Codex claimed A7, Claude
+claimed A7 two minutes later, and then both agents fixed it at once and made a
+second collision: Claude dropped its row, Codex renamed its own to A8, and
+Claude wrote a new row at A8 having read the board before Codex's rename landed.
+A read, a write, and somebody else's write in between. A shared counter needs
+coordination that a commit race does not provide.
+
+If two rows ever do take one id, the row already on `main` keeps it and the
+later push moves. Renumber your own row, never the other agent's.
+
+The Done table is keyed by pull request number for the same reason: it is
+already unique, and an invented id there was one more counter to race on.
 
 Status is one of: `open`, `in progress`, `needs approval` (a visual change
 waiting on Jorge's proposal page), `in review`, `done`.
@@ -44,13 +50,13 @@ waiting on Jorge's proposal page), `in review`, `done`.
 
 | # | Item | Owner | Branch | Files | Status | PR |
 |---|------|-------|--------|-------|--------|-----|
-| A1 | **The Online room.** The under construction page is built and live. The room itself still exists: its tool pill, sign-in parameter, salesperson tab, `LEAD_VARIANTS` entry and row family. Jorge marked this LATER, so it is not to be removed until he says. | - | - | `src/Manager.jsx`, `src/LeadPerformanceCalculator.jsx` | open (deferred by Jorge) | - |
-| A2 | **Ten stores with no goal.** Four of fourteen stores have set a monthly goal. The prompt that would ask for one is not built. Marked LATER. Needs a proposal page before anything is drawn. | - | - | `src/Manager.jsx` | open (deferred by Jorge, needs approval) | - |
-| A3 | **Drop `public.queue_identity`.** Six rows, last touched 22 August, and nothing reads or writes it since the PIN came out in #326. Dropping a table cannot be undone, so it waits for Jorge to say the word. A migration under `supabase/migrations/`, nothing else. | - | - | `supabase/migrations/` | open (waiting on Jorge) | - |
-| A6 | **The desks caption on the Live Activity.** It reads "1 and 2 and 3 and 4 and 5 and 6 are open" because the free desk numbers are joined with the word "and". It should say "6 desks open". Written and held: there is no Swift toolchain in a web session, and the pull request's own iOS check could not run because the Expo account has used its free-plan builds for the month. It merges when a real build can check it. The patch is on `claude/desks-caption`. | Claude | `claude/desks-caption` | `native/targets/queue/QueueActivity.swift` | blocked on the Expo build quota | - |
-| A8 | **Make the required checks reliable on Windows.** Git currently converts the checkout to CRLF, which breaks source guards written against LF, and five tests turn a Windows file URL into `C:\\C:\\...`. Keep code files on LF and resolve file URLs with Node's cross-platform helper so Codex can run the same required checks Claude and CI run. No product behaviour or pixels change. | Codex | `codex/windows-checks` | `.gitattributes`, `test/` | in progress | - |
-| A9 | **Review the `--dvh` and safe-area division inside the text-size zoom.** Merged in #334. One rule redefines `--dvh`, `--sat` and `--sab` inside the four zoom roots so the phone's own measurements are not enlarged along with the words, and it carries every full-height salesperson screen. Verified by measurement and pixel diff in Chromium only, so WebKit is the open question, along with whether `--satx` can leak to the manager and two hand-tuned constants no test holds. The brief is the issue. | Codex | - | review only, no branch | open | #335 |
-| A4 | **Move the restore point out of the store row.** Every save currently ships a copy of the state it is replacing. Putting the restore point in a key of its own makes a save smaller and a store row easier to read. Noted in the September audit and deliberately not taken then, because it is bigger than the rest of that batch. | - | - | `src/LeadPerformanceCalculator.jsx`, `api/`, `test/` | open | - |
+| C1 | **The Online room.** The under construction page is built and live. The room itself still exists: its tool pill, sign-in parameter, salesperson tab, `LEAD_VARIANTS` entry and row family. Jorge marked this LATER, so it is not to be removed until he says. | - | - | `src/Manager.jsx`, `src/LeadPerformanceCalculator.jsx` | open (deferred by Jorge) | - |
+| C2 | **Ten stores with no goal.** Four of fourteen stores have set a monthly goal. The prompt that would ask for one is not built. Marked LATER. Needs a proposal page before anything is drawn. | - | - | `src/Manager.jsx` | open (deferred by Jorge, needs approval) | - |
+| C3 | **Drop `public.queue_identity`.** Six rows, last touched 22 August, and nothing reads or writes it since the PIN came out in #326. Dropping a table cannot be undone, so it waits for Jorge to say the word. A migration under `supabase/migrations/`, nothing else. | - | - | `supabase/migrations/` | open (waiting on Jorge) | - |
+| C4 | **The desks caption on the Live Activity.** It reads "1 and 2 and 3 and 4 and 5 and 6 are open" because the free desk numbers are joined with the word "and". It should say "6 desks open". Written and held: there is no Swift toolchain in a web session, and the pull request's own iOS check could not run because the Expo account has used its free-plan builds for the month. It merges when a real build can check it. The patch is on `claude/desks-caption`. | Claude | `claude/desks-caption` | `native/targets/queue/QueueActivity.swift` | blocked on the Expo build quota | - |
+| X1 | **Make the required checks reliable on Windows.** Git currently converts the checkout to CRLF, which breaks source guards written against LF, and five tests turn a Windows file URL into `C:\\C:\\...`. Keep code files on LF and resolve file URLs with Node's cross-platform helper so Codex can run the same required checks Claude and CI run. No product behaviour or pixels change. | Codex | `codex/windows-checks` | `.gitattributes`, `test/` | in progress | - |
+| C5 | **Review the `--dvh` and safe-area division inside the text-size zoom.** Merged in #334. One rule redefines `--dvh`, `--sat` and `--sab` inside the four zoom roots so the phone's own measurements are not enlarged along with the words, and it carries every full-height salesperson screen. Verified by measurement and pixel diff in Chromium only, so WebKit is the open question, along with whether `--satx` can leak to the manager and two hand-tuned constants no test holds. The brief is the issue. | Codex | - | review only, no branch | open | #335 |
+| C6 | **Move the restore point out of the store row.** Every save currently ships a copy of the state it is replacing. Putting the restore point in a key of its own makes a save smaller and a store row easier to read. Noted in the September audit and deliberately not taken then, because it is bigger than the rest of that batch. | - | - | `src/LeadPerformanceCalculator.jsx`, `api/`, `test/` | open | - |
 
 ## Settled
 
@@ -66,9 +72,9 @@ Jorge decided on 15 September that they stay: they are part of the character of 
 
 Two dead ends, recorded so nobody walks them twice. The heavy `.s2-noise` layer, which draws the same lines at twenty two percent, is not involved: it sits at `opacity:0` unless the hero is in its grey lost-signal state. And the rounded corner is not leaking the sheet's own background: painting `.ru-sheet` red produces no red at the corner, the clip is clean. Also worth knowing: there are two round-ups, one in `Manager.jsx` and one on the salesperson side, and a question about "the round-up" needs to say which.
 
-**For whoever takes the Windows checks (A7).** #334 added seven more source guards to `test/feel.test.mjs`, and several of them match across a line break, for example `` /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/ ``. They are written against LF and they will fail on a CRLF checkout, which is the thing that item is fixing. They are not a new kind of problem, the file already had them at lines 143, 168, 169, 202 and 222, but they are new instances and they landed after that claim was made. Rebase on `main` before measuring, or the count will be short.
+**For whoever takes the Windows checks (`X1`).** #334 added seven more source guards to `test/feel.test.mjs`, and several of them match across a line break, for example `` /@container mchead \(max-width:300px\)\{\n  \.mc-corner\{ flex-direction:row;/ ``. They are written against LF and they will fail on a CRLF checkout, which is the thing that item is fixing. They are not a new kind of problem, the file already had them at lines 143, 168, 169, 202 and 222, but they are new instances and they landed after that claim was made. Rebase on `main` before measuring, or the count will be short.
 
-Two claims were numbered A7 on 15 September, by two agents within two minutes of each other. Codex's reached `main` first, so by rule 1 it keeps the number and Claude's went to Done as D8. Worth knowing that the board's ids are not a reliable lock on their own: the row is.
+Two claims were numbered A7 on 15 September, by two agents within two minutes of each other. That is what the owner prefixes at the top of this file exist to stop. Worth knowing that the board's ids are not a reliable lock on their own: the row is.
 
 ## Outside the repo, for Jorge
 
@@ -82,13 +88,13 @@ These are not agent work. They are here so nobody proposes them again.
 
 ## Done
 
-| # | Item | Owner | PR |
-|---|------|-------|-----|
-| D1 | The PIN stage removed from sign-in. Picking a name is the whole of it. | Claude | #326 |
-| D2 | One way to say two names are one person: one sentence, one audit line. | Claude | #327 |
-| D3 | Printing opens one window, and the sign-in poster takes the room. | Claude | #328 |
-| D4 | The two-tap check measures from inside the page and reads the server until it settles. | Claude | #329 |
-| D5 | One selector drew the 9px verdict glyphs at 68 by 34, and three sizings fell out of it. | Claude | #331 |
-| D6 | One line for the labels, and a morning brief that notices silence. | Claude | #332 |
-| D7 | There was no third write: the settle rule was reading a chain mid flight. | Claude | #333 |
-| D8 | The screen's own measurements are not text: the text size is a zoom, and it was enlarging the phone's height and its safe areas along with the words. | Claude | #334 |
+| PR | Item | Owner |
+|----|------|-------|
+| #326 | The PIN stage removed from sign-in. Picking a name is the whole of it. | Claude |
+| #327 | One way to say two names are one person: one sentence, one audit line. | Claude |
+| #328 | Printing opens one window, and the sign-in poster takes the room. | Claude |
+| #329 | The two-tap check measures from inside the page and reads the server until it settles. | Claude |
+| #331 | One selector drew the 9px verdict glyphs at 68 by 34, and three sizings fell out of it. | Claude |
+| #332 | One line for the labels, and a morning brief that notices silence. | Claude |
+| #333 | There was no third write: the settle rule was reading a chain mid flight. | Claude |
+| #334 | The screen's own measurements are not text: the text size is a zoom, and it was enlarging the phone's height and its safe areas along with the words. | Claude |
