@@ -13121,6 +13121,10 @@ function RoundUp({ config, store, data, M }) {
       const pct = cur && cur.l > 0 ? Math.round((cur.u / cur.l) * 100) : null;
       const prevPct = prev && prev.l > 0 ? Math.round((prev.u / prev.l) * 100) : null;
       return { id: c.id, label: c.label + " close", pct,
+        /* The standard the channel is measured against, so the round-up can
+           draw the figure the way the hero and the roster draw it rather than
+           print a bare number beside two surfaces that show a tube. */
+        tgt: (normThresholds(store.thresholds)[c.id] || {}).green ?? null,
         delta: pct != null && prevPct != null ? pct - prevPct : null };
     }).filter((c) => c.pct != null);
 
@@ -13229,18 +13233,38 @@ function RoundUp({ config, store, data, M }) {
                       <div className="ru2-stat-num"><CountUp value={ru2.soldY.us} delay={320} /></div>
                     </div>
                   )}
-                  {ru2.close.map((c, i) => (
-                    <div className="ru2-stat" key={c.id} style={{ animationDelay: (300 + i * 60) + "ms" }}>
-                      <div className="ru2-stat-name">{c.label}</div>
-                      <div className="ru2-stat-row">
-                        <span className="ru2-stat-num">{c.pct}%</span>
-                        {c.delta != null && c.delta !== 0 && (
-                          <span className={"ru-chip " + (c.delta > 0 ? "ru-up" : "ru-down")}>
-                            {c.delta > 0 ? "+" : ""}{c.delta}</span>
-                        )}
+                  {ru2.close.map((c, i) => {
+                    /* The same tube the hero draws and the roster draws, at the
+                       same scale: the standard sits at a fixed height on every
+                       column, the fill runs to the figure, and the band between
+                       them is how far short it is. Three surfaces showed the
+                       same three channels three ways, and a bare "8%" next to a
+                       drawn one reads as a different measure. */
+                    const t = c.tgt ? goalTier(c.pct, c.tgt) : null;
+                    const h = !c.tgt ? 0 : Math.max(3, Math.min(100, (c.pct / c.tgt) * CH_STD));
+                    const gap = !c.tgt || h >= CH_STD ? null
+                      : { bottom: h, height: CH_STD - h, deep: c.pct < c.tgt / 2 };
+                    return (
+                      <div className="ru2-stat ru2-ch" key={c.id} style={{ animationDelay: (300 + i * 60) + "ms" }}>
+                        <div className="ru2-stat-name">{c.label}</div>
+                        <div className="ru2-stat-row">
+                          {c.tgt != null && (
+                            <span className="s2g4-col ru2-tube" aria-hidden="true">
+                              <i style={{ height: h.toFixed(1) + "%", background: t ? t.col : undefined }} />
+                              {gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")}
+                                style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}
+                              <s />
+                            </span>
+                          )}
+                          <span className="ru2-stat-num">{c.pct}%</span>
+                          {c.delta != null && c.delta !== 0 && (
+                            <span className={"ru-chip " + (c.delta > 0 ? "ru-up" : "ru-down")}>
+                              {c.delta > 0 ? "+" : ""}{c.delta}</span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -13806,12 +13830,20 @@ function MetricStrip({ ev, stats, thr, first }) {
              puts a channel at target exactly on the line and lets a good one
              stand above it. */
           const h = na || vShow == null ? 0 : Math.max(3, Math.min(100, (vShow / tgt) * CH_STD));
+          /* The shortfall, drawn, exactly as the hero's own tubes draw it: the
+             band between where the fill stops and where the standard sits is
+             the amount that is missing, and the amount of tint IS the severity.
+             The two used to say the same thing in two different drawings, one
+             on the store's card and one on each person's row, which is the kind
+             of difference a manager reads as two different measures. */
+          const gap = na || vShow == null || h >= CH_STD ? null
+            : { bottom: h, height: CH_STD - h, deep: vShow < tgt / 2 };
           return (
             <span key={metric} className={"s2g4 s2g4-bar bloop-host" + (t ? " " + t.cls : "")}
               tabIndex={0} style={{ "--cc": chan.col }}>
               <b className="s2g4-v" style={{ color: vShow == null ? "#B9BEC6" : col }}>{shown}</b>
               <span className={"s2g4-col" + (!na && vShow != null && vShow >= tgt ? " over" : "") + (h >= 100 ? " full" : "")} aria-hidden="true">
-                <i style={{ height: h.toFixed(1) + "%" }} /><s />
+                <i style={{ height: h.toFixed(1) + "%" }} />{gap && <u className={"s2g4-gap" + (gap.deep ? " deep" : "")} aria-hidden="true" style={{ bottom: `${gap.bottom.toFixed(1)}%`, height: `${gap.height.toFixed(1)}%` }} />}<s />
               </span>
               <span className="s2g4-l">{METRIC_TINY[metric] || def.short.replace(/\s*%\s*$/, "")} <i>{na ? "n/a" : tgt + "%"}</i>{t && <Verdict ratio={vShow / tgt} size={9} />}</span>
               <div className={"bloopwin" + (gi >= 2 ? " r" : "")} style={{ "--bw": na || vShow == null ? "var(--ink-3)" : chan.col }}>
@@ -26587,6 +26619,15 @@ button.da-lbrow { cursor:pointer; }
         transition:height .5s var(--spring); }
 .s2g4-col s { position:absolute; left:-2px; right:-2px; bottom:60%; height:2px; margin-bottom:-1px;
         border-radius:1px; background:var(--ink); opacity:.34; }
+/* The same hatching the hero uses for the same fact, at the roster's smaller
+   scale: amber for short of the standard, red once it is under half of it. */
+.s2g4-gap { position:absolute; left:0; right:0; border-radius:5px; pointer-events:none;
+        background:repeating-linear-gradient(135deg, rgba(224,161,0,.30) 0 3px, rgba(224,161,0,.08) 3px 7px); }
+.s2g4-gap.deep { background:repeating-linear-gradient(135deg, rgba(200,53,43,.34) 0 3px, rgba(200,53,43,.10) 3px 7px); }
+/* The round-up's copy of the tube: the same drawing, sitting beside the figure
+   rather than under it, because a tile here is a line and not a column. */
+.ru2-ch .ru2-stat-row { display:flex; align-items:center; gap:10px; }
+.ru2-tube { width:14px; height:38px; flex:0 0 auto; }
 /* One line, centred, and allowed to use the gap either side of its column.
    This wrapped for a day and it was the wrong answer: the label is a name, a
    target and a verdict mark, so the second line was usually the mark on its
@@ -27944,10 +27985,12 @@ button.da-lbrow { cursor:pointer; }
 .s2-osd > span i { width:7px; height:7px; border-radius:50%; background:#F08A80; animation:osdblink 1s steps(2,end) infinite; }
 @keyframes osdblink { 50% { opacity:0; } }
 .s2-osd.back { background:#8FD8AF; color:#12251B; } .s2-osd.back > span i { background:#12251B; animation:none; }
-/* Out of the buttons' corner. Pinned to the same top right as the hero's own
-   button stack, this sat across "Month so far" and read as two things printed
-   on top of each other. The stamp is the quieter of the two, so it moves. */
-.s2-age { position:absolute; left:14px; top:12px; right:auto; z-index:6; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
+/* The hero's top corners both belong to something: the store's mark and name on
+   the left, its button stack on the right. This stamp was pinned to the right
+   and printed across "Month so far", then moved to the left and printed across
+   the mark. The free ground is the middle of that top edge, between the two, so
+   that is where it goes. */
+.s2-age { position:absolute; left:50%; transform:translateX(-50%); top:12px; right:auto; z-index:6; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px;
   font:500 10px var(--font-mono); letter-spacing:.06em; color:#E4C98D; background:rgba(228,201,141,.12); border:1px solid rgba(228,201,141,.35); }
 .s2-age i { width:6px; height:6px; border-radius:50%; background:#E4C98D; animation:agePulse 1.8s ease-in-out infinite; }
 @keyframes agePulse { 50% { opacity:.35; } }
