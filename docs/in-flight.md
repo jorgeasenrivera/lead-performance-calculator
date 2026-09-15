@@ -17,6 +17,24 @@ row to done and adding the pull request number.
   `supabase/`, `test/`, `workers/`, `native/` or `docs/`, or review the open
   pull request instead.
 
+**When two claims take the same id.** It has happened twice in one afternoon, and
+the second time was caused by fixing the first. Codex claimed A7, Claude claimed
+A7 two minutes later, and then both agents resolved it at once: Claude dropped
+its row, Codex renamed its own to A8, and Claude then wrote a new row at A8
+having read the board before Codex's rename landed. A read, then a write, with
+somebody else's write in between.
+
+So, until the ids are changed to something that cannot collide: **renumber your
+own row, never the other agent's, and re-read the board immediately before you
+push.** If both of you renumber anyway, the row already on `main` keeps its
+number and the later push moves.
+
+Better, and worth agreeing rather than one of us imposing it: give the ids an
+owner prefix, `C1` and `C2` for Claude, `X1` and `X2` for Codex, so two agents
+picking a number at the same moment cannot land on the same one. A shared
+counter needs coordination that a commit race does not provide. Jorge and Codex
+to say yes or no; the rows above stay as they are in the meantime.
+
 Status is one of: `open`, `in progress`, `needs approval` (a visual change
 waiting on Jorge's proposal page), `in review`, `done`.
 
@@ -31,7 +49,7 @@ waiting on Jorge's proposal page), `in review`, `done`.
 | A3 | **Drop `public.queue_identity`.** Six rows, last touched 22 August, and nothing reads or writes it since the PIN came out in #326. Dropping a table cannot be undone, so it waits for Jorge to say the word. A migration under `supabase/migrations/`, nothing else. | - | - | `supabase/migrations/` | open (waiting on Jorge) | - |
 | A6 | **The desks caption on the Live Activity.** It reads "1 and 2 and 3 and 4 and 5 and 6 are open" because the free desk numbers are joined with the word "and". It should say "6 desks open". Written and held: there is no Swift toolchain in a web session, and the pull request's own iOS check could not run because the Expo account has used its free-plan builds for the month. It merges when a real build can check it. The patch is on `claude/desks-caption`. | Claude | `claude/desks-caption` | `native/targets/queue/QueueActivity.swift` | blocked on the Expo build quota | - |
 | A8 | **Make the required checks reliable on Windows.** Git currently converts the checkout to CRLF, which breaks source guards written against LF, and five tests turn a Windows file URL into `C:\\C:\\...`. Keep code files on LF and resolve file URLs with Node's cross-platform helper so Codex can run the same required checks Claude and CI run. No product behaviour or pixels change. | Codex | `codex/windows-checks` | `.gitattributes`, `test/` | in progress | - |
-| A8 | **Review the `--dvh` and safe-area division inside the text-size zoom.** Merged in #334. One rule redefines `--dvh`, `--sat` and `--sab` inside the four zoom roots so the phone's own measurements are not enlarged along with the words, and it carries every full-height salesperson screen. Verified by measurement and pixel diff in Chromium only, so WebKit is the open question, along with whether `--satx` can leak to the manager and two hand-tuned constants no test holds. The brief is the issue. | Codex | - | review only, no branch | open | #335 |
+| A9 | **Review the `--dvh` and safe-area division inside the text-size zoom.** Merged in #334. One rule redefines `--dvh`, `--sat` and `--sab` inside the four zoom roots so the phone's own measurements are not enlarged along with the words, and it carries every full-height salesperson screen. Verified by measurement and pixel diff in Chromium only, so WebKit is the open question, along with whether `--satx` can leak to the manager and two hand-tuned constants no test holds. The brief is the issue. | Codex | - | review only, no branch | open | #335 |
 | A4 | **Move the restore point out of the store row.** Every save currently ships a copy of the state it is replacing. Putting the restore point in a key of its own makes a save smaller and a store row easier to read. Noted in the September audit and deliberately not taken then, because it is bigger than the rest of that batch. | - | - | `src/LeadPerformanceCalculator.jsx`, `api/`, `test/` | open | - |
 
 ## Settled
